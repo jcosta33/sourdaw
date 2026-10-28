@@ -355,7 +355,9 @@ export async function reproposePendingChatActions(
     }
     let goalState = metricGoalStateCodec(approval.metricGoalState);
     if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
-        if (selectsSubset) goalState = { ...goalState, proofs: [] };
+        if (selectsSubset) {
+            goalState = { ...goalState, proofs: [] };
+        }
         let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
         try {
             refreshedProof = await prepareMetricGoalPreview({

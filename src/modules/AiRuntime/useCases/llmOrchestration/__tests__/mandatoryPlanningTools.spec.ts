@@ -38,6 +38,7 @@ import { estimateConservativePromptTokens } from '../../../transformers/estimate
 import { describeLocalContextWindowShortfall } from '../../../transformers/localContextWindowRefusal';
 import { createPlanningProject } from '../../__tests__/planningProjectFixture';
 import { createFullThreadContext, threadRequest } from '../../__tests__/threadContextFixture';
+import { admitPlanningInterpretation } from '../../admitPlanningInterpretation';
 import {
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     AGENT_COMMAND_INDEX_SEARCH_TOOL_NAME,
@@ -56,6 +57,7 @@ import { buildAgentContext } from '../../buildAgentContext';
 import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
+import { parseAnalysisMeasureArguments } from '../../parseAnalysisMeasureArguments';
 import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from '../../prepareMetricIntentCatalog';
@@ -133,7 +135,9 @@ function productionToolSchemas(
                 binding: actualBinding,
             }),
         ],
-        'planning'
+        'planning',
+        undefined,
+        'pending'
     );
 }
 
@@ -219,6 +223,59 @@ describe('mandatory planning tools', () => {
             const sent = (mocks.generateCloudToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[];
             expectAllMandatory(namesOf(sent));
         });
+    });
+
+    it('roundtrips the full pending baseline scope/range/metric law through the actual strict hosted converter', async () => {
+        mocks.backendChain.value = ['cloud'];
+        mocks.usesStrictCloudToolSchemas.mockReturnValue(true);
+        mocks.generateCloudToolCalls.mockResolvedValue({
+            providerRequestId: null,
+            strictToolSchemas: true,
+            usage: null,
+            assistantItems: [],
+            calls: [
+                {
+                    id: 'baseline-before-intake',
+                    name: ANALYSIS_MEASURE_TOOL_NAME,
+                    arguments: {
+                        scope: { kind: 'tracks', ids: ['track-before-intake'] },
+                        range: { startBeat: 4, endBeat: 12 },
+                        metrics: ['integratedLoudness', 'truePeak'],
+                    },
+                },
+            ],
+        });
+        const outcome = await generateToolPlanningOutcome(
+            'system',
+            'read current figures before interpretation',
+            productionToolSchemas()
+        );
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            toolCalls: [
+                {
+                    name: ANALYSIS_MEASURE_TOOL_NAME,
+                    arguments: {
+                        scope: { kind: 'tracks', ids: ['track-before-intake'] },
+                        range: { startBeat: 4, endBeat: 12 },
+                        metrics: ['integratedLoudness', 'truePeak'],
+                    },
+                },
+            ],
+        });
+        if (outcome.status !== 'complete') {
+            throw new Error('Expected the actual baseline contract.');
+        }
+        expect(parseAnalysisMeasureArguments(outcome.toolCalls[0]!.arguments)).toMatchObject({
+            status: 'valid',
+            value: {
+                subject: { kind: 'project' },
+                scope: { kind: 'tracks', ids: ['track-before-intake'] },
+                metrics: ['integratedLoudness', 'truePeak'],
+            },
+        });
+        const sent = mocks.generateCloudToolCalls.mock.calls[0]?.[2];
+        expect(sent).toBeDefined();
     });
 
     describe('hosted dialects', () => {
@@ -494,6 +551,7 @@ describe('mandatory planning tools', () => {
                     discoveryContext,
                     built.localMessage
                 );
+
                 return { built, outcome, providerResults, sent: mocks.generateWebLlmCompletion.mock.calls[0] };
             }
 
@@ -824,18 +882,258 @@ describe('mandatory planning tools', () => {
                 expect(text).toContain('Return this call alone in its turn.');
             });
 
-            it('sends the full schemas to the provider request that validates the reply', async () => {
-                const { advertised } = await serializeWebLlmPrompt('add an eq device to the vocals');
-
-                const proposal = advertised.find((tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME);
-                expect(proposal?.function.parameters).toHaveProperty([
-                    'properties',
-                    'list',
-                    'properties',
-                    'items',
-                    'maxItems',
-                ]);
-            });
+            it.each(['webllm', 'cloud'] as const)(
+                'sends the full schemas to the %s provider request that validates the reply after actual raw intake',
+                async (backend) => {
+                    const context = getProjectContext();
+                    const prompt = 'Apply the exact literal controls';
+                    const revision = 'phase-wire-revision';
+                    const creative = prepareCreativeInterpretationCatalog({
+                        prompt,
+                        context,
+                        projectRevision: revision,
+                    });
+                    const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: revision });
+                    const metric = prepareMetricIntentCatalog({ prompt, answer });
+                    const built = buildAgentContext({
+                        fixedPolicy: 'policy',
+                        prompt,
+                        context,
+                        projectRevision: revision,
+                    });
+                    const joint = createPlanningInterpretationToolSchema({
+                        creative,
+                        answer,
+                        metric,
+                        binding: built.planningBinding,
+                    });
+                    const canonical = [...getPlanningProviderToolSchemas(), joint];
+                    const intake = {
+                        id: 'phase-intake',
+                        name: CREATIVE_INTERPRETATION_TOOL_NAME,
+                        arguments: {
+                            catalogId: creative.catalogId,
+                            modeId: 'literal',
+                            targetCandidateIds: [],
+                            editDimensionCandidateIds: [],
+                            constraintCandidateIds: [],
+                            creationSlotIds: [],
+                            uncertainty: 'none',
+                            answer: null,
+                            metricIntent: { kind: 'literal', objectives: [], uncertainty: 'none' },
+                        },
+                    };
+                    const advertised: Array<readonly ToolSchema[]> = [];
+                    const firstAssistantItems = [{ type: 'function_call', call_id: intake.id }];
+                    let replies = 0;
+                    mocks.backendChain.value = [backend];
+                    mocks.usesStrictCloudToolSchemas.mockReturnValue(backend === 'cloud');
+                    if (backend === 'webllm') {
+                        const actual = await vi.importActual<typeof import('../../../repositories/webLlm/toolCalling')>(
+                            '../../../repositories/webLlm/toolCalling'
+                        );
+                        mocks.generateWebLlmToolCalls.mockImplementation(
+                            (...args: Parameters<typeof actual.generateWebLlmToolCalls>) => {
+                                advertised.push(args[2]);
+                                return actual.generateWebLlmToolCalls(...args);
+                            }
+                        );
+                        mocks.generateWebLlmCompletion.mockImplementation(async () => {
+                            replies += 1;
+                            if (replies === 2) {
+                                return JSON.stringify([
+                                    {
+                                        id: 'phase-discovery',
+                                        name: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                                        arguments: { category: 'command', names: ['setTrackGain'] },
+                                    },
+                                ]);
+                            }
+                            return JSON.stringify(
+                                replies === 1
+                                    ? [intake]
+                                    : [
+                                          {
+                                              id: 'phase-proposal',
+                                              name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                                              arguments: {
+                                                  commands: [
+                                                      {
+                                                          name: 'setTrackGain',
+                                                          arguments: { trackId: 'track-phase', gain: 0.7 },
+                                                      },
+                                                  ],
+                                              },
+                                          },
+                                      ]
+                            );
+                        });
+                    } else {
+                        mocks.generateCloudToolCalls.mockImplementation(
+                            async (_system: string, _user: string, tools: readonly ToolSchema[]) => {
+                                advertised.push(tools);
+                                replies += 1;
+                                if (replies === 2) {
+                                    return {
+                                        providerRequestId: null,
+                                        strictToolSchemas: true,
+                                        usage: null,
+                                        assistantItems: [{ type: 'function_call', call_id: 'phase-discovery' }],
+                                        calls: [
+                                            {
+                                                id: 'phase-discovery',
+                                                name: AGENT_CATALOG_DISCOVERY_TOOL_NAME,
+                                                arguments: { category: 'command', names: ['setTrackGain'] },
+                                            },
+                                        ],
+                                    };
+                                }
+                                return {
+                                    providerRequestId: null,
+                                    strictToolSchemas: true,
+                                    usage: null,
+                                    assistantItems:
+                                        replies === 1
+                                            ? firstAssistantItems
+                                            : [{ type: 'function_call', call_id: 'phase-proposal' }],
+                                    calls:
+                                        replies === 1
+                                            ? [intake]
+                                            : [
+                                                  {
+                                                      id: 'phase-proposal',
+                                                      name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                                                      arguments: {
+                                                          commands: [
+                                                              {
+                                                                  name: 'setTrackGain',
+                                                                  argumentsJson: '{"trackId":"track-phase","gain":0.7}',
+                                                              },
+                                                          ],
+                                                          list: null,
+                                                          plan: null,
+                                                          compiledCallIds: null,
+                                                      },
+                                                  },
+                                              ],
+                                };
+                            }
+                        );
+                    }
+                    const result = await runApplicationOwnedToolLoop({
+                        loopId: `phase-${backend}`,
+                        requireWholeRequestIntake: true,
+                        terminalToolNames: new Set([COMMAND_BATCH_PROPOSAL_TOOL_NAME]),
+                        interpretation: {
+                            toolName: intake.name,
+                            admit: (call, identity) => {
+                                const admitted = admitPlanningInterpretation({
+                                    creative,
+                                    answer,
+                                    metric,
+                                    call,
+                                    projectRevision: revision,
+                                    turn: identity.turn,
+                                });
+                                if (admitted.status !== 'admitted' || admitted.kind !== 'literal') {
+                                    throw new Error('Expected actual positive literal intake.');
+                                }
+                                return {
+                                    status: 'admitted',
+                                    providerProjection: { kind: 'metric-intent', catalogId: metric.catalogId },
+                                    receipt: {
+                                        data: {
+                                            kind: 'metric-intent',
+                                            catalogId: metric.catalogId,
+                                            intentKind: admitted.metricAuthority.kind,
+                                            goals: admitted.metricAuthority.goals,
+                                        },
+                                        summary:
+                                            'Whole-request literal intent admitted without creative mutation authority.',
+                                    },
+                                };
+                            },
+                        },
+                        requestTurn: async (input) => {
+                            expect(input.wholeRequestIntake).toBe(input.turn === 1 ? 'pending' : 'admitted');
+                            if (backend === 'cloud' && input.turn === 2) {
+                                expect(input.history[0]?.assistantItems).toBe(firstAssistantItems);
+                            }
+                            const schemas = projectPlanningProviderToolSchemas(
+                                canonical,
+                                'planning',
+                                undefined,
+                                input.wholeRequestIntake
+                            );
+                            return generateToolPlanningOutcome(
+                                buildPlanningSystemPrompt(),
+                                built.message,
+                                schemas,
+                                undefined,
+                                prompt,
+                                undefined,
+                                undefined,
+                                undefined,
+                                AUTO_TOOL_CHOICE,
+                                {
+                                    firstUserMessage: built.message,
+                                    history: input.history,
+                                    budgetNote: input.budgetNote,
+                                },
+                                built.localMessage
+                            );
+                        },
+                    });
+                    expect(result, JSON.stringify(result)).toMatchObject({
+                        status: 'complete',
+                        turns: 3,
+                        interpretation: 'admitted',
+                        toolCalls: [
+                            {
+                                name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                                arguments: {
+                                    commands: [
+                                        { name: 'setTrackGain', arguments: { trackId: 'track-phase', gain: 0.7 } },
+                                    ],
+                                },
+                            },
+                        ],
+                        receipts: [
+                            { callId: intake.id, status: 'success' },
+                            { callId: 'phase-discovery', status: 'success' },
+                        ],
+                    });
+                    expect(advertised).toHaveLength(3);
+                    expectAllMandatory(namesOf(advertised[0]!));
+                    expectAllMandatory(namesOf(advertised[1]!));
+                    const pendingProposal = advertised[0]!.find(
+                        (tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                    );
+                    expect(pendingProposal?.function.parameters).toMatchObject({
+                        properties: {},
+                        required: [],
+                        additionalProperties: false,
+                    });
+                    const proposal = advertised[1]!.find(
+                        (tool) => tool.function.name === COMMAND_BATCH_PROPOSAL_TOOL_NAME
+                    );
+                    expect(proposal?.function.parameters).toHaveProperty([
+                        'properties',
+                        'list',
+                        'properties',
+                        'items',
+                        'maxItems',
+                    ]);
+                    const consumedJoint = advertised[1]!.find(
+                        (tool) => tool.function.name === CREATIVE_INTERPRETATION_TOOL_NAME
+                    );
+                    expect(consumedJoint?.function.parameters).toMatchObject({
+                        properties: {},
+                        required: [],
+                        additionalProperties: false,
+                    });
+                }
+            );
         });
     });
 

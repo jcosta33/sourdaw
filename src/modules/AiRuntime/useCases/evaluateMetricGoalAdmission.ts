@@ -198,15 +198,30 @@ export function evaluateMetricGoalAdmission(input: {
         );
     }
     function satisfies(goal: MetricGoal, before: number, after: number, reference: number | undefined): boolean {
-        if (goal.relation === 'increase') return after > before;
-        if (goal.relation === 'decrease') return after < before;
-        if (goal.relation === 'hold') return after === before;
-        if (goal.relation === 'target')
+        if (goal.relation === 'increase') {
+            return after > before;
+        }
+        if (goal.relation === 'decrease') {
+            return after < before;
+        }
+        if (goal.relation === 'hold') {
+            return after === before;
+        }
+        if (goal.relation === 'target') {
             return goal.targetValue !== null && Math.abs(after - goal.targetValue) <= goal.tolerance;
-        if (reference === undefined) return false;
-        if (goal.relation === 'match-current') return Math.abs(after - reference) <= goal.tolerance;
-        if (goal.relation === 'greater-than-current') return after > reference;
-        if (goal.relation === 'less-than-current') return after < reference;
+        }
+        if (reference === undefined) {
+            return false;
+        }
+        if (goal.relation === 'match-current') {
+            return Math.abs(after - reference) <= goal.tolerance;
+        }
+        if (goal.relation === 'greater-than-current') {
+            return after > reference;
+        }
+        if (goal.relation === 'less-than-current') {
+            return after < reference;
+        }
         return false;
     }
     for (const goal of goals) {
@@ -260,8 +275,9 @@ export function evaluateMetricGoalAdmission(input: {
                 unit = final.unit;
                 const referenceValue = reference.length === 1 ? reference[0] : reference[index];
                 if (
-                    !satisfies(goal, before.value, after.value, referenceValue) ||
-                    !satisfies(goal, initial.value, final.value, referenceValue)
+                    failure === null &&
+                    (!satisfies(goal, before.value, after.value, referenceValue) ||
+                        !satisfies(goal, initial.value, final.value, referenceValue))
                 ) {
                     failure = 'out-of-tolerance';
                 }

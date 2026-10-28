@@ -7,6 +7,7 @@ import { getAgentMeasurementMetricIds } from '#/modules/AudioAnalysis/useCases';
 import { getAgentBuiltinDeviceRuntimeManifest } from '#/modules/AudioEngine/useCases';
 import {
     getExecutableAppActionIntentCatalogUnicodeLength,
+    isExecutableAppActionType,
     MAX_EXECUTABLE_APP_ACTION_INTENT_CATALOG_INTENT_LENGTH,
 } from '#/modules/Command/useCases';
 import { getAgentDeviceFactoryManifest } from '#/modules/PluginHost/useCases';
@@ -22,6 +23,7 @@ import { APPLICATION_OWNED_CAPABILITY_OPERATIONS } from '../models/AgentCapabili
 import { type AgentPlanProposal } from '../models/AgentRun';
 import {
     ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
+    ANALYSIS_MEASURE_TOOL_NAME,
     AGENT_CATALOG_CATEGORIES,
     type AgentCatalogCategory,
 } from '../models/AgentToolCatalogNames';
@@ -92,6 +94,10 @@ import { formatReceiptContext } from './formatReceiptContext';
 import { getAgentToolCatalogEntries } from './getAgentToolCatalogEntries';
 import { parseRecipeDiscoveryInput } from './parseRecipeDiscoveryInput';
 import { projectAnswerProviderReceipt } from './projectAnswerProviderReceipt';
+import {
+    WHOLE_REQUEST_PREPARATION_TOOL_NAMES,
+    type WholeRequestIntakePhase,
+} from './projectPlanningProviderToolSchemas';
 
 export const APPLICATION_OWNED_TOOL_LOOP_LIMITS = {
     maxTurns: 4,
@@ -190,8 +196,10 @@ export type DeclineAdmission = { status: 'admitted' } | { status: 'refused'; rea
 
 type RunApplicationOwnedToolLoopInput = {
     loopId: string;
+    requireWholeRequestIntake?: true;
     requestTurn: (input: {
         turn: number;
+        wholeRequestIntake?: WholeRequestIntakePhase;
         receiptContext: string | null;
         /** Every earlier turn a hosted provider reported, ascending, for callers that replay them natively. */
         history: HostedTurnHistory;
@@ -2093,6 +2101,7 @@ export async function runApplicationOwnedToolLoop(
     let answerEntry = false;
     const answerReads = new Map<string, AdmittedAnswerRead>();
     let interpretation: ApplicationOwnedToolLoopInterpretationOutcome = 'none';
+    let wholeRequestIntake: WholeRequestIntakePhase = 'pending';
 
     /**
      * The turn ceiling for the run as it currently stands. Offering the tool buys nothing: only a run
@@ -2191,6 +2200,7 @@ export async function runApplicationOwnedToolLoop(
             const answerAuthorityForTurn = answerIntake?.authority ?? metricProviderProjection;
             outcome = await input.requestTurn({
                 turn,
+                ...(input.requireWholeRequestIntake ? { wholeRequestIntake } : {}),
                 receiptContext,
                 ...(answerIntake === null ? {} : { answerOnly: true as const }),
                 ...(answerEntry && answerIntake === null ? { answerIntakeOnly: true as const } : {}),
@@ -2250,6 +2260,27 @@ export async function runApplicationOwnedToolLoop(
             }
             seenCallIds.add(callId);
             identifiedCalls.push({ call, callId });
+        }
+
+        if (
+            input.requireWholeRequestIntake &&
+            wholeRequestIntake === 'pending' &&
+            identifiedCalls.some(
+                ({ call }) =>
+                    isExecutableAppActionType(call.name) ||
+                    WHOLE_REQUEST_PREPARATION_TOOL_NAMES.has(call.name) ||
+                    (call.name === ANALYSIS_MEASURE_TOOL_NAME &&
+                        (call.arguments.subject === 'preview' ||
+                            call.arguments.proposal !== undefined ||
+                            call.arguments.recipeCallId !== undefined))
+            )
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'Whole-request intake is required before preparation, compilation or proposal.',
+                receipts,
+                turns: turn,
+            };
         }
 
         const entryCalls = identifiedCalls.filter(
@@ -2460,25 +2491,24 @@ export async function runApplicationOwnedToolLoop(
                     retainedCompilations: [],
                 };
             }
+            const receipt = boundReceipt(
+                {
+                    schema: 'sourdaw.application-tool-receipt',
+                    schemaVersion: 1,
+                    callId,
+                    toolName: call.name,
+                    turn,
+                    status: 'success',
+                    revision: null,
+                    data: admission.receipt.data,
+                    summary: admission.receipt.summary,
+                    warnings: [],
+                    error: null,
+                },
+                limits.maxReceiptBytesPerCall
+            );
             const overBudget = admitTurnReceipts(
-                [
-                    boundReceipt(
-                        {
-                            schema: 'sourdaw.application-tool-receipt',
-                            schemaVersion: 1,
-                            callId,
-                            toolName: call.name,
-                            turn,
-                            status: 'success',
-                            revision: null,
-                            data: admission.receipt.data,
-                            summary: admission.receipt.summary,
-                            warnings: [],
-                            error: null,
-                        },
-                        limits.maxReceiptBytesPerCall
-                    ),
-                ],
+                [receipt],
                 turn,
                 outcome,
                 interpretationCalls,
@@ -2486,6 +2516,26 @@ export async function runApplicationOwnedToolLoop(
             );
             if (overBudget !== null) {
                 return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
+            }
+            if (receipt.status !== 'success') {
+                return {
+                    status: 'rejected',
+                    reason:
+                        receipt.error?.safeMessage ?? 'Creative interpretation exceeded the bounded receipt budget.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            if (input.requireWholeRequestIntake && admission.providerProjection?.kind !== 'metric-intent') {
+                return {
+                    status: 'rejected',
+                    reason: 'Whole-request metric intent was not admitted.',
+                    receipts,
+                    turns: turn,
+                };
+            }
+            if (admission.providerProjection?.kind === 'metric-intent') {
+                wholeRequestIntake = 'admitted';
             }
             metricProviderProjection = admission.providerProjection;
             interpretation = 'admitted';

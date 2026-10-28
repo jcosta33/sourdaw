@@ -422,12 +422,15 @@ describe('joint planning interpretation consumes the actual printed context view
         const value = fixture();
         const strict = projectOpenAiStrictToolSchema(value.schema);
         expect(strict.function.parameters.required).toContain('answer');
+        expect(strict.function.parameters.required).toContain('metricIntent');
         const call = legacyCall(value.creative.catalogId);
-        expect(matchesJsonSchema({ ...call.arguments, answer: null }, strict.function.parameters)).toBe(true);
+        expect(
+            matchesJsonSchema({ ...call.arguments, answer: null, metricIntent: null }, strict.function.parameters)
+        ).toBe(true);
         expect(
             admitPlanningInterpretation({
                 ...value,
-                call: { ...call, arguments: { ...call.arguments, answer: null } },
+                call: { ...call, arguments: { ...call.arguments, answer: null, metricIntent: null } },
                 projectRevision: 'revision',
             })
         ).toMatchObject({ status: 'admitted', kind: 'creative', authority: { mode: 'read-only' } });

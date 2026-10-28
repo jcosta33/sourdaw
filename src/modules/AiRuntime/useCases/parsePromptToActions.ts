@@ -675,7 +675,6 @@ const planPromptIntent = inject({ logger })(
                     context,
                     projectRevision: projectRevision ?? '',
                 });
-                const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
                 const providerToolSchemas = [
                     ...(readonly ? [createAnswerInterpretationToolSchema(answerCatalog)] : []),
                     ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
@@ -765,6 +764,7 @@ const planPromptIntent = inject({ logger })(
                             'Provider planning rejected: relevant production authority exceeds the bounded context limit.',
                     };
                 }
+                const metricCatalog = prepareMetricIntentCatalog({ prompt, answer: answerCatalog });
                 // The loop is told only whether a call was admitted. The record itself stays here, so a
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
@@ -894,6 +894,7 @@ const planPromptIntent = inject({ logger })(
                     };
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
+                    ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
                     transientOnsetRead: transientRead,
                     textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                     loopId: `planning-${crypto.randomUUID()}`,
@@ -1050,6 +1051,7 @@ const planPromptIntent = inject({ logger })(
                         transientOnsetsDiscovered,
                         answerOnly,
                         answerIntakeOnly,
+                        wholeRequestIntake,
                     }) => {
                         let phase: PlanningAnswerPhase = 'planning';
                         if (answerOnly) {
@@ -1081,7 +1083,8 @@ const planPromptIntent = inject({ logger })(
                                       ]),
                             ],
                             phase,
-                            profile
+                            profile,
+                            wholeRequestIntake
                         );
                         if (!planningContext.authorityComplete) {
                             throw new Error('Provider planning cannot continue with incomplete relevant authority.');
@@ -1140,6 +1143,31 @@ const planPromptIntent = inject({ logger })(
                         return turn;
                     },
                 }).finally(() => transientRead?.dispose());
+                // Admission can stage a record before its genuine receipt is bounded. A failed
+                // control never enters the authority carried by a refusal or a correction.
+                const successfulIntakeReceipts = planningOutcome.receipts.filter(
+                    (receipt) => receipt.toolName === CREATIVE_INTERPRETATION_TOOL_NAME && receipt.status === 'success'
+                );
+                if (metricAuthority !== undefined) {
+                    const staged = metricAuthority;
+                    if (
+                        !successfulIntakeReceipts.some(
+                            (receipt) => receipt.callId === staged.callId && receipt.turn === staged.turn
+                        )
+                    ) {
+                        metricAuthority = undefined;
+                    }
+                }
+                if (creativeAuthority !== undefined) {
+                    const staged = creativeAuthority;
+                    if (
+                        !successfulIntakeReceipts.some(
+                            (receipt) => isRecord(receipt.data) && receipt.data.authorityId === staged.authorityId
+                        )
+                    ) {
+                        creativeAuthority = undefined;
+                    }
+                }
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0
                         ? {}
@@ -1616,9 +1644,12 @@ const planPromptIntent = inject({ logger })(
                     }
                     const steps: MetricGoalState['steps'][number][] = [];
                     const usedRecipes = selectedCompilations.flatMap((compilation) => {
-                        if (compilation.kind === 'recipe') return [compilation];
-                        if (compilation.kind !== 'preview' || compilation.measuredPreview.recipeSource === undefined)
+                        if (compilation.kind === 'recipe') {
+                            return [compilation];
+                        }
+                        if (compilation.kind !== 'preview' || compilation.measuredPreview.recipeSource === undefined) {
                             return [];
+                        }
                         const source = compilation.measuredPreview.recipeSource;
                         return planningOutcome.retainedCompilations.filter(
                             (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> =>
@@ -1639,27 +1670,25 @@ const planPromptIntent = inject({ logger })(
                                         goal.source.recipeDigest === compilation.metricRecipe?.recipeDigest
                                 )
                             )
-                        )
+                        ) {
                             continue;
+                        }
                         steps.push({
                             stepId,
                             commandCount: compilation.commands.length,
                             operationTypes: compilation.commands.map((command) => command.operation),
                         });
                     }
-                    const onlyAction = grounded.actions[0];
                     if (
                         steps.length === 0 &&
-                        grounded.actions.length === 1 &&
-                        onlyAction?.type === 'setTrackGain' &&
-                        authorities.some((authority) =>
-                            authority.goals.some(
-                                (goal) =>
-                                    goal.stepId === 'overall' && goal.targetIds.includes(onlyAction.payload.trackId)
-                            )
-                        )
+                        grounded.actions.length > 0 &&
+                        authorities.some((authority) => authority.goals.some((goal) => goal.stepId === 'overall'))
                     ) {
-                        steps.push({ stepId: 'overall', commandCount: 1, operationTypes: ['setTrackGain'] });
+                        steps.push({
+                            stepId: 'overall',
+                            commandCount: grounded.actions.length,
+                            operationTypes: grounded.actions.map((action) => action.type),
+                        });
                     }
                     const metricGoalState: MetricGoalState = {
                         schemaVersion: 1,

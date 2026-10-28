@@ -97,8 +97,9 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
             ) ||
             !Array.isArray(entry.prohibitions) ||
             !Array.isArray(entry.creationSlots)
-        )
+        ) {
             return false;
+        }
         return (
             entry.targets.every(
                 (target: unknown) =>
@@ -126,9 +127,13 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
         );
     }
     function source(entry: unknown): entry is MetricGoalSource {
-        if (!record(entry)) return false;
-        if (entry.kind === 'unsupported') return keys(entry, ['kind']);
-        if (entry.kind === 'recipe')
+        if (!record(entry)) {
+            return false;
+        }
+        if (entry.kind === 'unsupported') {
+            return keys(entry, ['kind']);
+        }
+        if (entry.kind === 'recipe') {
             return (
                 keys(entry, ['kind', 'recipeId', 'catalogVersion', 'recipeDigest', 'expectationIndex']) &&
                 text(entry.recipeId) &&
@@ -136,8 +141,10 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
                 text(entry.recipeDigest) &&
                 integer(entry.expectationIndex)
             );
-        if (entry.kind === 'request-number')
+        }
+        if (entry.kind === 'request-number') {
             return keys(entry, ['kind', 'candidateId', 'token']) && text(entry.candidateId) && text(entry.token);
+        }
         return (
             entry.kind === 'policy' &&
             keys(entry, ['kind', 'policyId']) &&
@@ -221,8 +228,12 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
         );
     }
     function metricEntry(entry: unknown): boolean {
-        if (!record(entry)) return false;
-        if (entry.status === 'unavailable') return keys(entry, ['status', 'reason']) && text(entry.reason);
+        if (!record(entry)) {
+            return false;
+        }
+        if (entry.status === 'unavailable') {
+            return keys(entry, ['status', 'reason']) && text(entry.reason);
+        }
         return (
             keys(entry, ['status', 'metricVersion', 'unit', 'value', 'confidence']) &&
             entry.status === 'measured' &&
@@ -262,9 +273,12 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
             !oneOf(entry.scope.kind, ['master', 'project', 'tracks', 'buses']) ||
             !range(entry.range) ||
             !Array.isArray(entry.targets)
-        )
+        ) {
             return false;
-        if ((entry.scope.kind === 'tracks' || entry.scope.kind === 'buses') && !strings(entry.scope.ids)) return false;
+        }
+        if ((entry.scope.kind === 'tracks' || entry.scope.kind === 'buses') && !strings(entry.scope.ids)) {
+            return false;
+        }
         if (
             !entry.targets.every(
                 (target: unknown) =>
@@ -281,16 +295,18 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
                                 (delta.status === 'incomparable' && text(delta.reason)))
                     )
             )
-        )
+        ) {
             return false;
+        }
         if (
             entry.recipeSource !== undefined &&
             (!record(entry.recipeSource) ||
                 !text(entry.recipeSource.recipeId) ||
                 !text(entry.recipeSource.title) ||
                 !text(entry.recipeSource.targetId))
-        )
+        ) {
             return false;
+        }
         const provenance = entry.provenance;
         return (
             record(provenance) &&
@@ -334,8 +350,9 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
                     strings(step.operationTypes) &&
                     step.commandCount === step.operationTypes.length
             )
-        )
+        ) {
             return false;
+        }
         const binding = entry.binding;
         return (
             binding === null ||

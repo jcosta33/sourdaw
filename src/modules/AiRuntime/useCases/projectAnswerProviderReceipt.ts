@@ -25,12 +25,55 @@ export function projectAnswerProviderReceipt(
             data: {
                 ...data,
                 goals: data.goals.map((goal: unknown) => {
-                    if (!isRecord(goal) || !isRecord(goal.range)) return goal;
-                    const { sectionId: _sectionId, ...range } = goal.range;
-                    return { ...goal, range };
+                    if (!isRecord(goal)) {
+                        return goal;
+                    }
+                    let range: unknown = goal.range;
+                    if (isRecord(range)) {
+                        const { sectionId: _sectionId, ...beats } = range;
+                        range = beats;
+                    }
+                    let source: unknown = null;
+                    if (isRecord(goal.source)) {
+                        if (goal.source.kind === 'recipe') {
+                            source = { kind: 'recipe', recipeId: goal.source.recipeId };
+                        }
+                        if (goal.source.kind === 'policy') {
+                            source = { kind: 'policy', policyId: goal.source.policyId };
+                        }
+                        if (goal.source.kind === 'request-number') {
+                            source = { kind: 'request-number', token: goal.source.token };
+                        }
+                        if (goal.source.kind === 'unsupported') {
+                            source = { kind: 'unsupported' };
+                        }
+                    }
+                    return {
+                        metricId: goal.metricId,
+                        band: goal.band,
+                        targetIds: goal.targetIds,
+                        referenceTargetIds: goal.referenceTargetIds,
+                        range,
+                        relation: goal.relation,
+                        targetValue: goal.targetValue,
+                        tolerance: goal.tolerance,
+                        source,
+                    };
                 }),
             },
         };
+    }
+    if (
+        authority.kind === 'metric-intent' &&
+        data.schema === 'sourdaw.recipe-expansion' &&
+        isRecord(data.metricExpectations)
+    ) {
+        const {
+            catalogVersion: _catalogVersion,
+            recipeDigest: _recipeDigest,
+            ...expectations
+        } = data.metricExpectations;
+        return { ...receipt, data: { ...data, metricExpectations: expectations } };
     }
     if (data.kind === 'analysis-measurement' && isRecord(data.range)) {
         const { sectionId: _sectionId, ...range } = data.range;

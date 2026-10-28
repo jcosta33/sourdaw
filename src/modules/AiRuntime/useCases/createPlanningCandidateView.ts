@@ -2,6 +2,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 import { type CreativeInterpretationCatalog } from '../models/CreativeInterpretation';
 import { type PlanningContextBinding, type PlanningContextObject } from '../models/PlanningContextBinding';
 
+import { OBJECTIVE_METRIC_UNITS } from './objectiveMetricProjection';
 import { type MetricIntentCatalog } from './prepareMetricIntentCatalog';
 
 function collectCandidateObjectFacts(
@@ -99,6 +100,15 @@ export function createPlanningCandidateView(
     ) {
         throw new Error('Planning interpretation catalogs do not share the actual context binding.');
     }
+    if (
+        metric !== undefined &&
+        (metric.catalogId !== answer.catalogId ||
+            metric.revision !== answer.revision ||
+            metric.requestDigest !== answer.requestDigest ||
+            JSON.stringify(metric.selection) !== JSON.stringify(answer.selection))
+    ) {
+        throw new Error('Metric interpretation does not share the complete printed context binding.');
+    }
     const fallback: Array<[string, string, string, string | null, number | null, number | null]> = [];
     const facts = collectCandidateObjectFacts(creative, answer);
     const references = new Map<string, string>();
@@ -165,6 +175,70 @@ export function createPlanningCandidateView(
         // Raw internal section identities are withheld by the context producer, including fallback rows.
         return printed?.reference ?? [range.label, range.startBeat, range.endBeat];
     });
+    const metricEligibility: number[][] = [];
+    const metricRoles = [...new Set(metric?.objectives.flatMap((objective) => objective.roles) ?? [])];
+    const metricRoleSets: number[][] = [];
+    const metricMetrics: Array<[string, string | null]> = [];
+    const metricPolicies: string[] = [];
+    type Relation = MetricIntentCatalog['objectives'][number]['goals'][number]['relation'];
+    const metricExpectations: Array<[number, string | null, Relation, number | null, number, number | null]> = [];
+    const metricObjectives: Array<[string, string | null, string, number, number, number, number[]]> = [];
+    function intern<T>(table: T[], value: T): number {
+        const key = JSON.stringify(value);
+        const prior = table.findIndex((entry) => JSON.stringify(entry) === key);
+        if (prior >= 0) {
+            return prior;
+        }
+        table.push(value);
+        return table.length - 1;
+    }
+    function scopeIndices(ids: readonly string[]): number[] {
+        return ids.map((id) => {
+            const index = answer.scopes.findIndex((scope) => scope.candidateId === id);
+            if (index < 0) {
+                throw new Error('Metric eligibility names an unpublished shared scope.');
+            }
+            return index;
+        });
+    }
+    for (const objective of metric?.objectives ?? []) {
+        const expectations = objective.goals.map((goal) => {
+            let unit: string | null = null;
+            if (goal.metricId !== null) {
+                unit = OBJECTIVE_METRIC_UNITS[goal.metricId];
+            }
+            const metricIndex = intern(metricMetrics, [goal.metricName, unit]);
+            let policyIndex: number | null = null;
+            if (goal.source.kind === 'policy') {
+                policyIndex = intern(metricPolicies, goal.source.policyId);
+            }
+            return intern(metricExpectations, [
+                metricIndex,
+                goal.band,
+                goal.relation,
+                goal.targetValue,
+                goal.tolerance,
+                policyIndex,
+            ]);
+        });
+        const source = objective.goals[0]?.source;
+        let identity: string | null = null;
+        if (source?.kind === 'recipe') {
+            identity = source.recipeId;
+        }
+        metricObjectives.push([
+            source?.kind ?? 'unsupported',
+            identity,
+            objective.label,
+            intern(metricEligibility, scopeIndices(objective.eligibleScopeIds)),
+            intern(metricEligibility, scopeIndices(objective.defaultScopeIds)),
+            intern(
+                metricRoleSets,
+                objective.roles.map((role) => metricRoles.indexOf(role))
+            ),
+            expectations,
+        ]);
+    }
     return {
         activeView: creative.selection.activeView,
         unresolved: creative.unresolvedExplicitReferences,
@@ -175,19 +249,12 @@ export function createPlanningCandidateView(
         scopes,
         ranges,
         fallback,
-        metricObjectives:
-            metric?.objectives.map((objective) => [
-                objective.id,
-                objective.label,
-                objective.eligibleScopeIds,
-                objective.goals.map((goal) => [
-                    goal.metricId,
-                    goal.band,
-                    goal.relation,
-                    goal.targetValue,
-                    goal.tolerance,
-                    goal.source,
-                ]),
-            ]) ?? [],
+        metricObjectives,
+        metricEligibility,
+        metricRoles,
+        metricRoleSets,
+        metricMetrics,
+        metricExpectations,
+        metricPolicies,
     };
 }

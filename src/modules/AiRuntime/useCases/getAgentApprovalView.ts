@@ -1,4 +1,5 @@
 import { trackStore } from '#/modules/Arrangement/stores';
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { type ChatActionConfirmationStatus } from '../models/Chat';
@@ -13,6 +14,7 @@ import { proposalCommandShape } from './agentReference/proposalCommandShape';
 import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getProviderRouteView } from './getProviderRouteView';
 import { metricGoalStateCodec } from './metricGoalStateCodec';
+import { OBJECTIVE_METRIC_LABELS } from './objectiveMetricProjection';
 import { validateAgentRiskApproval } from './validateAgentRiskApproval';
 
 type ApprovalSnapshot = PendingAppActionConfirmation['approvalSnapshot'];
@@ -401,6 +403,7 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
             currentRevision: freshness.currentRevision ?? undefined,
         });
     }
+    const metricRecipeCatalog = getMixRecipeCatalog();
     const metricGoals: AgentApprovalView['metricGoals'] = {
         ...metricEvaluation,
         criteria: metricEvaluation.criteria.map((criterion) => {
@@ -413,24 +416,50 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
                     )
                     .map((name) => `“${name}”`)
                     .join(', ');
-            const unit = criterion.unit ?? 'unavailable';
+            let unit = criterion.unit ?? '';
+            if (unit === 'hertz') {
+                unit = 'Hz';
+            }
             const range =
                 criterion.range === null
                     ? 'range unavailable'
                     : `beats ${String(criterion.range.startBeat)}–${String(criterion.range.endBeat)}`;
-            let source = 'Application objective policy';
-            if (criterion.source.kind === 'recipe')
-                source = `Recipe ${criterion.source.recipeId}, catalog ${String(criterion.source.catalogVersion)}, expectation ${String(criterion.source.expectationIndex + 1)}`;
-            if (criterion.source.kind === 'policy') source = criterion.source.policyId;
+            let source = 'Objective criterion';
+            if (criterion.source.kind === 'recipe') {
+                const recipeId = criterion.source.recipeId;
+                const recipe = metricRecipeCatalog.recipes.find((entry) => entry.id === recipeId);
+                source = recipe === undefined ? 'Authored mixing recipe' : `Recipe “${recipe.title}”`;
+            }
+            if (criterion.source.kind === 'policy') {
+                source = 'Preview comparison';
+            }
+            if (criterion.source.kind === 'request-number') {
+                source = 'Requested target';
+            }
+            const metric =
+                Object.entries(OBJECTIVE_METRIC_LABELS).find(([id]) => id === criterion.metricId)?.[1] ??
+                'unsupported metric';
+            const relations: Readonly<Record<typeof criterion.relation, string>> = {
+                increase: 'must increase',
+                decrease: 'must decrease',
+                hold: 'must stay equal',
+                'match-current': 'must match the current reference preview',
+                'greater-than-current': 'must exceed the current reference preview',
+                'less-than-current': 'must be below the current reference preview',
+                target: `must reach ${criterion.targetValue === null ? 'an unavailable target' : String(criterion.targetValue)} ${unit}`,
+                unsupported: 'cannot be verified with the available measurements',
+            };
             let reference = '';
-            if (criterion.referenceTargetIds.length > 0)
-                reference = `; current preview reference ${names(criterion.referenceTargetIds)}: ${criterion.reference.map(String).join(', ')} ${unit}`;
+            if (criterion.referenceTargetIds.length > 0) {
+                reference = `; reference ${names(criterion.referenceTargetIds)} in this preview: ${criterion.reference.map(String).join(', ') || 'unavailable'} ${unit}`;
+            }
             let tolerance = '';
-            if (criterion.relation === 'match-current')
-                tolerance = `; absolute difference ≤ ${String(criterion.tolerance)} LU (application objective policy)`;
+            if (criterion.relation === 'match-current') {
+                tolerance = ` within ${String(criterion.tolerance)} LU (application objective policy)`;
+            }
             return {
                 ...criterion,
-                criterionText: `${source}: ${criterion.metricId ?? 'unsupported metric'}${criterion.band === null ? '' : `, band ${criterion.band}`} on ${names(criterion.targetIds)}, ${range}; criterion ${criterion.relation}${tolerance}; actual baseline ${criterion.baseline.map(String).join(', ') || 'unavailable'} ${unit}; actual preview ${criterion.observed.map(String).join(', ') || 'unavailable'} ${unit}${reference}. ${criterion.status}.`,
+                criterionText: `${source}: ${metric}${criterion.band === null ? '' : ` (${criterion.band} band)`} on ${names(criterion.targetIds)}, ${range}, ${relations[criterion.relation]}${tolerance}. Baseline: ${criterion.baseline.map(String).join(', ') || 'unavailable'} ${unit}; preview: ${criterion.observed.map(String).join(', ') || 'unavailable'} ${unit}${reference}. ${criterion.status}.`,
             };
         }),
     };

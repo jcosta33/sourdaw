@@ -71,7 +71,9 @@ export async function prepareMetricGoalPreview(input: {
     let offset = 0;
     for (const prefix of needed) {
         const step = state.steps.find((entry) => entry.stepId === prefix.stepId);
-        if (step !== undefined) offset += step.commandCount;
+        if (step !== undefined) {
+            offset += step.commandCount;
+        }
         const count = prefix.stepId === 'overall' ? parsed.envelope.commands.length : offset;
         const commands = parsed.envelope.commands.slice(0, count);
         const commandIds = new Set(commands.map((command) => command.commandId));
@@ -83,7 +85,9 @@ export async function prepareMetricGoalPreview(input: {
             ),
         };
         for (const goal of goals) {
-            if (goal.metricId === null || goal.range === null || goal.relation === 'unsupported') continue;
+            if (goal.metricId === null || goal.range === null || goal.relation === 'unsupported') {
+                continue;
+            }
             if (
                 goal.range.sectionId !== null &&
                 !input.context.sections?.some(
@@ -92,8 +96,9 @@ export async function prepareMetricGoalPreview(input: {
                         section.startBeat === goal.range.startBeat &&
                         section.endBeat === goal.range.endBeat
                 )
-            )
+            ) {
                 continue;
+            }
             const ids = [...new Set([...goal.targetIds, ...goal.referenceTargetIds])];
             for (const kind of ['master', 'tracks', 'buses'] as const) {
                 const members = ids.filter((id) =>
@@ -117,7 +122,9 @@ export async function prepareMetricGoalPreview(input: {
                             JSON.stringify(request.range) === JSON.stringify(goal.range)
                     );
                     if (existing !== undefined) {
-                        if (!existing.metrics.includes(goal.metricId)) existing.metrics.push(goal.metricId);
+                        if (!existing.metrics.includes(goal.metricId)) {
+                            existing.metrics.push(goal.metricId);
+                        }
                     } else {
                         requests.push({
                             hash: prefix.after,
@@ -158,7 +165,9 @@ export async function prepareMetricGoalPreview(input: {
         idempotent: true,
         retriable: false,
     });
-    if (claimed.status !== 'claimed') throw new Error(`Metric preview work could not be claimed: ${claimed.status}`);
+    if (claimed.status !== 'claimed') {
+        throw new Error(`Metric preview work could not be claimed: ${claimed.status}`);
+    }
     const controller = new AbortController();
     const release = agentRunCancellation.bindAbortController({
         runId: input.runId,
@@ -170,7 +179,9 @@ export async function prepareMetricGoalPreview(input: {
     let terminalState: 'completed' | 'failed' | 'cancelled' = 'failed';
     try {
         for (const request of requests) {
-            if (controller.signal.aborted || captureProjectRevision() !== parsed.envelope.baseRevision) break;
+            if (controller.signal.aborted || captureProjectRevision() !== parsed.envelope.baseRevision) {
+                break;
+            }
             const callId = `goal-measure-${crypto.randomUUID()}`;
             const call = {
                 id: callId,

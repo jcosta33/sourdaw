@@ -16,6 +16,21 @@ export function admitPlanningInterpretation(input: {
     turn?: number;
 }) {
     const { answer, metricIntent, ...legacyArguments } = input.call.arguments;
+    if (
+        metricIntent !== undefined &&
+        metricIntent !== null &&
+        input.metric !== undefined &&
+        (input.metric.catalogId !== input.answer.catalogId ||
+            input.metric.revision !== input.projectRevision ||
+            input.metric.requestDigest !== input.creative.requestDigest ||
+            JSON.stringify(input.metric.selection) !== JSON.stringify(input.creative.selection))
+    ) {
+        return {
+            status: 'rejected' as const,
+            reason: 'Metric interpretation does not share the captured request, revision and selection.',
+        };
+    }
+
     if (answer === undefined || answer === null) {
         if (metricIntent !== undefined && metricIntent !== null && input.metric === undefined) {
             return { status: 'rejected' as const, reason: 'Metric interpretation has no published catalog.' };

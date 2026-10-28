@@ -67,7 +67,11 @@ export function admitMetricIntent(input: {
         const range = input.catalog.ranges.find((entry) => entry.candidateId === selection.rangeCandidateId);
         if (
             candidate === undefined ||
-            (scope === undefined && !(candidate.id === 'unsupported' && selection.scopeCandidateId === null)) ||
+            (scope === undefined &&
+                !(
+                    candidate.goals.every((goal) => goal.source.kind === 'unsupported') &&
+                    selection.scopeCandidateId === null
+                )) ||
             (scope !== undefined && !candidate.eligibleScopeIds.includes(scope.candidateId)) ||
             (selection.referenceScopeCandidateId !== null && reference === undefined) ||
             (selection.rangeCandidateId !== null && range === undefined)
@@ -99,8 +103,9 @@ export function admitMetricIntent(input: {
                 if (goal.source.kind === 'recipe') {
                     stepId = `recipe:${goal.source.recipeId}:${targetIds[0] ?? 'unavailable'}`;
                 }
+                const { metricName: _metricName, ...frozenGoal } = goal;
                 goals.push({
-                    ...structuredClone(goal),
+                    ...structuredClone(frozenGoal),
                     goalId: `${String(index)}:${String(targetIndex)}:${String(expectationIndex)}`,
                     stepId,
                     targetIds,

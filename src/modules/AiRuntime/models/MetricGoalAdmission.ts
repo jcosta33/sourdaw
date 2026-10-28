@@ -118,6 +118,7 @@ export type MetricGoalEvaluation = {
         readonly referenceTargetIds: readonly string[];
         readonly range: MeasuredPreview['range'] | null;
         readonly relation: MetricGoal<string>['relation'];
+        readonly targetValue: number | null;
         readonly tolerance: number;
         readonly baseline: readonly number[];
         readonly observed: readonly number[];
