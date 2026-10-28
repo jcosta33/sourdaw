@@ -1,0 +1,23 @@
+src/modules/Project/repositories/nativeFileDialog/__tests__/agentAssetFileBoundary.browserFallback.integration.spec.ts
+  s_59e31a5c6f3e31::t_8e87e69874f142 3,5
+src/modules/Project/repositories/nativeFileDialog/__tests__/browserFallback.integration.spec.ts
+  s_59e31a5c6f3e31::t_322546eda13c40 44-48,50
+src/modules/Project/repositories/nativeFileDialog/__tests__/helpers.spec.ts
+  s_59e31a5c6f3e31::t_5dbe1a750001f0 44,46,54-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9a4c12a4c61c0aee340ea765f451fdf600e19f59",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
