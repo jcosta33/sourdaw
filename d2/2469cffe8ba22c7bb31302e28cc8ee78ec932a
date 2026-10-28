@@ -1,0 +1,140 @@
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  h_beb54bf43b47b7 40,68-118
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-17,238-256
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 1-7
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-76
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-24,1323-1343
+docs/manual/devices/10-proof.md
+  h_beb54bf43b47b7 7,31-35,37
+evidence/agent-campaign/corpora/development.json
+  h_beb54bf43b47b7 2457-2744
+evidence/agent-campaign/corpora/held-out.json
+  h_beb54bf43b47b7 2414-2701
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 800,808,816
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1212
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 155-157
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 261-262,612,630,638-644,681,685-695,1071,1075,1094-1100,1110-1123,1186-1187,1193-1201,1323-1332,1446-1486,1492,1554-1555,1607-1675,1704,1792-1818,1933-1986,2018-2019,2057-2089,2167-2190,2377-2442
+src/modules/Arrangement/handlers/__tests__/clipGeometryActionOutcomes.spec.ts
+  h_beb54bf43b47b7 20-21,44-45,321,363,378,465,480
+src/modules/Arrangement/handlers/clip/__tests__/handleSlipClipContent.spec.ts
+  h_beb54bf43b47b7 6,28,92-154
+src/modules/Arrangement/handlers/clip/__tests__/handleTrimClipStart.spec.ts
+  h_beb54bf43b47b7 6-14,28,69-129
+src/modules/Arrangement/handlers/clip/handleSlipClipContent.ts
+  h_beb54bf43b47b7 8-11,14-30,32-41,83-93,98-99
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  h_beb54bf43b47b7 7-10,12-46,48-57,96-106,111-112
+src/modules/Arrangement/handlers/clip/midiRowCoordinateReplay.ts
+  h_beb54bf43b47b7 1-197
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  h_beb54bf43b47b7 134-136
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  h_beb54bf43b47b7 122-124
+src/modules/Arrangement/useCases/clipEditing/__tests__/clipEditingOperations.spec.ts
+  h_beb54bf43b47b7 6-7,15,55,64,73
+src/modules/Arrangement/useCases/clipEditing/__tests__/slipTrimDurationDerivedRoundTrip.spec.ts
+  h_beb54bf43b47b7 333,335
+src/modules/Arrangement/useCases/clipEditing/slipClipContent.ts
+  h_beb54bf43b47b7 1,11,38-43,45-80,82-91,93-94
+src/modules/Arrangement/useCases/clipEditing/trimClipStart.ts
+  h_beb54bf43b47b7 1,42-47,79-130,132-173,175,177-180,182-191
+src/modules/Command/useCases/__tests__/midiRowCoordinateReplay.integration.spec.ts
+  h_beb54bf43b47b7 1-740
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  h_beb54bf43b47b7 125-165
+src/modules/Command/useCases/macro/playback.ts
+  h_beb54bf43b47b7 230-241,384-385
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  h_beb54bf43b47b7 1622-1660,1668,1689,1720,1725,1731,1738,1753,1777,1786-1787,1833,1837,1840,1844,1850,1862,1866,1883,1889,1892,1910,1917,1928,1959,1971,1979,1991,2007,2015,2021,2030-2031,2047,2058,2095,2100,2143,2148,2266,2272,2290,2295,2354,2382,2401,2429,2452-2453,2476,2495,2503,2512,2523-2525,2539-2541,2572,2578,2587,2598,2606,2617-2618,2640,2662-2663,2688-2689,2748,2756,2817,2835,2841,2889,2897,2906,2915-2916,2921-2926,2961,2968,2984,2992,3052-3053,3126,3137,3177,3183,3233,3248,3253,3272-3273,3293,3307-3308,3317,3319,3331-3332,3340-3341,3411-3412,3488-3489,3569-3570,3712,3718,3722-3723,3738,3745,3748,3757,3759,3841-3842,3869-3870,3892,3906,3915,3937,3951,3958,3965-3967,4008-4011,4033,4038,4050,4057,4062,4064,4070,4075,4077-4078,4097,4104,4112-4113,4119,4122,4166-4167,4176-4177,4240,4246-4247,4260-4261,4287,4292-4293,4319,4327,4334,4339-4340,4356,4361-4362,4374,4384,4391,4397,4402,4411-4412,4434,4439-4440,4477-4478,4498,4512-4513,4521-4522,4563,4611,4618,4624-4625,4632,4646,4661,4675,4680-4683,4712,4718,4732,4738,4783,4785,4800,4809-4810,4812,4825-4826,4829,4836,4841,4868,4873,4968,4975,5003,5011,5017,5025-5026,5066,5077,5085,5091,5098,5103,5111-5112,5323,5339,5356,5363-5364,5367,5398,5411-5414,5424-5425,5470,5484,5489,5491,5539,5544,5562,5567,5599,5604,5667,5676,5688,5700,5721,5733,5739,5745-5746,5771,5777-5778,5842,5848,5851,5858,5863,5865,5874,5876,5885,5933,5938,5957,5962,6023-6044,6051-6071,6073-6075,6077-6099,6102-6107,6111,6113-6132,6135,6137-6147,6149-6150,6158-6191,6197-6198,6201-6205,6207-6208,6210,6212-6222,6226-6228,6230-6234,6236-6237,6239-6241,6243-6255,6257,6259-6261,6266,6269-6272,6276-6281,6286,6288-6289,6291-6292,6295-6307,6311-6315,6317-6320,6324-6325,6327-6335,6337-6339
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_beb54bf43b47b7 125-127
+src/modules/MIDI/useCases/index.ts
+  h_beb54bf43b47b7 116,119
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/planMidiRowCoordinateShift.spec.ts
+  h_beb54bf43b47b7 1-246
+src/modules/MIDI/useCases/midiNoteCrud/__tests__/prepareClipMidiRowCoordinateShift.spec.ts
+  h_beb54bf43b47b7 1-139
+src/modules/MIDI/useCases/midiNoteCrud/isMidiRowCoordinateCapture.ts
+  h_beb54bf43b47b7 1-19
+src/modules/MIDI/useCases/midiNoteCrud/planMidiRowCoordinateShift.ts
+  h_beb54bf43b47b7 1-138
+src/modules/MIDI/useCases/midiNoteCrud/prepareClipMidiRowCoordinateShift.ts
+  h_beb54bf43b47b7 1-78
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 212-214
+src/modules/Project/repositories/nativeFileDialog/__tests__/agentAssetFileBoundary.browserFallback.integration.spec.ts
+  h_beb54bf43b47b7 1-161
+src/modules/Project/repositories/nativeFileDialog/__tests__/browserFallback.integration.spec.ts
+  h_beb54bf43b47b7 1-278
+src/modules/Project/repositories/nativeFileDialog/__tests__/helpers.spec.ts
+  h_beb54bf43b47b7 6,16-17,19,22-24,43-47,50-52,54-55
+src/modules/Project/repositories/nativeFileDialog/__tests__/nativeFileDialog.spec.ts
+  h_beb54bf43b47b7 1,19-25,54-64,79,81-85,87-91
+src/modules/Project/repositories/nativeFileDialog/__tests__/openViaNative.spec.ts
+  h_beb54bf43b47b7 63-64,68,71-85
+src/modules/Project/repositories/nativeFileDialog/helpers.ts
+  h_beb54bf43b47b7 11-12,14-15,25,50,52,54,63-71
+src/modules/Project/repositories/nativeFileDialog/openViaNative.ts
+  h_beb54bf43b47b7 5,7,18
+src/modules/Project/repositories/nativeFileDialog/pickFiles.ts
+  h_beb54bf43b47b7 4,18,24-25,28-30,33,40
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 277-279
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 176-178
+src/modules/Project/useCases/agentAssetFileBoundary.ts
+  h_beb54bf43b47b7 18,30,54,61,93-99
+src/modules/Proof/models/ProofDisclosure.ts
+  h_beb54bf43b47b7 1-17
+src/modules/Proof/models/__tests__/ProofDisclosure.spec.ts
+  h_beb54bf43b47b7 1-30
+src/modules/Proof/presentations/views/ProofPanel.tsx
+  h_beb54bf43b47b7 1,3,17,20-25,28,47,49,56,116,170-190,201-246,384,388-389,398-415,572-577,790,1445-1446,1464
+src/modules/Proof/presentations/views/__tests__/ProofDisclosure.integration.spec.tsx
+  h_beb54bf43b47b7 1-210
+src/modules/Proof/presentations/views/__tests__/ProofPanel.spec.tsx
+  h_beb54bf43b47b7 1,133-144,315-327,397-399,758-760,861,887,924-926,980-981,1039-1040,1098,1100-1104,1160-1161,1280-1281,1314-1315,1348-1349,1537,1561,1588,1643-1645
+src/modules/Proof/useCases/__tests__/setProofPanelUiLevel.spec.ts
+  h_beb54bf43b47b7 1-461
+src/modules/Proof/useCases/hydrateProofDisclosureFromProject.ts
+  h_beb54bf43b47b7 1-18
+src/modules/Proof/useCases/setProofPanelUiLevel.ts
+  h_beb54bf43b47b7 1-76
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 14-24,1480-1481,1503-1504
+tests/e2e/browserDisplayScale.spec.ts
+  h_beb54bf43b47b7 348-352
+tests/e2e/proofDynKnobsTestId.spec.ts
+  h_beb54bf43b47b7 41-44,48-50,55-58,71-74
+tests/e2e/proofEqKnobsTestId.spec.ts
+  h_beb54bf43b47b7 39-48,54-57,69-72
+tests/e2e/proofImagerExciterKnobsTestId.spec.ts
+  h_beb54bf43b47b7 40-49,55-57,69-71
+tests/e2e/proofLimiterBypassTestId.spec.ts
+  h_beb54bf43b47b7 44-47,49-51
+tests/e2e/proofLoudnessGateTestId.spec.ts
+  h_beb54bf43b47b7 34-38,43-46,48-50,55-58
+tests/e2e/proofModuleTogglesTestId.spec.ts
+  h_beb54bf43b47b7 43-46,50-52,73-75,94-96,115-117
+tests/e2e/proofPanelTestId.spec.ts
+  h_beb54bf43b47b7 3,36-155
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d22469cffe8ba22c7bb31302e28cc8ee78ec932a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
