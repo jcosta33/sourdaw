@@ -1,5 +1,19 @@
 # Lesson library: project integrity
 
+## 2026-10-28 — a recovered entry does not itself prove project and Undo preservation (#5595)
+
+The empty-root external entry dates to commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`;
+no associated introducing PR or private review history is established. The historical gap is a
+missing unavailable-entry probe, not proof that a reload is safe after application startup.
+If recovery navigates, exercise a real same-tab saved project with future-side Undo through the
+actual failed entry and successful successor. Require the same project identity, exact content,
+history witnesses, settled session mirror and successful subsequent Undo/Redo; a fresh blank
+project or mere mirror existence cannot carry that claim. Keep unrelated storage and project
+writes out of the retry controller. Unavailable or corrupt retry-budget storage must fail closed
+to manual recovery, with one budget shared across host and child and no reset on entry success.
+Independently deliver a late entry-targeted error to a dirty running project and require no
+navigation, replacement or history consumption.
+
 ## 2026-10-27 — single-entry priors could not distinguish partial or wrong-group Undo (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) used single-entry prior groups and
@@ -86,6 +100,26 @@ one later Save to persist the exact failed source and a runtime-clear restore to
 Also replace or remove the same asset while settlement is held and require the admitted snapshot to
 be superseded rather than certified by the later source.
 
+### VCA Inspector membership must retain Command and durable history
+
+The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
+remained outside the typed VCA history route added by PR #1049. The missed observable was the
+Inspector entry reaching that route; historical private review prompts and tiers are unknown.
+
+Exercise Create, Assign and None through real Command and its registered handler against a
+CRDT-backed root. Compare raw track group IDs and group member arrays with their projections;
+require one history and Undo entry, and verify Undo and Redo restore exact prior and next states
+without changing unrelated tracks or groups. Locked admission must preserve raw state, history and
+engine writes; no-op selection must leave them unchanged. Revert the relevant component dispatch
+to its direct use case and require the connected history or lock case to fail.
+
+A queued gesture must keep its project identity across an asynchronous snapshot wait: copied
+track and group IDs do not identify the owning document. Hold the real queue, dispatch each
+gesture, replace the root with a same-ID successor through production repository and projection,
+then release it and require unchanged successor raw/projected state, history and engine calls.
+An ordinary same-project snapshot must still permit the gesture. This successor case was caught
+in #5789 review before merge, not established as a main escape.
+
 ## Lesson from the PR #964 escape
 
 PR #964 (`8a96bdafd6605daa098c2851bdfab2fdeb8a1db3`) removed embedded PCM from live project
@@ -99,6 +133,20 @@ The review blind spot was treating an observed write inside the asset repository
 aggregate Save observed it. For any snapshot that replaces embedded data with durable references,
 apply the selective-failure probe above at the aggregate Save boundary. Restore the old success
 path as a mutation; the real import/Save/clear/restore test must fail on Save=true or missing PCM.
+
+### Timeline bake must preserve project truth across a later-pad refusal
+
+The direct per-pad writer traces to `90bc7995e`; GitHub reports no associated PR. PR #474
+retained the escape when it added a groove-projection refusal after a clip write, allowing a
+later pad failure to leave earlier clips or notes in the project. The missing probe was project
+integrity across the whole action; historical private review prompts and tiers are unknown.
+
+When one UI action generates several clips or notes, fail a later lane after an earlier lane is
+valid. Pre-resolve source projections and submit one compensated typed batch bound to the current
+project and document identity. Require refusal to leave raw CRDT, projected stores and Undo history
+unchanged. On success, one Undo removes every generated clip and note, and one Redo restores
+exact content. Direct writers inside a per-pad loop can leave partial music even when each writer
+is valid.
 
 ## Lesson from the PR #1077 and PR #2822 escape
 

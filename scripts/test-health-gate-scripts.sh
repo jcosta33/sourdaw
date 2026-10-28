@@ -202,9 +202,6 @@ const { assertApprovalGatedRequiredCheck } = await import(
 const { assertHostedQuantumMeasurementWorkflow } = await import(
     `${process.env.REPO_ROOT}/scripts/hostedQuantumMeasurementWorkflowContract.ts`
 );
-const { assertSemanticReviewWorkflow } = await import(
-    `${process.env.REPO_ROOT}/scripts/semanticReviewWorkflowContract.ts`
-);
 const workflow = parse(readFileSync(process.env.WORKFLOW_PATH, 'utf8'));
 const validationWorkflow = parse(readFileSync(process.env.VALIDATION_WORKFLOW_PATH, 'utf8'));
 const heavyWorkflow = parse(readFileSync(process.env.HEAVY_WORKFLOW_PATH, 'utf8'));
@@ -214,12 +211,8 @@ const hostedQuantumMeasurement = parse(
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
 const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
-const semanticReview = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/semantic-review.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
-// The harness that owns the credential boundary must run it here too: the recorded snapshot alone is
-// regenerated as a matter of course, so it cannot stand behind a boundary move by itself.
-assertSemanticReviewWorkflow(semanticReview);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
 const gitleaksConfig = readFileSync(`${process.env.REPO_ROOT}/.gitleaks.toml`, 'utf8');
 const gitleaksIgnore = readFileSync(`${process.env.REPO_ROOT}/.gitleaksignore`, 'utf8');
@@ -292,6 +285,7 @@ function runResolveScope(event, scopes) {
             EVENT: event,
             BROWSER: scopes.browser ?? 'false',
             PROFILE: scopes.profile ?? 'broad',
+            MODE: 'full',
             RUST: scopes.rust,
             SERVER: scopes.server,
             E2E: scopes.e2e,
@@ -462,7 +456,6 @@ try {
         'nightly.yml': nightly,
         'quantum-measurements.yml': hostedQuantumMeasurement,
         'wasm-artifacts.yml': hostedWasm,
-        'semantic-review.yml': semanticReview,
     });
 } catch (error) {
     approvalGateError = error;
@@ -558,6 +551,7 @@ expect(workflow.jobs?.validation?.uses === './.github/workflows/validation.yml',
 expect(workflow.jobs?.validation?.needs === 'scope', 'validation must wait for selected scope');
 expect(workflow.jobs?.validation?.with?.browser === "${{ needs.scope.outputs.browser == 'true' }}", 'validation smoke must use selected browser scope');
 expect(workflow.jobs?.validation?.with?.profile === '${{ needs.scope.outputs.profile }}', 'validation must use selected profile');
+expect(workflow.jobs?.validation?.with?.mode === 'full', 'required validation must select full mode');
 expect(workflow.jobs?.affected?.uses === './.github/workflows/heavy-gates.yml', 'the PR workflow must call selected browser checks');
 expect(JSON.stringify(workflow.jobs?.affected?.needs) === JSON.stringify(['scope', 'validation']),
     'selected browser checks must wait for scope and successful validation');
@@ -665,19 +659,19 @@ expect(staticJob?.if === undefined, 'static must stay unconditional so wasm fres
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
 expect(
-    validationWorkflow.jobs?.build?.if === "needs.decide.outputs.web == 'true'",
+    validationWorkflow.jobs?.build?.if === "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
     'the production build must answer to the web scope alone'
 );
 expect(
-    validationWorkflow.jobs?.rust?.if === "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+    validationWorkflow.jobs?.rust?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
     'the Rust workspace leg must answer to the Rust and server scopes'
 );
 expect(
-    validationWorkflow.jobs?.['native-macos']?.if === "needs.decide.outputs.rust == 'true'",
+    validationWorkflow.jobs?.['native-macos']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
     'the native macOS leg must answer to the Rust scope alone'
 );
 expect(
-    validationWorkflow.jobs?.['native-windows']?.if === "needs.decide.outputs.rust == 'true'",
+    validationWorkflow.jobs?.['native-windows']?.if === "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
     'the native Windows leg must answer to the Rust scope alone'
 );
 const deviceWriteBoundaryCensusRun =
@@ -1177,7 +1171,6 @@ const workflowsByFile = {
     'nightly.yml': nightly,
     'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
-    'semantic-review.yml': semanticReview,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.

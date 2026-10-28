@@ -855,6 +855,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
     readonly reason: string;
 }[] = [
     {
+        file: 'src/modules/Toaster/models/ToasterKit.ts',
+        exportName: 'DEFAULT_MORPH_STATE',
+        reason: 'The initial persisted pattern morph state, not a DSP descriptor parameter default.',
+    },
+    {
         file: 'src/modules/Grinder/models/GrinderPatch.ts',
         exportName: 'DEFAULT_MIC',
         reason:

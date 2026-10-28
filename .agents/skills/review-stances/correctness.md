@@ -148,6 +148,24 @@ direct and claimed release permitted. Assert exact owner and claim removal along
 reported reason and output. Persistent refusal must still report retention, and an earlier
 process or resource failure must remain a failure after storage removal.
 
+### DAWproject diagnostics missed unconsumed source and partial mixer losses
+
+PR #5656 delivered a bounded import-warning slice, but named source constructs and inexact
+retained content remained silent. The original introduction of the broader population gap and
+historical reviewer prompts and tiers are unestablished. Review of #5795 found a rejected
+structure-level Channel reference whose named Notes descendant also vanished, and an invalid
+retained Volume that fell back without a partial-loss warning. The missed input was the full
+source population and the actual reader's fallback, not just the named incident.
+
+Enumerate the legal source grammar and account for every preserved, omitted or partially retained
+semantic element, including independently named descendants under rejected owners. Exercise real
+import bytes and assert each warning's source identity, owner, order and cardinality beside playable
+siblings. For retained mixer values, test explicit malformed, nonnumeric, nonfinite, empty and
+whitespace-only attributes against the actual parser and fallback; require truthful partial-loss
+warnings while preserving the existing musical mapping. Pair absent values, valid defaults and
+supported finite values, including zero, as quiet controls. Remove each accounting or partial-warning
+branch and require its corresponding unchanged case to fail.
+
 ### 2026-10-11 — a requested crop anchor displaced render history (PR #5323 review repair)
 
 The orchestrator packet prescribed the requested beat-four anchor without tracing
@@ -251,9 +269,8 @@ and `ci` limits on a change set wide enough that the total binds — several col
 sources they cover, with a deleted, an over-ceiling and a credentialed path — and compare the planned
 units, their own and context regions, the reasons and their sides against the merge base. Compare
 fixture against fixture, never aggregate counts, and treat a reallocation the probe measures as the
-finding rather than as a disclosed limitation. `scripts/semanticReview/__tests__/semanticReview.spec.ts`
-now pins the case (`ranks a covered source with the spec that covers it...`), and disabling the
-`specCovered` arm still has to redden the two pairwise cases.
+finding rather than as a disclosed limitation. The semantic-review feature and its pairwise cases
+were retired; retain this probe for any future evidence allocation system.
 
 ### 2026-09-27 — a declaration recogniser that refused eight grammar-legal forms as computed loads (escaped via PR #4775; measured in review of #4828; fix handed to #4835)
 

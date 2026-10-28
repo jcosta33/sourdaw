@@ -174,7 +174,7 @@ function mapTrack({ parsed, bufferIdsByPath, masterTrackId, warnings }: MapTrack
                   const device = normalizeDeviceType(rawType);
                   const source = parsed.deviceSources?.[index];
                   if (device.type === 'builtin-gain' && !PASS_THROUGH_DEVICE_TYPES.has(rawType.toLowerCase())) {
-                      warnings?.push({
+                      const warning: DawProjectImportWarning = {
                           kind: 'unsupported-device',
                           name: source?.name ?? rawType,
                           sourceType: source?.sourceType ?? rawType,
@@ -182,7 +182,11 @@ function mapTrack({ parsed, bufferIdsByPath, masterTrackId, warnings }: MapTrack
                           context: parsed.name,
                           handling: 'substituted',
                           sourceOrder: source?.sourceOrder ?? -1,
-                      });
+                      };
+                      if (source?.hasSettings) {
+                          warning.details = ['settings'];
+                      }
+                      warnings?.push(warning);
                   } else if (source?.hasSettings) {
                       warnings?.push({
                           kind: 'unsupported-device-settings',
