@@ -1,0 +1,44 @@
+tests/e2e/entryLoadRecovery.spec.ts
+  s_29d8df116c5b92::t_3eb365bf91797e 2,4,16-19,25-29,42-45,47-55,58-68,73-76,230,327,360
+  s_29d8df116c5b92::t_1fc6fd839346af 1,30,32,39-41,57,87,229,276,310,322-324,328-334,339,347-349,353,356-358
+  s_29d8df116c5b92::t_12339cc298c533 3,12-15,77-86,88-106,204-228,231-275,277-309,311-321,325-326,335-338,340-346,350-352,354-355,359
+  s_29d8df116c5b92::t_032d49847cbeff 33-38,46,56,69
+  s_29d8df116c5b92::t_04da848cbcdd41 107-109,173-197,201-203
+  s_29d8df116c5b92::t_442ec666f0b067 361-363
+  s_29d8df116c5b92::t_1ddc18bbca612f 5-11,70-72,161-163,198-200
+  s_29d8df116c5b92::t_614c2f2bea8fc4 20-24
+src/app/main.tsx
+  s_29d8df116c5b92::t_682708ce3f0b1a 5-8
+public/entryLoadRecovery.js
+  s_29d8df116c5b92::t_682708ce3f0b1a 1-51,53-55,61-76
+  s_29d8df116c5b92::t_0654f87d620729 56-60
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_29d8df116c5b92::t_da5589f22a6903 273,294-299
+index.html
+  s_29d8df116c5b92::t_682708ce3f0b1a 15-29
+  s_29d8df116c5b92::t_689833e2b7669e 30-32
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_e0a2d3b681ec99 3-16
+.agents/skills/review-stances/session-lifecycle.md
+  s_29d8df116c5b92::t_e0a2d3b681ec99 39-51
+.agents/skills/review-stances/startup-entry-availability.md
+  s_29d8df116c5b92::t_e0a2d3b681ec99 1-14,19-27
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_e0a2d3b681ec99 9-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53af306a8aef69e3e9a91b2d7cde823bfdafa157",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
