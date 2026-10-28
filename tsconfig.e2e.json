@@ -11,5 +11,11 @@
             "/src/*": ["./src/*"]
         }
     },
-    "include": ["playwright.config.ts", "src/types/**/*.d.ts", "tests/e2e/**/*.ts"]
+    "include": [
+        "playwright.config.ts",
+        "playwright.production.config.ts",
+        "src/types/**/*.d.ts",
+        "tests/e2e/**/*.ts",
+        "tests/production-e2e/**/*.ts"
+    ]
 }
