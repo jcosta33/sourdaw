@@ -1,0 +1,120 @@
+.agents/skills/review-stances/e2e-server-provenance.md
+  h_beb54bf43b47b7 13-20
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1212
+scripts/__tests__/loopbackOpenAiProvider.spec.ts
+  h_beb54bf43b47b7 1-52
+scripts/__tests__/proveDesktopAgentWorkspace.spec.ts
+  h_beb54bf43b47b7 14,71,75
+scripts/desktopAgentWorkspaceDrive.ts
+  h_beb54bf43b47b7 3,155-156,158,169-171,173-201,317-318
+scripts/loopbackOpenAiProvider.ts
+  h_beb54bf43b47b7 19,21-22,25-36,101-102,120-156,182-187
+scripts/proveDesktopAgentWorkspace.ts
+  h_beb54bf43b47b7 56-60,220-223
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  h_beb54bf43b47b7 7-177
+src/components/ui/bipolar-slider.tsx
+  h_beb54bf43b47b7 1-9,18,29-59,62,64,66-97,104-110,114-118,120-122,126-128,130,133-176,179-186,193,203-204
+src/modules/AiRuntime/models/PlanningProfile.ts
+  h_beb54bf43b47b7 1-58
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  h_beb54bf43b47b7 10,19-22
+src/modules/AiRuntime/useCases/__tests__/explainPlanningProfile.spec.ts
+  h_beb54bf43b47b7 1-251
+src/modules/AiRuntime/useCases/__tests__/planPromptActions.spec.ts
+  h_beb54bf43b47b7 75,336-355
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  h_beb54bf43b47b7 811-821,823-830,832-860,863-876,878-882,885-890,892-896
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  h_beb54bf43b47b7 1-646
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  h_beb54bf43b47b7 10,23,66,318,505-506,520-553,889-891,928,932
+src/modules/AiRuntime/useCases/getPlanningProviderToolSchemas.ts
+  h_beb54bf43b47b7 4,11-28,37-42
+src/modules/AiRuntime/useCases/llmOrchestration/inference.ts
+  h_beb54bf43b47b7 106-107,605-609
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 23-27,51,123,514,516,520-529,531-537,540-545,547-551,553-557,579-597,599,601,603,605,607,609,611-614,616-619,621-624,626-636,638-639,641-652,657,668,675-691,719,723,726-783,794-803,836-837,840-865,867,880,894,910-929,1008-1016
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  h_beb54bf43b47b7 5,10,36,193,207,209-211,289,292-295,331,341,355-359,367-368
+src/modules/AiRuntime/useCases/sendChatMessage.ts
+  h_beb54bf43b47b7 7,37-49,52
+src/modules/Arrangement/handlers/device/__tests__/handleSetDeviceParameter.spec.ts
+  h_beb54bf43b47b7 70-105
+src/modules/Arrangement/handlers/device/handleSetDeviceParameter.ts
+  h_beb54bf43b47b7 137-149,166,169-172,230-231,251
+src/modules/Arrangement/useCases/device/setDeviceParameter/__tests__/setDeviceParameter.spec.ts
+  h_beb54bf43b47b7 113-208
+src/modules/Arrangement/useCases/device/setDeviceParameter/setDeviceParameter.ts
+  h_beb54bf43b47b7 15-16,24-27,36-39,78-79,82-104,119-127
+src/modules/AudioEngine/engine/TrackNode.ts
+  h_beb54bf43b47b7 7,177-182,190,794-795,802,806-813,896-900,903-906,1254,1514-1515,1517-1529
+src/modules/AudioEngine/engine/__tests__/TrackNodeDevices.spec.ts
+  h_beb54bf43b47b7 6-11,1026-1258
+src/modules/AudioEngine/stores/deviceParameterRuntimeWriteOwners.ts
+  h_beb54bf43b47b7 1-12
+src/modules/AudioEngine/useCases/deviceControls/__tests__/holdWebFallbackDeviceParam.spec.ts
+  h_beb54bf43b47b7 18-19,21,66-81
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteAuthority.ts
+  h_beb54bf43b47b7 1-47
+src/modules/AudioEngine/useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt.ts
+  h_beb54bf43b47b7 1-47
+src/modules/AudioEngine/useCases/deviceControls/deviceParameterRuntimeWriteParameterId.ts
+  h_beb54bf43b47b7 1-8
+src/modules/AudioEngine/useCases/deviceControls/holdWebFallbackDeviceParam.ts
+  h_beb54bf43b47b7 7,33-35
+src/modules/AudioEngine/useCases/deviceControls/setDeviceParameterRuntimeWriteOwner.ts
+  h_beb54bf43b47b7 1-27
+src/modules/AudioEngine/useCases/deviceControls/updateDeviceParam.ts
+  h_beb54bf43b47b7 6,34-40,42-44
+src/modules/AudioEngine/useCases/deviceControls/withDeviceParameterRuntimeWriteOwner.ts
+  h_beb54bf43b47b7 1-20
+src/modules/AudioEngine/useCases/index.ts
+  h_beb54bf43b47b7 74
+src/modules/Automation/useCases/automationRecording/__tests__/recordAutomationValue.spec.ts
+  h_beb54bf43b47b7 132-145
+src/modules/Automation/useCases/automationRecording/__tests__/releaseTouchAutomation.spec.ts
+  h_beb54bf43b47b7 3,6,9,11,18-25,40,77-134
+src/modules/Automation/useCases/automationRecording/captureTouchAutomationRecordingAuthority.ts
+  h_beb54bf43b47b7 1-18
+src/modules/Automation/useCases/automationRecording/recordAutomationValue.ts
+  h_beb54bf43b47b7 12-18,107-109
+src/modules/Automation/useCases/automationRecording/recordingSessionState.ts
+  h_beb54bf43b47b7 23-24
+src/modules/Automation/useCases/automationRecording/releaseTouchAutomation.ts
+  h_beb54bf43b47b7 6,8-11
+src/modules/Automation/useCases/index.ts
+  h_beb54bf43b47b7 41
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  h_beb54bf43b47b7 646-676
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 11-16,48,154-159,209-210,216-217,309-321,324,349
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 1,12,19-23,41-110,277-300,305-509,626-627,632,634-657,669-676
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 1,4-7,157-160,252,254-344
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-1773
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationUndoExclusion.integration.spec.ts
+  h_beb54bf43b47b7 1-253
+src/utils/__tests__/createHandler.spec.ts
+  h_beb54bf43b47b7 28-50
+src/utils/createHandler.ts
+  h_beb54bf43b47b7 41-44
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 3233-3240,3298
+tests/e2e/aiConfirmApplyUndo.spec.ts
+  h_beb54bf43b47b7 3-4,36-39,50-51,57-63,72-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6836a86de03226d70bfccb2ccdc895619ae463f1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}

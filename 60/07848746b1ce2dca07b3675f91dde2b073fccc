@@ -1,0 +1,26 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/synthEnvelopeGestureUndo.integration.spec.tsx
+  s_b3201877f50e8a::t_f0281d12f4ce11 366
+  s_b3201877f50e8a::t_3edc90d3241dbe 1-202,210,218,226,234,242-350,367-1003,1006-1010,1012-1059,1063-1123
+  s_b3201877f50e8a::t_b020162a1972da 203-209,211-217,219-225,227-233,235-241,351-365,1004-1005,1011,1060-1062
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/BuiltinSynthLayout.spec.tsx
+  s_b3201877f50e8a::t_4d532cbd302d9d 4-5,23-24,75-81,153,162,164-210
+src/components/daw/visualizers/__tests__/ADSREnvelope.spec.tsx
+  s_b3201877f50e8a::t_de1c9941c0e232 219-409
+  s_b3201877f50e8a::t_b2ff0fcd757ff1 410-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6007848746b1ce2dca07b3675f91dde2b073fccc",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
