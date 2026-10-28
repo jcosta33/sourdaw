@@ -181,7 +181,8 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
         expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
-        expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: "Couldn't list MIDI devices" })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'No MIDI devices found' })).not.toBeInTheDocument();
     });
 
     it('shows the detecting state and a disabled select while devices are empty and not initialised', async () => {

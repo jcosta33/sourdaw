@@ -73,6 +73,10 @@ describe('MIDI permission recovery', () => {
             fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
             await waitFor(() => expect(webMidiStore.value?.enumerationError).toBe('Still denied'));
             expect(screen.getByText("Couldn't list MIDI devices. Refresh to try again.")).toBeInTheDocument();
+            expect(screen.getByLabelText('MIDI input device')).toBeDisabled();
+            expect(screen.getByRole('option', { name: "Couldn't list MIDI devices" })).toBeInTheDocument();
+            expect(screen.queryByRole('option', { name: 'No MIDI devices found' })).not.toBeInTheDocument();
+            expect(screen.getByLabelText('Refresh MIDI devices')).toBeEnabled();
             retryView.unmount();
             render(
                 <TooltipProvider>
@@ -85,7 +89,10 @@ describe('MIDI permission recovery', () => {
             await waitFor(() => expect(webMidiStore.value?.enumerationError).toBeNull());
             expect(webMidiStore.value).toMatchObject({ isSupported: true, inputs: [], selectedInputId: null });
             expect(screen.getByText('No MIDI')).toBeInTheDocument();
-            await waitFor(() => expect(screen.getByText('No MIDI devices found')).toBeInTheDocument());
+            await waitFor(() =>
+                expect(screen.getByRole('option', { name: 'No MIDI devices found' })).toBeInTheDocument()
+            );
+            expect(screen.queryByText("Couldn't list MIDI devices. Refresh to try again.")).not.toBeInTheDocument();
             expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
             expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
             expect(requestMIDIAccess).toHaveBeenCalledTimes(3);

@@ -63,7 +63,11 @@ export const MidiDevicePicker = (): ReactElement => {
     };
 
     const listingFailed = (state.enumerationError ?? null) !== null;
-    const emptyInputsOptionLabel = initialised || listingFailed ? 'No MIDI devices found' : 'Detecting devices...';
+    const emptyInputsOptionLabel = listingFailed
+        ? "Couldn't list MIDI devices"
+        : initialised
+          ? 'No MIDI devices found'
+          : 'Detecting devices...';
 
     return (
         <Stack gap={2}>
