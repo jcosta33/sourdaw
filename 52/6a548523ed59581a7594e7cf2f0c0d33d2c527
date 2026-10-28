@@ -1,0 +1,31 @@
+scripts/setupPnpm.ts
+  s_3168504f6ce387::t_5cbaeb1940d9d1 185-186
+  s_3168504f6ce387::t_00e6710434f6a3 13,27,73,89-93,95-97,101,103-105,108-113,120,124,133,141-142,153-177,180-182,200,217-218
+  s_3168504f6ce387::t_e136664a47c4bf 119
+  s_3168504f6ce387::t_f683250b6e0ab9 70-72,98-99,201-209
+.github/actions/setup-pnpm/action.yml
+  s_3168504f6ce387::t_5cbaeb1940d9d1 2
+scripts/__tests__/setupPnpm.spec.ts
+  s_3168504f6ce387::t_dd253a60560a7a 32-37,42-46,57,87,115-116,126-129,163-167,171-172,177-183,192-195,222-226,231-237
+  s_3168504f6ce387::t_e136664a47c4bf 38-41,73-82,168-170,173-175,184-191,227-230
+  s_3168504f6ce387::t_a57a73daa52ef1 196-221,238
+  s_3168504f6ce387::t_3ad23f717c173a 71-72
+  s_3168504f6ce387::t_756c48b62cf68f 176
+  s_3168504f6ce387::t_3a08d11a1b627f 239
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "526a548523ed59581a7594e7cf2f0c0d33d2c527",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
