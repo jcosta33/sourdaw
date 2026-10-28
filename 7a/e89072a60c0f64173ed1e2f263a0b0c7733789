@@ -1,0 +1,56 @@
+src/modules/AiRuntime/models/ApplicationOwnedTool.ts
+  h_beb54bf43b47b7 9-10
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  h_beb54bf43b47b7 62-63
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  h_beb54bf43b47b7 8,74-142
+src/modules/AiRuntime/stores/agentRunStore.ts
+  h_beb54bf43b47b7 927-933,938,960,973-976
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  h_beb54bf43b47b7 20-21,28-31,101-147,266-267,271,415-419
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_beb54bf43b47b7 21-22,171-193,227,233,237,246
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 3-4,7-12,17,20,22-26,28-30,32,45,125-223,225-226,228-344,346-446,448-476,478,480-844,846,850,853-860,867,872,875,878,880-881,884,891-896,903-906,908-912,917-927,931-942,944-986,988-993,995-1001
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  h_beb54bf43b47b7 227-241
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  h_beb54bf43b47b7 3,6,10-16,18-19,21,801-912
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  h_beb54bf43b47b7 3,12,14,16,20,28-29,40,44,93-116,118-132,135-255,257-264,266-289,291-343,352,355,361-372,374-383,385-469,472-474,477-489,491-554,556-559,561-569,571-576,578,580-700,702-706
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  h_beb54bf43b47b7 4-5,17,21-23,1335-1336,1345,1355-1396,1398-1399,1430-1437,1453-1475,1506-1509
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 364,366,383-386,1852,1895,1912
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  h_beb54bf43b47b7 25,40-43
+src/modules/AiRuntime/useCases/collectMetricGoalProof.ts
+  h_beb54bf43b47b7 29-31
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  h_beb54bf43b47b7 30,107,109,116,203-220
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  h_beb54bf43b47b7 19-28,236,295,302
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  h_beb54bf43b47b7 294-295
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  h_beb54bf43b47b7 347,351-354
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 92,94,1648-1652,1668-1683,1688,1700
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  h_beb54bf43b47b7 13-15,253-268
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  h_beb54bf43b47b7 1-5,28,85-138,279-284
+src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts
+  h_beb54bf43b47b7 115-120,123-128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7ae89072a60c0f64173ed1e2f263a0b0c7733789",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
