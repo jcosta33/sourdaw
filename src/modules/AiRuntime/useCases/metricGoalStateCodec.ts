@@ -344,10 +344,14 @@ export function metricGoalStateCodec(serialized: string | null | undefined): Met
             !entry.steps.every(
                 (step: unknown) =>
                     record(step) &&
-                    keys(step, ['stepId', 'commandCount', 'operationTypes']) &&
+                    keys(step, ['stepId', 'commandCount', 'operationTypes', 'recipePrefixHash']) &&
                     text(step.stepId) &&
                     integer(step.commandCount) &&
                     strings(step.operationTypes) &&
+                    ((step.stepId === 'overall' && step.recipePrefixHash === null) ||
+                        (step.stepId.startsWith('recipe:') &&
+                            typeof step.recipePrefixHash === 'string' &&
+                            /^[a-f0-9]{64}$/u.test(step.recipePrefixHash))) &&
                     step.commandCount === step.operationTypes.length
             )
         ) {

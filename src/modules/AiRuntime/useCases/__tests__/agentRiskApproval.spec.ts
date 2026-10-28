@@ -17,12 +17,18 @@ import {
     getPendingActionConfirmation,
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { describeAgentRiskApproval } from '../describeAgentRiskApproval';
 import { getExactAgentActionHash } from '../getExactAgentActionHash';
+import { getProjectContext } from '../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
+import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import {
@@ -90,6 +96,53 @@ function createBatch(projectRevision: string) {
         throw new Error(parsedCommand.reason);
     }
     return { action, command: parsedCommand.envelope, commandBatch: compiled.commandBatch };
+}
+
+/** These policy cases supply a positive configured literal decision through the real joint admission. */
+function literalGoalState(commandBatch: ReturnType<typeof compilePlannedActionCommandBatch>['commandBatch']): string {
+    const parsed = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
+    if (parsed.status !== 'valid') {
+        throw new Error(parsed.reason);
+    }
+    const input = {
+        prompt: parsed.envelope.intent,
+        context: getProjectContext(),
+        projectRevision: parsed.envelope.baseRevision,
+    };
+    const creative = prepareCreativeInterpretationCatalog(input);
+    const answer = prepareAnswerInterpretationCatalog(input);
+    const metric = prepareMetricIntentCatalog({ prompt: input.prompt, answer });
+    const admitted = admitPlanningInterpretation({
+        creative,
+        answer,
+        metric,
+        projectRevision: input.projectRevision,
+        turn: 1,
+        call: {
+            id: 'risk-literal-intake',
+            name: 'selectCreativeInterpretation',
+            arguments: {
+                catalogId: creative.catalogId,
+                modeId: 'literal',
+                uncertainty: 'none',
+                targetCandidateIds: [],
+                editDimensionCandidateIds: [],
+                constraintCandidateIds: [],
+                creationSlotIds: [],
+                answer: null,
+                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+            },
+        },
+    });
+    if (admitted.status !== 'admitted' || admitted.kind !== 'literal') {
+        throw new Error('The positive literal fixture must pass the actual joint intake.');
+    }
+    return JSON.stringify(
+        bindMetricGoalsToBatch({
+            commandBatch,
+            state: { schemaVersion: 1, authorities: [admitted.metricAuthority], steps: [], proofs: [], binding: null },
+        })
+    );
 }
 
 describe('agent risk approval', () => {
@@ -210,10 +263,12 @@ describe('agent risk approval', () => {
     it('binds exact command hashes, revision, fingerprints, consequences, trust mode, and local actor', () => {
         const revision = captureProjectRevision();
         const { command, commandBatch } = createBatch(revision);
-        const approval = compileAgentRiskApproval({ commandBatch });
+        const metricGoalState = literalGoalState(commandBatch);
+        const approval = compileAgentRiskApproval({ commandBatch, metricGoalState });
 
         expect(approval).toEqual({
             schemaVersion: 1,
+            metricGoalState,
             actionHashes: [getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })],
             sourceRevision: revision,
             targetFingerprints: { 'track-vocal': targetFingerprint },
@@ -357,7 +412,11 @@ describe('agent risk approval', () => {
     it('revalidates an auto-allowed policy without upgrading it to confirmation', () => {
         const revision = captureProjectRevision();
         const { commandBatch } = createBatch(revision);
-        const approval = compileAgentRiskApproval({ commandBatch, requireExplicitApproval: false });
+        const approval = compileAgentRiskApproval({
+            commandBatch,
+            requireExplicitApproval: false,
+            metricGoalState: literalGoalState(commandBatch),
+        });
 
         expect(approval.policy.decision).toBe('allow');
         expect(validateAgentRiskApproval({ approval, commandBatch, currentRevision: revision })).toEqual({

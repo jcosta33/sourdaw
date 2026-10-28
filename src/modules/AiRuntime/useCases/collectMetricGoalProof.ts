@@ -26,6 +26,9 @@ export function collectMetricGoalProof(input: {
         if (
             receipt?.status !== 'success' ||
             receipt.toolName !== 'analysis.measure' ||
+            (provenance.origin === 'approval-preview' &&
+                (receipt.turn !== 0 || receipt.origin !== 'application-verification')) ||
+            (provenance.origin === 'planner' && (receipt.turn < 1 || receipt.origin !== undefined)) ||
             receipt.revision !== compilation.revision ||
             provenance.callId !== receipt.callId ||
             provenance.turn !== receipt.turn ||

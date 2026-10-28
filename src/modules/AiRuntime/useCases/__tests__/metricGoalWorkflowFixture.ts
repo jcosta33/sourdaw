@@ -224,3 +224,18 @@ export function metricGoalAudioBuffer(sample: (seconds: number) => number, secon
         },
     };
 }
+
+/** A scripted provider's semantic plan; no metric result or private source identity is supplied here. */
+export function metricGoalProviderPlan(objective: string, targetIds: readonly string[]) {
+    return {
+        semantic: { classification: 'complex', uncertainty: [] },
+        objective,
+        constraints: ['Require actual objective proof before approval.'],
+        scope: { targetIds: [...targetIds], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+        capabilityIds: [],
+        assetIds: [],
+        alternatives: [],
+        validationStrategy: ['Check the actual named-range measurements against the frozen criteria.'],
+        stoppingConditions: ['Stop before mutation if actual metric proof is missing or incompatible.'],
+    };
+}

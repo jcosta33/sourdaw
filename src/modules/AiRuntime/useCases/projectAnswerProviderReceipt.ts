@@ -63,18 +63,6 @@ export function projectAnswerProviderReceipt(
             },
         };
     }
-    if (
-        authority.kind === 'metric-intent' &&
-        data.schema === 'sourdaw.recipe-expansion' &&
-        isRecord(data.metricExpectations)
-    ) {
-        const {
-            catalogVersion: _catalogVersion,
-            recipeDigest: _recipeDigest,
-            ...expectations
-        } = data.metricExpectations;
-        return { ...receipt, data: { ...data, metricExpectations: expectations } };
-    }
     if (data.kind === 'analysis-measurement' && isRecord(data.range)) {
         const { sectionId: _sectionId, ...range } = data.range;
         return { ...receipt, data: { ...data, range } };

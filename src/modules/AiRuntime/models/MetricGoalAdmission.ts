@@ -59,6 +59,8 @@ export type MetricGoalStep = {
     readonly stepId: string;
     readonly commandCount: number;
     readonly operationTypes: readonly string[];
+    /** Exact cumulative commands compiled from successful authored expansions; null for an overall policy. */
+    readonly recipePrefixHash: string | null;
 };
 
 /** Only a successful, bounded producer projection can supply these render identities. */

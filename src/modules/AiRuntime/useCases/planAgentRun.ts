@@ -10,6 +10,9 @@ import {
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { RUNTIME_ACTION_TYPES } from '../models/RuntimeAction';
 
+import { ANALYSIS_MEASURE_TOOL_NAME } from './agentToolCatalog';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
+
 type AgentRunSemanticEvidence = { uncertainty: AgentPlanUncertainty[] };
 
 /**
@@ -247,7 +250,22 @@ export function planAgentRun(input: PlanAgentRunInput): PlanAgentRunResult {
         return { status: 'rejected', reason: 'Provider attempted to enlarge or omit the application-owned scope.' };
     }
     const capabilities = deriveCapabilities(input);
-    if (capabilities.some((capability) => capability.status === 'unavailable')) {
+    const goals = metricGoalStateCodec(input.metricGoalState);
+    const blockedMetricProposal =
+        input.requiresConfirmation &&
+        goals !== null &&
+        goals.authorities.some((authority) => authority.kind !== 'literal' && authority.goals.length > 0);
+    if (
+        capabilities.some(
+            (capability) =>
+                capability.status === 'unavailable' &&
+                !(
+                    blockedMetricProposal &&
+                    capability.source === 'application-tool-catalog' &&
+                    capability.id === ANALYSIS_MEASURE_TOOL_NAME
+                )
+        )
+    ) {
         return {
             status: 'rejected',
             reason: 'A validated capability, budget, asset, or data-policy prerequisite is unavailable.',

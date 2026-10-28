@@ -89,7 +89,9 @@ import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } fro
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { compilePreviewMeasurementProposal } from './compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
+import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeReferenceMeasurement } from './executeReferenceMeasurement';
@@ -1643,21 +1645,11 @@ const planPromptIntent = inject({ logger })(
                         }
                     }
                     const steps: MetricGoalState['steps'][number][] = [];
-                    const usedRecipes = selectedCompilations.flatMap((compilation) => {
-                        if (compilation.kind === 'recipe') {
-                            return [compilation];
-                        }
-                        if (compilation.kind !== 'preview' || compilation.measuredPreview.recipeSource === undefined) {
-                            return [];
-                        }
-                        const source = compilation.measuredPreview.recipeSource;
-                        return planningOutcome.retainedCompilations.filter(
-                            (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> =>
-                                entry.kind === 'recipe' &&
-                                entry.recipe.recipeId === source.recipeId &&
-                                entry.recipe.targetId === source.targetId
-                        );
-                    });
+                    // Frozen recipe obligations survive a terminal that adopts a complete semantic-list preview.
+                    const usedRecipes = planningOutcome.retainedCompilations.filter(
+                        (entry): entry is Extract<RetainedCompilation, { kind: 'recipe' }> => entry.kind === 'recipe'
+                    );
+                    const cumulativeRecipes: Extract<RetainedCompilation, { kind: 'recipe' }>[] = [];
                     for (const compilation of usedRecipes) {
                         const stepId = `recipe:${compilation.recipe.recipeId}:${compilation.recipe.targetId}`;
                         if (
@@ -1673,10 +1665,27 @@ const planPromptIntent = inject({ logger })(
                         ) {
                             continue;
                         }
+                        if (steps.some((step) => step.stepId === stepId)) {
+                            continue;
+                        }
+                        cumulativeRecipes.push(compilation);
+                        const prefix = compilePreviewMeasurementProposal({
+                            callId: compilation.callId,
+                            source: { retained: [...cumulativeRecipes] },
+                            context,
+                            prompt,
+                            revision: projectRevision ?? '',
+                            runId: streamIdentity?.runId ?? 'prompt-preview',
+                            creativeAuthority,
+                        });
+                        if (prefix.status !== 'compiled') {
+                            continue;
+                        }
                         steps.push({
                             stepId,
                             commandCount: compilation.commands.length,
                             operationTypes: compilation.commands.map((command) => command.operation),
+                            recipePrefixHash: digestCommandBatchContent(prefix.envelope),
                         });
                     }
                     if (
@@ -1688,6 +1697,7 @@ const planPromptIntent = inject({ logger })(
                             stepId: 'overall',
                             commandCount: grounded.actions.length,
                             operationTypes: grounded.actions.map((action) => action.type),
+                            recipePrefixHash: null,
                         });
                     }
                     const metricGoalState: MetricGoalState = {

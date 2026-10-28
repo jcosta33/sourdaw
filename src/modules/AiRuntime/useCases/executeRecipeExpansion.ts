@@ -107,7 +107,6 @@ export function executeRecipeExpansion(input: {
                 targetId: expansion.recipe.targetId,
                 commands: materializeTransformToolCalls([retained]),
                 values: expansion.values,
-                metricExpectations: metricRecipe ?? null,
             },
             summary: `Expanded recipe ${expansion.recipe.recipeId} into ${String(expansion.commands.length)} ordinary command(s).`,
             warnings: [],

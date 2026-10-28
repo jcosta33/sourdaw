@@ -112,12 +112,20 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
             scopes.filter((scope) => scope.kind !== 'clips').flatMap((scope) => scope.objectIds)
         )) {
             const defaultAllowed =
-                expandMixRecipe({ recipeId: recipe.id, targetId, role: null, values: [] }, input.answer.context, 1)
-                    .status === 'expanded';
+                expandMixRecipe(
+                    { recipeId: recipe.id, targetId, role: null, values: [] },
+                    input.answer.context,
+                    1,
+                    catalog
+                ).status === 'expanded';
             const roles = recipe.roles.filter(
                 (role) =>
-                    expandMixRecipe({ recipeId: recipe.id, targetId, role, values: [] }, input.answer.context, 1)
-                        .status === 'expanded'
+                    expandMixRecipe(
+                        { recipeId: recipe.id, targetId, role, values: [] },
+                        input.answer.context,
+                        1,
+                        catalog
+                    ).status === 'expanded'
             );
             eligibility.set(targetId, { defaultAllowed, roles });
         }

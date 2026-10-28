@@ -924,11 +924,18 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     const revision = readNullableString(value.revision);
     const summary = readString(value.summary);
     const warnings = readStringArray(value.warnings);
+    const origin = value.origin;
+    if (origin !== undefined && origin !== 'application-verification') {
+        return null;
+    }
+    if (origin === 'application-verification' && toolName !== 'analysis.measure') {
+        return null;
+    }
     if (
         callId === null ||
         toolName === null ||
         turn === null ||
-        turn < 1 ||
+        (turn < 1 && !(turn === 0 && origin === 'application-verification' && toolName === 'analysis.measure')) ||
         revision === undefined ||
         summary === null ||
         warnings === null
@@ -950,7 +957,7 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     if ((value.status === 'success' && error !== null) || (value.status === 'failure' && error === null)) {
         return null;
     }
-    return {
+    const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId,
@@ -963,6 +970,10 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
         warnings,
         error,
     };
+    if (origin !== undefined) {
+        return { ...receipt, origin };
+    }
+    return receipt;
 }
 
 function isThreadCommitStanding(value: unknown): value is ThreadCommitStanding {

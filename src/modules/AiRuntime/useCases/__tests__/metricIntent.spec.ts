@@ -1,13 +1,24 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
-import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import {
+    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
+    runApplicationOwnedToolLoop,
+    boundReceipt,
+    admitTurnReadReceipts,
+    serializeReceiptContext,
+} from '../applicationOwnedToolLoop';
 import { buildAgentContext } from '../buildAgentContext';
+import { collectMetricGoalProof } from '../collectMetricGoalProof';
+import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
 import { createPlanningInterpretationToolSchema } from '../createPlanningInterpretationToolSchema';
+import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { expandMixRecipe } from '../expandMixRecipe';
 import { getPlanningProviderToolSchemas } from '../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../getProjectContext';
@@ -785,5 +796,117 @@ describe('strict hosted projection consumes the actual live phase', () => {
         };
         expect(() => getHostedProposalWireToolSchema(malformedProposal)).toThrow('missing commands');
         expect(() => getHostedProposalWireToolSchema(malformedMeasure)).toThrow('missing proposal');
+    });
+});
+
+describe('retained recipe and verification receipt boundaries', () => {
+    it.each(['default', 'explicit-role', 'frozen'] as const)(
+        'uses the one actual catalog snapshot with unchanged %s expansion eligibility',
+        (mode) => {
+            const value = fixture('Make Lead Vocal warmer');
+            const track = value.context.tracks[2];
+            if (track === undefined) {
+                throw new Error('Expected the actual named vocal fixture.');
+            }
+            track.canonicalRole = getCanonicalTrackRole({
+                track: { id: track.id, name: track.name, kind: track.kind, clips: [], devices: [] },
+            });
+            if (mode === 'frozen') {
+                track.frozen = true;
+            }
+            const input = {
+                recipeId: 'vocal-warm',
+                targetId: track.id,
+                role: mode === 'explicit-role' ? 'vocal' : null,
+                values: [],
+            };
+            const snapshot = getMixRecipeCatalog();
+            const explicit = expandMixRecipe(input, value.context, 1, snapshot);
+            expect(explicit).toEqual(expandMixRecipe(input, value.context, 1));
+            expect(explicit.status).toBe(mode === 'frozen' ? 'refused' : 'expanded');
+        }
+    );
+
+    it('refuses a genuine successful retained expansion from an older revision before compiling a prefix', () => {
+        const value = fixture('Make Lead Vocal warmer');
+        const targetId = value.context.tracks[2]?.id;
+        const objective = value.metric.objectives.find((entry) =>
+            entry.goals.some((goal) => goal.source.kind === 'recipe' && goal.source.recipeId === 'vocal-warm')
+        );
+        const source = objective?.goals.find((goal) => goal.source.kind === 'recipe')?.source;
+        const scope = value.metric.scopes.find((entry) => targetId !== undefined && entry.objectIds.includes(targetId));
+        if (source?.kind !== 'recipe' || scope === undefined || targetId === undefined) {
+            throw new Error('Expected an actual published conditional authored recipe and target.');
+        }
+        expect(objective?.eligibleScopeIds).toContain(scope.candidateId);
+        expect(objective?.roles).toContain('vocal');
+        const expanded = executeRecipeExpansion({
+            call: { name: 'recipe.expand', arguments: { recipeId: source.recipeId, targetId, role: 'vocal' } },
+            callId: 'old-expansion',
+            turn: 2,
+            ordinal: 1,
+            context: value.context,
+            revision: 'metric-revision',
+        });
+        expect(expanded.receipt.status).toBe('success');
+        if (expanded.commands === null || expanded.recipe === null) {
+            throw new Error('Expected real expansion commands.');
+        }
+        expect(
+            compilePreviewMeasurementProposal({
+                callId: 'new-prefix',
+                context: value.context,
+                prompt: 'Make Lead Vocal warmer',
+                revision: 'new-revision',
+                runId: 'stale-prefix',
+                creativeAuthority: undefined,
+                source: {
+                    retained: [{ callId: 'old-expansion', revision: 'metric-revision', commands: expanded.commands }],
+                },
+            })
+        ).toEqual({ status: 'rejected', reason: 'The retained prefix has another revision or no producer commands.' });
+    });
+
+    it('keeps application verification identity on genuine byte refusals without trusting a matching raw carrier', () => {
+        const raw: ApplicationToolReceipt = {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId: 'goal-measure-oversized',
+            toolName: 'analysis.measure',
+            turn: 0,
+            origin: 'application-verification',
+            status: 'success',
+            revision: 'metric-revision',
+            data: { payload: 'x'.repeat(20_000) },
+            summary: 'Untrusted receipt-shaped data.',
+            warnings: [],
+            error: null,
+        };
+        const perCall = boundReceipt(raw, APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall);
+        expect(perCall).toMatchObject({
+            status: 'failure',
+            origin: 'application-verification',
+            turn: 0,
+            error: { code: 'tool-receipt-too-large' },
+        });
+        const perRun = admitTurnReadReceipts({
+            realReceipts: [raw],
+            turn: 0,
+            totalReceiptBytesSoFar: 0,
+            maxReceiptBytesPerTurn: 1000,
+            maxTotalReceiptBytes: 1000,
+        });
+        expect(perRun).toMatchObject([
+            {
+                status: 'failure',
+                origin: 'application-verification',
+                turn: 0,
+                error: { code: 'run-receipt-budget-spent' },
+            },
+        ]);
+        expect(new TextEncoder().encode(serializeReceiptContext(perRun, 0)).byteLength).toBeLessThanOrEqual(1000);
+        expect(
+            collectMetricGoalProof({ authorities: [], compilations: [], receipts: [raw, perCall, ...perRun] })
+        ).toEqual([]);
     });
 });

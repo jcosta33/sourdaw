@@ -361,8 +361,9 @@ function failureReceipt(input: {
     code: string;
     safeMessage: string;
     retryable: boolean;
+    origin?: ApplicationToolReceipt['origin'];
 }): ApplicationToolReceipt {
-    return {
+    const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId: input.callId,
@@ -379,6 +380,10 @@ function failureReceipt(input: {
             retryable: input.retryable,
         },
     };
+    if (input.origin !== undefined) {
+        return { ...receipt, origin: input.origin };
+    }
+    return receipt;
 }
 
 function executeSemanticProjectQuery(
@@ -1844,6 +1849,7 @@ export function boundReceipt(receipt: ApplicationToolReceipt, maxBytes: number):
         callId: receipt.callId,
         toolName: receipt.toolName,
         turn: receipt.turn,
+        origin: receipt.origin,
         code: 'tool-receipt-too-large',
         safeMessage: 'Tool receipt exceeded the per-call budget; request a narrower page.',
         retryable: true,
@@ -1886,6 +1892,7 @@ function turnReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): Applica
         callId: receipt.callId,
         toolName: receipt.toolName,
         turn: receipt.turn,
+        origin: receipt.origin,
         code: 'turn-receipt-budget-spent',
         safeMessage: "This turn's receipt budget is spent; request this read again in a later turn.",
         retryable: true,
@@ -1902,6 +1909,7 @@ function runReceiptBudgetSpentReceipt(receipt: ApplicationToolReceipt): Applicat
         callId: receipt.callId,
         toolName: receipt.toolName,
         turn: receipt.turn,
+        origin: receipt.origin,
         code: 'run-receipt-budget-spent',
         safeMessage: "The run's receipt budget cannot hold this read; plan with the receipts already delivered.",
         retryable: false,

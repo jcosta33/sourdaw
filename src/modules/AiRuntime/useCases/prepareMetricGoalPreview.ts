@@ -1,4 +1,8 @@
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    compileVersionedCommandBatchEnvelope,
+    parseVersionedCommandBatchEnvelope,
+    serializeVersionedCommandEnvelope,
+} from '#/modules/Command/useCases';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
@@ -21,6 +25,7 @@ import {
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
+import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { type MetricGoalState } from './metricGoalContractTypes';
 
@@ -77,13 +82,60 @@ export async function prepareMetricGoalPreview(input: {
         const count = prefix.stepId === 'overall' ? parsed.envelope.commands.length : offset;
         const commands = parsed.envelope.commands.slice(0, count);
         const commandIds = new Set(commands.map((command) => command.commandId));
-        const envelope = {
-            ...parsed.envelope,
-            commands,
-            batchLocalBindings: parsed.envelope.batchLocalBindings.filter((binding) =>
-                commandIds.has(binding.producerCommandId)
-            ),
-        };
+        let envelope = parsed.envelope;
+        if (commands.length !== parsed.envelope.commands.length) {
+            const originalEffects = parsed.envelope.dynamicEffects;
+            let dynamicEffects: Parameters<typeof compileVersionedCommandBatchEnvelope>[0]['dynamicEffects'];
+            if (originalEffects !== undefined) {
+                if (originalEffects.commandEffects === undefined) {
+                    // An aggregate cannot prove which bounds belong to this dependency-closed prefix.
+                    continue;
+                }
+                const commandEffects = originalEffects.commandEffects.filter((entry) =>
+                    commandIds.has(entry.commandId)
+                );
+                dynamicEffects = {
+                    commandEffects,
+                    affectedTrackIds: [
+                        ...new Set(commandEffects.flatMap((entry) => entry.effects.affectedTrackIds ?? [])),
+                    ],
+                    affectedClipIds: [
+                        ...new Set(commandEffects.flatMap((entry) => entry.effects.affectedClipIds ?? [])),
+                    ],
+                    affectedTargetIds: [
+                        ...new Set(commandEffects.flatMap((entry) => entry.effects.affectedTargetIds ?? [])),
+                    ],
+                    automationPoints: commandEffects.reduce(
+                        (total, entry) => total + (entry.effects.automationPoints ?? 0),
+                        0
+                    ),
+                    deletedObjects: commandEffects.reduce(
+                        (total, entry) => total + (entry.effects.deletedObjects ?? 0),
+                        0
+                    ),
+                };
+            }
+            const compiled = compileVersionedCommandBatchEnvelope({
+                commands: commands.map(serializeVersionedCommandEnvelope),
+                batchLocalBindings: parsed.envelope.batchLocalBindings.filter((binding) =>
+                    commandIds.has(binding.producerCommandId)
+                ),
+                dynamicEffects,
+                baseRevision: parsed.envelope.baseRevision,
+                batchId: parsed.envelope.batchId,
+                projectId: parsed.envelope.projectId,
+                runId: parsed.envelope.runId,
+                intent: parsed.envelope.intent,
+                mode: 'preview',
+                protectedTargetIds: parsed.envelope.scope.protectedTargetIds,
+                protectedRanges: parsed.envelope.scope.protectedRanges,
+            });
+            const prefixBatch = parseVersionedCommandBatchEnvelope(compiled.serialized, compiled.authority);
+            if (prefixBatch.status !== 'valid' || digestCommandBatchContent(prefixBatch.envelope) !== prefix.after) {
+                continue;
+            }
+            envelope = prefixBatch.envelope;
+        }
         for (const goal of goals) {
             if (goal.metricId === null || goal.range === null || goal.relation === 'unsupported') {
                 continue;
@@ -224,7 +276,12 @@ export async function prepareMetricGoalPreview(input: {
                             ?.creativeAuthority ?? undefined,
                 },
             });
-            rawReceipts.push(boundReceipt(read.receipt, APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall));
+            rawReceipts.push(
+                boundReceipt(
+                    { ...read.receipt, origin: 'application-verification' },
+                    APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+                )
+            );
             if (read.commands !== null && read.measuredPreview !== null) {
                 compilations.push({
                     kind: 'preview',

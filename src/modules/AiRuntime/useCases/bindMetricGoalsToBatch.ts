@@ -22,6 +22,7 @@ export function bindMetricGoalsToBatch(input: {
     for (const step of original.steps) {
         const slice = envelope.commands.slice(offset, offset + step.commandCount);
         if (
+            (step.stepId !== 'overall' && step.recipePrefixHash === null) ||
             slice.length !== step.commandCount ||
             slice.some((command, index) => command.operation !== step.operationTypes[index])
         ) {
@@ -36,6 +37,10 @@ export function bindMetricGoalsToBatch(input: {
             commands,
             batchLocalBindings: envelope.batchLocalBindings.filter((binding) => ids.has(binding.producerCommandId)),
         });
+        if (step.recipePrefixHash !== null && step.recipePrefixHash !== after) {
+            complete = false;
+            break;
+        }
         prefixes.push({ stepId: step.stepId, before, after });
         before = after;
     }

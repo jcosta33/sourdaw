@@ -16,7 +16,16 @@ export function evaluateMetricGoalAdmission(input: {
     commandBatch: { serialized: string; authority: Parameters<typeof parseVersionedCommandBatchEnvelope>[1] };
     currentRevision?: string;
 }): MetricGoalEvaluation {
-    const criteria: MetricGoalEvaluation['criteria'][number][] = [];
+    const criteria: MetricGoalEvaluation['criteria'][number][] = (input.state?.authorities ?? []).flatMap((authority) =>
+        authority.goals.map((goal) => ({
+            ...goal,
+            baseline: [],
+            observed: [],
+            reference: [],
+            unit: null,
+            status: 'blocked',
+        }))
+    );
     const blocked = (failure: NonNullable<MetricGoalEvaluation['failure']>, reason: string): MetricGoalEvaluation => ({
         status: 'blocked',
         failure,
@@ -224,7 +233,7 @@ export function evaluateMetricGoalAdmission(input: {
         }
         return false;
     }
-    for (const goal of goals) {
+    for (const [goalIndex, goal] of goals.entries()) {
         const baseline: number[] = [];
         const observed: number[] = [];
         const reference: number[] = [];
@@ -283,14 +292,14 @@ export function evaluateMetricGoalAdmission(input: {
                 }
             }
         }
-        criteria.push({
+        criteria[goalIndex] = {
             ...goal,
             baseline,
             observed,
             reference,
             unit,
             status: failure === null ? 'verified' : 'blocked',
-        });
+        };
         if (failure !== null) {
             return blocked(
                 failure,
