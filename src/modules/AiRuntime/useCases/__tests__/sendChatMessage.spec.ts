@@ -13,11 +13,6 @@ import { DEFAULT_AGENT_RESOURCE_LIMITS, describeAgentRunCreationRefusal } from '
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ExecutableRuntimeAction } from '../../models/ExecutableRuntimeAction';
 import { type ProjectContext } from '../../models/ProjectContext';
-import {
-    type CloudChatCompletionOutcome,
-    type streamCloudChatCompletion,
-} from '../../repositories/cloudLlm/cloudInference/streamCloudChatCompletion';
-import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { agentRunStore, readAgentRunState } from '../../stores/agentRunStore';
 import { llmStatusStore } from '../../stores/llmStatusStore';
@@ -26,7 +21,6 @@ import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmT
 import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
-import { AGENT_RUN_PROVIDER_PERSISTENCE_WARNING } from '../agentRequestOrchestration/settleAgentRunWorkLeaseSafely';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { recoverInterruptedAgentRuns } from '../agentRunRecovery';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -40,7 +34,6 @@ import { sendChatMessage } from '../sendChatMessage';
 
 type PlanPromptActionsInput = Parameters<typeof planPromptActions>[0];
 type PreparedStemReadiness = 'ready' | 'missing' | 'cleanup-pending';
-type CloudStreamOptions = Parameters<typeof streamCloudChatCompletion>[2];
 type ParsedCommandBatch = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>;
 type BatchEnvelope = ParsedCommandBatch['envelope'];
 type BatchCommandEnvelope = BatchEnvelope['commands'][number];
@@ -117,8 +110,6 @@ function validParsedBatch(input: {
     };
 }
 
-const PROVIDER_PERSISTENCE_WARNING =
-    'Agent run provider response recovery state could not be persisted after execution. The retained response remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const WORK_PERSISTENCE_WARNING =
     'Agent run work recovery state could not be persisted after execution. The retained work outcome remains visible, but its lifecycle is not durably settled. Review it before retrying.';
 const COMMAND_PERSISTENCE_WARNING =
@@ -127,14 +118,8 @@ const FAILURE_PERSISTENCE_WARNING =
     'Agent run failure recovery state could not be persisted. The work failed, and no successful artifact is claimed. Review the durable run state before retrying.';
 const COMPLETION_PERSISTENCE_WARNING =
     'Agent run completion recovery state could not be persisted. No completed artifact is claimed. Review the durable run state before retrying.';
-const PROVIDER_FAILURE_PERSISTENCE_WARNING =
-    'Agent run provider failure recovery state could not be persisted. The visible partial response remains available, but it is not a completed response. Review the durable run state before retrying.';
 const STALE_FAILURE_WARNING =
     'Agent work failed after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
-const STALE_PROVIDER_FAILURE_WARNING =
-    'Agent provider work failed after its run lease was cancelled or replaced. The visible partial response was retained without reopening the terminal run.';
-const STALE_PROVIDER_COMPLETION_WARNING =
-    'Agent provider work completed after its run lease was cancelled or replaced. The visible provider output was retained without reopening the terminal run.';
 const STALE_CANCELLATION_WARNING =
     'Agent work was cancelled after its run lease was cancelled or replaced. No successful artifact is claimed, and the terminal run was not reopened.';
 
@@ -700,40 +685,6 @@ function createSuccessfulWebLlmEngine(content: string) {
     };
 }
 
-function createFailingWebLlmEngine(content: string, error: Error) {
-    async function* streamCompletion() {
-        yield {
-            choices: [{ delta: { content } }],
-        };
-        throw error;
-    }
-
-    return {
-        interruptGenerate: vi.fn(),
-        chat: {
-            completions: {
-                create: vi.fn(async () => streamCompletion()),
-            },
-        },
-    };
-}
-
-function observeAbortListenerRegistration(signal: AbortSignal, expectedRegistration: number) {
-    const registered = Promise.withResolvers<void>();
-    const addEventListener = signal.addEventListener.bind(signal);
-    let registrations = 0;
-    const addAbortListener = vi.spyOn(signal, 'addEventListener').mockImplementation((type, listener, options) => {
-        if (type === 'abort') {
-            registrations += 1;
-            if (registrations === expectedRegistration) {
-                registered.resolve();
-            }
-        }
-        addEventListener(type, listener, options);
-    });
-    return { registered: registered.promise, restore: () => addAbortListener.mockRestore() };
-}
-
 describe('sendChatMessage retained-provider selection', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -857,951 +808,92 @@ describe('sendChatMessage retained-provider selection', () => {
         );
     });
 
-    it('preserves provider content while marking an unsettled successful response for restart recovery', async () => {
-        const content = 'The mix is ready for a final balance pass.';
-        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementationOnce(() => {
-            throw storageFailure;
-        });
-        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
-        expect(AGENT_RUN_PROVIDER_PERSISTENCE_WARNING).toBe(PROVIDER_PERSISTENCE_WARNING);
-
-        try {
-            await expect(sendChatMessage('How does the mix sound?', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    content: `${content}\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
-                    error: PROVIDER_PERSISTENCE_WARNING,
-                })
-            );
-            expect(run).toMatchObject({
-                phase: 'planning',
-                errors: [],
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: null })],
-            });
-            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
-                recoveredRunIds: [run?.runId],
-            });
-            expect(agentRunLifecycle.get(run?.runId ?? '')).toMatchObject({
-                phase: 'paused',
-                manualResume: { required: true, workIds: ['provider-response'] },
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'orphaned' })],
-            });
-            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-            expect(loggerError).toHaveBeenCalledOnce();
-        } finally {
-            settleWorkLease.mockRestore();
-            loggerError.mockRestore();
-        }
-    });
-
-    it('records hosted provider usage against the exact terminal provider receipt and budget attempt', async () => {
-        const content = 'The hosted mix summary is ready.';
-        const providerUsage = await import('../recordAgentProviderUsage');
-        const recordProviderUsage = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
-        mocks.aiBackendPreference.value = 'cloud';
-        mocks.resolveBackend.mockReturnValue('cloud');
-        mocks.isCloudAvailable.mockReturnValue(true);
-        mocks.getCloudProviderInfo.mockReturnValue({
-            provider: 'openai',
-            model: 'gpt-4o-mini',
-            baseUrl: 'https://api.openai.com/v1',
-            authentication: 'api-key',
-        });
-        mocks.streamCloudChatCompletion.mockImplementation(
-            async (
-                _messages: Parameters<typeof streamCloudChatCompletion>[0],
-                onToken: Parameters<typeof streamCloudChatCompletion>[1],
-                options?: CloudStreamOptions
-            ): Promise<CloudChatCompletionOutcome> => {
-                onToken(content);
-                options?.onUsage?.({
-                    type: 'usage',
-                    mode: 'final',
-                    usage: {
-                        inputTokens: 321,
-                        outputTokens: 34,
-                        cachedInputTokens: 21,
-                        reasoningTokens: 8,
-                    },
-                    provenance: 'provider-reported',
-                });
-                return { status: 'complete', finishReason: 'stop', providerRequestId: null };
-            }
-        );
-
-        try {
-            await expect(sendChatMessage('Summarize the hosted mix.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            if (run === null) {
-                throw new Error('Expected the hosted provider run to remain inspectable.');
-            }
-            const providerReceiptIdentity = `provider:cloud:${run.runId}`;
-            expect(recordProviderUsage).toHaveBeenCalledWith(
-                run.runId,
-                expect.objectContaining({
-                    provider: 'openai',
-                    model: 'gpt-4o-mini',
-                    correlationId: providerReceiptIdentity,
-                    status: 'complete',
-                    usage: {
-                        inputTokens: 321,
-                        outputTokens: 34,
-                        cachedInputTokens: 21,
-                        reasoningTokens: 8,
-                        provenance: 'provider-reported',
-                    },
-                }),
-                providerReceiptIdentity,
-                { terminal: true }
-            );
-            expect(run.providerUsage).toEqual(
-                expect.arrayContaining([
-                    expect.objectContaining({
-                        provider: 'openai',
-                        model: 'gpt-4o-mini',
-                        correlationId: providerReceiptIdentity,
-                        status: 'complete',
-                        routeId: 'cloud:openai:gpt-4o-mini',
-                        executor: 'cloud',
-                    }),
-                ])
-            );
-            expect(run.budgetAttempts).toEqual(
-                expect.arrayContaining([
-                    expect.objectContaining({
-                        attemptId: providerReceiptIdentity,
-                        category: 'remoteTokens',
-                    }),
-                ])
-            );
-        } finally {
-            recordProviderUsage.mockRestore();
-        }
-    });
-
-    it('retains a hosted partial response when the active stream controller aborts its transport', async () => {
-        const partialContent = 'The hosted response began before cancellation.';
-        let transportSignal: AbortSignal | undefined;
-        const transportAbort = vi.fn();
-        let markTransportStarted: () => void = () => undefined;
-        const transportStarted = new Promise<void>((resolve) => {
-            markTransportStarted = resolve;
-        });
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
-        mocks.aiBackendPreference.value = 'cloud';
-        mocks.resolveBackend.mockReturnValue('cloud');
-        mocks.isCloudAvailable.mockReturnValue(true);
-        mocks.getCloudProviderInfo.mockReturnValue({
-            provider: 'openai',
-            model: 'gpt-4o-mini',
-            baseUrl: 'https://api.openai.com/v1',
-            authentication: 'api-key',
-        });
-        mocks.streamCloudChatCompletion.mockImplementation(
-            (
-                _messages: Parameters<typeof streamCloudChatCompletion>[0],
-                onToken: Parameters<typeof streamCloudChatCompletion>[1],
-                options?: CloudStreamOptions
-            ) => {
-                transportSignal = options?.signal;
-                onToken(partialContent);
-                markTransportStarted();
-                return new Promise<CloudChatCompletionOutcome>((_resolve, reject) => {
-                    transportSignal?.addEventListener(
-                        'abort',
-                        () => {
-                            transportAbort(transportSignal);
-                            reject(transportSignal?.reason);
-                        },
-                        { once: true }
-                    );
-                });
-            }
-        );
-
-        try {
-            const pendingResponse = sendChatMessage('Summarize the hosted bridge.', { mode: 'explain' });
-            await transportStarted;
-            const activeAborter = mocks.setActiveAborter.mock.calls.find(
-                ([value]) => value instanceof AbortController
-            )?.[0];
-            if (!(activeAborter instanceof AbortController)) {
-                throw new Error('Expected hosted streaming to expose its active abort controller.');
-            }
-
-            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
-            await expect(pendingResponse).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(transportSignal).toBe(activeAborter.signal);
-            expect(transportAbort).toHaveBeenCalledWith(activeAborter.signal);
-            expect(run).toMatchObject({
-                phase: 'cancelled',
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
-            });
-            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({ isStreaming: false, content: partialContent })
-            );
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            settleWorkLease.mockRestore();
-        }
-    });
-
-    it('retains a WebLLM partial response when the active stream controller interrupts generation', async () => {
-        const partialContent = 'The local response began before cancellation.';
-        let unblockStream: (() => void) | null = null;
-        let markStreamPaused: () => void = () => undefined;
-        const streamPaused = new Promise<void>((resolve) => {
-            markStreamPaused = resolve;
-        });
-        async function* streamCompletion() {
-            yield { choices: [{ delta: { content: partialContent } }] };
-            await new Promise<void>((resolve) => {
-                unblockStream = resolve;
-                markStreamPaused();
-            });
-            yield { choices: [{ delta: {}, finish_reason: 'stop' }] };
-        }
-        const engine = {
-            interruptGenerate: vi.fn(() => {
-                unblockStream?.();
-            }),
-            chat: {
-                completions: {
-                    create: vi.fn(async () => streamCompletion()),
-                },
+    it('routes Explain through one shared planning lease and ordinary answer without a placeholder', async () => {
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine('unused'));
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            projectRevision: 'revision-fixture',
+            result: {
+                actions: [],
+                rawText: 'Explain',
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'answer', text: 'Shared answer', evidence: [] },
             },
-        };
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle');
-        mocks.getLlmEngine.mockReturnValue(engine);
-
-        try {
-            const pendingResponse = sendChatMessage('Summarize the local bridge.', { mode: 'explain' });
-            await streamPaused;
-            const activeAborter = mocks.setActiveAborter.mock.calls.find(
-                ([value]) => value instanceof AbortController
-            )?.[0];
-            if (!(activeAborter instanceof AbortController)) {
-                throw new Error('Expected WebLLM streaming to expose its active abort controller.');
-            }
-
-            activeAborter.abort(new DOMException('Cancelled by the user.', 'AbortError'));
-            await expect(pendingResponse).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(engine.interruptGenerate).toHaveBeenCalledOnce();
-            expect(run).toMatchObject({
-                phase: 'cancelled',
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
-            });
-            expect(settleWorkLease).not.toHaveBeenCalledWith(expect.objectContaining({ terminalState: 'completed' }));
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({ isStreaming: false, content: partialContent })
-            );
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            settleWorkLease.mockRestore();
-        }
+        });
+        await sendChatMessage('Explain', { mode: 'explain' });
+        expect(mocks.resolveBackend).toHaveBeenCalledWith({ operation: 'tools', modality: 'text', streaming: false });
+        expect(mocks.planPromptActions).toHaveBeenCalledWith(expect.objectContaining({ profile: 'readonly-answer' }));
+        expect(readAgentRunState().runs).toEqual([
+            expect.objectContaining({
+                mode: 'explain',
+                phase: 'completed',
+                workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: 'completed' })],
+            }),
+        ]);
+        expect(
+            mocks.appendChatMessage.mock.calls.map(([message]) => ({ role: message.role, content: message.content }))
+        ).toEqual([
+            { role: 'user', content: 'Explain' },
+            { role: 'assistant', content: 'Shared answer' },
+        ]);
+        expect(mocks.streamCloudChatCompletion).not.toHaveBeenCalled();
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
-    it('keeps a cancelled queued completion from interrupting an active chat stream before admitting the next completion', async () => {
-        const streamPaused = Promise.withResolvers<void>();
-        const releaseStream = Promise.withResolvers<void>();
-        const engineFinishedStream = Promise.withResolvers<void>();
-        const unexpectedCompletionCreate = Promise.withResolvers<void>();
-        const events: string[] = [];
-        const pending: Promise<unknown>[] = [];
-        let observeUnexpectedCompletionCreate: (() => void) | null = null;
-        let releaseNextAdmission: (() => void) | null = null;
-        async function* activeStream() {
-            yield { choices: [{ delta: { content: 'The active answer starts. ' } }] };
-            streamPaused.resolve();
-            await releaseStream.promise;
-            yield { choices: [{ delta: { content: 'The active answer finishes.' }, finish_reason: 'stop' }] };
-            events.push('active-stream-finished');
-            engineFinishedStream.resolve();
-        }
-        const create = vi.fn(async (params: Record<string, unknown>) => {
-            if (params.stream === true) {
-                events.push('active-stream-created');
-                return activeStream();
-            }
-            observeUnexpectedCompletionCreate?.();
-            events.push('queued-completion-created');
-            return { choices: [{ finish_reason: 'stop', message: { content: 'The next completion.' } }] };
+    it.each([
+        { actions: [createAddTrackAction()] },
+        { preparationRequest: 'stem-import' },
+        { requiresConfirmation: true },
+        { batchSchedule: {} },
+        { providerProposal: {} },
+    ])('refuses forged internal Explain answer metadata before materialization: %j', async (violation) => {
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine('unused'));
+        mocks.planPromptActions.mockResolvedValue({
+            context: {},
+            projectRevision: 'revision-fixture',
+            result: {
+                actions: [],
+                rawText: 'Explain',
+                requiresConfirmation: false,
+                planningOutcome: { kind: 'answer', text: 'Forged answer', evidence: [] },
+                ...violation,
+            },
         });
-        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
-        const cancelled = new AbortController();
-        const cancelledAdmission = observeAbortListenerRegistration(cancelled.signal, 1);
-        mocks.getLlmEngine.mockReturnValue(engine);
-        mocks.initWebLlmEngine.mockResolvedValue(engine);
-
-        try {
-            const activeChat = sendChatMessage('Keep streaming this answer.', { mode: 'explain' });
-            pending.push(activeChat.catch(() => undefined));
-            await streamPaused.promise;
-
-            observeUnexpectedCompletionCreate = unexpectedCompletionCreate.resolve;
-            const cancelledCompletion = generateWebLlmCompletion('system', 'cancel me', { signal: cancelled.signal });
-            pending.push(cancelledCompletion.catch(() => undefined));
-            const cancelledAdmissionResult = await Promise.race([
-                cancelledAdmission.registered.then(() => 'listener' as const),
-                unexpectedCompletionCreate.promise.then(() => 'engine-create' as const),
-            ]);
-            if (cancelledAdmissionResult === 'engine-create') {
-                expect(create).toHaveBeenCalledTimes(1);
-            }
-            observeUnexpectedCompletionCreate = null;
-            expect(create).toHaveBeenCalledOnce();
-
-            cancelled.abort(new DOMException('Cancelled while queued.', 'AbortError'));
-            await expect(cancelledCompletion).rejects.toMatchObject({ name: 'AbortError' });
-            expect(engine.interruptGenerate).not.toHaveBeenCalled();
-
-            const next = new AbortController();
-            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
-            releaseNextAdmission = nextAdmission.restore;
-            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
-            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
-            const nextCompletion = generateWebLlmCompletion('system', 'run after the stream', { signal: next.signal });
-            pending.push(nextCompletion.catch(() => undefined));
-            const nextAdmissionResult = await Promise.race([
-                nextAdmission.registered.then(() => 'listener' as const),
-                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
-            ]);
-            if (nextAdmissionResult === 'engine-create') {
-                expect(create).toHaveBeenCalledTimes(1);
-            }
-            observeUnexpectedCompletionCreate = null;
-            releaseNextAdmission();
-            releaseNextAdmission = null;
-            expect(create).toHaveBeenCalledOnce();
-
-            releaseStream.resolve();
-            await engineFinishedStream.promise;
-            await expect(activeChat).resolves.toBeUndefined();
-            await expect(nextCompletion).resolves.toBe('The next completion.');
-
-            expect(events).toEqual(['active-stream-created', 'active-stream-finished', 'queued-completion-created']);
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    content: 'The active answer starts. The active answer finishes.',
-                })
-            );
-            expect(engine.interruptGenerate).not.toHaveBeenCalled();
-        } finally {
-            releaseStream.resolve();
-            await Promise.allSettled(pending);
-            cancelledAdmission.restore();
-            releaseNextAdmission?.();
-        }
+        await sendChatMessage('Explain', {
+            mode: 'explain',
+            grants: {
+                allowedOperationPrefixes: ['addTrack'],
+                create: true,
+                delete: true,
+                routing: true,
+                tempo: true,
+                master: true,
+                file: true,
+                audioUpload: true,
+                remoteGeneration: true,
+                autoCommit: true,
+            },
+        });
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(mocks.executePlannedActions).not.toHaveBeenCalled();
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
+        expect(mocks.appendChatMessage.mock.calls.some(([message]) => message.content === 'Forged answer')).toBe(false);
+        expect(readAgentRunState().runs).toEqual([expect.objectContaining({ phase: 'failed' })]);
     });
 
-    it('keeps an active completion intact when a queued explain chat is cancelled before the next completion starts', async () => {
-        const completionResponse = Promise.withResolvers<unknown>();
-        const completionStarted = Promise.withResolvers<void>();
-        const activeAborterExposed = Promise.withResolvers<AbortController>();
-        const chatCancellationBound = Promise.withResolvers<void>();
-        const unexpectedChatCreate = Promise.withResolvers<void>();
-        const events: string[] = [];
-        const pending: Promise<unknown>[] = [];
-        let completionCount = 0;
-        let observeUnexpectedChatCreate: (() => void) | null = null;
-        let observeUnexpectedCompletionCreate: (() => void) | null = null;
-        let releaseNextAdmission: (() => void) | null = null;
-        const queuedChatAdmission: {
-            observation: ReturnType<typeof observeAbortListenerRegistration> | null;
-        } = { observation: null };
-        async function* cancelledChatStream() {
-            yield { choices: [{ delta: { content: 'Cancelled chat content.' }, finish_reason: 'stop' }] };
-        }
-        const create = vi.fn((params: Record<string, unknown>) => {
-            if (params.stream === true) {
-                observeUnexpectedChatCreate?.();
-                events.push('queued-chat-created');
-                return Promise.resolve(cancelledChatStream());
-            }
-            completionCount += 1;
-            if (completionCount === 1) {
-                events.push('active-completion-created');
-                completionStarted.resolve();
-                return completionResponse.promise.then((response) => {
-                    events.push('active-completion-finished');
-                    return response;
-                });
-            }
-            observeUnexpectedCompletionCreate?.();
-            events.push('next-completion-created');
-            return Promise.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Next completion.' } }] });
-        });
-        const engine = { interruptGenerate: vi.fn(), chat: { completions: { create } } };
-        const bindAbortController = agentRunCancellation.bindAbortController;
-        const bindCancellation = vi.spyOn(agentRunCancellation, 'bindAbortController').mockImplementation((input) => {
-            queuedChatAdmission.observation = observeAbortListenerRegistration(input.controller.signal, 2);
-            chatCancellationBound.resolve();
-            return bindAbortController(input);
-        });
-        mocks.getLlmEngine.mockReturnValue(engine);
-        mocks.initWebLlmEngine.mockResolvedValue(engine);
-        mocks.setActiveAborter.mockImplementation((value) => {
-            if (value instanceof AbortController) {
-                activeAborterExposed.resolve(value);
-            }
-        });
-
-        try {
-            const activeCompletion = generateWebLlmCompletion('system', 'finish this answer');
-            pending.push(activeCompletion.catch(() => undefined));
-            await completionStarted.promise;
-
-            observeUnexpectedChatCreate = unexpectedChatCreate.resolve;
-            const queuedChat = sendChatMessage('Cancel this queued chat.', { mode: 'explain' });
-            pending.push(queuedChat.catch(() => undefined));
-            const activeAborter = await activeAborterExposed.promise;
-            await chatCancellationBound.promise;
-            const observation = queuedChatAdmission.observation;
-            if (observation === null) {
-                throw new Error('Expected the queued explain chat cancellation binding to remain observable.');
-            }
-            const queuedChatAdmissionResult = await Promise.race([
-                observation.registered.then(() => 'listener' as const),
-                unexpectedChatCreate.promise.then(() => 'engine-create' as const),
-            ]);
-            if (queuedChatAdmissionResult === 'engine-create') {
-                expect(create).toHaveBeenCalledTimes(1);
-            }
-            observeUnexpectedChatCreate = null;
-            expect(create).toHaveBeenCalledOnce();
-
-            activeAborter.abort(new DOMException('Cancelled while queued.', 'AbortError'));
-            await expect(queuedChat).resolves.toBeUndefined();
-            expect(engine.interruptGenerate).not.toHaveBeenCalled();
-            expect(agentRunLifecycle.get(getMostRecentlyAdmittedRunId())).toMatchObject({
-                phase: 'cancelled',
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'cancelled' })],
-            });
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({ isStreaming: false, content: '' })
-            );
-
-            const next = new AbortController();
-            const nextAdmission = observeAbortListenerRegistration(next.signal, 1);
-            releaseNextAdmission = nextAdmission.restore;
-            const unexpectedNextCompletionCreate = Promise.withResolvers<void>();
-            observeUnexpectedCompletionCreate = unexpectedNextCompletionCreate.resolve;
-            const nextCompletion = generateWebLlmCompletion('system', 'run after the active completion', {
-                signal: next.signal,
-            });
-            pending.push(nextCompletion.catch(() => undefined));
-            const nextAdmissionResult = await Promise.race([
-                nextAdmission.registered.then(() => 'listener' as const),
-                unexpectedNextCompletionCreate.promise.then(() => 'engine-create' as const),
-            ]);
-            if (nextAdmissionResult === 'engine-create') {
-                expect(create).toHaveBeenCalledTimes(1);
-            }
-            observeUnexpectedCompletionCreate = null;
-            releaseNextAdmission();
-            releaseNextAdmission = null;
-            expect(create).toHaveBeenCalledOnce();
-
-            completionResponse.resolve({
-                choices: [{ finish_reason: 'stop', message: { content: '<think>hidden</think>Active completion.' } }],
-            });
-            await expect(activeCompletion).resolves.toBe('Active completion.');
-            await expect(nextCompletion).resolves.toBe('Next completion.');
-
-            expect(events).toEqual([
-                'active-completion-created',
-                'active-completion-finished',
-                'next-completion-created',
-            ]);
-            expect(engine.interruptGenerate).not.toHaveBeenCalled();
-        } finally {
-            completionResponse.resolve({ choices: [{ finish_reason: 'stop', message: { content: 'Released.' } }] });
-            await Promise.allSettled(pending);
-            queuedChatAdmission.observation?.restore();
-            releaseNextAdmission?.();
-            bindCancellation.mockRestore();
-        }
-    });
-
-    it('retains a hosted completed response with a persistence warning when completion settlement cannot persist', async () => {
-        const content = 'The hosted completion remains visible.';
-        const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        let releaseCompletion: () => void = () => undefined;
-        let markCompletionReady: () => void = () => undefined;
-        let restoreSetItem: (() => void) | null = null;
-        const completionReady = new Promise<void>((resolve) => {
-            markCompletionReady = resolve;
-        });
-        mocks.aiBackendPreference.value = 'cloud';
-        mocks.resolveBackend.mockReturnValue('cloud');
-        mocks.isCloudAvailable.mockReturnValue(true);
-        mocks.getCloudProviderInfo.mockReturnValue({
-            provider: 'openai',
-            model: 'gpt-4o-mini',
-            baseUrl: 'https://api.openai.com/v1',
-            authentication: 'api-key',
-        });
-        mocks.streamCloudChatCompletion.mockImplementation(
-            (
-                _messages: Parameters<typeof streamCloudChatCompletion>[0],
-                onToken: Parameters<typeof streamCloudChatCompletion>[1]
-            ) => {
-                onToken(content);
-                markCompletionReady();
-                return new Promise<CloudChatCompletionOutcome>((resolve) => {
-                    releaseCompletion = () =>
-                        resolve({ status: 'complete', finishReason: 'stop', providerRequestId: null });
-                });
-            }
-        );
-
-        try {
-            const pendingResponse = sendChatMessage('Summarize the hosted arrangement.', { mode: 'explain' });
-            await completionReady;
-            const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementationOnce(() => {
-                throw settlementFailure;
-            });
-            restoreSetItem = () => setItem.mockRestore();
-            releaseCompletion();
-            await expect(pendingResponse).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            if (run === null) {
-                throw new Error('Expected the hosted run to remain inspectable after settlement persistence failed.');
-            }
-            const durableRun = JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '').json.runs.find(
-                (candidate: { runId: string }) => candidate.runId === run.runId
-            );
-            expect(run).toMatchObject({
-                phase: 'planning',
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
-                providerUsage: [expect.objectContaining({ status: 'complete' })],
-            });
-            expect(durableRun).toMatchObject({
-                runId: run.runId,
-                phase: 'planning',
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
-                providerUsage: [expect.objectContaining({ status: 'complete' })],
-            });
-            expect(durableRun.workLeases).toEqual(run.workLeases);
-            expect(durableRun.providerUsage).toEqual(run.providerUsage);
-            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    content: `${content}\n\n_${PROVIDER_PERSISTENCE_WARNING}_`,
-                    error: PROVIDER_PERSISTENCE_WARNING,
-                })
-            );
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            restoreSetItem?.();
-        }
-    });
-
-    it('keeps a hosted provider stream failure terminal with its exact provider lease and usage identity', async () => {
-        const providerError = new Error('Hosted provider stream failed');
-        const partialContent = 'The hosted bridge summary started.';
-        const providerUsage = await import('../recordAgentProviderUsage');
-        const recordProviderUsage = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
-        mocks.aiBackendPreference.value = 'cloud';
-        mocks.resolveBackend.mockReturnValue('cloud');
-        mocks.isCloudAvailable.mockReturnValue(true);
-        mocks.getCloudProviderInfo.mockReturnValue({
-            provider: 'openai',
-            model: 'gpt-4o-mini',
-            baseUrl: 'https://api.openai.com/v1',
-            authentication: 'api-key',
-        });
-        mocks.streamCloudChatCompletion.mockImplementation(
-            async (
-                _messages: Parameters<typeof streamCloudChatCompletion>[0],
-                onToken: Parameters<typeof streamCloudChatCompletion>[1]
-            ): Promise<CloudChatCompletionOutcome> => {
-                onToken(partialContent);
-                throw providerError;
-            }
-        );
-
-        try {
-            await expect(sendChatMessage('Summarize the hosted bridge.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            if (run === null) {
-                throw new Error('Expected the hosted failed-provider run to remain inspectable.');
-            }
-            const providerReceiptIdentity = `provider:cloud:${run.runId}`;
-            expect(run).toMatchObject({
+    it('settles a shared Explain provider failure without publishing partial prose', async () => {
+        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine('unused'));
+        mocks.planPromptActions.mockRejectedValue(new Error('Explain provider transport failed'));
+        await sendChatMessage('Explain', { mode: 'explain' });
+        expect(readAgentRunState().runs).toEqual([
+            expect.objectContaining({
                 phase: 'failed',
-                errors: [expect.objectContaining({ category: 'provider' })],
-                workLeases: [
-                    expect.objectContaining({
-                        runId: run.runId,
-                        workId: 'provider-response',
-                        leaseId: `${run.runId}:provider-response:0`,
-                        cancellationGeneration: 0,
-                        idempotencyKey: providerReceiptIdentity,
-                        receiptIdentity: providerReceiptIdentity,
-                        terminalState: 'failed',
-                    }),
-                ],
-                providerUsage: [
-                    expect.objectContaining({
-                        provider: 'openai',
-                        model: 'gpt-4o-mini',
-                        correlationId: providerReceiptIdentity,
-                        status: 'partial',
-                        routeId: 'cloud:openai:gpt-4o-mini',
-                        executor: 'cloud',
-                    }),
-                ],
-            });
-            expect(recordProviderUsage).toHaveBeenCalledWith(
-                run.runId,
-                expect.objectContaining({
-                    provider: 'openai',
-                    model: 'gpt-4o-mini',
-                    correlationId: providerReceiptIdentity,
-                    status: 'partial',
-                    partialOutputDisposition: 'preserve',
-                }),
-                providerReceiptIdentity,
-                { terminal: true }
-            );
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    error: providerError.message,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
-                })
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            recordProviderUsage.mockRestore();
-        }
-    });
-
-    it('retains regular-chat content without reopening a cancelled run after stale provider settlement', async () => {
-        const content = 'The chorus is ready to automate.';
-        const providerUsage = await import('../recordAgentProviderUsage');
-        const recordProviderUsageCall = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
-        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage');
-        const transitionPhase = vi.spyOn(agentRunLifecycle, 'transitionPhase');
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
-            agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
-            return { status: 'stale' };
-        });
-        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
-
-        try {
-            await expect(sendChatMessage('Summarize the chorus.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const runId = getMostRecentlyAdmittedRunId();
-            const run = agentRunLifecycle.get(runId);
-            if (run === null) {
-                throw new Error('Expected the stale provider run to remain inspectable.');
-            }
-            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
-            expect(run.phase).toBe('cancelled');
-            expect(transitionPhase).not.toHaveBeenCalledWith(expect.objectContaining({ phase: 'completed' }));
-            expect(recordProviderUsage).toHaveBeenCalledOnce();
-            expect(recordProviderUsageCall).toHaveBeenCalledWith(
-                run.runId,
-                {
-                    schemaVersion: 2,
-                    provider: 'webllm',
-                    model: 'fixture-model',
-                    correlationId: providerReceiptIdentity,
-                    status: 'complete',
-                    finishReason: 'stop',
-                    failure: null,
-                    partialOutputDisposition: 'none',
-                    output: { text: content, reasoning: '', toolCalls: [], structuredOutput: null },
-                    usage: {
-                        inputTokens: null,
-                        outputTokens: null,
-                        cachedInputTokens: null,
-                        reasoningTokens: null,
-                        provenance: 'unavailable',
-                    },
-                    ignoredProviderEvents: [],
-                },
-                providerReceiptIdentity,
-                { terminal: true }
-            );
-            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    content: `${content}\n\n_${STALE_PROVIDER_COMPLETION_WARNING}_`,
-                    error: STALE_PROVIDER_COMPLETION_WARNING,
-                })
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            settleWorkLease.mockRestore();
-            transitionPhase.mockRestore();
-            recordProviderUsage.mockRestore();
-            recordProviderUsageCall.mockRestore();
-        }
-    });
-
-    it('keeps a streamed provider failure cancelled after stale settlement', async () => {
-        const providerError = new Error('WebLLM provider failed during streaming');
-        const partialContent = 'The bridge starts with a muted guitar.';
-        const providerUsage = await import('../recordAgentProviderUsage');
-        const recordProviderUsageCall = vi.spyOn(providerUsage, 'recordAgentProviderUsage');
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
-            agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'cancelled' });
-            return { status: 'stale' };
-        });
-        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
-
-        try {
-            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const runId = getMostRecentlyAdmittedRunId();
-            const run = agentRunLifecycle.get(runId);
-            if (run === null) {
-                throw new Error('Expected the stale failed-provider run to remain inspectable.');
-            }
-            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
-            expect(run).toMatchObject({
-                phase: 'cancelled',
-                errors: [],
-                providerUsage: [
-                    {
-                        provider: 'webllm',
-                        model: 'fixture-model',
-                        inputTokens: null,
-                        outputTokens: null,
-                        cachedInputTokens: null,
-                        provenance: 'unavailable',
-                        correlationId: providerReceiptIdentity,
-                        status: 'partial',
-                        retryable: true,
-                        partialOutputDisposition: 'preserve',
-                        routeId: 'webllm:webllm:fixture-model',
-                        executor: 'webllm',
-                        fallbackReason: null,
-                    },
-                ],
-            });
-            expect(recordProviderUsageCall).toHaveBeenCalledWith(
-                run.runId,
-                {
-                    schemaVersion: 2,
-                    provider: 'webllm',
-                    model: 'fixture-model',
-                    correlationId: providerReceiptIdentity,
-                    status: 'partial',
-                    finishReason: 'error',
-                    failure: {
-                        code: 'provider-stream-failed',
-                        retryable: true,
-                        safeMessage: 'The model provider request failed.',
-                        correlationId: providerReceiptIdentity,
-                        partialOutputDisposition: 'preserve',
-                    },
-                    partialOutputDisposition: 'preserve',
-                    output: { text: partialContent, reasoning: '', toolCalls: [], structuredOutput: null },
-                    usage: {
-                        inputTokens: null,
-                        outputTokens: null,
-                        cachedInputTokens: null,
-                        reasoningTokens: null,
-                        provenance: 'unavailable',
-                    },
-                    ignoredProviderEvents: [],
-                },
-                providerReceiptIdentity,
-                { terminal: true }
-            );
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    error: `${providerError.message}\n\n${STALE_PROVIDER_FAILURE_WARNING}`,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${STALE_PROVIDER_FAILURE_WARNING}_`,
-                })
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            settleWorkLease.mockRestore();
-            recordProviderUsageCall.mockRestore();
-        }
-    });
-
-    it('keeps a streamed provider failure authoritative when failed-lease settlement persistence throws', async () => {
-        const providerError = new Error('WebLLM provider failed during streaming');
-        const partialContent = 'The bridge starts with a muted guitar.';
-        const settlementFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const settleWorkLease = vi.spyOn(agentRunWorkLease, 'settle').mockImplementation(() => {
-            throw settlementFailure;
-        });
-        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
-
-        try {
-            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(run).toMatchObject({
-                phase: 'failed',
-                errors: [expect.objectContaining({ category: 'provider' })],
-            });
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    error: `${providerError.message}\n\n${PROVIDER_FAILURE_PERSISTENCE_WARNING}`,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._\n\n_${PROVIDER_FAILURE_PERSISTENCE_WARNING}_`,
-                })
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-            expect(loggerError).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    cause: settlementFailure,
-                    message: 'Failed provider work lease settlement failed',
-                })
-            );
-        } finally {
-            settleWorkLease.mockRestore();
-            loggerError.mockRestore();
-        }
-    });
-
-    it('preserves a completed regular-chat response when provider usage persistence fails', async () => {
-        const content = 'The arrangement now has a clear final chorus.';
-        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage').mockImplementation(() => {
-            throw storageFailure;
-        });
-        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
-
-        try {
-            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({ isStreaming: false, content, error: undefined })
-            );
-            expect(run?.errors).toEqual([]);
-            expect(run?.phase).toBe('completed');
-            expect(JSON.parse(localStorage.getItem('sourdaw-agent-runs') ?? '')).toMatchObject({
-                json: {
-                    runs: [expect.objectContaining({ runId: run?.runId, phase: 'completed' })],
-                },
-            });
-            expect(run?.workLeases).toEqual(
-                expect.arrayContaining([
-                    expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' }),
-                ])
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-            expect(loggerError).toHaveBeenCalledOnce();
-        } finally {
-            recordProviderUsage.mockRestore();
-            loggerError.mockRestore();
-        }
-    });
-
-    it('preserves a completed regular-chat response when completion lifecycle persistence fails', async () => {
-        const content = 'The arrangement is ready for a final automation pass.';
-        const lifecycleFailure = new Error('Completed lifecycle persistence failed');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const transitionPhase = agentRunLifecycle.transitionPhase;
-        const transition = vi.spyOn(agentRunLifecycle, 'transitionPhase').mockImplementation((input) => {
-            if (input.phase === 'completed') {
-                throw lifecycleFailure;
-            }
-            return transitionPhase(input);
-        });
-        mocks.getLlmEngine.mockReturnValue(createSuccessfulWebLlmEngine(content));
-
-        try {
-            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            if (run === null) {
-                throw new Error('Expected the completed provider lease to remain inspectable after lifecycle failure.');
-            }
-            const providerReceiptIdentity = `provider:webllm:${run.runId}`;
-            expect(mocks.updateChatMessage).toHaveBeenLastCalledWith(
-                expect.any(String),
-                expect.objectContaining({ isStreaming: false, content, error: undefined })
-            );
-            expect(run).toMatchObject({
-                phase: 'planning',
-                errors: [],
-                workLeases: [
-                    expect.objectContaining({
-                        runId: run.runId,
-                        workId: 'provider-response',
-                        leaseId: `${run.runId}:provider-response:0`,
-                        cancellationGeneration: 0,
-                        idempotencyKey: providerReceiptIdentity,
-                        receiptIdentity: providerReceiptIdentity,
-                        terminalState: 'completed',
-                    }),
-                ],
-            });
-            await expect(recoverInterruptedAgentRuns({ recoveredAt: 200 })).resolves.toEqual({
-                recoveredRunIds: [run.runId],
-            });
-            expect(agentRunLifecycle.get(run.runId)).toMatchObject({
-                phase: 'partially-completed',
-                manualResume: { required: false, workIds: [] },
-                workLeases: [expect.objectContaining({ workId: 'provider-response', terminalState: 'completed' })],
-            });
-            expect(llmStatusStore.value).toEqual({ state: 'ready', backend: 'webllm', modelId: 'fixture-model' });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-            expect(loggerError).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    cause: lifecycleFailure,
-                    message: 'Completed provider lifecycle persistence failed',
-                })
-            );
-        } finally {
-            transition.mockRestore();
-            loggerError.mockRestore();
-        }
+                workLeases: [expect.objectContaining({ workId: 'provider-planning', terminalState: 'failed' })],
+            }),
+        ]);
+        expect(mocks.appendChatMessage.mock.calls.at(-1)?.[0].error).toContain('Explain provider transport failed');
+        expect(mocks.proposePendingActionConfirmation).not.toHaveBeenCalled();
     });
 
     it('preserves a planning rejection when provider work settlement persistence fails', async () => {
@@ -1895,103 +987,6 @@ describe('sendChatMessage retained-provider selection', () => {
             expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
         } finally {
             settleWorkLease.mockRestore();
-            loggerError.mockRestore();
-        }
-    });
-
-    it('keeps a streamed provider failure terminal when usage persistence fails', async () => {
-        const providerError = new Error('WebLLM provider failed during streaming');
-        const partialContent = 'The bridge starts with a muted guitar.';
-        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const recordProviderUsage = vi.spyOn(agentRunLifecycle, 'recordProviderUsage').mockImplementation(() => {
-            throw storageFailure;
-        });
-        mocks.getLlmEngine.mockReturnValue(createFailingWebLlmEngine(partialContent, providerError));
-
-        try {
-            await expect(sendChatMessage('Summarize the arrangement.', { mode: 'explain' })).resolves.toBeUndefined();
-
-            const run = agentRunLifecycle.get(getMostRecentlyAdmittedRunId());
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    error: providerError.message,
-                    content: `${partialContent}\n\n_Response incomplete because the provider stream failed._`,
-                })
-            );
-            expect(run).toEqual(
-                expect.objectContaining({
-                    phase: 'failed',
-                    workLeases: expect.arrayContaining([
-                        expect.objectContaining({ workId: 'provider-response', terminalState: 'failed' }),
-                    ]),
-                })
-            );
-            expect(llmStatusStore.value).toEqual({ state: 'error', message: providerError.message });
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-            expect(loggerError).toHaveBeenCalledOnce();
-        } finally {
-            recordProviderUsage.mockRestore();
-            loggerError.mockRestore();
-        }
-    });
-
-    it('preserves the provider failure message when agent-run storage fails after admission', async () => {
-        const providerError = new Error('WebLLM provider failed');
-        const storageFailure = new DOMException('The quota has been exceeded.', 'QuotaExceededError');
-        const loggerError = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
-        const storageSetItem = vi.spyOn(Storage.prototype, 'setItem');
-        let admittedRunId: string | null = null;
-        let armedSetItemCount: number | null = null;
-        mocks.getLlmEngine.mockReturnValue({});
-        mocks.getActiveModelId
-            .mockImplementationOnce(() => 'fixture-model')
-            .mockImplementationOnce(() => {
-                admittedRunId = getMostRecentlyAdmittedRunId();
-                armedSetItemCount = storageSetItem.mock.calls.length;
-                storageSetItem.mockImplementation(() => {
-                    throw storageFailure;
-                });
-                throw providerError;
-            });
-
-        try {
-            await expect(sendChatMessage('summarize this', { mode: 'explain' })).resolves.toBeUndefined();
-            expect(mocks.updateChatMessage).toHaveBeenCalledWith(
-                expect.any(String),
-                expect.objectContaining({
-                    isStreaming: false,
-                    error: `WebLLM provider failed\n\n${FAILURE_PERSISTENCE_WARNING}`,
-                    content: `Sorry, I encountered an error while thinking about that.\n\n_${FAILURE_PERSISTENCE_WARNING}_`,
-                })
-            );
-            expect(armedSetItemCount).not.toBeNull();
-            expect(storageSetItem.mock.calls.length).toBeGreaterThan(armedSetItemCount ?? 0);
-            expect(agentRunLifecycle.get(admittedRunId ?? '')).toEqual(
-                expect.objectContaining({
-                    phase: 'failed',
-                    errors: expect.arrayContaining([
-                        expect.objectContaining({
-                            code: 'agent.provider',
-                            category: 'provider',
-                            cause: { kind: 'unknown-internal', source: 'provider-planning' },
-                        }),
-                    ]),
-                })
-            );
-            expect(loggerError).toHaveBeenCalledWith(
-                expect.objectContaining({
-                    cause: expect.objectContaining({ message: 'Agent run state could not be persisted locally' }),
-                    message: 'Failed provider work lease settlement failed',
-                })
-            );
-            expect(mocks.setActiveAborter).toHaveBeenLastCalledWith(null);
-            expect(mocks.setChatGenerating).toHaveBeenLastCalledWith(false);
-        } finally {
-            storageSetItem.mockRestore();
             loggerError.mockRestore();
         }
     });
