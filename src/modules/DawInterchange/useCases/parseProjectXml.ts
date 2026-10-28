@@ -174,7 +174,10 @@ function warnTimelineMetadata(context: ParseContext, node: XmlQuery, owner: stri
 }
 
 function hasMixerBounds(node: XmlQuery): boolean {
-    return [VOLUME, PAN].includes(node.element.tagName) && ['min', 'max'].some((name) => node.attr(name) !== null);
+    return (
+        (node.element.tagName === VOLUME || node.element.tagName === PAN) &&
+        ['min', 'max'].some((name) => node.attr(name) !== null)
+    );
 }
 
 function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, owner: string, units: string[]): void {
