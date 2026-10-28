@@ -1,0 +1,24 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-70
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-30
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 149-151
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 193-196
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 2525-2531,2533-2548
+src/modules/Toaster/presentations/views/__tests__/ToasterPanel.disclosureRuntime.integration.spec.tsx
+  h_beb54bf43b47b7 228-229
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a8ed54e3878f5b254fb251223dd7dff1b25ec4e7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
