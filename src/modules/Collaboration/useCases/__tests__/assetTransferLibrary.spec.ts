@@ -333,6 +333,71 @@ function decodedBuffer(): AudioBuffer {
 }
 
 describe('local library fulfillment through the real asset request boundary', () => {
+    it.each(['addLocalAsset', 'stageLocalAsset'] as const)(
+        '%s rejects a pre-handoff hash and leaves the next owner free to retain the exact original',
+        async (method) => {
+            const nativeClone = structuredClone;
+            vi.stubGlobal('structuredClone', (value: unknown) => {
+                const cloned: unknown = nativeClone(value);
+                if (
+                    typeof value === 'object' &&
+                    value !== null &&
+                    'blob' in value &&
+                    value.blob instanceof Blob &&
+                    typeof cloned === 'object' &&
+                    cloned !== null
+                ) {
+                    Reflect.set(cloned, 'blob', value.blob.slice(0, value.blob.size, value.blob.type));
+                }
+                return cloned;
+            });
+            vi.stubGlobal('showDirectoryPicker', vi.fn());
+            const bytes = new TextEncoder().encode(`${method} old owner source`);
+            const hash = await chunkDigest(bytes);
+            const blob = new Blob([bytes]);
+            const nativeRead = Blob.prototype.arrayBuffer.bind(blob);
+            const readEntered = Promise.withResolvers<void>();
+            const finishRead = Promise.withResolvers<ArrayBuffer>();
+            Object.defineProperty(blob, 'arrayBuffer', {
+                configurable: true,
+                value: vi
+                    .fn()
+                    .mockImplementationOnce(() => {
+                        readEntered.resolve();
+                        return finishRead.promise;
+                    })
+                    .mockImplementation(() => nativeRead()),
+            });
+
+            const current = endpoint();
+            const staleImport = current.transfer[method](blob, 'source.wav');
+            await readEntered.promise;
+            const nextOwner = 'cccccccc-cccc-8ccc-8ccc-cccccccccccc';
+            const handoff = await current.transfer.prepareDurableOwnerRebind(nextOwner);
+            expect(handoff.status).toBe('prepared');
+            if (handoff.status !== 'prepared') {
+                throw new Error('Expected owner handoff preparation');
+            }
+            expect(await handoff.commit()).toMatchObject({ status: 'committed' });
+            finishRead.resolve(await nativeRead());
+
+            await expect(staleImport).rejects.toThrow('ownership changed');
+            expect(current.transfer.hasAsset(hash)).toBe(false);
+            const cold = endpoint(nextOwner);
+            expect(await cold.transfer.reopenDurableAsset(hash)).toMatchObject({
+                status: 'failed',
+                reason: 'missing-asset',
+            });
+
+            await current.transfer[method](blob, 'source.wav');
+            const retried = endpoint(nextOwner);
+            expect(await retried.transfer.reopenDurableAsset(hash)).toMatchObject({ status: 'opened' });
+            expect(Array.from(new Uint8Array(await retried.transfer.getAsset(hash)!.arrayBuffer()))).toEqual(
+                Array.from(bytes)
+            );
+        }
+    );
+
     it('does not retain an old owner resident blob after a handoff during hashing, then permits a new owner retry', async () => {
         const nativeClone = structuredClone;
         vi.stubGlobal('structuredClone', (value: unknown) => {

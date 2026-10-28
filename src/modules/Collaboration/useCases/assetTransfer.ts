@@ -388,11 +388,13 @@ export class AssetTransfer {
 
     /** Register a local asset (e.g. after recording or importing). */
     async addLocalAsset(blob: Blob, name: string): Promise<string> {
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const hash = await hashBlob(blob);
-        await this.retainOriginal(blob, name, hash);
-        if (this.disposed) {
-            throw new Error('AssetTransfer is disposed');
-        }
+        this.assertLocalAssetAuthority(ownerId, lifetime);
+        await this.retainOriginal(blob, name, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const existing = this.localAssets.get(hash);
         if (existing) {
             existing.durable = true;
@@ -404,11 +406,13 @@ export class AssetTransfer {
 
     /** Stage an import in this live Collaboration session until commit or cancellation. */
     async stageLocalAsset(blob: Blob, name: string): Promise<{ hash: string; leaseId: string }> {
+        const ownerId = this.ownerId;
+        const lifetime = this.transferLifetime;
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const hash = await hashBlob(blob);
-        await this.retainOriginal(blob, name, hash);
-        if (this.disposed) {
-            throw new Error('AssetTransfer is disposed');
-        }
+        this.assertLocalAssetAuthority(ownerId, lifetime);
+        await this.retainOriginal(blob, name, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         const leaseId = `asset-stage-${crypto.randomUUID()}`;
         const existing = this.localAssets.get(hash);
         if (existing) {
@@ -420,19 +424,28 @@ export class AssetTransfer {
         return { hash, leaseId };
     }
 
+    private assertLocalAssetAuthority(ownerId: string, lifetime: number): void {
+        if (this.disposed) {
+            throw new Error('AssetTransfer is disposed');
+        }
+        if (this.ownerId !== ownerId || this.transferLifetime !== lifetime) {
+            throw new Error('Project original ownership changed');
+        }
+    }
+
     /** Make every verified source independently reopenable before exposing it to a clip or peer. */
     private async retainOriginal(
         blob: Blob,
         name: string,
         hash: string,
-        expectedOwnerId = this.ownerId
+        expectedOwnerId = this.ownerId,
+        expectedLifetime = this.transferLifetime
     ): Promise<void> {
         if (typeof window === 'undefined' || typeof window.showDirectoryPicker !== 'function') {
             return;
         }
-        const lifetime = this.transferLifetime;
         const isCurrent = () =>
-            !this.disposed && this.transferLifetime === lifetime && this.ownerId === expectedOwnerId;
+            !this.disposed && this.transferLifetime === expectedLifetime && this.ownerId === expectedOwnerId;
         await this.runOwnerOperation(async (assets) => {
             if (!isCurrent()) {
                 throw new Error('Project original ownership changed');
@@ -1122,7 +1135,8 @@ export class AssetTransfer {
         if (this.disposed || this.ownerId !== ownerId || this.transferLifetime !== lifetime) {
             throw new Error('Project original ownership changed');
         }
-        await this.retainOriginal(blob, hash, hash, ownerId);
+        await this.retainOriginal(blob, hash, hash, ownerId, lifetime);
+        this.assertLocalAssetAuthority(ownerId, lifetime);
         return true;
     }
 
