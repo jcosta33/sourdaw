@@ -1,0 +1,37 @@
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_d99a62fe2de3a3::t_0cfcb666fcfcce 69-92
+.agents/skills/review-stances/project-integrity.md
+  s_d99a62fe2de3a3::t_0cdc47ece10a0f 215-222
+.agents/skills/review-stances/test-validity.md
+  s_d99a62fe2de3a3::t_9fb87b9cd70318 1292-1300
+src/modules/Command/useCases/__tests__/midiRowCoordinateReplay.integration.spec.ts
+  s_26f70b851e8f7a::t_3190227bc5292c 518-569,571-588,590-593,595-659,661-662
+src/modules/Command/useCases/macro/__tests__/playback.spec.ts
+  s_d99a62fe2de3a3::t_56b647a33debd8 125,159-160
+src/modules/Command/useCases/macro/playback.ts
+  s_d99a62fe2de3a3::t_be49aad065e1cb 231-233,235-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41b76d68b8108ca459a632a8db462ba4673bcac9",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_d99a62fe2de3a3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a172e8-2ac0-7402-932a-7e6760b63aba",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
