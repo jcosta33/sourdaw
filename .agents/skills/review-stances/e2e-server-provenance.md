@@ -10,7 +10,11 @@ exit code or signal. Exercise requested cleanup and a failed spawn. Removing eit
 exit lifecycle record must fail its corresponding subprocess assertion; a green test after either
 mutation does not prove the record reaches the caller.
 
-PR #5437's Grinder-only dev-companion case asserted `localhost`, while PR #5723 made
-`e2eOrigin` return IPv4 loopback to match Vite's `127.0.0.1` listener. A hostname that can resolve
-to a separate IPv6 listener is not the same serving origin. Keep the companion's `baseURL` and its
-readiness URL on the explicit IPv4 origin, and check both in the shard-specific config case.
+PR #5723 changed the E2E origin to literal IPv4 loopback so Vite's IPv4 listener remains reachable
+when an IPv6 listener starts on the same port. The Grinder-only companion case added later by
+PR #5437 retained `localhost` expectations for the same configured origins, so the named CI case
+failed despite the correct server setup. The missed stance was post-integration host consistency
+across every companion route. Keep the build and dev origins in that case equal to the configured
+IPv4 origins, then temporarily make the origin factory return `localhost` and run the named Grinder
+case: it must fail. Preserve project selection, ports, child command, output capture, and shutdown
+assertions while correcting fixture expectations.
