@@ -86,6 +86,26 @@ one later Save to persist the exact failed source and a runtime-clear restore to
 Also replace or remove the same asset while settlement is held and require the admitted snapshot to
 be superseded rather than certified by the later source.
 
+### VCA Inspector membership must retain Command and durable history
+
+The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
+remained outside the typed VCA history route added by PR #1049. The missed observable was the
+Inspector entry reaching that route; historical private review prompts and tiers are unknown.
+
+Exercise Create, Assign and None through real Command and its registered handler against a
+CRDT-backed root. Compare raw track group IDs and group member arrays with their projections;
+require one history and Undo entry, and verify Undo and Redo restore exact prior and next states
+without changing unrelated tracks or groups. Locked admission must preserve raw state, history and
+engine writes; no-op selection must leave them unchanged. Revert the relevant component dispatch
+to its direct use case and require the connected history or lock case to fail.
+
+A queued gesture must keep its project identity across an asynchronous snapshot wait: copied
+track and group IDs do not identify the owning document. Hold the real queue, dispatch each
+gesture, replace the root with a same-ID successor through production repository and projection,
+then release it and require unchanged successor raw/projected state, history and engine calls.
+An ordinary same-project snapshot must still permit the gesture. This successor case was caught
+in #5789 review before merge, not established as a main escape.
+
 ## Lesson from the PR #964 escape
 
 PR #964 (`8a96bdafd6605daa098c2851bdfab2fdeb8a1db3`) removed embedded PCM from live project
