@@ -1,0 +1,14 @@
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 439-441,10464-10466,10533-10535,10615-10617,10676-10678,10736-10738,11196-11198,11756-11758,11814-11816
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3cfc9f440a6e30831de90be14ca77600175efec",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
