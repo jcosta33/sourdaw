@@ -3210,3 +3210,38 @@ describe('DAWproject diagnostic accounting', () => {
         expect(parsed.tracks[0]?.clips).toMatchObject([{ name: 'Zero' }]);
     });
 });
+
+describe('rejected owners and invalid mixer values', () => {
+    it('reports named descendants and invalid values while preserving playable clips and mixer defaults', () => {
+        const parsed = parseProjectXml(
+            project(
+                `<Structure><Channel id="return" name="Return"/><Track id="keys" name="Keys" contentType="notes"><Channel><Volume id="vol" unit="linear" value="not-a-number"/><Pan id="pan" value="Infinity"/></Channel></Track><Track name="Controls" contentType="notes"><Channel><Volume value="0"/><Pan value="0.5"/></Channel></Track><Track name="Defaults" contentType="notes"><Channel><Volume/><Pan/></Channel></Track></Structure><Arrangement><Lanes><Clips track="return"><Clip id="orphan" name="Orphan" time="0" duration="1"><Notes id="verse" name="Verse"><Note key="60" time="0" duration="1"/></Notes></Clip></Clips><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement>`
+            )
+        );
+        expect(parsed.warnings).toMatchObject([
+            { sourceType: 'Channel', sourceId: 'return', name: 'Return', context: 'Structure', handling: 'dropped' },
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            { sourceType: 'Clip', sourceId: 'orphan', name: 'Orphan', context: 'return', handling: 'dropped' },
+            { sourceType: 'Notes', sourceId: 'verse', name: 'Verse', context: 'Orphan', handling: 'dropped' },
+        ]);
+        expect(parsed.warnings).toHaveLength(5);
+        expect(parsed.tracks[0]).toMatchObject({ name: 'Keys', volume: 0.8, pan: 0, clips: [{ name: 'Playable' }] });
+        expect(parsed.tracks[1]).toMatchObject({ name: 'Controls', volume: 0, pan: 0 });
+        expect(parsed.tracks[2]).toMatchObject({ name: 'Defaults', volume: 0.8, pan: 0 });
+    });
+});

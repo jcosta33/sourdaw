@@ -860,4 +860,50 @@ describe('importDawProject', () => {
         expect(result).toMatchObject({ ok: false, warnings: [{ name: 'Cutoff' }] });
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
+    it('reports rejected named notes and invalid mixer values from real ZIP bytes', async () => {
+        vi.clearAllMocks();
+        setupRealImport();
+        const projectXml = `<Project version="1.0"><Structure><Channel id="return" name="Return"/><Track id="keys" name="Keys" contentType="notes"><Channel><Volume id="vol" unit="linear" value="not-a-number"/><Pan id="pan" value="Infinity"/></Channel></Track></Structure><Arrangement><Lanes><Clips track="return"><Clip id="orphan" name="Orphan" time="0" duration="1"><Notes id="verse" name="Verse"><Note key="60" time="0" duration="1"/></Notes></Clip></Clips><Clips track="keys"><Clip name="Playable" time="0" duration="1"><Notes><Note key="64" time="0" duration="1"/></Notes></Clip></Clips></Lanes></Arrangement></Project>`;
+        const zipped = buildDawProjectZip({ projectXml, metadataXml: '', audioFiles: new Map() });
+        const result = await importDawProject({
+            buffer: new Uint8Array(zipped).buffer,
+            fileName: 'rejected.dawproject',
+        });
+        expect(result.warnings).toMatchObject([
+            { sourceType: 'Channel', sourceId: 'return', name: 'Return', context: 'Structure', handling: 'dropped' },
+            {
+                sourceType: 'Volume',
+                sourceId: 'vol',
+                name: 'Volume',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            {
+                sourceType: 'Pan',
+                sourceId: 'pan',
+                name: 'Pan',
+                context: 'Keys',
+                handling: 'partial',
+                details: ['invalid parameter value'],
+            },
+            { sourceType: 'Clip', sourceId: 'orphan', name: 'Orphan', context: 'return', handling: 'dropped' },
+            { sourceType: 'Notes', sourceId: 'verse', name: 'Verse', context: 'Orphan', handling: 'dropped' },
+        ]);
+        expect(result.warnings).toHaveLength(5);
+        const applied = mocks.applyImportedProjectData.mock.calls[0]?.[0]?.data;
+        expect(applied.arrangement.tracks.find((track: { name: string }) => track.name === 'Keys')).toMatchObject({
+            gain: 0.8,
+            pan: 0,
+            clips: [{ name: 'Playable' }],
+        });
+        expect(mocks.notifyUser.mock.calls.map(([message]) => message)).toEqual([
+            expect.stringContaining('Channel "Return" on "Structure" was not imported'),
+            expect.stringContaining('Volume "Volume" on "Keys" was partially imported: invalid parameter value'),
+            expect.stringContaining('Pan "Pan" on "Keys" was partially imported: invalid parameter value'),
+            expect.stringContaining('Clip "Orphan" on "return" was not imported'),
+            expect.stringContaining('Notes "Verse" on "Orphan" was not imported'),
+            expect.stringContaining('Imported rejected.dawproject'),
+        ]);
+    });
 });

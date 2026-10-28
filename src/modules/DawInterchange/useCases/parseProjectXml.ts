@@ -193,6 +193,13 @@ function warnParameterMetadata(context: ParseContext, node: XmlQuery | null, own
         details.push('parameter unit');
     }
     const value = node.attrNumber('value', 0);
+    if (
+        (node.element.tagName === VOLUME || node.element.tagName === PAN) &&
+        node.attr('value') !== null &&
+        !Number.isFinite(node.attrNumber('value', Number.NaN))
+    ) {
+        details.push('invalid parameter value');
+    }
     if (node.element.tagName === VOLUME && clampFaderGain(value) !== value) {
         details.push('volume range');
     }
@@ -1567,6 +1574,7 @@ function parseArrangementClips(
                         laneOrClips.attr('name') ?? 'Clip',
                         ownerName(contentOwner.reference, 'Unassigned lane')
                     );
+                    context.rejectedContents.push({ node: laneOrClips, owner: laneOrClips.attr('name') ?? 'Clip' });
                 }
                 walkClips(
                     laneOrClips,
