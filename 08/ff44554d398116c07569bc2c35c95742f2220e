@@ -1,0 +1,45 @@
+.agents/skills/review-stances/test-validity.md
+  s_b3201877f50e8a::t_2d5c2f2c4e612a 1468-1487
+.agents/skills/review-stances/project-integrity.md
+  s_b3201877f50e8a::t_e6313ae9420e3c 364-387
+src/modules/AiRuntime/useCases/__tests__/coordinatedLevelTargetGrounding.spec.ts
+  s_b3201877f50e8a::t_69a884dc8a6db0 1822-1848,1863-1997
+src/modules/AiRuntime/useCases/agentReference/__tests__/getExplicitlyProtectedClips.spec.ts
+  s_b3201877f50e8a::t_af5d8f6f575796 5,92-188
+src/modules/AiRuntime/useCases/agentReference/getExplicitlyProtectedClips.ts
+  s_b3201877f50e8a::t_f82d327f88efa7 6-7,32,88,90,95-102,118-136,138-139,191-198,220-235,238,264,267
+src/modules/Arrangement/stores/index.ts
+  s_b3201877f50e8a::t_f460b9e46b532a 14
+src/modules/Arrangement/stores/isValidTakePlacement.ts
+  s_b3201877f50e8a::t_bc8bce7fa7a22c 1-27
+src/modules/Arrangement/stores/takeLaneStore.ts
+  s_b3201877f50e8a::t_a220e09a53bfd1 9,86
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_b3201877f50e8a::t_21ccdb175638f1 3,15,357,818-891
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateArrangementStoreFromProjectData.spec.ts
+  s_b3201877f50e8a::t_99828d77c8c8a5 8-13,17,263-337
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/hydrateModuleStoresFromProjectData.spec.ts
+  s_b3201877f50e8a::t_9a4b0c6fe3b855 24-27
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_b3201877f50e8a::t_abb0b8481a2ad9 647-704
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/replaceProjectData.spec.ts
+  s_b3201877f50e8a::t_1b292bd5513343 83-86
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_b3201877f50e8a::t_bd72706e5983e4 1,668-669
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08ff44554d398116c07569bc2c35c95742f2220e",
+  "prompts": {},
+  "sessions": {
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
