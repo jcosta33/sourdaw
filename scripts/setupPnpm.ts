@@ -4,14 +4,13 @@ import {
     copyFileSync,
     lstatSync,
     mkdirSync,
-    mkdtempSync,
     readFileSync,
     readdirSync,
     realpathSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 const registry = 'https://registry.npmjs.org/';
@@ -25,6 +24,7 @@ export type SetupPnpmOptions = {
     dest?: string;
     env: NodeJS.ProcessEnv;
     node: string;
+    platform?: NodeJS.Platform;
     run?: (file: string, args: string[], options: CommandOptions) => CommandResult;
 };
 
@@ -67,9 +67,10 @@ function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
 }
 
 function targetVersion(workspace: string, manifest: string): string {
-    const file = resolve(workspace, manifest);
-    const path = relative(workspace, file);
-    if (path.startsWith('..') || isAbsolute(path)) throw new Error('pnpm manifest must belong to the workspace');
+    const requested = resolve(workspace, manifest);
+    if (!within(workspace, requested)) throw new Error('pnpm manifest must belong to the workspace');
+    const file = realpathSync(requested);
+    if (!within(workspace, file)) throw new Error('pnpm manifest must belong to the workspace');
     const data: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (data === null || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid pnpm manifest');
     const declaration: unknown = Reflect.get(data, 'packageManager');
@@ -85,34 +86,42 @@ function targetVersion(workspace: string, manifest: string): string {
     return declaration.slice('pnpm@'.length);
 }
 
+function within(root: string, path: string): boolean {
+    const child = relative(root, path);
+    return child !== '..' && !child.startsWith(`..${sep}`) && !isAbsolute(child);
+}
+
 function prepareDestination(dest: string | undefined, env: NodeJS.ProcessEnv, workspace: string): string {
-    const candidate = resolve(dest || env.RUNNER_TEMP || tmpdir());
-    const withinWorkspace = relative(resolve(workspace), candidate);
-    if (!withinWorkspace.startsWith('..') && !isAbsolute(withinWorkspace)) {
-        throw new Error('pnpm destination must be outside the project workspace');
-    }
-    if (dest === undefined || dest === '') {
-        return realpathSync(mkdtempSync(join(env.RUNNER_TEMP ?? tmpdir(), 'sourdaw-pnpm-')));
-    }
-    if (!isAbsolute(dest) || /[\r\n]/.test(dest)) throw new Error('pnpm destination must be an absolute path');
+    // The stable per-job path keeps setup-node's store-cache archive path stable.
+    // An existing nonempty directory is refused rather than reused or deleted.
+    const candidate = dest || join(env.RUNNER_TEMP ?? tmpdir(), 'sourdaw-pnpm');
+    if (!isAbsolute(candidate) || /[\r\n]/.test(candidate))
+        throw new Error('pnpm destination must be an absolute path');
     let stat;
+    let root: string;
     try {
-        stat = lstatSync(dest);
+        stat = lstatSync(candidate);
+        if (stat.isSymbolicLink()) throw new Error('pnpm destination must be an empty owned directory with mode 0755');
+        root = realpathSync(candidate);
     } catch (error) {
         if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT') throw error;
-        mkdirSync(dest, { mode: 0o755 });
-        stat = lstatSync(dest);
+        root = join(realpathSync(dirname(candidate)), basename(candidate));
+    }
+    if (within(workspace, root)) throw new Error('pnpm destination must be outside the project workspace');
+    if (stat === undefined) {
+        mkdirSync(root, { mode: 0o755 });
+        stat = lstatSync(root);
     }
     if (
         !stat.isDirectory() ||
         stat.isSymbolicLink() ||
         (process.getuid !== undefined && stat.uid !== process.getuid()) ||
-        (stat.mode & 0o777) !== 0o755 ||
-        readdirSync(dest).length !== 0
+        (process.platform !== 'win32' && (stat.mode & 0o777) !== 0o755) ||
+        readdirSync(root).length !== 0
     ) {
         throw new Error('pnpm destination must be an empty owned directory with mode 0755');
     }
-    return realpathSync(dest);
+    return root;
 }
 
 function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.ProcessEnv {
@@ -121,6 +130,7 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.Proce
     );
     const config = join(root, 'config');
     mkdirSync(config);
+    mkdirSync(join(root, 'runtime'));
     const userConfig = join(config, 'user.npmrc');
     const globalConfig = join(config, 'global.npmrc');
     writeFileSync(userConfig, '');
@@ -128,6 +138,8 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.Proce
     return {
         ...safe,
         XDG_CONFIG_HOME: config,
+        XDG_CACHE_HOME: join(root, 'cache'),
+        XDG_STATE_HOME: join(root, 'state'),
         NPM_CONFIG_USERCONFIG: userConfig,
         NPM_CONFIG_GLOBALCONFIG: globalConfig,
         NPM_CONFIG_CACHE: join(root, 'npm-cache'),
@@ -138,13 +150,40 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.Proce
     };
 }
 
+function installedEntrypoint(dest: string, bin: string, version: string): string {
+    // pnpm's linker writes this marker on every platform, and self-update itself
+    // uses it to identify installed shim targets. Execute the JS with known Node
+    // so Windows never needs a terminal to launch a .cmd file.
+    const marker = readFileSync(join(bin, 'pnpm'), 'utf8').match(/^#\s*cmd-shim-target=(.+)$/m)?.[1];
+    if (!marker) throw new Error('pnpm target shim has no installed entrypoint');
+    const entrypoint = realpathSync(resolve(bin, marker));
+    if (
+        (!within(join(dest, 'runtime'), entrypoint) && !within(join(dest, 'store'), entrypoint)) ||
+        basename(entrypoint) !== 'pnpm.mjs'
+    ) {
+        throw new Error('pnpm target entrypoint must belong to its independent installation');
+    }
+    const manifest: unknown = JSON.parse(readFileSync(join(dirname(entrypoint), '../package.json'), 'utf8'));
+    if (
+        manifest === null ||
+        typeof manifest !== 'object' ||
+        Reflect.get(manifest, 'name') !== 'pnpm' ||
+        Reflect.get(manifest, 'version') !== version
+    ) {
+        throw new Error('pnpm target package identity does not match the requested release');
+    }
+    return entrypoint;
+}
+
 export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: string; version: string } {
     assertSafeEnvironment(options.env);
-    const version = targetVersion(options.workspace, options.manifest);
-    const dest = prepareDestination(options.dest, options.env, options.workspace);
+    const workspace = realpathSync(options.workspace);
+    const version = targetVersion(workspace, options.manifest);
+    const dest = prepareDestination(options.dest, options.env, workspace);
     const bootstrap = join(dest, 'bootstrap');
     mkdirSync(bootstrap);
-    // This reviewed repository lock replaces the external action's bootstrap
+    // pnpm 11.26 verifies the selected engine, so unused native signatures cannot
+    // block a JavaScript target (#5806). This reviewed repository lock replaces the external action's bootstrap
     // byte pin. It authenticates the already signature-checked official release;
     // target signature verification remains a separate runtime pnpm operation.
     for (const file of ['package.json', 'package-lock.json']) {
@@ -158,7 +197,16 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
             throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
         return result.stdout.trim();
     };
-    command('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], 'bootstrap installation');
+    const nodeDirectory = dirname(options.node);
+    const npmEntrypoint =
+        (options.platform ?? process.platform) === 'win32'
+            ? join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js')
+            : resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
+    command(
+        options.node,
+        [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
+        'bootstrap installation'
+    );
     command(
         options.node,
         [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), 'self-update', version],
@@ -166,8 +214,8 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     );
     const home = join(dest, 'runtime');
     const bin = join(home, 'bin');
-    const target = join(bin, process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm');
-    const actual = command(target, ['--version'], 'target version check');
+    const target = installedEntrypoint(dest, bin, version);
+    const actual = command(options.node, [target, '--version'], 'target version check');
     if (actual !== version) throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
     const { GITHUB_PATH, GITHUB_ENV, GITHUB_OUTPUT } = options.env;
     if (!GITHUB_PATH || !GITHUB_ENV || !GITHUB_OUTPUT) throw new Error('pnpm setup requires GitHub output files');

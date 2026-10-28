@@ -29,10 +29,21 @@ function fixture() {
         env[name] = join(workspace, name);
         writeFileSync(env[name], '');
     }
-    const run = vi.fn<NonNullable<SetupPnpmOptions['run']>>((_file, args) => ({
-        status: 0,
-        stdout: args[0] === '--version' ? '11.6.0\n' : '',
-    }));
+    const target = join(dest, 'runtime/target/node_modules/pnpm/bin/pnpm.mjs');
+    const implementation: NonNullable<SetupPnpmOptions['run']> = (_file, args) => {
+        if (args.includes('self-update')) {
+            mkdirSync(dirname(target), { recursive: true });
+            mkdirSync(join(dest, 'runtime/bin'), { recursive: true });
+            writeFileSync(target, 'console.log("11.6.0");\n');
+            writeFileSync(
+                join(dirname(target), '../package.json'),
+                JSON.stringify({ name: 'pnpm', version: '11.6.0' })
+            );
+            writeFileSync(join(dest, 'runtime/bin/pnpm'), `#!/bin/sh\n# cmd-shim-target=${target}\n`);
+        }
+        return { status: 0, stdout: args.includes('--version') ? '11.6.0\n' : '' };
+    };
+    const run = vi.fn<NonNullable<SetupPnpmOptions['run']>>(implementation);
     const options: SetupPnpmOptions = {
         workspace,
         dest,
@@ -43,7 +54,7 @@ function fixture() {
     };
     const exports = () =>
         ['GITHUB_PATH', 'GITHUB_ENV', 'GITHUB_OUTPUT'].map((name) => readFileSync(join(workspace, name), 'utf8'));
-    return { workspace, dest, options, run, exports };
+    return { workspace, dest, options, run, implementation, target, exports };
 }
 
 describe('verified JavaScript pnpm setup', () => {
@@ -57,12 +68,23 @@ describe('verified JavaScript pnpm setup', () => {
         const lock = readFileSync(join(input.workspace, 'pnpm-lock.yaml'), 'utf8');
         const result = setupPnpm(input.options);
         expect(input.run.mock.calls.map(([file, args]) => [file, args])).toEqual([
-            ['npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund']],
+            [
+                process.execPath,
+                [
+                    process.platform === 'win32'
+                        ? join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
+                        : resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js'),
+                    'ci',
+                    '--ignore-scripts',
+                    '--no-audit',
+                    '--no-fund',
+                ],
+            ],
             [
                 process.execPath,
                 [join(result.dest, 'bootstrap/node_modules/pnpm/bin/pnpm.mjs'), 'self-update', '11.6.0'],
             ],
-            [join(result.bin, process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'), ['--version']],
+            [process.execPath, [input.target, '--version']],
         ]);
         for (const [, , options] of input.run.mock.calls) {
             expect(options.cwd).toBe(join(result.dest, 'bootstrap'));
@@ -90,9 +112,9 @@ describe('verified JavaScript pnpm setup', () => {
 
     it.each([0, 1, 2])('exports nothing when command %s fails and never executes a later command', (failure) => {
         const input = fixture();
-        input.run.mockImplementation((_file, args) => ({
+        input.run.mockImplementation((file, args, options) => ({
+            ...input.implementation(file, args, options),
             status: input.run.mock.calls.length - 1 === failure ? 1 : 0,
-            stdout: args[0] === '--version' ? '11.6.0' : '',
         }));
         expect(() => setupPnpm(input.options)).toThrow('failed');
         expect(input.run).toHaveBeenCalledTimes(failure + 1);
@@ -101,7 +123,10 @@ describe('verified JavaScript pnpm setup', () => {
 
     it('does not activate a bootstrap version returned instead of the target', () => {
         const input = fixture();
-        input.run.mockReturnValue({ status: 0, stdout: '11.26.0\n' });
+        input.run.mockImplementation((file, args, options) => ({
+            ...input.implementation(file, args, options),
+            stdout: args.includes('--version') ? '11.26.0\n' : '',
+        }));
         expect(() => setupPnpm(input.options)).toThrow('reports 11.26.0, expected 11.6.0');
         expect(input.exports()).toEqual(['', '', '']);
     });
@@ -133,6 +158,83 @@ describe('verified JavaScript pnpm setup', () => {
         input.options.dest = join(input.workspace, 'tools');
         expect(() => setupPnpm(input.options)).toThrow('outside the project workspace');
         expect(input.run).not.toHaveBeenCalled();
+    });
+
+    it('refuses manifest and destination ancestor symlinks that cross the project boundary', () => {
+        const input = fixture();
+        const outside = join(dirname(input.workspace), 'outside.json');
+        writeFileSync(outside, JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
+        symlinkSync(outside, join(input.workspace, 'manifest-link.json'));
+        expect(() => setupPnpm({ ...input.options, manifest: 'manifest-link.json' })).toThrow(
+            'belong to the workspace'
+        );
+        const ancestor = join(dirname(input.workspace), 'ancestor');
+        symlinkSync(input.workspace, ancestor);
+        expect(() => setupPnpm({ ...input.options, dest: join(ancestor, 'tools') })).toThrow(
+            'outside the project workspace'
+        );
+        expect(input.run).not.toHaveBeenCalled();
+    });
+
+    it('uses JavaScript entrypoints and known Node on Windows without shell launchers', () => {
+        const input = fixture();
+        input.options.platform = 'win32';
+        input.options.node = join(dirname(input.workspace), 'Node tools & 100%', 'node.exe');
+        setupPnpm(input.options);
+        expect(input.run.mock.calls.map(([file]) => file)).toEqual([
+            input.options.node,
+            input.options.node,
+            input.options.node,
+        ]);
+        expect(input.run.mock.calls[0]?.[1][0]).toBe(
+            join(dirname(input.options.node), 'node_modules/npm/bin/npm-cli.js')
+        );
+        expect(input.run.mock.calls[2]?.[1]).toEqual([input.target, '--version']);
+        expect(input.run.mock.calls.some(([file]) => /\.cmd$|cmd\.exe$/.test(file))).toBe(false);
+    });
+
+    it('executes the Windows-layout JavaScript route with literal shell metacharacters in tool paths', () => {
+        const input = fixture();
+        const nodeDirectory = join(dirname(input.workspace), 'Node tools & 100%');
+        mkdirSync(join(nodeDirectory, 'node_modules/npm/bin'), { recursive: true });
+        const node = join(nodeDirectory, 'node.exe');
+        symlinkSync(process.execPath, node);
+        const bootstrap = `import {mkdirSync,writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+const home=process.env.PNPM_HOME;
+const entry=join(home,'target/node_modules/pnpm/bin/pnpm.mjs');
+mkdirSync(join(home,'bin'),{recursive:true});
+mkdirSync(join(home,'target/node_modules/pnpm/bin'),{recursive:true});
+writeFileSync(entry,'console.log("11.6.0");');
+writeFileSync(join(home,'target/node_modules/pnpm/package.json'),JSON.stringify({name:'pnpm',version:'11.6.0'}));
+writeFileSync(join(home,'bin/pnpm'),'# cmd-shim-target='+entry+'\\n');`;
+        const npm = `const {mkdirSync,writeFileSync}=require('node:fs');
+const {join}=require('node:path');
+if(JSON.stringify(process.argv.slice(2))!==JSON.stringify(['ci','--ignore-scripts','--no-audit','--no-fund']))process.exit(9);
+mkdirSync(join(process.cwd(),'node_modules/pnpm/bin'),{recursive:true});
+writeFileSync(join(process.cwd(),'node_modules/pnpm/bin/pnpm.mjs'),${JSON.stringify(bootstrap)});`;
+        writeFileSync(join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js'), npm);
+        const result = setupPnpm({ ...input.options, node, platform: 'win32', run: undefined });
+        expect(result.version).toBe('11.6.0');
+        expect(input.exports()[0]).toBe(`${result.bin}\n`);
+    });
+
+    it('rejects a target shim redirected outside its verified installation', () => {
+        const input = fixture();
+        input.run.mockImplementation((file, args, options) => {
+            const result = input.implementation(file, args, options);
+            if (args.includes('self-update')) {
+                writeFileSync(
+                    join(input.dest, 'runtime/bin/pnpm'),
+                    `# cmd-shim-target=${join(input.workspace, 'pnpm.mjs')}\n`
+                );
+                writeFileSync(join(input.workspace, 'pnpm.mjs'), 'throw new Error("foreign target executed");');
+            }
+            return result;
+        });
+        expect(() => setupPnpm(input.options)).toThrow('independent installation');
+        expect(input.run).toHaveBeenCalledTimes(2);
+        expect(input.exports()).toEqual(['', '', '']);
     });
 
     it.each([
