@@ -1,0 +1,18 @@
+.agents/decisions/0051-wasm-bank-commit-retires-instead-of-releasing-off-thread.md
+  h_beb54bf43b47b7 72-74
+.agents/decisions/0052-a-disposed-wasm-engine-drains-in-paced-steps-before-it-is-freed.md
+  h_beb54bf43b47b7 35-39,82,129-134
+src/modules/AudioEngine/services/levainProcessor.ts
+  h_beb54bf43b47b7 71-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "405d4b4d52b92a029496e3adc50d18fe5a6ac361",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
