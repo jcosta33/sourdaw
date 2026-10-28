@@ -1,0 +1,20 @@
+.agents/skills/review-stances/README.md
+  s_3168504f6ce387::t_def7dec8e35621 67-68,70-71
+  s_3168504f6ce387::t_db692a2452b07d 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73452daab8f11a0be10740fdd84f07aeab8ebe36",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
