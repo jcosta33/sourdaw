@@ -104,6 +104,23 @@ record, loop toggle — and for each, name the state the native session is left 
 contradicts the transport state the UI shows. One line per gesture; a gesture with no answer is the
 finding.
 
+### Browser MIDI denial must remain retryable through teardown
+
+Commit `8b0050b90f2b8e18956c16edd20c9afea3ddbd2b` treated a rejected Web MIDI request
+without a native fallback as unsupported, hiding the picker even when the browser API existed.
+PR #5411 retained that state while exposing the error in the footer; its review explicitly left
+broader permission retry open. The missed lifecycle observable was the musician's retry path,
+not proof that the API was absent. Historical private review prompts and tiers are unknown.
+
+Drive denial through the real browser repository and picker: keep an access error and explicit
+Refresh without automatic repeat prompts after reopening. Separately remove the API and require
+unsupported. After permission is granted with zero devices, Refresh must complete and show the
+empty-device state, not indefinite detection; a later device enumeration must show that device.
+Hold a real pending access request across teardown, then resolve or reject it: no old input,
+listener, callback or state may return. A new current initialization remains a positive control.
+Revert each capability, completion or teardown guard and require its named connected case to fail.
+These controlled browser and repository probes do not establish native or hardware behavior.
+
 ### 2026-08-31 — unmount is a Connect gesture (escaped via PR #3226)
 
 PR #3226 inserted a 15s probe between opening a credential session and `replace_runtime`. Overlapping
