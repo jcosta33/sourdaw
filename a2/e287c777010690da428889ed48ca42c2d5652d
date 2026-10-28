@@ -1,0 +1,36 @@
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  h_beb54bf43b47b7 9-12,25,57-75,163-164,252-290,294-299,492,519-575,578
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  h_beb54bf43b47b7 57,77,1719,1899-1904,1913-1920
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 15,29,35,40-42,52,139-140,142-144,453-695
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  h_beb54bf43b47b7 330-331,337-341,343
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  h_beb54bf43b47b7 27-31,247-262
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  h_beb54bf43b47b7 8-12,17,25,82,96,108-111,114-115,467,497,547,554-613,620-622
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  h_beb54bf43b47b7 120-123,133,165,271
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  h_beb54bf43b47b7 18-19,54,61
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  h_beb54bf43b47b7 20,30,48
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  h_beb54bf43b47b7 311-313
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  h_beb54bf43b47b7 57-66
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  h_beb54bf43b47b7 229-230,677-720
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2e287c777010690da428889ed48ca42c2d5652d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
