@@ -22,6 +22,18 @@ type LoopbackOpenAiProviderOptions = {
     toolCalls?: readonly { id: string; name: string; arguments: Record<string, unknown> }[];
 };
 
+/** A project read followed by an answer that cites that read's actual receipt. */
+export function createLoopbackAnswerToolCalls(reply: string): NonNullable<LoopbackOpenAiProviderOptions['toolCalls']> {
+    return [
+        { id: 'loopback-query', name: 'project_query', arguments: { type: 'project-summary' } },
+        {
+            id: 'loopback-answer',
+            name: 'answer_respond',
+            arguments: { text: reply, evidenceCallIds: ['loopback-query'] },
+        },
+    ];
+}
+
 export type LoopbackOpenAiProvider = {
     /** OpenAI-compatible base URL, e.g. `http://127.0.0.1:41234/v1`. */
     baseUrl: string;
