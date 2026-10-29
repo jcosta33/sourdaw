@@ -34,6 +34,7 @@ import * as commandUseCases from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { type ConfirmPayload, type NotifyPayload, type PromptPayload } from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
@@ -52,6 +53,14 @@ import { handleRestoreRecording } from '../handleRestoreRecording';
 const A = 'recording-track-a';
 const B = 'peer-track-b';
 const metadata = { record: () => [], markReverted: () => ({ status: 'unavailable' as const }), clear: () => undefined };
+
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
+type ReplayOperation = typeof undo | typeof redo;
 
 function flush(): void {
     flushAutomergeStorageWrites();
@@ -155,19 +164,23 @@ function witness() {
     };
 }
 
-async function expectRefused(replay: () => Promise<void>): Promise<void> {
+async function expectRefused(replay: ReplayOperation): Promise<void> {
     const before = witness();
-    const entries = [...(undoHistoryStore.value?.past ?? []), ...(undoHistoryStore.value?.future ?? [])];
+    const state = undoHistoryStore.value;
+    const entries = state ? [...state.past, ...state.future] : [];
     await replay();
     expect(witness()).toEqual(before);
-    const after = [...(undoHistoryStore.value?.past ?? []), ...(undoHistoryStore.value?.future ?? [])];
+    const updated = undoHistoryStore.value;
+    const after = updated ? [...updated.past, ...updated.future] : [];
     expect(after).toHaveLength(entries.length);
-    entries.forEach((entry, index) => expect(after[index]).toBe(entry));
+    for (const [index, entry] of entries.entries()) {
+        expect(after[index]).toBe(entry);
+    }
 }
 
 describe('recording replay preserves peer ownership (#5288)', () => {
     beforeEach(() => {
-        injectDependencies(notifyUser, { eventBus: createEventBus() });
+        injectDependencies(notifyUser, { eventBus: createEventBus<NotificationEvents>() });
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('recording replay ownership integration');
         removeCrdtDoc('root');
@@ -263,11 +276,11 @@ describe('recording replay preserves peer ownership (#5288)', () => {
             const recording = leg === 'undo' ? state.past[0]! : state.future[0]!;
             recording.groupId = sentinel.groupId = 'recording-and-sentinel';
             // Undo reverses past; redo runs future forwards. Sentinel executes first in both.
-            undoHistoryStore.set(
-                leg === 'undo'
-                    ? { past: [recording, sentinel], future: [] }
-                    : { past: [], future: [sentinel, recording] }
-            );
+            if (leg === 'undo') {
+                undoHistoryStore.set({ past: [recording, sentinel], future: [] });
+            } else {
+                undoHistoryStore.set({ past: [], future: [sentinel, recording] });
+            }
             await expectRefused(leg === 'undo' ? undo : redo);
             expect(writes).toBe(0);
         }
@@ -365,30 +378,38 @@ describe('recording replay preserves peer ownership (#5288)', () => {
                 entry.kind !== 'action' ||
                 entry.action.type !== 'commitRecording' ||
                 entry.redoAction?.type !== 'restoreRecording'
-            )
+            ) {
                 throw new Error('expected recording entry');
+            }
             const original = entry.action;
             const redoCapture = entry.redoAction;
-            if (kind === 'missing-source')
+            if (kind === 'missing-source') {
                 entry.action = { type: 'discardRecording', payload: { clipId: original.payload.clip.id } };
-            if (kind === 'wrong-id')
+            }
+            if (kind === 'wrong-id') {
                 entry.action = {
                     type: 'commitRecording',
                     payload: { clip: { ...original.payload.clip, id: 'different-source' } },
                 };
-            if (kind === 'missing-redo') delete entry.redoAction;
+            }
+            if (kind === 'missing-redo') {
+                delete entry.redoAction;
+            }
             if (kind === 'wrong-redo-id') {
                 entry.redoAction = {
                     type: 'restoreRecording',
                     payload: { ...redoCapture.payload, clip: { ...redoCapture.payload.clip, id: 'different-redo' } },
                 };
             }
-            if (kind === 'wrong-redo-owner')
+            if (kind === 'wrong-redo-owner') {
                 entry.redoAction = {
                     type: 'restoreRecording',
                     payload: { ...redoCapture.payload, clip: { ...redoCapture.payload.clip, trackId: B } },
                 };
-            if (kind === 'duplicate') undoHistoryStore.set({ past: [entry], future: [entry] });
+            }
+            if (kind === 'duplicate') {
+                undoHistoryStore.set({ past: [entry], future: [entry] });
+            }
             await expectRefused(undo);
         }
     );
@@ -396,8 +417,9 @@ describe('recording replay preserves peer ownership (#5288)', () => {
     it('refuses detached or missing inverse association and accepts the fresh current inverse', async () => {
         await record();
         const entry = undoHistoryStore.value!.past[0]!;
-        if (entry.kind !== 'action' || entry.inverseAction?.type !== 'discardRecording')
+        if (entry.kind !== 'action' || entry.inverseAction?.type !== 'discardRecording') {
             throw new Error('expected recording inverse');
+        }
         const original = entry.inverseAction;
         const detached = structuredClone(original);
         const before = witness();
@@ -417,8 +439,9 @@ describe('recording replay preserves peer ownership (#5288)', () => {
     it('rejects both replay actions through the real isolated preview capability boundary', async () => {
         await record();
         const entry = undoHistoryStore.value!.past[0]!;
-        if (entry.kind !== 'action' || !entry.inverseAction || !entry.redoAction)
+        if (entry.kind !== 'action' || !entry.inverseAction || !entry.redoAction) {
             throw new Error('expected replay actions');
+        }
         const before = witness();
         for (const action of [entry.inverseAction, entry.redoAction]) {
             const command = createVersionedCommandEnvelope({
@@ -498,8 +521,9 @@ describe('recording replay preserves peer ownership (#5288)', () => {
             entry.kind !== 'action' ||
             entry.inverseAction?.type !== 'discardRecording' ||
             entry.redoAction?.type !== 'restoreRecording'
-        )
+        ) {
             throw new Error('expected recording actions');
+        }
         const before = witness();
         const read = vi.spyOn(commandUseCases, 'readUndoEntryForInverse');
         const context: HandlerValidationContext = {

@@ -21,10 +21,12 @@ export function readUndoEntryForInverse(inverse: AppAction): HandlerSessionActio
     if (!match) {
         return null;
     }
-    const captured: HandlerSessionActionEntry = {
+    const captured = {
         action: match.action,
         inverseAction: match.inverseAction,
-        ...(match.redoAction ? { redoAction: match.redoAction } : {}),
     };
+    if (match.redoAction) {
+        return structuredClone({ ...captured, redoAction: match.redoAction });
+    }
     return structuredClone(captured);
 }

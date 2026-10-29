@@ -92,8 +92,9 @@ describe('readUndoEntryForInverse', () => {
             result?.action.type !== 'commitRecording' ||
             result.inverseAction?.type !== 'discardRecording' ||
             result.redoAction?.type !== 'restoreRecording'
-        )
+        ) {
             throw new Error('expected recording capture');
+        }
         expect(result.action).not.toBe(entry.action);
         expect(result.inverseAction).not.toBe(inverse);
         expect(result.redoAction).not.toBe(entry.redoAction);
