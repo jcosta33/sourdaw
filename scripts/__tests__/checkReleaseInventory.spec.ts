@@ -3505,14 +3505,16 @@ describe('release inventory', () => {
             const { jsonPath } = writeGrandBouleMeasurementFixture(root);
             const markdownPath = join(root, 'crates/daw-dsp/benches/quantum-cost-table.md');
             const originalMarkdown = readFileSync(markdownPath, 'utf8');
-
-            writeFileSync(
-                markdownPath,
-                originalMarkdown.replace(
-                    '| Audio thread, worst quantum, upper bound | 2.1 |',
-                    '| Audio thread, worst quantum, upper bound | 9.9 |'
-                )
+            const originalRow = '| Audio thread, worst quantum, median-based total | 2.1 |';
+            const staleMarkdown = originalMarkdown.replace(
+                originalRow,
+                '| Audio thread, worst quantum, median-based total | 9.9 |'
             );
+
+            expect(() => assertGrandBouleMeasurementAdmission(root)).not.toThrow();
+            expect(originalMarkdown).toContain(originalRow);
+            expect(staleMarkdown).not.toBe(originalMarkdown);
+            writeFileSync(markdownPath, staleMarkdown);
             expect(() => assertGrandBouleMeasurementAdmission(root)).toThrow(
                 'generated region does not match JSON rendering'
             );
