@@ -1,0 +1,218 @@
+.agents/skills/delivery-orchestration/historical-stack-admission.md
+  h_beb54bf43b47b7 49-93
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 14-28,396-414,495-498,851-865
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 197-202,463-484
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 314-343,472-475
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-23,496-499,846-849,1298-1324,1372-1377,1827-1841
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 134-248,1018-1022,1121-1123,1137-1138,1140-1148,1189,1196,1219-1222,1276,1278-1294,1298-1326,1666-1667,1783-1785,1840-1847,3251-3255,3286-3290,3320-3436
+crates/daw-dsp/src/grinder/input.rs
+  h_beb54bf43b47b7 69-73,116-121,344-505
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  h_beb54bf43b47b7 1-668
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 20,113,136-139,161,266-275,457-520,997-1005
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  h_beb54bf43b47b7 134,310-330,333,494-496,630-1220,1937-2617
+docs/README.md
+  h_beb54bf43b47b7 21-22
+docs/design-system.md
+  h_beb54bf43b47b7 1-36
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 344,351,355,368,411
+electron/commands.ts
+  h_beb54bf43b47b7 54,61,65,78,120
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1153-1166,1211-1269,1334-1349
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,21-34,79-137,202-217
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+scripts/__tests__/historicalStackAdmission.spec.ts
+  h_beb54bf43b47b7 2,4,9-10,17-23,26-27,36,1551-2399
+scripts/__tests__/supersedePullRequest.spec.ts
+  h_beb54bf43b47b7 25,5770-5872
+scripts/__tests__/trustedGithubWriteBootstrap.spec.ts
+  h_beb54bf43b47b7 352-354,526-528
+scripts/laneStackForkMarkers.ts
+  h_beb54bf43b47b7 1-12,24-533
+scripts/stackedLanes.ts
+  h_beb54bf43b47b7 5,7-18,22-27,38,44-76,83-87,100,105-116,447,517-618
+scripts/supersedePullRequest.ts
+  h_beb54bf43b47b7 2,27-33,55,61-81,175-178,804,815-921,1845-1847
+scripts/syncParentLane.ts
+  h_beb54bf43b47b7 3,18-24,29-31,54-56,66,70-86,90-98,100-111,113-114,116,130,133,163,227-239,242-250,252-255,259-269,271-272,278-280,296,331-333,338,346-372,379-380,481,580,588-590
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 140,536,2111,2282,2894,3125-3133,3785,4721,5054,5477,5630,6494,6557,6827,7169,7229-7237,7358,7556,8420,8861,8960,9203,9833,10310,10400,11543,11678,12002,13127,13847,14090,14540,15296,15467,15620,15629,15863,16142,16466,16601,16799,17312,17564,17762,17969,18500,19814,19904,20300,20822,20948,21281,22091,23351,23432,23594,24323,24575,24854,24899,25043
+src/components/daw/ControlGallery.tsx
+  h_beb54bf43b47b7 1-223
+src/components/daw/Fader.tsx
+  h_beb54bf43b47b7 11-18,90-93,135-136,160,163,276,301-307,399-405,408,410-414,418-424,461-462,466,483,492,502-503,507
+src/components/daw/RotaryKnob.tsx
+  h_beb54bf43b47b7 48-50,494-500,504-506,508,510-513
+src/components/daw/__tests__/ControlGallery.spec.tsx
+  h_beb54bf43b47b7 1-75
+src/components/daw/__tests__/Fader.spec.tsx
+  h_beb54bf43b47b7 4-5,57-122,194-221
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_beb54bf43b47b7 676-740
+src/modules/Arrangement/useCases/__tests__/projectTrackToLiveStrip.spec.ts
+  h_beb54bf43b47b7 4,31,65,100,625-856
+src/modules/Arrangement/useCases/projectTrackToLiveStrip.ts
+  h_beb54bf43b47b7 10,12-13,28,41-47,88-93,95,98-100,106-150,156-158,161-163,166-167,169-171,174-188,204,213,238-239
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  h_beb54bf43b47b7 332,1217,1240,1274,1285,1287-1288,1329,1334,1336,1339,1343
+src/modules/AudioEngine/useCases/exportStems.ts
+  h_beb54bf43b47b7 10-11,43,239-242,244-245,254,476-501,507,509-521,523-526,534
+src/modules/AudioEngine/useCases/offlineRender/cropHistoryFromRenderedBuffer.ts
+  h_beb54bf43b47b7 5,8-13,19-20,32-40
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  h_beb54bf43b47b7 43,103-108
+src/modules/AudioEngine/useCases/offlineRender/types.ts
+  h_beb54bf43b47b7 148-160
+src/modules/AudioEngine/useCases/renderOffline.ts
+  h_beb54bf43b47b7 7
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1153-1166,1211-1269,1334-1349
+src/modules/AudioRendering/models/ExportAudioSource.ts
+  h_beb54bf43b47b7 1-14
+src/modules/AudioRendering/models/PcmDitherOptions.ts
+  h_beb54bf43b47b7 1-9
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_beb54bf43b47b7 42,45,187-188,195-211,213,397,401,408-411,430-439,441-454,461-467,470-471,475,477,481,484,486,488-505,507-531,534-535,538-540,543-545,548-555,560-568,581,588,594,622,637,639-640,642-654,659-660,692,723-724,729-738,749,756-757,782,791-792,794-801,816,825-833,835,838,841-846,851
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 11,81-89,94-96,107,119,144-146,157,167,174-176,283-291,295-299,352-368,371-385,387-450,701-703,747,749,755-759,769-784,786-795,797-802,804-807,809-814,816-821,823,840,854,856,865-870,918,1349-1363,1379-1380,1402,1415-1416,1456,1474-1475,1531-1536,1543-1544,1553,1715-1717,1738-1740,2000,2311,2313-2344,2346-2392,2395-2514,2516-2519,2521-2523,2526-2527,2529-2531,2537-2593,2607-2612,2615,2618-2619
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  h_beb54bf43b47b7 1-1209
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createIncrementalMd5.spec.ts
+  h_beb54bf43b47b7 1-28
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createPcmBlockReader.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  h_beb54bf43b47b7 2-4,21-22,25-41,107,195-280
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/flacEncoder.spec.ts
+  h_beb54bf43b47b7 45,47
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/mp3Encoder.spec.ts
+  h_beb54bf43b47b7 29,49
+src/modules/AudioRendering/repositories/audioEncoders/applyExportNormalization.ts
+  h_beb54bf43b47b7 4-5,10-11,43,64
+src/modules/AudioRendering/repositories/audioEncoders/convertFloatChannelsToPcm.ts
+  h_beb54bf43b47b7 1-6,43,45-63,65-67,69,71
+src/modules/AudioRendering/repositories/audioEncoders/createIncrementalMd5.ts
+  h_beb54bf43b47b7 1-94
+src/modules/AudioRendering/repositories/audioEncoders/createPcmBlockReader.ts
+  h_beb54bf43b47b7 1-96
+src/modules/AudioRendering/repositories/audioEncoders/flacEncoder.ts
+  h_beb54bf43b47b7 1,3-5,141,144,146,324-333,336-344,349-380,382-404,406-407,411-422,424-425,427-428,430-433,435-440,442-446,448,450-451,453,458,460-469
+src/modules/AudioRendering/repositories/audioEncoders/mp3Encoder.ts
+  h_beb54bf43b47b7 3,5-6,8-17,20-28,30-31,33-45,47-48,52,55,57,59-68
+src/modules/AudioRendering/repositories/audioEncoders/wavEncoder.ts
+  h_beb54bf43b47b7 1,3-4,6-20,22,24-38,40-41,45-49,51-62,66-68,72,75-76,78-123,125-134
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExport.nativeCancellation.spec.ts
+  h_beb54bf43b47b7 1-180
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  h_beb54bf43b47b7 1-173
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  h_beb54bf43b47b7 1-276
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  h_beb54bf43b47b7 1-247
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  h_beb54bf43b47b7 1-132
+src/modules/AudioRendering/useCases/audioBufferToMp3.ts
+  h_beb54bf43b47b7 1,12-26,28,32-34,36-43
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  h_beb54bf43b47b7 1-123
+src/modules/AudioRendering/useCases/normalizeExportBuffer.ts
+  h_beb54bf43b47b7 7-8
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  h_beb54bf43b47b7 3,11,25,28,570-602,606-619
+src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx
+  h_beb54bf43b47b7 6,82,86-89,147,187-220
+src/modules/Automation/stores/index.ts
+  h_beb54bf43b47b7 6
+src/modules/Automation/stores/modulationDragPreviewStore.ts
+  h_beb54bf43b47b7 1-9
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 14-15,93,101,112
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 110-112,130
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 195-255,285-286,288-291,302-305
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  h_beb54bf43b47b7 55-56,60-66
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.gain.integration.spec.tsx
+  h_beb54bf43b47b7 1-102
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx
+  h_beb54bf43b47b7 32-53,225,237-241
+src/modules/MixerConsole/presentations/views/Mixer/ExpandedChannelStrip.tsx
+  h_beb54bf43b47b7 708-709
+src/modules/MixerConsole/presentations/views/Mixer/MasterGainControl.tsx
+  h_beb54bf43b47b7 89-90
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/ExpandedChannelStrip.spec.tsx
+  h_beb54bf43b47b7 192-195,209-210
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterGainControl.spec.tsx
+  h_beb54bf43b47b7 53-73
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 33,662-667,679-683,685,687,795,797-799,919,943,982
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 1-9,11,25,74-82,85-130,163,178,181-183,185,188-198,205-215,258-297,367-487,594-632
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  h_beb54bf43b47b7 3,6-38,69-74,110-119,177-178,186-481,483-515
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 65,203-206
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.integration.spec.ts
+  h_beb54bf43b47b7 1-573
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_beb54bf43b47b7 159-168,208,214,261-268,271-276,364-365,369,394,419,423-487
+src/modules/Transport/useCases/ensureTrackStrips.ts
+  h_beb54bf43b47b7 12,20-23,27,75,77,80,82-89,97-110
+src/routeTree.gen.ts
+  h_beb54bf43b47b7 13,20-24,28,32,37,41,43-44,49,61-67,73
+src/routes/__tests__/dev.control-gallery.spec.tsx
+  h_beb54bf43b47b7 1-39
+src/routes/dev.control-gallery.tsx
+  h_beb54bf43b47b7 1-12
+src/utils/__tests__/audioLevelLaw.spec.ts
+  h_beb54bf43b47b7 9-10,82-125
+src/utils/__tests__/desktopBridge.spec.ts
+  h_beb54bf43b47b7 5-9,79-114
+src/utils/__tests__/routingCycle.spec.ts
+  h_beb54bf43b47b7 93-122
+src/utils/audioLevelLaw.ts
+  h_beb54bf43b47b7 47-129,270-271
+src/utils/desktopBridge.ts
+  h_beb54bf43b47b7 253-283
+src/utils/routingCycle.ts
+  h_beb54bf43b47b7 54,56,59-60,62,69,72-74,76,102,115,127,140,149
+src/utils/sourdawCommandArguments.ts
+  h_beb54bf43b47b7 29,36,40,53,96
+tests/e2e/controlGallery.spec.ts
+  h_beb54bf43b47b7 1-62
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 18,22
+tests/e2e/exportAudioEvidence.spec.ts
+  h_beb54bf43b47b7 8,90-92,94-101,103-120,122-127,129-172
+tests/e2e/exportFilePickerCapture.ts
+  h_beb54bf43b47b7 1-216
+tests/e2e/exportStemsModeTestId.spec.ts
+  h_beb54bf43b47b7 1-2,4,7,15-73,96,98-139,141-150,156,158-161
+tests/e2e/modulationHaloInteraction.spec.ts
+  h_beb54bf43b47b7 1-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f329494b946c6b82b13b5bf9e72acec46d425d6b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
