@@ -102,6 +102,19 @@ to an unrelated slot after a local edit, and require the runtime fields to survi
 takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
 fingerprint: ask which caller it speaks for.
 
+### 2026-10-29 — failed Freeze settlement needs current attempt authority (PR #2597 escape)
+
+The #2597 diagnostic/no-history escape requires a separate failure settlement after the render
+refuses. That continuation must still belong to the exact project root, revision, task and freeze
+aggregate when admitted and immediately before commit. A track ID or reused project timestamp
+cannot establish ownership, and the old attempt must not clear a newer task in its finalizer.
+
+Hold settlement admission and separately its staged-write commit boundary. Cancel, start a newer
+task, replace the root with the same timestamp and track ID, remove/recreate the track, or replace
+its take. Require the successor to survive with no failed-Freeze history. Pair each refusal with
+a genuinely current retry that persists its reason and later freezes, undoes and redoes normally.
+The missed real Command/durable-state stance cannot be replaced by a direct use-case callback.
+
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
 The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;

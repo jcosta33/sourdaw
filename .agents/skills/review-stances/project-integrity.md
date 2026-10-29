@@ -206,6 +206,21 @@ PR #4111 introduced Yeast processor undo guards without exercising the codec's d
 
 Review every serialized inverse guard through its real prepare, write, fresh durable projection, undo, and redo route. Reorder nested object keys and pass absent, explicitly undefined, empty, and populated optional fields through their owning codec. Unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
 
+## Lesson from the PR #2597 failed-Freeze transaction escape
+
+PR #2597 returned no-write after staging Freeze's error in the render transaction inherited
+from #2387. Aborting the failed render correctly suppressed successful history but also erased
+its diagnostic. Settle that reason through a separate typed, non-undoable action while retaining
+the prior freeze aggregate; do not commit the refused render to keep its error.
+
+Probe the actual registered action against raw CRDT, store projection, material and history.
+Withdraw task, cancellation, root, revision or expected-aggregate authority both before admission
+and after settlement stages its replacement but before commit. A late attempt must preserve its
+successor. Keep genuine rollback, cleanup and storage failures observable, and preserve the
+committed classification when storage publishes before throwing. Compose any caller fence with
+handler and production-brief validation, and retain Redo capture discard on refusal and proven
+publication/settlement on durable or ambiguous commits.
+
 ## Lesson from the PR #806 transaction-scope escape
 
 PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until
