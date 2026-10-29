@@ -1,0 +1,30 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 197-200
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 592-595
+src/modules/Arrangement/handlers/recording/__tests__/recordingReplayOwnership.integration.spec.ts
+  h_beb54bf43b47b7 1-517
+src/modules/Arrangement/handlers/recording/handleDiscardRecording.ts
+  h_beb54bf43b47b7 6,16-22
+src/modules/Arrangement/handlers/recording/handleRestoreRecording.ts
+  h_beb54bf43b47b7 4,8,19-23,25-31,33
+src/modules/Arrangement/handlers/recording/recordingReplayOwnership.ts
+  h_beb54bf43b47b7 1-66
+src/modules/Command/useCases/__tests__/readUndoEntryForInverse.spec.ts
+  h_beb54bf43b47b7 1-107
+src/modules/Command/useCases/index.ts
+  h_beb54bf43b47b7 104
+src/modules/Command/useCases/readUndoEntryForInverse.ts
+  h_beb54bf43b47b7 1-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a59d440d52de99b718322b404d0c1b1eff5e36c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
