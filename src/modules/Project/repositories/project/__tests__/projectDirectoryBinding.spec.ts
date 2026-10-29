@@ -128,10 +128,33 @@ describe('private project directory binding cache', () => {
         const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
         const earlierRead = binding.loadProjectDirectoryRoot('P');
         const clear = binding.clearLastProjectDirectoryBinding('P');
-        await Promise.all([earlierRead, clear]);
+        const [readRoot] = await Promise.all([earlierRead, clear]);
+        expect(readRoot).toBeNull();
         expect(binding.cachedProjectDirectoryRoot('P')).toBeNull();
         expect(await binding.loadProjectDirectoryRoot('P')).toBeNull();
         expect(await binding.loadProjectDirectoryBinding('last')).toBeNull();
+    });
+
+    it('does not revive an older root when the selected folder bookmark fails', async () => {
+        const first = new SelectedDirectory('A');
+        const initial = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+        await initial.bindProjectDirectoryRoot('P', first, 'saved-P');
+        vi.resetModules();
+        const binding = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+        const earlierRead = binding.loadProjectDirectoryRoot('P');
+        const failure = new Error('Private bookmark unavailable');
+        vi.spyOn(indexedDB, 'open').mockImplementationOnce(() => {
+            throw failure;
+        });
+        await expect(binding.bindProjectDirectoryRoot('P', new SelectedDirectory('B'), 'saved-P')).rejects.toBe(
+            failure
+        );
+        await expect(earlierRead).resolves.toBeNull();
+        expect(binding.cachedProjectDirectoryRoot('P')).toBeNull();
+        await expect(binding.loadProjectDirectoryRoot('P')).resolves.toBeNull();
+        vi.resetModules();
+        const cold = (await import('../projectDirectoryBinding')).projectDirectoryBinding;
+        expect(await cold.loadProjectDirectoryRoot('P')).toBe(first);
     });
 
     it('caches a current durable read and exposes database open failures', async () => {
