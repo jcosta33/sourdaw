@@ -196,7 +196,7 @@ The collector protection test must also include finalized recovery storage durin
 
 ## Escape: repairing attached composite conflicts cloned live proxies (PR #4292)
 
-PR #4292 (`ac8e123b5e`) introduced a repair path that passed attached Automerge map and list proxies to `structuredClone`, which throws `Cannot create a reference to an existing document object`. The scalar conflict case did not exercise either composite shape. Keep that escape distinct from the actor-order flake recorded below in the test-validity guidance.
+PR #4292 (`ac8e123b5e`) introduced a repair path that passed attached Automerge map and list proxies to `structuredClone`. The map input throws `DataCloneError: '#<Object> could not be cloned.'`; the list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar conflict case did not exercise either composite shape. Keep this escape distinct from the actor-order flake in `test-validity.md`.
 
 For project integrity, create real concurrent conflicts at the `tracks` map and `tracks.tracks` list with two fixed actors, then run the registered `repairProjectData` action. Verify the conflict and repair gate clear while the complete resolved tracks and MIDI remain identical in the raw document and projected stores, including exact `0.9999999999999999` gain, MIDI offset, and duration leaves. Save and reload actual Automerge bytes, rebuild projections, then run the registered `setTrackPan` action; the raw document and projection must agree and the edit must create one undo entry.
 
