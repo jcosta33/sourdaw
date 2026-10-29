@@ -1,0 +1,25 @@
+scripts/trustedGithubWriteBootstrap.ts
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 190
+release/open-source-inventory.json
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 169-170,403,1347,1351,1761,1769
+scripts/reviewRiskPolicy.ts
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 171
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 1158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3b9bac81a3f0db80223cd7e89512b3d3f552903",
+  "prompts": {},
+  "sessions": {
+    "s_4a92fcb4f3e922": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188d4-5e00-7b41-a25f-393f9e294d9d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
