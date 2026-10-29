@@ -1,0 +1,46 @@
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_3168504f6ce387::t_72db4e332009fd 908-912,914,920,922-926,938-944,946-950
+src/modules/AudioEngine/repositories/nativeEngineIncarnation.ts
+  s_3168504f6ce387::t_2c783ef09a96a2 1-9,12-15
+  s_3168504f6ce387::t_a65b4bfb47edb4 10-11
+crates/sourdaw-native/src/commands/graph.rs
+  s_3168504f6ce387::t_dd9eb2f276fe80 5547-5562
+  s_3168504f6ce387::t_2ed2438a0ba580 956-958,1097,1122-1126,1142,1164,1185,1344,1374,1390-1399,5047-5048,5078
+  s_3168504f6ce387::t_ae86f6278f1d0b 5563-5565
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_3168504f6ce387::t_9b26e1e2e3bdcf 55-71
+src/modules/AudioEngine/repositories/__tests__/nativeEngineIncarnation.spec.ts
+  s_3168504f6ce387::t_ac2b7529be1ad6 1-32
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_3168504f6ce387::t_a65b4bfb47edb4 104-105,107
+  s_3168504f6ce387::t_756d8cb4e0915a 8
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_3168504f6ce387::t_72db4e332009fd 1299-1306
+  s_3168504f6ce387::t_445abb02035166 153-155,251,503-506,526,533-535,1085
+  s_3168504f6ce387::t_2c783ef09a96a2 1307
+  s_3168504f6ce387::t_cf7caf290e1972 1308-1309
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_3168504f6ce387::t_2c783ef09a96a2 1022-1023
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_3168504f6ce387::t_2c783ef09a96a2 13-14
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_3168504f6ce387::t_ac2b7529be1ad6 53,189,196
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_3168504f6ce387::t_9b26e1e2e3bdcf 122-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5933f0a4133e969751fe46081119289e7e6b3a51",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
