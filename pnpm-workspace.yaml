@@ -1,6 +1,10 @@
 packages:
     - .
 
+# CI defaults this to false; pin it so local freshness checks agree without
+# reinstalling. Keep each checkout's installed virtual store private.
+enableGlobalVirtualStore: false
+
 allowBuilds:
     esbuild: true
     core-js: false

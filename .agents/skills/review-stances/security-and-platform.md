@@ -56,6 +56,19 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-29 — private install ownership omitted cross-environment settings (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6; CI defaults an unset virtual-store setting to false, but
+local freshness comparison still sees unset. Existing ownership checks could accept the install
+while an ordinary local package command refused it. Historical private prompts and tiers are
+unestablished; this refusal does not establish a security exposure.
+
+Probe the real pinned runner with a private offline install under CI followed by local and CI
+package commands using repository workspace policy. Require unchanged lock/ownership metadata and
+a checkout-private virtual tree while retaining shared download-cache policy and freshness checks.
+Removing the explicit false pin must expose the same setting mismatch; a precheck bypass, metadata
+rewrite or different CI environment cannot carry that proof.
+
 ### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
 
 PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455

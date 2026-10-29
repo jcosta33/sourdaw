@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — an owned CI install was not fresh under local defaults (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6 and moved build policy into the workspace. CI records an
+unset `enableGlobalVirtualStore` as false, while a local unset value disagrees during freshness
+checking. Ownership-only fixtures could not observe that environment transition. Historical private
+prompts and tiers are unestablished.
+
+Copy the real repository workspace policy into an offline file-dependency fixture with its own
+store and install. Install under CI, then run error-mode and normal package probes under explicit
+CI=false and CI=true with inherited configuration isolated. Require the pinned runtime, original
+lock and install metadata, private owner/store paths and no installation output. Removing only
+the workspace pin must fail the same case with the exact setting-changed error; restoring it passes.
+
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
 The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
