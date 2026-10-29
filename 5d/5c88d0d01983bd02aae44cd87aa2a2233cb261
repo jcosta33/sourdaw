@@ -1,0 +1,16 @@
+src/modules/Arrangement/handlers/clip/__tests__/handleDetectTransients.spec.ts
+  h_beb54bf43b47b7 4-5,36-112
+src/modules/Arrangement/handlers/clip/handleDetectTransients.ts
+  h_beb54bf43b47b7 23-51,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d5c88d0d01983bd02aae44cd87aa2a2233cb261",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
