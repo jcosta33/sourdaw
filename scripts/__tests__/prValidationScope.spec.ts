@@ -2107,6 +2107,8 @@ describe('repository tooling selects no browser suite', () => {
         'release/web-artifact-manifest.json',
         '.agents/skills/review-stances/stances.json',
         'crates/daw-dsp/README.md',
+        '.gitleaksignore',
+        '.gitleaks.toml',
     ])('keeps %s on broad non-browser validation', (path) => {
         const plan = selectValidationPlan([path], INVENTORY);
         expect(plan).toMatchObject(BROAD_WITHOUT_BROWSER);
@@ -2129,24 +2131,45 @@ describe('repository tooling selects no browser suite', () => {
         }
     });
 
-    it('lets the product path decide browser selection when scripts change beside it', () => {
-        const full = selectValidationPlan(['scripts/gen-daw-dsp-worklet.ts', 'src/app/bootstrap.ts'], INVENTORY);
-        expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
-        expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
-
-        const paths = ['scripts/gen-daw-dsp-worklet.ts', TUNER];
-        const productPaths = productPathsOf(paths, INVENTORY, false);
-        expect(productPaths).toEqual([TUNER]);
-        expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
-        const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
-            kind: 'narrow',
-            specs: [...TUNER_SPECS],
-            browserAi: false,
-            owners: ['Tuner'],
-        });
-        expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
-        expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+    it.each([
+        ['.gitleaksignore', false],
+        ['.gitleaks.toml', true],
+    ] as const)('preserves broad validation and CodeQL selection for %s', (path, codeql) => {
+        expect(selectValidationPlan([path], INVENTORY)).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql });
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
     });
+
+    it.each(['.gitleaksignore.bak', '.gitleaks.toml.bak', 'config/.gitleaksignore', 'config/.gitleaks.toml'])(
+        'retains full browser coverage for unrecognized scanner path %s',
+        (path) => {
+            const plan = selectValidationPlan([path], INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+            expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+        }
+    );
+
+    it.each(['scripts/gen-daw-dsp-worklet.ts', '.gitleaksignore', '.gitleaks.toml'])(
+        'lets the product path decide browser selection when %s changes beside it',
+        (toolingPath) => {
+            const full = selectValidationPlan([toolingPath, 'src/app/bootstrap.ts'], INVENTORY);
+            expect(full).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(full)).toEqual(fullInventory(INVENTORY));
+
+            const paths = [toolingPath, TUNER];
+            const productPaths = productPathsOf(paths, INVENTORY, false);
+            expect(productPaths).toEqual([TUNER]);
+            expect(canNarrow({ productPaths, candidateDiff: `M\0${TUNER}\0`, integrationDiff: '' })).toBe(true);
+            const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+                kind: 'narrow',
+                specs: [...TUNER_SPECS],
+                browserAi: false,
+                owners: ['Tuner'],
+            });
+            expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+            expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+        }
+    );
 
     it('keeps Markdown inside product trees on the product route', () => {
         const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
