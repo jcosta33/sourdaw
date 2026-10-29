@@ -1,0 +1,19 @@
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_567a084d0540c4::t_dc20259cdb6696 4-5,8,453-466
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f27b75c01662b62f56a761e204723ec01ddd6ee",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
