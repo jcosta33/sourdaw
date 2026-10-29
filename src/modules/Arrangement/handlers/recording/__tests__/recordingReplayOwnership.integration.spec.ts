@@ -21,6 +21,7 @@ import {
     setActionHistoryMetadataPort,
     undo,
 } from '#/modules/Command/useCases';
+import * as commandUseCases from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
     getCrdtDoc,
@@ -30,11 +31,10 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
-import * as commandUseCases from '#/modules/Command/useCases';
 import { createHandler } from '#/utils/createHandler';
 import { type HandlerValidationContext } from '#/utils/handlerContract';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { type ConfirmPayload, type NotifyPayload, type PromptPayload } from '#/utils/Notification/notificationEventBus';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';

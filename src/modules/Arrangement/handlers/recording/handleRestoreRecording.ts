@@ -38,6 +38,7 @@ export const handleRestoreRecording = createHandler<'restoreRecording'>({
             controlChangeSnapshot: midiCcSnapshot,
             pitchBendSnapshot: midiPitchBendSnapshot,
         });
+        return undefined;
     },
     describe: () => ({ label: 'Restore recording' }),
     undoable: false,
