@@ -1,0 +1,25 @@
+src/modules/Arrangement/handlers/clip/__tests__/compRegionSplitTakeReKey.integration.spec.ts
+  s_29d8df116c5b92::t_726b9859111df3 287-295,297,312
+  s_29d8df116c5b92::t_b1f235e729d5f6 162,269-286,296,298-311,313-424,426-431,433-449,451-464,466-471,473-475
+  s_29d8df116c5b92::t_bead4db9821677 7-8,27-28,32,146,148-149,151-161,163-217,222-238
+  s_29d8df116c5b92::t_2dfd74776b8e7a 425,432,450,465,472
+  s_29d8df116c5b92::t_f9d4d1ff6cc168 147,150,218-221
+  s_29d8df116c5b92::t_e1ea896e54a114 268
+  s_29d8df116c5b92::t_9b86bd12e92dda 476-477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "445326df55480d8090ae00c37d28fc7af0563d85",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
