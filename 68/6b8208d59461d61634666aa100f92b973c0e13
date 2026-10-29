@@ -1,0 +1,34 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 866-879
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 504-509
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 530-535,1888-1901
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 1102,1988,2023,2069,2134,2272,2333,2744-2745,2747,2750,2764-2766,2772,2775-2777,2780,2782,2786-2791,2803-2810,3312,3467,3525
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 12036-12039,12048-12050,12094,12112,12119
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "686b8208d59461d61634666aa100f92b973c0e13",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
