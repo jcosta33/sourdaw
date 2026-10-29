@@ -1207,10 +1207,10 @@
                 "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
-                "tracked-set-sha256:30337272c2637b5a5e56052488dab7eb0079b4cf492fb6d0d8387338bdf2b46b:grand-boule-factory-admission",
-                "tracked-set-sha256:289686b414ccdbe7f94460885c05e7962d8b0648e1e2e24742ad279baa3eb1ff:grand-boule-live-runtime",
+                "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
+                "tracked-set-sha256:9add2037c2766126e9d3f40d23500167897ae0e2407b680b15cf8818b5078edc:grand-boule-live-runtime",
                 "tracked-set-sha256:3f4f7ef7d2a6ca4a1f518d2e7a6675387c783395d13a12e03448861ab4f913fc:grand-boule-project-state",
-                "tracked-set-sha256:9dfc4486bfff344cbf90042c46ea3d598121bb595ec1d2244221afe6589d5a2b:grand-boule-offline-composition",
+                "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
                 "tracked-set-sha256:5c8a902914cd511ac233d288fb021f4dfb034ddcc8e16f134aa92c3ce59304d5:grand-boule-release-proof"
             ],
             "licenses": [
@@ -1342,13 +1342,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:0c5bc8ace4f960c08e1d0880bb2a7d43617ec93cd04def2843682c8bb96d6ac6",
+                "daw-dsp sha256:8c2023ca2a578e034e1648410a3b75a77335e4d22c39fa7cfa7e5146632bdbed",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
-                "scoring sha256:8c2052047e0c114422aa9700391243160392266fc8d732e1d75bf3d7fa55714f"
+                "scoring sha256:b4cf4abd85bc99e90b9f47ac992a6223808b53e09d699b6d074bf38763d60e5a"
             ],
             "digests": [
-                "sha256:d94418bed9b08a3f30e2a6f4fa136d397fa2ea97201745202c624707a790ba9e:public/wasm/manifest.json"
+                "sha256:bb39cce07d2584bfee6a2fbd74784687a1387d4b5977d172e16d7474ece1bfc0:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1766,7 +1766,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "d94418bed9b08a3f30e2a6f4fa136d397fa2ea97201745202c624707a790ba9e"
+            "sha256": "bb39cce07d2584bfee6a2fbd74784687a1387d4b5977d172e16d7474ece1bfc0"
         }
     ],
     "externalReferences": [
