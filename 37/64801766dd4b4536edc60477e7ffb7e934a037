@@ -1,0 +1,38 @@
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 7160,9815,10382,11660,14531,15458,15854,16457,16790,18491,20813,21272,23423,24566
+src/infra/store/storage/__tests__/createAutomergeStorage.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 71-76,80-82,164-202
+src/infra/store/storage/createAutomergeStorage.ts
+  h_beb54bf43b47b7 870-872
+src/modules/Arrangement/handlers/clip/__tests__/handleDetectTransients.spec.ts
+  h_beb54bf43b47b7 81,113
+src/modules/Arrangement/handlers/clip/handleDetectTransients.ts
+  h_beb54bf43b47b7 25-27,29-34,40-42,50-52,54-56,138-140
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 91-93,130-132,135-137,163-165,167-169,179-180,182-185,187-188,194-196,220-221,223-227,266-268,274-276,293-295,303-305,307-309
+src/modules/ElasticAudio/models/__tests__/TransientDetection.spec.ts
+  h_beb54bf43b47b7 61-66,70-72,76-78
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 120-122,196-198,203-205,223-225,228-230
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 121-125,160-162,456-458,473-478,487-504,550-552,574-576,843-845,854-856,860-862,867-869,897-899
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 44-46,56-73
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 26-31,36-38,40-42,50-52,81-83
+src/modules/ElasticAudio/useCases/elasticAudio/readClipTransientOnsets.ts
+  h_beb54bf43b47b7 208-210,213-215,265-267
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 24-26,30-32,35-37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3764801766dd4b4536edc60477e7ffb7e934a037",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
