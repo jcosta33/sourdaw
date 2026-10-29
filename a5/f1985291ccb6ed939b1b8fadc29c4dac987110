@@ -1,0 +1,14 @@
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 30-32,36,342
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5f1985291ccb6ed939b1b8fadc29c4dac987110",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
