@@ -64,9 +64,9 @@ vi.mock('react-dom/client', async (importOriginal) => {
 function gateApp() {
     let resolve: (value: { App: () => null }) => void = () => undefined;
     let reject: (reason: unknown) => void = () => undefined;
-    mocks.appPromise = new Promise<{ App: () => null }>((resolvePromise, rejectPromise) => {
-        resolve = resolvePromise;
-        reject = rejectPromise;
+    mocks.appPromise = new Promise<{ App: () => null }>((_resolve, _reject) => {
+        resolve = _resolve;
+        reject = _reject;
     });
     return { resolve, reject, promise: mocks.appPromise };
 }
