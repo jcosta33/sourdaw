@@ -1,5 +1,19 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
+`tREG` name `/tmp/no info.txt`. Its public final review lists borrower and incomplete-evidence
+coverage, but the pathname-versus-diagnostic admission probe was missing; historical private prompts
+and tiers are unestablished. A later clean catalog does not explain an earlier unrecorded failure.
+
+Run `keeps diagnostic words in absolute Darwin` and require exact path preservation plus owned-storage
+retention for a borrower. Use injected catalogs only: opening an adversarial filename can poison
+other lanes' global guards. Run `reports bounded Darwin inspection context`, the whole/scoped
+replacement and stable-reason sequences, and the receipt cases with detailed obstruction reasons.
+Revert the pathname distinction to make the new parser assertion fail; remove context propagation
+to make the census assertions fail. Never weaken malformed, missing-type or unknown-type admission.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
@@ -1240,6 +1254,12 @@ Probe that would have caught it: when a diff reads a method off a native or clas
 later, fake that host receiver-sensitively — a plain function or class method that throws unless
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
+
+### Fermenter filter chips changed state without recording Undo
+
+Filter Type originated in `c40d444ff96520cb2f718dd2a397173d72dc1b50` and Filter Model in `66b0569af54525fc983a0632ce0c12d92f83fe90`, both through the direct bridge. Neither source origin has an evidenced public PR association, and historical reviewer prompts and tiers are unknown. A handler-only test cannot observe a panel callback that never dispatches that handler.
+
+Mount the real panel with unconditional entry-point admission and the real registered Command/CRDT path. Assert raw absent-versus-explicit defaults, projected values, pressed chips, independent Model/Type history entries, live macro preservation and both Undo/Redo legs. Hold the actual snapshot wait for latest same-parameter choices and independent different-parameter choices, and vary each stale authority guard separately. Restore only the panel's direct-bridge branch on a committed head: the unchanged owning test must fail its history assertion even while the chip and document update. Controlled engine calls prove parameter-boundary behavior; they do not prove audible, native or hardware acceptance.
 
 ### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
 

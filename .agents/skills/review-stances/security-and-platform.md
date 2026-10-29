@@ -1,5 +1,21 @@
 # Lesson library: security and platform boundaries
 
+### 2026-10-29 — diagnostic words inside a Darwin pathname rejected usable storage evidence (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) matched inspection-error words anywhere in an `lsof` name. A pure
+`tREG` fixture named `/tmp/no info.txt` therefore rejected a complete catalog. The public final
+review covered startup routing, borrower retention, interrupted reclamation, account admission and
+failure reporting; a pathname-versus-diagnostic admission probe was missing. Historical private
+prompts and tiers are unestablished. This counterexample does not identify the cause of a later
+uninstrumented census failure.
+
+Probe absolute REG/DIR paths containing diagnostic words without opening those filenames on the
+shared host. Require the parsed path to veto storage reclamation. Keep unrooted errors and ambiguous
+stat/readlink suffixes fail-closed, preserve whole/scoped replacement proof and the five-second bound,
+and retain only bounded PID, descriptor, type and matched-category context, never unrelated catalog
+names or environment text. Reverting the pathname distinction must fail the parser assertion;
+dropping the retained context must fail the whole/scoped diagnostic assertions.
+
 Lesson library for defects in native authority, renderer trust, platform capabilities, IPC
 exposure, filesystem access, secrets, or operating-system integration. Per the Review section of
 `AGENTS.md`, this directory is a lesson library, not a stance menu: an escape — a defect that
