@@ -2891,7 +2891,7 @@
   {
     "id": "ui-1c2804517312e831",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 711,
+    "line": 713,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -3120,6 +3120,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-1dc4944e3f7e0b46",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 697,
+    "fingerprint": "Button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
     "disposition": "already-migrated"
   },
   {
@@ -6444,15 +6453,6 @@
     "disposition": "semantic-wrapper"
   },
   {
-    "id": "ui-3f5fd8a60c9a5f07",
-    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 606,
-    "fingerprint": "button\t",
-    "kind": "generic-control",
-    "mapping": "Button",
-    "disposition": "eligible"
-  },
-  {
     "id": "ui-3f74bcd3c5bf7ab5",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 423,
@@ -6491,7 +6491,7 @@
   {
     "id": "ui-3fa7dee136ae925a",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 632,
+    "line": 634,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8417,7 +8417,7 @@
   {
     "id": "ui-52eaf9f3da1a83aa",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 633,
+    "line": 635,
     "fingerprint": "DawCompactCheckbox\t",
     "kind": "generic-control",
     "mapping": "DawCompactCheckbox",
@@ -14087,7 +14087,7 @@
   {
     "id": "ui-8c04f267d18d6be0",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 646,
+    "line": 606,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15617,7 +15617,7 @@
   {
     "id": "ui-9d31fdcea360d43b",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 618,
+    "line": 620,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16139,7 +16139,7 @@
   {
     "id": "ui-a2647493ad7e5c06",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 650,
+    "line": 648,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17966,7 +17966,7 @@
   {
     "id": "ui-b4854dfb37c81ebc",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 713,
+    "line": 715,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -19811,7 +19811,7 @@
   {
     "id": "ui-c8750fb146e93384",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 695,
+    "line": 652,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -23348,7 +23348,7 @@
   {
     "id": "ui-ec46fe2a02e492b2",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 690,
+    "line": 692,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -25040,7 +25040,7 @@
   {
     "id": "ui-fcee26de2a637970",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 689,
+    "line": 691,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
