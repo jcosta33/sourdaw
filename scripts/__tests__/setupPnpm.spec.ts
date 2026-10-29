@@ -85,7 +85,7 @@ function configFileProcess(
         `import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 import {join} from 'node:path';
-process.umask(${options.mask ?? 0o022});
+if(process.platform!=='win32')process.umask(${options.mask ?? 0o022});
 const workspace=${JSON.stringify(input.workspace)},dest=${JSON.stringify(options.dest ?? input.dest)},env=${JSON.stringify(input.options.env)};
 const injection=${JSON.stringify(options.injection ?? null)};
 const target=join(workspace,'preserve-config-target');
@@ -124,24 +124,41 @@ console.log(JSON.stringify({creationMask:process.umask(),destinationExists:fs.ex
     return report;
 }
 
-describe('verified JavaScript pnpm setup', () => {
-    it('creates private config files and readable executable directories under the ordinary creation mask', () => {
-        const report = configFileProcess(fixture());
-        expect(report).toMatchObject({
-            creationMask: 0o022,
-            rootMode: 0o755,
-            configMode: 0o700,
-            runtimeMode: 0o755,
-            bootstrapMode: 0o755,
-            files: {
-                'user.npmrc': { mode: 0o600, content: '', symlink: false },
-                'global.npmrc': { mode: 0o600, content: '', symlink: false },
-            },
-            commands: 1,
-            target: 'preserve input',
-            exports: ['', '', ''],
-        });
+function expectConfigCollision(injection: { name: string; kind: 'file' | 'symlink' }) {
+    const report = configFileProcess(fixture(), { injection });
+    expect(report).toMatchObject({
+        files: { [injection.name]: { content: 'preserve input', symlink: injection.kind === 'symlink' } },
+        commands: 0,
+        error: { code: 'EEXIST' },
+        target: 'preserve input',
+        exports: ['', '', ''],
     });
+    if (process.platform !== 'win32') {
+        expect(report).toMatchObject({ rootMode: 0o755, configMode: 0o700 });
+    }
+}
+
+describe('verified JavaScript pnpm setup', () => {
+    it.skipIf(process.platform === 'win32')(
+        'creates private config files and readable executable directories under the ordinary creation mask',
+        () => {
+            const report = configFileProcess(fixture());
+            expect(report).toMatchObject({
+                creationMask: 0o022,
+                rootMode: 0o755,
+                configMode: 0o700,
+                runtimeMode: 0o755,
+                bootstrapMode: 0o755,
+                files: {
+                    'user.npmrc': { mode: 0o600, content: '', symlink: false },
+                    'global.npmrc': { mode: 0o600, content: '', symlink: false },
+                },
+                commands: 1,
+                target: 'preserve input',
+                exports: ['', '', ''],
+            });
+        }
+    );
 
     it.skipIf(process.platform === 'win32').each([
         { mask: 0o000, permissions: 'group and other' },
@@ -166,23 +183,19 @@ describe('verified JavaScript pnpm setup', () => {
         });
     });
 
-    it.each([
-        { name: 'user.npmrc', kind: 'file' },
-        { name: 'global.npmrc', kind: 'file' },
-        { name: 'user.npmrc', kind: 'symlink' },
-        { name: 'global.npmrc', kind: 'symlink' },
-    ] as const)('refuses an existing $name $kind before running any package command', (injection) => {
-        const report = configFileProcess(fixture(), { injection });
-        expect(report).toMatchObject({
-            rootMode: 0o755,
-            configMode: 0o700,
-            files: { [injection.name]: { content: 'preserve input', symlink: injection.kind === 'symlink' } },
-            commands: 0,
-            error: { code: 'EEXIST' },
-            target: 'preserve input',
-            exports: ['', '', ''],
-        });
-    });
+    it.each(['user.npmrc', 'global.npmrc'])(
+        'refuses an existing %s file before running any package command',
+        (name) => {
+            expectConfigCollision({ name, kind: 'file' });
+        }
+    );
+
+    it.skipIf(process.platform === 'win32').each(['user.npmrc', 'global.npmrc'])(
+        'refuses an existing %s symlink before running any package command',
+        (name) => {
+            expectConfigCollision({ name, kind: 'symlink' });
+        }
+    );
 
     it('keeps the default job directory stable for cache paths and refuses reuse of populated storage', () => {
         const input = fixture();
