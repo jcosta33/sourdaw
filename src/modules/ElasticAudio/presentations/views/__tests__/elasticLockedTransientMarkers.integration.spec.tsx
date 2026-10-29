@@ -427,9 +427,11 @@ describe('locked transient markers through the real Elastic editor', () => {
         supplyBuffer(burstSamples());
         const frames = holdAnimationFrames();
         const original = JSON.stringify(getCrdtDoc('root'));
+        const originalProjection = structuredClone(getWarpState(CLIP_ID));
         const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         const frame = await frames.next();
         expect(JSON.stringify(getCrdtDoc('root'))).toBe(original);
+        expect(getWarpState(CLIP_ID)).toEqual(originalProjection);
         expect(undoHistoryStore.value?.past).toHaveLength(0);
         addManualMarker(CLIP_ID, 1.5);
         toggleMarkerLock(CLIP_ID, lockedMarker.id);
