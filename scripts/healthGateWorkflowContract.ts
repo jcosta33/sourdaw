@@ -41,6 +41,7 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
     'cargo-dependency-seed.yml',
+    'reload-cancellation-diagnostic.yml',
 ] as const;
 
 export const WORKFLOW_SNAPSHOT_PATH = 'scripts/__tests__/fixtures/health-gate-workflows.snapshot.json';
@@ -319,6 +320,20 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
         'nightly-report': ['Checkout', 'Open or update the nightly failure issue'],
     },
+    'reload-cancellation-diagnostic.yml': {
+        diagnose: [
+            'Initialize diagnostic evidence',
+            'Checkout diagnostic harness',
+            'Checkout original source',
+            'Set up pinned pnpm',
+            'Restore original lockfile cache',
+            'Record runtime provenance',
+            'Install original dependencies',
+            'Verify original preinstalled browser runtime',
+            'Run one advisory diagnostic',
+            'Upload diagnostic evidence',
+        ],
+    },
 };
 
 // Every step condition in the registered workflows, keyed by file, job, and step
@@ -376,6 +391,7 @@ export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
     ].map((step) => pin('validation.yml', 'static', step, PRODUCT_SCOPE)),
     pin('heavy-gates.yml', 'e2e', 'Report shard failure', SHARD_FAIL),
     pin('heavy-gates.yml', 'e2e', 'Upload blob report', BLOB_UPLOAD),
+    pin('reload-cancellation-diagnostic.yml', 'diagnose', 'Upload diagnostic evidence', ALWAYS_EXPRESSION),
     pin('heavy-gates.yml', 'browser-ai-webgpu', 'Upload Browser AI WebGPU diagnostics', ALWAYS_EXPRESSION),
     pin('nightly.yml', 'unit', 'Report shard failure', SHARD_FAIL),
     pin('nightly.yml', 'desktop-measure', 'Upload the measurement record', ALWAYS),

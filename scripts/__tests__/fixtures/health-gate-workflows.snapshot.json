@@ -7,6 +7,7 @@
     "nightly.yml",
     "pr-checks.yml",
     "quantum-measurements.yml",
+    "reload-cancellation-diagnostic.yml",
     "validation.yml",
     "wasm-artifacts.yml"
   ],
@@ -2947,6 +2948,116 @@
           {
             "name": "Test the native crate",
             "run": "cargo test --package sourdaw-native"
+          }
+        ]
+      }
+    }
+  },
+  "reload-cancellation-diagnostic.yml": {
+    "name": "Reload cancellation advisory diagnostic",
+    "on": {
+      "pull_request": {
+        "types": [
+          "opened"
+        ],
+        "paths": [
+          ".github/workflows/reload-cancellation-diagnostic.yml",
+          "scripts/diagnostics/reloadCancellation/**",
+          "scripts/__tests__/reloadCancellation*.spec.ts"
+        ]
+      }
+    },
+    "permissions": {
+      "contents": "read"
+    },
+    "jobs": {
+      "diagnose": {
+        "name": "Diagnose original reload cancellation",
+        "if": "${{ github.event.action == 'opened' && github.run_attempt == 1 }}",
+        "runs-on": "ubuntu-latest",
+        "container": {
+          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "options": "--init --ipc=host"
+        },
+        "defaults": {
+          "run": {
+            "shell": "bash"
+          }
+        },
+        "timeout-minutes": 75,
+        "steps": [
+          {
+            "name": "Initialize diagnostic evidence",
+            "env": {
+              "DIAGNOSTIC_HEAD": "${{ github.event.pull_request.head.sha }}",
+              "DIAGNOSTIC_RUN": "${{ github.run_id }}",
+              "DIAGNOSTIC_ATTEMPT": "${{ github.run_attempt }}"
+            },
+            "run": "set -euo pipefail\nmkdir -p \"$RUNNER_TEMP/reload-cancellation\"\nprintf 'head=%s\\nrun=%s\\nattempt=%s\\n' \"$DIAGNOSTIC_HEAD\" \"$DIAGNOSTIC_RUN\" \"$DIAGNOSTIC_ATTEMPT\" > \"$RUNNER_TEMP/reload-cancellation/job-identity.txt\"\n"
+          },
+          {
+            "name": "Checkout diagnostic harness",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "${{ github.event.pull_request.head.sha }}",
+              "path": "harness",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Checkout original source",
+            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+            "with": {
+              "ref": "1587850a91b3cb729f5e59492829d297840eeb9d",
+              "path": "original",
+              "persist-credentials": false
+            }
+          },
+          {
+            "name": "Set up pinned pnpm",
+            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "with": {
+              "package_json_file": "original/package.json"
+            }
+          },
+          {
+            "name": "Restore original lockfile cache",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "24.19.0",
+              "cache": "pnpm",
+              "cache-dependency-path": "original/pnpm-lock.yaml"
+            }
+          },
+          {
+            "name": "Record runtime provenance",
+            "run": "set -euo pipefail\n{\n  node --version\n  pnpm --version\n  pnpm store path --silent\n  node -p \"require('./original/package.json').packageManager\"\n} > \"$RUNNER_TEMP/reload-cancellation/runtime.txt\"\ntest \"$(node --version)\" = v24.19.0\ntest \"$(pnpm --version)\" = 11.6.0\n"
+          },
+          {
+            "name": "Install original dependencies",
+            "working-directory": "original",
+            "run": "pnpm install --frozen-lockfile"
+          },
+          {
+            "name": "Verify original preinstalled browser runtime",
+            "working-directory": "original",
+            "timeout-minutes": 2,
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+          },
+          {
+            "name": "Run one advisory diagnostic",
+            "run": "set -o pipefail\nnode harness/scripts/diagnostics/reloadCancellation/run.ts \"$GITHUB_WORKSPACE/harness\" \"$GITHUB_WORKSPACE/original\" \"$RUNNER_TEMP/reload-cancellation\" 2>&1 | tee \"$RUNNER_TEMP/reload-cancellation/collector.log\"\n"
+          },
+          {
+            "name": "Upload diagnostic evidence",
+            "if": "${{ always() }}",
+            "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+            "with": {
+              "name": "reload-cancellation-advisory-${{ github.run_id }}",
+              "path": "${{ runner.temp }}/reload-cancellation/",
+              "retention-days": 7,
+              "if-no-files-found": "error"
+            }
           }
         ]
       }

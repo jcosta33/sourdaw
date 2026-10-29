@@ -427,6 +427,7 @@ const { document: nightlyDocument, parsed: nightly } = loadWorkflow('nightly.yml
 const { parsed: nightlyEvidenceReporter } = loadWorkflow('nightly-evidence-report.yml');
 const { parsed: hostedQuantumMeasurement } = loadWorkflow('quantum-measurements.yml');
 const { parsed: hostedWasm } = loadWorkflow('wasm-artifacts.yml');
+const { parsed: reloadCancellationDiagnostic } = loadWorkflow('reload-cancellation-diagnostic.yml');
 const parsedVercelConfig: unknown = JSON.parse(readFileSync(join(repositoryRoot, 'vercel.json'), 'utf8'));
 const vercelConfig = asRecord(parsedVercelConfig, 'Vercel configuration');
 
@@ -1593,6 +1594,7 @@ type WorkflowSet = {
     nightlyEvidenceReporter: UnknownRecord;
     hostedQuantumMeasurement: UnknownRecord;
     hostedWasm: UnknownRecord;
+    reloadCancellationDiagnostic: UnknownRecord;
 };
 
 function workflowSet(): WorkflowSet {
@@ -1606,6 +1608,7 @@ function workflowSet(): WorkflowSet {
         nightlyEvidenceReporter,
         hostedQuantumMeasurement,
         hostedWasm,
+        reloadCancellationDiagnostic,
     };
 }
 
@@ -1621,6 +1624,10 @@ function cloneWorkflows(label: string): WorkflowSet {
         nightlyEvidenceReporter: asRecord(clone.nightlyEvidenceReporter, `${label} nightly evidence reporter`),
         hostedQuantumMeasurement: asRecord(clone.hostedQuantumMeasurement, `${label} hosted quantum measurement`),
         hostedWasm: asRecord(clone.hostedWasm, `${label} hosted WASM`),
+        reloadCancellationDiagnostic: asRecord(
+            clone.reloadCancellationDiagnostic,
+            `${label} reload cancellation diagnostic`
+        ),
     };
 }
 
@@ -1652,6 +1659,7 @@ function workflowFiles(set: WorkflowSet): ReadonlyArray<readonly [string, Unknow
         ['nightly-evidence-report.yml', set.nightlyEvidenceReporter],
         ['quantum-measurements.yml', set.hostedQuantumMeasurement],
         ['wasm-artifacts.yml', set.hostedWasm],
+        ['reload-cancellation-diagnostic.yml', set.reloadCancellationDiagnostic],
     ];
 }
 

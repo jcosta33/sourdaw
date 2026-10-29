@@ -73,6 +73,9 @@ export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
         'pr-secrets': ['Checkout trusted scanner', 'Checkout scan target'],
     },
     'wasm-artifacts.yml': { 'build-artifacts': ['Checkout workflow control', 'Checkout source head'] },
+    'reload-cancellation-diagnostic.yml': {
+        diagnose: ['Checkout diagnostic harness', 'Checkout original source'],
+    },
 };
 
 // `Gate` is the one required context, and GitHub satisfies it with the newest

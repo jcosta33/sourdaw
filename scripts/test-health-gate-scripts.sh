@@ -210,6 +210,7 @@ const hostedQuantumMeasurement = parse(
     readFileSync(`${process.env.REPO_ROOT}/.github/workflows/quantum-measurements.yml`, 'utf8')
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
+const reloadCancellationDiagnostic = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/reload-cancellation-diagnostic.yml`, 'utf8'));
 const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
@@ -473,6 +474,7 @@ try {
         'nightly.yml': nightly,
         'quantum-measurements.yml': hostedQuantumMeasurement,
         'wasm-artifacts.yml': hostedWasm,
+        'reload-cancellation-diagnostic.yml': reloadCancellationDiagnostic,
     });
 } catch (error) {
     approvalGateError = error;
@@ -519,6 +521,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['reload-cancellation-diagnostic.yml', reloadCancellationDiagnostic],
 ]) {
     for (const violation of gateNameViolations(file, parsed.jobs ?? {})) {
         expect(false, violation);
@@ -593,6 +596,7 @@ for (const [file, parsed, exempt] of [
     ['validation.yml', validationWorkflow],
     ['heavy-gates.yml', heavyWorkflow],
     ['nightly.yml', nightly, 'deploy-web'],
+    ['reload-cancellation-diagnostic.yml', reloadCancellationDiagnostic],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         if (id === exempt) {
@@ -1141,6 +1145,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['reload-cancellation-diagnostic.yml', reloadCancellationDiagnostic],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         expect(
@@ -1198,6 +1203,7 @@ const workflowsByFile = {
     'nightly.yml': nightly,
     'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
+    'reload-cancellation-diagnostic.yml': reloadCancellationDiagnostic,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.
@@ -1633,6 +1639,7 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
+    ['reload-cancellation-diagnostic.yml', reloadCancellationDiagnostic],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         for (const step of job?.steps ?? []) {

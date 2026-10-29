@@ -1,0 +1,101 @@
+name: Reload cancellation advisory diagnostic
+
+# One advisory observation of the original failed merge; this job never mints Gate.
+on:
+  pull_request:
+    types: [opened]
+    paths:
+      - .github/workflows/reload-cancellation-diagnostic.yml
+      - scripts/diagnostics/reloadCancellation/**
+      - scripts/__tests__/reloadCancellation*.spec.ts
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Diagnose original reload cancellation
+    if: ${{ github.event.action == 'opened' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 75
+    steps:
+      - name: Initialize diagnostic evidence
+        env:
+          DIAGNOSTIC_HEAD: ${{ github.event.pull_request.head.sha }}
+          DIAGNOSTIC_RUN: ${{ github.run_id }}
+          DIAGNOSTIC_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/reload-cancellation"
+          printf 'head=%s\nrun=%s\nattempt=%s\n' "$DIAGNOSTIC_HEAD" "$DIAGNOSTIC_RUN" "$DIAGNOSTIC_ATTEMPT" > "$RUNNER_TEMP/reload-cancellation/job-identity.txt"
+
+      - name: Checkout diagnostic harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: harness
+          persist-credentials: false
+
+      - name: Checkout original source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: 1587850a91b3cb729f5e59492829d297840eeb9d
+          path: original
+          persist-credentials: false
+
+      - name: Set up pinned pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          package_json_file: original/package.json
+
+      - name: Restore original lockfile cache
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.19.0
+          cache: pnpm
+          cache-dependency-path: original/pnpm-lock.yaml
+
+      - name: Record runtime provenance
+        run: |
+          set -euo pipefail
+          {
+            node --version
+            pnpm --version
+            pnpm store path --silent
+            node -p "require('./original/package.json').packageManager"
+          } > "$RUNNER_TEMP/reload-cancellation/runtime.txt"
+          test "$(node --version)" = v24.19.0
+          test "$(pnpm --version)" = 11.6.0
+
+      - name: Install original dependencies
+        working-directory: original
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify original preinstalled browser runtime
+        working-directory: original
+        timeout-minutes: 2
+        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
+
+      # run.ts independently checks the opened event, attempt 1, exact harness
+      # head, original merge/tree/spec bytes, physical target install, runtime,
+      # 28 selectors/91 collected cases and exclusive execution claim.
+      # The original target config itself builds and serves the e2e preview.
+      - name: Run one advisory diagnostic
+        run: |
+          set -o pipefail
+          node harness/scripts/diagnostics/reloadCancellation/run.ts "$GITHUB_WORKSPACE/harness" "$GITHUB_WORKSPACE/original" "$RUNNER_TEMP/reload-cancellation" 2>&1 | tee "$RUNNER_TEMP/reload-cancellation/collector.log"
+
+      - name: Upload diagnostic evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: reload-cancellation-advisory-${{ github.run_id }}
+          path: ${{ runner.temp }}/reload-cancellation/
+          retention-days: 7
+          if-no-files-found: error
