@@ -1,0 +1,22 @@
+scripts/__tests__/reloadCancellationCollector.spec.ts
+  s_26f70b851e8f7a::t_7d4f5e9eb90c1d 3,19,59-76
+  s_26f70b851e8f7a::t_8376e1f4313048 77-78
+scripts/diagnostics/reloadCancellation/viteTransportProbe.ts
+  s_26f70b851e8f7a::t_69a90647d335aa 2,11-14,43,60,70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b274e39cde2be69b5a6ec1bc66973f79837251af",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
