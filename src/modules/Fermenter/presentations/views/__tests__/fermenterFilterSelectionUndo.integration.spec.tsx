@@ -703,7 +703,10 @@ describe('Fermenter Filter selection through Command', () => {
                     } else {
                         replaceTrack({
                             ...track,
-                            devices: change === 'removed-device' ? [] : [...track.devices, { ...track.devices[0]! }],
+                            devices:
+                                change === 'removed-device'
+                                    ? []
+                                    : [...track.devices, { ...track.devices[0]!, name: 'Duplicate occurrence' }],
                         });
                     }
                 });
@@ -757,7 +760,13 @@ describe('Fermenter Filter selection through Command', () => {
         act(() => replaceValues({ ...rawValues(), filterModel: 4 }));
         flushAutomergeStorageWrites();
         audio.updateDeviceParam.mockClear();
-        await act(() => (leg === 'undo' ? undo() : redo()));
+        await act(async () => {
+            if (leg === 'undo') {
+                await undo();
+            } else {
+                await redo();
+            }
+        });
         await expectModel(4, leg === 'undo' ? 1 : 0);
         expect(undoStore.value?.future).toHaveLength(leg === 'undo' ? 0 : 1);
         expect(audio.updateDeviceParam).not.toHaveBeenCalled();
