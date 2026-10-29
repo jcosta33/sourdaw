@@ -1,0 +1,23 @@
+.agents/skills/review-stances/session-lifecycle.md
+  s_59e31a5c6f3e31::t_1ed53dcaaa116f 314-325
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_1ed53dcaaa116f 1298-1310
+.agents/skills/review-stances/project-integrity.md
+  s_59e31a5c6f3e31::t_1ed53dcaaa116f 463-473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84499e9be213e59fed1d5641b1aea799c1e1fac1",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
