@@ -3,6 +3,9 @@ import { Profiler, type ProfilerOnRenderCallback } from 'react';
 import { render, act, fireEvent, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 import { modulationDragPreviewStore, modulationStore, modulationRuntimeStore } from '#/modules/Automation/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -106,6 +109,11 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         renderCount = 0;
         vi.mocked(executeUserAppAction).mockClear();
         mockSetDeviceParameter.mockClear();
+        mockSetDeviceParameter.mockReturnValue(true);
+        vi.mocked(executeUserAppAction).mockResolvedValue(undefined);
+        configureAutomergeStoragePort(null);
+        const track = createTrack({ id: 'track-1', name: 'Test', kind: 'audio', withoutDefaultDevice: true });
+        trackStore.set({ tracks: [{ ...track, devices: [device] }], selectedTrackId: 'track-1', ghostClips: [] });
         mockProjectCurrent.value = true;
         mockProjectGeneration.value = 0;
         setDragPreview(null);
@@ -436,12 +444,26 @@ describe('DeviceParameterControl modulation subscription (audit M5)', () => {
         expect(shouldExecute.shouldExecute()).toBe(false);
     });
 
-    it('does not announce or draw a stored mapping that the engine rejects as ineligible', () => {
+    it('does not announce or draw a stored mapping that the engine rejects as ineligible', async () => {
         render(<DeviceParameterControl param={{ ...param, automatable: false }} device={device} trackId="track-1" />);
         expect(screen.queryByRole('region', { name: 'Modulation target for Gain' })).not.toBeInTheDocument();
         expect(screen.getByTestId('rotary-knob').dataset.modulations).toBe('null');
-        fireEvent.click(screen.getByTestId('rotary-knob'));
-        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 0.75);
+        await act(async () => {
+            fireEvent.click(screen.getByTestId('rotary-knob'));
+        });
+        expect(mockSetDeviceParameter).toHaveBeenCalledWith('device-1', 'gain', 0.75, {
+            transient: true,
+            runtimeOwner: expect.any(Symbol),
+            automationRecordingOwner: expect.any(Symbol),
+        });
+        expect(executeUserAppAction).toHaveBeenCalledOnce();
+        expect(executeUserAppAction).toHaveBeenCalledWith(
+            {
+                type: 'setDeviceParameter',
+                payload: expect.objectContaining({ deviceId: 'device-1', paramId: 'gain', value: 0.75 }),
+            },
+            expect.objectContaining({ shouldExecute: expect.any(Function) })
+        );
     });
 
     it('previews a zero-runtime source over an unconnected knob, then commits only on drop', () => {

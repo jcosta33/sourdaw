@@ -200,6 +200,10 @@ describe('DeviceParameterControl', () => {
                 targetType: 'deviceParam',
                 trackId: 'track-1',
                 deviceId: 'device-1',
+                gestureAuthority: {
+                    acquire: expect.any(Function),
+                    isCurrent: expect.any(Function),
+                },
             })
         );
     });
