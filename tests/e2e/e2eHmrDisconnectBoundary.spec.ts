@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { expect, test } from '@playwright/test';
-import { createServer, type WebSocketClient } from 'vite';
+import { createServer, type ServerOptions, type WebSocketClient } from 'vite';
 
 function deferred<T>() {
     let complete!: (value: T) => void;
@@ -47,11 +47,15 @@ for (const hmr of [false, true]) {
         const record = (event: string, detail: unknown): void => {
             events.push({ event, at: performance.now(), detail });
         };
+        const serverOptions: ServerOptions = { host: '127.0.0.1', port: 0, strictPort: true };
+        if (!hmr) {
+            serverOptions.hmr = false;
+        }
         const server = await createServer({
             configFile: false,
             root,
             cacheDir,
-            server: { host: '127.0.0.1', port: 0, strictPort: true, ...(hmr ? {} : { hmr: false }) },
+            server: serverOptions,
             plugins: [
                 {
                     name: 'pending-app-module',
@@ -71,7 +75,9 @@ for (const hmr of [false, true]) {
                             pendingApp.complete();
                             response.once('close', () => record('App-response-close', response.writableFinished));
                             void releaseApp.promise.then(() => {
-                                if (!response.destroyed) next();
+                                if (!response.destroyed) {
+                                    next();
+                                }
                             });
                         });
                     },
@@ -83,10 +89,14 @@ for (const hmr of [false, true]) {
         session.on('Page.frameRequestedNavigation', (event) => {
             record('requested-navigation', event);
             navigationRequests.push(event);
-            if (event.reason === 'reload') reloaded.complete();
+            if (event.reason === 'reload') {
+                reloaded.complete();
+            }
         });
         session.on('Network.requestWillBeSent', (event) => {
-            if (event.type === 'Document') documents.push(event.request.url);
+            if (event.type === 'Document') {
+                documents.push(event.request.url);
+            }
         });
         session.on('Network.webSocketClosed', (event) => {
             record('socket-closed', event);
@@ -94,9 +104,15 @@ for (const hmr of [false, true]) {
         });
         page.on('console', (message) => {
             record('console', { type: message.type(), text: message.text() });
-            if (message.text() === '[vite] connected.') browserConnected.complete();
-            if (message.text() === 'fixture-disconnected') disconnectHandled.complete();
-            if (message.type() === 'error') errors.push(message.text());
+            if (message.text() === '[vite] connected.') {
+                browserConnected.complete();
+            }
+            if (message.text() === 'fixture-disconnected') {
+                disconnectHandled.complete();
+            }
+            if (message.type() === 'error') {
+                errors.push(message.text());
+            }
         });
         page.on('pageerror', (error) => errors.push(error.message));
         try {
@@ -104,7 +120,9 @@ for (const hmr of [false, true]) {
             await session.send('Page.enable');
             await server.listen();
             const address = server.httpServer?.address();
-            if (!address || typeof address === 'string') throw new Error('Missing owned HTTP listener');
+            if (!address || typeof address === 'string') {
+                throw new Error('Missing owned HTTP listener');
+            }
             const origin = `http://127.0.0.1:${address.port}`;
             const health = async (): Promise<void> => {
                 const response = await fetch(`${origin}/health`);
