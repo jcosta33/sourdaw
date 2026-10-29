@@ -8,6 +8,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { activeRecordingRef, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import {
+    discardRecording,
     getArrangementHandlers,
     resolveClipsWithComping,
     setArrangementEventBus,
@@ -2079,7 +2080,12 @@ describe('punch audio capture loop placement', () => {
         const clipId = activeRecordingRef.current[0]!;
         startPlayheadScheduler();
         await advanceUntil(() => hardware.now >= 52.25);
-        await executeAppAction({ type: 'discardRecording', payload: { clipId } }, { skipUndo: true });
+        // No recording entry exists yet: use the real failed-capture retirement,
+        // rather than dispatching an inverse detached from its owning history.
+        expect(discardRecording(clipId)).toBe(true);
+        expect(recordedClips()).toEqual([]);
+        expect(takeLaneStore.value?.lanes).toEqual([]);
+        expectProjectProjection();
         hardware.now = 52.5;
         await stopPlayback();
         expect(recordedClips()).toEqual([]);

@@ -101,6 +101,7 @@ export { startMacroRecording } from './macro/recording/startMacroRecording';
 export { stopMacroRecording } from './macro/recording/stopMacroRecording';
 
 export { undo } from './undo';
+export { readUndoEntryForInverse } from './readUndoEntryForInverse';
 export { redo } from './redo';
 export { REDO_NOT_APPLIED } from './redoResult';
 export { revertActionGroup } from './revertActionGroup';

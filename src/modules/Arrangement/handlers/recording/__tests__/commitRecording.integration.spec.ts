@@ -28,6 +28,7 @@ import {
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
 import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { type ConfirmPayload, type NotifyPayload, type PromptPayload } from '#/utils/Notification/notificationEventBus';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
@@ -50,6 +51,12 @@ const noActionHistoryMetadataPort = {
     clear: () => undefined,
 };
 
+type NotificationEvents = {
+    'ui.notify': NotifyPayload;
+    'ui.confirm': ConfirmPayload;
+    'ui.prompt': PromptPayload;
+};
+
 function clipIds(trackId = TRACK_ID): string[] {
     return (trackStore.value?.tracks.find((track) => track.id === trackId)?.clips ?? []).map((clip) => clip.id);
 }
@@ -59,6 +66,14 @@ function takeRefs(): { id: string; clipId: string }[] {
         lane.takes.map((take) => ({ id: take.id, clipId: take.clipId }))
     );
 }
+
+beforeEach(async () => {
+    const [{ createEventBus }, { setNotificationEventBus }] = await Promise.all([
+        import('#/infra/events/createEventBus'),
+        import('#/utils/Notification/notificationEventBus'),
+    ]);
+    setNotificationEventBus(createEventBus<NotificationEvents>());
+});
 
 function takeEndsFor(clipId: string): number[] {
     return (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
