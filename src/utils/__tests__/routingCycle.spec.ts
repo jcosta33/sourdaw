@@ -90,3 +90,33 @@ describe('hasRoutingCycle', () => {
         expect(hasRoutingCycle({ tracks })).toBe(false);
     });
 });
+
+describe('shared routing relation preservation', () => {
+    it.each(['output', 'send'] as const)('unions duplicate owner rows when the %s edge closes a loop', (edge) => {
+        const tracks = [
+            track('owner', 'output-target'),
+            { id: 'owner', sends: [{ busId: 'send-target' }] },
+            track('output-target', edge === 'output' ? 'owner' : 'master'),
+            track('send-target', edge === 'send' ? 'owner' : 'master'),
+        ];
+        expect(hasRoutingCycle({ tracks })).toBe(true);
+        expect(wouldCreateRoutingCycle({ sourceId: `${edge}-target`, targetId: 'owner', tracks })).toBe(true);
+    });
+
+    it('retains partial rows and optional edge fields without inventing a return path', () => {
+        const tracks = [{ id: 'a' }, { id: 'b', outputId: undefined, sends: undefined }];
+        const sidechainRoutes = [{ sourceTrackId: 'a', targetTrackId: 'b' }];
+        expect(hasRoutingCycle({ tracks, sidechainRoutes })).toBe(false);
+        expect(wouldCreateRoutingCycle({ sourceId: 'b', targetId: 'a', tracks, sidechainRoutes })).toBe(true);
+        expect(wouldCreateRoutingCycle({ sourceId: 'a', targetId: 'b', tracks, sidechainRoutes })).toBe(false);
+    });
+
+    it('includes sidechain-only owners even when the track list is empty', () => {
+        const sidechainRoutes = [
+            { sourceTrackId: 'a', targetTrackId: 'b' },
+            { sourceTrackId: 'b', targetTrackId: 'a' },
+        ];
+        expect(hasRoutingCycle({ tracks: [], sidechainRoutes })).toBe(true);
+        expect(wouldCreateRoutingCycle({ sourceId: 'a', targetId: 'b', tracks: [], sidechainRoutes })).toBe(true);
+    });
+});
