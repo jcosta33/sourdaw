@@ -1,0 +1,50 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 41-42,162-187
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 452-466
+.gitignore
+  h_beb54bf43b47b7 75-77
+AGENTS.md
+  h_beb54bf43b47b7 396-421
+package.json
+  h_beb54bf43b47b7 52-53
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 998-999,1111-1113,1142-1143,1146-1150,1152,1154-1159,1161,1165,1169
+scripts/__tests__/cleanupLanes.spec.ts
+  h_beb54bf43b47b7 1-413
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 9881-9958
+scripts/__tests__/installCleanupLanes.spec.ts
+  h_beb54bf43b47b7 1-226
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 34-35,1027-1028,1248,1303-1315
+scripts/__tests__/removeLane.spec.ts
+  h_beb54bf43b47b7 425-427,1495,1499,1517,1519
+scripts/cleanupLanes.ts
+  h_beb54bf43b47b7 1-457
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 7,4489-4490,4515-4518,4584,4637,4644-4653
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 1-309
+scripts/laneActivity.ts
+  h_beb54bf43b47b7 1-69
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 21-23,95-99
+scripts/removeLane.ts
+  h_beb54bf43b47b7 4,16,112-115,237-240,473-523,527-529,542-545,548-568,760-770,777-779,801,807,813,834
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 144,153,155,166,169-174,197
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 174-175,178-182,184,186-191,193,197,201
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b2b2982b8be99249d2200bd4ae9dd07fa36ac1d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
