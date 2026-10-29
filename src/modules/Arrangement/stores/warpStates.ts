@@ -453,7 +453,9 @@ export function prepareTransientWarpState(scope: object | undefined, clipId: str
         return undefined;
     }
     const current = warpStateStore.value ?? defaultWarpStateStoreState;
-    return warpStateStorage.prepareSet?.(scope, { states: { ...current.states, [clipId]: state } });
+    return warpStateStorage.prepareSet?.(scope, { states: { ...current.states, [clipId]: state } }, (value) =>
+        warpStateStore.set(value)
+    );
 }
 
 export const warpStateStore = createStore<WarpStateStoreState>({

@@ -1247,6 +1247,7 @@ describe('command batch idempotency', () => {
             flushAutomergeStorageWrites();
             const gainStorage = createAutomergeStorage<{ value: number }>('root', 'trackGain');
             gainStorage.hydrate?.();
+            clearHandlerRegistry();
             registerHandlerMap({
                 setTrackGain: createHandler({
                     execute: () => {

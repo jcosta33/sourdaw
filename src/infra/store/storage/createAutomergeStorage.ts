@@ -267,7 +267,11 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
  */
 export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
     flushPendingUnscopedWrite(): void;
-    prepareSet?(scope: object | undefined, value: TData): PreparedStorageSet | undefined;
+    prepareSet?(
+        scope: object | undefined,
+        value: TData,
+        stageValue?: (value: TData) => void
+    ): PreparedStorageSet | undefined;
 };
 
 type AutomergeStorageWriteContext = {
@@ -2663,7 +2667,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
 
     const adapter: AutomergeStorageAdapter<TData> = {
-        prepareSet(scope, requestedValue) {
+        prepareSet(scope, requestedValue, stageValue) {
             const captured = scope ? preparationScopes.get(scope) : undefined;
             const port = getAutomergeStoragePort();
             if (
@@ -2786,7 +2790,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         throw new Error('Prepared Automerge set requires its captured transaction');
                     }
                     const preparedCandidate = candidate;
-                    adapter.set(value);
+                    if (stageValue) {
+                        stageValue(value);
+                    } else {
+                        adapter.set(value);
+                    }
                     const pending = pendingWritesByOwner.get(transaction.commitOwner);
                     if (
                         !pending ||
