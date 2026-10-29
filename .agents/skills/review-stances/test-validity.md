@@ -19,6 +19,12 @@ with a wrong fingerprint. Keep independent synthetic credential controls, includ
 allow annotation. Preserve failed controls and diagnose their input against the pinned rule; a
 credential-shaped string outside that rule is not a positive control.
 
+PR #5846's initial repair passed real scanner probes but was caught by the hosted byte-exact
+ignore contract in `scripts/test-health-gate-scripts.sh`. Scanner execution does not observe every
+caller that binds its configuration bytes. Trace direct readers and evaluate the unchanged owning
+assertion against the candidate; removing the audited exception, changing its provenance or adding
+an unrelated fingerprint must fail without weakening exact equality.
+
 ### 2026-10-29 — static scanner metadata fell through to browser coverage (#5483)
 
 PR #5483 (`07b3882eb3`) introduced broad non-browser repository tooling selection but omitted
