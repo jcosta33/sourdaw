@@ -1,0 +1,29 @@
+src/modules/CrdtDocument/useCases/registerCrdtStorageRuntime.ts
+  s_59e31a5c6f3e31::t_c1a10d3554da23 31-36
+  s_59e31a5c6f3e31::t_ec6268a9477085 37-39
+src/infra/store/storage/createAutomergeStorage.ts
+  s_59e31a5c6f3e31::t_c1a10d3554da23 85-92,807-816,819,857-859,864,867-872,876,880-882
+  s_59e31a5c6f3e31::t_694eeb01a13088 805-806,837,865-866,873-875,877-879
+src/modules/CrdtDocument/useCases/mutateCrdtDoc.ts
+  s_59e31a5c6f3e31::t_c1a10d3554da23 24,34-40
+  s_59e31a5c6f3e31::t_88b77ea976f5a6 41-43
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_59e31a5c6f3e31::t_c1a10d3554da23 20,36-42,478-479,486-522
+  s_59e31a5c6f3e31::t_47af727a9a9ecf 523-525
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b84ebc25d4e8a7827f66695b8ebb8da5dda8531",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
