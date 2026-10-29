@@ -218,6 +218,17 @@ export type NativeLiveGraphSessionResult =
 
 type PreparedSession = Extract<ReturnType<typeof prepareNativeSessionStart>, { outcome: 'prepared' }>;
 
+function claimInitialNativeCarriers(prepared: PreparedSession): void {
+    if (prepared.waitsForModels) {
+        return;
+    }
+    const audible = prepared.monitor === 'audible';
+    claimCarriedStrips(audible ? carriedStripIds(prepared.firstCommands) : new Set());
+    if (audible) {
+        replaceNativeChains(projectedChainReports(prepared.firstCommands));
+    }
+}
+
 /**
  * The tracks this batch tells the engine to sound, read back off the batch
  * itself.
@@ -1048,12 +1059,7 @@ export function startNativeLiveGraphSession(
                 // record — dropping it, restoring it, or replacing it with the
                 // applied batch's reports.
                 const chainsTheStartFound = nativeLiveGraphSession.nativeChainByStripId;
-                if (!waitsForModels) {
-                    claimCarriedStrips(audible ? carriedStripIds(firstCommands) : new Set());
-                }
-                if (audible && !waitsForModels) {
-                    replaceNativeChains(projectedChainReports(firstCommands));
-                }
+                claimInitialNativeCarriers(prepared);
                 const started = await applyTopologyBatch({
                     transport: availability.transport,
                     backend,
