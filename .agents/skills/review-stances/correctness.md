@@ -849,6 +849,20 @@ PR #2083 made device edits require an exact live before-chain. MIDI import publi
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
+### 2026-10-29 — resolved group replay was mistaken for a completed revert (#5565)
+
+The AI history caller from `22a84b216658f593391e7e141d90f7c84d13648b` marked its row
+reverted after a void replay, including an absent group; the delegation retained by
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` preserved that false success. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. The missed input was a group that replay could not actually undo whole.
+
+Drive the actual history caller with absent, partially undone and nonreplayable groups.
+Require no project or Undo change, no Reverted flag, and visible refusal. A committed
+warning must keep the successful whole revert consumed and report the warning; an
+unexpected replay failure must reach visible error feedback without leaving the existing
+fire-and-forget UI callers an abandoned rejection. Runtime-only history remains inert.
+
 ### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
 PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
@@ -891,3 +905,19 @@ Require nonzero late PCM beyond the old cap, the final response window, exact si
 after the physical duration, and preserved lower-rate decay, energy and spectral shape.
 Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
 served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
+
+### 2026-10-29 — capped render placement trusted the requested end (#5013)
+
+The offline producer capped frames in `bf14e0d6c1`, while the consumer introduced in
+`e7d4f0b69b` trusted the requested musical end. The production route in `33a3549990`
+joined them; `adfc95a453` is its first-parent integration boundary. GitHub associates
+none of those commits with a PR, and historical reviewer prompts, stance and tier are
+unavailable. #5371 delivered the endpoint repair, not the introduction.
+
+Compare returned frames with the requested endpoint before resolving a tail: a short
+buffer ends at its actual tempo-mapped position, including nonzero starts; redo retains
+that endpoint and buffer identity. Complete no-tail renders retain the exact musical end,
+while complete tail renders retain the decay. Probe both tail settings at the `2^30 + 1`
+requested versus `2^30` returned frame boundary; reverting the returned-frame branch must
+fail the owning `renderToClip.spec.ts` boundary case. Buffer metadata suffices for this
+arithmetic contract; it does not establish long-render PCM or listening behavior.

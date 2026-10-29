@@ -410,7 +410,7 @@ function expectMarkedRecovery(
     if (diagnostics.length > 0) {
         expectedDiagnostics.push(
             expect.stringMatching(
-                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-missed-pid-(?:exited|heir):count=[1-9]\d*:pid=\S+|lsof-fields-unusable:(?:descriptor-type-missing|file-inspection-diagnostic))$/
+                /^guard storage file-use proof unavailable: (?:lsof-live-pid-missing:count=[1-9]\d*:pid\/uid\/state=\S+|lsof-missed-pid-(?:exited|heir):count=[1-9]\d*:pid=\S+|lsof-fields-unusable:descriptor-type-missing|lsof-fields-unusable:file-inspection-diagnostic:pid=[1-9]\d*:fd=[a-z0-9.]+:type=[a-zA-Z0-9]+:name=(?:absolute-path|text):match=(?:permission-denied|operation-not-permitted|no-info|stat|readlink))$/
             )
         );
     }
@@ -2816,7 +2816,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
                 temp=storage.tempDirectory;
                 const state=storageFileState([temp],[],reason=>reasons.push(reason));
-                const initial={state,reasons:[...reasons],samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
+                const initial={state,reasons:[...reasons],diagnosticPid:missed,samples,scopedSamples,processSamples,reads:[...reads],timeouts:[...timeouts],elapsed:now};
                 now=0;samples=0;scopedSamples=0;processSamples=0;reads=[];timeouts=[];
                 const released=await storage.release(true);
                 console.log(JSON.stringify({initial,released,retained:existsSync(temp)}));
@@ -2825,6 +2825,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 initial: {
                     state: string;
                     reasons: string[];
+                    diagnosticPid: number;
                     samples: number;
                     scopedSamples: number;
                     processSamples: number;
@@ -2849,7 +2850,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
                 Array.from({ length: samples + scopedSamples }, (_, index) => 5000 - index * 100)
             );
             expect(initial.elapsed).toBe(state === 'unknown' ? 5000 : (samples + scopedSamples) * 100);
-            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`;
+            const reason = `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic:pid=${initial.diagnosticPid}:fd=3:type=REG:name=text:match=permission-denied`;
             expect(initial.reasons).toEqual(state === 'unknown' ? [reason] : []);
             expect(observed.released).toBe(state === 'dead');
             expect(observed.retained).toBe(state !== 'dead');
@@ -2950,7 +2951,7 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
             const ports={identityState:()=> 'dead',sessionState:(_owner,original,current=original)=>storageFileState([original,current],[],reason=>reasons.push(reason))};
             const storage=createGuardStorage({root:${JSON.stringify(join(root, 'storage'))},token:${JSON.stringify(randomUUID())},owner:${JSON.stringify(fakeOwner)},ports});
             const state=storageFileState([storage.tempDirectory],[],reason=>reasons.push(reason));
-            const initial={state,reasons:[...reasons],failureReached,transient:areTransientProofReasons(reasons)};
+            const initial={state,reasons:[...reasons],diagnosticPid:missed,failureReached,transient:areTransientProofReasons(reasons)};
             diagnosed=false;userLists=0;failureReached=false;
             const released=await storage.release(true);
             console.log(JSON.stringify({initial,released,retained:existsSync(storage.tempDirectory)}));
@@ -2964,7 +2965,10 @@ describe('storage ownership recovery', { timeout: GUARDED_CASE_TIMEOUT_MS }, () 
         );
         expect(observed.initial).toEqual({
             state: 'unknown',
-            reasons: [`lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic`],
+            reasons: [
+                `lsof-${route === 'scoped' ? 'scoped-' : ''}fields-unusable:file-inspection-diagnostic:pid=${observed.initial.diagnosticPid}:fd=3:type=REG:name=text:match=permission-denied`,
+            ],
+            diagnosticPid: observed.initial.diagnosticPid,
             failureReached: true,
             transient: false,
         });
@@ -4529,6 +4533,75 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         15_000
     );
 
+    it.each(['REG', 'DIR'])(
+        'keeps diagnostic words in absolute Darwin $type paths as storage references',
+        async (type) => {
+            const root = fixture();
+            const storage = ownedStorage(root, {
+                identityState: () => 'dead',
+                sessionState: (_owner, temp) => {
+                    const census = parseLsofCensus(`p123\0\nf3\0t${type}\0n${temp}/no info.txt\0\n`);
+                    if (census === undefined) {
+                        return 'unknown';
+                    }
+                    return census.paths.some((path) => referencesStoragePath(path, [temp])) ? 'alive' : 'dead';
+                },
+            });
+            for (const name of ['no info.txt', 'Permission denied', 'Operation not permitted']) {
+                const path = `${storage.tempDirectory}/${name}`;
+                const reasons: string[] = [];
+                expect(parseLsofCensus(`p123\0\nf3\0t${type}\0n${path}\0\n`, (reason) => reasons.push(reason))).toEqual(
+                    {
+                        pids: new Set([123]),
+                        paths: [path],
+                    }
+                );
+                expect(reasons).toEqual([]);
+            }
+            expect(await storage.release(true)).toBe(false);
+            expect(existsSync(storage.tempDirectory)).toBe(true);
+        }
+    );
+
+    it.each([
+        { type: 'REG', name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'REG', name: 'vnode: Operation not permitted', match: 'operation-not-permitted', kind: 'text' },
+        { type: 'unix', name: 'no info', match: 'no-info', kind: 'text' },
+        { type: undefined, name: 'vnode: Permission denied', match: 'permission-denied', kind: 'text' },
+        { type: 'REG', name: '/private/held (stat: Permission denied)', match: 'stat', kind: 'absolute-path' },
+        { type: 'REG', name: '/private/held (readlink: Permission denied)', match: 'readlink', kind: 'absolute-path' },
+    ])('reports bounded Darwin inspection context for $type $match $kind', ({ type, name, match, kind }) => {
+        const fields = `f3\0${type === undefined ? '' : `t${type}\0`}n${name}${' unrelated-name-text'.repeat(1000)}`;
+        const reports: { reason: string; detail: string | undefined }[] = [];
+        expect(
+            parseLsofCensus(`p123\0\n${fields}\0\n`, (reason, detail) => reports.push({ reason, detail }))
+        ).toBeUndefined();
+        expect(reports).toEqual([
+            {
+                reason: 'file-inspection-diagnostic',
+                detail: `pid=123:fd=3:type=${type ?? 'missing'}:name=${kind}:match=${match}`,
+            },
+        ]);
+        expect(JSON.stringify(reports).length).toBeLessThan(180);
+        expect(JSON.stringify(reports)).not.toContain('unrelated-name-text');
+        expect(JSON.stringify(reports)).not.toContain('/private/held');
+    });
+
+    it.each([
+        { descriptor: 'fp.', reported: 'fp.' },
+        { descriptor: '3'.repeat(1000), reported: 'oversized' },
+    ])('bounds Darwin diagnostic descriptor identity to $reported', ({ descriptor, reported }) => {
+        const reports: string[] = [];
+        expect(
+            parseLsofCensus(`p123\0\nf${descriptor}\0tREG\0nvnode: Permission denied\0\n`, (_reason, detail) => {
+                if (detail !== undefined) {
+                    reports.push(detail);
+                }
+            })
+        ).toBeUndefined();
+        expect(reports).toEqual([`pid=123:fd=${reported}:type=REG:name=text:match=permission-denied`]);
+    });
+
     it('parses complete NUL file records and rejects malformed, truncated or opaque file evidence', () => {
         const valid = 'p10\0\nfcwd\0tDIR\0n/owned/tmp\0\nf3\0tREG\0n/owned/tmp/held\0\n';
         expect(parseLsofCensus(valid)).toEqual({ pids: new Set([10]), paths: ['/owned/tmp', '/owned/tmp/held'] });
@@ -4578,6 +4651,8 @@ else if(fs.existsSync(fixture.childPath))catalog+=entry(Number(fs.readFileSync(f
         for (const reason of [
             'lsof-fields-unusable:file-inspection-diagnostic',
             'lsof-scoped-fields-unusable:file-inspection-diagnostic',
+            'lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
+            'lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         ]) {
             expect(areTransientProofReasons([reason])).toBe(false);
             expect(areTransientProofReasons(['file-census-time-bound', reason])).toBe(false);
@@ -5041,14 +5116,20 @@ describe('unproved guard storage', { timeout: GUARDED_CASE_TIMEOUT_MS }, () => {
         {
             name: 'a stable unusable-inspection reason',
             script: 'process.exitCode=0',
-            host: censusReporting('unknown', 'lsof-fields-unusable:file-inspection-diagnostic'),
-            census: 'unknown lsof-fields-unusable:file-inspection-diagnostic',
+            host: censusReporting(
+                'unknown',
+                'lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied'
+            ),
+            census: 'unknown lsof-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         },
         {
             name: 'a stable unusable scoped-inspection reason',
             script: 'process.exitCode=0',
-            host: censusReporting('unknown', 'lsof-scoped-fields-unusable:file-inspection-diagnostic'),
-            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic',
+            host: censusReporting(
+                'unknown',
+                'lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied'
+            ),
+            census: 'unknown lsof-scoped-fields-unusable:file-inspection-diagnostic:pid=123:fd=3:type=REG:name=text:match=permission-denied',
         },
         {
             name: 'a transient reason mixed with a stable one',
