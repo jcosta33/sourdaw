@@ -60,13 +60,17 @@ const measurement = {
 
 function withTrust(trust: boolean) {
     const data = structuredClone(measurement);
-    for (const row of data.rows) row.medianTrustworthy = trust;
+    for (const row of data.rows) {
+        row.medianTrustworthy = trust;
+    }
     return data;
 }
 
 function rowById(data: typeof measurement, id: string) {
     const row = data.rows.find((candidate) => candidate.id === id);
-    if (!row) throw new Error(`missing measurement row ${id}`);
+    if (!row) {
+        throw new Error(`missing measurement row ${id}`);
+    }
     return row;
 }
 
