@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -13,6 +13,7 @@ import {
     removalLockPid,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
+import { laneIsActive } from './laneActivity.ts';
 import { PR_STATE, supersessionReplacement } from './prContract.ts';
 import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
@@ -108,6 +109,10 @@ export function isExpectedReviewLaneName(name: string): boolean {
 export function isExpectedReviewLanePath(target: string, primaryRoot: string): boolean {
     const canonicalPrimaryRoot = canonicalPath(primaryRoot);
     const canonicalTarget = canonicalPath(target);
+    const legacyRoot = canonicalPath(join(canonicalPrimaryRoot, '.agents', 'review-worktrees'));
+    if (canonicalTarget !== legacyRoot && inside(legacyRoot, canonicalTarget)) {
+        return relative(legacyRoot, canonicalTarget).split('/').length === 1;
+    }
     const agentWorktreesRoot = canonicalPath(join(canonicalPrimaryRoot, '.agents', 'worktrees'));
     if (canonicalTarget === agentWorktreesRoot || !inside(agentWorktreesRoot, canonicalTarget)) {
         return false;
@@ -229,7 +234,10 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
         fail(`refusing to ${verb} the primary worktree`);
     }
     const agentRoot = canonicalPath(join(canonicalRoot, '.agents', 'worktrees'));
-    if (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) {
+    if (
+        (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) &&
+        !(lane.detached && lane.branch === undefined && isExpectedReviewLanePath(canonicalTarget, canonicalRoot))
+    ) {
         fail(`${target} is not an agent worktree`);
     }
     if (inside(canonicalTarget, canonicalPath(port.currentDirectory()))) {
@@ -462,10 +470,63 @@ function validateOwnership(
     };
 }
 
-export function removeLane(target: string, port: LaneRemovalPort): void {
+export type LaneIdentity = {
+    path: string;
+    head: string;
+    branch?: string;
+    detached: boolean;
+    directory: { dev: number; ino: number; birthtimeMs: number };
+};
+
+export function laneIdentity(lane: Worktree): LaneIdentity {
+    const directory = statSync(lane.path);
+    return {
+        path: lane.path,
+        head: lane.head,
+        branch: lane.branch,
+        detached: lane.detached,
+        directory: { dev: directory.dev, ino: directory.ino, birthtimeMs: directory.birthtimeMs },
+    };
+}
+
+export function sameLaneIdentity(expected: LaneIdentity, actual: LaneIdentity): boolean {
+    return (
+        expected.path === actual.path &&
+        expected.head === actual.head &&
+        expected.branch === actual.branch &&
+        expected.detached === actual.detached &&
+        JSON.stringify(expected.directory) === JSON.stringify(actual.directory)
+    );
+}
+
+function assertLocalRemovalState(target: string, expected: Worktree, port: LaneRemovalPort): void {
+    const current = matchingWorktrees(target, port.worktrees());
+    if (
+        current.length !== 1 ||
+        current[0]?.head !== expected.head ||
+        current[0]?.branch !== expected.branch ||
+        current[0]?.detached !== expected.detached ||
+        current[0]?.path !== expected.path
+    ) {
+        fail('worktree identity changed during removal');
+    }
+    if (
+        port.dirty(target) ||
+        port.active(target) ||
+        port.operation(target) !== undefined ||
+        port.ignored(target).some((path) => !disposableIgnored(path))
+    ) {
+        fail('worktree changed during removal');
+    }
+}
+
+export function removeLane(target: string, port: LaneRemovalPort, expected?: LaneIdentity): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
+    if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+        fail('queued worktree identity changed');
+    }
     const laneName = basename(target);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
     if (!authorLocked) {
@@ -478,9 +539,33 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
         if (JSON.stringify(initial) !== JSON.stringify(final)) {
             fail('worktree authority changed during removal');
         }
+        assertLocalRemovalState(target, lane, port);
+        if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+            fail('queued worktree identity changed');
+        }
         port.unlock(target);
         releaseOnFailure = false;
-        port.remove(target);
+        try {
+            // Native, deliberately without --force: Git remains the last dirt/submodule gate.
+            assertLocalRemovalState(target, lane, port);
+            if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+                fail('queued worktree identity changed');
+            }
+            port.remove(target);
+        } catch (error) {
+            const remaining = matchingWorktrees(target, port.worktrees());
+            if (
+                authorLocked &&
+                remaining.length === 1 &&
+                remaining[0]?.head === lane.head &&
+                remaining[0]?.branch === lane.branch &&
+                !remaining[0]?.locked &&
+                (expected === undefined || sameLaneIdentity(expected, laneIdentity(remaining[0])))
+            ) {
+                port.lock(target, AUTHOR_LOCK_REASON);
+            }
+            throw error;
+        }
         port.clearGuardFailure(laneName);
     } finally {
         if (releaseOnFailure) {
@@ -672,13 +757,25 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
     }
 }
 
-function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
+    const inspection = command === 'lsof' || command === 'ps';
+    const executable =
+        process.platform === 'darwin' && inspection ? (command === 'lsof' ? '/usr/sbin/lsof' : '/bin/ps') : command;
+    const result = spawnSync(executable, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        maxBuffer: 64 * 1024 * 1024,
+        ...(inspection ? { timeout: 5_000 } : {}),
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
+    }
+    if (inspection && result.stderr.trim() !== '') {
+        fail('open-file inspection was incomplete');
     }
     return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
 }
@@ -701,36 +798,19 @@ function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
-export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort {
+export function shellPort(shell: ShellRunner = { capture, run }, root?: string): LaneStrandPort {
     let cachedRepository: string | undefined;
     const repository = () => {
         cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
         return cachedRepository;
     };
-    const primaryRoot = resolvePrimaryRoot();
+    const primaryRoot = root ?? resolvePrimaryRoot();
     return {
         fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
-        active: (path) => {
-            const canonicalTarget = canonicalPath(path);
-            let pid: number | undefined;
-            for (const line of shell.capture('lsof', ['-a', '-d', 'cwd', '-F', 'pn']).split('\n')) {
-                if (line.startsWith('p')) {
-                    pid = Number(line.slice(1));
-                    continue;
-                }
-                if (
-                    line.startsWith('n') &&
-                    pid !== process.pid &&
-                    inside(canonicalTarget, canonicalPath(line.slice(1)))
-                ) {
-                    return true;
-                }
-            }
-            return false;
-        },
+        active: (path) => laneIsActive(path, shell),
         processAlive: (pid) => {
             try {
                 process.kill(pid, 0);
@@ -751,6 +831,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                 .filter((candidate) => candidate !== ''),
         operation: (path) => {
             const candidates = [
+                ['index update', 'index.lock'],
                 ['merge', 'MERGE_HEAD'],
                 ['rebase', 'rebase-merge'],
                 ['rebase', 'rebase-apply'],

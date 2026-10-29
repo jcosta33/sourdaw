@@ -38,6 +38,8 @@ holds the procedure an orchestrator needs at the moment it runs those scripts.
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
+| Retry/discover pending post-merge cleanup                   | `pnpm lane:cleanup [--status]`                                                                                                                                                                                                   |
+| Install/refresh macOS cleanup job                           | `pnpm lane:cleanup:install`                                                                                                                                                                                                      |
 | Remove a spent lane                                         | `pnpm lane:remove <path>`                                                                                                                                                                                                        |
 | Strand an abandoned lane                                    | `pnpm lane:strand <path> --reason "<text>"`                                                                                                                                                                                      |
 | Prune lane artifacts                                        | `pnpm lane:prune <path> \| --all \| --stale-days <days>`                                                                                                                                                                         |
@@ -156,6 +158,32 @@ require a fresh `Gate` on that changed code and a fresh review of the new head
 before delivery. If the new check fails, retain the new failure as evidence and
 continue fixing the cause; do not rerun it to obtain green. Diagnostic retries
 never replace the original failure or authorize `deliver`.
+
+### Local cleanup after delivery
+
+Once merged recovery or delivery completes its receipt and tracker writes, and its serialization is
+released, it queues and attempts native lane removal. A cleanup refusal leaves delivery successful
+and reports pending cleanup. Failed delivery never attempts cleanup. A periodic deterministic macOS
+job recovers missed queueing and crashes by rescanning registered author and legacy detached review
+roots; no model automation or reviewer-created checkout is involved.
+
+`lane:cleanup` writes identity-bound pending/protected/removed records before attempting removal,
+under the primary `.agents/lane-cleanup/`. Safety refusals retry on the ordinary schedule; unavailable
+inspection uses capped backoff. Successful delivery wakes its matching head while respecting shared
+inspection backoff. Every attempt repeats live exact-head
+merge/supersession and local safety proof through `removeLane`; records grant no deletion authority.
+Dirty, untracked, non-regenerable ignored data, active Git work, open files, incomplete process
+inspection and foreign locks survive. A replacement directory or changed HEAD gets a separate delayed
+record and must earn its own fresh proof. Git CAS serialization recovers only a proven-dead worker.
+
+Run `pnpm lane:cleanup:install` from approved current sources to install or refresh the user launchd
+job. It materializes the worker's verified `origin/main` local-import closure, requires only Node and
+existing Git/GitHub executables, and checks runtime bytes and manifest against approved Git objects
+before every execution. It can refresh only the canonical protected-primary bootstrap from approved
+sources when its HEAD/index or previous verified installation proves the current bytes; a local edit
+refuses. It preserves other primary dirt and never depends on the author lane surviving. Consult
+`lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
 
 ### Refusals and retries
 

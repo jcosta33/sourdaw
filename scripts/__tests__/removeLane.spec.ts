@@ -422,6 +422,9 @@ describe('isExpectedReviewLaneName', () => {
 
 describe('isExpectedReviewLanePath', () => {
     it.each([
+        ['/repo/.agents/review-worktrees/1976-probe', true],
+        ['/repo/.agents/review-worktrees', false],
+        ['/repo/.agents/review-worktrees/nested/probe', false],
         ['/repo/.agents/worktrees/review', true],
         ['/repo/.agents/worktrees/review-1976', true],
         ['/repo/.agents/worktrees/review_1976', true],
@@ -1489,10 +1492,11 @@ describe('lane-removal shell boundary', () => {
             symlinkSync(repository, alias, 'dir');
             const port = shellPort({
                 capture: (command) => {
+                    if (command === 'ps') return `${process.pid} ${process.getuid?.()}`;
                     if (command !== 'lsof') {
                         throw new Error(`unexpected capture: ${command}`);
                     }
-                    return `p999999\nfcwd\nn${join(alias, '.agents/worktrees/feature')}`;
+                    return `p${process.pid}\0\nfcwd\0tDIR\0n${join(alias, '.agents/worktrees/feature')}\0\n`;
                 },
                 run: () => undefined,
             });
@@ -1510,8 +1514,9 @@ describe('lane-removal shell boundary', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
                 captures.push({ command, args });
+                if (command === 'ps') return `${process.pid} ${process.getuid?.()}`;
                 if (command === 'lsof') {
-                    return `p999\nfcwd\nn${target}`;
+                    return `p${process.pid}\0\nfcwd\0tDIR\0n${target}\0\n`;
                 }
                 if (args.includes('nameWithOwner')) {
                     return 'jcosta33/sourdaw';

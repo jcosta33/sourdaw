@@ -9878,6 +9878,84 @@ describe('delivery author authentication', () => {
             'dispose',
         ]);
     }, 30_000);
+    it.each(['success', 'already merged', 'delivery failure', 'cleanup failure'])(
+        'post-delivery cleanup: %s preserves the delivery boundary',
+        async (scenario) => {
+            const root = mkdtempSync(join(tmpdir(), 'sourdaw-deliver-cleanup-'));
+            const events: string[] = [];
+            try {
+                const { baseSha, headSha } = commitRange(root, undefined);
+                const { dependencies } = classificationDependencies({
+                    root,
+                    baseSha,
+                    headSha,
+                    events,
+                    authorMints: [],
+                });
+                let locked = false;
+                dependencies.serializeDelivery = async (_root, _number, operation) => {
+                    locked = true;
+                    try {
+                        return await operation({
+                            markRemoteMutationAttempt: () => {},
+                            ownerOid: '',
+                            registerSuccessfulCompletion: () => {},
+                        });
+                    } finally {
+                        locked = false;
+                        events.push('released');
+                    }
+                };
+                if (scenario === 'already merged') {
+                    const snapshot = pullRequest({
+                        state: 'MERGED',
+                        body: relationshipBody('None.'),
+                        mergedByActorNodeId: AUTHOR_BOT_NODE_ID,
+                        baseRefOid: baseSha,
+                        headRefOid: headSha,
+                    });
+                    const merged = fakePort({
+                        // Classification consumes one snapshot before the real merged-recovery route.
+                        primary: [snapshot, snapshot],
+                        dependentSets: [[]],
+                        receipts: [],
+                        persistedReceiptAuthority: undefined,
+                    });
+                    dependencies.deliveryPort = () => merged.port;
+                    dependencies.deliver = (number, port) => {
+                        deliverPullRequest(number, port, merged.tracker);
+                        expect(merged.calls).toContain('PR #42 was already merged; repaired 0 remaining dependent(s)');
+                        events.push('recovered merged delivery');
+                    };
+                } else {
+                    dependencies.deliver = () => {
+                        events.push('delivered');
+                        if (scenario === 'delivery failure') throw new Error('delivery refused');
+                    };
+                }
+                dependencies.cleanupAfterDelivery = async (primary, head) => {
+                    expect(locked).toBe(false);
+                    expect(primary).toBe(root);
+                    expect(head).toBe(headSha);
+                    expect(events.at(-1)).toBe('released');
+                    events.push('cleanup queued');
+                    if (scenario === 'cleanup failure') throw new Error('cleanup pending');
+                };
+                dependencies.reportCleanupFailure = (message) => events.push(message);
+                if (scenario === 'delivery failure') {
+                    await expect(coordinateDelivery(PR_NUMBER, dependencies)).rejects.toThrow('delivery refused');
+                    expect(events).not.toContain('cleanup queued');
+                } else {
+                    await expect(coordinateDelivery(PR_NUMBER, dependencies)).resolves.toBeUndefined();
+                    expect(events).toContain('cleanup queued');
+                    if (scenario === 'cleanup failure')
+                        expect(events.at(-1)).toContain('Delivery completed; lane cleanup is pending');
+                }
+            } finally {
+                rmSync(root, { recursive: true, force: true });
+            }
+        }
+    );
 });
 
 describe('delivery shell boundary', () => {

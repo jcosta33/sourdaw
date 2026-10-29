@@ -995,6 +995,8 @@ describe('package scripts and gitignore', () => {
         expect(pkg.scripts['issue:reconcile']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:reconcile');
         expect(pkg.scripts['issue:claim']).toBe('node scripts/trustedGithubWriteBootstrap.ts issue:claim');
         expect(pkg.scripts['lane:remove']).toBe('node scripts/removeLane.ts');
+        expect(pkg.scripts['lane:cleanup']).toBe('node scripts/cleanupLanes.ts');
+        expect(pkg.scripts['lane:cleanup:install']).toBe('node scripts/installCleanupLanes.ts');
         expect(pkg.scripts.deliver).toBe('node scripts/trustedGithubWriteBootstrap.ts deliver');
     });
 
@@ -1106,6 +1108,9 @@ describe('package scripts and gitignore', () => {
             'deliverPullRequest.ts',
             'pullRequestMutationLock.ts',
             'removeLane.ts',
+            'cleanupLanes.ts',
+            'installCleanupLanes.ts',
+            'laneActivity.ts',
             'resolveThread.ts',
             'recoverDeliveryLock.ts',
             'deliveryLockLegacyIncidents.ts',
@@ -1134,29 +1139,37 @@ describe('package scripts and gitignore', () => {
         expect(paths).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',
             'scripts/deliverPullRequest.ts',
-            'scripts/pullRequestReviewState.ts',
-            'scripts/recoverDeliveryLock.ts',
+            'scripts/canonicalRecord.ts',
+            'scripts/cleanupLanes.ts',
             'scripts/deliveryLockLegacyIncidents.ts',
             'scripts/deliveryRemoteInspection.ts',
+            'scripts/evidenceSafety.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/laneActivity.ts',
+            'scripts/pnpmModulesPreflight.ts',
+            'scripts/prContract.ts',
             'scripts/pullRequestMutationLock.ts',
+            'scripts/pullRequestReviewState.ts',
             'scripts/reconcileTrackerIssue.ts',
-            'scripts/trackerIssueReconciliation.ts',
+            'scripts/recoverDeliveryLock.ts',
+            'scripts/removeLane.ts',
+            'scripts/resourceGuard.ts',
+            'scripts/resourceGuardDisk.ts',
+            'scripts/resourceGuardProofReasons.ts',
+            'scripts/resourceGuardStorage.ts',
             'scripts/reviewBundleLocator.ts',
+            'scripts/reviewDiffSummary.ts',
             'scripts/reviewDossier.ts',
             'scripts/reviewDossierBindings.ts',
-            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierChain.ts',
+            'scripts/reviewDossierReassessed.ts',
             'scripts/reviewDossierViews.ts',
-            'scripts/evidenceSafety.ts',
-            'scripts/canonicalRecord.ts',
             'scripts/reviewRiskPolicy.ts',
             'scripts/savedProjectStatePaths.ts',
-            'scripts/reviewDiffSummary.ts',
+            'scripts/trackerIssueReconciliation.ts',
             'scripts/wasm-artifacts.ts',
             'scripts/wasmToolchainPins.ts',
             'scripts/workspaceManifestFingerprint.ts',
-            'scripts/githubAppIdentity.ts',
-            'scripts/prContract.ts',
         ]);
         expect(trustedDependencyPaths('review:resolve')).toEqual([
             'scripts/trustedGithubWriteBootstrap.ts',

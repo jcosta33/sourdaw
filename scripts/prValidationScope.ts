@@ -18,6 +18,9 @@ const REVIEW_TOOLING = new Set([
     'agentDeliveryScripts',
     'acceptReview',
     'claimTrackerIssue',
+    'cleanupLanes',
+    'installCleanupLanes',
+    'laneActivity',
     'confirmReviewRepairs',
     'deliverPullRequest',
     'fileTrackerIssue',
@@ -89,7 +92,11 @@ const RELEASE_TOOLING_METADATA = new Set([
     'release/dependency-license-proofs.json',
 ]);
 
-const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
+const OPERATIONAL_PACKAGE_SCRIPTS = new Map([
+    ['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts'],
+    ['lane:cleanup', 'node scripts/cleanupLanes.ts'],
+    ['lane:cleanup:install', 'node scripts/installCleanupLanes.ts'],
+]);
 
 export type BrowserMatrix = { include: { id: number; specs: string[] }[] };
 export type ValidationPlan = {

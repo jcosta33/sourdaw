@@ -449,3 +449,18 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### Merged lane cleanup must prove release and survive removal refusal (introduced by PR #1802)
+
+PR #1802 introduced lane removal (`4404e50fdc`) and cwd-only activity inspection (`2a13a418e1`).
+A process outside the lane could hold a lane file open without blocking deletion, and a refused
+native removal after unlock lost the original author lock. Historic private stance, prompt and
+model are unestablished. A manual-only exit also left merged worktrees behind when delivery or its
+caller stopped before removal.
+
+Probe native removal with a spawned process whose cwd is elsewhere but whose descriptor holds a
+lane file; incomplete/denied lsof catalogs and omitted live same-user PIDs must retain the lane.
+Inject a native removal refusal after unlock and require the original author lock restored.
+Kill the worker after durable queue publication and require a later process to reclaim only after
+fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
+with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.

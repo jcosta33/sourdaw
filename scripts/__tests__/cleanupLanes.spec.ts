@@ -1,0 +1,413 @@
+import { execFileSync, spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+
+import { describe, expect, it } from 'vitest';
+
+import {
+    cleanupBackoff,
+    cleanupLanes,
+    readCleanupRecords,
+    withCleanupLock,
+    type CleanupPort,
+} from '../cleanupLanes.ts';
+import { AUTHOR_LOCK_REASON, githubAuthorizationGitEnv } from '../githubAppIdentity.ts';
+import { laneIsActive } from '../laneActivity.ts';
+import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
+
+function fixture() {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-')));
+    const env = githubAuthorizationGitEnv();
+    const git = (args: string[]) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', env }).trim();
+    git(['init', '-b', 'main']);
+    git(['config', 'user.name', 'Fixture']);
+    git(['config', 'user.email', 'fixture@example.com']);
+    writeFileSync(join(root, '.gitignore'), '.agents/\n.env\nnode_modules/\n');
+    writeFileSync(join(root, 'tracked'), 'original');
+    git(['add', '.']);
+    git(['commit', '-m', 'fixture']);
+    const lane = join(root, '.agents/worktrees/author');
+    git(['worktree', 'add', '-b', 'fix/fixture', lane]);
+    git(['worktree', 'lock', '--reason', AUTHOR_LOCK_REASON, lane]);
+    const head = git(['rev-parse', 'HEAD']);
+    const pr: PullRequest = {
+        number: 42,
+        headRefName: 'fix/fixture',
+        headRefOid: head,
+        headRepository: 'jcosta33/sourdaw',
+        state: 'MERGED',
+        isDraft: false,
+        mergedAt: '2026-10-28T00:00:00Z',
+    };
+    const shell: ShellRunner = {
+        capture: (command, args, options) => {
+            const output = execFileSync(command, args, {
+                cwd: root,
+                env,
+                encoding: 'utf8',
+                maxBuffer: 64 * 1024 * 1024,
+            });
+            return options?.preserveStdout ? output : output.trim();
+        },
+        run: (command, args) => {
+            execFileSync(command, args, { cwd: root, env });
+        },
+    };
+    const native = shellPort(shell, root);
+    let now = 1_000;
+    const port: CleanupPort = {
+        primaryRoot: root,
+        now: () => now,
+        serialize: (operation) => withCleanupLock(root, shell, operation),
+        log: () => {},
+        removal: {
+            ...native,
+            repository: () => 'jcosta33/sourdaw',
+            fetch: () => {},
+            pullRequests: () => [pr],
+            commitPullRequests: () => [pr],
+            currentDirectory: () => root,
+            active: () => false,
+            remoteHead: () => undefined,
+        },
+    };
+    return {
+        root,
+        lane,
+        head,
+        pr,
+        git,
+        shell,
+        port,
+        advance: () => {
+            now += 100_000_000;
+        },
+        dispose: () => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }),
+    };
+}
+
+describe('automatic lane cleanup', () => {
+    it('removes a clean merged author and legacy detached review lane through native no-force Git', () => {
+        const f = fixture();
+        try {
+            const review = join(f.root, '.agents/review-worktrees/review-42');
+            f.git(['worktree', 'add', '--detach', review, f.head]);
+            const outcomes = cleanupLanes(f.port);
+            expect(outcomes.filter((outcome) => outcome.status === 'removed')).toHaveLength(2);
+            expect(existsSync(f.lane)).toBe(false);
+            expect(existsSync(review)).toBe(false);
+            expect(f.git(['branch', '--list', 'fix/fixture'])).toContain('fix/fixture');
+            expect(readCleanupRecords(f.root).every((record) => record.status === 'removed')).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each([
+        'dirty',
+        'untracked',
+        'ignored',
+        'active cwd',
+        'open file',
+        'operation',
+        'foreign lock',
+        'open PR',
+        'unmerged',
+        'wrong head',
+        'ambiguous',
+    ])('retains %s with a durable reason and retries only after backoff', (condition) => {
+        const f = fixture();
+        try {
+            if (condition === 'dirty') writeFileSync(join(f.lane, 'tracked'), 'changed');
+            if (condition === 'untracked') writeFileSync(join(f.lane, 'notes'), 'keep');
+            if (condition === 'ignored') writeFileSync(join(f.lane, '.env'), 'keep');
+            if (condition === 'active cwd' || condition === 'open file') f.port.removal.active = () => true;
+            if (condition === 'operation')
+                writeFileSync(f.git(['-C', f.lane, 'rev-parse', '--git-path', 'MERGE_HEAD']), f.head);
+            if (condition === 'foreign lock') {
+                f.git(['worktree', 'unlock', f.lane]);
+                f.git(['worktree', 'lock', '--reason', 'foreign', f.lane]);
+            }
+            if (condition === 'open PR') {
+                f.pr.state = 'OPEN';
+                f.pr.mergedAt = null;
+            }
+            if (condition === 'unmerged') {
+                f.pr.state = 'CLOSED';
+                f.pr.mergedAt = null;
+                f.port.removal.comments = () => [];
+            }
+            if (condition === 'wrong head') f.pr.headRefOid = '1'.repeat(40);
+            if (condition === 'ambiguous') f.port.removal.pullRequests = () => [f.pr, { ...f.pr, number: 43 }];
+            expect(cleanupLanes(f.port)[0]).toMatchObject({ status: 'protected' });
+            expect(existsSync(f.lane)).toBe(true);
+            const [record] = readCleanupRecords(f.root);
+            expect(record?.reason).not.toBe('');
+            expect(record?.attempts).toBe(1);
+            cleanupLanes(f.port);
+            expect(readCleanupRecords(f.root)[0]?.attempts).toBe(1);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('retains primary and outside worktrees and never trusts a queued path after its HEAD changes', () => {
+        const f = fixture();
+        try {
+            const foreign = join(f.root, 'foreign');
+            f.git(['worktree', 'add', '-b', 'foreign', foreign]);
+            cleanupLanes(f.port, undefined, true);
+            f.git(['-C', f.lane, 'commit', '--allow-empty', '-m', 'successor']);
+            const outcome = cleanupLanes(f.port);
+            expect(outcome[0]?.reason).toContain('replaced a previous cleanup identity');
+            expect(existsSync(f.lane)).toBe(true);
+            expect(existsSync(foreign)).toBe(true);
+            expect(existsSync(join(f.root, '.git'))).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('does not spend a stale request on a replacement directory holding the same branch/head', () => {
+        const f = fixture();
+        try {
+            cleanupLanes(f.port, undefined, true);
+            f.git(['worktree', 'unlock', f.lane]);
+            f.git(['worktree', 'remove', f.lane]);
+            f.git(['worktree', 'add', f.lane, 'fix/fixture']);
+            expect(cleanupLanes(f.port)[0]?.status).toBe('protected');
+            expect(existsSync(f.lane)).toBe(true);
+            f.advance();
+            expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('keeps API refusal pending without hammering later lanes, then a fresh worker proves merge before removal', () => {
+        const f = fixture();
+        try {
+            let calls = 0;
+            f.port.removal.pullRequests = () => {
+                calls += 1;
+                throw new Error('GitHub unavailable');
+            };
+            expect(cleanupLanes(f.port)[0]?.status).toBe('pending');
+            expect(calls).toBe(1);
+            expect(readCleanupRecords(f.root)[0]?.nextAttemptAt).toBeGreaterThan(f.port.now());
+            cleanupLanes(f.port);
+            expect(calls).toBe(1);
+            const freshPort = {
+                ...f.port,
+                removal: {
+                    ...f.port.removal,
+                    pullRequests: () => {
+                        calls += 1;
+                        return [f.pr];
+                    },
+                },
+            };
+            f.advance();
+            expect(cleanupLanes(freshPort)[0]?.status).toBe('removed');
+            expect(calls).toBe(3); // both native ownership snapshots read fresh live proof
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('keeps protected checks on cadence and a successful delivery wakes the exact head without bypassing API backoff', () => {
+        const f = fixture();
+        try {
+            f.pr.state = 'OPEN';
+            f.pr.mergedAt = null;
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+                cleanupLanes(f.port);
+                expect(readCleanupRecords(f.root)[0]?.nextAttemptAt).toBe(f.port.now() + cleanupBackoff(1));
+                f.advance();
+            }
+            cleanupLanes(f.port);
+            f.pr.state = 'MERGED';
+            f.pr.mergedAt = '2026-10-28T00:00:00Z';
+            expect(cleanupLanes(f.port, f.head)[0]?.status).toBe('removed');
+        } finally {
+            f.dispose();
+        }
+        const blocked = fixture();
+        try {
+            let reads = 0;
+            blocked.port.removal.pullRequests = () => {
+                reads += 1;
+                throw new Error('GitHub unavailable');
+            };
+            cleanupLanes(blocked.port);
+            expect(cleanupLanes(blocked.port, blocked.head)[0]?.status).toBe('pending');
+            expect(reads).toBe(1);
+            expect(existsSync(blocked.lane)).toBe(true);
+        } finally {
+            blocked.dispose();
+        }
+    });
+
+    it('preserves the author lock when native removal fails after its final unlock', () => {
+        const f = fixture();
+        try {
+            f.port.removal.remove = () => {
+                throw new Error('native removal refused');
+            };
+            expect(cleanupLanes(f.port)[0]?.status).toBe('pending');
+            expect(f.port.removal.worktrees().find((lane) => lane.path === f.lane)?.lockReason).toBe(
+                AUTHOR_LOCK_REASON
+            );
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('retains a changed lane immediately before the native removal boundary', () => {
+        const f = fixture();
+        try {
+            const unlock = f.port.removal.unlock;
+            f.port.removal.unlock = (path) => {
+                unlock(path);
+                writeFileSync(join(path, 'late-notes'), 'keep');
+            };
+            expect(cleanupLanes(f.port)[0]?.status).toBe('protected');
+            expect(readFileSync(join(f.lane, 'late-notes'), 'utf8')).toBe('keep');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('serializes competing workers and recovers a killed worker without losing its pending identity', async () => {
+        const f = fixture();
+        try {
+            expect(() => withCleanupLock(f.root, f.shell, () => withCleanupLock(f.root, f.shell, () => {}))).toThrow(
+                'already running'
+            );
+            const module = resolve('scripts/cleanupLanes.ts');
+            const script = `
+                const {cleanupLanes, withCleanupLock} = await import(${JSON.stringify(module)});
+                const {shellPort} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
+                const {execFileSync} = await import('node:child_process');
+                const root = ${JSON.stringify(f.root)};
+                const shell = { capture: (command,args,options) => {const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
+                    run: (command,args) => execFileSync(command,args,{cwd:root}) };
+                const removal={...shellPort(shell,root),fetch:()=>{},repository:()=> 'jcosta33/sourdaw',currentDirectory:()=>root,active:()=>false,
+                    pullRequests:()=>[${JSON.stringify(f.pr)}],remoteHead:()=>undefined,
+                    remove:()=>process.kill(process.pid,'SIGKILL')};
+                cleanupLanes({primaryRoot:root,removal,now:()=>1000,serialize:op=>withCleanupLock(root,shell,op),log:()=>{}});
+            `;
+            const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+                cwd: f.root,
+                env: githubAuthorizationGitEnv(),
+                stdio: 'pipe',
+            });
+            const [, signal] = await once(child, 'exit');
+            expect(signal).toBe('SIGKILL');
+            expect(readCleanupRecords(f.root)[0]).toMatchObject({ status: 'pending', attempts: 1 });
+            expect(existsSync(f.lane)).toBe(true);
+            f.advance();
+            expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('caps retry backoff without persisting secret-shaped errors', () => {
+        expect(cleanupBackoff(1)).toBe(300_000);
+        expect(cleanupBackoff(100)).toBe(86_400_000);
+        const f = fixture();
+        try {
+            f.port.removal.pullRequests = () => {
+                throw new Error(['gh', 'p_', 'private'].join(''));
+            };
+            cleanupLanes(f.port);
+            expect(readCleanupRecords(f.root)[0]?.reason).toBe('inspection failed (private details withheld)');
+        } finally {
+            f.dispose();
+        }
+    });
+});
+
+describe('complete lane activity proof', () => {
+    const uid = process.getuid?.() ?? 0;
+    const catalog = `p${process.pid}\0\nfcwd\0tDIR\0n/repo\0\n`;
+    const capture = (command: string) => (command === 'ps' ? `${process.pid} ${uid}` : catalog);
+
+    it('refuses a successful but incomplete catalog omitting a live process', () => {
+        expect(() =>
+            laneIsActive('/repo/lane', {
+                capture: (command) => (command === 'ps' ? `${process.pid} ${uid}\n${process.ppid} ${uid}` : catalog),
+            })
+        ).toThrow('omitted a live process');
+    });
+    it('refuses truncated and permission-denied observations', () => {
+        expect(() =>
+            laneIsActive('/repo/lane', { capture: (command) => (command === 'ps' ? capture(command) : 'p1') })
+        ).toThrow('incomplete');
+        expect(() =>
+            laneIsActive('/repo/lane', {
+                capture: (command) =>
+                    command === 'ps' ? capture(command) : `p${process.pid}\0\nfcwd\0tDIR\0nPermission denied\0\n`,
+            })
+        ).toThrow('incomplete');
+        expect(() =>
+            laneIsActive('/repo/lane', {
+                capture: () => {
+                    throw new Error('permission denied');
+                },
+            })
+        ).toThrow('permission denied');
+    });
+    it('an observed holder vetoes deletion even when an unrelated descriptor catalog is incomplete', () => {
+        const partial = `p${process.pid}\0\nf7\0tREG\0n/repo/lane/held\0\nf8\0nmissing-type\0\n`;
+        expect(
+            laneIsActive('/repo/lane', { capture: (command) => (command === 'ps' ? capture(command) : partial) })
+        ).toBe(true);
+    });
+    it('admits only complete before/after coverage and observes any open file', () => {
+        expect(laneIsActive('/repo/lane', { capture })).toBe(false);
+        expect(
+            laneIsActive('/repo/lane', {
+                capture: (command) =>
+                    command === 'ps' ? capture(command) : catalog + 'f7\0tREG\0n/repo/lane/held\0\n',
+            })
+        ).toBe(true);
+    });
+    it.skipIf(process.platform !== 'darwin')(
+        'observes a real holder whose working directory is outside the temporary worktree',
+        async () => {
+            const f = fixture();
+            const child = spawn(
+                process.execPath,
+                [
+                    '-e',
+                    `const fs=require('node:fs');fs.openSync(${JSON.stringify(join(f.lane, 'tracked'))},'r');process.stdout.write('ready');setInterval(()=>{},1000);`,
+                ],
+                { cwd: f.root, stdio: ['ignore', 'pipe', 'pipe'] }
+            );
+            try {
+                await once(child.stdout, 'data');
+                const native = shellPort(
+                    {
+                        ...f.shell,
+                        capture: (command, args, options) =>
+                            f.shell.capture(
+                                command,
+                                command === 'lsof' ? [...args, '-p', String(child.pid)] : args,
+                                options
+                            ),
+                    },
+                    f.root
+                );
+                expect(native.active(f.lane)).toBe(true);
+            } finally {
+                child.kill();
+                await once(child, 'exit');
+                f.dispose();
+            }
+        }
+    );
+});

@@ -72,3 +72,6 @@ test-results/
 
 # Gate run output written by `pnpm evidence:gate`; the manifest they answer to is tracked
 /evidence/agent-campaign/records/
+
+# Durable post-merge cleanup records, verified runtime and launchd logs
+.agents/lane-cleanup/
