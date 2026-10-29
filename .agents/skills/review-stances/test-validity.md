@@ -1549,3 +1549,21 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+### A failed control receipt must invalidate the authority it staged (introduced by PR #4128)
+
+PR #4128 (`1d1471216e55823296bf84abcb4d2933ab0e3bee`) checked receipt bounding and
+interpretation admission separately, allowing a failed bounded control to leave staged semantic
+authority usable. An assertion about the failure receipt alone cannot observe that escape.
+Historical private reviewer prompts, models and tiers are unknown.
+
+Use an otherwise-valid selector built from actual published enum members whose genuine receipt
+exceeds the unchanged bound, then attempt an effectful proposal through the real parser and
+correction orchestrator. Require the correlated failure, no further provider turn, no escaped
+authority or metric state, and no proposal or writes; effectful schemas and calls stay closed.
+Compacted or replacement text must not stand in for an admitted raw success witness. Preserve
+`does not let the actual parser carry failed control authority into a following proposal` and its
+correction-orchestrator counterpart in `metricIntent.spec.ts`, plus the successful in-budget local
+and hosted controls that restore effectful planning. In a committed isolated probe, mutate only
+the discard/admission edge and require the named behavioral negative to fail without relying on a
+manifest digest failure. A fabricated failed receipt or mocked callback refusal is insufficient.
