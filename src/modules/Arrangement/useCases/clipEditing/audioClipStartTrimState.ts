@@ -108,6 +108,7 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
     if (
         !isRecord(value) ||
         typeof value.clipId !== 'string' ||
+        !Object.hasOwn(value, 'takeSourceTransitions') ||
         !validClock(value.clock) ||
         (value.direction !== 'apply' && value.direction !== 'restore') ||
         !Object.keys(value).every((key) =>
@@ -128,20 +129,22 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
     if (!projected || !valuesEqual(projected, snapshots.after)) {
         return null;
     }
-    const capture: DecodedTrim = { clipId: value.clipId, ...snapshots, clock: value.clock, direction: value.direction };
-    if (Object.hasOwn(value, 'takeSourceTransitions')) {
-        if (
-            !audioClipTrimTakeSources.isValid(
-                value.takeSourceTransitions,
-                snapshots.before,
-                audioClipTrimTimeline(value.clock)
-            )
-        ) {
-            return null;
-        }
-        capture.takeSourceTransitions = value.takeSourceTransitions;
+    if (
+        !audioClipTrimTakeSources.isValid(
+            value.takeSourceTransitions,
+            snapshots.before,
+            audioClipTrimTimeline(value.clock)
+        )
+    ) {
+        return null;
     }
-    return capture;
+    return {
+        clipId: value.clipId,
+        ...snapshots,
+        clock: value.clock,
+        direction: value.direction,
+        takeSourceTransitions: value.takeSourceTransitions,
+    };
 }
 
 function isAudioClipStartTrimPayload(value: unknown): boolean {

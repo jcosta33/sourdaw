@@ -1884,27 +1884,83 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
         );
 
-        it('retains the absent-field historical clip-only capture contract across saved replay', async () => {
-            const { before } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+        it.each(
+            [false, true].flatMap((withTakes) => (['past', 'future'] as const).map((side) => ({ withTakes, side })))
+        )(
+            'rejects a saved missing take-source capture withTakes=$withTakes side=$side',
+            async ({ withTakes, side }) => {
+                await trimAudio(
+                    { startBeat: 8, endBeat: 16, stretchMode: 'timestretch', stretchRatio: 2 },
+                    9,
+                    false,
+                    withTakes
+                );
+                if (side === 'future') {
+                    expect((await undo()).headConsumed).toBe(true);
+                    await vi.waitFor(() =>
+                        expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                    );
+                }
+                const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                const entries = saved[side];
+                if (!Array.isArray(entries) || !isRecord(entries[0])) {
+                    throw new TypeError('Expected the saved modern trim');
+                }
+                for (const key of ['inverseAction', 'redoAction']) {
+                    const action = entries[0][key];
+                    if (!isRecord(action) || !isRecord(action.payload)) {
+                        throw new Error('Expected the complete modern trim capture');
+                    }
+                    expect(action.payload.takeSourceTransitions).toHaveLength(withTakes ? 1 : 0);
+                    delete action.payload.takeSourceTransitions;
+                    expect
+                        .soft(handleRestoreAudioClipStartTrim.validateSessionActionArguments?.(action.payload))
+                        .toBe(false);
+                }
+                const trackState = trackStore.value;
+                if (!trackState) {
+                    throw new Error('Expected the trimmed track owner');
+                }
+                trackStore.set({ ...trackState, selectedTrackId: null });
+                flushAutomergeStorageWrites();
+                const raw = structuredClone(getCrdtDoc('root'));
+                const heads = Automerge.getHeads(getCrdtDoc('root')!);
+                const owners = ownerProjections();
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                reloadSavedProject();
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect(Automerge.getHeads(getCrdtDoc('root')!)).toEqual(heads);
+                expect(ownerProjections()).toEqual(owners);
+                expect.soft(undoHistoryStore.value?.[side]).toEqual([]);
+                await expectReplayRefused(side === 'past' ? 'undo' : 'redo');
+            }
+        );
+
+        it('keeps an explicit empty take-source capture through two binary reload Undo/Redo cycles', async () => {
+            const { before, satellites } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
             const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
             const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
             if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
-                throw new Error('Expected saved trim');
+                throw new TypeError('Expected the saved no-take trim');
             }
             for (const key of ['inverseAction', 'redoAction']) {
                 const action = saved.past[0][key];
                 if (!isRecord(action) || !isRecord(action.payload)) {
-                    throw new Error('Expected saved capture');
+                    throw new Error('Expected the no-take source capture');
                 }
-                delete action.payload.takeSourceTransitions;
+                expect(Object.hasOwn(action.payload, 'takeSourceTransitions')).toBe(true);
+                expect(action.payload.takeSourceTransitions).toEqual([]);
             }
-            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
-            reloadSavedProject();
-            expect((await undo()).headConsumed).toBe(true);
-            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
-            reloadSavedProject();
-            await redo();
-            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                reloadSavedProject();
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+                expect(takeLaneStore.value).toEqual(satellites.takes);
+                reloadSavedProject();
+                await redo();
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+                expect(takeLaneStore.value).toEqual(satellites.takes);
+            }
         });
 
         it('restores original region source absence through two binary Undo/Redo cycles beside a later peer comp row', async () => {

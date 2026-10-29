@@ -1677,8 +1677,8 @@ export type AppAction =
               before: ClipStateSnapshot;
               after: ClipStateSnapshot;
               clock: TempoSourceClock;
-              /** Absent retains historical clip-only replay; present captures the complete take source scope. */
-              takeSourceTransitions?: TakeReKeyLaneTransitionSnapshot[];
+              /** Complete source scope captured before trim; empty when the clip has no takes. */
+              takeSourceTransitions: TakeReKeyLaneTransitionSnapshot[];
               direction: 'apply' | 'restore';
           };
       }

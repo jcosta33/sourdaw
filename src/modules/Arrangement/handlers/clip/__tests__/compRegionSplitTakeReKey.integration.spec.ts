@@ -9,6 +9,8 @@ import { projectOfflineAudioClipPlaybacks, resolveTrackClipsWithComping } from '
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore as undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    commitUndoEntry,
+    createUndoEntry,
     executeAppAction,
     executeAppActionBatch,
     redo,
@@ -264,6 +266,63 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         sessionStorage.removeItem('sourdaw-undo-session');
         removeCrdtDoc('root');
         vi.restoreAllMocks();
+    });
+
+    it.each([120, 60])('restores a representative legacy deleted audio snapshot at current tempo %s', async (tempo) => {
+        const snapshot = ClipDummy.create({
+            id: 'legacy-audio',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 8,
+            endBeat: 16,
+            audioBufferId: 'source-buffer',
+            audioOffsetBeats: 2,
+        });
+        const track = TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [snapshot] });
+        takeLaneStore.set({ lanes: [] });
+        trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        expectSourceEntry(8, 1);
+        trackStore.set({ tracks: [{ ...track, clips: [] }], selectedTrackId: null, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        // Representative beat-only fixture, not a captured old-producer event.
+        // The shipped restore route inserts its saved clip snapshot verbatim.
+        commitUndoEntry(
+            createUndoEntry(
+                'Remove legacy audio',
+                { type: 'removeClip', payload: { clipId: snapshot.id, ripple: false } },
+                {
+                    type: 'restoreClip',
+                    payload: {
+                        clipId: snapshot.id,
+                        trackId: track.id,
+                        clipSnapshot: snapshot,
+                        clipIndex: 0,
+                        clipOrder: [snapshot.id],
+                        ripplePlan: null,
+                        midiNotesSnapshot: null,
+                        midiCcSnapshot: null,
+                        midiPitchBendSnapshot: null,
+                        retiredTakeLanes: [],
+                    },
+                }
+            )
+        );
+        tempoMapStore.set({ changes: [{ id: 'restore-tempo', beat: 0, tempo, curve: 'instant' }] });
+        flushAutomergeStorageWrites();
+        expect((await undo()).headConsumed).toBe(true);
+        const restored = clips()[0];
+        expect(restored).toEqual(snapshot);
+        for (const field of [
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+        ]) {
+            expect(Object.hasOwn(restored ?? {}, field), field).toBe(false);
+        }
+        expectSourceEntry(8, 2 * (60 / tempo));
     });
 
     it('trim of a stretched finite selected pass retains the original PCM entry and frontier through undo and redo', async () => {

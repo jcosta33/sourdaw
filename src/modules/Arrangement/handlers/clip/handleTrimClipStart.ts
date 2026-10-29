@@ -89,14 +89,14 @@ function executeCapturedAudioTrim(alpha: TrimClipStartAction, audio: AudioTrimCa
     const lanes = audioClipTrimTakeSources.project(
         takeLaneStore.value?.lanes ?? [],
         capture.clipId,
-        capture.takeSourceTransitions ?? [],
+        capture.takeSourceTransitions,
         'apply'
     );
     if (!lanes) {
         proof.release();
         return { status: 'conflict' };
     }
-    if (capture.takeSourceTransitions?.length) {
+    if (capture.takeSourceTransitions.length > 0) {
         takeLaneStore.set({ lanes });
     }
     const written = trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);

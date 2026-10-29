@@ -43,20 +43,18 @@ export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipSt
         if (!proof) {
             return { status: 'conflict' };
         }
-        if (capture.takeSourceTransitions !== undefined) {
-            const lanes = audioClipTrimTakeSources.project(
-                takeLaneStore.value?.lanes ?? [],
-                capture.clipId,
-                capture.takeSourceTransitions,
-                capture.direction
-            );
-            if (!lanes) {
-                proof.release();
-                return { status: 'conflict' };
-            }
-            if (capture.takeSourceTransitions.length > 0) {
-                takeLaneStore.set({ lanes });
-            }
+        const lanes = audioClipTrimTakeSources.project(
+            takeLaneStore.value?.lanes ?? [],
+            capture.clipId,
+            capture.takeSourceTransitions,
+            capture.direction
+        );
+        if (!lanes) {
+            proof.release();
+            return { status: 'conflict' };
+        }
+        if (capture.takeSourceTransitions.length > 0) {
+            takeLaneStore.set({ lanes });
         }
         const written = updateClip(capture.clipId, (clip) => {
             const updated = { ...clip, startBeat: replacement.startBeat };
