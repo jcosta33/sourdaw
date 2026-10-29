@@ -1,0 +1,16 @@
+scripts/__tests__/setupPnpm.spec.ts
+  h_beb54bf43b47b7 8,10,89,95-110,112-114,120-121,137-138,154-155,188-190,196-219,260-269,271,291,302-329,338-340
+scripts/setupPnpm.ts
+  h_beb54bf43b47b7 7,11,56-57,149,214-215,218-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4aac2aae9a4103e69f58392d81cb3cb40eb79f9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
