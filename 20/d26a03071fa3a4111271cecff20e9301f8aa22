@@ -1,0 +1,20 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 467-475
+scripts/__tests__/cleanupLanes.spec.ts
+  h_beb54bf43b47b7 16,40,109-179
+scripts/__tests__/removeLane.spec.ts
+  h_beb54bf43b47b7 67,129,696-777,949,1238-1243,1500-1505,1630,1685-1690,1708-1713,1721-1825,1850,1916-1921
+scripts/removeLane.ts
+  h_beb54bf43b47b7 14,39,53,305,310-334,352,366-367,370-371,438-439,447,456,475-476,486-493,510-511,915-916,930,935-936,949-950,964,969-970,1000-1005,1008-1010
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "20d26a03071fa3a4111271cecff20e9301f8aa22",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
