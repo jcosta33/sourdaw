@@ -16,6 +16,14 @@ The unpatched immutable case must fail on the observed extra reload. Do not requ
 unfinished without emitting one. This mechanism proof does not reproduce the original
 Linux blank shell or discharge its failed Gate.
 
+The unpublished `51f7581418` regression could finish green before a delayed reconnect reload:
+removing the client gate while delaying its real ping wait by five seconds emitted Vite's
+existing polling-start log, then completed App/CSS before teardown. Observe that signal,
+emitted before the asynchronous wait, and require zero polling starts for immutable documents
+and exactly one for the developer reload control, alongside the existing navigation assertions.
+The same delayed bad-client probe must fail; finishing before a scheduled side effect is not
+evidence that the side effect was prevented.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete

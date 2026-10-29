@@ -40,6 +40,7 @@ for (const hmr of [false, true]) {
         const disconnected = deferred<void>();
         const disconnectHandled = deferred<void>();
         const reloaded = deferred<void>();
+        const reconnectPollingEvents: string[] = [];
         const navigationRequests: unknown[] = [];
         const documents: string[] = [];
         const errors: string[] = [];
@@ -110,6 +111,10 @@ for (const hmr of [false, true]) {
             if (message.text() === 'fixture-disconnected') {
                 disconnectHandled.complete();
             }
+            if (message.text() === '[vite] server connection lost. Polling for restart...') {
+                reconnectPollingEvents.push(message.text());
+                record('reconnect-polling-started', message.text());
+            }
             if (message.type() === 'error') {
                 errors.push(message.text());
             }
@@ -159,10 +164,15 @@ for (const hmr of [false, true]) {
             await health();
             expect(errors).toEqual([]);
             if (hmr) {
+                expect(reconnectPollingEvents).toHaveLength(1);
                 expect(finalTimeOrigin).not.toBe(timeOrigin);
                 expect(documents).toHaveLength(2);
                 expect(navigationRequests).toEqual([expect.objectContaining({ reason: 'reload' })]);
             } else {
+                expect(
+                    reconnectPollingEvents,
+                    'An immutable document must not enter Vite reconnect polling'
+                ).toHaveLength(0);
                 expect(
                     navigationRequests,
                     'A disconnected editor socket must not navigate an immutable document'
@@ -181,7 +191,11 @@ for (const hmr of [false, true]) {
                 } finally {
                     await rm(cacheDir, { recursive: true, force: true });
                     await testInfo.attach('hmr-disconnect-events', {
-                        body: JSON.stringify({ hmr, identity, events, navigationRequests, documents, errors }, null, 2),
+                        body: JSON.stringify(
+                            { hmr, identity, events, reconnectPollingEvents, navigationRequests, documents, errors },
+                            null,
+                            2
+                        ),
                         contentType: 'application/json',
                     });
                 }
