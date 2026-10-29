@@ -7,12 +7,13 @@ import { expect, test, type Frame, type FrameLocator, type Locator, type Page, t
 import { stringify as superjsonStringify } from 'superjson';
 
 import { analyzePcmWav } from '../e2e/analyzePcmWav';
+import { installFilePickerCapture, type FilePickerCapture } from '../e2e/exportFilePickerCapture';
 
 import { installFaustProbe } from './productionFaustProbe';
 import { admitProductionTransportInput } from './productionTransportInput';
 
 // This is a production-preview case. It deliberately uses the shipping iframe,
-// native worklet loading, real transport controls and the real download path.
+// native worklet loading, real transport controls and controlled picker storage.
 async function buildIdentity(origin: string): Promise<Record<string, unknown>> {
     const paths = (await readdir('dist', { recursive: true, withFileTypes: true }))
         .filter((entry) => entry.isFile())
@@ -141,16 +142,57 @@ async function openBakery(app: FrameLocator): Promise<Locator> {
     return dialog;
 }
 
-async function captureWav(page: Page, dialog: Locator, testInfo: TestInfo, name: string): Promise<Buffer> {
-    const downloadPromise = page.waitForEvent('download', { timeout: 180_000 });
+type SavedCapture = {
+    name: string;
+    filename: string;
+    bytes: number;
+    writes: number;
+    closes: number;
+    aborts: number;
+    requests: number;
+    writables: number;
+};
+
+function captureCounts(capture: FilePickerCapture) {
+    return {
+        bytes: capture.bytesWritten(),
+        writes: capture.writeCount(),
+        closes: capture.closeCount(),
+        aborts: capture.abortCount(),
+        requests: capture.pickerCount(),
+        writables: capture.writableCount(),
+    };
+}
+
+function captureState(capture: FilePickerCapture) {
+    capture.assertHealthy();
+    return captureCounts(capture);
+}
+
+async function captureWav(
+    dialog: Locator,
+    testInfo: TestInfo,
+    name: string,
+    capture: FilePickerCapture,
+    completed: SavedCapture[]
+): Promise<Buffer> {
     await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
-    const download = await downloadPromise;
-    expect(await download.failure()).toBeNull();
+    await expect.poll(() => capture.closeCount(), { timeout: 180_000 }).toBe(1);
+    await capture.waitForClose();
+    const filename = await capture.pickerFilename;
+    expect(filename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+    const saved = captureState(capture);
+    expect(saved.bytes).toBeGreaterThan(0);
+    expect(saved.writes).toBeGreaterThan(0);
+    expect(saved.closes).toBe(1);
+    expect(saved.aborts).toBe(0);
+    expect(saved.requests).toBe(1);
+    expect(saved.writables).toBe(1);
     await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible();
     await dialog.getByRole('button', { name: 'Close Bakery' }).click();
-    const path = testInfo.outputPath(`${name}.wav`);
-    await download.saveAs(path);
+    const path = capture.path;
     const bytes = await readFile(path);
+    expect(bytes.length).toBe(saved.bytes);
     const analysis = analyzePcmWav(bytes);
     expect(analysis.channels).toBe(2);
     expect(analysis.bitsPerSample).toBe(24);
@@ -161,6 +203,8 @@ async function captureWav(page: Page, dialog: Locator, testInfo: TestInfo, name:
     expect(analysis.clippedSampleCount).toBe(0);
     await testInfo.attach(name, { path, contentType: 'audio/wav' });
     await testInfo.attach(`${name}-analysis`, { body: JSON.stringify(analysis), contentType: 'application/json' });
+    completed.push({ name, filename, ...saved });
+    await capture.retire();
     return bytes;
 }
 
@@ -209,10 +253,19 @@ test('production Faust plays and exports after slow native loading, refuses a na
     let transportInput: Awaited<ReturnType<typeof admitProductionTransportInput>> | undefined;
     const downloads: string[] = [];
     page.on('download', (download) => downloads.push(download.suggestedFilename()));
+    const captures: FilePickerCapture[] = [];
+    const completed: SavedCapture[] = [];
+    const newCapture = async (name: string) => {
+        const capture = await installFilePickerCapture(page, testInfo.outputPath(name), {
+            initializeCurrentFrames: true,
+        });
+        captures.push(capture);
+        return capture;
+    };
     try {
+        const activeCapture = await newCapture('active-tape-delay.wav');
         const dismissed = superjsonStringify(true);
         await page.addInitScript((alphaDismissed) => {
-            Reflect.deleteProperty(window, 'showSaveFilePicker');
             if (window.parent === window) {
                 localStorage.clear();
                 localStorage.setItem('wd:onboarding-completed', '1');
@@ -266,7 +319,7 @@ test('production Faust plays and exports after slow native loading, refuses a na
         await transportInput.stop();
         await frame.evaluate(() => window.productionFaustProbe.setMode('hold-offline'));
         let dialog = await openBakery(app);
-        const activePromise = captureWav(page, dialog, testInfo, 'active-tape-delay');
+        const activePromise = captureWav(dialog, testInfo, 'active-tape-delay', activeCapture, completed);
         await holdAndRelease(frame, 'offline');
         const active = await activePromise;
         // Select the actual bus through its visible track row; the mute and
@@ -285,8 +338,9 @@ test('production Faust plays and exports after slow native loading, refuses a na
         ).length;
         await trackList.getByRole('button', { name: 'Mute Delay Bus', exact: true }).click();
         await expect(trackList.getByRole('button', { name: 'Unmute Delay Bus', exact: true })).toBeVisible();
+        const mutedCapture = await newCapture('muted-delay-bus.wav');
         dialog = await openBakery(app);
-        const muted = await captureWav(page, dialog, testInfo, 'muted-delay-bus');
+        const muted = await captureWav(dialog, testInfo, 'muted-delay-bus', mutedCapture, completed);
         const mutedLoads = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
             (load) => load.context === 'offline'
         );
@@ -303,8 +357,9 @@ test('production Faust plays and exports after slow native loading, refuses a na
         const beforeBypass = (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
             (load) => load.context === 'offline'
         ).length;
+        const bypassCapture = await newCapture('bypassed-tape-delay.wav');
         dialog = await openBakery(app);
-        const bypassed = await captureWav(page, dialog, testInfo, 'bypassed-tape-delay');
+        const bypassed = await captureWav(dialog, testInfo, 'bypassed-tape-delay', bypassCapture, completed);
         expect(
             (await frame.evaluate(() => window.productionFaustProbe.snapshot())).loads.filter(
                 (load) => load.context === 'offline'
@@ -325,8 +380,10 @@ test('production Faust plays and exports after slow native loading, refuses a na
             window.productionFaustProbe.setMode('reject-offline');
             window.productionFaustProbe.observeSuccess();
         });
+        // This precreated staging artifact is not a completed user WAV.
+        const failedCapture = await newCapture('native-failure-aborted.incomplete');
         dialog = await openBakery(app);
-        const beforeFailure = downloads.length;
+        const beforeFailure = completed.length;
         await dialog.getByRole('button', { name: 'Start Baking', exact: true }).click();
         await expect(dialog.getByText('The bread burned...', { exact: true })).toBeVisible({ timeout: 90_000 });
         await expect(dialog.getByText(/Delay Bus.*Tape Delay|Tape Delay.*Delay Bus/)).toBeVisible();
@@ -335,15 +392,35 @@ test('production Faust plays and exports after slow native loading, refuses a na
         );
         expect(failed).toMatchObject({ nativeInvoked: true, nativeCompleted: false, constructions: 0 });
         expect(failed?.nativeRejected).toBeTruthy();
-        expect(downloads).toHaveLength(beforeFailure);
+        await failedCapture.waitForAbort();
+        const failedState = captureState(failedCapture);
+        expect(failedState).toMatchObject({ closes: 0, aborts: 1, requests: 1, writables: 1 });
+        const incomplete = await readFile(failedCapture.path);
+        expect(incomplete.length).toBe(failedState.bytes);
+        expect(() => analyzePcmWav(incomplete)).toThrow();
+        await testInfo.attach('native-failure-aborted-artifact', {
+            path: failedCapture.path,
+            contentType: 'application/octet-stream',
+        });
+        expect(completed).toHaveLength(beforeFailure);
+        expect(downloads).toHaveLength(0);
         await expect(app.getByText('Ding! The audio finished baking', { exact: true })).toHaveCount(0);
         const retry = dialog.getByRole('button', { name: 'Start Baking', exact: true });
         await expect(retry).toBeEnabled();
         expect((await frame.evaluate(() => window.productionFaustProbe.snapshot())).successNotifications).toBe(0);
         await frame.evaluate(() => window.productionFaustProbe.stopObservingSuccess());
         observations.failedLoad = failed;
+        observations.failedCapture = captureState(failedCapture);
+        await failedCapture.retire();
         await frame.evaluate(() => window.productionFaustProbe.setMode('pass'));
-        const recovered = await captureWav(page, dialog, testInfo, 'same-page-recovered-tape-delay');
+        const recoveryCapture = await newCapture('same-page-recovered-tape-delay.wav');
+        const recovered = await captureWav(
+            dialog,
+            testInfo,
+            'same-page-recovered-tape-delay',
+            recoveryCapture,
+            completed
+        );
         const recoveryContrast = pcmContrast(recovered, bypassed);
         observations.recoveryBypassContrast = recoveryContrast;
         const repeatedActiveContrast = pcmContrast(recovered, active);
@@ -362,20 +439,35 @@ test('production Faust plays and exports after slow native loading, refuses a na
             nativeRejected: null,
             constructions: 1,
         });
-        expect(downloads).toHaveLength(beforeFailure + 1);
+        expect(completed).toHaveLength(beforeFailure + 1);
+        expect(captureState(failedCapture)).toEqual(failedState);
+        expect(await readFile(failedCapture.path)).toEqual(incomplete);
+        expect(downloads).toHaveLength(0);
     } finally {
-        observations.transportInput = transportInput?.snapshot();
-        transportInput?.dispose();
-        if (frame) {
-            observations.finalProbe = await frame
-                .evaluate(() => window.productionFaustProbe.snapshot())
-                .catch((error: unknown) => String(error));
+        try {
+            observations.transportInput = transportInput?.snapshot();
+            transportInput?.dispose();
+            if (frame) {
+                observations.finalProbe = await frame
+                    .evaluate(() => window.productionFaustProbe.snapshot())
+                    .catch((error: unknown) => String(error));
+            }
+            observations.downloads = downloads;
+            observations.completedPickerCaptures = completed;
+            observations.pickerCaptures = captures.map((capture) => ({
+                path: capture.path,
+                ...captureCounts(capture),
+            }));
+            await testInfo.attach('production-faust-observations', {
+                body: JSON.stringify(observations, null, 2),
+                contentType: 'application/json',
+            });
+            console.log(`production-faust-observations ${JSON.stringify(observations)}`);
+        } finally {
+            await Promise.all(captures.map((capture) => capture.dispose()));
+            for (const capture of captures) {
+                capture.assertHealthy();
+            }
         }
-        observations.downloads = downloads;
-        await testInfo.attach('production-faust-observations', {
-            body: JSON.stringify(observations, null, 2),
-            contentType: 'application/json',
-        });
-        console.log(`production-faust-observations ${JSON.stringify(observations)}`);
     }
 });
