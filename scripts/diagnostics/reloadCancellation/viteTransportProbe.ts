@@ -16,7 +16,9 @@ export function installViteTransportProbe(output: string): () => void {
     const journal = createJournal(output);
     let active = true;
     const record: typeof journal = (kind, data) => {
-        if (!active) return;
+        if (!active) {
+            return;
+        }
         try {
             journal(kind, data);
         } catch {

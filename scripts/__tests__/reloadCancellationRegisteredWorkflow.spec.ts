@@ -67,7 +67,7 @@ function assertRegisteredDiagnostic(value: Mapping): void {
     assert.equal(job.name, 'Diagnose original reload cancellation');
     assert.equal(
         job.if,
-        "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.run_attempt == 1 }}"
+        "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.event.pull_request.head.sha == 'b274e39cde2be69b5a6ec1bc66973f79837251af' && github.run_attempt == 1 }}"
     );
     assert.equal(job['runs-on'], 'ubuntu-latest');
     assert.deepEqual(job.container, { image: originalImage, options: '--init --ipc=host' });
@@ -175,6 +175,13 @@ describe('registered reload cancellation advisory workflow', () => {
         [
             'no attempt guard',
             (value: Mapping) => (diagnosticJob(value).if = "${{ github.event.action == 'synchronize' }}"),
+        ],
+        [
+            'another capture head',
+            (value: Mapping) => {
+                const job = diagnosticJob(value);
+                job.if = String(job.if).replace('b274e39cde2be69b5a6ec1bc66973f79837251af', 'a'.repeat(40));
+            },
         ],
         [
             'wrong install directory',

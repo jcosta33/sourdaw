@@ -3,26 +3,20 @@ import { recordOf } from './journal.ts';
 export function assertTelemetryHealth(value: unknown): void {
     const health = recordOf(value, 'collector health');
     const counts = recordOf(health.counts, 'event counts');
-    const required =
-        health.profile === 'transport'
-            ? ['collector-ready', 'Network.requestWillBeSent', 'Page.frameNavigated']
-            : [
-                  'collector-ready',
-                  'Network.requestWillBeSent',
-                  'Page.frameNavigated',
-                  'document-init',
-                  'public-dom-transition',
-              ];
+    const required = ['collector-ready', 'Network.requestWillBeSent', 'Page.frameNavigated'];
+    if (health.profile !== 'transport') {
+        required.push('document-init', 'public-dom-transition');
+    }
     for (const name of required) {
         if (typeof counts[name] !== 'number' || !Number.isFinite(counts[name]) || counts[name] <= 0) {
             throw new Error(`Required actual telemetry was not observed: ${name}`);
         }
     }
     const websocket = recordOf(health.websocket, 'websocket health');
-    const coverageErrors =
-        health.profile === 'transport'
-            ? [health.errors, websocket.errors]
-            : [health.errors, websocket.errors, websocket.missingCreation];
+    const coverageErrors = [health.errors, websocket.errors];
+    if (health.profile !== 'transport') {
+        coverageErrors.push(websocket.missingCreation);
+    }
     for (const errors of coverageErrors) {
         if (!Array.isArray(errors) || errors.length > 0) {
             throw new Error('Collector errors or incomplete websocket coverage remain');
