@@ -262,7 +262,7 @@ afterEach(async () => {
     const created = native.invoke.mock.calls.filter(([command]) => command === 'create_crumbs');
     for (const [, input] of created) {
         if (typeof input?.[0] !== 'string') {
-            throw new Error('Expected the created native instance identity');
+            throw new TypeError('Expected the created native instance identity');
         }
         const createdId = input[0];
         await waitFor(() =>

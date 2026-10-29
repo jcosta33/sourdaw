@@ -2,15 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     subscribe: vi.fn((_listener: (docId?: string) => void) => vi.fn()),
+    getDocument: vi.fn((_id: string) => undefined),
+    captureRootIdentity: vi.fn(() => JSON.stringify({ rootIdentityEpoch: 0 })),
     toasterSweep: vi.fn(),
     levainSweep: vi.fn(),
     crumbsSweep: vi.fn(),
     configureSampleAccess: vi.fn((_capture: (deviceId: string) => number | null) => vi.fn()),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    DOC_PREFIX_ROOT: 'root',
     subscribeToCrdtChanges: mocks.subscribe,
+    getCrdtDoc: mocks.getDocument,
+    captureProjectRootIdentity: mocks.captureRootIdentity,
 }));
 // The seam is document glue and nothing else: three owner sweeps it runs in
 // registration order and a document filter it owns.
@@ -64,6 +68,8 @@ describe('initDeviceStateReconciliation', () => {
             throw new Error('Expected the actual sample owner reader');
         }
         expect(capture('missing-crumbs-device')).toBeNull();
+        expect(mocks.getDocument).toHaveBeenCalledExactlyOnceWith('root');
+        expect(mocks.captureRootIdentity).not.toHaveBeenCalled();
         const dispose = mocks.configureSampleAccess.mock.results.at(-1)?.value;
         if (!dispose) {
             throw new Error('Expected the sample access disposer');
