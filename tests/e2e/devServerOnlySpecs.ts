@@ -14,6 +14,7 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/browserAiWebGpuAdmission.spec.ts',
     'tests/e2e/browserDisplayScale.spec.ts',
     'tests/e2e/builtinDeviceAutomationOffline.spec.ts',
+    'tests/e2e/controlGallery.spec.ts',
     'tests/e2e/crdtPersistence.native.spec.ts',
     'tests/e2e/grinderOfflineNumericParity.spec.ts',
     'tests/e2e/monoModulationInput.spec.ts',
