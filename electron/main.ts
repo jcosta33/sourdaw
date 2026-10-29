@@ -44,8 +44,8 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
 } from './channels.js';
 import { APPLY_GRAPH_COMMANDS, EXPOSED_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './commands.js';
-import { createCommandStream, createEventForwarder } from './events.js';
 import { createScopedNativeAddon } from './createScopedNativeAddon.js';
+import { createCommandStream, createEventForwarder } from './events.js';
 import {
     bindMainWindowOwnerTeardown,
     destroyCrashedMainWindow,
@@ -79,8 +79,8 @@ import { createRendererSessionLifecycle, isRendererReplacingNavigation } from '.
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
-import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { resolveRuntimeScope } from './runtimeScope.js';
+import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { publishScanWorkerLaunch } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
 import { createProductionShellComposition, requestApprovedWindowClose } from './shellComposition.js';

@@ -11,13 +11,14 @@
  * The module's `main()` is guarded by an entry check, so importing it here does
  * not load a native addon or claim `parentPort`.
  */
-import { readFileSync, mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
-import { resolve, join } from 'node:path';
-import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { readFileSync, mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve, join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { resolveRuntimeScope } from '../runtimeScope.js';
 import {
     asScanWorkerRequest,
     handleScanRequest,
@@ -29,7 +30,6 @@ import {
 } from '../scanWorker.js';
 
 import type { NativeHost } from '../native.js';
-import { resolveRuntimeScope } from '../runtimeScope.js';
 
 const policySource = readFileSync(resolve('crates/sourdaw-native/src/host/plugin_scan_worker.rs'), 'utf8');
 

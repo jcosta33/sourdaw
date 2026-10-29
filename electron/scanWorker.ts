@@ -29,10 +29,10 @@
  */
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
-import { createScopedNativeAddon } from './createScopedNativeAddon.js';
-import { resolveRuntimeScope } from './runtimeScope.js';
 
+import { createScopedNativeAddon } from './createScopedNativeAddon.js';
 import { loadNativeAddon, resolveNativeAddonPath, type NativeCommand, type NativeHost } from './native.js';
+import { resolveRuntimeScope } from './runtimeScope.js';
 
 /**
  * The env var carrying the leaf spawn command to the Rust policy.
