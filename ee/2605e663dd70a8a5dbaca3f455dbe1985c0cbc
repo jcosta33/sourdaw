@@ -1,0 +1,100 @@
+src/modules/AudioRendering/repositories/audioEncoders/encodeOggAudio.ts
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 1-48
+  s_59e31a5c6f3e31::t_f65e6010787365 49-51
+src/modules/AudioRendering/presentations/views/__tests__/exportSettings.spec.ts
+  s_59e31a5c6f3e31::t_474b7171a8148a 8-11,14,18
+  s_59e31a5c6f3e31::t_c67b6f1638ac0a 12-13
+  s_59e31a5c6f3e31::t_64426e2120e87e 15-17
+  s_59e31a5c6f3e31::t_053b90ceb5641d 19-21
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_de6ea2d4f2a85b 374-382,385-393,751-758,772-773,775-800,1171,1262
+  s_59e31a5c6f3e31::t_c4ab545510472c 15-16,373,383-384,394,750,759-768,1263
+  s_59e31a5c6f3e31::t_e75b6d6e7ca2e1 769-771,774,1143-1146,1158,1176
+  s_59e31a5c6f3e31::t_776c0c66671b1b 801-803
+  s_59e31a5c6f3e31::t_38ece44aca4ab1 1147-1149
+  s_59e31a5c6f3e31::t_af76690a91dbbd 1155-1157
+  s_59e31a5c6f3e31::t_7279ceccdffdc1 1159-1161,1168-1170
+  s_59e31a5c6f3e31::t_94524bb0b42064 1172-1175
+  s_59e31a5c6f3e31::t_c1c65f12734392 1259-1261
+  s_59e31a5c6f3e31::t_1788ff7a5cbd95 1264
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/opusEncoder.spec.ts
+  s_59e31a5c6f3e31::t_edcd946f59867c 1,15-22,34-65
+  s_59e31a5c6f3e31::t_2027991e8c3eef 2-14,23-33,66
+src/modules/AudioRendering/repositories/audioEncoders/createOggCodecWorker.ts
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 4,99,123-126
+  s_59e31a5c6f3e31::t_3782f9c6b70134 1-3,5-98,100-122,127-130
+  s_59e31a5c6f3e31::t_7906c032fcc38c 131-133
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_4661bc2400cb66 46
+  s_59e31a5c6f3e31::t_7ade06e5decee1 9-14,20-37
+  s_59e31a5c6f3e31::t_c7277dd6a22e82 38-40,43-45
+  s_59e31a5c6f3e31::t_719b97b18a87f4 47-49
+src/modules/AudioRendering/repositories/audioEncoders/vorbisEncoder.ts
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 1-7
+  s_59e31a5c6f3e31::t_4935e1bf9bd303 8-10
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/vorbisEncoder.spec.ts
+  s_59e31a5c6f3e31::t_2027991e8c3eef 2-15,68-69,71,73,75
+  s_59e31a5c6f3e31::t_edcd946f59867c 1,16-67,70,72,74
+.prettierignore
+  s_59e31a5c6f3e31::t_f8059c94fd21a6 30-41
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createOggCodecWorker.spec.ts
+  s_59e31a5c6f3e31::t_8f06f6919932b2 2-12,58,64-73,97,133,138,144-147
+  s_59e31a5c6f3e31::t_edcd946f59867c 1,13-57,59-63,74-96,98-132,134-137,139-143
+src/modules/AudioRendering/workers/__tests__/oggCodecWorker.spec.ts
+  s_59e31a5c6f3e31::t_43ce6210b40087 12,15,21-24,40,64-69
+  s_59e31a5c6f3e31::t_8f06f6919932b2 2-3,9-11,13,35-36,43-46,50-51,57-59,71-72
+  s_59e31a5c6f3e31::t_edcd946f59867c 1,4-8,14,16-20,25-34,37-39,41-42,47-49,52-56,60-63,70
+  s_59e31a5c6f3e31::t_6037048ca50bf6 73-75
+tests/e2e/exportOggCodecs.spec.ts
+  s_59e31a5c6f3e31::t_8beb037f93f2c6 129,249-251,256-262,264-273,275-278,280-302,306-307
+  s_59e31a5c6f3e31::t_d407f8fb2e2d15 1-5,9-13,26-27,34-39,42,52-53,57-58,62-63,65-75,80-81,88,91-92,96-103,114-118,122,125-126,130,133-135,143-147,149-150,157,161,182-183,191,203-213,225,230,246-247
+  s_59e31a5c6f3e31::t_ebb31e314c2622 6-8,14-25,28-33,40-41,43-51,54-56,59-61,64,76-79,82-87,89-90,93-95,104-113,119-121,123-124,127-128,131-132,136-142,148,151-156,158-160,162-181,184-190,192-202,215-224,226-229,231-245,248,252-255,263,274,279,303-305,308
+  s_59e31a5c6f3e31::t_edcd946f59867c 214
+  s_59e31a5c6f3e31::t_a702d068c1793f 309-311
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/oggCodecTestWorker.ts
+  s_59e31a5c6f3e31::t_2027991e8c3eef 1-18,24-34,38-59,63-66,81-85,90-96,100-102,108,112-114
+  s_59e31a5c6f3e31::t_b770317e458bd4 19-23,35-37,60-62,67-80,86-89,97-99,103-107,109-111
+src/modules/AudioRendering/models/OggCodecWorkerProtocol.ts
+  s_59e31a5c6f3e31::t_3782f9c6b70134 1-5,7-10,14-15
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 6,11-13
+src/modules/AudioRendering/repositories/audioEncoders/opusEncoder.ts
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 1-7
+  s_59e31a5c6f3e31::t_66f8b6674732b2 8-10
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_59e31a5c6f3e31::t_6e2240899624d4 8,69
+src/modules/AudioRendering/useCases/resolveDeliveryTargets.ts
+  s_59e31a5c6f3e31::t_6e2240899624d4 37,39
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_75ac69a3f567f7 453,459,1514-1516
+  s_59e31a5c6f3e31::t_1148eeaa3719ff 454-458,1378-1379,1389-1393,1413-1415,1489-1495
+  s_59e31a5c6f3e31::t_6e2240899624d4 95-97,883-884,888,1376-1377,1380-1381,1396
+src/modules/AudioRendering/workers/oggCodecWorker.ts
+  s_59e31a5c6f3e31::t_edcd946f59867c 31-35,61-67,80-87,102-104,124,127-128,130
+  s_59e31a5c6f3e31::t_75ac69a3f567f7 1
+  s_59e31a5c6f3e31::t_4eb9f1440e3591 2-7,10-30,36-60,68-79,88-101,105-123,125-126,129,131-137
+  s_59e31a5c6f3e31::t_43ce6210b40087 8-9
+src/modules/AudioRendering/models/DeliveryTarget.ts
+  s_59e31a5c6f3e31::t_6e2240899624d4 3
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_b770317e458bd4 120-122,158-162,208-210
+  s_59e31a5c6f3e31::t_6e2240899624d4 5-6,19,142,150-151,154-157,163-173,201-204,211
+src/modules/AudioRendering/useCases/__tests__/resolveDeliveryTargets.spec.ts
+  s_59e31a5c6f3e31::t_474b7171a8148a 6-12
+  s_59e31a5c6f3e31::t_5c7a2bbc57bde2 13-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee2605e663dd70a8a5dbaca3f455dbe1985c0cbc",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
