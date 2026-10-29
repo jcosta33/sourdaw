@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test('development control gallery shows source tokens and interactive shared controls', async ({ page }, testInfo) => {
     await setupWorkspace(page);
@@ -8,7 +8,8 @@ test('development control gallery shows source tokens and interactive shared con
     await page.goto('/dev/control-gallery');
     const galleryHeading = page.getByRole('heading', { name: 'Sourdaw control gallery' });
     expect(await page.locator('script[type="module"][src^="/src/"]').count()).toBeGreaterThan(0);
-    await expect(galleryHeading).toBeVisible();
+    // The direct navigation starts a new application boot, including cold dev-server transforms.
+    await expect(galleryHeading).toBeVisible({ timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS });
 
     const tokens = page.getByRole('list', { name: 'Design tokens' }).locator('[data-token-name]');
     await expect(tokens).toHaveCount(193);
