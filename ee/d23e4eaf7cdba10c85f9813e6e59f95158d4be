@@ -1,0 +1,20 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1824-1829
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_beb54bf43b47b7 64,79-80,88,111,113,121,132,204-205,207,209,220,231,233,240,251,256-258,260-261
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  h_beb54bf43b47b7 74,192,196,199,217,267-275,280,308-309,324,329-330,333-334
+scripts/__tests__/quantumCostTableRendering.spec.ts
+  h_beb54bf43b47b7 1-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eed23e4eaf7cdba10c85f9813e6e59f95158d4be",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
