@@ -454,6 +454,17 @@ Require the authoritative document, Automation projection, links, samples, and u
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
 
+### A projected absence is not a committed deletion (issue #5283)
+
+Hold the production registered removal handler for an On track `a` in a real storage transaction.
+While its optimistic projection hides `a`, independently commit `replacement-input` with
+`mutateCrdtDoc`. At that held interval observe the raw committed root still containing `a`, the
+visible projection omitting it, and runtime ownership together: the obsolete `a` key and edge
+must already be retired, while eligible shared `b` keeps the same capture, edge, and stream. In a
+last-owner case, the old input must stop. Neither case may recreate `a`'s strip or request
+permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
+and capture. Testing deletion and selector changes separately misses this authority crossing.
+
 ## Lesson from the PR #645 selected-range undo escape
 
 PR #645 made selected-range deletion retain prepared publication handles for durable Undo. Ordinary CRDT settlement

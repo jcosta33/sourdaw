@@ -1280,6 +1280,20 @@ case with equal start timestamps and one with equal end timestamps; for each pai
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
 
+### A held removal and committed retarget need one discriminating oracle (issue #5283)
+
+Use the registered removal handler and real storage transaction with On track `a` at input `null`
+and eligible shared owner `b`. While removal hides `a` optimistically, commit
+`replacement-input` independently via `mutateCrdtDoc`. Assert in the same held interval that the
+raw committed root still contains `a`, the projection hides it, and runtime owners contain only
+`b`, whose capture, edge, and stream are unchanged. Require no absent-strip recreation or new
+permission request; in a last-owner case, require the old input to stop. Commit removes `a`; abort
+re-admits the current input; a same-input abort retains the original owner and capture.
+
+As the discriminator, remove only the committed-selector retirement branch: the unchanged combined
+shared-commit case must fail before removal commits, reporting owners `a, b` instead of `b`. Two
+separate single-condition cases cannot establish this combined observation.
+
 ### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
 
 PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
