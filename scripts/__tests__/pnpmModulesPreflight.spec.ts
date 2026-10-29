@@ -1,12 +1,14 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+    closeSync,
+    fstatSync,
     mkdirSync,
     mkdtempSync,
+    openSync,
     readFileSync,
     realpathSync,
     rmSync,
-    statSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
@@ -448,16 +450,20 @@ describe('pnpm modules preflight against a real filesystem', () => {
                     `node_modules/${PNPM_WORKSPACE_STATE}`,
                     'node_modules/.pnpm/lock.yaml',
                 ].map((path) => {
-                    const file = join(root, path);
-                    const stat = statSync(file);
-                    return [
-                        path,
-                        {
-                            sha256: createHash('sha256').update(readFileSync(file)).digest('hex'),
-                            ino: stat.ino,
-                            mtimeMs: stat.mtimeMs,
-                        },
-                    ];
+                    const descriptor = openSync(join(root, path), 'r');
+                    try {
+                        const stat = fstatSync(descriptor);
+                        return [
+                            path,
+                            {
+                                sha256: createHash('sha256').update(readFileSync(descriptor)).digest('hex'),
+                                ino: stat.ino,
+                                mtimeMs: stat.mtimeMs,
+                            },
+                        ];
+                    } finally {
+                        closeSync(descriptor);
+                    }
                 })
             );
         const before = metadata();
