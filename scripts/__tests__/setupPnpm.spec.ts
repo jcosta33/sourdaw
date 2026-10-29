@@ -75,16 +75,19 @@ function fixture() {
     return { workspace, dest, options, run, implementation, target, exports };
 }
 
-function configFileProcess(input: ReturnType<typeof fixture>, injection?: { name: string; kind: 'file' | 'symlink' }) {
+function configFileProcess(
+    input: ReturnType<typeof fixture>,
+    options: { injection?: { name: string; kind: 'file' | 'symlink' }; mask?: number; dest?: string } = {}
+) {
     const script = join(dirname(input.workspace), 'config-files.mjs');
     writeFileSync(
         script,
         `import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
 import {join} from 'node:path';
-process.umask(0);
-const workspace=${JSON.stringify(input.workspace)},dest=${JSON.stringify(input.dest)},env=${JSON.stringify(input.options.env)};
-const injection=${JSON.stringify(injection ?? null)};
+process.umask(${options.mask ?? 0o022});
+const workspace=${JSON.stringify(input.workspace)},dest=${JSON.stringify(options.dest ?? input.dest)},env=${JSON.stringify(input.options.env)};
+const injection=${JSON.stringify(options.injection ?? null)};
 const target=join(workspace,'preserve-config-target');
 fs.writeFileSync(target,'preserve input');
 if(injection){
@@ -110,7 +113,8 @@ for(const name of ['user.npmrc','global.npmrc']){
  const file=join(dest,'config',name);
  if(fs.existsSync(file))files[name]={mode:fs.statSync(file).mode&0o777,content:fs.readFileSync(file,'utf8'),symlink:fs.lstatSync(file).isSymbolicLink()};
 }
-console.log(JSON.stringify({rootMode:fs.statSync(dest).mode&0o777,configMode:fs.statSync(join(dest,'config')).mode&0o777,files,commands,error,target:fs.readFileSync(target,'utf8'),exports:['GITHUB_PATH','GITHUB_ENV','GITHUB_OUTPUT'].map(name=>fs.readFileSync(env[name],'utf8'))}));
+const mode=file=>fs.existsSync(file)?fs.statSync(file).mode&0o777:null;
+console.log(JSON.stringify({creationMask:process.umask(),destinationExists:fs.existsSync(dest),rootMode:mode(dest),configMode:mode(join(dest,'config')),runtimeMode:mode(join(dest,'runtime')),bootstrapMode:mode(join(dest,'bootstrap')),files,commands,error,target:fs.readFileSync(target,'utf8'),exports:['GITHUB_PATH','GITHUB_ENV','GITHUB_OUTPUT'].map(name=>fs.readFileSync(env[name],'utf8'))}));
 `
     );
     const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 5_000 });
@@ -121,16 +125,42 @@ console.log(JSON.stringify({rootMode:fs.statSync(dest).mode&0o777,configMode:fs.
 }
 
 describe('verified JavaScript pnpm setup', () => {
-    it('creates private config files readable by their owner even with a permissive umask', () => {
+    it('creates private config files and readable executable directories under the ordinary creation mask', () => {
         const report = configFileProcess(fixture());
         expect(report).toMatchObject({
+            creationMask: 0o022,
             rootMode: 0o755,
             configMode: 0o700,
+            runtimeMode: 0o755,
+            bootstrapMode: 0o755,
             files: {
                 'user.npmrc': { mode: 0o600, content: '', symlink: false },
                 'global.npmrc': { mode: 0o600, content: '', symlink: false },
             },
             commands: 1,
+            target: 'preserve input',
+            exports: ['', '', ''],
+        });
+    });
+
+    it.skipIf(process.platform === 'win32').each([
+        { mask: 0o000, permissions: 'group and other' },
+        { mask: 0o002, permissions: 'group' },
+        { mask: 0o020, permissions: 'other' },
+    ])('refuses a mask permitting $permissions writes before creating the destination', ({ mask }) => {
+        const input = fixture();
+        const dest = join(dirname(input.workspace), 'uncreated-tools');
+        const report = configFileProcess(input, { mask, dest });
+        expect(report).toMatchObject({
+            creationMask: mask,
+            destinationExists: false,
+            rootMode: null,
+            configMode: null,
+            runtimeMode: null,
+            bootstrapMode: null,
+            files: {},
+            commands: 0,
+            error: { message: 'pnpm setup requires a creation mask that blocks group and other writes' },
             target: 'preserve input',
             exports: ['', '', ''],
         });
@@ -142,7 +172,7 @@ describe('verified JavaScript pnpm setup', () => {
         { name: 'user.npmrc', kind: 'symlink' },
         { name: 'global.npmrc', kind: 'symlink' },
     ] as const)('refuses an existing $name $kind before running any package command', (injection) => {
-        const report = configFileProcess(fixture(), injection);
+        const report = configFileProcess(fixture(), { injection });
         expect(report).toMatchObject({
             rootMode: 0o755,
             configMode: 0o700,

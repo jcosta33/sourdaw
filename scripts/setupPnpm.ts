@@ -51,6 +51,9 @@ function canonicalRegistry(value: string): boolean {
 }
 
 function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
+    if (process.platform !== 'win32' && (process.umask() & 0o022) !== 0o022) {
+        throw new Error('pnpm setup requires a creation mask that blocks group and other writes');
+    }
     for (const [name, value] of Object.entries(env)) {
         if (!value) {
             continue;
