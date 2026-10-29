@@ -6,8 +6,8 @@ import {
     type TempoMapRowPlan,
 } from '#/utils/tempoMapRowPlan';
 
-import { findTempoMapAddTarget } from '../../models/findTempoMapAddTarget';
 import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
+import { findTempoMapAddTarget } from '../../models/TempoMapAddTarget';
 
 import { applyTempoMapRowPlan } from './applyTempoMapRowPlan';
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';

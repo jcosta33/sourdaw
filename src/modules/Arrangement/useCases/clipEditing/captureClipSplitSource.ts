@@ -21,9 +21,9 @@ import { reKeyedTakeLaneOwnersMatchStore } from '../comping/reKeyedTakeLaneOwner
 
 import { audioClipStartTrimState } from './audioClipStartTrimState';
 import { clipSplitSource } from './clipSplitSource';
+import { observeClipSplitSource } from './observeClipSplitSource';
 import { type PreparedClipSplit } from './preparedClipSplit';
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
-import { observeClipSplitSource } from './observeClipSplitSource';
 import { readClipSplitSourceAuthority } from './readClipSplitSourceAuthority';
 
 type Root = Readonly<Record<string, unknown>>;

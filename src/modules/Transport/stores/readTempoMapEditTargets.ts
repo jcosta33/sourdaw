@@ -1,6 +1,6 @@
 import { type TempoMapEdit, type TempoMapRow } from '#/utils/tempoMapRowPlan';
 
-import { findTempoMapAddTarget } from '../models/findTempoMapAddTarget';
+import { findTempoMapAddTarget } from '../models/TempoMapAddTarget';
 
 import { tempoMapStore } from './tempoMapStore';
 
