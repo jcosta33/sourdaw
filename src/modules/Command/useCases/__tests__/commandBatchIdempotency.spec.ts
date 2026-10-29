@@ -1297,10 +1297,10 @@ describe('command batch idempotency', () => {
                     confirmed: true,
                 });
                 expect(result.status).toBe('committed');
-                expect(publications[0]?.prepared).toBe(false);
-                expect(publications[0]?.keys).toEqual(['trackGain', 'commandBatchIdempotency']);
                 // Observe the FIRST actual publication: a later receipt-finalization write cannot mask a dropped checkpoint.
                 expect(publications[0]?.checkpoint).toMatchObject({ records: [{ state: 'effects-pending' }] });
+                expect(publications[0]?.prepared).toBe(false);
+                expect(publications[0]?.keys).toEqual(['trackGain', 'commandBatchIdempotency']);
                 expect(projectDocument.commandBatchIdempotency).toMatchObject({ records: [{ state: 'complete' }] });
             } else {
                 const result = await executeAppActionBatch([

@@ -398,7 +398,6 @@ describe('separated single-change prospective phases', () => {
                 preparedCandidate: prepared,
             })
         );
-        transaction.commit();
         const installed = repository.getDoc<State>('root');
         expect(installed).toBe(accepted);
         expect(unused).not.toHaveBeenCalled();
@@ -425,7 +424,55 @@ describe('separated single-change prospective phases', () => {
                     validation: callbacks,
                 })
             )
-        ).toThrow();
+        ).toThrow('Prospective candidate has already settled');
+        transaction.commit();
+    });
+
+    it('rejects a separated candidate without snapshot, observer or actor footprints', async () => {
+        const original = seed();
+        const before = epochs();
+        const observer = vi.fn();
+        repository.onChange(observer);
+        const callbacks = validation(() => {
+            throw new Error('full prepared validator refused');
+        });
+        const snapshots = await repository.transactSnapshot(async (snapshot) => {
+            const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+                repository.cloneProspectiveMutation<State>(
+                    'root',
+                    (draft) => {
+                        draft.count = 9;
+                    },
+                    'prepared refusal',
+                    snapshot,
+                    ['count']
+                )
+            );
+            if (transaction.status !== 'returned') {
+                throw transaction.error;
+            }
+            const prepared = transaction.scope(transaction.value.materialize);
+            expect(() =>
+                transaction.scope(() =>
+                    repository.changeDoc<State>('root', () => undefined, 'prepared refusal', snapshot, ['count'], {
+                        ...callbacks,
+                        preparedCandidate: prepared,
+                    })
+                )
+            ).toThrow('full prepared validator refused');
+            transaction.abort();
+        });
+        expect(snapshots.before.size).toBe(0);
+        expect(snapshots.after.size).toBe(0);
+        expect(repository.getDoc('root')).toBe(original);
+        expect(epochs()).toEqual(before);
+        expect(observer).not.toHaveBeenCalled();
+        expect(callbacks.beforePublication).not.toHaveBeenCalled();
+        expect(callbacks.onPublished).not.toHaveBeenCalled();
+        repository.changeDoc<State>('root', (draft) => {
+            draft.count = 1;
+        });
+        expect(repository.getDoc<State>('root')?.count).toBe(1);
     });
 
     it.each(['replace', 'mutate', 'peer ABA'] as const)('refuses a stale private candidate after %s', (kind) => {
