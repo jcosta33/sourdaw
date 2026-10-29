@@ -1,0 +1,24 @@
+src/modules/Project/repositories/project/__tests__/projectDirectoryBinding.spec.ts
+  s_59e31a5c6f3e31::t_7a31918f9cc94b 12-17,59-61,64-66,73-76,91-93
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/pickAndImportProjectFile.spec.ts
+  s_59e31a5c6f3e31::t_7a31918f9cc94b 246-253
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_59e31a5c6f3e31::t_bb1568ed9ef5b1 1062-1064
+  s_59e31a5c6f3e31::t_7a31918f9cc94b 1047
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f9b210f150bb6378983651d2d9ad188da2d8d009",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
