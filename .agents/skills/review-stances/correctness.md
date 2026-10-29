@@ -264,6 +264,19 @@ Blind spot: review checked the reservation's arithmetic and each refusal's code 
 
 Probe that would have caught it: plan the change under review, then measure the deepest unit the planner admits with the provider's own expression (`JSON.stringify({state, questions})`) against the profile's own ceiling — a positive overage is the finding, and the fitted-region count that produces it is the reproduction to keep. Then drive a plan whose middle unit trips each refusal and assert which units are never attempted and what reason each records.
 
+### 2026-10-29 — failed Freeze lost its persisted reason (introduced by PR #2597)
+
+PR #2597 added a failure notice and returned `false` after writing the error inside Freeze's
+captured transaction. The registered handler mapped that return to no-write, so Command aborted
+the diagnostic along with the render. Its unit oracle applied mocked `updateTrack` callbacks;
+it observed an error-shaped value without proving that the project retained it.
+
+The missed stance is the real Command outcome: reject the offline render through registered
+Freeze, then require the notice, raw document and projected failure reason, unchanged prior take
+and material, and no successful Freeze history. Retry successfully, Undo and Redo, and require
+both the prior diagnostic and exact rendered take to restore. Callback execution alone cannot
+prove this durable postcondition.
+
 ### 2026-09-27 — member expression overtook its own release (escaped via PR #805)
 
 PR #805 replaced one MIDI event tail with a global note tail and per-channel expression tails. Its first review caught unrelated-channel expression delayed by a pending note, but the revised note-off still waited only on the global note tail. A pending note-on followed by pressure, CC74, bend and release therefore committed the note before the last gestures reached it; the next note on that member channel could start before the old bend finished.
