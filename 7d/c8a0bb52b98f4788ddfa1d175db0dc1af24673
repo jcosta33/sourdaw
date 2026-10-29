@@ -1,0 +1,177 @@
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_ac2741ba6e39ae 30
+  s_3168504f6ce387::t_18c91846d9f284 31-33
+src/modules/AudioEngine/useCases/livePlayback/readNativeEnginePlayheadSeconds.ts
+  s_3168504f6ce387::t_3f4c73d30bfd2a 32-33
+  s_3168504f6ce387::t_d8f7d3fbce254b 30-31,34
+src/modules/AudioEngine/models/AudioEngineState.ts
+  s_3168504f6ce387::t_d3450199560c65 526-529
+  s_3168504f6ce387::t_ba81dd579acb17 530
+  s_3168504f6ce387::t_7371be043c48cc 531-533
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_ac2741ba6e39ae 119-123,529-531
+  s_3168504f6ce387::t_b49dc507d3cb56 532-534
+src/modules/AiRuntime/stores/measuredPreviewAuditionStore.ts
+  s_3168504f6ce387::t_74c27acaf3f234 1-15
+src/modules/Transport/useCases/transportControls/__tests__/startPlayback.spec.ts
+  s_3168504f6ce387::t_97b686161c4d71 41-66,75-78,116,182-196
+  s_3168504f6ce387::t_5b0954aea35bf5 197-198
+src/modules/Transport/useCases/transportControls/__tests__/pausePlayback.spec.ts
+  s_3168504f6ce387::t_9777439b10b53a 137
+  s_3168504f6ce387::t_b45a45a417eaee 20-45,56-57,90,132-136,139-146
+  s_3168504f6ce387::t_704b601bacdc0e 138
+  s_3168504f6ce387::t_4e28ad4ccc5a78 147-148
+src/modules/AudioEngine/useCases/audition.ts
+  s_3168504f6ce387::t_9561d57cf0b8f8 2,13,37-87
+src/modules/Transport/useCases/transportControls/__tests__/stopPlayback.spec.ts
+  s_3168504f6ce387::t_9777439b10b53a 125
+  s_3168504f6ce387::t_93c2ded0e9794c 17-42,49-50,82,120-124,127-134
+  s_3168504f6ce387::t_33e6c036cc0e10 126
+  s_3168504f6ce387::t_48a924797d0891 135-136
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_e3ab66b7e1a1bb 14-15,37,42,59-63,154-160,163,166,168-169,263-264,308,310,361-362,594-731,756-824
+  s_3168504f6ce387::t_32162cc5b05d30 825-827
+src/modules/AudioEngine/repositories/__tests__/controlRoomMonitoringListeningPath.spec.ts
+  s_3168504f6ce387::t_d8104b01f5f6e8 37-38,47-50,378,384,387-389,394-437
+tests/e2e/agentMixingRequest.spec.ts
+  s_3168504f6ce387::t_bd02ffad3a3f77 169,294,297,301-305,312-315,346-347,355,622-624,627,631-632,635-638,643-646
+  s_3168504f6ce387::t_5c071af9b4f1c5 592
+  s_3168504f6ce387::t_70ee112cdd7106 171,296,324,327-328,647-657,659-661,663
+  s_3168504f6ce387::t_942b0a30b6feab 170,295,306-311,317-321,325-326,329-334,348,633
+  s_3168504f6ce387::t_a05332a96e4323 1-168,172-293,298-300,316,322-323,335-345,349-354,356-591,593-621,628-630,634,639-642,658,662,664-691,693-735
+  s_3168504f6ce387::t_73cf98c7e672a0 625-626
+  s_3168504f6ce387::t_8ecb66742042ef 692
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_3168504f6ce387::t_80bd9d370f7d18 349
+  s_3168504f6ce387::t_3b560c35229e59 85
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_3168504f6ce387::t_ed9708b3ae197e 59,72-109
+  s_3168504f6ce387::t_5949cd3b8a42c6 110
+src/modules/AiRuntime/useCases/getMeasuredPreviewAuditionView.ts
+  s_3168504f6ce387::t_74c27acaf3f234 1-37
+  s_3168504f6ce387::t_08490298365503 38-40
+src/modules/AiRuntime/presentations/views/index.ts
+  s_3168504f6ce387::t_6116aca2149a9a 11
+src/modules/AudioEngine/useCases/audioDeviceSelection/setOutputDevice.ts
+  s_3168504f6ce387::t_b0b028a0d62d3a 26,49,51,54
+  s_3168504f6ce387::t_d8f7d3fbce254b 27-29,32
+  s_3168504f6ce387::t_3f4c73d30bfd2a 30-31
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeAuditionMonitoring.spec.ts
+  s_3168504f6ce387::t_dbe50a9ec23874 1-100
+  s_3168504f6ce387::t_052bcef889d15c 101-103
+src/modules/AiRuntime/useCases/index.ts
+  s_3168504f6ce387::t_5a2aa40729f206 105-107
+src/modules/WorkspaceShell/presentations/__tests__/preCommitAudition.spec.tsx
+  s_3168504f6ce387::t_c6d2ab5c0e1034 1-157
+src/modules/AudioEngine/useCases/playExclusiveAudioBufferPreview.ts
+  s_3168504f6ce387::t_ed54bb1f0b7f8a 1-10,15-24,26-34,37-38,41,47-54,61-63,66-68,70-76,78-81,88,90-96,103,107-116,118-159
+  s_3168504f6ce387::t_9aeec62d7fc24e 39-40,42-46,56,60,64-65,69,77,82-87,89,97-102,104-106,117
+  s_3168504f6ce387::t_8fc43dc86b4ee5 11-14,25,35-36,55,57-59
+  s_3168504f6ce387::t_611e4a2228f39b 160-162
+src/modules/Transport/useCases/transportControls/__tests__/executePlayheadSeek.spec.ts
+  s_3168504f6ce387::t_9777439b10b53a 227
+  s_3168504f6ce387::t_702c64a5568892 46-71,136-137,188,222-226,229-236
+  s_3168504f6ce387::t_a8e48b291d8358 228
+  s_3168504f6ce387::t_339b41ff4e3470 237-238
+src/modules/AudioEngine/useCases/livePlayback/reconcileNativeAuditionMonitoring.ts
+  s_3168504f6ce387::t_56a139440c9fd2 1-35,42-58,69-104,110-111,113-135,138-147,149
+  s_3168504f6ce387::t_8fc43dc86b4ee5 36-41,59-68,136-137
+  s_3168504f6ce387::t_17b369669d8489 105-109,112
+  s_3168504f6ce387::t_07c0eed7a361d3 148
+  s_3168504f6ce387::t_17780011383c58 150-152
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  s_3168504f6ce387::t_d74088db6bf951 20-28,36-42
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_3168504f6ce387::t_ba81dd579acb17 34,2694-2757,2761,2768-2770
+  s_3168504f6ce387::t_d3450199560c65 355-356,469,474-475,521,2657-2661,2665-2667,2671-2693
+  s_3168504f6ce387::t_10c33ecaa56ea0 2758-2760
+  s_3168504f6ce387::t_b20b8e1759ffcc 2762-2767
+  s_3168504f6ce387::t_0a0839ffec03d6 2771-2773
+src/modules/AudioEngine/useCases/livePlayback/retireOrphanedNativeEngine.ts
+  s_3168504f6ce387::t_ac2741ba6e39ae 65
+  s_3168504f6ce387::t_daa647fc8e6fc3 66-68
+src/modules/AudioEngine/useCases/index.ts
+  s_3168504f6ce387::t_ba81dd579acb17 45-46
+src/modules/AiRuntime/services/measuredPreviewAuditionRuntime.ts
+  s_3168504f6ce387::t_74c27acaf3f234 1-17
+src/modules/AudioEngine/models/AudioPreviewIntent.ts
+  s_3168504f6ce387::t_d3450199560c65 5-6
+src/modules/AudioEngine/useCases/playAudioBufferPreview.ts
+  s_3168504f6ce387::t_8b36470770bc36 43,58,78,109
+  s_3168504f6ce387::t_41f8400c5ca703 49,65-69,81,104
+  s_3168504f6ce387::t_d0d681ef2ca1e7 1-31,39-42,44-48,50-57,59-64,70-74,76-77,79-80,82-95,100-103,105-108,110
+  s_3168504f6ce387::t_4d81f07282e6af 32-38,75,96-99
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_3168504f6ce387::t_e6ab961a72326f 1-185
+  s_3168504f6ce387::t_c93c5f26c2f57b 186-188
+src/modules/AiRuntime/useCases/__tests__/threadContextForPlanner.spec.ts
+  s_3168504f6ce387::t_e3ab66b7e1a1bb 107-126,132
+  s_3168504f6ce387::t_34b475fadd48d4 127-131
+  s_3168504f6ce387::t_745e4534bdbeb9 133-135
+src/modules/AudioEngine/useCases/livePlayback/abandonNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_ac2741ba6e39ae 40,44,62
+src/modules/Transport/useCases/transportControls/__tests__/setPlayback.spec.ts
+  s_3168504f6ce387::t_c8e3aa34c9b144 14-51,56,94-111
+  s_3168504f6ce387::t_113681ebd3fa68 112
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_3168504f6ce387::t_17b369669d8489 151
+  s_3168504f6ce387::t_20661f254b81a3 174-175
+  s_3168504f6ce387::t_d74088db6bf951 144-150,152-156,163-173,176-179,278-282
+src/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents.ts
+  s_3168504f6ce387::t_d3450199560c65 73
+  s_3168504f6ce387::t_83dce42c39cd9d 74-76
+src/modules/AiRuntime/useCases/startMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_74c27acaf3f234 1-68,81,83-109
+  s_3168504f6ce387::t_68728cdb56b5dd 69-80,82
+  s_3168504f6ce387::t_6e89782eb6e0ab 110-112
+src/modules/AiRuntime/presentations/views/MeasuredPreviewAudition.tsx
+  s_3168504f6ce387::t_6116aca2149a9a 1-91
+  s_3168504f6ce387::t_09b5f880043f08 92-94
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_3168504f6ce387::t_3a27a1c5cfa98e 10,59-64,81-82,117-136,168-170,181-198,200,204,214,227,229
+  s_3168504f6ce387::t_9d68326be201c8 199
+  s_3168504f6ce387::t_06a74b0159d18c 201-203
+  s_3168504f6ce387::t_8c2818e7e075a7 205-207,211-213
+  s_3168504f6ce387::t_0f19c770a52cf9 215-217,224-226
+  s_3168504f6ce387::t_952828e93d0748 228
+src/modules/AiRuntime/useCases/resolveMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_20661f254b81a3 1-157,160,162
+  s_3168504f6ce387::t_0f996d180eec18 158-159
+  s_3168504f6ce387::t_443aaf0fd56056 161
+  s_3168504f6ce387::t_1de090c91658ee 163-165
+src/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState.ts
+  s_3168504f6ce387::t_06b8f0438225f6 247,249-251
+  s_3168504f6ce387::t_3f4c73d30bfd2a 66,209
+  s_3168504f6ce387::t_d8f7d3fbce254b 62-64,67-68,206-207,210-211,241,248,252-254
+  s_3168504f6ce387::t_e3ab66b7e1a1bb 242-246
+  s_3168504f6ce387::t_b9e89df49da386 65
+  s_3168504f6ce387::t_f69f5e6634c408 208
+  s_3168504f6ce387::t_3db3334cb6264c 255
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_3168504f6ce387::t_c6d2ab5c0e1034 413-415
+  s_3168504f6ce387::t_6116aca2149a9a 5-6,494
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecording.spec.ts
+  s_3168504f6ce387::t_fb1d0cb579bc2f 81-106,142-143,182,234-244,247-254
+  s_3168504f6ce387::t_9777439b10b53a 245
+  s_3168504f6ce387::t_5bcfc4c60b0b9e 246
+  s_3168504f6ce387::t_7201076a440baf 255-256
+src/modules/AiRuntime/useCases/stopMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_74c27acaf3f234 1-54
+  s_3168504f6ce387::t_ed21dfd1122ae1 55-57
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7dc8a0bb52b98f4788ddfa1d175db0dc1af24673",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
