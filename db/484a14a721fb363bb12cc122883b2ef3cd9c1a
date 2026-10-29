@@ -1,0 +1,179 @@
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_3168504f6ce387::t_1f702eb8ca549a 10-11,39-43,86-93,95
+  s_3168504f6ce387::t_4b4bceefa57d3d 15,35-38,44-49,57-73,102-107,109-116,118-125,127-137,139-147,594-600,602
+  s_3168504f6ce387::t_daf7d279087c29 1,55-56,77
+  s_3168504f6ce387::t_5ef0b6dac6fcff 385-388,461,531-533
+  s_3168504f6ce387::t_0bcbc3ea7f8994 16,50-54,74-76,78-85,94,96-101,108,117,126,138
+  s_3168504f6ce387::t_7a0ce7ffe7eb14 3,148-174,177,590-593
+  s_3168504f6ce387::t_4ebd29cc25a32a 175-176
+  s_3168504f6ce387::t_379d07f9b6c34e 534-536
+  s_3168504f6ce387::t_28b9f4715d4dde 601
+  s_3168504f6ce387::t_bf11e53e7f3f58 603
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_3168504f6ce387::t_5ef0b6dac6fcff 398,411
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  s_3168504f6ce387::t_238cea31a0a82c 49
+  s_3168504f6ce387::t_b4aeb43f9c6089 25,38,276-301
+  s_3168504f6ce387::t_950b8bc388786f 302
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3168504f6ce387::t_ff3c986301b7b0 1306,1308-1309,1311
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3168504f6ce387::t_5ef0b6dac6fcff 416-421
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  s_3168504f6ce387::t_ff3c986301b7b0 2-20
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_3168504f6ce387::t_57719a3f211bf7 495-504,506
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_3168504f6ce387::t_343d54d0fcb708 53
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_3168504f6ce387::t_57719a3f211bf7 1365-1368
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_3168504f6ce387::t_551c4d3ba32210 7901-7908
+  s_3168504f6ce387::t_a4ffb6a42c16e2 7900
+src/modules/AiRuntime/useCases/__tests__/stampProcessingOnlyParameterPolicy.spec.ts
+  s_3168504f6ce387::t_f540b7e120d6f5 15-16,274-276
+  s_3168504f6ce387::t_06cd19b0ca2c23 277
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_3168504f6ce387::t_f56cdf97902e65 5935,6073,6075-6076,6078-6079,6082,6086-6087,6093-6094,6102
+  s_3168504f6ce387::t_8e67b8136e1e6c 5936
+  s_3168504f6ce387::t_93a2342bbc3bd5 6596
+  s_3168504f6ce387::t_e0400eedb70983 58,6077
+  s_3168504f6ce387::t_d9c1b6369d3085 6080-6081
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  s_3168504f6ce387::t_6ec60f60f87676 35-36,148-151,251-252
+  s_3168504f6ce387::t_a34f2f3b124b71 253-254
+src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts
+  s_3168504f6ce387::t_a786a76e07c2b9 10,183-184,187,193-194,197,199
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  s_3168504f6ce387::t_0a6ab4d95d5700 50,114,169,177-178
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_3168504f6ce387::t_7a5d40bff2f96e 20,1007
+  s_3168504f6ce387::t_e74d0fd88afe51 953-969,991-1006,1008-1011,1016-1017
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_3168504f6ce387::t_7592a406e3527d 26-27,429-432,476,599
+  s_3168504f6ce387::t_85306c2d1d7967 600-602
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  s_3168504f6ce387::t_c1169ae9ceb598 41
+  s_3168504f6ce387::t_0a6ab4d95d5700 612,620-621
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_3168504f6ce387::t_551c4d3ba32210 226-238
+  s_3168504f6ce387::t_2a6df349cdb415 197-225,239-240
+  s_3168504f6ce387::t_74e2d1b15c1559 241-243
+src/modules/AiRuntime/useCases/admitMetricIntent.ts
+  s_3168504f6ce387::t_64da21f7ecd3a8 142-143
+  s_3168504f6ce387::t_343d54d0fcb708 38,52-53,55-58,153
+  s_3168504f6ce387::t_50db90c0ff2fb0 59-61
+  s_3168504f6ce387::t_91da1e28bac06d 144-146
+  s_3168504f6ce387::t_227e89fac34b59 152
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_3168504f6ce387::t_39e85e225b0ba9 519-540
+  s_3168504f6ce387::t_41b817b69a48bc 541-543
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_3168504f6ce387::t_5ef0b6dac6fcff 29-37
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_3168504f6ce387::t_f540b7e120d6f5 36-37
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_3168504f6ce387::t_13e070da13c26d 130-153,156-161,166-204,208-234,238-243,430,443
+  s_3168504f6ce387::t_73e697cef1e458 154-155,162-165,205-207,235-237
+  s_3168504f6ce387::t_ad914dd4f16a88 244-387,408,415,419,738,750
+  s_3168504f6ce387::t_c87912016dc42b 388-390,405-407
+  s_3168504f6ce387::t_9494a2341dec20 409-414
+  s_3168504f6ce387::t_e3e8947fe306d8 416-418
+  s_3168504f6ce387::t_e3a30a52a0989a 420-422,427-429
+  s_3168504f6ce387::t_d6c6915af186dc 431-433,440-442
+  s_3168504f6ce387::t_87e24812917e31 444
+  s_3168504f6ce387::t_e515d3cd997583 736-737
+  s_3168504f6ce387::t_d3c18a58a8ce9f 739-741,747-749
+  s_3168504f6ce387::t_621c545d6cf29a 751-753
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_3168504f6ce387::t_4bea09bd552af3 247
+  s_3168504f6ce387::t_61988fca990b07 84-85,223-224,226-227,230-231,235-236,240,248
+  s_3168504f6ce387::t_d83890acd98d65 219-220,228-229
+  s_3168504f6ce387::t_157ca4f75af04c 225
+  s_3168504f6ce387::t_8d80e38adb027e 1618
+  s_3168504f6ce387::t_cc9c29ed954228 53
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  s_3168504f6ce387::t_64da21f7ecd3a8 39-40,61,64,67
+  s_3168504f6ce387::t_343d54d0fcb708 49,94
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_3168504f6ce387::t_0e3b55c20a0098 57,239
+  s_3168504f6ce387::t_f56cdf97902e65 124,233-234,237-238,240-241,244,248-249,253-254,262,877
+  s_3168504f6ce387::t_ff0af81789b3f4 125
+  s_3168504f6ce387::t_0c6388448c1f08 242-243
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_3168504f6ce387::t_58fc0b9120de3a 69,71
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_3168504f6ce387::t_c1169ae9ceb598 61
+  s_3168504f6ce387::t_0a6ab4d95d5700 468,476-477
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_3168504f6ce387::t_57719a3f211bf7 268-271
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_3168504f6ce387::t_f2900407dc3a02 19,333-340
+  s_3168504f6ce387::t_7894e2ea8ddf24 341-343
+src/modules/AiRuntime/useCases/readRequestMetricNumbers.ts
+  s_3168504f6ce387::t_7320dae365159f 2,27
+  s_3168504f6ce387::t_a786a76e07c2b9 1,3-26,28-36
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_3168504f6ce387::t_da6262c3951445 1038-1063,1065-1086,1089-1092
+  s_3168504f6ce387::t_21d5a0b48b8ca1 21-27,278-320
+  s_3168504f6ce387::t_ca78907d7abb8d 28,1820-1827,1876
+  s_3168504f6ce387::t_92e51592be0ee5 363,372-380,1421-1426,2175,2356,2630-2631,2738-2740,2768-2773
+  s_3168504f6ce387::t_80e0d9be760aab 781-814,816-828,830-831,834-837
+  s_3168504f6ce387::t_5863826a9d8b5f 978-987,1439-1445,1501-1507,1509-1522,1524-1527,1554-1557,1603-1606,1773-1776,1799-1802,1882-1893,1972-1980,2242-2252,2266-2276,2434-2437,2490-2500,2602-2605,2618-2627,2666-2669,2703-2709,2827-2829,2848-2854
+  s_3168504f6ce387::t_6eaa132a5116de 762,845,2119-2122,2173-2174,2176,2329-2330,2336,2354-2355,2357,2450,2548
+  s_3168504f6ce387::t_386765c44289ee 1500,1523,1528
+  s_3168504f6ce387::t_a14690f64fc0d6 1897
+  s_3168504f6ce387::t_dbcb6845984589 870-895,897-918,920-932,934-935,938-941
+  s_3168504f6ce387::t_9eb200b9fead8b 2331-2335
+  s_3168504f6ce387::t_a680966cddf44d 2033-2058,2060-2076,2079-2082
+  s_3168504f6ce387::t_fe5badafff529a 2692,2752-2754
+  s_3168504f6ce387::t_bf58786dc578b6 252-277,321-322
+  s_3168504f6ce387::t_d252b27e7205db 326
+  s_3168504f6ce387::t_688df5ff98a5c0 325,364-370
+  s_3168504f6ce387::t_20fdc0b6c23541 698-731,733-745,747-748,751-754
+  s_3168504f6ce387::t_ff77e31609b665 1815-1818,2587
+  s_3168504f6ce387::t_0eb19d38d1f4b3 1295,1297,1374-1376,1401,1403,1569-1571,1590,1628-1630,1642,1693,1716,1736,1756
+  s_3168504f6ce387::t_c65f6c58bfbc20 1117-1146,1148-1163,1166-1169
+  s_3168504f6ce387::t_5be168559d38a8 20,324,371
+  s_3168504f6ce387::t_40fe1ef81dbd3f 2728-2732
+  s_3168504f6ce387::t_ba4a52ea82a064 2819
+  s_3168504f6ce387::t_dc6486acbf825d 1296,1303-1304,1314-1320,1326,1332,1402,1410,1417
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_3168504f6ce387::t_cca1b89f2d898e 119-121
+  s_3168504f6ce387::t_a8ff8e5f21c9cd 4,9,37-41
+  s_3168504f6ce387::t_8cff135c4b43d1 58-63,81-88
+  s_3168504f6ce387::t_c4c913cf143dec 1-3,5-8,10-36,42-57,64-80,89-118,122-129
+  s_3168504f6ce387::t_1ea546037ac04e 130-132
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_3168504f6ce387::t_c1169ae9ceb598 72
+  s_3168504f6ce387::t_0a6ab4d95d5700 316,324-325
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_3168504f6ce387::t_343d54d0fcb708 225,229
+  s_3168504f6ce387::t_7a0ce7ffe7eb14 230
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3168504f6ce387::t_ff3c986301b7b0 411-419
+  s_3168504f6ce387::t_64da21f7ecd3a8 135-148,234-239,246
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_3168504f6ce387::t_c1169ae9ceb598 44
+  s_3168504f6ce387::t_0a6ab4d95d5700 145,153-154
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_3168504f6ce387::t_743833faff249c 30,200-201,203
+  s_3168504f6ce387::t_9c1afcd9df93b6 6,182,231
+  s_3168504f6ce387::t_e3533a54bafdff 195,199,202
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db484a14a721fb363bb12cc122883b2ef3cd9c1a",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
