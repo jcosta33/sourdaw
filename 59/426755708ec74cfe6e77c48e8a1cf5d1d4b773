@@ -1,0 +1,18 @@
+src/infra/store/storage/createAutomergeStorage.ts
+  h_beb54bf43b47b7 270-274,2670,2793-2797
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 456-458
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  h_beb54bf43b47b7 1250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59426755708ec74cfe6e77c48e8a1cf5d1d4b773",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
