@@ -1,0 +1,23 @@
+tests/e2e/e2eUtils.ts
+  s_3168504f6ce387::t_53dad9159b732a 51,94-97,108
+  s_3168504f6ce387::t_43c58aff7a3893 50
+tests/e2e/agentMixingRequest.spec.ts
+  s_3168504f6ce387::t_80a81dd4267f0d 719-729
+  s_3168504f6ce387::t_53dad9159b732a 404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "842ebb988b3bef605eb50425d33d844299b2c966",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
