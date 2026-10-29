@@ -492,7 +492,7 @@ export const RotaryKnob = ({
 
                 {/* R-C1: Modulation halo arcs — one layer per connected modulator */}
                 {modulations?.map((mod, index) => {
-                    const sweepDeg = Math.max(2, Math.min(270, Math.abs(mod.amount * 270)));
+                    const sweepDeg = Math.min(270, Math.abs(mod.amount * 270));
                     const rangeStart = mod.amount >= 0 ? arcAngleDeg : arcAngleDeg - sweepDeg;
                     const rangeEnd = mod.amount >= 0 ? arcAngleDeg + sweepDeg : arcAngleDeg;
                     const lo = Math.max(0, Math.min(270, rangeStart));
