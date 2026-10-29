@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type initializeTrackStripFromSnapshot } from '#/modules/AudioEngine/useCases';
+import { type getAllSidechainRoutes } from '#/modules/Routing/useCases';
 
 import { trackStore } from '../../stores/trackStore';
 import { createTrack } from '../createTrack';
@@ -27,7 +28,7 @@ const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
-    getAllSidechainRoutes: vi.fn(() => []),
+    getAllSidechainRoutes: vi.fn<typeof getAllSidechainRoutes>(() => []),
     resolveToasterPadBinding: vi.fn(),
     reportLatency: vi.fn(),
     soloMode: 'sip',
@@ -96,6 +97,7 @@ describe('projectTrackToLiveStrip', () => {
         mocks.activateExternalPlugin.mockReturnValue(Promise.resolve({ status: 'active' }));
         mocks.soloMode = 'sip';
         mocks.resolveToasterPadBinding.mockReturnValue(undefined);
+        mocks.getAllSidechainRoutes.mockReturnValue([]);
         trackStore.set({ tracks: [], selectedTrackId: null });
         applySoloLogic({ resetSavedGains: true, applyActions: false });
     });
@@ -763,6 +765,71 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
         expect(mocks.setTrackGain).not.toHaveBeenCalled();
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it.each(['strip', 'sends'] as const)('ignores orphan sidechain metadata in %s admission', (mode) => {
+        const first = createTrack({ id: 'first', name: 'First', kind: 'bus' });
+        const later = createTrack({ id: 'later', name: 'Later', kind: 'bus' });
+        first.outputId = later.id;
+        trackStore.set({ tracks: [first, later], selectedTrackId: null });
+        mocks.getAllSidechainRoutes.mockReturnValue([
+            {
+                id: 'orphan',
+                sourceTrackId: later.id,
+                targetTrackId: first.id,
+                targetDeviceId: 'absent',
+                targetParameterId: 'threshold',
+                gain: 1,
+            },
+        ]);
+        if (mode === 'sends') {
+            expect(projectTrackToLiveStrip({ mode, trackId: first.id })).toEqual({ status: 'projected' });
+        } else {
+            expect(projectTrackToLiveStrip({ trackId: first.id })).toMatchObject({
+                acceptance: 'accepted',
+                application: 'applied',
+            });
+        }
+    });
+
+    it.each(['strip', 'sends'] as const)('still rejects supported sidechain feedback in %s admission', (mode) => {
+        const first = createTrack({ id: 'first', name: 'First', kind: 'bus' });
+        const later = createTrack({ id: 'later', name: 'Later', kind: 'bus' });
+        first.outputId = later.id;
+        first.devices = [
+            {
+                id: 'detector',
+                name: 'Detector',
+                type: 'builtin-sidechain-compressor',
+                bypassed: true,
+                parameterValues: {},
+            },
+        ];
+        trackStore.set({ tracks: [first, later], selectedTrackId: null });
+        mocks.getAllSidechainRoutes.mockReturnValue([
+            {
+                id: 'feedback',
+                sourceTrackId: later.id,
+                targetTrackId: first.id,
+                targetDeviceId: 'detector',
+                targetParameterId: 'threshold',
+                gain: 1,
+            },
+        ]);
+        if (mode === 'sends') {
+            expect(projectTrackToLiveStrip({ mode, trackId: first.id })).toEqual({
+                status: 'rejected',
+                reason: 'Persisted live routing contains a routing cycle',
+            });
+        } else {
+            expect(projectTrackToLiveStrip({ trackId: first.id })).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+            });
+        }
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
     });
 
     it('keeps captured device-control replay independent from routing admission', () => {
