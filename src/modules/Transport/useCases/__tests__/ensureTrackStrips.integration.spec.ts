@@ -23,6 +23,7 @@ import {
     mutateCrdtDoc,
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
+import { sidechainStore } from '#/modules/Routing/stores';
 import { workspaceStore, defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
 
 import { createMockAudioContext } from '../../../../helpers/__tests__/audioContext.mock';
@@ -56,9 +57,11 @@ describe('project strip initialization before bus facade and send publication', 
                 },
             ];
         }
-        source.sends = [{ busId: first.id, level: 0.3, preFader: true }];
+        source.sends = [
+            { busId: first.id, level: 0.3, preFader: true },
+            { busId: later.id, level: 0.2, preFader: true },
+        ];
         first.sends = [{ busId: later.id, level: 0.4, preFader: false }];
-        later.sends = [{ busId: first.id, level: 0.2, preFader: true }];
         return [source, first, later];
     }
 
@@ -176,6 +179,7 @@ describe('project strip initialization before bus facade and send publication', 
             });
             return ensureBus(busId);
         });
+        sidechainStore.set({ routes: [] });
         createCrdtDoc('root');
         configureAutomergeStoragePort({
             getDoc: (id) => getCrdtDoc(id),
@@ -191,6 +195,7 @@ describe('project strip initialization before bus facade and send publication', 
 
     afterEach(() => {
         audioEngine.resetGraph();
+        sidechainStore.set({ routes: [] });
         configureRuntimeGraphProjectRevisionValidator(null);
         configureRuntimeGraphTopologyValidator(null);
         restoreTrackSnapshot({ tracks: [], selectedTrackId: null });
@@ -210,7 +215,7 @@ describe('project strip initialization before bus facade and send publication', 
         }
     });
 
-    it('constructs complete private bus chains before facades and cyclic sends, then rebuilds without duplication', () => {
+    it('constructs complete private bus chains before facades and acyclic sends, then rebuilds without duplication', () => {
         installTracks(tracksWithSends());
         const result = ensureTrackStrips();
         expect(
@@ -239,10 +244,70 @@ describe('project strip initialization before bus facade and send publication', 
         expect(edges.get(first!.carrierGate)?.has(later!.gainNode)).toBe(true);
         expectSend('source', 'first-bus', true);
         expectSend('first-bus', 'later-bus', false);
-        expectSend('later-bus', 'first-bus', true);
+        expectSend('source', 'later-bus', true);
         expect(ensureTrackStrips().status).toBe('ready');
         expect(privateConstruction).toHaveLength(6);
         expectSend('source', 'first-bus', true);
+    });
+
+    it.each(['output-send', 'send-send', 'output-output', 'output-sidechain'] as const)(
+        'refuses a restored %s cycle before any strip, facade or route publication',
+        (relation) => {
+            const tracks = tracksWithSends();
+            const first = tracks[1]!;
+            const later = tracks[2]!;
+            if (relation === 'output-output') {
+                later.outputId = first.id;
+            } else if (relation === 'output-sidechain') {
+                sidechainStore.set({
+                    routes: [
+                        {
+                            id: 'restored-return',
+                            sourceTrackId: later.id,
+                            targetTrackId: first.id,
+                            targetDeviceId: `${first.id}-eq`,
+                            targetParameterId: 'threshold',
+                            gain: 1,
+                        },
+                    ],
+                });
+            } else {
+                later.sends = [{ busId: first.id, level: 0.2, preFader: true }];
+                if (relation === 'send-send') {
+                    first.outputId = 'master';
+                }
+            }
+            installTracks(tracks);
+            // Normal snapshot restoration keeps the invalid rows; admission must
+            // refuse runtime effects without deleting saved project truth.
+            const savedTracks = JSON.stringify(trackStore.value);
+            const savedSidechains = JSON.stringify(sidechainStore.value);
+            expect(ensureTrackStrips()).toMatchObject({
+                status: 'failed',
+                reason: expect.stringContaining('routing cycle'),
+            });
+            expect(privateConstruction).toEqual([]);
+            expect(facades).toEqual([]);
+            for (const track of tracks) {
+                expect(audioEngine.getTrackStrip(track.id)).toBeUndefined();
+            }
+            expect(JSON.stringify(trackStore.value)).toBe(savedTracks);
+            expect(JSON.stringify(sidechainStore.value)).toBe(savedSidechains);
+        }
+    );
+
+    it('ignores cycles confined to dormant folder rows while restoring valid live output and send routes', () => {
+        const tracks = tracksWithSends();
+        const a = createTrack({ id: 'dormant-a', name: 'A', kind: 'folder', withoutDefaultDevice: true });
+        const b = createTrack({ id: 'dormant-b', name: 'B', kind: 'folder', withoutDefaultDevice: true });
+        a.outputId = b.id;
+        b.sends = [{ busId: a.id, level: 0.5, preFader: false }];
+        installTracks([...tracks, a, b]);
+        expect(ensureTrackStrips().status).toBe('ready');
+        expect(privateConstruction).toHaveLength(6);
+        expect(audioEngine.getTrackStrip(a.id)).toBeUndefined();
+        expect(audioEngine.getTrackStrip(b.id)).toBeUndefined();
+        expectSend('first-bus', 'later-bus', false);
     });
 
     it.each(['muted', 'sip', 'pfl'] as const)('preserves %s bus gain and send gates after facade creation', (mode) => {
