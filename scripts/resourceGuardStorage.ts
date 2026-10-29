@@ -101,6 +101,18 @@ function lsofInspectionMatch(name: string, type: string | undefined): string | u
     return /Permission denied|Operation not permitted|no info/i.exec(name)?.[0].toLowerCase().replaceAll(' ', '-');
 }
 
+function describeLsofInspection(
+    pid: number,
+    descriptorField: string | undefined,
+    type: string | undefined,
+    name: string | undefined,
+    match: string
+): string {
+    // Keep only bounded field identities and the matched category, never names or catalog text.
+    const descriptor = (descriptorField ?? '').slice(1);
+    return `pid=${pid}:fd=${descriptor.length <= 20 ? descriptor : 'oversized'}:type=${type ?? 'missing'}:name=${name?.startsWith('/') ? 'absolute-path' : 'text'}:match=${match}`;
+}
+
 function parseLsofFile(
     fields: string[],
     knownTypes: Set<string>,
@@ -127,12 +139,7 @@ function parseLsofFile(
     }
     const inspectionMatch = name === undefined ? undefined : lsofInspectionMatch(name, type);
     if (inspectionMatch !== undefined) {
-        // Keep only bounded field identities and the matched category, never names or catalog text.
-        const descriptor = (fields[0] ?? '').slice(1);
-        report(
-            'file-inspection-diagnostic',
-            `pid=${pid}:fd=${descriptor.length <= 20 ? descriptor : 'oversized'}:type=${type ?? 'missing'}:name=${name?.startsWith('/') ? 'absolute-path' : 'text'}:match=${inspectionMatch}`
-        );
+        report('file-inspection-diagnostic', describeLsofInspection(pid, fields[0], type, name, inspectionMatch));
         return undefined;
     }
     if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
