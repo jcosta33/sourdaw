@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
     activateExternalPlugin: vi.fn(),
     setSend: vi.fn(),
     wireSidechainRoutes: vi.fn(),
+    getAllSidechainRoutes: vi.fn(() => []),
     resolveToasterPadBinding: vi.fn(),
     reportLatency: vi.fn(),
     soloMode: 'sip',
@@ -60,6 +61,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 vi.mock('#/modules/Routing/useCases', () => ({
     setSend: mocks.setSend,
     wireSidechainRoutes: mocks.wireSidechainRoutes,
+    getAllSidechainRoutes: mocks.getAllSidechainRoutes,
 }));
 
 vi.mock('#/modules/WorkspaceShell/stores', () => ({
@@ -738,6 +740,31 @@ describe('projectTrackToLiveStrip', () => {
             expect(mocks.setSend).not.toHaveBeenCalled();
         }
     );
+    it.each(['strip', 'sends'] as const)('refuses persisted feedback in %s mode before any runtime write', (mode) => {
+        const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
+        const target = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
+        source.outputId = target.id;
+        target.sends = [{ busId: source.id, level: 0.4, preFader: false }];
+        trackStore.set({ tracks: [source, target], selectedTrackId: null });
+        if (mode === 'sends') {
+            expect(projectTrackToLiveStrip({ mode, trackId: source.id })).toEqual({
+                status: 'rejected',
+                reason: 'Persisted live routing contains a routing cycle',
+            });
+        } else {
+            expect(projectTrackToLiveStrip({ trackId: source.id })).toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'Persisted live routing contains a routing cycle',
+            });
+        }
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+        expect(mocks.setTrackGain).not.toHaveBeenCalled();
+        expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
     it.each(['builtin-synth', 'drum-kit'])('initializes source and routed target without %s nodes', (type) => {
         const source = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
         source.devices = [{ id: 'source-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];
