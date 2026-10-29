@@ -494,7 +494,7 @@ describe('ordered tempo and audio split source preparation', () => {
                 owners();
             } else {
                 if (peer === 'owned-source' && 'reason' in result) {
-                    expect(result.reason).toContain('Audio source prefix owner changed before commit');
+                    expect(result.reason).toContain('Split source owners or clock changed before commit');
                 }
                 if (result.status === 'failed') {
                     // The existing time-signature handler declares guarded
