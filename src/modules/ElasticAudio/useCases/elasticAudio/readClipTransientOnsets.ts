@@ -205,10 +205,10 @@ async function copyProductChannels(source: CachedSource, isCurrent: () => boolea
     const chunkFrames = 262_144;
     for (let channel = 0; channel < source.identity.channelCount; channel++) {
         const samples = source.buffer.getChannelData(channel);
-        if (samples.length !== source.identity.frameCount) return null;
+        if (samples.length !== source.identity.frameCount) { return null; }
         const copy = new Float32Array(samples.length);
         for (let start = 0; start < samples.length; start += chunkFrames) {
-            if (!isCurrent()) return null;
+            if (!isCurrent()) { return null; }
             const taskStarted = performance.now();
             copy.set(samples.subarray(start, start + chunkFrames), start);
             performance.measure('elastic-transient-copy-task', { start: taskStarted, end: performance.now() });
@@ -243,17 +243,22 @@ async function readSource(input: ReadInput, channelSampleCeiling: number): Promi
         if (!isCurrent()) {
             return { status: 'failed', code: 'stale-source' };
         }
-        const channels =
-            channelSampleCeiling === 10_000_000
-                ? copySourceChannels(source)
-                : await copyProductChannels(source, isCurrent);
-        if (channels === null) {
-            return {
-                status: 'failed',
-                code: input.signal?.aborted ? 'cancelled' : !isCurrent() ? 'stale-source' : 'invalid-source',
-            };
+        let channels: ReturnType<typeof copySourceChannels>;
+        if (channelSampleCeiling === 10_000_000) {
+            channels = copySourceChannels(source);
+        } else {
+            channels = await copyProductChannels(source, isCurrent);
         }
-        if (!isCurrent()) return { status: 'failed', code: 'stale-source' };
+        if (channels === null) {
+            let code: 'cancelled' | 'stale-source' | 'invalid-source' = 'invalid-source';
+            if (input.signal?.aborted) {
+                code = 'cancelled';
+            } else if (!isCurrent()) {
+                code = 'stale-source';
+            }
+            return { status: 'failed', code };
+        }
+        if (!isCurrent()) { return { status: 'failed', code: 'stale-source' }; }
         input.onAnalysisStarted();
         const result = await runTransientOnsetWorker({
             channels,

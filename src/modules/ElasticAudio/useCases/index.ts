@@ -4,6 +4,7 @@
 export { detectTransients } from './elasticAudio/detectTransients';
 export { readClipTransientOnsets } from './elasticAudio/readClipTransientOnsets';
 export { detectTransientsForClip } from './elasticAudio/detectTransientsForClip';
+export { setElasticRootIdentityProvider } from './elasticAudio/setElasticRootIdentityProvider';
 export { markElasticDetectionComplete } from './elasticAudio/markElasticDetectionComplete';
 export { selectElasticMarkers } from './elasticAudio/selectElasticMarkers';
 export { openElasticEditor } from './elasticAudio/openElasticEditor';

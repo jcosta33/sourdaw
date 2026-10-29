@@ -21,14 +21,14 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
     }
     const revision = clipId ? transientDetectionRevision(clipId) : 0;
     const waiters = pending?.waiters ?? [];
-    if (pending) clearTimeout(pending.timer);
+    if (pending) { clearTimeout(pending.timer); }
     return new Promise<void>((resolve, reject) => {
         waiters.push({ resolve, reject });
         const finish = (): void => {
-            for (const waiter of waiters) waiter.resolve();
+            for (const waiter of waiters) { waiter.resolve(); }
         };
         const fail = (error: unknown): void => {
-            for (const waiter of waiters) waiter.reject(error);
+            for (const waiter of waiters) { waiter.reject(error); }
         };
         const timer = setTimeout(() => {
             pending = null;

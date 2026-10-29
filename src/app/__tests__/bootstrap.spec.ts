@@ -23,6 +23,12 @@ import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/u
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+const elasticRootMocks = vi.hoisted(() => ({
+    capture: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(() => 'root-epoch-1'),
+    install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
+}));
+vi.mock('#/modules/ElasticAudio/useCases', () => ({ setElasticRootIdentityProvider: elasticRootMocks.install }));
+
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
@@ -516,6 +522,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectIdentity: captureProjectIdentityMock,
+    captureProjectRootIdentity: elasticRootMocks.capture,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -796,6 +803,13 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('installs the live root epoch reader before command consumers register', () => {
+        expect(elasticRootMocks.install).toHaveBeenCalledExactlyOnceWith(elasticRootMocks.capture);
+        expect(elasticRootMocks.capture).not.toHaveBeenCalled();
+        expect(elasticRootMocks.install.mock.invocationCallOrder[0]!).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
+        );
+    });
     it('binds committed project access during bootstrap', () => {
         expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
     });

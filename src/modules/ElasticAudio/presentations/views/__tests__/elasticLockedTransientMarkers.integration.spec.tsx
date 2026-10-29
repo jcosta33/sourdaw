@@ -1,4 +1,4 @@
-import { change, clone } from '@automerge/automerge';
+import { change, clone, toJS } from '@automerge/automerge';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/mo
 import { clearUndoHistory, executeAppAction, undo, redo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    captureProjectRootIdentity,
     getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
@@ -41,6 +42,7 @@ import {
     type TransientOnsetWorkerResult,
 } from '../../../models/TransientOnsetWorker';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
+import { setElasticRootIdentityProvider } from '../../../useCases/elasticAudio/setElasticRootIdentityProvider';
 import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
@@ -116,8 +118,8 @@ function holdAnimationFrames() {
     let handle = 0;
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
         const waiter = waiters.shift();
-        if (waiter) waiter(callback);
-        else callbacks.push(callback);
+        if (waiter) { waiter(callback); }
+        else { callbacks.push(callback); }
         return ++handle;
     });
     const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
@@ -142,6 +144,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        setElasticRootIdentityProvider(captureProjectRootIdentity);
         clearHandlerRegistry();
         clearUndoHistory();
         registerHandlerMap({ ...getArrangementHandlers(), ...getFinalFeatureHandlers() });
@@ -152,7 +155,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             });
             const mono = new Float32Array(copied[0]!.length);
             for (let i = 0; i < mono.length; i++)
-                mono[i] = copied.reduce((sum, channel) => sum + channel[i]!, 0) / copied.length;
+                { mono[i] = copied.reduce((sum, channel) => sum + channel[i]!, 0) / copied.length; }
             return { status: 'complete', hits: detectTransients(mono, sampleRate, sensitivity) };
         });
         const track = createTrack({ id: 'audio-track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
@@ -204,6 +207,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+        setElasticRootIdentityProvider(null);
     });
 
     it('Detect preserves the edited locked automatic row in raw CRDT, store and visible count', async () => {
@@ -445,7 +449,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         await execution;
         const after = structuredClone(rawWarpState());
         expect(after.markers).toHaveLength(3);
-        for (const marker of before.markers) expect(after.markers).toContainEqual(marker);
+        for (const marker of before.markers) { expect(after.markers).toContainEqual(marker); }
         expect(getWarpState(CLIP_ID)).toEqual(after);
         await undo();
         expect(rawWarpState()).toEqual(before);
@@ -460,9 +464,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             supplyBuffer(burstSamples());
             const frames = holdAnimationFrames();
             const controller = new AbortController();
-            if (reason === 'editor disposal') render(<ElasticEditorPanel />);
+            if (reason === 'editor disposal') { render(<ElasticEditorPanel />); }
             if (reason === 'preference reset')
-                preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+                { preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 }); }
             const before = JSON.stringify(getCrdtDoc('root'));
             const execution = executeAppAction(
                 { type: 'detectTransients', payload: { clipId: CLIP_ID } },
@@ -471,13 +475,13 @@ describe('locked transient markers through the real Elastic editor', () => {
             const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
             const staleFrame = await frames.next();
             let successor: Promise<void> | undefined;
-            if (reason === 'abort') controller.abort();
-            if (reason === 'editor disposal') cleanup();
-            if (reason === 'editor switch') openElasticEditor('other-clip');
-            if (reason === 'preference reset') resetPreferences();
-            if (reason === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+            if (reason === 'abort') { controller.abort(); }
+            if (reason === 'editor disposal') { cleanup(); }
+            if (reason === 'editor switch') { openElasticEditor('other-clip'); }
+            if (reason === 'preference reset') { resetPreferences(); }
+            if (reason === 'pagehide') { window.dispatchEvent(new Event('pagehide')); }
             if (reason === 'successor')
-                successor = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+                { successor = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } }); }
             await rejected;
             expect(frames.cancelled).toHaveBeenCalled();
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
@@ -523,25 +527,29 @@ describe('locked transient markers through the real Elastic editor', () => {
             const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
             const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
             const frame = await frames.next();
-            if (source === 'tempo') transportStore.set({ ...defaultTransportState, tempo: 128 });
-            if (source === 'buffer' || source === 'clip')
-                trackStore.update((state) =>
-                    state
-                        ? {
-                              ...state,
-                              tracks: state.tracks.map((track) => ({
-                                  ...track,
-                                  clips:
-                                      source === 'clip'
-                                          ? track.clips.filter((clip) => clip.id !== CLIP_ID)
-                                          : track.clips.map((clip) =>
-                                                clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
-                                            ),
-                              })),
-                          }
-                        : state
-                );
-            if (source === 'root') createCrdtDoc('root');
+            if (source === 'tempo') { transportStore.set({ ...defaultTransportState, tempo: 128 }); }
+            if (source === 'buffer' || source === 'clip') {
+                trackStore.update((state) => {
+                    if (!state) {
+                        return state;
+                    }
+                    return {
+                        ...state,
+                        tracks: state.tracks.map((track) => {
+                            let clips = track.clips;
+                            if (source === 'clip') {
+                                clips = clips.filter((clip) => clip.id !== CLIP_ID);
+                            } else {
+                                clips = clips.map((clip) =>
+                                    clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                                );
+                            }
+                            return { ...track, clips };
+                        }),
+                    };
+                });
+            }
+            if (source === 'root') { createCrdtDoc('root'); }
             flushAutomergeStorageWrites();
             const changed = JSON.stringify(getCrdtDoc('root'));
             frame(performance.now());
@@ -551,11 +559,62 @@ describe('locked transient markers through the real Elastic editor', () => {
         }
     );
 
+    it('requires the configured root reader on the registered route and permits retry', async () => {
+        supplyBuffer(burstSamples());
+        setElasticRootIdentityProvider(null);
+        const calls = worker.mock.calls.length;
+        const before = toJS(getCrdtDoc('root')!);
+        await expect(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } })).rejects.toThrow(
+            /cancelled|changed/
+        );
+        expect(worker).toHaveBeenCalledTimes(calls);
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        setElasticRootIdentityProvider(captureProjectRootIdentity);
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        expect(rawWarpState().markers.length).toBeGreaterThan(1);
+    });
+    it.each(['removed', 'replaced', 'root-ABA'] as const)(
+        'refuses a held registered result after %s even when the root values match',
+        async (change) => {
+            supplyBuffer(burstSamples());
+            const frames = holdAnimationFrames();
+            const original = getCrdtDoc('root');
+            if (!original) {
+                throw new Error('Expected live root');
+            }
+            const before = toJS(original);
+            const epoch = captureProjectRootIdentity();
+            const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            const frame = await frames.next();
+            if (change === 'removed') {
+                setElasticRootIdentityProvider(null);
+            } else if (change === 'replaced') {
+                setElasticRootIdentityProvider(() => captureProjectRootIdentity());
+                expect(captureProjectRootIdentity()).toBe(epoch);
+            } else {
+                createCrdtDoc('root');
+                replaceCrdtDocInLineage({ id: 'root', doc: clone(original) });
+                expect(captureProjectRootIdentity()).not.toBe(epoch);
+            }
+            expect(getCrdtDoc('root')).toEqual(before);
+            frame(performance.now());
+            await rejected;
+            expect(getCrdtDoc('root')).toEqual(before);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+        }
+    );
+
     it('undoes the first detection from absent warp state and guards the absent-state redo', async () => {
         supplyBuffer(burstSamples());
         warpStateStore.set({ states: { 'other-clip': otherWarpState } });
         flushAutomergeStorageWrites();
-        const before = JSON.parse(JSON.stringify(getCrdtDoc('root')));
+        const original = getCrdtDoc('root');
+        if (!original) {
+            throw new Error('Expected live root');
+        }
+        const before = toJS(original);
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         const after = structuredClone(rawWarpState());
         expect(after.markers).toHaveLength(1);
@@ -582,8 +641,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         const started = new Promise<void>((resolve) =>
             worker.mockImplementationOnce(() => {
                 resolve();
-                return new Promise((done) => {
-                    finish = done;
+                return new Promise((resolve) => {
+                    finish = resolve;
                 });
             })
         );
@@ -629,8 +688,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         const started = new Promise<void>((resolve) =>
             worker.mockImplementationOnce(() => {
                 resolve();
-                return new Promise((done) => {
-                    finish = done;
+                return new Promise((resolve) => {
+                    finish = resolve;
                 });
             })
         );
@@ -655,8 +714,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         const started = new Promise<void>((resolve) =>
             worker.mockImplementationOnce(() => {
                 resolve();
-                return new Promise((done) => {
-                    finish = done;
+                return new Promise((resolve) => {
+                    finish = resolve;
                 });
             })
         );
@@ -715,8 +774,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         const started = new Promise<void>((resolve) =>
             worker.mockImplementationOnce(() => {
                 resolve();
-                return new Promise((done) => {
-                    finish = done;
+                return new Promise((resolve) => {
+                    finish = resolve;
                 });
             })
         );
@@ -757,7 +816,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             registerCrdtStorageRuntime();
             const port = observePort.mock.calls.at(-1)?.[0];
             observePort.mockRestore();
-            if (!port?.mutateDocValidated) throw new Error('Production runtime must provide prospective validation');
+            if (!port?.mutateDocValidated) { throw new Error('Production runtime must provide prospective validation'); }
             const mutateValidated = port.mutateDocValidated;
             configureAutomergeStoragePort({
                 ...port,
@@ -766,16 +825,16 @@ describe('locked transient markers through the real Elastic editor', () => {
                         ...input,
                         validateDocument: (candidate) => {
                             input.validateDocument(candidate);
-                            if (mode === 'reject') throw new Error('materialized candidate refused');
+                            if (mode === 'reject') { throw new Error('materialized candidate refused'); }
                             const current = getCrdtDoc<{ tracks: { tracks: ReturnType<typeof createTrack>[] } }>(
                                 'root'
                             );
-                            if (!current) throw new Error('Expected live project');
+                            if (!current) { throw new Error('Expected live project'); }
                             replaceCrdtDocInLineage({
                                 id: 'root',
                                 doc: change(clone(current), (draft) => {
                                     const track = draft.tracks.tracks[0];
-                                    if (!track) throw new Error('Expected audio track');
+                                    if (!track) { throw new Error('Expected audio track'); }
                                     track.name = 'Reentrant rename';
                                 }),
                             });
@@ -803,7 +862,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         flushAutomergeStorageWrites();
         const retained = structuredClone(getWarpState(CLIP_ID).markers);
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
-        for (const marker of retained) expect(rawWarpState().markers).toContainEqual(marker);
+        for (const marker of retained) { expect(rawWarpState().markers).toContainEqual(marker); }
         expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
     });
 });

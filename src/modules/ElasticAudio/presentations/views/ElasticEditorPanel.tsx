@@ -117,7 +117,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         setDetectionStatus('');
         return () => {
             detectRequest.current++;
-            if (clipId) cancelTransientDetection(clipId);
+            if (clipId) { cancelTransientDetection(clipId); }
         };
     }, [clipId]);
     const [zoom, setZoom] = useState(1);
@@ -191,12 +191,12 @@ export const ElasticEditorPanel = (): ReactElement => {
             payload: { clipId, sensitivity: preferences.elasticTransientSensitivity },
         }).then(
             () => {
-                if (request !== detectRequest.current) return;
+                if (request !== detectRequest.current) { return; }
                 markElasticDetectionComplete();
                 setDetectionStatus('Detection complete');
             },
             () => {
-                if (request === detectRequest.current) setDetectionStatus('Detection cancelled or failed. Try again.');
+                if (request === detectRequest.current) { setDetectionStatus('Detection cancelled or failed. Try again.'); }
             }
         );
     };
@@ -214,10 +214,10 @@ export const ElasticEditorPanel = (): ReactElement => {
         setDetectionStatus('Detecting…');
         void setElasticSensitivity(value).then(
             () => {
-                if (request === detectRequest.current) setDetectionStatus('');
+                if (request === detectRequest.current) { setDetectionStatus(''); }
             },
             () => {
-                if (request === detectRequest.current) setDetectionStatus('Detection cancelled or failed. Try again.');
+                if (request === detectRequest.current) { setDetectionStatus('Detection cancelled or failed. Try again.'); }
             }
         );
     };

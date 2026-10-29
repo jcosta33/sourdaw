@@ -88,7 +88,7 @@ describe('private prospective Automerge candidates', () => {
         expect(getHeads(original)).toEqual(heads);
         expect(epochs()).toEqual(before);
         expect(observer).not.toHaveBeenCalled();
-        if (!owner) throw new Error('Expected exact storage owner');
+        if (!owner) { throw new Error('Expected exact storage owner'); }
         expect(repository.readOwnedDocumentPublications(owner)).toEqual([]);
         expect(repository.getMutationEpochForOwner(owner)).toBe(0);
         repository.changeDoc<State>('root', (doc) => {
@@ -125,10 +125,10 @@ describe('private prospective Automerge candidates', () => {
         transaction.commit();
         const accepted = repository.getDoc<State>('root');
         expect(accepted).toBe(validated);
-        if (!accepted || !owner) throw new Error('Expected accepted candidate and owner');
+        if (!accepted || !owner) { throw new Error('Expected accepted candidate and owner'); }
         expect(getActorId(accepted)).toBe(ACTOR);
         const bytes = getLastLocalChange(accepted);
-        if (!bytes) throw new Error('Expected accepted local change');
+        if (!bytes) { throw new Error('Expected accepted local change'); }
         const decoded = decodeChange(bytes);
         expect(decoded.actor).toBe(ACTOR);
         expect(decoded.seq).toBe(2);
@@ -154,9 +154,9 @@ describe('private prospective Automerge candidates', () => {
             validation()
         );
         const next = repository.getDoc<State>('root');
-        if (!next) throw new Error('Expected next candidate');
+        if (!next) { throw new Error('Expected next candidate'); }
         const nextBytes = getLastLocalChange(next);
-        if (!nextBytes) throw new Error('Expected next local change');
+        if (!nextBytes) { throw new Error('Expected next local change'); }
         expect(decodeChange(nextBytes)).toMatchObject({ actor: ACTOR, seq: 3, deps: getHeads(accepted) });
     });
 
@@ -167,19 +167,19 @@ describe('private prospective Automerge candidates', () => {
             const before = epochs();
             const callbacks = validation();
             if (phase === 'validator')
-                callbacks.validateDocument.mockImplementation(() => {
+                { callbacks.validateDocument.mockImplementation(() => {
                     throw new Error('stopped');
-                });
+                }); }
             if (phase === 'beforePublication')
-                callbacks.beforePublication.mockImplementation(() => {
+                { callbacks.beforePublication.mockImplementation(() => {
                     throw new Error('stopped');
-                });
+                }); }
             expect(() =>
                 repository.changeDoc<State>(
                     'root',
                     (doc) => {
                         doc.count = 9;
-                        if (phase === 'mutation') throw new Error('stopped');
+                        if (phase === 'mutation') { throw new Error('stopped'); }
                     },
                     undefined,
                     undefined,
@@ -204,11 +204,11 @@ describe('private prospective Automerge candidates', () => {
             let surviving: Doc<State> | undefined;
             const callbacks = validation(() => {
                 if (operation === 'mutate')
-                    repository.changeDoc<State>('root', (doc) => {
+                    { repository.changeDoc<State>('root', (doc) => {
                         doc.peer = true;
-                    });
+                    }); }
                 if (operation === 'replace')
-                    repository.replaceDoc('root', from<State>({ count: 3, replacement: true }));
+                    { repository.replaceDoc('root', from<State>({ count: 3, replacement: true })); }
                 if (operation === 'merge') {
                     const peer = change(clone(original, { actor: PEER }), (doc) => {
                         doc.peer = true;
@@ -247,13 +247,13 @@ describe('private prospective Automerge candidates', () => {
         seed();
         const callbacks = validation();
         const replace = (): void => repository.replaceDoc('root', from<State>({ count: 5, replacement: true }));
-        if (phase === 'beforePublication') callbacks.beforePublication.mockImplementation(replace);
+        if (phase === 'beforePublication') { callbacks.beforePublication.mockImplementation(replace); }
         expect(() =>
             repository.changeDoc<State>(
                 'root',
                 (doc) => {
                     doc.count = 999;
-                    if (phase === 'mutation') replace();
+                    if (phase === 'mutation') { replace(); }
                 },
                 undefined,
                 undefined,
@@ -270,7 +270,7 @@ describe('private prospective Automerge candidates', () => {
         const callbacks = validation();
         repository.changeDoc<State>('root', () => undefined, undefined, undefined, undefined, callbacks);
         const current = repository.getDoc<State>('root');
-        if (!current) throw new Error('Expected installed candidate');
+        if (!current) { throw new Error('Expected installed candidate'); }
         expect(getHeads(current)).toEqual(getHeads(original));
         expect(getActorId(current)).toBe(ACTOR);
         expect(callbacks.onPublished).toHaveBeenCalledOnce();
@@ -278,9 +278,9 @@ describe('private prospective Automerge candidates', () => {
             doc.count = 1;
         });
         const next = repository.getDoc<State>('root');
-        if (!next) throw new Error('Expected next write');
+        if (!next) { throw new Error('Expected next write'); }
         const bytes = getLastLocalChange(next);
-        if (!bytes) throw new Error('Expected next change');
+        if (!bytes) { throw new Error('Expected next change'); }
         expect(decodeChange(bytes).seq).toBe(2);
     });
 

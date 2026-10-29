@@ -867,7 +867,7 @@ function commitAutomergeStorageMutations(
                     ...input,
                     validateDocument: (document) => {
                         const failure = validateDocument(document);
-                        if (failure) throw new AutomergeStorageTransactionValidationError(failure);
+                        if (failure) { throw new AutomergeStorageTransactionValidationError(failure); }
                     },
                     beforePublication: finishApplication,
                     onPublished: () => {

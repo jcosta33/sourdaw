@@ -1,4 +1,3 @@
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -6,6 +5,7 @@ import { transportStore } from '#/modules/Transport/stores';
 import { elasticAudioStore } from '../../stores/elasticAudio';
 
 import { readProductTransientOnsets } from './readClipTransientOnsets';
+import { elasticRootIdentityProviderState } from './elasticRootIdentityProviderState';
 
 const active = new Map<string, AbortController>();
 const revisions = new Map<string, number>();
@@ -23,15 +23,15 @@ export function cancelTransientDetection(clipId: string): void {
 
 /** Align visible commits; a hidden page can finish without its suspended animation frame. */
 function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
-    if (signal.aborted) return Promise.resolve(false);
-    if (document.hidden) return Promise.resolve(true);
+    if (signal.aborted) { return Promise.resolve(false); }
+    if (document.hidden) { return Promise.resolve(true); }
     return new Promise((resolve) => {
         let frame: number | undefined;
         let settled = false;
         const finish = (admitted: boolean): void => {
-            if (settled) return;
+            if (settled) { return; }
             settled = true;
-            if (frame !== undefined) cancelAnimationFrame(frame);
+            if (frame !== undefined) { cancelAnimationFrame(frame); }
             signal.removeEventListener('abort', abort);
             document.removeEventListener('visibilitychange', visibilityChanged);
             window.removeEventListener('pagehide', abort);
@@ -39,7 +39,7 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
         };
         const abort = (): void => finish(false);
         const visibilityChanged = (): void => {
-            if (document.hidden) finish(true);
+            if (document.hidden) { finish(true); }
         };
         signal.addEventListener('abort', abort, { once: true });
         document.addEventListener('visibilitychange', visibilityChanged);
@@ -51,6 +51,10 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
 /** Read-only owned-copy Worker stage; Arrangement's registered action owns the write. */
 export async function detectTransientsForClip(clipId: string, sensitivity: number, signal?: AbortSignal) {
     cancelTransientDetection(clipId);
+    const captureRootIdentity = elasticRootIdentityProviderState.captureRootIdentity;
+    if (!captureRootIdentity) {
+        return { status: 'failed' as const, code: 'stale-source' as const };
+    }
     const controller = new AbortController();
     active.set(clipId, controller);
     const abort = (): void => controller.abort();
@@ -59,12 +63,12 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         abort();
     }
     const projectId = getSettledProjectId();
-    const root = captureProjectRootIdentity();
+    const root = captureRootIdentity();
     const tempo = transportStore.value?.tempo;
     const editorClip = elasticAudioStore.value?.openClipId;
     const preference = preferencesStore.value?.elasticTransientSensitivity;
     const unsubscribePreference = preferencesStore.subscribe((state) => {
-        if (state?.elasticTransientSensitivity !== preference) abort();
+        if (state?.elasticTransientSensitivity !== preference) { abort(); }
     });
     let editorChanged = false;
     const unsubscribe = elasticAudioStore.subscribe((state) => {
@@ -79,7 +83,8 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         !editorChanged &&
         elasticAudioStore.value?.openClipId === editorClip &&
         preferencesStore.value?.elasticTransientSensitivity === preference &&
-        captureProjectRootIdentity() === root &&
+        elasticRootIdentityProviderState.captureRootIdentity === captureRootIdentity &&
+        captureRootIdentity() === root &&
         getSettledProjectId() === projectId &&
         transportStore.value?.tempo === tempo;
     const dispose = (): void => {

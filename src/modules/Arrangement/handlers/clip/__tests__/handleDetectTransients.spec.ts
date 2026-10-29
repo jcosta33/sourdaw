@@ -8,6 +8,16 @@ const mocks = vi.hoisted(() => ({ detect: vi.fn(), notice: vi.fn() }));
 vi.mock('#/modules/ElasticAudio/useCases', () => ({ detectTransientsForClip: mocks.detect }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notice }));
 
+function changedMarkerField(key: string): boolean | string | number {
+    if (key === 'locked') {
+        return false;
+    }
+    if (key === 'id' || key === 'origin') {
+        return 'changed';
+    }
+    return 0.1;
+}
+
 describe('Arrangement Detect owns async admission and notification', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -69,7 +79,7 @@ describe('prospective transient-state equality preserves the canonical oracle', 
         ...Object.keys(marker).map((key) => ({
             ...state,
             markers: [
-                { ...marker, [key]: key === 'locked' ? false : key === 'id' || key === 'origin' ? 'changed' : 0.1 },
+                { ...marker, [key]: changedMarkerField(key) },
             ],
         })),
         { ...state, markers: [{ ...marker, unexpected: true }] },
@@ -103,7 +113,7 @@ describe('prospective transient-state equality preserves the canonical oracle', 
             const changed = {
                 ...state,
                 markers: [
-                    { ...marker, [key]: key === 'locked' ? false : key === 'id' || key === 'origin' ? 'changed' : 0.1 },
+                    { ...marker, [key]: changedMarkerField(key) },
                 ],
             };
             expect(transientStateMatches(changed, state)).toBe(false);

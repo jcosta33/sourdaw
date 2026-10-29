@@ -111,9 +111,11 @@ import {
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
+import { setElasticRootIdentityProvider } from '#/modules/ElasticAudio/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
+    captureProjectRootIdentity,
     initBranchState,
     captureProjectRevision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
@@ -263,6 +265,7 @@ setActionHistoryMetadataPort({
 sessionUndoWitnessStampPort.setProvider(stampSessionUndoWitness);
 productionBriefAdmissionPort.setGuard(productionBriefActionBatchAdmission.capture);
 commandProjectRevisionPort.setProvider(captureProjectRevision);
+setElasticRootIdentityProvider(captureProjectRootIdentity);
 commandProjectRevisionPort.setLiveMatchIgnoringCommandCheckpoint(projectRevisionMatchesLiveIgnoringCommandCheckpoint);
 configureRuntimeGraphProjectRevisionValidator(
     (expectedProjectRevision) => captureProjectRevision() === expectedProjectRevision
