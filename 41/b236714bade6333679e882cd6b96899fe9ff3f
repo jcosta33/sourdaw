@@ -1,0 +1,57 @@
+src/modules/Arrangement/repositories/mixRecipes/masterMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 414-436
+  s_3168504f6ce387::t_773c8b46cdd9db 437-439
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 405-426
+  s_3168504f6ce387::t_b0f6c6256ec10e 427-429
+src/modules/Arrangement/repositories/mixRecipes/busMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 408-430
+  s_3168504f6ce387::t_0ad979e9380450 431-433
+src/modules/Arrangement/repositories/mixRecipes/bassMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 427-448
+  s_3168504f6ce387::t_8788825d5b1734 449-451
+src/modules/Arrangement/repositories/__tests__/controlledRecipes.spec.ts
+  s_3168504f6ce387::t_679099c3d7cfbe 1-89
+  s_3168504f6ce387::t_5fae889d7bb6f5 90-92
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_3168504f6ce387::t_0c45fcf3988206 1-2,4,6,32-40,44-48,56-64,69-72,78,83-86,92-95,98-104,108-121,125-126,133-139,150-153,155-158,161,163,501-502
+  s_3168504f6ce387::t_f78e81663da7c3 18-26,172-174,184-187,199-209,218-219,227-233,235-241,248-249,251-256,258-259,264-267,276-279,281-284,295-312,315-329,333-361,369,371,382-384,389-391,399-401,404-406,409-410,415-417,422-424,483,493-494,496-499
+  s_3168504f6ce387::t_84c97c550bcb39 105-107,122-124,148,164
+  s_3168504f6ce387::t_c05279f310aac8 159-160,162,454-458,460-461,463-479,484-492
+  s_3168504f6ce387::t_013a4cf33cffdf 3,5,7-17,27-31,41-43,49-55,65-68,73-77,79-82,87-91,96-97,127-132,140-147,149,154,165-171,175-183,188-198,210-217,220-226,234,242-247,250,257,260,262-263,270-274,285-294,313-314,330-332,362-368,372-381,385-388,392-398,402-403,407-408,411-414,418-421,425-426,495,500
+  s_3168504f6ce387::t_0d4a34e5f57a23 261,268-269,275,280,427-453,459,462,480-482
+  s_3168504f6ce387::t_aaf2c8b80c171b 370
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_3168504f6ce387::t_437270754af2e0 212-231,692-699,714,730,740
+  s_3168504f6ce387::t_84c97c550bcb39 700-713,715-729,731-739,741-751
+  s_3168504f6ce387::t_dcd2fbec49fc0a 752
+src/modules/Arrangement/repositories/mixRecipes/vocalMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 432-453
+  s_3168504f6ce387::t_76e24e72b45261 454-456
+src/modules/Arrangement/repositories/mixRecipes/keysMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 400-421
+  s_3168504f6ce387::t_e871e89cd10157 422-424
+tests/e2e/devServerOnlySpecs.ts
+  s_3168504f6ce387::t_0c45fcf3988206 18
+src/modules/Arrangement/models/MixRecipe.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 20,39,67,93
+src/modules/Arrangement/repositories/mixRecipes/guitarMixRecipes.ts
+  s_3168504f6ce387::t_319bdc112e0a3a 412-433
+  s_3168504f6ce387::t_6cdfc0c760f45c 434-436
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41b236714bade6333679e882cd6b96899fe9ff3f",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
