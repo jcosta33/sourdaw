@@ -694,6 +694,22 @@ describe('RotaryKnob', () => {
         ).toEqual(halos.map((halo) => halo.getAttribute('style')));
     });
 
+    it('does not invent a modulation range when the mapping depth is zero', () => {
+        const color = 'oklch(0.7 0.1 20)';
+        const { container } = render(
+            <RotaryKnob
+                value={50}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'zero-depth', amount: 0, color, activity: 0.8 }]}
+            />
+        );
+
+        const halo = container.querySelector<HTMLElement>('[data-modulation-halo="zero-depth"]')!;
+        expect(halo.style.background).toContain(`transparent 135deg, ${color} 135deg, ${color} 135deg`);
+    });
+
     it('clips positive and negative modulation ranges at the knob limits', () => {
         const color = 'oklch(0.7 0.1 20)';
         const { container, rerender } = render(
