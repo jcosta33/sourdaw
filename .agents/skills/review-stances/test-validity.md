@@ -6,6 +6,40 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
+
+The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
+was absent from replacement #5748's PR range but remained on a retained branch that Nightly scanned
+with `--all`. Historical private prompts and tiers are unestablished. Current runtime-composed
+fixtures and a green replacement diff could not observe the old finding.
+
+Run the pinned real scanner against the exact original commit and path. Require the original
+finding without the candidate ignore, no finding with its exact audited fingerprint, and detection
+with a wrong fingerprint. Keep independent synthetic credential controls, including an inline
+allow annotation. Preserve failed controls and diagnose their input against the pinned rule; a
+credential-shaped string outside that rule is not a positive control.
+
+PR #5846's initial repair passed real scanner probes but was caught by the hosted byte-exact
+ignore contract in `scripts/test-health-gate-scripts.sh`. Scanner execution does not observe every
+caller that binds its configuration bytes. Trace direct readers and evaluate the unchanged owning
+assertion against the candidate; removing the audited exception, changing its provenance or adding
+an unrelated fingerprint must fail without weakening exact equality.
+The subsequent literal source URL also entered the external-reference census. Use the production
+snapshot loader restricted to changed source paths, compare discovered keys with inventory
+assignments, and prove removal of the new assignment exposes that exact missing reference.
+
+### 2026-10-29 — static scanner metadata fell through to browser coverage (#5483)
+
+PR #5483 (`07b3882eb3`) introduced broad non-browser repository tooling selection but omitted
+the root `.gitleaksignore` and `.gitleaks.toml` inputs. Static scanner metadata therefore selected
+the full browser inventory. Historical private prompts and tiers are unestablished; the missed
+input class was security metadata alongside the existing scripts and prose cases.
+
+Exercise the real planner with each exact root path, requiring broad non-browser validation and
+unchanged CodeQL selection. Keep suffix lookalikes and unknown nested paths on the full fallback;
+mixed product edits must retain their full or narrowed browser coverage. Removing only the exact
+root classification must fail the owning cases.
+
 ### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
 
 Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
@@ -493,6 +527,12 @@ check. Poison the reserved PCM span, compare each acknowledged window with the i
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
 
+### An unlocked-only fixture could not expose locked automatic-row loss (#4630)
+
+The original re-detection case seeded a user marker and an unlocked `transient-auto` marker; dropping every automatic row therefore still passed. It could not falsify loss of a locked automatic row. Current main retains locked rows regardless of origin and suppresses hits within `1e-3` of a retained original beat (PR #5515).
+
+Use a moved locked automatic row with exact ID, original and warped beats, lock and confidence beside user, grid and unlocked automatic rows. Exercise real Detect, sensitivity re-detection and registered Command; assert the exact raw CRDT and projected row. Vary the input or sensitivity so redetection changes the detected population, and require visible counts, draws and hit state to reflect the new projection while other-clip state and source PCM remain unchanged. Then unlock that same held automatic marker and detect again; it must be replaceable, so retaining it after unlock fails the control. Remove only locked-row retention and require the exact-row assertion to fail; independently remove equal/near-hit suppression and require both equal and near-collision cases to fail. Empty-hit mocks cannot prove suppression. These are falsifiable review probes, not evidence of a new runtime test, Worker behavior, performance, or full issue acceptance.
+
 ### A silent sensitivity fixture could not expose a stale marker view
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
@@ -588,6 +628,10 @@ the owned group on its first `ESRCH`, share that ownership through helper shutdo
 rescue, and never signal the raw descendant PID. Intercept every nonzero signal after a real
 absence observation, model reuse without forwarding it, and require zero retired-ID signals.
 Keep live-group rescue and fixture removal after independently observed group exit.
+
+### Recording ownership refusals need pre-write and independent negative probes
+
+PR #4564 (`40c5218228c542c5a4cf3cdd73388f4da893ea4e`) allowed a recorded clip ID moved by a peer to be restored twice and globally removed. A normal recording round trip cannot observe that input. Require real Command/CRDT cases with the same ID on another track before each history leg, nonempty peer facets, duplicate occurrences, unchanged raw/projected state and the identical pending entries. Place a writing sentinel before the recording action in a group and require its write count to remain zero, since rollback alone cannot prove preflight. On a committed head, omit only discard owner authentication and require the before-Undo cases to fail; separately omit global restore absence and require the before-Redo case to fail. Retain legacy singleton, multi-recording group, distinct-ID peer and isolated-preview controls. Historical reviewer prompts and tiers are unverified.
 
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
@@ -1806,3 +1850,32 @@ alone cannot observe the file admission gap.
 The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
+
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
+
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
+
+Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
+Serial; GitHub reports no associated PR for that commit. PR #2079 (`c6a1310929`)
+made Serial actually chain the bands, but its routing fixture selected both modes explicitly
+and never observed a fresh constructor. Historical private review prompts and tiers are unknown.
+The missed stance was the audio produced before any routing parameter write.
+
+Render a fresh instance through an active two-band clipper then low-pass chain without setting
+routing. Require exact equality with explicit Serial on both channels, non-silent references,
+and separation from explicit Parallel. Revert only the constructor default: the named default
+case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
+Parallel so their assertions continue to observe the path they claim.

@@ -56,6 +56,19 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
+
+PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455
+section 1.2 WebSocket nonce. Replacement #5748 composed it at runtime and excluded the original
+commit from its PR range, but Nightly's `--all` scan still reached the retained original branch.
+The missed proof route was retained history after replacement; private reviewer prompts and tiers
+are unestablished. The value is a published protocol example, not an issued credential.
+
+Read the exact historical finding and its public source. Prove detection with the pinned scanner,
+then admit only that commit/path/rule/line fingerprint. A wrong fingerprint and independent synthetic
+credentials, including `gitleaks:allow`, must remain detected under the same trusted configuration
+and flags. A clean replacement diff does not establish a clean full-history scan.
+
 ### 2026-10-28 — PR security scan lacked its main comparison configurations (PRs #3170 and #4854)
 
 PR #3170 moved the main CodeQL producer from Health gates to Nightly, leaving the older main
