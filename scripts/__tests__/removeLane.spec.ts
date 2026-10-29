@@ -1586,7 +1586,9 @@ describe('lane-removal shell boundary', () => {
             symlinkSync(repository, alias, 'dir');
             const port = shellPort({
                 capture: (command) => {
-                    if (command === 'ps') return `${process.pid} ${process.getuid?.()}`;
+                    if (command === 'ps') {
+                        return `${process.pid} ${process.getuid?.()}`;
+                    }
                     if (command !== 'lsof') {
                         throw new Error(`unexpected capture: ${command}`);
                     }
@@ -1608,7 +1610,9 @@ describe('lane-removal shell boundary', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
                 captures.push({ command, args });
-                if (command === 'ps') return `${process.pid} ${process.getuid?.()}`;
+                if (command === 'ps') {
+                    return `${process.pid} ${process.getuid?.()}`;
+                }
                 if (command === 'lsof') {
                     return `p${process.pid}\0\nfcwd\0tDIR\0n${target}\0\n`;
                 }
@@ -1809,17 +1813,20 @@ describe('lane-removal shell boundary', () => {
             head: { ref: 'feat/work', sha: 'head', repo: { full_name: 'jcosta33/sourdaw' } },
         };
         const port = shellPort({
-            capture: (_command, args) =>
-                args.includes('nameWithOwner')
-                    ? 'jcosta33/sourdaw'
-                    : JSON.stringify(args.includes('--slurp') ? [[raw]] : raw),
+            capture: (_command, args) => {
+                if (args.includes('nameWithOwner')) {
+                    return 'jcosta33/sourdaw';
+                }
+                return JSON.stringify(args.includes('--slurp') ? [[raw]] : raw);
+            },
             run: () => {},
         });
         const records = [port.pullRequests('feat/work')[0], port.commitPullRequests?.('head')[0], port.replacement(42)];
         for (const record of records) {
             expect(record).toMatchObject({ state: input.expectedState, baseRefName: input.expectedBase });
-            if (input.name.includes('timestamp') && input.name !== 'open despite timestamp')
+            if (input.name.includes('timestamp') && input.name !== 'open despite timestamp') {
                 expect(record?.mergedAt).toBeNull();
+            }
         }
     });
 

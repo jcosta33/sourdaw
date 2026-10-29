@@ -16,6 +16,7 @@ import {
     TRACKER_AUTHOR_MINT_PERMISSIONS,
     isAuthorBotNodeId,
     AUTHOR_MINT_PERMISSIONS,
+    CLEANUP_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_MINT_PERMISSIONS,
     PUBLISH_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
     DELIVER_AUTHOR_WORKFLOW_MINT_PERMISSIONS,
@@ -667,6 +668,59 @@ describe('installation mint', () => {
         expect(minted.actorNodeId).toBe(REVIEWER_BOT_NODE_ID);
         expect(minted.token).toBe('ghs_minted');
         expect(requests.find((entry) => entry.url.includes('/users/'))?.authorization).toBe('Bearer ghs_minted');
+    });
+
+    it('accepts the cleanup read-only mint without changing author or reviewer defaults', async () => {
+        const { requests, request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: {
+                contents: 'read',
+                pull_requests: 'read',
+                issues: 'read',
+            },
+        });
+        const auth = await authenticateRole({
+            primaryRoot: '/repo',
+            role: 'author',
+            permissions: CLEANUP_MINT_PERMISSIONS,
+            readFile: files(),
+            request,
+            env: {},
+        });
+        try {
+            expect(JSON.parse(requests[0]?.body ?? '{}')).toEqual({
+                permissions: {
+                    contents: 'read',
+                    pull_requests: 'read',
+                    issues: 'read',
+                },
+            });
+            expect(auth.minted.actorNodeId).toBe(AUTHOR_BOT_NODE_ID);
+            expect(AUTHOR_MINT_PERMISSIONS).toEqual({ contents: 'write', pull_requests: 'write' });
+            expect(REVIEWER_MINT_PERMISSIONS).toEqual({ contents: 'read', pull_requests: 'write' });
+        } finally {
+            auth.session.dispose();
+        }
+    });
+
+    it.each(['pull_requests', 'issues'] as const)('refuses cleanup mint escalation for %s', async (permission) => {
+        const { request } = mintClient({
+            login: RENAMED_AUTHOR_LOGIN,
+            permissions: {
+                ...CLEANUP_MINT_PERMISSIONS,
+                [permission]: 'write',
+            },
+        });
+        await expect(
+            authenticateRole({
+                primaryRoot: '/repo',
+                role: 'author',
+                permissions: CLEANUP_MINT_PERMISSIONS,
+                readFile: files(),
+                request,
+                env: {},
+            })
+        ).rejects.toThrow(`installation token ${permission} is write; expected read`);
     });
 
     it('pins the reviewer and confirm mints to their exact permission sets', () => {

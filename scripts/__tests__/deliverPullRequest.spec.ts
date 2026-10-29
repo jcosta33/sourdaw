@@ -9930,7 +9930,9 @@ describe('delivery author authentication', () => {
                 } else {
                     dependencies.deliver = () => {
                         events.push('delivered');
-                        if (scenario === 'delivery failure') throw new Error('delivery refused');
+                        if (scenario === 'delivery failure') {
+                            throw new Error('delivery refused');
+                        }
                     };
                 }
                 dependencies.cleanupAfterDelivery = async (primary, head) => {
@@ -9939,7 +9941,9 @@ describe('delivery author authentication', () => {
                     expect(head).toBe(headSha);
                     expect(events.at(-1)).toBe('released');
                     events.push('cleanup queued');
-                    if (scenario === 'cleanup failure') throw new Error('cleanup pending');
+                    if (scenario === 'cleanup failure') {
+                        throw new Error('cleanup pending');
+                    }
                 };
                 dependencies.reportCleanupFailure = (message) => events.push(message);
                 if (scenario === 'delivery failure') {
@@ -9948,8 +9952,9 @@ describe('delivery author authentication', () => {
                 } else {
                     await expect(coordinateDelivery(PR_NUMBER, dependencies)).resolves.toBeUndefined();
                     expect(events).toContain('cleanup queued');
-                    if (scenario === 'cleanup failure')
+                    if (scenario === 'cleanup failure') {
                         expect(events.at(-1)).toContain('Delivery completed; lane cleanup is pending');
+                    }
                 }
             } finally {
                 rmSync(root, { recursive: true, force: true });

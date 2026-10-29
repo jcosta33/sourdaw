@@ -322,7 +322,9 @@ function mergedTimestamp(value: unknown): string | null {
 
 function restPullRequestState(state: unknown, mergedAt: unknown): string {
     const normalized = typeof state === 'string' ? state.toUpperCase() : 'UNKNOWN';
-    if (normalized === PR_STATE.MERGED && mergedTimestamp(mergedAt) === null) return 'UNKNOWN';
+    if (normalized === PR_STATE.MERGED && mergedTimestamp(mergedAt) === null) {
+        return 'UNKNOWN';
+    }
     return normalized === PR_STATE.CLOSED && mergedTimestamp(mergedAt) !== null ? PR_STATE.MERGED : normalized;
 }
 
@@ -802,14 +804,20 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
 
 export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
     const inspection = command === 'lsof' || command === 'ps';
-    const executable =
-        process.platform === 'darwin' && inspection ? (command === 'lsof' ? '/usr/sbin/lsof' : '/bin/ps') : command;
+    let executable = command;
+    if (process.platform === 'darwin' && inspection) {
+        if (command === 'lsof') {
+            executable = '/usr/sbin/lsof';
+        } else {
+            executable = '/bin/ps';
+        }
+    }
     const result = spawnSync(executable, args, {
         cwd: process.cwd(),
         encoding: 'utf8',
         shell: false,
         maxBuffer: 64 * 1024 * 1024,
-        ...(inspection ? { timeout: 5_000 } : {}),
+        timeout: inspection ? 5_000 : undefined,
     });
     if (result.error !== undefined) {
         throw result.error;

@@ -7,13 +7,19 @@ import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+    authenticateCleanup,
     cleanupBackoff,
     cleanupLanes,
     readCleanupRecords,
     withCleanupLock,
     type CleanupPort,
 } from '../cleanupLanes.ts';
-import { AUTHOR_BOT_NODE_ID, AUTHOR_LOCK_REASON, githubAuthorizationGitEnv } from '../githubAppIdentity.ts';
+import {
+    AUTHOR_BOT_NODE_ID,
+    AUTHOR_LOCK_REASON,
+    githubAuthorizationGitEnv,
+    type authenticateRole,
+} from '../githubAppIdentity.ts';
 import { laneIsActive } from '../laneActivity.ts';
 import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 
@@ -90,6 +96,27 @@ function fixture() {
 }
 
 describe('automatic lane cleanup', () => {
+    it('requests only read permissions under the author identity for cleanup', async () => {
+        const requests: Array<Parameters<typeof authenticateRole>[0]> = [];
+        const refused = new Error('stop before authentication');
+        await expect(
+            authenticateCleanup('/repo', async (input) => {
+                requests.push(input);
+                throw refused;
+            })
+        ).rejects.toBe(refused);
+        expect(requests).toEqual([
+            {
+                primaryRoot: '/repo',
+                role: 'author',
+                permissions: {
+                    contents: 'read',
+                    pull_requests: 'read',
+                    issues: 'read',
+                },
+            },
+        ]);
+    });
     it('removes a clean merged author and legacy detached review lane through native no-force Git', () => {
         const f = fixture();
         try {
@@ -123,7 +150,9 @@ describe('automatic lane cleanup', () => {
         const f = fixture();
         try {
             const target = route === 'review' ? join(f.root, '.agents/review-worktrees/review-42') : f.lane;
-            if (route === 'review') f.git(['worktree', 'add', '--detach', target, f.head]);
+            if (route === 'review') {
+                f.git(['worktree', 'add', '--detach', target, f.head]);
+            }
             if (route === 'replacement') {
                 f.pr.state = 'CLOSED';
                 f.pr.mergedAt = null;
@@ -140,7 +169,9 @@ describe('automatic lane cleanup', () => {
                         { number, state: 'MERGED', baseRefName: 'main', mergedAt: '2026-08-20T00:00:00Z' },
                         invalid
                     );
-            } else Object.assign(f.pr, invalid);
+            } else {
+                Object.assign(f.pr, invalid);
+            }
             const outcome = cleanupLanes(f.port).find((item) => item.lane === target);
             expect(outcome?.status).toBe('protected');
             expect(existsSync(target)).toBe(true);
@@ -192,12 +223,21 @@ describe('automatic lane cleanup', () => {
     ])('retains %s with a durable reason and retries only after backoff', (condition) => {
         const f = fixture();
         try {
-            if (condition === 'dirty') writeFileSync(join(f.lane, 'tracked'), 'changed');
-            if (condition === 'untracked') writeFileSync(join(f.lane, 'notes'), 'keep');
-            if (condition === 'ignored') writeFileSync(join(f.lane, '.env'), 'keep');
-            if (condition === 'active cwd' || condition === 'open file') f.port.removal.active = () => true;
-            if (condition === 'operation')
+            if (condition === 'dirty') {
+                writeFileSync(join(f.lane, 'tracked'), 'changed');
+            }
+            if (condition === 'untracked') {
+                writeFileSync(join(f.lane, 'notes'), 'keep');
+            }
+            if (condition === 'ignored') {
+                writeFileSync(join(f.lane, '.env'), 'keep');
+            }
+            if (condition === 'active cwd' || condition === 'open file') {
+                f.port.removal.active = () => true;
+            }
+            if (condition === 'operation') {
                 writeFileSync(f.git(['-C', f.lane, 'rev-parse', '--git-path', 'MERGE_HEAD']), f.head);
+            }
             if (condition === 'foreign lock') {
                 f.git(['worktree', 'unlock', f.lane]);
                 f.git(['worktree', 'lock', '--reason', 'foreign', f.lane]);
@@ -211,8 +251,12 @@ describe('automatic lane cleanup', () => {
                 f.pr.mergedAt = null;
                 f.port.removal.comments = () => [];
             }
-            if (condition === 'wrong head') f.pr.headRefOid = '1'.repeat(40);
-            if (condition === 'ambiguous') f.port.removal.pullRequests = () => [f.pr, { ...f.pr, number: 43 }];
+            if (condition === 'wrong head') {
+                f.pr.headRefOid = '1'.repeat(40);
+            }
+            if (condition === 'ambiguous') {
+                f.port.removal.pullRequests = () => [f.pr, { ...f.pr, number: 43 }];
+            }
             expect(cleanupLanes(f.port)[0]).toMatchObject({ status: 'protected' });
             expect(existsSync(f.lane)).toBe(true);
             const [record] = readCleanupRecords(f.root);
@@ -444,7 +488,7 @@ describe('complete lane activity proof', () => {
         expect(
             laneIsActive('/repo/lane', {
                 capture: (command) =>
-                    command === 'ps' ? capture(command) : catalog + 'f7\0tREG\0n/repo/lane/held\0\n',
+                    command === 'ps' ? capture(command) : `${catalog}f7\0tREG\0n/repo/lane/held\0\n`,
             })
         ).toBe(true);
     });

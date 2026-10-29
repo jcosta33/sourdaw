@@ -22,6 +22,7 @@ import {
     assertRequiredRepository,
     assertTrustedExecutingBlob,
     authenticateRole,
+    CLEANUP_MINT_PERMISSIONS,
     githubAuthorizationGitEnv,
     originMainBlob,
     REQUIRED_REPOSITORY,
@@ -69,10 +70,13 @@ export type CleanupPort = {
 };
 
 export function cleanupFailureReason(error: unknown): string {
-    const message = (error instanceof Error ? error.message : String(error)).replace(/[\r\n\u2028\u2029]/g, ' ').trim();
-    return unsafeCredentialReason(message) === undefined
-        ? message.slice(0, 512)
-        : 'inspection failed (private details withheld)';
+    const message = (error instanceof Error ? error.message : String(error))
+        .replaceAll(/[\r\n\u2028\u2029]/g, ' ')
+        .trim();
+    if (unsafeCredentialReason(message) !== undefined) {
+        return 'inspection failed (private details withheld)';
+    }
+    return message.slice(0, 512);
 }
 
 export function cleanupBackoff(attempts: number): number {
@@ -98,7 +102,9 @@ export function ensureCleanupExcluded(primaryRoot: string): void {
     }
     const previous = existsSync(path) ? readFileSync(path, 'utf8') : '';
     const entry = '/.agents/lane-cleanup/';
-    if (previous.split(/\r?\n/).includes(entry)) return;
+    if (previous.split(/\r?\n/).includes(entry)) {
+        return;
+    }
     const fd = openSync(path, 'a', 0o600);
     try {
         // One append preserves existing bytes and concurrent unrelated exclusions.
@@ -239,6 +245,63 @@ export function withCleanupLock<Value>(primaryRoot: string, shell: ShellRunner, 
     }
 }
 
+function queueCleanupCandidates(
+    port: CleanupPort,
+    primaryRoot: string,
+    directory: string,
+    registered: Worktree[],
+    records: CleanupRecord[],
+    onlyHead?: string
+): { candidates: CleanupRecord[]; outcomes: CleanupOutcome[] } {
+    const candidates: CleanupRecord[] = [];
+    const outcomes: CleanupOutcome[] = [];
+    for (const lane of registered) {
+        if (onlyHead !== undefined && lane.head !== onlyHead) {
+            continue;
+        }
+        let identity: LaneIdentity;
+        try {
+            if (!cleanupCandidate(primaryRoot, lane)) {
+                port.log(`protected ${lane.path}: outside managed cleanup roots or no removable worktree`);
+                continue;
+            }
+            identity = laneIdentity(lane);
+        } catch (error) {
+            const reason = cleanupFailureReason(error);
+            outcomes.push({ lane: lane.path, status: 'protected', reason });
+            port.log(`protected ${lane.path}: ${reason}`);
+            continue;
+        }
+        const record = records.find((item) => sameLaneIdentity(item.identity, identity));
+        // A different registered directory or HEAD never inherits a stale cleanup request.
+        const reused = records.some(
+            (item) => item.identity.path === lane.path && !sameLaneIdentity(item.identity, identity)
+        );
+        const current: CleanupRecord = record ?? {
+            version: 1,
+            repository: REQUIRED_REPOSITORY,
+            primaryRoot,
+            identity,
+            status: 'pending',
+            attempts: 0,
+            nextAttemptAt: 0,
+            reason: 'awaiting live merged-head and inactivity proof',
+        };
+        if (onlyHead !== undefined && record !== undefined && record.status !== 'removed') {
+            current.nextAttemptAt = 0;
+        }
+        if (reused && record === undefined) {
+            current.status = 'protected';
+            current.reason =
+                'registered path or HEAD replaced a previous cleanup identity; awaiting independent fresh proof';
+            current.nextAttemptAt = port.now() + cleanupBackoff(1);
+        }
+        writeRecord(directory, current);
+        candidates.push(current);
+    }
+    return { candidates, outcomes };
+}
+
 export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = false): CleanupOutcome[] {
     return port.serialize(() => {
         const primaryRoot = realpathSync(port.primaryRoot);
@@ -249,61 +312,24 @@ export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = f
         }
         assertRequiredRepository(port.removal.repository());
         const records = readCleanupRecords(primaryRoot);
-        const candidates: CleanupRecord[] = [];
-        const outcomes: CleanupOutcome[] = [];
-        for (const lane of registered) {
-            if (onlyHead !== undefined && lane.head !== onlyHead) {
-                continue;
-            }
-            let identity: LaneIdentity;
-            try {
-                if (!cleanupCandidate(primaryRoot, lane)) {
-                    port.log(`protected ${lane.path}: outside managed cleanup roots or no removable worktree`);
-                    continue;
-                }
-                identity = laneIdentity(lane);
-            } catch (error) {
-                const reason = cleanupFailureReason(error);
-                outcomes.push({ lane: lane.path, status: 'protected', reason });
-                port.log(`protected ${lane.path}: ${reason}`);
-                continue;
-            }
-            const record = records.find((item) => sameLaneIdentity(item.identity, identity));
-            // A different registered directory or HEAD never inherits a stale cleanup request.
-            const reused = records.some(
-                (item) => item.identity.path === lane.path && !sameLaneIdentity(item.identity, identity)
-            );
-            const current: CleanupRecord = record ?? {
-                version: 1,
-                repository: REQUIRED_REPOSITORY,
-                primaryRoot,
-                identity,
-                status: 'pending',
-                attempts: 0,
-                nextAttemptAt: 0,
-                reason: 'awaiting live merged-head and inactivity proof',
-            };
-            if (onlyHead !== undefined && record !== undefined && record.status !== 'removed') {
-                current.nextAttemptAt = 0;
-            }
-            if (reused && record === undefined) {
-                current.status = 'protected';
-                current.reason =
-                    'registered path or HEAD replaced a previous cleanup identity; awaiting independent fresh proof';
-                current.nextAttemptAt = port.now() + cleanupBackoff(1);
-            }
-            writeRecord(directory, current);
-            candidates.push(current);
-        }
+        const { candidates, outcomes } = queueCleanupCandidates(
+            port,
+            primaryRoot,
+            directory,
+            registered,
+            records,
+            onlyHead
+        );
         // Persist every candidate before network access or removal, including a killed first attempt.
         candidates.sort((left, right) => left.nextAttemptAt - right.nextAttemptAt);
         let attempted = 0;
         const circuitPath = join(directory, CIRCUIT_FILE);
-        const circuit = existsSync(circuitPath)
-            ? (JSON.parse(readFileSync(circuitPath, 'utf8')) as { nextAttemptAt: number })
-            : { nextAttemptAt: 0 };
+        let circuit = { nextAttemptAt: 0 };
+        if (existsSync(circuitPath)) {
+            circuit = JSON.parse(readFileSync(circuitPath, 'utf8')) as { nextAttemptAt: number };
+        }
         if (!Number.isSafeInteger(circuit.nextAttemptAt)) {
-            throw new Error('cleanup inspection backoff is invalid');
+            throw new TypeError('cleanup inspection backoff is invalid');
         }
         let unavailable = queueOnly || circuit.nextAttemptAt > port.now();
         for (const record of candidates) {
@@ -324,7 +350,9 @@ export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = f
                         record.reason
                     );
                     record.status = safetyRefusal ? 'protected' : 'pending';
-                    if (safetyRefusal) record.nextAttemptAt = port.now() + cleanupBackoff(1);
+                    if (safetyRefusal) {
+                        record.nextAttemptAt = port.now() + cleanupBackoff(1);
+                    }
                     if (!safetyRefusal) {
                         unavailable = true;
                         atomicJson(circuitPath, { nextAttemptAt: record.nextAttemptAt, reason: record.reason });
@@ -340,18 +368,24 @@ export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = f
     });
 }
 
+export function authenticateCleanup(primaryRoot: string, authenticate: typeof authenticateRole = authenticateRole) {
+    return authenticate({ primaryRoot, role: 'author', permissions: CLEANUP_MINT_PERMISSIONS });
+}
+
 export async function runCleanup(primaryRoot: string, onlyHead?: string): Promise<CleanupOutcome[]> {
     const root = realpathSync(primaryRoot);
     const gitEnv = githubAuthorizationGitEnv();
     const localShell: ShellRunner = {
-        capture: (command, args, options?: ShellCaptureOptions) =>
-            command === 'lsof' || command === 'ps'
-                ? captureRemoval(command, args, options)
-                : spawnCapture(command, args, {
-                      cwd: root,
-                      env: command === 'git' ? gitEnv : process.env,
-                      trim: options?.preserveStdout !== true,
-                  }),
+        capture: (command, args, options?: ShellCaptureOptions) => {
+            if (command === 'lsof' || command === 'ps') {
+                return captureRemoval(command, args, options);
+            }
+            return spawnCapture(command, args, {
+                cwd: root,
+                env: command === 'git' ? gitEnv : process.env,
+                trim: options?.preserveStdout !== true,
+            });
+        },
         run: (command, args) => spawnRun(command, args, { cwd: root, env: command === 'git' ? gitEnv : process.env }),
     };
     const remote = localShell.capture('git', ['remote', 'get-url', 'origin']);
@@ -377,25 +411,23 @@ export async function runCleanup(primaryRoot: string, onlyHead?: string): Promis
     // Use the author App's independent, read-only quota; no shared operator REST dependency.
     let auth: Awaited<ReturnType<typeof authenticateRole>>;
     try {
-        auth = await authenticateRole({
-            primaryRoot: root,
-            role: 'author',
-            permissions: { contents: 'read', pull_requests: 'read', issues: 'read' },
-        });
+        auth = await authenticateCleanup(root);
     } catch (error) {
         atomicJson(circuitPath, { nextAttemptAt: Date.now() + cleanupBackoff(1), reason: cleanupFailureReason(error) });
         throw error;
     }
     try {
         const shell: ShellRunner = {
-            capture: (command, args, options) =>
-                command === 'gh'
-                    ? spawnCapture(command, args, {
-                          cwd: root,
-                          env: auth.session.env,
-                          trim: options?.preserveStdout !== true,
-                      })
-                    : localShell.capture(command, args, options),
+            capture: (command, args, options) => {
+                if (command === 'gh') {
+                    return spawnCapture(command, args, {
+                        cwd: root,
+                        env: auth.session.env,
+                        trim: options?.preserveStdout !== true,
+                    });
+                }
+                return localShell.capture(command, args, options);
+            },
             run: localShell.run,
         };
         const removal = { ...shellPort(shell, root), repository: () => REQUIRED_REPOSITORY };
@@ -434,7 +466,7 @@ async function main(): Promise<number> {
             }
             return 0;
         }
-        if (args.length !== 0) {
+        if (args.length > 0) {
             throw new Error('usage: pnpm lane:cleanup [--status]');
         }
         assertTrustedExecutingBlob(

@@ -66,7 +66,9 @@ function fixture() {
         capture: (command, args) => {
             if (command === '/bin/launchctl') {
                 events.push(args);
-                if (!loaded) throw new Error('Could not find service in domain');
+                if (!loaded) {
+                    throw new Error('Could not find service in domain');
+                }
                 return 'state = waiting';
             }
             return git(args);
@@ -214,7 +216,9 @@ describe('cleanup installation', () => {
                 installCleanupLanes({
                     ...f.port,
                     capture: (command, args) => {
-                        if (command === '/bin/launchctl') throw new Error('permission denied');
+                        if (command === '/bin/launchctl') {
+                            throw new Error('permission denied');
+                        }
                         return f.port.capture(command, args);
                     },
                 })

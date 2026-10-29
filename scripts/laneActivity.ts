@@ -5,6 +5,15 @@ import { parseLsofCensus, sameUserProcessIds } from './resourceGuardStorage.ts';
 
 import type { ShellRunner } from './removeLane.ts';
 
+function processIsGone(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return false;
+    } catch (error) {
+        return error instanceof Error && 'code' in error && error.code === 'ESRCH';
+    }
+}
+
 /** A successful lsof catalog may omit a live process. Absence needs complete same-user coverage. */
 export function laneIsActive(path: string, shell: Pick<ShellRunner, 'capture'>): boolean {
     const uid = process.getuid?.();
@@ -42,13 +51,9 @@ export function laneIsActive(path: string, shell: Pick<ShellRunner, 'capture'>):
         if (census.pids.has(pid)) {
             continue;
         }
-        try {
-            process.kill(pid, 0);
-        } catch (error) {
-            if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
-                missed.add(pid);
-                continue;
-            }
+        if (processIsGone(pid)) {
+            missed.add(pid);
+            continue;
         }
         throw new Error('open-file inspection omitted a live process');
     }
@@ -56,11 +61,11 @@ export function laneIsActive(path: string, shell: Pick<ShellRunner, 'capture'>):
     // gone, so its heir cannot inherit an absence claim from the earlier process catalog.
     if (missed.size > 0) {
         for (const pid of users()) {
-            if (census.pids.has(pid) || missed.has(pid)) continue;
-            try {
-                process.kill(pid, 0);
-            } catch (error) {
-                if (error instanceof Error && 'code' in error && error.code === 'ESRCH') continue;
+            if (census.pids.has(pid) || missed.has(pid)) {
+                continue;
+            }
+            if (processIsGone(pid)) {
+                continue;
             }
             throw new Error('open-file inspection has an uncovered successor process');
         }

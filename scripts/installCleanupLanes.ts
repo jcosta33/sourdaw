@@ -138,14 +138,16 @@ export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: st
     const current = readFileSync(path, 'utf8');
     const receiptPath = join(directory, 'launcher-installation.json');
     type InstalledBlob = { commit: string; hash: string };
-    const receipt = existsSync(receiptPath)
-        ? (JSON.parse(readFileSync(receiptPath, 'utf8')) as InstalledBlob & { previous?: InstalledBlob })
-        : undefined;
+    let receipt: (InstalledBlob & { previous?: InstalledBlob }) | undefined;
+    if (existsSync(receiptPath)) {
+        receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as InstalledBlob & { previous?: InstalledBlob };
+    }
     const head = port.capture(port.git, ['show', `HEAD:${BOOTSTRAP_PATH}`]);
     const index = port.capture(port.git, ['show', `:${BOOTSTRAP_PATH}`]);
     const installed = [receipt, receipt?.previous].find((previous) => {
-        if (previous === undefined || !/^[a-f0-9]{40}$/.test(previous.commit) || hash(current) !== previous.hash)
+        if (previous === undefined || !/^[a-f0-9]{40}$/.test(previous.commit) || hash(current) !== previous.hash) {
             return false;
+        }
         port.capture(port.git, ['merge-base', '--is-ancestor', previous.commit, commit]);
         return port.capture(port.git, ['show', `${previous.commit}:${BOOTSTRAP_PATH}`]) === current;
     });
@@ -155,10 +157,11 @@ export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: st
     }
     if (current !== next) {
         // Record both the approved replacement and its origin before publication, so interruption is recoverable.
-        atomicWrite(
-            receiptPath,
-            `${JSON.stringify({ commit, hash: hash(next), ...(installed === undefined ? {} : { previous: { commit: installed.commit, hash: installed.hash } }) })}\n`
-        );
+        const installation: InstalledBlob & { previous?: InstalledBlob } = { commit, hash: hash(next) };
+        if (installed !== undefined) {
+            installation.previous = { commit: installed.commit, hash: installed.hash };
+        }
+        atomicWrite(receiptPath, `${JSON.stringify(installation)}\n`);
         atomicWrite(path, next, statSync(path).mode & 0o777);
     } else {
         atomicWrite(receiptPath, `${JSON.stringify({ commit, hash: hash(next) })}\n`);
