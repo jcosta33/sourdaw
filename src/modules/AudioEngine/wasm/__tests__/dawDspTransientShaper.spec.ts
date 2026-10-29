@@ -14,7 +14,9 @@ describe('shipping scalar WASM ABI', () => {
         try {
             expect(instance.process_left(0.5, 2, 0.25)).toBe(1);
             expect(instance.process_right(0.001, 2, 0.25)).toBeCloseTo(0.00025, 9);
-            for (let frame = 0; frame < 48000; frame++) instance.process_left(0.5, 1, 1);
+            for (let frame = 0; frame < 48000; frame++) {
+                instance.process_left(0.5, 1, 1);
+            }
             expect(instance.process_left(0.5, 2, 0.25)).toBe(0.125);
             instance.reset();
             expect(instance.process_left(0.5, 2, 0.25)).toBe(1);
@@ -24,7 +26,8 @@ describe('shipping scalar WASM ABI', () => {
         }
     });
     it('rejects invalid sample rates explicitly', () => {
-        for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+        for (const rate of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
             expect(() => new TransientShaperInstance(rate)).toThrow();
+        }
     });
 });

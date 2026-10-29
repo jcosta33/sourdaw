@@ -705,7 +705,12 @@ function numericArgumentAnswersTo(deviceType: NativeDspDeviceType, paramId: stri
     if (translation.kind !== 'numericArguments') {
         return false;
     }
-    const position = paramId === 'attackGain' ? 1 : paramId === 'sustainGain' ? 2 : -1;
+    let position = -1;
+    if (paramId === 'attackGain') {
+        position = 1;
+    } else if (paramId === 'sustainGain') {
+        position = 2;
+    }
     if (position < 0) {
         return false;
     }

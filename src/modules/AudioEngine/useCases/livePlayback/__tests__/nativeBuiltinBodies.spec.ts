@@ -1151,7 +1151,9 @@ describe('the Transient Shaper native body', () => {
             expect(body.addressesParameter(name!)).toBe(true);
             expect(body.parameterName(name!)).toBe(name);
         }
-        for (const name of ['_resetEpoch', 'attack_gain', 'unknown']) expect(body.addressesParameter(name)).toBe(false);
+        for (const name of ['_resetEpoch', 'attack_gain', 'unknown']) {
+            expect(body.addressesParameter(name)).toBe(false);
+        }
         expect(body.projectPatch({ attackGain: 100, sustainGain: -100, _resetEpoch: 1, other: 1 })).toEqual({
             attackGain: 2,
             sustainGain: 0,

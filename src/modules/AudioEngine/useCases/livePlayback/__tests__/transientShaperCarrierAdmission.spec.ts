@@ -77,7 +77,9 @@ describe('Transient Shaper native carrier admission', () => {
                     outputId: 'hw_out',
                     devices: placement === 'own' ? [] : [shaper],
                 };
-                if (placement === 'send') audio.sends = [{ busId: 'bus', level: 0.5, preFader: false }];
+                if (placement === 'send') {
+                    audio.sends = [{ busId: 'bus', level: 0.5, preFader: false }];
+                }
                 const { carriers, commands } = project([audio, bus]);
                 expect(carriers.get('audio')).toEqual({ carrier: 'native' });
                 const strip = commands.find(
@@ -100,7 +102,7 @@ describe('Transient Shaper native carrier admission', () => {
             devices: [plugin, shaper],
             outputId: 'hw_out',
         };
-        const saved: Track = JSON.parse(JSON.stringify(audio));
+        const saved: Track = structuredClone(audio);
         for (const devices of [
             saved.devices,
             [plugin],

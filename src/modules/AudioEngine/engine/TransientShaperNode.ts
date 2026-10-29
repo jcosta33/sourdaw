@@ -1,12 +1,18 @@
 import { raceAbortSignal } from '#/infra/audioWorklet/raceAbortSignal';
 import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '#/infra/audioWorklet/workletInitShared';
 
-import { type OfflineAutomationSegment } from '../repositories/deviceStrategy/AudioDeviceStrategy';
 import processorUrl from '../services/transientShaperProcessor.ts?worker&url';
 
 const RESET_FAULT_EPOCH = 16_777_215;
 const DISPOSE_TIMEOUT_MS = 1000;
 const frameTimeBits = new DataView(new ArrayBuffer(8));
+
+type OfflineAutomationSegment = {
+    startFrame: number;
+    endFrame: number;
+    startValue: number;
+    endValue: number;
+};
 
 function frameTime(frame: number, sampleRate: number): number {
     const seconds = frame / sampleRate;

@@ -19,9 +19,13 @@ afterAll(() => vi.unstubAllGlobals());
 async function processor(initialize = true) {
     await import('../transientShaperProcessor');
     const Constructor = registry.get('transient-shaper-processor');
-    if (!Constructor) throw new Error('Shipping processor was not registered');
+    if (!Constructor) {
+        throw new Error('Shipping processor was not registered');
+    }
     const instance = new Constructor({ processorOptions: { wasmModule: module } });
-    if (initialize) instance.port.onmessage?.({ data: { type: 'init' } });
+    if (initialize) {
+        instance.port.onmessage?.({ data: { type: 'init' } });
+    }
     return { instance, Constructor };
 }
 function render(
@@ -32,7 +36,7 @@ function render(
     sustain = new Float32Array([1]),
     epoch = 0
 ) {
-    const output = [new Float32Array(frames).fill(9), new Float32Array(frames).fill(9)];
+    const output: [Float32Array, Float32Array] = [new Float32Array(frames).fill(9), new Float32Array(frames).fill(9)];
     const running = instance.process([input], [output], {
         attackGain: attack,
         sustainGain: sustain,
@@ -78,7 +82,9 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
     });
     it('resets before the first re-entry sample and terminal epoch emits silence without render messages', async () => {
         const { instance } = await processor();
-        for (let block = 0; block < 375; block++) render(instance, 128);
+        for (let block = 0; block < 375; block++) {
+            render(instance, 128);
+        }
         const attack = new Float32Array([2]);
         const sustain = new Float32Array([0.25]);
         expect(render(instance, 1, undefined, attack, sustain).output[0][0]).toBe(0.125);

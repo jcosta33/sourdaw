@@ -42,7 +42,9 @@ class FakeNode {
     disconnect = vi.fn();
     onprocessorerror: (() => void) | null = null;
     constructor() {
-        if (constructionFails) throw new Error('construction failed');
+        if (constructionFails) {
+            throw new Error('construction failed');
+        }
         instances.push(this);
     }
     message(data: unknown) {
@@ -65,7 +67,9 @@ async function create(signal?: AbortSignal, onFailure?: (message: string) => voi
     const node = await createTransientShaperNode(context, signal, onFailure);
     void node.ready.catch(() => undefined);
     const fake = instances[0];
-    if (!fake) throw new Error('node not constructed');
+    if (!fake) {
+        throw new Error('node not constructed');
+    }
     return { node, fake };
 }
 function dispose(node: Awaited<ReturnType<typeof createTransientShaperNode>>, fake: FakeNode) {
@@ -112,7 +116,9 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         const node = await createTransientShaperNode(exactContext);
         void node.ready.catch(() => undefined);
         const fake = instances[0];
-        if (!fake) throw new Error('No worklet');
+        if (!fake) {
+            throw new Error('No worklet');
+        }
         node.setParam('attackGain', 1.5, 1665);
         node.scheduleParam('sustainGain', [{ startFrame: 1665, endFrame: 3329, startValue: 0.5, endValue: 1 }]);
         node.setBypass(true);
@@ -120,7 +126,9 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         const gainTime = fake.parameters.get('attackGain')?.setValueAtTime.mock.calls[0]?.[1];
         const rampTime = fake.parameters.get('sustainGain')?.linearRampToValueAtTime.mock.calls[0]?.[1];
         const reset = fake.parameters.get('_resetEpoch');
-        if (gainTime === undefined || rampTime === undefined || !reset) throw new Error('No scheduled event');
+        if (gainTime === undefined || rampTime === undefined || !reset) {
+            throw new Error('No scheduled event');
+        }
         expect(Math.ceil(gainTime * 48000)).toBe(1665);
         expect(Math.ceil(rampTime * 48000)).toBe(3329);
         expect(reset.valueWrites.mock.calls).toEqual([[1], [2]]);
@@ -197,7 +205,9 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         const loaded = vi.fn();
         setAudioDeviceRuntimeSink({ emitDeviceLoaded: loaded });
         const descriptor = findWasmDescriptor('transient-shaper');
-        if (!descriptor) throw new Error('No real registry descriptor');
+        if (!descriptor) {
+            throw new Error('No real registry descriptor');
+        }
         const registryContext = { ...context, createGain: () => ({ disconnect: vi.fn() }) } as unknown as AudioContext;
         return { descriptor, registryContext, loaded };
     }
@@ -219,13 +229,19 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         });
         await vi.waitFor(() => expect(instances).toHaveLength(1));
         const fake = instances[0];
-        if (!fake) throw new Error('No constructed worklet');
-        if (state === 'aborted') abort.abort();
+        if (!fake) {
+            throw new Error('No constructed worklet');
+        }
+        if (state === 'aborted') {
+            abort.abort();
+        }
         fake.message({ type: 'ready' });
         await load.loadPromise;
         expect(loaded).not.toHaveBeenCalled();
         expect(fake.disconnect).toHaveBeenCalledOnce();
-        if (state !== 'rejected') expect(onLoaded).not.toHaveBeenCalled();
+        if (state !== 'rejected') {
+            expect(onLoaded).not.toHaveBeenCalled();
+        }
         fake.message({ type: 'disposed' });
     });
     it('retires post-ready faults and requests recovery only after the owning graph accepted replacement', async () => {
@@ -243,7 +259,9 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         });
         await vi.waitFor(() => expect(instances).toHaveLength(1));
         const fake = instances[0];
-        if (!fake) throw new Error('No constructed worklet');
+        if (!fake) {
+            throw new Error('No constructed worklet');
+        }
         fake.message({ type: 'ready' });
         await load.loadPromise;
         expect(loaded).toHaveBeenCalledOnce();
@@ -269,7 +287,9 @@ describe('Transient Shaper registry promotion lifecycle', () => {
         });
         await vi.waitFor(() => expect(instances).toHaveLength(1));
         const fake = instances[0];
-        if (!fake) throw new Error('No constructed worklet');
+        if (!fake) {
+            throw new Error('No constructed worklet');
+        }
         fake.message({ type: 'ready' });
         await load.loadPromise;
         expect(loaded).not.toHaveBeenCalled();
