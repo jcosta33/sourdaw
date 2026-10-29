@@ -1,0 +1,78 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 212-215
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 626-629
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 7-9,15-16,23-24,29-82,149-223,227,270-277,280-284,289-292,295-299,341-344,346,382-413,421
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  h_beb54bf43b47b7 11
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  h_beb54bf43b47b7 43
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  h_beb54bf43b47b7 31,54-59,70-77
+src/modules/Arrangement/handlers/recording/__tests__/recordingReplayOwnership.integration.spec.ts
+  h_beb54bf43b47b7 1-541
+src/modules/Arrangement/handlers/recording/handleDiscardRecording.ts
+  h_beb54bf43b47b7 6,16-22
+src/modules/Arrangement/handlers/recording/handleRestoreRecording.ts
+  h_beb54bf43b47b7 4,8,19-23,25-31,33,41
+src/modules/Arrangement/handlers/recording/recordingReplayOwnership.ts
+  h_beb54bf43b47b7 1-66
+src/modules/Command/useCases/__tests__/readUndoEntryForInverse.spec.ts
+  h_beb54bf43b47b7 1-107
+src/modules/Command/useCases/index.ts
+  h_beb54bf43b47b7 104
+src/modules/Command/useCases/readUndoEntryForInverse.ts
+  h_beb54bf43b47b7 1-32
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  h_beb54bf43b47b7 13
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 145
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 119
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  h_beb54bf43b47b7 118
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 129
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 183
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  h_beb54bf43b47b7 139
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  h_beb54bf43b47b7 192
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  h_beb54bf43b47b7 124
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  h_beb54bf43b47b7 122
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  h_beb54bf43b47b7 112
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  h_beb54bf43b47b7 70
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipGainEnvelopeSection.spec.tsx
+  h_beb54bf43b47b7 101
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  h_beb54bf43b47b7 212
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  h_beb54bf43b47b7 16
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  h_beb54bf43b47b7 84
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  h_beb54bf43b47b7 26
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 11,2083-2088
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8919f3928bb0de4836acd4fcabd4962abf7c8dcb",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
