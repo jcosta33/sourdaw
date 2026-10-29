@@ -3,6 +3,11 @@ const STORE = 'directories';
 
 const cachedRoots = new Map<string, FileSystemDirectoryHandle>();
 const invalidatedProjectIds = new Set<string>();
+const rootCacheGenerations = new Map<string, number>();
+
+function advanceRootCacheGeneration(projectId: string): void {
+    rootCacheGenerations.set(projectId, (rootCacheGenerations.get(projectId) ?? 0) + 1);
+}
 
 export type ProjectDirectoryBinding = {
     projectId: string;
@@ -48,6 +53,7 @@ async function loadProjectDirectoryRoot(projectId: string): Promise<FileSystemDi
     if (!globalThis.indexedDB) {
         throw new Error('Project directory bindings are unavailable');
     }
+    const generation = rootCacheGenerations.get(projectId);
     const database = await openDatabase();
     try {
         const value = await new Promise<unknown>((resolve, reject) => {
@@ -56,6 +62,11 @@ async function loadProjectDirectoryRoot(projectId: string): Promise<FileSystemDi
             transaction.oncomplete = () => resolve(request.result);
             transaction.onabort = () => reject(transaction.error ?? new Error('Project directory binding read failed'));
         });
+        // A folder selected or cleared during this read owns the live cache,
+        // even when this earlier readonly transaction still sees the old root.
+        if (rootCacheGenerations.get(projectId) !== generation) {
+            return cachedProjectDirectoryRoot(projectId);
+        }
         if (value === undefined) {
             return null;
         }
@@ -110,6 +121,7 @@ async function clearLastProjectDirectoryBinding(projectId?: string): Promise<voi
         return;
     }
     if (projectId) {
+        advanceRootCacheGeneration(projectId);
         cachedRoots.delete(projectId);
         invalidatedProjectIds.add(projectId);
     }
@@ -145,6 +157,7 @@ async function bindProjectDirectoryRoot(
     // The selected folder already owns the committed project at this point.
     // A failed private bookmark write must never send the next Save to an older
     // folder with the same project id in this live session.
+    advanceRootCacheGeneration(projectId);
     cachedRoots.set(projectId, root);
     invalidatedProjectIds.add(projectId);
     const database = await openDatabase();
