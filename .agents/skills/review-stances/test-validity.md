@@ -24,6 +24,9 @@ ignore contract in `scripts/test-health-gate-scripts.sh`. Scanner execution does
 caller that binds its configuration bytes. Trace direct readers and evaluate the unchanged owning
 assertion against the candidate; removing the audited exception, changing its provenance or adding
 an unrelated fingerprint must fail without weakening exact equality.
+The subsequent literal source URL also entered the external-reference census. Use the production
+snapshot loader restricted to changed source paths, compare discovered keys with inventory
+assignments, and prove removal of the new assignment exposes that exact missing reference.
 
 ### 2026-10-29 — static scanner metadata fell through to browser coverage (#5483)
 

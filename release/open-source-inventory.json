@@ -2317,6 +2317,11 @@
             "value": "https://vercel.com/sso-api?url=https%3A%2F%2Frestricted.vercel.app%2F"
         },
         {
+            "surface": "project-source",
+            "file": "scripts/test-health-gate-scripts.sh",
+            "value": "https://www.rfc-editor.org/rfc/rfc6455.html#section-1.2"
+        },
+        {
             "surface": "project-wasm",
             "file": "public/wasm/daw-dsp/package.json",
             "value": "https://github.com/jcosta33/sourdaw"
