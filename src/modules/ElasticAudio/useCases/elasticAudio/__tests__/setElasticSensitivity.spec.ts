@@ -4,11 +4,14 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 
 const mocks = vi.hoisted(() => ({
-    detectTransientsForClip: vi.fn().mockReturnValue({ ok: true, added: 0, kept: 0, removed: 0 }),
+    execute: vi.fn().mockResolvedValue(undefined),
+    cancel: vi.fn(),
 }));
 
+vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.execute }));
 vi.mock('../detectTransientsForClip', () => ({
-    detectTransientsForClip: (...args: unknown[]) => mocks.detectTransientsForClip(...args),
+    cancelTransientDetection: mocks.cancel,
+    transientDetectionRevision: () => 0,
 }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
@@ -17,13 +20,14 @@ import { setElasticSensitivity } from '../setElasticSensitivity';
 describe('setElasticSensitivity', () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        mocks.detectTransientsForClip.mockClear();
+        mocks.execute.mockClear();
         elasticAudioStore.set({ ...defaultElasticAudioState });
         preferencesStore.trySet(defaultPreferences);
     });
 
     afterEach(() => {
         preferencesStore.trySet(defaultPreferences);
+        vi.clearAllTimers();
         vi.useRealTimers();
     });
 
@@ -45,8 +49,14 @@ describe('setElasticSensitivity', () => {
         vi.advanceTimersByTime(150);
         await pending;
 
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledOnce();
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.5);
+        expect(mocks.execute).toHaveBeenCalledOnce();
+        expect(mocks.execute).toHaveBeenCalledWith(
+            {
+                type: 'detectTransients',
+                payload: { clipId: 'clip-1', sensitivity: 0.5 },
+            },
+            { signal: undefined }
+        );
     });
 
     it('updates the canonical preference immediately', () => {
@@ -72,13 +82,19 @@ describe('setElasticSensitivity', () => {
     it('debounces detection by 150ms when a clip is open', async () => {
         elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
         const promise = setElasticSensitivity(0.5);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         vi.advanceTimersByTime(149);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         vi.advanceTimersByTime(10);
         await promise;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.5);
+        expect(mocks.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.execute).toHaveBeenCalledWith(
+            {
+                type: 'detectTransients',
+                payload: { clipId: 'clip-1', sensitivity: 0.5 },
+            },
+            { signal: undefined }
+        );
     });
 
     it('collapses rapid calls into a single detection on the last value', async () => {
@@ -88,8 +104,14 @@ describe('setElasticSensitivity', () => {
         const third = setElasticSensitivity(0.9);
         vi.advanceTimersByTime(200);
         await Promise.all([first, second, third]);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.9);
+        expect(mocks.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.execute).toHaveBeenCalledWith(
+            {
+                type: 'detectTransients',
+                payload: { clipId: 'clip-1', sensitivity: 0.9 },
+            },
+            { signal: undefined }
+        );
     });
 
     it('sets detected=true after running detection', async () => {
@@ -100,10 +122,32 @@ describe('setElasticSensitivity', () => {
         expect(elasticAudioStore.value?.detected).toBe(true);
     });
 
+    it('awaits actual completion and propagates failure without detected success', async () => {
+        elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
+        let fail: ((error: Error) => void) | undefined;
+        mocks.execute.mockImplementationOnce(
+            () =>
+                new Promise<void>((_resolve, reject) => {
+                    fail = reject;
+                })
+        );
+        const promise = setElasticSensitivity(0.82);
+        const failure = expect(promise).rejects.toThrow('Worker failed');
+        await vi.advanceTimersByTimeAsync(150);
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        fail?.(new Error('Worker failed'));
+        await failure;
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        const retry = setElasticSensitivity(0.82);
+        await vi.advanceTimersByTimeAsync(150);
+        await retry;
+        expect(elasticAudioStore.value?.detected).toBe(true);
+    });
+
     it('skips detection if no clip is open', async () => {
         const promise = setElasticSensitivity(0.5);
         vi.advanceTimersByTime(200);
         await promise;
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 });

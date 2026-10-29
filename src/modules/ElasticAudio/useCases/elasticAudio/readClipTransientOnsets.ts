@@ -114,7 +114,7 @@ function validReadLimits(input: ReadInput, found: ReturnType<typeof findSource>[
     );
 }
 
-function prepareSource(input: ReadInput): PreparedSource {
+function prepareSource(input: ReadInput, channelSampleCeiling: number): PreparedSource {
     if (input.signal?.aborted) {
         return { status: 'failed', code: 'cancelled' };
     }
@@ -144,7 +144,7 @@ function prepareSource(input: ReadInput): PreparedSource {
     }
     if (
         geometry.frameCount / geometry.sampleRate > Math.min(input.maxSourceSeconds, 600) ||
-        geometry.frameCount * geometry.channelCount > Math.min(input.maxChannelSamples, 10_000_000)
+        geometry.frameCount * geometry.channelCount > Math.min(input.maxChannelSamples, channelSampleCeiling)
     ) {
         return { status: 'failed', code: 'source-too-large' };
     }
@@ -199,9 +199,41 @@ function copySourceChannels({ buffer, identity }: CachedSource): Float32Array[] 
     return channels;
 }
 
+/** Bound each product copy task; cached channel buffers always stay owned by the cache. */
+async function copyProductChannels(source: CachedSource, isCurrent: () => boolean): Promise<Float32Array[] | null> {
+    const channels: Float32Array[] = [];
+    const chunkFrames = 262_144;
+    for (let channel = 0; channel < source.identity.channelCount; channel++) {
+        const samples = source.buffer.getChannelData(channel);
+        if (samples.length !== source.identity.frameCount) return null;
+        const copy = new Float32Array(samples.length);
+        for (let start = 0; start < samples.length; start += chunkFrames) {
+            if (!isCurrent()) return null;
+            const taskStarted = performance.now();
+            copy.set(samples.subarray(start, start + chunkFrames), start);
+            performance.measure('elastic-transient-copy-task', { start: taskStarted, end: performance.now() });
+            performance.clearMeasures('elastic-transient-copy-task');
+            if (start + chunkFrames < samples.length) {
+                await new Promise<void>((resolve) => setTimeout(resolve, 0));
+            }
+        }
+        channels.push(copy);
+    }
+    return channels;
+}
+
 /** A whole-source local read. The caller admits work before entering this cache boundary. */
-export async function readClipTransientOnsets(input: ReadInput): Promise<SourceRead> {
-    const prepared = prepareSource(input);
+export function readClipTransientOnsets(input: ReadInput): Promise<SourceRead> {
+    return readSource(input, 10_000_000);
+}
+
+/** Product detection admits two minutes of stereo 48 kHz independently of analysis queries. */
+export function readProductTransientOnsets(input: ReadInput): Promise<SourceRead> {
+    return readSource(input, 12_000_000);
+}
+
+async function readSource(input: ReadInput, channelSampleCeiling: number): Promise<SourceRead> {
+    const prepared = prepareSource(input, channelSampleCeiling);
     if (prepared.status === 'failed') {
         return prepared;
     }
@@ -211,10 +243,14 @@ export async function readClipTransientOnsets(input: ReadInput): Promise<SourceR
         if (!isCurrent()) {
             return { status: 'failed', code: 'stale-source' };
         }
-        const channels = copySourceChannels(source);
+        const channels =
+            channelSampleCeiling === 10_000_000
+                ? copySourceChannels(source)
+                : await copyProductChannels(source, isCurrent);
         if (channels === null) {
-            return { status: 'failed', code: 'invalid-source' };
+            return { status: 'failed', code: input.signal?.aborted ? 'cancelled' : 'invalid-source' };
         }
+        if (!isCurrent()) return { status: 'failed', code: 'stale-source' };
         input.onAnalysisStarted();
         const result = await runTransientOnsetWorker({
             channels,

@@ -1,18 +1,21 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { getWarpState, setWarpState, trackStore, warpStateStore } from '#/modules/Arrangement/stores';
-import { createTrack, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
+import { clearUndoHistory, executeAppAction, undo, redo } from '#/modules/Command/useCases';
 import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -24,10 +27,19 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
-import { detectTransientsForClip } from '../../../useCases/elasticAudio/detectTransientsForClip';
+import { detectTransients } from '../../../models/TransientDetection';
+import {
+    type TransientOnsetWorkerRequest,
+    type TransientOnsetWorkerResult,
+} from '../../../models/TransientOnsetWorker';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
+
+const worker = vi.hoisted(() =>
+    vi.fn<(input: TransientOnsetWorkerRequest & { signal?: AbortSignal }) => Promise<TransientOnsetWorkerResult>>()
+);
+vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: worker }));
 
 type WarpState = Parameters<typeof setWarpState>[1];
 
@@ -92,11 +104,28 @@ function rawWarpState(clipId = CLIP_ID): WarpState {
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
         resetPreferences();
+        const bus = createEventBus<{
+            'ui.notify': NotifyPayload;
+            'ui.confirm': ConfirmPayload;
+            'ui.prompt': PromptPayload;
+        }>();
+        injectDependencies(notifyUser, { eventBus: bus });
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         clearHandlerRegistry();
         clearUndoHistory();
+        registerHandlerMap({ ...getArrangementHandlers(), ...getFinalFeatureHandlers() });
+        projectStore.set({ ...defaultProjectStoreState, initialized: true, loading: false });
+        worker.mockImplementation(async ({ channels, sampleRate, sensitivity }) => {
+            const copied = structuredClone(channels, {
+                transfer: channels.map((channel) => channel.buffer as ArrayBuffer),
+            });
+            const mono = new Float32Array(copied[0]!.length);
+            for (let i = 0; i < mono.length; i++)
+                mono[i] = copied.reduce((sum, channel) => sum + channel[i]!, 0) / copied.length;
+            return { status: 'complete', hits: detectTransients(mono, sampleRate, sensitivity) };
+        });
         const track = createTrack({ id: 'audio-track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
         trackStore.set({
             tracks: [
@@ -148,7 +177,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         removeCrdtDoc('root');
     });
 
-    it('Detect preserves the edited locked automatic row in raw CRDT, store and visible count', () => {
+    it('Detect preserves the edited locked automatic row in raw CRDT, store and visible count', async () => {
         const samples = new Float32Array(SAMPLE_RATE);
         const buffer = makeBuffer(samples);
         const originalTracks = structuredClone(trackStore.value?.tracks);
@@ -158,6 +187,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
 
         fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+        await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
         flushAutomergeStorageWrites();
 
         expect(rawWarpState().markers).toEqual([lockedMarker]);
@@ -277,10 +307,10 @@ describe('locked transient markers through the real Elastic editor', () => {
             'ui.prompt': PromptPayload;
         }>();
         setNotificationEventBus(eventBus);
+        injectDependencies(notifyUser, { eventBus });
         const unsubscribe = eventBus.on('ui.notify', (notice) => {
             notices.push(notice);
         });
-        registerHandlerMap({ detectTransients: getFinalFeatureHandlers().detectTransients });
 
         render(<ElasticEditorPanel />);
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('2 transients, 2 user, 1 locked');
@@ -309,12 +339,13 @@ describe('locked transient markers through the real Elastic editor', () => {
 
     it.each([0, 0.0005])(
         'suppresses hits %s beats from a retained lock and replaces it after real unlock',
-        (offset) => {
+        async (offset) => {
             const samples = burstSamples();
             const originalPcm = samples.slice();
             supplyBuffer(samples);
             setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [] });
-            expect(detectTransientsForClip(CLIP_ID, 0.5)).toEqual({ ok: true, added: 1, kept: 0, removed: 0 });
+            await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
+            expect(getWarpState(CLIP_ID).markers).toHaveLength(1);
             const first = getWarpState(CLIP_ID).markers[0];
             if (!first) {
                 throw new Error('The deterministic burst must produce its real automatic marker');
@@ -338,6 +369,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             render(<ElasticEditorPanel />);
 
             fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
             flushAutomergeStorageWrites();
 
             expect(rawWarpState().markers).toEqual([retained]);
@@ -345,6 +377,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
             act(() => toggleMarkerLock(CLIP_ID, first.id));
             fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+            await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Detection complete'));
             flushAutomergeStorageWrites();
 
             const expectedReplacement = {
@@ -361,4 +394,77 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(samples).toEqual(originalPcm);
         }
     );
+    it('captures the inverse after the Worker and keeps concurrent edits through real Undo and Redo', async () => {
+        supplyBuffer(burstSamples());
+        let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
+        const started = new Promise<void>((resolve) =>
+            worker.mockImplementationOnce(() => {
+                resolve();
+                return new Promise((done) => {
+                    finish = done;
+                });
+            })
+        );
+        const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        await started;
+        setWarpState(CLIP_ID, {
+            ...getWarpState(CLIP_ID),
+            markers: [
+                ...getWarpState(CLIP_ID).markers,
+                { id: 'during-worker', originalBeat: 1.5, warpedBeat: 1.7, origin: 'user' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(getWarpState(CLIP_ID));
+        finish?.({ status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] });
+        await execution;
+        const after = structuredClone(getWarpState(CLIP_ID));
+        expect(after.markers).toContainEqual(lockedMarker);
+        expect(after.markers).toContainEqual(before.markers[1]);
+        expect(after.markers).toHaveLength(3);
+        expect(rawWarpState()).toEqual(after);
+        await undo();
+        expect(rawWarpState()).toEqual(before);
+        expect(getWarpState(CLIP_ID)).toEqual(before);
+        await redo();
+        expect(rawWarpState()).toEqual(after);
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+        setWarpState(CLIP_ID, {
+            ...after,
+            markers: [...after.markers, { id: 'later-user', originalBeat: 1.9, warpedBeat: 1.9, origin: 'user' }],
+        });
+        flushAutomergeStorageWrites();
+        const diverged = structuredClone(rawWarpState());
+        const outcome = await undo();
+        expect(outcome.headConsumed).toBe(false);
+        expect(rawWarpState()).toEqual(diverged);
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+    });
+
+    it('rejects a cancelled Worker result with no raw document write and permits retry', async () => {
+        supplyBuffer(burstSamples());
+        let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
+        const started = new Promise<void>((resolve) =>
+            worker.mockImplementationOnce(() => {
+                resolve();
+                return new Promise((done) => {
+                    finish = done;
+                });
+            })
+        );
+        const controller = new AbortController();
+        const before = JSON.stringify(getCrdtDoc('root'));
+        const execution = executeAppAction(
+            { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+            { signal: controller.signal }
+        );
+        const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+        await started;
+        controller.abort();
+        finish?.({ status: 'complete', hits: [{ sampleOffset: 512, confidence: 1 }] });
+        await rejected;
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(1);
+    });
 });

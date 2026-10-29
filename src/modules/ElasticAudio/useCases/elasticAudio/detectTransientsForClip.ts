@@ -1,115 +1,85 @@
-import { addWarpMarker, getWarpState, setWarpState, trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
+import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { detectTransients } from './detectTransients';
+import { elasticAudioStore } from '../../stores/elasticAudio';
 
-export type DetectTransientsResult =
-    | { ok: true; added: number; kept: number; removed: number }
-    | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_BUFFER' | 'NO_TEMPO' };
+import { readProductTransientOnsets } from './readClipTransientOnsets';
 
-type DetectableClip = {
-    id: string;
-    type: 'audio' | 'midi';
-    audioBufferId?: string;
-};
+const active = new Map<string, AbortController>();
+const revisions = new Map<string, number>();
 
-function findClip(clipId: string): { clip: DetectableClip } | null {
-    const tracks = trackStore.value?.tracks ?? [];
-    for (const track of tracks) {
-        const clips: readonly DetectableClip[] = track.clips;
-        const clip = clips.find((candidate) => candidate.id === clipId);
-        if (clip) {
-            return { clip };
-        }
-    }
-    return null;
+export function transientDetectionRevision(clipId: string): number {
+    return revisions.get(clipId) ?? 0;
 }
 
-/**
- * Detect transients in an audio clip and write the resulting markers into the
- * warp-marker store with `origin: 'transient-auto'`. User-locked markers and
- * markers with origin `user`/`grid-snap` are preserved across re-runs.
- *
- * Synchronous main-thread implementation. The pure detector is fast enough to
- * run inline for clips up to a few minutes; offloading to a worker is a
- * milestone-3 concern.
- */
-export function detectTransientsForClip(clipId: string, sensitivity: number): DetectTransientsResult {
-    const found = findClip(clipId);
-    if (!found) {
-        return { ok: false, reason: 'CLIP_NOT_FOUND' };
-    }
-    const { clip } = found;
-    if (clip.type !== 'audio') {
-        return { ok: false, reason: 'CLIP_NOT_AUDIO' };
-    }
-    if (!clip.audioBufferId) {
-        return { ok: false, reason: 'NO_BUFFER' };
-    }
-    const buffer = audioBufferCache.get(clip.audioBufferId);
-    if (!buffer) {
-        return { ok: false, reason: 'NO_BUFFER' };
-    }
+/** Revoke immediately, including during the sensitivity debounce and editor teardown. */
+export function cancelTransientDetection(clipId: string): void {
+    active.get(clipId)?.abort();
+    active.delete(clipId);
+    revisions.set(clipId, transientDetectionRevision(clipId) + 1);
+}
 
+/** Read-only owned-copy Worker stage; Arrangement's registered action owns the write. */
+export async function detectTransientsForClip(clipId: string, sensitivity: number, signal?: AbortSignal) {
+    cancelTransientDetection(clipId);
+    const controller = new AbortController();
+    active.set(clipId, controller);
+    const abort = (): void => controller.abort();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) {
+        abort();
+    }
+    const projectId = getSettledProjectId();
+    const root = captureProjectRootIdentity();
     const tempo = transportStore.value?.tempo;
-    if (!tempo || tempo <= 0) {
-        return { ok: false, reason: 'NO_TEMPO' };
-    }
-
-    const monoSamples = downmixToMono(buffer);
-    const hits = detectTransients(monoSamples, buffer.sampleRate, sensitivity);
-
-    const beatsPerSecond = tempo / 60;
-    const existing = getWarpState(clipId);
-    // Keep the preserved set stable as additions replace the store state, so
-    // duplicate checks and counts refer only to markers retained from this run.
-    const preservedSnapshot = existing.markers.filter(
-        (m) => m.locked === true || (m.origin ?? 'user') !== 'transient-auto'
-    );
-
-    setWarpState(clipId, {
-        ...existing,
-        markers: [...preservedSnapshot].sort((a, b) => a.originalBeat - b.originalBeat),
+    const editorClip = elasticAudioStore.value?.openClipId;
+    let editorChanged = false;
+    const unsubscribe = elasticAudioStore.subscribe((state) => {
+        if (state?.openClipId !== editorClip) {
+            editorChanged = true;
+            abort();
+        }
     });
-
-    let added = 0;
-    for (const hit of hits) {
-        const beat = (hit.sampleOffset / buffer.sampleRate) * beatsPerSecond;
-        if (preservedSnapshot.some((m) => Math.abs(m.originalBeat - beat) < 1e-3)) {
-            continue;
-        }
-        addWarpMarker(clipId, beat, beat, {
-            origin: 'transient-auto',
-            confidence: hit.confidence,
-        });
-        added++;
-    }
-
-    return {
-        ok: true,
-        added,
-        kept: preservedSnapshot.length,
-        removed: existing.markers.length - preservedSnapshot.length,
+    const isCurrent = (): boolean =>
+        !controller.signal.aborted &&
+        active.get(clipId) === controller &&
+        !editorChanged &&
+        elasticAudioStore.value?.openClipId === editorClip &&
+        captureProjectRootIdentity() === root &&
+        getSettledProjectId() === projectId &&
+        transportStore.value?.tempo === tempo;
+    const dispose = (): void => {
+        signal?.removeEventListener('abort', abort);
+        unsubscribe();
     };
-}
-
-function downmixToMono(buffer: AudioBuffer): Float32Array {
-    if (buffer.numberOfChannels === 1) {
-        return buffer.getChannelData(0);
+    if (!projectId || !tempo || !Number.isFinite(tempo) || tempo <= 0) {
+        dispose();
+        return { status: 'failed' as const, code: 'stale-source' as const };
     }
-    const out = new Float32Array(buffer.length);
-    const channels = buffer.numberOfChannels;
-    const buffers: Float32Array[] = [];
-    for (let c = 0; c < channels; c++) {
-        buffers.push(buffer.getChannelData(c));
-    }
-    for (let i = 0; i < buffer.length; i++) {
-        let sum = 0;
-        for (let c = 0; c < channels; c++) {
-            sum += buffers[c]![i]!;
+    try {
+        const result = await readProductTransientOnsets({
+            clipId,
+            sensitivity,
+            projectId,
+            isProjectRevisionCurrent: isCurrent,
+            maxSourceSeconds: 600,
+            maxChannelSamples: 12_000_000,
+            timeoutMs: 30_000,
+            signal: controller.signal,
+            onAnalysisStarted: () => undefined,
+        });
+        if (result.status === 'failed') {
+            return result;
         }
-        out[i] = sum / channels;
+        return {
+            ...result,
+            tempo,
+            isCurrent: () => isCurrent() && result.isCurrent(),
+        };
+    } finally {
+        dispose();
+        // Retain the identity through final commit validation. The next request or
+        // explicit cancellation revokes it even after the Worker has settled.
     }
-    return out;
 }

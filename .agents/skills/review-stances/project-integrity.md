@@ -445,6 +445,22 @@ lane identities against that prefix before any member writes. A live-only
 guard falsely refuses the genuine group; checking only current lane IDs lets
 an earlier restore occupy a later restore's ID and causes partial replay.
 
+### 2026-10-29 — redetection discarded an edited locked automatic marker (#4630)
+
+Direct commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised locked-marker preservation
+while removing every `transient-auto` row; there is no introducing pull request. Its initial
+case seeded user and unlocked automatic rows, omitting the locked automatic condition. PR #5515
+repaired retention; the complete Worker route must retain that invariant at its admitted commit.
+
+Seed a moved, locked automatic marker with its exact ID, original/warped beats, lock and confidence,
+alongside user, grid and unlocked automatic rows. Exercise real Detect, sensitivity and registered
+Command; inspect raw CRDT, owner projection, visible counts, another clip and unchanged cached PCM.
+While the Worker waits, edit a retained row or add a user row: capture the inverse at the admitted
+write so real Undo and Redo retain that edit. A later divergent edit must refuse replay without
+writing. Switch source/project, replace PCM, change tempo or cancel before commit and require zero
+write. Unlock and redetect to prove automatic replacement resumes. Independently remove locked-aware
+retention and nearby-hit suppression: the locked case and equal/near-hit cases must each fail.
+
 ### 2026-09-20 — cancellation cleanup outran durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) routed pending-confirmation cancellation through the run controller, whose

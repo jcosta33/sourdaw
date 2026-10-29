@@ -2,6 +2,7 @@ import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLaye
 import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
+import { handleDetectTransients } from '../handlers/clip/handleDetectTransients';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
@@ -174,6 +175,7 @@ export function getArrangementHandlers() {
         discardCreatedTracks: handleDiscardCreatedTracks,
         restoreTimeOperationState: handleRestoreTimeOperationState,
         restoreTrackClipStates: handleRestoreTrackClipStates,
+        detectTransients: handleDetectTransients,
         restoreScratchPadState: handleRestoreScratchPadState,
         discardCreatedCompGroup: handleDiscardCreatedCompGroup,
         selectTake: handleSelectTake,

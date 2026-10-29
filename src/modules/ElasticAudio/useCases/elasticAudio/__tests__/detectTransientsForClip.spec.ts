@@ -1,235 +1,59 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { elasticAudioStore, defaultElasticAudioState } from '../../../stores/elasticAudio';
+import { cancelTransientDetection, detectTransientsForClip } from '../detectTransientsForClip';
 
-const SAMPLE_RATE = 44100;
-
-const mocks = vi.hoisted(() => ({
-    bufferCacheGet: vi.fn(),
-    transportValue: { tempo: 120 },
-    trackStoreValue: { tracks: [] as Array<{ clips: Array<unknown> }> },
-    addWarpMarkerCalls: [] as Array<{ clipId: string; originalBeat: number; options?: unknown }>,
-    warpStates: new Map<
-        string,
-        {
-            enabled: boolean;
-            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: string;
-            originalTempo: number | null;
-        }
-    >(),
-}));
-
-vi.mock('#/modules/Arrangement/stores', () => ({
-    trackStore: {
-        get value() {
-            return mocks.trackStoreValue;
-        },
-    },
-    addWarpMarker: (clipId: string, originalBeat: number, _warpedBeat: number, options?: unknown) => {
-        mocks.addWarpMarkerCalls.push({ clipId, originalBeat, options });
-        const state = mocks.warpStates.get(clipId) ?? {
-            enabled: false,
-            markers: [],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        };
-        const opts = (options ?? {}) as { origin?: string; locked?: boolean };
-        state.markers.push({
-            id: `m-${state.markers.length}`,
-            originalBeat,
-            warpedBeat: _warpedBeat,
-            origin: opts.origin ?? 'user',
-            locked: opts.locked ?? false,
-        });
-        mocks.warpStates.set(clipId, state);
-    },
-    warpStates: mocks.warpStates,
-    getWarpState: (clipId: string) =>
-        mocks.warpStates.get(clipId) ?? {
-            enabled: false,
-            markers: [],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        },
-    setWarpState: (
-        clipId: string,
-        state: {
-            enabled: boolean;
-            markers: Array<{ id: string; originalBeat: number; warpedBeat: number; origin?: string; locked?: boolean }>;
-            stretchMode: string;
-            originalTempo: number | null;
-        }
-    ) => {
-        mocks.warpStates.set(clipId, state);
-    },
-}));
-
+const mocks = vi.hoisted(() => ({ read: vi.fn(), root: 'root-1', tempo: 120 }));
+vi.mock('../readClipTransientOnsets', () => ({ readProductTransientOnsets: mocks.read }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => mocks.root }));
+vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => 'project-1' }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {
         get value() {
-            return mocks.transportValue;
+            return { tempo: mocks.tempo };
         },
     },
 }));
 
-vi.mock('#/modules/AudioEngine/stores', () => ({
-    audioBufferCache: {
-        get: (id: string) => mocks.bufferCacheGet(id),
-    },
-}));
-
-import { detectTransientsForClip } from '../detectTransientsForClip';
-
-function makeBufferWithImpulses(seconds: number, beatPeriodSeconds: number): AudioBuffer {
-    const totalSamples = Math.floor(seconds * SAMPLE_RATE);
-    const data = new Float32Array(totalSamples);
-    const period = Math.floor(beatPeriodSeconds * SAMPLE_RATE);
-    for (let i = 0; i < totalSamples; i += period) {
-        const burst = Math.floor(0.005 * SAMPLE_RATE);
-        for (let j = 0; j < burst && i + j < totalSamples; j++) {
-            data[i + j] = (Math.random() * 2 - 1) * Math.exp(-j / 50);
-        }
-    }
-    return {
-        length: totalSamples,
-        numberOfChannels: 1,
-        sampleRate: SAMPLE_RATE,
-        getChannelData: (_: number) => data,
-    } as unknown as AudioBuffer;
-}
-
-describe('detectTransientsForClip', () => {
+describe('product transient Worker source lifetime', () => {
     beforeEach(() => {
-        mocks.bufferCacheGet.mockReset();
-        mocks.transportValue = { tempo: 120 };
-        mocks.trackStoreValue = { tracks: [] };
-        mocks.addWarpMarkerCalls.length = 0;
-        mocks.warpStates.clear();
+        vi.clearAllMocks();
+        mocks.root = 'root-1';
+        mocks.tempo = 120;
+        elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
+        mocks.read.mockResolvedValue({
+            status: 'complete',
+            hits: [],
+            identity: { clipId: 'clip-1' },
+            isCurrent: () => true,
+        });
     });
-
-    afterEach(() => {
-        mocks.warpStates.clear();
+    it('returns Worker analysis without writing Arrangement and captures tempo', async () => {
+        const result = await detectTransientsForClip('clip-1', 0.82);
+        expect(mocks.read).toHaveBeenCalledWith(
+            expect.objectContaining({ sensitivity: 0.82, maxChannelSamples: 12_000_000 })
+        );
+        expect(result.status).toBe('complete');
+        if (result.status !== 'complete') throw new Error('Expected completed analysis');
+        expect(result.tempo).toBe(120);
+        expect(result.isCurrent()).toBe(true);
+        mocks.tempo = 128;
+        expect(result.isCurrent()).toBe(false);
     });
-
-    it('returns CLIP_NOT_FOUND when the clip id is unknown', () => {
-        const result = detectTransientsForClip('missing', 0.5);
-        expect(result).toEqual({ ok: false, reason: 'CLIP_NOT_FOUND' });
-    });
-
-    it('returns CLIP_NOT_AUDIO for MIDI clips', () => {
-        mocks.trackStoreValue = {
-            tracks: [{ clips: [{ id: 'c1', type: 'midi', audioBufferId: undefined }] }],
-        };
-        const result = detectTransientsForClip('c1', 0.5);
-        expect(result).toEqual({ ok: false, reason: 'CLIP_NOT_AUDIO' });
-    });
-
-    it('returns NO_BUFFER when the audio buffer is missing', () => {
-        mocks.trackStoreValue = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'b1' }] }],
-        };
-        mocks.bufferCacheGet.mockReturnValue(undefined);
-        const result = detectTransientsForClip('c1', 0.5);
-        expect(result).toEqual({ ok: false, reason: 'NO_BUFFER' });
-    });
-
-    it('detects transients and writes them to the warp store with origin transient-auto', () => {
-        const buffer = makeBufferWithImpulses(1, 0.25);
-        mocks.trackStoreValue = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'b1' }] }],
-        };
-        mocks.bufferCacheGet.mockReturnValue(buffer);
-
-        const result = detectTransientsForClip('c1', 0.5);
-        expect(result.ok).toBe(true);
-        if (!result.ok) {
-            return;
+    it.each(['root', 'editor', 'cancel', 'successor'] as const)(
+        'revokes an earlier completed read on %s',
+        async (change) => {
+            const result = await detectTransientsForClip('clip-1', 0.5);
+            if (result.status !== 'complete') throw new Error('Expected completed analysis');
+            if (change === 'root') mocks.root = 'root-2';
+            if (change === 'editor') elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-2' });
+            if (change === 'cancel') cancelTransientDetection('clip-1');
+            if (change === 'successor') await detectTransientsForClip('clip-1', 0.82);
+            expect(result.isCurrent()).toBe(false);
         }
-        expect(result.added).toBeGreaterThanOrEqual(3);
-        for (const call of mocks.addWarpMarkerCalls) {
-            const opts = call.options as { origin?: string };
-            expect(opts.origin).toBe('transient-auto');
-        }
-    });
-
-    it('preserves user markers across re-detection (replaces only transient-auto markers)', () => {
-        const buffer = makeBufferWithImpulses(1, 0.25);
-        mocks.trackStoreValue = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'b1' }] }],
-        };
-        mocks.bufferCacheGet.mockReturnValue(buffer);
-        mocks.warpStates.set('c1', {
-            enabled: true,
-            markers: [
-                { id: 'user1', originalBeat: 1.7, warpedBeat: 1.7, origin: 'user' },
-                { id: 'auto1', originalBeat: 0.42, warpedBeat: 0.42, origin: 'transient-auto' },
-            ],
-            stretchMode: 'phase-vocoder',
-            originalTempo: null,
-        });
-
-        const result = detectTransientsForClip('c1', 0.5);
-        expect(result.ok).toBe(true);
-        if (!result.ok) {
-            return;
-        }
-        expect(result.kept).toBe(1);
-
-        const after = mocks.warpStates.get('c1')!;
-        expect(after.markers.some((m) => m.id === 'user1')).toBe(true);
-        expect(after.markers.some((m) => m.id === 'auto1')).toBe(false);
-        expect(after.markers.some((m) => m.origin === 'transient-auto')).toBe(true);
-    });
-
-    it('keeps locked automatic, user, grid and legacy rows intact with exact replacement counts', () => {
-        const samples = new Float32Array(SAMPLE_RATE);
-        mocks.bufferCacheGet.mockReturnValue({
-            length: samples.length,
-            numberOfChannels: 1,
-            sampleRate: SAMPLE_RATE,
-            getChannelData: () => samples,
-        });
-        mocks.trackStoreValue = {
-            tracks: [{ clips: [{ id: 'c1', type: 'audio', audioBufferId: 'b1' }] }],
-        };
-        const preserved = [
-            {
-                id: 'locked-auto',
-                originalBeat: 0.8,
-                warpedBeat: 1.1,
-                origin: 'transient-auto',
-                locked: true,
-                confidence: 0.73,
-            },
-            { id: 'user', originalBeat: 1.3, warpedBeat: 1.5, origin: 'user' },
-            { id: 'grid', originalBeat: 0.5, warpedBeat: 0.4, origin: 'grid-snap', locked: false },
-            { id: 'legacy', originalBeat: 0.1, warpedBeat: 0.2 },
-        ];
-        const otherState = {
-            enabled: true,
-            markers: [{ id: 'other-auto', originalBeat: 2, warpedBeat: 2.5, origin: 'transient-auto' }],
-            stretchMode: 'repitch',
-            originalTempo: 90,
-        };
-        mocks.warpStates.set('other-clip', otherState);
-        mocks.warpStates.set('c1', {
-            enabled: true,
-            markers: [
-                ...preserved,
-                { id: 'unlocked-auto', originalBeat: 0.3, warpedBeat: 0.6, origin: 'transient-auto', locked: false },
-            ],
-            stretchMode: 'repitch',
-            originalTempo: 120,
-        });
-
-        expect(detectTransientsForClip('c1', 0.5)).toEqual({ ok: true, added: 0, kept: 4, removed: 1 });
-        expect(mocks.warpStates.get('c1')).toEqual({
-            enabled: true,
-            markers: [...preserved].sort((a, b) => a.originalBeat - b.originalBeat),
-            stretchMode: 'repitch',
-            originalTempo: 120,
-        });
-        expect(mocks.warpStates.get('other-clip')).toEqual(otherState);
-        expect(mocks.addWarpMarkerCalls).toEqual([]);
-        expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+    );
+    it('propagates Worker failure and allows retry', async () => {
+        mocks.read.mockResolvedValueOnce({ status: 'failed', code: 'analysis-failed' });
+        expect(await detectTransientsForClip('clip-1', 0.5)).toEqual({ status: 'failed', code: 'analysis-failed' });
+        expect((await detectTransientsForClip('clip-1', 0.5)).status).toBe('complete');
     });
 });

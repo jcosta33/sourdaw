@@ -227,6 +227,23 @@ checked the revision, then require the exact fingerprint detail with unchanged d
 Pair it with a queued real device edit before admission: its explicit settlement must take the
 revision path without executing the old approval.
 
+### 2026-10-29 — an unlocked-only fixture missed destructive automatic-marker replacement (#4630)
+
+Direct commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d`, without an introducing pull request,
+removed all automatic rows despite promising locked preservation. Its test covered user and unlocked
+automatic markers, so an all-automatic removal passed. Do not infer a historical review prompt or tier.
+
+Use the real typed Detect, editor button and debounced sensitivity paths with a moved locked automatic
+row carrying every retained field, user/grid/unlocked rows and a second clip. Await actual Worker and
+committed UI completion; compare raw CRDT and projection, visible counts and original PCM bytes.
+`elasticLockedTransientMarkers.integration.spec.tsx` owns the locked retention and equal/near-hit
+obligations, including unlock and redetect. Removing the locked predicate must fail its exact-row
+assertion; independently removing near-hit suppression must fail both equal and nearby-hit cases.
+A mock that always returns empty hits cannot prove suppression. Hold the Worker to discriminate
+pending from complete, make a concurrent edit, and exercise real Undo/Redo and divergent refusal.
+The performance case must time the real 120-second source's click/copy/cold Worker/atomic commit/UI
+completion while recording actual frames and main-thread tasks over the same interval.
+
 ### 2026-10-25 — fixed sleeps did not establish repeated-signal escalation (introduced by commit `0e20269791`)
 
 Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard's 50 ms signal gap and
