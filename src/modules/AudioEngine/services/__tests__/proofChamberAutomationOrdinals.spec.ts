@@ -277,6 +277,19 @@ async function render(
     return { pcm, calls };
 }
 
+function firstPcmMismatch(actual: Float32Array, expected: Float32Array) {
+    const length = Math.min(actual.length, expected.length);
+    for (let index = 0; index < length; index++) {
+        if (!Object.is(actual[index], expected[index])) {
+            return { index, actual: actual[index], expected: expected[index] };
+        }
+    }
+    if (actual.length !== expected.length) {
+        return { index: length, actualLength: actual.length, expectedLength: expected.length };
+    }
+    return null;
+}
+
 describe('fresh Proof Chamber WASM offline automation', () => {
     it('keeps a nondefault named value before the first scheduled frame', async () => {
         const fixture: Fixture = { from: 0.6, to: 0.8, why: 'stored damping before a delayed lane' };
@@ -320,8 +333,8 @@ describe('fresh Proof Chamber WASM offline automation', () => {
                 }
                 expect(moving.pcm.every(Number.isFinite)).toBe(true);
                 expect(moving.pcm.some((value) => Math.abs(value) > 1e-7)).toBe(true);
-                expect(moving.pcm).not.toEqual(flat.pcm);
-                expect(moving.pcm).toEqual(named.pcm);
+                expect(firstPcmMismatch(moving.pcm, flat.pcm), `${name}: moving versus flat PCM`).not.toBeNull();
+                expect(firstPcmMismatch(moving.pcm, named.pcm), `${name}: moving versus named PCM`).toBeNull();
             }
         } finally {
             spy.mockRestore();
