@@ -1472,6 +1472,23 @@ Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/co
 
 Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
 
+### Crumbs setter spies and canvas presence missed stale waveform pixels
+
+Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced both the unfenced
+peak continuation and the empty-before-clear canvas return. PR #5041's tests held decode,
+while the component checks observed mounting/cursor/style rather than bitmap clearing (#5780).
+The origin has no evidenced associated PR; historical private prompts and tiers are unknown.
+
+Keep unconditional rendered entry points, real store metadata/vector/loading assertions and
+explicit promise-entry/settlement observations. Drive project/device authority from actual
+committed root events, including same-ID ABA with no newer sequence/leaf masking the guard.
+Paint the production component in Chromium, prove known colored pixels at the expected DPR
+dimensions, then pass empty peaks to the same canvas without remounting or resizing. Require
+transparent or exact opaque-background pixels, and retain refill/resize controls. Restore the
+early return on a committed head and require the unchanged unit and pixel probes to fail.
+DOM presence, a setter call, or an unpainted transparent canvas is not pixel evidence; controlled
+desktop bridge responses do not establish native OS, audible or hardware acceptance.
+
 ### 2026-09-20 — mocked cancellation hid failed durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) added run-controller cancellation before pending-confirmation settlement,

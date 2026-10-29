@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     toasterSweep: vi.fn(),
     levainSweep: vi.fn(),
     crumbsSweep: vi.fn(),
+    configureSampleAccess: vi.fn((_capture: (deviceId: string) => number | null) => vi.fn()),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -15,7 +16,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 // registration order and a document filter it owns.
 vi.mock('#/modules/Toaster/useCases', () => ({ reconcileToasterKitsFromProject: mocks.toasterSweep }));
 vi.mock('#/modules/Levain/useCases', () => ({ reconcileLevainDeviceStatesFromProject: mocks.levainSweep }));
-vi.mock('#/modules/Crumbs/useCases', () => ({ reconcileCrumbsDeviceStatesFromProject: mocks.crumbsSweep }));
+vi.mock('#/modules/Crumbs/useCases', () => ({
+    reconcileCrumbsDeviceStatesFromProject: mocks.crumbsSweep,
+    configureCrumbsSampleProjectAccess: mocks.configureSampleAccess,
+}));
 
 import { initDeviceStateReconciliation } from '../initDeviceStateReconciliation';
 
@@ -51,6 +55,17 @@ describe('initDeviceStateReconciliation', () => {
         expect(mocks.toasterSweep).toHaveBeenCalledTimes(1);
         expect(mocks.levainSweep).toHaveBeenCalledTimes(1);
         expect(mocks.crumbsSweep).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers the current sample owner reader and disposes that registration', () => {
+        expect(mocks.configureSampleAccess).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+        const dispose = mocks.configureSampleAccess.mock.results.at(-1)?.value;
+        if (!dispose) {
+            throw new Error('Expected the sample access disposer');
+        }
+        stop?.();
+        stop = undefined;
+        expect(dispose).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('runs the sweeps on a bulk change that names no document', async () => {

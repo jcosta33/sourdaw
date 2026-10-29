@@ -9,7 +9,8 @@ import { basename_from_path } from '#/utils/path-basename';
 import { getCrumbsDroppedSampleWrites } from '../repositories/crumbsBridge/getCrumbsDroppedSampleWrites';
 import { getWaveformPeaks } from '../repositories/crumbsBridge/getWaveformPeaks';
 import { loadSample } from '../repositories/crumbsBridge/loadSample';
-import { setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
+import { crumbsSampleProjectAccess } from '../stores/crumbsSampleProjectAccess';
+import { crumbsStore, setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
 import { beginCrumbsSampleLoad, isLatestCrumbsSampleLoad } from '../stores/sampleLoadGate';
 
 import type { SampleCategory, SampleMeta } from '../models/CrumbsTypes';
@@ -77,7 +78,20 @@ export async function loadSampleFromPath(
     filePath: string,
     targetWidth: number = DEFAULT_WAVEFORM_WIDTH
 ): Promise<void> {
+    const captureOwner = crumbsSampleProjectAccess.current;
+    const owner = captureOwner?.(instanceId);
+    if (!captureOwner || owner === null || owner === undefined) {
+        return;
+    }
     const sequence = beginCrumbsSampleLoad(instanceId);
+    const isCurrentLoad = (): boolean =>
+        crumbsSampleProjectAccess.current === captureOwner &&
+        captureOwner(instanceId) === owner &&
+        isLatestCrumbsSampleLoad(instanceId, sequence);
+    let acceptedSample: SampleMeta | undefined;
+    const ownsPublication = (): boolean =>
+        isCurrentLoad() &&
+        (acceptedSample === undefined || crumbsStore.value?.[instanceId]?.activeSample === acceptedSample);
     setLoading(instanceId, true);
 
     try {
@@ -88,7 +102,7 @@ export async function loadSampleFromPath(
         // after the local user's short pick silently reverts the pick. The
         // superseded load bows out quietly; its successor already owns the
         // loading flag, the store and the persistence commit.
-        if (!isLatestCrumbsSampleLoad(instanceId, sequence)) {
+        if (!isCurrentLoad()) {
             return;
         }
 
@@ -114,7 +128,14 @@ export async function loadSampleFromPath(
             fileName,
         };
 
+        if (!isCurrentLoad()) {
+            return;
+        }
+        acceptedSample = meta;
         setActiveSample(instanceId, meta);
+        if (!ownsPublication()) {
+            return;
+        }
 
         // The pool refuses writes past its fixed bound as a counted no-op, so
         // an exhausted instance accepts the load on the command side and then
@@ -124,6 +145,9 @@ export async function loadSampleFromPath(
         // trips the bound may surface on the next load — fine for a warning.
         try {
             const droppedWrites = await getCrumbsDroppedSampleWrites(instanceId);
+            if (!ownsPublication()) {
+                return;
+            }
             if (droppedWrites > 0) {
                 logger.warn(
                     `Crumbs sample pool for ${instanceId} refused ${String(droppedWrites)} write(s): ` +
@@ -135,22 +159,33 @@ export async function loadSampleFromPath(
             // The warning is best-effort telemetry; a failed read must not
             // fail the load that already succeeded.
         }
+        if (!ownsPublication()) {
+            return;
+        }
 
         // Load waveform peaks for display at a level sized to the canvas, not the
         // recording length (avoids an enormous IPC payload for long samples).
         try {
             const level = selectMipmapLevel(result.frameCount, targetWidth);
             const peaks = await getWaveformPeaks(instanceId, result.sampleId, level);
+            if (!ownsPublication()) {
+                return;
+            }
             setWaveformPeaks(instanceId, peaks);
         } catch (error) {
+            if (!ownsPublication()) {
+                return;
+            }
             logger.warn('Waveform peak loading failed:', error);
         }
 
-        setLoading(instanceId, false);
+        if (ownsPublication()) {
+            setLoading(instanceId, false);
+        }
     } catch (error) {
         // A superseded load's failure leaves the loading flag to its
         // successor, which is still in flight.
-        if (isLatestCrumbsSampleLoad(instanceId, sequence)) {
+        if (ownsPublication()) {
             setLoading(instanceId, false);
         }
         throw error;

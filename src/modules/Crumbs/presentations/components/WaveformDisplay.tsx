@@ -43,10 +43,6 @@ export const WaveformDisplay = ({
         }
 
         const draw = (): void => {
-            if (peaks.length === 0) {
-                return;
-            }
-
             const ctx = canvas.getContext('2d');
             if (!ctx) {
                 return;
