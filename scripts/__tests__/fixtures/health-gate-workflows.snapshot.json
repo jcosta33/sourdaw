@@ -649,10 +649,6 @@
         },
         "steps": [
           {
-            "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-          },
-          {
             "name": "Filter changed paths",
             "id": "filter",
             "continue-on-error": true,

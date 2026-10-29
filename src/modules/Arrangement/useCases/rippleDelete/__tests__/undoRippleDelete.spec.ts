@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { undoRippleDelete } from '../undoRippleDelete';
 
 const mocks = vi.hoisted(() => ({
@@ -36,6 +37,33 @@ vi.mock('../../comping/restoreTakesForClip', () => ({
 
 describe('undoRippleDelete', () => {
     beforeEach(() => vi.clearAllMocks());
+
+    it.each([false, true])('restores a captured slot and preserves peer order with shifts=%s', (withShifts) => {
+        const left = ClipDummy.create({ id: 'left', trackId: 't1', startBeat: 0, endBeat: 4 });
+        const removed = ClipDummy.create({ id: 'removed', trackId: 't1', startBeat: 4, endBeat: 8, gain: 0.75 });
+        const right = ClipDummy.create({ id: 'right', trackId: 't1', startBeat: 8, endBeat: 12, gain: 0.6 });
+        const peer = ClipDummy.create({ id: 'peer', trackId: 't1', startBeat: 16, endBeat: 20, gain: 0.3 });
+        const currentRight = withShifts ? { ...right, startBeat: 4, endBeat: 8 } : right;
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [left, peer, currentRight] }] });
+        const shiftedClips: Parameters<typeof undoRippleDelete>[0]['shiftedClips'] = [];
+        if (withShifts) {
+            shiftedClips.push({ clipId: right.id, origStartBeat: 8, origEndBeat: 12, automationDelta: -4 });
+        }
+
+        undoRippleDelete({
+            trackId: 't1',
+            clipIndex: 1,
+            removedClips: [removed],
+            shiftedClips,
+        });
+
+        expect(mocks.setTrackState.mock.calls[0]?.[0].tracks[0].clips).toEqual([left, removed, peer, right]);
+        if (withShifts) {
+            expect(mocks.shiftClipAutomation).toHaveBeenCalledWith(right.id, 4);
+        } else {
+            expect(mocks.shiftClipAutomation).not.toHaveBeenCalled();
+        }
+    });
 
     it('restores removed clips and shifts back shifted clips', () => {
         const shiftedClip = { id: 'c3', startBeat: 6, endBeat: 10 }; // Currently at 6

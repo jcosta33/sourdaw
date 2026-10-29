@@ -1,22 +1,14 @@
 import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
-import { type TakeReKeyLaneTransition } from '../comping/takeReKeyTransition';
 
+import { isReKeyLaneTransition } from './isReKeyLaneTransition';
 import { type TakeLaneTransitionPlan } from './takeLaneTransitionPlan';
 
 const TAKE_LANE_TRANSITION_KEYS = ['version', 'appliedEffect', 'removedClipIds', 'retiredLanes'] as const;
 // Optional so plans written before take re-keying joined the operation (#4841)
 // keep their exact-key shape; absent means the operation re-keyed nothing.
 const TAKE_LANE_TRANSITION_OPTIONAL_KEYS = ['reKeyedLanes'] as const;
-const RE_KEY_LANE_TRANSITION_KEYS = [
-    'laneId',
-    'trackId',
-    'takesBefore',
-    'takesAfter',
-    'regionsBefore',
-    'regionsAfter',
-] as const;
 
 function isNonEmptyId(value: unknown): value is string {
     return typeof value === 'string' && value.trim().length > 0;
@@ -42,49 +34,6 @@ function isRetiredLaneSnapshot(value: unknown): value is RetiredTakeLaneSnapshot
     }
     const retiredTakeIds: unknown = Reflect.get(value, 'retiredTakeIds');
     return retiredTakeIds === undefined || isIdArray(retiredTakeIds);
-}
-
-function isExactFacetPair(
-    value: object,
-    laneId: string,
-    trackId: string,
-    takesKey: string,
-    regionsKey: string
-): boolean {
-    // Both facet sides ride the plan, so each must decode against the same bar
-    // as a hydrated lane: exact takes, and regions sorted, non-overlapping, and
-    // naming only takes the same side holds — the writer's reconcile depends on
-    // all three.
-    const takes: unknown = Reflect.get(value, takesKey);
-    const activeCompRegions: unknown = Reflect.get(value, regionsKey);
-    const skeleton = {
-        id: laneId,
-        trackId,
-        takes,
-        activeCompRegions,
-    };
-    return decodeExactTakeLaneSnapshots([skeleton]) !== null;
-}
-
-function isReKeyLaneTransition(value: unknown): value is TakeReKeyLaneTransition {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-        return false;
-    }
-    if (
-        Reflect.ownKeys(value).length !== RE_KEY_LANE_TRANSITION_KEYS.length ||
-        !RE_KEY_LANE_TRANSITION_KEYS.every((key) => Object.hasOwn(value, key))
-    ) {
-        return false;
-    }
-    const laneId: unknown = Reflect.get(value, 'laneId');
-    const trackId: unknown = Reflect.get(value, 'trackId');
-    if (!isNonEmptyId(laneId) || !isNonEmptyId(trackId)) {
-        return false;
-    }
-    return (
-        isExactFacetPair(value, laneId, trackId, 'takesBefore', 'regionsBefore') &&
-        isExactFacetPair(value, laneId, trackId, 'takesAfter', 'regionsAfter')
-    );
 }
 
 /**
