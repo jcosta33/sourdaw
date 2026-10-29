@@ -40,7 +40,12 @@ function readOwnerFingerprint(deviceId: string): string | null {
     if (trackObjectId === null || deviceObjectId === null) {
         return null;
     }
-    return JSON.stringify({ root: captureProjectRootIdentity(), trackObjectId, deviceObjectId });
+    return JSON.stringify({
+        root: captureProjectRootIdentity(),
+        trackId: owner.track.id,
+        trackObjectId,
+        deviceObjectId,
+    });
 }
 
 /** Observe actual owner transitions, including absence, without revoking ordinary root edits. */

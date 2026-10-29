@@ -406,6 +406,8 @@ describe('Crumbs waveform authority from the actual application producer', () =>
         ['peaks', 'duplicate'],
         ['telemetry', 'owner-ABA'],
         ['peaks', 'owner-ABA'],
+        ['telemetry', 'owner-id-ABA'],
+        ['peaks', 'owner-id-ABA'],
     ] as const)('refuses outgoing %s publication after actual %s replacement', async (boundary, replacement) => {
         const request = await beginHeldDrop(boundary);
         const saved = clone(root());
@@ -442,6 +444,22 @@ describe('Crumbs waveform authority from the actual application producer', () =>
                 });
                 replaceCrdtDocInLineage({ id: 'root', doc: clone(saved) });
                 expect(captureProjectRootIdentity()).toBe(installation);
+            } else if (replacement === 'owner-id-ABA') {
+                for (const ownerId of ['replacement-owner-id', TRACK]) {
+                    mutateCrdtDoc<Root>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            const owner = document.tracks.tracks[0];
+                            if (!owner) {
+                                throw new Error('Expected the existing owner');
+                            }
+                            owner.id = ownerId;
+                        },
+                    });
+                }
+                expect(captureProjectRootIdentity()).toBe(installation);
+                expect(getObjectId(root().tracks.tracks[0])).toBe(getObjectId(saved.tracks.tracks[0]));
+                expect(getObjectId(rawDevice())).toBe(getObjectId(saved.tracks.tracks[0]?.devices[0]));
             } else if (replacement === 'owner-ABA') {
                 mutateCrdtDoc<Root>({
                     id: 'root',
