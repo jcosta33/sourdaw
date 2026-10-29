@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
+
+Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
+detector; the hold added in `2b080af5adc16f6fb9013ebd1d582e3cbe5b2238` still began only after
+threshold acquisition. GitHub reports no associated PR for either commit; their review stance,
+prompt and tier are unestablished. Steady-state fade checks did not observe the enable transition.
+
+Compare short-window output and gain with an already-open reference while enabling during a
+sustained note, including a zero crossing, slow attack/fast release and a settled detector barely
+above the opening hysteresis threshold. Whole-note RMS can hide the dip. Remove only
+bypass detector tracking: the near-threshold constant and bipolar-square cases must fail.
+Independently remove enable-time hold seeding: the silence/replay case must fail. Replay enabled
+on silence and after reset to prove replay cannot rearm the hold, and pin disabled input bits.
+Report component and served-WASM engine output separately from audible application acceptance.
+
 ### 2026-10-28 — output scrubbing hid poisoned recursive gate state
 
 Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
