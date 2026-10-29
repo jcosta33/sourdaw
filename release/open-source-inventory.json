@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a4c17a354d14ce85ab2384c6e74a0e1e74aeb94db10c8e7ce5707c9da8e47000:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:c1871aa43e72b5729360f4724eb671b310906d86435aaeeeadea30bc7197a200:release/dependency-license-proofs.json"
+                "sha256:a7bafe90fb97fe027d9cc102c69b75f85a45c3d1dde5260e804942a0f39d1e1a:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:3ea18dcf9c8ba8262832789f4bb8d6ab967e6dbd741815160ab0d6d89f00c6dd:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -218,15 +218,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 44.4.5 694f45852a0f1726cd23bfd379854de489cccb65",
-                "Chromium 152.0.7977.130 2c592105bbcd9490a9894df48d0fe59b2c512651",
-                "Node v24.21.0 955266bfdd854cd280dffd47548673914484e4c0",
+                "electron 44.9.1 e02265be96c5e13ae43644ef482b718e1e800499",
+                "Chromium 152.0.7977.167 dd78960ccd8a03a2fe1f629543d27783885b78e9",
+                "Node v24.22.0 f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93",
                 "FFmpeg 2b68d2babae73714846961fb0ee47e3b3d2e39a9",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==",
+                "npm-integrity:sha512-x/tECFFDa2OFNjMObFH0EGKWrCnFZPOR1wP2iMIVt0STecGl8FmDXdaiaryY0kf8mtw9kSLP2yK8dfdaWkfDmw==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -277,7 +277,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294",
+                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -353,7 +353,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -582,7 +582,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -792,7 +792,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1119,7 +1119,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1207,10 +1207,10 @@
                 "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
-                "tracked-set-sha256:30337272c2637b5a5e56052488dab7eb0079b4cf492fb6d0d8387338bdf2b46b:grand-boule-factory-admission",
-                "tracked-set-sha256:289686b414ccdbe7f94460885c05e7962d8b0648e1e2e24742ad279baa3eb1ff:grand-boule-live-runtime",
+                "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
+                "tracked-set-sha256:9add2037c2766126e9d3f40d23500167897ae0e2407b680b15cf8818b5078edc:grand-boule-live-runtime",
                 "tracked-set-sha256:3f4f7ef7d2a6ca4a1f518d2e7a6675387c783395d13a12e03448861ab4f913fc:grand-boule-project-state",
-                "tracked-set-sha256:9dfc4486bfff344cbf90042c46ea3d598121bb595ec1d2244221afe6589d5a2b:grand-boule-offline-composition",
+                "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
                 "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
             ],
             "licenses": [
@@ -1342,13 +1342,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:f73896c0ff93bf8778890dc1f54ad6e8d833bf063ae607b53e817c327d689460",
+                "daw-dsp sha256:24b14fc1ce58a61f3cd63557b49c690262c5db8a14801e3870757192e67ea24b",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:7466fc25b8ad50a6bfe47796a410eeee2fcc0d744b1cd97919fadf7cfd951439:public/wasm/manifest.json"
+                "sha256:cedae292d8807bb529699282b5e4940ba87b686f489c00720b38bf147a7a4b98:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1738,7 +1738,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "c2d69c5b2e3f2e6dd2504a1122ce4f552db37191a624e25573c134124e9fbb0e"
+            "sha256": "d995d244ee45dbb679731eac8f913d29c13ecd789046696f403c4d0e68585445"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1750,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294"
+            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
         },
         {
             "path": "Cargo.toml",
@@ -1766,7 +1766,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "7466fc25b8ad50a6bfe47796a410eeee2fcc0d744b1cd97919fadf7cfd951439"
+            "sha256": "cedae292d8807bb529699282b5e4940ba87b686f489c00720b38bf147a7a4b98"
         }
     ],
     "externalReferences": [
