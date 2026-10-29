@@ -361,7 +361,7 @@ const COLLAB_SERVER_GATE_COMMAND = 'sh scripts/health-gates-server.sh';
 // `success()` that would skip the annotation over the very failure it names.
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
 // The decide job's changed-paths filter lists a pull request's files through
-// the GitHub REST API on its shallow checkout, and that API intermittently
+// the GitHub REST API without a checkout, and that API intermittently
 // answers 500 (#3592). The first attempt may fail softly so the retry step can
 // re-run the identical filter; `Resolve scope` coalesces the retry's verdicts
 // first and refuses an empty one, so a persistent API failure fails the job
@@ -567,6 +567,7 @@ function runScopeScript(
     const outputPath = join(directory, 'github-output');
     try {
         const result = spawnSync('bash', ['-c', script], {
+            cwd: directory,
             encoding: 'utf8',
             env: {
                 ...process.env,
@@ -677,6 +678,52 @@ function assertScopeContract(candidate: UnknownRecord): string {
         throw new Error('shared validation must consume the affected profile input');
     }
     return stringAt(scope, 'run');
+}
+
+function assertRepositoryIndependentScope(
+    candidate: UnknownRecord,
+    workflows: Readonly<Record<string, UnknownRecord>>
+): void {
+    const callers: string[] = [];
+    for (const [file, workflow] of Object.entries(workflows)) {
+        for (const value of Object.values(recordAt(workflow, 'jobs'))) {
+            const job = asRecord(value, 'job');
+            if (job.uses !== './.github/workflows/validation.yml') {
+                continue;
+            }
+            callers.push(file);
+            if (JSON.stringify(Object.keys(recordAt(workflow, 'on'))) !== JSON.stringify(['pull_request'])) {
+                throw new Error(`${file} must call validation only on pull_request`);
+            }
+            const permissions = asRecord(job.permissions ?? workflow.permissions, 'caller permissions');
+            if (permissions['pull-requests'] !== 'read') {
+                throw new Error(`${file} must grant the changed-files API read permission`);
+            }
+        }
+    }
+    if (JSON.stringify(callers.sort()) !== JSON.stringify(['health-gates.yml', 'pr-checks.yml'])) {
+        throw new Error('repository-independent scope must account for every validation caller');
+    }
+    const decide = jobAt(candidate, 'decide');
+    const steps = arrayAt(decide, 'steps').map((step) => asRecord(step, 'scope step'));
+    if (
+        JSON.stringify(steps.map((step) => step.name)) !==
+        JSON.stringify([PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP, 'Resolve scope'])
+    ) {
+        throw new Error('API-only scope must not acquire a repository checkout or extra step');
+    }
+    for (const step of steps.slice(0, 2)) {
+        const options = recordAt(step, 'with');
+        if (
+            step.uses !== PATHS_FILTER_ACTION ||
+            JSON.stringify(Object.keys(options).sort()) !== JSON.stringify(['filters', 'predicate-quantifier']) ||
+            !stringAt(options, 'filters').includes('\n')
+        ) {
+            throw new Error(
+                'both scope filters must use the pinned PR API path with its default token and inline filters'
+            );
+        }
+    }
 }
 
 function scopeFilterPatterns(candidate: UnknownRecord, scope: string): string[] {
@@ -2870,6 +2917,49 @@ describe('health gates workflow contract', () => {
         expect(() => assertNoJobLevelConcurrency(shardCancellingNightly, 'nightly.yml', DEPLOY_WEB_JOB)).toThrow(
             'nightly.yml job e2e must not carry job-level concurrency'
         );
+    });
+
+    it('resolves PR scope without a repository checkout for every validation caller', () => {
+        const workflows = Object.fromEntries(
+            readdirSync(join(repositoryRoot, '.github/workflows'))
+                .filter((file) => /\.ya?ml$/.test(file))
+                .map((file) => [file, loadWorkflow(file).parsed])
+        );
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, workflows)).not.toThrow();
+        const checkout = structuredClone(validationWorkflow);
+        arrayAt(jobAt(checkout, 'decide'), 'steps').unshift({ name: 'Checkout', uses: 'actions/checkout@pinned' });
+        expect(() => assertRepositoryIndependentScope(checkout, workflows)).toThrow(
+            'API-only scope must not acquire a repository checkout or extra step'
+        );
+        for (const name of [PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP]) {
+            const noToken = structuredClone(validationWorkflow);
+            recordAt(stepNamed(jobAt(noToken, 'decide'), name), 'with').token = '';
+            expect(() => assertRepositoryIndependentScope(noToken, workflows)).toThrow('pinned PR API path');
+            const localFilters = structuredClone(validationWorkflow);
+            recordAt(stepNamed(jobAt(localFilters, 'decide'), name), 'with').filters = 'filters.yml';
+            expect(() => assertRepositoryIndependentScope(localFilters, workflows)).toThrow('inline filters');
+        }
+        for (const caller of ['health-gates.yml', 'pr-checks.yml']) {
+            const nonPrCaller = structuredClone(workflows);
+            recordAt(nonPrCaller[caller]!, 'on').workflow_dispatch = {};
+            expect(() => assertRepositoryIndependentScope(validationWorkflow, nonPrCaller)).toThrow(
+                `${caller} must call validation only on pull_request`
+            );
+            const unreadable = structuredClone(workflows);
+            recordAt(unreadable[caller]!, 'permissions')['pull-requests'] = 'none';
+            expect(() => assertRepositoryIndependentScope(validationWorkflow, unreadable)).toThrow(
+                'changed-files API read permission'
+            );
+        }
+        const newCaller = { ...workflows, 'another.yml': structuredClone(prChecksWorkflow) };
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, newCaller)).toThrow(
+            'account for every validation caller'
+        );
+        // runScopeScript executes the real inline shell in a fresh empty directory.
+        expect(runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { WEB: 'true' })).toMatchObject({
+            web: 'true',
+            code: 'true',
+        });
     });
 
     it('keeps the required scope and full nightly train separate', () => {
