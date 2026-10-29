@@ -1,0 +1,19 @@
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_26f70b851e8f7a::t_aaf25c2812eb72 3508-3511,3513-3517
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e87b8a2adadcd25ba4d2320a947935d64938f345",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
