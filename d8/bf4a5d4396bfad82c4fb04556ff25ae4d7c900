@@ -1,0 +1,28 @@
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_07c3772a027321 9-21
+  s_567a084d0540c4::t_166225ddd9dc0c 22-33
+.gitleaksignore
+  s_567a084d0540c4::t_166225ddd9dc0c 8-11
+.agents/skills/review-stances/security-and-platform.md
+  s_567a084d0540c4::t_166225ddd9dc0c 59-71
+scripts/__tests__/prValidationScope.spec.ts
+  s_567a084d0540c4::t_01dd8b586cb010 2110-2111,2134-2139,2142-2173
+scripts/prValidationScope.ts
+  s_567a084d0540c4::t_01dd8b586cb010 119-120
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d8bf4a5d4396bfad82c4fb04556ff25ae4d7c900",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
