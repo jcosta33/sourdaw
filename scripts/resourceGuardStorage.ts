@@ -93,8 +93,7 @@ function lsofInspectionMatch(name: string, type: string | undefined): string | u
     if (operation !== undefined) {
         return operation.toLowerCase();
     }
-    // Darwin libproc emits vnode paths separately from unrooted errno messages (err2nm).
-    // Words inside an absolute REG/DIR path do not make that path an inspection failure.
+    // Darwin libproc separates vnode paths from unrooted errno messages, so path words are not errors.
     if ((type === 'REG' || type === 'DIR') && name.startsWith('/')) {
         return undefined;
     }
