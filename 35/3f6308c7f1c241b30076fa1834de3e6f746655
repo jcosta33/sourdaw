@@ -1,0 +1,28 @@
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1137-1176,1236-1296,1298-1310
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5-44,104-164,166-178
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21,40,44-46,49
+public/wasm/scoring/scoring.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1348,1351,1769
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1137-1176,1236-1296,1298-1310
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "353f6308c7f1c241b30076fa1834de3e6f746655",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
