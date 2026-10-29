@@ -1141,7 +1141,7 @@ describe('ExportDialog', () => {
                         const print = requirePcm('cold-frozen');
                         const mix = MockAudioBuffer.create(1, frozen.length, 44100);
                         mix.getChannelData(0).set(
-                            frozen.map((sample, frame) => sample + clip.getChannelData(0)[frame]!)
+                            print.getChannelData(0).map((sample, frame) => sample + clip.getChannelData(0)[frame]!)
                         );
                         return mix;
                     });
