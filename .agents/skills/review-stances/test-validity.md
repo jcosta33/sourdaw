@@ -1,5 +1,21 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-29 — an HMR-disabled server still navigated the browser
+
+The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's
+lifecycle wrapper, and remains in Vite 8.3.5 pinned by #5748. Private historical prompts
+and tiers are unavailable. A configuration assertion that HMR is false does not observe
+the installed client's disconnect/ping/reload behavior.
+
+Run the real pinned Vite and Chromium fixture in browser-equipped CI. Await the browser's
+connected frame as well as the server's client before terminating its own socket. Require
+actual App import and CSS completion, no console/page errors, unchanged time origin and no
+CDP-requested navigation for immutable E2E documents; default developer HMR must reload.
+The unpatched immutable case must fail on the observed extra reload. Do not require a CDP
+`loadingFailed` event for the abandoned import: the real fixture can close that HTTP response
+unfinished without emitting one. This mechanism proof does not reproduce the original
+Linux blank shell or discharge its failed Gate.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete

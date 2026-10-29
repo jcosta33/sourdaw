@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a

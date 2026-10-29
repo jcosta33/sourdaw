@@ -1,5 +1,21 @@
 # Lesson library: startup entry availability
 
+## 2026-10-29 — editor reconnect replaced an acceptance document after entry began
+
+Commit `0ef2e91d94` introduced Playwright's `pnpm dev` server; PR #5363 retained a dev
+companion for source-importing cases, and #5738 routed both dev modes through the observed
+wrapper. Vite 8.3.5, pinned by #5748, still reloads after a socket disconnect even with
+`server.hmr: false`. The initial transport fault in #5595 is unproved; historical private
+review prompts and tiers are unavailable. The missing probe was document replacement by
+the editor transport after the application entry had begun, beyond entry-only recovery.
+
+Hold a real dynamic App module while the owned HTTP server stays healthy. Await both server
+and browser socket readiness, terminate only that socket, then require the immutable E2E
+document's original time origin, one document request, actual App/CSS fulfillment and no
+console or page errors. Keep ordinary developer reconnect reload as a positive control.
+An automatic reload outside application recovery still crosses the document-state boundary;
+do not infer saved-project or Undo preservation from this tiny transport fixture.
+
 ## 2026-10-28 — the entry could fail before recovery code existed
 
 Commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf` introduced an empty HTML root and an
