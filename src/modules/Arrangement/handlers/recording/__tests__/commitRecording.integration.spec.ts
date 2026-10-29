@@ -52,6 +52,14 @@ function takeRefs(): { id: string; clipId: string }[] {
     );
 }
 
+beforeEach(async () => {
+    const [{ createEventBus }, { setNotificationEventBus }] = await Promise.all([
+        import('#/infra/events/createEventBus'),
+        import('#/utils/Notification/notificationEventBus'),
+    ]);
+    setNotificationEventBus(createEventBus());
+});
+
 function takeEndsFor(clipId: string): number[] {
     return (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
         lane.takes.filter((take) => take.clipId === clipId).map((take) => take.endBeat)
