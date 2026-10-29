@@ -1,5 +1,7 @@
 import { isExactAutomationLaneSnapshots, isExactClipAutomationMoveSnapshots } from '#/modules/Automation/useCases';
 import { decodeMidiClipDataSnapshots, isExactMidiClipDataActionSnapshot } from '#/modules/MIDI/useCases';
+import { captureAudioSourceState, hasValidAudioSourceTiles } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     type AppAction,
     type HandlerSessionActionEntry,
@@ -7,6 +9,7 @@ import {
 } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
+import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
@@ -24,103 +27,8 @@ import type { TakeLane } from '../../models/TakeLane';
 import type { Clip } from '../../stores/trackStore';
 import type { undoRippleDelete } from '../../useCases/rippleDelete/undoRippleDelete';
 
-function isFiniteNumber(value: unknown): boolean {
-    return typeof value === 'number' && Number.isFinite(value);
-}
-
 function optionalField(value: Record<string, unknown>, key: string, accepts: (field: unknown) => boolean): boolean {
     return !Object.hasOwn(value, key) || value[key] === undefined || accepts(value[key]);
-}
-
-function isKneadBlob(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        typeof value.id === 'string' &&
-        isFiniteNumber(value.startTime) &&
-        isFiniteNumber(value.endTime) &&
-        isFiniteNumber(value.pitchCenterCents) &&
-        optionalField(value, 'originalPitchCenterCents', isFiniteNumber) &&
-        Array.isArray(value.pitchCurveCents) &&
-        value.pitchCurveCents.every(isFiniteNumber) &&
-        isFiniteNumber(value.voicedConfidence) &&
-        Object.keys(value).every((key) =>
-            [
-                'id',
-                'startTime',
-                'endTime',
-                'pitchCenterCents',
-                'originalPitchCenterCents',
-                'pitchCurveCents',
-                'voicedConfidence',
-            ].includes(key)
-        )
-    );
-}
-
-function isKneadState(value: unknown): boolean {
-    return (
-        isRecord(value) &&
-        Array.isArray(value.blobs) &&
-        value.blobs.every(isKneadBlob) &&
-        isFiniteNumber(value.retuneSpeedMs) &&
-        isFiniteNumber(value.humanizePercent) &&
-        typeof value.formantPreserve === 'boolean' &&
-        Object.keys(value).every((key) =>
-            ['blobs', 'retuneSpeedMs', 'humanizePercent', 'formantPreserve'].includes(key)
-        )
-    );
-}
-
-const optionalClipFields: Record<string, (value: unknown) => boolean> = {
-    audioBufferId: (value) => typeof value === 'string',
-    fileId: (value) => typeof value === 'string',
-    assetHash: (value) => typeof value === 'string',
-    audioOffsetBeats: isFiniteNumber,
-    midiOffsetBeats: isFiniteNumber,
-    stretchMode: (value) => value === 'off' || value === 'repitch' || value === 'timestretch',
-    stretchRatio: isFiniteNumber,
-    loopEnabled: (value) => typeof value === 'boolean',
-    loopLength: isFiniteNumber,
-    loopOriginBeat: isFiniteNumber,
-    followAction: (value) =>
-        value === 'stop' ||
-        value === 'play_next' ||
-        value === 'play_previous' ||
-        value === 'play_random' ||
-        value === 'play_first' ||
-        value === 'play_last',
-    generating: (value) => typeof value === 'boolean',
-    isGhost: (value) => typeof value === 'boolean',
-    isInlineEditing: (value) => typeof value === 'boolean',
-    parentClipId: (value) => typeof value === 'string',
-    isLinkedInstance: (value) => typeof value === 'boolean',
-    sourceKeyRoot: isFiniteNumber,
-    sourceScaleName: (value) => typeof value === 'string',
-    overrides: (value) => isRecord(value) && Object.values(value).every((entry) => typeof entry === 'boolean'),
-    kneadState: isKneadState,
-};
-
-const requiredClipFields = new Set([
-    'id',
-    'trackId',
-    'name',
-    'startBeat',
-    'endBeat',
-    'type',
-    'fadeInBeats',
-    'fadeOutBeats',
-    'gain',
-    'color',
-    'locked',
-    'muted',
-]);
-
-function hasValidClipFields(value: Record<string, unknown>): boolean {
-    return Object.entries(value).every(
-        ([key, field]) =>
-            requiredClipFields.has(key) ||
-            (Object.hasOwn(optionalClipFields, key) && (field === undefined || optionalClipFields[key]!(field)))
-    );
 }
 
 function isRetiredTakeLane(value: unknown, lane: TakeLane, clipId: string, trackId?: string): boolean {
@@ -145,7 +53,20 @@ function isRetiredTakeLane(value: unknown, lane: TakeLane, clipId: string, track
                     (id) =>
                         typeof id === 'string' && lane.takes.some((take) => take.id === id && take.clipId === clipId)
                 )
-        ) && Object.keys(value).every((key) => ['laneIndex', 'lane', 'retiredTakeIds'].includes(key))
+        ) &&
+        optionalField(
+            value,
+            'retiredBaseGapAudioSources',
+            (tiles) =>
+                hasValidAudioSourceTiles(tiles) &&
+                tiles.every(
+                    (tile) =>
+                        tile.clipId === clipId && lane.baseGapAudioSources?.some((saved) => valuesEqual(saved, tile))
+                )
+        ) &&
+        Object.keys(value).every((key) =>
+            ['laneIndex', 'lane', 'retiredTakeIds', 'retiredBaseGapAudioSources'].includes(key)
+        )
     );
 }
 
@@ -159,29 +80,6 @@ function isRetiredTakeLanes(value: unknown, clipId: string, trackId?: string): b
         new Set(lanes.map((lane) => lane.id)).size === lanes.length &&
         new Set(lanes.map((lane) => lane.trackId)).size === lanes.length &&
         value.every((entry, index) => isRetiredTakeLane(entry, lanes[index]!, clipId, trackId))
-    );
-}
-
-function isClipSnapshot(value: unknown, clipId: string, trackId: string): value is Clip {
-    return (
-        isRecord(value) &&
-        value.id === clipId &&
-        value.trackId === trackId &&
-        typeof value.name === 'string' &&
-        typeof value.startBeat === 'number' &&
-        Number.isFinite(value.startBeat) &&
-        value.startBeat >= 0 &&
-        typeof value.endBeat === 'number' &&
-        Number.isFinite(value.endBeat) &&
-        value.endBeat > value.startBeat &&
-        (value.type === 'audio' || value.type === 'midi') &&
-        isFiniteNumber(value.fadeInBeats) &&
-        isFiniteNumber(value.fadeOutBeats) &&
-        isFiniteNumber(value.gain) &&
-        typeof value.color === 'string' &&
-        typeof value.locked === 'boolean' &&
-        typeof value.muted === 'boolean' &&
-        hasValidClipFields(value)
     );
 }
 
@@ -315,6 +213,11 @@ function isSplitSnapshot(value: unknown, clipId: string, rightClipId: string): v
         typeof value.rightClipIndex === 'number' &&
         Number.isSafeInteger(value.rightClipIndex) &&
         value.rightClipIndex >= 0 &&
+        optionalField(
+            value,
+            'audioSourceTempoAtStart',
+            (tempo) => typeof tempo === 'number' && Number.isFinite(tempo) && tempo > 0
+        ) &&
         isClipSplitOrderSnapshot(value.rightClipOrder, clipId, rightClipId) &&
         isExactMidiClipDataActionSnapshot(value.sourceMidi) &&
         isExactMidiClipDataActionSnapshot(value.rightMidi) &&
@@ -358,17 +261,73 @@ function splitSnapshotCaptureOwnersMatch(value: Record<string, unknown>, clipId:
     );
 }
 
-function splitLeftSourceMatches(left: unknown, otherLeft: unknown): boolean {
+function preservedSplitFields(clip: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+        Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
+    );
+}
+
+function splitAudioSourceFieldsMatch(
+    original: Record<string, unknown>,
+    split: Record<string, unknown>,
+    tempo: number
+): boolean {
+    if (
+        original.rightClip !== null ||
+        split.rightClip === null ||
+        typeof original.trackId !== 'string' ||
+        !isRecord(original.leftClip) ||
+        typeof original.leftClip.id !== 'string' ||
+        !isClipSnapshot(original.leftClip, original.leftClip.id, original.trackId) ||
+        original.leftClip.type !== 'audio' ||
+        !isRecord(split.leftClip)
+    ) {
+        return false;
+    }
+    const clip = original.leftClip;
+    const loop = projectClipLoopExpansion({
+        clipDurationBeats: clip.endBeat - clip.startBeat,
+        configuredLoopLengthBeats: clip.loopLength,
+        loopEnabled: clip.loopEnabled ?? false,
+    });
+    const source = captureAudioSourceState(clip, loop.loopLengthBeats, tempo);
+    if (!source) {
+        return false;
+    }
+    const promoted = {
+        ...clip,
+        ...source,
+    };
+    if (clip.loopEnabled) {
+        promoted.loopLength = loop.loopLengthBeats;
+        promoted.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
+    }
+    return valuesEqual(preservedSplitFields(promoted), preservedSplitFields(split.leftClip));
+}
+
+function splitLeftSourceMatches(expected: Record<string, unknown>, replacement: Record<string, unknown>): boolean {
+    const left = expected.leftClip;
+    const otherLeft = replacement.leftClip;
     if (!isRecord(left) || !isRecord(otherLeft)) {
         return false;
     }
-    // prepareClipSplit changes only these three left-fragment fields. Every
-    // surviving source facet, including optional-field presence, stays exact.
-    const preservedFields = (clip: Record<string, unknown>): Record<string, unknown> =>
-        Object.fromEntries(
-            Object.entries(clip).filter(([key]) => key !== 'name' && key !== 'endBeat' && key !== 'fadeOutBeats')
-        );
-    return valuesEqual(preservedFields(left), preservedFields(otherLeft));
+    // Historical splits changed only these fields. New audio captures prove
+    // their additional source promotion against the stored old governing tempo.
+    if (expected.audioSourceTempoAtStart === undefined && replacement.audioSourceTempoAtStart === undefined) {
+        return valuesEqual(preservedSplitFields(left), preservedSplitFields(otherLeft));
+    }
+    const tempo = expected.audioSourceTempoAtStart;
+    if (
+        typeof tempo !== 'number' ||
+        !Number.isFinite(tempo) ||
+        tempo <= 0 ||
+        tempo !== replacement.audioSourceTempoAtStart
+    ) {
+        return false;
+    }
+    const original = expected.rightClip === null ? expected : replacement;
+    const split = expected.rightClip === null ? replacement : expected;
+    return splitAudioSourceFieldsMatch(original, split, tempo);
 }
 
 function splitRightSourceMatches(
@@ -426,7 +385,7 @@ export function clipSplitCaptureOwnersMatch(value: unknown): boolean {
         typeof value.expected.trackId === 'string' &&
         splitSnapshotCaptureOwnersMatch(value.expected, value.clipId, value.rightClipId) &&
         splitSnapshotCaptureOwnersMatch(value.replacement, value.clipId, value.rightClipId) &&
-        splitLeftSourceMatches(value.expected.leftClip, value.replacement.leftClip) &&
+        splitLeftSourceMatches(value.expected, value.replacement) &&
         isSplitTakeReKeyCapture(value.reKeyedTakeLanes, value.expected.trackId, value.clipId, value.rightClipId)
     );
 }
@@ -478,7 +437,14 @@ function isSplitTakeReKeyCapture(value: unknown, trackId: string, clipId: string
             return false;
         }
         laneIds.add(transition.laneId);
+        const foreignBefore = (transition.baseGapAudioSourcesBefore ?? []).filter(
+            (tile) => tile.clipId !== clipId && tile.clipId !== rightClipId
+        );
+        const foreignAfter = (transition.baseGapAudioSourcesAfter ?? []).filter(
+            (tile) => tile.clipId !== clipId && tile.clipId !== rightClipId
+        );
         if (
+            !valuesEqual(foreignBefore, foreignAfter) ||
             !foreignTakesUnchanged(transition.takesBefore, transition.takesAfter, clipId, rightClipId) ||
             !foreignTakesUnchanged(transition.takesAfter, transition.takesBefore, clipId, rightClipId) ||
             !foreignRegionsUnchanged(

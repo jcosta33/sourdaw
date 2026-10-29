@@ -1,4 +1,4 @@
-import { clone as cloneAutomergeDoc } from '@automerge/automerge';
+import { clone as cloneAutomergeDoc, load, save } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -18,6 +18,7 @@ import {
     captureProjectRootIdentity,
     createCrdtDoc,
     getCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     replaceCrdtDoc,
@@ -26,6 +27,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { createTake, createTakeLane } from '../../../models/TakeLane';
@@ -307,6 +309,116 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(findClip(provisional.id)).toMatchObject({ id: provisional.id, startBeat: 4, endBeat: 5 });
         expect(takeRefs()).toEqual([{ id: recordedTakeId, clipId: provisional.id }]);
         expect(takeEndsFor(provisional.id)).toEqual([5]);
+    });
+
+    it('keeps stored physical source zeros in the committed clip, saved redo, and reloaded binary', async () => {
+        transportStore.set({ ...transportStore.value!, tempo: 120 });
+        const [provisional] = startRecording(4);
+        if (!provisional) {
+            throw new Error('expected a provisional audio clip');
+        }
+        expect(provisional.audioOffsetSeconds).toBeUndefined();
+        expect(provisional.audioUnwrappedOffsetSeconds).toBeUndefined();
+        updateTrack(TRACK_ID, (track) => ({
+            ...track,
+            clips: track.clips.map((clip) => {
+                if (clip.id !== provisional.id) {
+                    return clip;
+                }
+                return {
+                    ...clip,
+                    audioBufferId: 'stale-buffer',
+                    audioOffsetBeats: 1,
+                    audioOffsetSeconds: 0,
+                    audioUnwrappedOffsetSeconds: 0,
+                };
+            }),
+        }));
+        flushAutomergeStorageWrites();
+        await stopRecording(4.25);
+        flushAutomergeStorageWrites();
+        const stagedTake = takeLaneStore.value?.lanes
+            .flatMap((lane) => lane.takes)
+            .find((take) => take.clipId === provisional.id);
+        if (!stagedTake) {
+            throw new Error('expected a staged recording take');
+        }
+        expect(stagedTake).toMatchObject({ startBeat: 4, endBeat: 5 });
+
+        await commitRecording({ ...provisional, audioBufferId: 'rec-buffer-1', endBeat: 4.25 });
+        flushAutomergeStorageWrites();
+        const [entry] = undoHistoryStore.value?.past ?? [];
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        if (entry?.kind !== 'action' || entry.redoAction?.type !== 'restoreRecording') {
+            throw new Error('expected one recorded action with explicit restoration');
+        }
+        const expected = {
+            id: provisional.id,
+            trackId: TRACK_ID,
+            audioBufferId: 'rec-buffer-1',
+            audioOffsetBeats: 1,
+            audioOffsetSeconds: 0,
+            audioUnwrappedOffsetSeconds: 0,
+            startBeat: 4,
+            endBeat: 5,
+        };
+        const rawClip = () =>
+            getCrdtDoc<{ tracks: NonNullable<typeof trackStore.value> }>('root')?.tracks.tracks[0]?.clips.find(
+                (clip) => clip.id === provisional.id
+            );
+        const assertRecordedClip = () => {
+            const stored = findClip(provisional.id);
+            if (!stored) {
+                throw new Error('expected a committed audio clip');
+            }
+            expect(stored).toMatchObject(expected);
+            expect(rawClip()).toMatchObject(expected);
+            for (const clip of [stored, rawClip()]) {
+                expect(clip).not.toHaveProperty('audioLoopStartSeconds');
+                expect(clip).not.toHaveProperty('audioLoopPassEntrySeconds');
+                expect(clip).not.toHaveProperty('audioLoopPassOriginBeat');
+            }
+            const segment = projectAudioLoopPassSegments({
+                clip: stored,
+                loopLengthBeats: 1,
+                iterationStartBeat: 4,
+                iterationEndBeat: 5,
+                stretchRatio: 1,
+                tempoAtClipStart: 120,
+                secondsAtBeat: (beat) => beat / 2,
+            })[0];
+            if (!segment) {
+                throw new Error('expected an audible source segment');
+            }
+            // A beat-only fallback would start at frame 24,000 at 120 BPM.
+            expect(Math.round(segment.sourceStartSeconds * 48_000)).toBe(0);
+        };
+        assertRecordedClip();
+        expect(entry.redoAction.payload.clip).toMatchObject(expected);
+        expect(entry.redoAction.payload.clip).toEqual(findClip(provisional.id));
+        expect(entry.redoAction.payload.clip).not.toHaveProperty('audioLoopStartSeconds');
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(findClip(provisional.id)).toBeUndefined();
+        expect(rawClip()).toBeUndefined();
+        expect(takeRefs()).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        assertRecordedClip();
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([stagedTake]);
+        expect(
+            getCrdtDoc<{ takeLanes: NonNullable<typeof takeLaneStore.value> }>('root')?.takeLanes.lanes.flatMap(
+                (lane) => lane.takes
+            )
+        ).toEqual([stagedTake]);
+
+        const saved = save(getCrdtDoc('root')!);
+        replaceCrdtDoc({ id: 'root', doc: load(saved) });
+        projectCrdtToStores({ resetProjections: true });
+        assertRecordedClip();
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([stagedTake]);
     });
 
     it('keeps a pre-existing take lane and its unrelated take through undo and redo', async () => {

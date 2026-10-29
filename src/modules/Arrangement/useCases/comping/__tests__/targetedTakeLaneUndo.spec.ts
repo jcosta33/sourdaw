@@ -15,12 +15,13 @@ type PushedUndoEntry = { label: string; undo: () => void; redo: () => void };
 const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
     pushedUndoEntries: [] as PushedUndoEntry[],
+    executeUserAppAction: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn(),
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.executeUserAppAction,
     pushUndoEntry: (label: string, undo: () => void, redo: () => void) => {
         mocks.pushedUndoEntries.push({ label, undo, redo });
     },
@@ -223,22 +224,19 @@ describe('targeted take-lane undo entries (#4081)', () => {
         expect(getLane('t1').takes.map((take) => take.name)).toEqual(['New take']);
     });
 
-    it('removeCompRegion undo and redo rewrite only that lane and preserve later edits elsewhere', () => {
+    it('removeCompRegion delegates its targeted Undo/Redo to the typed command', () => {
+        const previousUndoCount = mocks.pushedUndoEntries.length;
         seedLanes([makeLane('t1', true), makeLane('t2', true)]);
-
+        const before = structuredClone(mocks.takeLaneStoreValue.value);
         removeCompRegion('t1', 0);
-        expect(getLane('t1').activeCompRegions).toEqual([]);
-
-        editLaneLater('t2', 'Renamed later');
-
-        lastEntry().undo();
-        expect(getLane('t1').activeCompRegions).toHaveLength(1);
-        expect(getLane('t1').takes).toHaveLength(1);
-        expect(getLane('t2').takes[0]!.name).toBe('Renamed later');
-
-        lastEntry().redo();
-        expect(getLane('t1').activeCompRegions).toEqual([]);
-        expect(getLane('t2').takes[0]!.name).toBe('Renamed later');
+        expect(mocks.executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'removeCompRegion',
+            payload: { trackId: 't1', startBeat: 0 },
+        });
+        expect(mocks.pushedUndoEntries).toHaveLength(previousUndoCount);
+        expect(mocks.takeLaneStoreValue.value).toEqual(before);
+        // Real registered removal/Undo/Redo with later edits to another lane
+        // is maintained in audioCompSourceInterval.integration.spec.ts.
     });
 
     it('does not replay a take back through the lane addition when its clip is gone', () => {

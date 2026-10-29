@@ -20,7 +20,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { defaultTransportState } from '../../../models/TransportState';
-import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { schedulerSession, stopActiveSources } from '../../playheadScheduler/schedulerSession';
 import { gainNodePool } from '../audioClipSchedulingState';
 import { disposeAudioClipScheduling } from '../disposeAudioClipScheduling';
 import { scheduleAudioClips } from '../scheduleAudioClips';
@@ -995,6 +995,83 @@ describe('scheduleAudioClips', () => {
     });
 
     // ── Loop iterations ─────────────────────────────────────────────────────
+
+    it('schedules three original source parts in one cut loop window once and retires every node', () => {
+        const sources: (ReturnType<typeof makeFakeSource> & { stop: ReturnType<typeof vi.fn> })[] = [];
+        mockCreateBufferSource.mockImplementation(() => {
+            const source = { ...makeFakeSource(), stop: vi.fn() };
+            sources.push(source);
+            return source as unknown as AudioBufferSourceNode;
+        });
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        mockResolveClips.mockReturnValue([
+            makeAudioClip({
+                startBeat: 2,
+                endBeat: 6,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 0,
+                stretchMode: 'timestretch',
+                stretchRatio: 2,
+                audioOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0,
+                audioLoopPassEntrySeconds: 0.5,
+                audioLoopPassOriginBeat: 1,
+            }),
+        ] as ReturnType<typeof resolveClipsWithComping>);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+        const scheduled = new Set<string>();
+        const active: AudioBufferSourceNode[] = [];
+
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        expect(sources.map((source) => source.start.mock.calls)).toEqual([[[1, 1.5, 2]], [[2, 0, 1]], [[2.5, 0.5, 1]]]);
+        expect(active).toEqual(sources);
+        scheduleAudioClips(0, 8, 0, scheduled, new Set(), active, defaultTransportState);
+        expect(mockCreateBufferSource).toHaveBeenCalledTimes(3);
+        const context = getAudioContext();
+        if (!context) {
+            throw new Error('Expected the scheduler audio context');
+        }
+        stopActiveSources(active, context);
+        for (const source of sources) {
+            expect(source.stop).toHaveBeenCalledExactlyOnceWith(0.005);
+        }
+        expect(active).toEqual([]);
+        for (const source of sources) {
+            expect(typeof source.onended).toBe('function');
+            if (typeof source.onended === 'function') {
+                source.onended();
+            }
+        }
+        expect(active).toEqual([]);
+    });
+
+    it.each([0, 1])('reads canonical source second %s after placement crosses a tempo change', (sourceSeconds) => {
+        tempoMapStore.value = {
+            changes: [
+                { id: 'a', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'b', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+        const fakeSource = makeFakeSource();
+        mockCreateBufferSource.mockReturnValue(fakeSource as unknown as AudioBufferSourceNode);
+        mockGetCachedAudioBuffer.mockReturnValue({ duration: 100 } as AudioBuffer);
+        const clips = [makeAudioClip({ audioOffsetBeats: 2, audioOffsetSeconds: sourceSeconds })] as ReturnType<
+            typeof resolveClipsWithComping
+        >;
+        mockResolveClips.mockReturnValue(clips);
+        trackStoreState.value = { tracks: [makeAudioTrack([])] };
+
+        scheduleAudioClips(0, 16, 0, new Set(), new Set(), [], defaultTransportState);
+
+        expect(fakeSource.start).toHaveBeenCalledTimes(1);
+        const [when, offset, duration] = fakeSource.start.mock.calls[0]!;
+        expect(when).toBeCloseTo(6, 9);
+        expect(offset).toBe(sourceSeconds);
+        expect(duration).toBeCloseTo(4, 9);
+    });
 
     it('schedules one source per loop iteration, advancing the start time by loopLength', () => {
         const sources = [makeFakeSource(), makeFakeSource()];

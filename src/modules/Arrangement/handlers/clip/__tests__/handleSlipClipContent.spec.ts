@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ClipDummy } from '../../../__tests__/ClipDummy';
+import { type Clip } from '../../../models/Track';
 import { handleSlipClipContent } from '../handleSlipClipContent';
 
 const mocks = vi.hoisted(() => ({
@@ -8,7 +10,7 @@ const mocks = vi.hoisted(() => ({
         () => {
             tracks: {
                 id: string;
-                clips: { id: string; type: 'audio' | 'midi'; audioOffsetBeats?: number; midiOffsetBeats?: number }[];
+                clips: Clip[];
             }[];
         } | null
     >(),
@@ -32,13 +34,13 @@ describe('handleSlipClipContent', () => {
     it('executes slipClipContent with the provided payload', () => {
         void handleSlipClipContent.execute({
             type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
+            payload: { clipId: 'c1', clipType: 'midi', offset: 1.5 },
         });
 
         // A fresh keyless dispatch forwards no recorded lift — the handler
         // passes the payload's field verbatim, so the use-case sees the
         // keyless fresh-action shape, not a zero lift.
-        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'audio', 1.5, undefined);
+        expect(mocks.slipClipContent).toHaveBeenCalledWith('c1', 'midi', 1.5, undefined, { restore: undefined });
     });
 
     it('provides a description with no inverse when the clip is gone', () => {
@@ -50,9 +52,14 @@ describe('handleSlipClipContent', () => {
         expect(desc.inverseAction).toBeNull();
     });
 
-    it('describes an inverse back to the pre-slip audio offset', () => {
+    it('captures exact source presence and both replay directions for audio', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'c1', type: 'audio', audioOffsetBeats: -2 }] }],
+            tracks: [
+                {
+                    id: 't1',
+                    clips: [ClipDummy.create({ id: 'c1', trackId: 't1', type: 'audio', audioOffsetBeats: -2 })],
+                },
+            ],
         });
 
         const desc = handleSlipClipContent.describe({
@@ -60,15 +67,22 @@ describe('handleSlipClipContent', () => {
             payload: { clipId: 'c1', clipType: 'audio', offset: 1.5 },
         });
 
-        expect(desc.inverseAction).toEqual({
-            type: 'slipClipContent',
-            payload: { clipId: 'c1', clipType: 'audio', offset: -2 },
+        expect(desc.inverseAction).toMatchObject({
+            type: 'restoreAudioClipSlip',
+            payload: {
+                clipId: 'c1',
+                offset: 1.5,
+                direction: 'restore',
+                before: { clip: { audioOffsetBeats: -2 } },
+                after: { clip: { audioOffsetBeats: 1.5, audioOffsetSeconds: 0.75, audioUnwrappedOffsetSeconds: 0.75 } },
+            },
         });
+        expect(desc.redoAction).toMatchObject({ type: 'restoreAudioClipSlip', payload: { direction: 'apply' } });
     });
 
     it('records a zero lift on the midi inverse — the restoration key rides every capture', () => {
         mocks.getTrackStoreState.mockReturnValue({
-            tracks: [{ id: 't1', clips: [{ id: 'cm', type: 'midi' }] }],
+            tracks: [{ id: 't1', clips: [ClipDummy.create({ id: 'cm', type: 'midi' })] }],
         });
 
         const desc = handleSlipClipContent.describe({
@@ -90,14 +104,14 @@ describe('handleSlipClipContent', () => {
         expect(handleSlipClipContent.undoable).toBe(true);
     });
 
-    it('preserves an audio refusal as no-write', () => {
-        mocks.slipClipContent.mockReturnValue(false);
+    it('refuses a missing audio source owner before executing the slip', () => {
         expect(
             handleSlipClipContent.execute({
                 type: 'slipClipContent',
                 payload: { clipId: 'c1', clipType: 'audio', offset: 1 },
             })
-        ).toEqual({ status: 'no-write' });
+        ).toEqual({ status: 'conflict' });
+        expect(mocks.slipClipContent).not.toHaveBeenCalled();
     });
 
     it('records the actual MIDI owner capture and passes reciprocal data on its real inverse', () => {

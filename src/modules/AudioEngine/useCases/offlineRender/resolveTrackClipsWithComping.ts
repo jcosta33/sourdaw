@@ -1,5 +1,14 @@
 import { takeLaneStore, type TakeLaneStoreState, type Track } from '#/modules/Arrangement/stores';
+import {
+    audioSourceSnapshotAtBeat,
+    captureAudioSourceSnapshot,
+    partitionAudioSourceTiles,
+    audioTakeFragmentSource,
+    resolveAudioTakeSource,
+    hasCanonicalAudioTakeSource,
+} from '#/utils/audioSourceTime';
 import { resolveLoopAnchoredStartBeat } from '#/utils/clipLoopOrigin';
+import { compBaseGapWindows } from '#/utils/compBaseGapWindows';
 import { boundStretchRatio } from '#/utils/stretchRatioBound';
 
 import { liveTempoTimeline, type ResolutionTempoTimeline } from '../livePlayback/liveTempoTimeline';
@@ -18,6 +27,7 @@ type TakeMedia = {
     latestBeatAt?: (fragmentStartBeat: number) => number;
     sourceStartBeat: number;
     offsetAt: (beat: number) => number;
+    offsetSecondsAt?: (beat: number) => number;
 };
 
 /*
@@ -130,7 +140,8 @@ function placedPassMedia(
 ): TakeMedia {
     const sourceRate = clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
     const passStartBeat = beatAtClipMediaSeconds(clip, anchorSeconds, timeline, sourceRate);
-    const depthBeats = (depthSeconds * timeline.tempoAtBeat(passStartBeat)) / 60;
+    const passStartTempo = timeline.tempoAtBeat(passStartBeat);
+    const depthBeats = (depthSeconds * passStartTempo) / 60;
     const media: TakeMedia = {
         earliestBeat: Math.max(clip.startBeat, passStartBeat),
         sourceStartBeat: passStartBeat - depthBeats / sourceRate,
@@ -141,6 +152,12 @@ function placedPassMedia(
             const mediaSeconds =
                 depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
             return (mediaSeconds * timeline.tempoAtBeat(beat)) / 60;
+        },
+        offsetSecondsAt: (beat) => {
+            if (isTempoConstantBetween(timeline, passStartBeat, beat)) {
+                return depthSeconds + (((beat - passStartBeat) * 60) / passStartTempo) * sourceRate;
+            }
+            return depthSeconds + (timeline.secondsAtBeat(beat) - timeline.secondsAtBeat(passStartBeat)) * sourceRate;
         },
     };
     if (sourceEndSeconds !== undefined) {
@@ -163,7 +180,16 @@ function placedPassMedia(
     return media;
 }
 
-function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia {
+function resolveTakeMedia(take: Take, clip: TrackClip, timeline: ResolutionTempoTimeline): TakeMedia | null {
+    if (clip.type === 'audio') {
+        const physical = resolveAudioTakeSource(take, clip, timeline);
+        if (physical && 'status' in physical) {
+            return null;
+        }
+        if (physical) {
+            return physical;
+        }
+    }
     if (take.sourceOffsetBeats === undefined) {
         return {
             earliestBeat: clip.startBeat,
@@ -193,6 +219,137 @@ function withMediaOffsetBeats(clip: TrackClip, offsetBeats: number): TrackClip {
         return clip;
     }
     return { ...clip, midiOffsetBeats: offsetBeats };
+}
+
+function appendTakeFragments(
+    lane: TakeLaneStoreState['lanes'][number],
+    clips: Track['clips'],
+    timeline: ResolutionTempoTimeline,
+    resolvedClips: ResolvedClip[]
+): void {
+    for (const region of lane.activeCompRegions) {
+        const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
+        if (!take) {
+            continue;
+        }
+
+        const sourceClip = clips.find((clip) => clip.id === take.clipId);
+        if (!sourceClip) {
+            continue;
+        }
+
+        const media = resolveTakeMedia(take, sourceClip, timeline);
+        if (!media) {
+            continue;
+        }
+        const overlapStart = Math.max(region.startBeat, media.earliestBeat);
+        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
+        if (overlapStart >= overlapEnd) {
+            continue;
+        }
+
+        // A comped take fragment's media basis is the take's own: `offsetAt`
+        // names what sounds at the region head in take coordinates, so the
+        // offset carried below enters that basis at relative 0 and the source
+        // clip's loop anchor has no meaning in it — the take's offset never
+        // accumulated the anchor's trim advance. Carried through, the
+        // loop-window readers derive advance = fragmentStart − anchor from the
+        // fragment and pull the read off the comped material onto an earlier
+        // pass's (#5198: a region one loop past the anchor read pass 1 at
+        // buffer 0 instead of pass 3 at buffer 4). The anchor is therefore
+        // stripped and the fragment reads the pre-anchor law — window opening
+        // at its own offset, exactly the placed media it read before anchoring
+        // existed. Gap fragments below keep the anchor: their offset advances
+        // with the same beat as the window, so the source's region law holds
+        // there unchanged.
+        const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
+        const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
+        let audioSource:
+            ReturnType<typeof audioSourceSnapshotAtBeat> | ReturnType<typeof audioTakeFragmentSource> | null = null;
+        if (sourceClip.type === 'audio') {
+            if (region.audioSource && take.passAnchorSeconds === undefined) {
+                let rate = 1;
+                if (sourceClip.stretchMode && sourceClip.stretchMode !== 'off') {
+                    rate = boundStretchRatio(sourceClip.stretchRatio ?? 1);
+                }
+                audioSource = audioSourceSnapshotAtBeat(
+                    region.audioSource,
+                    overlapStart,
+                    rate,
+                    sourceClip.loopEnabled ?? false,
+                    timeline.secondsAtBeat
+                );
+            } else if (hasCanonicalAudioTakeSource(take, sourceClip) && media.offsetSecondsAt) {
+                audioSource = audioTakeFragmentSource(media.offsetSecondsAt(overlapStart), overlapStart);
+            }
+        }
+        resolvedClips.push({
+            ...takeFragmentBasis,
+            ...audioSource,
+            startBeat: overlapStart,
+            endBeat: overlapEnd,
+            regionStartBeat: overlapStart,
+            regionEndBeat: overlapEnd,
+            sourceStartBeat: media.sourceStartBeat,
+        });
+    }
+}
+
+function appendBaseFragments(
+    lane: TakeLaneStoreState['lanes'][number],
+    clips: Track['clips'],
+    timeline: ResolutionTempoTimeline,
+    resolvedClips: ResolvedClip[]
+): void {
+    const sortedRegions = lane.activeCompRegions;
+
+    for (const clip of clips) {
+        const gaps = compBaseGapWindows(clip, sortedRegions);
+
+        for (const gap of gaps) {
+            const windows = partitionAudioSourceTiles(
+                clip.id,
+                gap.startBeat,
+                gap.endBeat,
+                clip.type === 'audio' ? (lane.baseGapAudioSources ?? []) : []
+            );
+            for (const window of windows) {
+                const rate =
+                    clip.stretchMode && clip.stretchMode !== 'off' ? boundStretchRatio(clip.stretchRatio ?? 1) : 1;
+                let snapshot = window.audioSource ?? null;
+                if (snapshot === null && clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+                    snapshot = captureAudioSourceSnapshot(
+                        clip,
+                        clip.loopLength ?? clip.endBeat - clip.startBeat,
+                        timeline.tempoAtBeat(clip.startBeat)
+                    );
+                }
+                let source: ReturnType<typeof audioSourceSnapshotAtBeat> = null;
+                if (snapshot) {
+                    source = audioSourceSnapshotAtBeat(
+                        snapshot,
+                        window.startBeat,
+                        rate,
+                        clip.loopEnabled ?? false,
+                        timeline.secondsAtBeat
+                    );
+                }
+                resolvedClips.push({
+                    ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, window.startBeat, timeline)),
+                    ...source,
+                    startBeat: window.startBeat,
+                    endBeat: window.endBeat,
+                    regionStartBeat: window.startBeat,
+                    regionEndBeat: window.endBeat,
+                    sourceStartBeat: resolveLoopAnchoredStartBeat({
+                        startBeat: clip.startBeat,
+                        loopOriginBeat: clip.loopOriginBeat,
+                        loopEnabled: clip.loopEnabled ?? false,
+                    }),
+                });
+            }
+        }
+    }
 }
 
 /**
@@ -231,7 +388,7 @@ export function resolveTrackClipsWithComping(
     }
 
     const lane = laneState.lanes.find((takeLane) => takeLane.trackId === trackId);
-    if (!lane || lane.activeCompRegions.length === 0) {
+    if (!lane || (lane.activeCompRegions.length === 0 && !lane.baseGapAudioSources?.length)) {
         return clips.map((clip) => ({
             ...clip,
             regionStartBeat: clip.startBeat,
@@ -246,85 +403,9 @@ export function resolveTrackClipsWithComping(
 
     const resolvedClips: ResolvedClip[] = [];
 
-    for (const region of lane.activeCompRegions) {
-        const take = lane.takes.find((candidateTake) => candidateTake.id === region.takeId);
-        if (!take) {
-            continue;
-        }
+    appendTakeFragments(lane, clips, timeline, resolvedClips);
 
-        const sourceClip = clips.find((clip) => clip.id === take.clipId);
-        if (!sourceClip) {
-            continue;
-        }
-
-        const media = resolveTakeMedia(take, sourceClip, timeline);
-        const overlapStart = Math.max(region.startBeat, media.earliestBeat);
-        const overlapEnd = Math.min(region.endBeat, sourceClip.endBeat, media.latestBeatAt?.(overlapStart) ?? Infinity);
-        if (overlapStart >= overlapEnd) {
-            continue;
-        }
-
-        // A comped take fragment's media basis is the take's own: `offsetAt`
-        // names what sounds at the region head in take coordinates, so the
-        // offset carried below enters that basis at relative 0 and the source
-        // clip's loop anchor has no meaning in it — the take's offset never
-        // accumulated the anchor's trim advance. Carried through, the
-        // loop-window readers derive advance = fragmentStart − anchor from the
-        // fragment and pull the read off the comped material onto an earlier
-        // pass's (#5198: a region one loop past the anchor read pass 1 at
-        // buffer 0 instead of pass 3 at buffer 4). The anchor is therefore
-        // stripped and the fragment reads the pre-anchor law — window opening
-        // at its own offset, exactly the placed media it read before anchoring
-        // existed. Gap fragments below keep the anchor: their offset advances
-        // with the same beat as the window, so the source's region law holds
-        // there unchanged.
-        const takeFragment = withMediaOffsetBeats(sourceClip, media.offsetAt(overlapStart));
-        const { loopOriginBeat: _sourceLoopOrigin, ...takeFragmentBasis } = takeFragment;
-        resolvedClips.push({
-            ...takeFragmentBasis,
-            startBeat: overlapStart,
-            endBeat: overlapEnd,
-            regionStartBeat: overlapStart,
-            regionEndBeat: overlapEnd,
-            sourceStartBeat: media.sourceStartBeat,
-        });
-    }
-
-    const sortedRegions = lane.activeCompRegions;
-
-    for (const clip of clips) {
-        const gaps: { start: number; end: number }[] = [];
-        let cursor = clip.startBeat;
-
-        for (const region of sortedRegions) {
-            if (region.endBeat <= clip.startBeat || region.startBeat >= clip.endBeat) {
-                continue;
-            }
-            const regionStart = Math.max(region.startBeat, clip.startBeat);
-            if (cursor < regionStart) {
-                gaps.push({ start: cursor, end: regionStart });
-            }
-            cursor = Math.max(cursor, Math.min(region.endBeat, clip.endBeat));
-        }
-        if (cursor < clip.endBeat) {
-            gaps.push({ start: cursor, end: clip.endBeat });
-        }
-
-        for (const gap of gaps) {
-            resolvedClips.push({
-                ...withMediaOffsetBeats(clip, clipMediaOffsetAt(clip, gap.start, timeline)),
-                startBeat: gap.start,
-                endBeat: gap.end,
-                regionStartBeat: gap.start,
-                regionEndBeat: gap.end,
-                sourceStartBeat: resolveLoopAnchoredStartBeat({
-                    startBeat: clip.startBeat,
-                    loopOriginBeat: clip.loopOriginBeat,
-                    loopEnabled: clip.loopEnabled ?? false,
-                }),
-            });
-        }
-    }
+    appendBaseFragments(lane, clips, timeline, resolvedClips);
 
     return resolvedClips.sort((leftClip, rightClip) => leftClip.startBeat - rightClip.startBeat);
 }

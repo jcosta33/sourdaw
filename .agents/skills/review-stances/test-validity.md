@@ -1638,6 +1638,15 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+### Tempo inverse probes must cross a complete excursion (escaped via PR #4987)
+
+A single tempo rise or drop did not expose `renderTempoTimeline` alternating
+between segments. Use 180 to 60 to 180 BPM at beats 0.25 and 0.5 and a physical
+source end of frame 8320 at 48 kHz; read the ending through the actual live and
+offline comp consumers. The old inverse returns frame 320. Restoring that inverse
+must fail both the owning numerical case and source-end parity; see
+`audio-source-time.md` for the traced escape and preservation obligations.
+
 ### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
 
 PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
@@ -1750,3 +1759,14 @@ alone cannot observe the file admission gap.
 The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
+
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.

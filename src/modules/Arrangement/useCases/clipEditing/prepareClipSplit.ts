@@ -1,25 +1,83 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
-import { type AppAction, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { getAudioSourcePositionSeconds, resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
+import {
+    type ClipAutomationLaneSnapshot,
+    type ClipSplitActionSnapshot,
+    type TakeReKeyLaneTransitionSnapshot,
+} from '#/utils/handlerContract';
 
+import { type TakeLane } from '../../models/TakeLane';
+import { type TempoTimeline } from '../../models/TempoTimeline';
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClipWriteTarget';
-import { type Clip } from '../../stores/trackStore';
-import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
+import { type Clip, type Track } from '../../stores/trackStore';
+import { captureClipSplitTakeReKeyTransitions } from '../comping/captureClipSplitTakeReKey';
+import { liveTempoTimeline } from '../liveTempoTimeline';
+import { resolveZeroCrossingPosition } from '../timelineInteractions/snapToZeroCrossing';
 
+import { audioSourceAtBeat } from './audioSourceAtBeat';
 import { consumedStretchFactor } from './consumedStretchFactor';
-import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { type PreparedClipSplit } from './preparedClipSplit';
 import { projectClipSplitSourceWindow } from './projectClipSplitSourceWindow';
 import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
+
+function snapshotTakeReKeyTransitions(
+    transitions: ReturnType<typeof captureClipSplitTakeReKeyTransitions>
+): readonly TakeReKeyLaneTransitionSnapshot[] {
+    return transitions.map((transition) => {
+        const { baseGapAudioSourcesBefore, baseGapAudioSourcesAfter, ...fields } = structuredClone(transition);
+        const snapshot: TakeReKeyLaneTransitionSnapshot = {
+            ...fields,
+            takesBefore: Array.from(fields.takesBefore),
+            takesAfter: Array.from(fields.takesAfter),
+            regionsBefore: Array.from(fields.regionsBefore),
+            regionsAfter: Array.from(fields.regionsAfter),
+        };
+        if (Object.hasOwn(transition, 'baseGapAudioSourcesBefore')) {
+            if (baseGapAudioSourcesBefore) {
+                snapshot.baseGapAudioSourcesBefore = Array.from(baseGapAudioSourcesBefore);
+            } else {
+                snapshot.baseGapAudioSourcesBefore = undefined;
+            }
+        }
+        if (Object.hasOwn(transition, 'baseGapAudioSourcesAfter')) {
+            if (baseGapAudioSourcesAfter) {
+                snapshot.baseGapAudioSourcesAfter = Array.from(baseGapAudioSourcesAfter);
+            } else {
+                snapshot.baseGapAudioSourcesAfter = undefined;
+            }
+        }
+        return snapshot;
+    });
+}
+
+function withAudioSourceTempo(
+    snapshot: Omit<ClipSplitActionSnapshot, 'audioSourceTempoAtStart'>,
+    enabled: boolean,
+    tempo: number
+): ClipSplitActionSnapshot {
+    if (!enabled) {
+        return snapshot;
+    }
+    return { audioSourceTempoAtStart: tempo, ...snapshot };
+}
 
 type PrepareClipSplitInput = {
     clipId: string;
     splitBeat: number;
     rightClipId?: string;
     resolvedSplitBeat?: number;
+    admittedSplitPosition?: ZeroCrossingPosition;
     targetNoteIds?: readonly string[];
-    priorActions?: readonly AppAction[];
+    owners?: {
+        readonly tracks: readonly Track[];
+        readonly takeLanes: readonly TakeLane[];
+        readonly automationLanes: readonly ClipAutomationLaneSnapshot[];
+        readonly timeline: TempoTimeline;
+    };
 };
 
 export function prepareClipSplit({
@@ -27,12 +85,19 @@ export function prepareClipSplit({
     splitBeat,
     rightClipId,
     resolvedSplitBeat,
+    admittedSplitPosition,
     targetNoteIds,
-    priorActions = [],
-}: PrepareClipSplitInput) {
+    owners,
+}: PrepareClipSplitInput): PreparedClipSplit | null {
     if (
         !Number.isFinite(splitBeat) ||
         (resolvedSplitBeat !== undefined && !Number.isFinite(resolvedSplitBeat)) ||
+        (admittedSplitPosition !== undefined &&
+            (!Number.isFinite(admittedSplitPosition.beat) ||
+                (resolvedSplitBeat !== undefined && admittedSplitPosition.beat !== resolvedSplitBeat) ||
+                (admittedSplitPosition.sourceSeconds !== undefined &&
+                    (!Number.isFinite(admittedSplitPosition.sourceSeconds) ||
+                        admittedSplitPosition.sourceSeconds < 0)))) ||
         (rightClipId !== undefined && rightClipId.trim().length === 0)
     ) {
         return null;
@@ -42,13 +107,14 @@ export function prepareClipSplit({
         return null;
     }
     const state = getTrackState();
-    const track = state?.tracks.find((candidate) => candidate.id === resolution.trackId);
+    const tracks = owners?.tracks ?? state?.tracks;
+    const track = tracks?.find((candidate) => candidate.id === resolution.trackId);
     const clip = track?.clips.find((candidate) => candidate.id === clipId);
-    if (!state || !track || !clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
+    if (!state || !tracks || !track || !clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
         return null;
     }
     const effectiveRightClipId = rightClipId ?? getNextClipId();
-    const rightIdIsUsed = state.tracks.some(
+    const rightIdIsUsed = tracks.some(
         (candidate) =>
             candidate.clips.some((candidateClip) => candidateClip.id === effectiveRightClipId) ||
             candidate.alternatives.some((alternative) =>
@@ -59,7 +125,16 @@ export function prepareClipSplit({
         return null;
     }
 
-    const adjustedSplitBeat = resolvedSplitBeat ?? snapToZeroCrossing(clip, splitBeat);
+    const timeline = owners?.timeline ?? liveTempoTimeline;
+    let splitPosition: ZeroCrossingPosition;
+    if (admittedSplitPosition !== undefined) {
+        splitPosition = admittedSplitPosition;
+    } else if (resolvedSplitBeat === undefined) {
+        splitPosition = resolveZeroCrossingPosition(clip, splitBeat, timeline);
+    } else {
+        splitPosition = { beat: resolvedSplitBeat };
+    }
+    const adjustedSplitBeat = splitPosition.beat;
     if (adjustedSplitBeat <= clip.startBeat || adjustedSplitBeat >= clip.endBeat) {
         return null;
     }
@@ -79,24 +154,35 @@ export function prepareClipSplit({
     // the bounded ratio when it is — the shared law, not the raw stored ratio
     // (a mode-off clip ignores its dormant ratio; an out-of-range one clamps).
     const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
-    const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    const capturesAudioSource = clip.type === 'audio';
+    const audioSourceTempoAtStart = timeline.tempoAtBeat(clip.startBeat);
+    const leftSource = capturesAudioSource ? audioSourceAtBeat(clip, clip.startBeat, timeline) : null;
+    const rightSource = capturesAudioSource ? audioSourceAtBeat(clip, adjustedSplitBeat, timeline) : null;
+    if (capturesAudioSource && (!leftSource || !rightSource)) {
+        return null;
+    }
+    if (rightSource && splitPosition.sourceSeconds !== undefined) {
+        rightSource.audioOffsetSeconds = splitPosition.sourceSeconds;
+    }
+    let contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
+    if (capturesAudioSource) {
+        const startTempo = timeline.tempoAtBeat(clip.startBeat);
+        const linearSourceSeconds = getAudioSourcePositionSeconds(
+            resolveAudioSourceOffsetSeconds(clip, startTempo),
+            timeline.secondsAtBeat(adjustedSplitBeat) - timeline.secondsAtBeat(clip.startBeat),
+            consumedStretchFactor(clip)
+        );
+        // Warp points partition in the original source-beat clock, before any loop reset.
+        contentSplitBeats = (linearSourceSeconds * startTempo) / 60;
+    }
 
     let reservedIdentityIds: ReadonlySet<string> | undefined;
-    let rightClipOrder = [...track.clips.map((clip) => clip.id), effectiveRightClipId];
-    let rightClipIndex = track.clips.length;
-    if (priorActions.length > 0) {
-        const projected = projectClipReplayPrefix(priorActions);
-        if (!projected) {
-            return null;
-        }
-        rightClipOrder = [
-            ...projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip.id),
-            effectiveRightClipId,
-        ];
-        rightClipIndex = rightClipOrder.length - 1;
+    const rightClipOrder = [...track.clips.map((clip) => clip.id), effectiveRightClipId];
+    const rightClipIndex = track.clips.length;
+    if (owners) {
         reservedIdentityIds = readClipSplitIdentityIds(
-            projected.lanes,
-            projected.clips.map((owner) => owner.clip)
+            owners.automationLanes,
+            tracks.flatMap((candidate) => candidate.clips)
         );
     }
 
@@ -143,36 +229,72 @@ export function prepareClipSplit({
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
         ...projectClipSplitSourceWindow(clip, adjustedSplitBeat),
+        audioOffsetBeats: contentSplitBeats,
     };
-    const previous: ClipSplitActionSnapshot = {
-        trackId: track.id,
-        leftClip: structuredClone(clip),
-        rightClip: null,
-        rightClipIndex,
-        rightClipOrder,
-        sourceMidi: midiPlan.previousSource,
-        rightMidi: midiPlan.previousRight,
-        clipSatellites: satellites.previous,
-        // The right clip id is proven unused, so the pre-split side carries no
-        // lanes for it; the explicit emptiness is what the undo leg restores.
-        clipAutomationLanes: [],
-    };
-    const next: ClipSplitActionSnapshot = {
-        trackId: track.id,
-        leftClip: structuredClone(leftClip),
-        rightClip: structuredClone(rightClip),
-        rightClipIndex,
-        rightClipOrder,
-        sourceMidi: midiPlan.nextSource,
-        rightMidi: midiPlan.nextRight,
-        clipSatellites: satellites.next,
-        clipAutomationLanes: satellites.rightAutomationLanes,
-    };
-    return {
+    if (capturesAudioSource) {
+        Object.assign(leftClip, leftSource);
+        Object.assign(rightClip, rightSource);
+        if (clip.loopEnabled) {
+            leftClip.loopOriginBeat = clip.loopOriginBeat ?? clip.startBeat;
+            rightClip.loopOriginBeat = leftClip.loopOriginBeat;
+        }
+    }
+    const previous: ClipSplitActionSnapshot = withAudioSourceTempo(
+        {
+            trackId: track.id,
+            leftClip: structuredClone(clip),
+            rightClip: null,
+            rightClipIndex,
+            rightClipOrder,
+            sourceMidi: midiPlan.previousSource,
+            rightMidi: midiPlan.previousRight,
+            clipSatellites: satellites.previous,
+            // The right clip id is proven unused, so the pre-split side carries no
+            // lanes for it; the explicit emptiness is what the undo leg restores.
+            clipAutomationLanes: [],
+        },
+        capturesAudioSource,
+        audioSourceTempoAtStart
+    );
+    const next: ClipSplitActionSnapshot = withAudioSourceTempo(
+        {
+            trackId: track.id,
+            leftClip: structuredClone(leftClip),
+            rightClip: structuredClone(rightClip),
+            rightClipIndex,
+            rightClipOrder,
+            sourceMidi: midiPlan.nextSource,
+            rightMidi: midiPlan.nextRight,
+            clipSatellites: satellites.next,
+            clipAutomationLanes: satellites.rightAutomationLanes,
+        },
+        capturesAudioSource,
+        audioSourceTempoAtStart
+    );
+    const prepared = {
         adjustedMediaSplit,
         previous,
         next,
         rightClipId: effectiveRightClipId,
         targetNoteIds: midiPlan.targetNoteIds,
     };
+    if (capturesAudioSource) {
+        return {
+            ...prepared,
+            takeReKeyTransitions: snapshotTakeReKeyTransitions(
+                captureClipSplitTakeReKeyTransitions({
+                    sourceClip: structuredClone(clip),
+                    trackId: track.id,
+                    clipId,
+                    rightClipId: effectiveRightClipId,
+                    splitBeat: adjustedSplitBeat,
+                    clipStartBeat: clip.startBeat,
+                    clipEndBeat: clip.endBeat,
+                    lanes: owners?.takeLanes,
+                    timeline,
+                })
+            ),
+        };
+    }
+    return prepared;
 }
