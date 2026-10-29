@@ -1,7 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { parse } from 'yaml';
+
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const workflow = parse(readFileSync('.github/workflows/pr5860-linux-capture.yml', 'utf8'));
 const steps = workflow.jobs.capture.steps as Array<{
