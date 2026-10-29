@@ -67,14 +67,14 @@ function requireColdStartTimeoutFirst(callbackBody: ts.Block): void {
 }
 
 describe('Browser AI WebGPU admission', () => {
-    it('keeps its development server immutable without changing its launch mode or identity', () => {
+    it('preserves cold worker optimization reloads without changing its launch mode or identity', () => {
         const server = admissionConfig.webServer;
         if (!server || Array.isArray(server)) {
             throw new Error('Expected the admission config to own one server');
         }
         expect(server.command).toBe('pnpm dev --host 127.0.0.1 --port 5188 --strictPort');
         expect(server.url).toBe('http://localhost:5188');
-        expect(server.env).toEqual({ NO_HMR: '1' });
+        expect(server.env).toEqual({ NO_HMR: '0' });
         expect(server.reuseExistingServer).toBe(false);
         expect(server.gracefulShutdown).toEqual({ signal: 'SIGTERM', timeout: 5_000 });
     });

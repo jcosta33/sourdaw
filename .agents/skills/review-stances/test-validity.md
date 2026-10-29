@@ -24,6 +24,14 @@ and exactly one for the developer reload control, alongside the existing navigat
 The same delayed bad-client probe must fail; finishing before a scheduled side effect is not
 evidence that the side effect was prevented.
 
+PR #5874's pre-merge hardware run 40972746984 exposed a distinct intentional reload contract:
+the existing DDSP worker probe handles Vite's cold dependency reoptimization by awaiting a new
+document. Applying `NO_HMR=1` to that profile filtered the optimizer's `full-reload` payload;
+its converter import then received `504 Outdated Optimize Dep` without navigation. Trace the
+producer and transport policy for every required reload, not only literal HMR consumers.
+Keep the dedicated cold-worker profile's HMR enabled while ordinary immutable E2E documents
+retain their disconnect fence; a config-value assertion alone cannot establish that policy.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
