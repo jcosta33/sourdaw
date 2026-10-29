@@ -181,6 +181,7 @@ const ENGINE_SOURCES: Record<NativeDspDeviceType, DeviceEngines> = {
     // The Tuner, whose engine is the `scoring` crate.
     'native-scoring': singleEngine('crates/scoring/src'),
     knead: singleEngine('crates/daw-dsp/src/knead'),
+    'transient-shaper': singleEngine('crates/daw-dsp/src/toaster/transient.rs'),
 };
 
 const SERVICES = 'src/modules/AudioEngine/services';
@@ -198,6 +199,7 @@ const WORKLETS = 'src/modules/AudioEngine/worklets';
  */
 type NameTranslation =
     | { readonly kind: 'identity' }
+    | { readonly kind: 'numericArguments'; readonly source: string; readonly processor: string }
     | { readonly kind: 'table'; readonly source: string; readonly constName: string }
     | { readonly kind: 'camelToSnake'; readonly source: string; readonly functionName: string };
 
@@ -234,6 +236,11 @@ const PARAM_NAME_TRANSLATIONS: Record<NativeDspDeviceType, NameTranslation> = {
     'dutch-oven': { kind: 'identity' },
     'native-scoring': { kind: 'identity' },
     knead: { kind: 'identity' },
+    'transient-shaper': {
+        kind: 'numericArguments',
+        source: 'crates/daw-dsp/src/toaster/transient.rs',
+        processor: `${SERVICES}/transientShaperProcessor.ts`,
+    },
 };
 
 /**
@@ -595,6 +602,10 @@ function readCamelToSnakeOverrides(sourcePath: string, functionName: string): Re
 function buildTranslator(deviceType: NativeDspDeviceType): (paramId: string) => string {
     const translation = PARAM_NAME_TRANSLATIONS[deviceType];
 
+    if (translation.kind === 'numericArguments') {
+        return (paramId) => paramId.replaceAll(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+    }
+
     if (translation.kind === 'identity') {
         return (paramId) => paramId;
     }
@@ -687,7 +698,43 @@ function selectableEngineIds(deviceType: NativeDspDeviceType): readonly string[]
     return [...new Set(SELECTOR_WIRE_VALUES.get(deviceType)!.values())];
 }
 
+/** Numeric ABI wiring is proved from both real signatures and each worklet
+ * argument's AudioParam producer; unrelated string setter arms cannot vouch for it. */
+function numericArgumentAnswersTo(deviceType: NativeDspDeviceType, paramId: string): boolean {
+    const translation = PARAM_NAME_TRANSLATIONS[deviceType];
+    if (translation.kind !== 'numericArguments') {
+        return false;
+    }
+    const position = paramId === 'attackGain' ? 1 : paramId === 'sustainGain' ? 2 : -1;
+    if (position < 0) {
+        return false;
+    }
+    const rust = stripComments(readFileSync(resolve(REPO_ROOT, translation.source), 'utf8'));
+    const processor = stripComments(readFileSync(resolve(REPO_ROOT, translation.processor), 'utf8'));
+    const argumentName = TRANSLATORS.get(deviceType)!(paramId);
+    const local = paramId === 'attackGain' ? 'attack' : 'sustain';
+    if (
+        !processor.includes(`const ${paramId} = parameters.${paramId};`) ||
+        !processor.includes(`const ${local} = ${paramId}?.[${paramId}.length === 1 ? 0 : frame]`)
+    ) {
+        return false;
+    }
+    return ['process_left', 'process_right'].every((method) => {
+        const signature = new RegExp(String.raw`pub fn ${method}\(([^)]*)\)`).exec(rust);
+        const args = signature?.[1]
+            ?.split(',')
+            .filter((part) => !part.includes('self'))
+            .map((part) => part.trim().split(':')[0]);
+        const call = new RegExp(String.raw`instance\.${method}\(([^;]*)\)`).exec(processor);
+        const values = call?.[1]?.split(',').map((part) => part.trim());
+        return args?.[position] === argumentName && values?.[position] === local;
+    });
+}
+
 function engineAnswersTo(deviceType: NativeDspDeviceType, engineId: string, paramId: string): boolean {
+    if (PARAM_NAME_TRANSLATIONS[deviceType].kind === 'numericArguments') {
+        return numericArgumentAnswersTo(deviceType, paramId);
+    }
     const translated = TRANSLATORS.get(deviceType)!(paramId);
     const shared = SHARED_PARAM_NAMES.get(deviceType)!;
     const own = ENGINE_PARAM_NAMES.get(deviceType)!.get(engineId);

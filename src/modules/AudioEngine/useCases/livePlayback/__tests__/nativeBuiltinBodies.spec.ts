@@ -1132,3 +1132,30 @@ describe('Proof canonical native target admission', () => {
         }
     });
 });
+
+describe('the Transient Shaper native body', () => {
+    it('admits exactly the real native body gain names and clamps finite patches', () => {
+        const body = bodyOf('transient-shaper');
+        expect(body).toMatchObject({
+            soundsNotes: false,
+            takesClipNoteReleases: true,
+            latencyCompensatedByEngine: false,
+        });
+        const source = stripComments(readFileSync(resolve(REPO_ROOT, 'crates/daw-engine/src/scheduler.rs'), 'utf8'));
+        const start = source.indexOf('impl TransientShaperBody');
+        expect(start).toBeGreaterThan(-1);
+        const block = readBalancedBlock(source, source.indexOf('{', start));
+        const names = [...block.matchAll(/"(\w+)"\s*=>/g)].map((match) => match[1]);
+        expect(names).toEqual(['attackGain', 'sustainGain']);
+        for (const name of names) {
+            expect(body.addressesParameter(name!)).toBe(true);
+            expect(body.parameterName(name!)).toBe(name);
+        }
+        for (const name of ['_resetEpoch', 'attack_gain', 'unknown']) expect(body.addressesParameter(name)).toBe(false);
+        expect(body.projectPatch({ attackGain: 100, sustainGain: -100, _resetEpoch: 1, other: 1 })).toEqual({
+            attackGain: 2,
+            sustainGain: 0,
+        });
+        expect(body.projectPatch({ attackGain: Number.NaN, sustainGain: Number.POSITIVE_INFINITY })).toEqual({});
+    });
+});
