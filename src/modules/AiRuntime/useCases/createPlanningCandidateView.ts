@@ -76,13 +76,12 @@ function collectCandidateObjectFacts(
     return facts;
 }
 
-/** Candidate-contract facts only; source records, paths and media identities never enter this view. */
-export function createPlanningCandidateView(
+function assertCandidateBinding(
     creative: CreativeInterpretationCatalog,
     answer: AnswerInterpretationCatalog,
     binding: PlanningContextBinding,
     metric?: MetricIntentCatalog
-) {
+): void {
     if (!binding.authorityComplete) {
         throw new Error('Incomplete production authority cannot be disclosed through candidate fallback.');
     }
@@ -109,6 +108,13 @@ export function createPlanningCandidateView(
     ) {
         throw new Error('Metric interpretation does not share the complete printed context binding.');
     }
+}
+
+function createCandidateReferences(
+    creative: CreativeInterpretationCatalog,
+    answer: AnswerInterpretationCatalog,
+    binding: PlanningContextBinding
+) {
     const fallback: Array<[string, string, string, string | null, number | null, number | null]> = [];
     const facts = collectCandidateObjectFacts(creative, answer);
     const references = new Map<string, string>();
@@ -140,6 +146,16 @@ export function createPlanningCandidateView(
         references.set(id, reference);
         return reference;
     }
+    return { fallback, facts, objectReference };
+}
+
+function createCandidateRows(
+    creative: CreativeInterpretationCatalog,
+    answer: AnswerInterpretationCatalog,
+    binding: PlanningContextBinding,
+    facts: Map<string, PlanningContextObject>,
+    objectReference: (id: string) => string
+) {
     const targets = creative.targets.map((target) => [
         target.provenance,
         target.objectType,
@@ -175,6 +191,10 @@ export function createPlanningCandidateView(
         // Raw internal section identities are withheld by the context producer, including fallback rows.
         return printed?.reference ?? [range.label, range.startBeat, range.endBeat];
     });
+    return { targets, constraints, scopes, ranges };
+}
+
+function createMetricTables(answer: AnswerInterpretationCatalog, metric?: MetricIntentCatalog) {
     const metricEligibility: number[][] = [];
     const metricRoles = [...new Set(metric?.objectives.flatMap((objective) => objective.roles) ?? [])];
     const metricRoleSets: number[][] = [];
@@ -183,7 +203,7 @@ export function createPlanningCandidateView(
     type Relation = MetricIntentCatalog['objectives'][number]['goals'][number]['relation'];
     const metricExpectations: Array<[number, string | null, Relation, number | null, number, number | null]> = [];
     const metricObjectives: Array<[string, string | null, string, number, number, number, number[]]> = [];
-    function intern<T>(table: T[], value: T): number {
+    function intern<Value>(table: Value[], value: Value): number {
         const key = JSON.stringify(value);
         const prior = table.findIndex((entry) => JSON.stringify(entry) === key);
         if (prior >= 0) {
@@ -239,6 +259,42 @@ export function createPlanningCandidateView(
             expectations,
         ]);
     }
+    return {
+        metricObjectives,
+        metricEligibility,
+        metricRoles,
+        metricRoleSets,
+        metricMetrics,
+        metricExpectations,
+        metricPolicies,
+    };
+}
+
+/** Candidate-contract facts only; source records, paths and media identities never enter this view. */
+export function createPlanningCandidateView(
+    creative: CreativeInterpretationCatalog,
+    answer: AnswerInterpretationCatalog,
+    binding: PlanningContextBinding,
+    metric?: MetricIntentCatalog
+) {
+    assertCandidateBinding(creative, answer, binding, metric);
+    const { fallback, facts, objectReference } = createCandidateReferences(creative, answer, binding);
+    const { targets, constraints, scopes, ranges } = createCandidateRows(
+        creative,
+        answer,
+        binding,
+        facts,
+        objectReference
+    );
+    const {
+        metricObjectives,
+        metricEligibility,
+        metricRoles,
+        metricRoleSets,
+        metricMetrics,
+        metricExpectations,
+        metricPolicies,
+    } = createMetricTables(answer, metric);
     return {
         activeView: creative.selection.activeView,
         unresolved: creative.unresolvedExplicitReferences,

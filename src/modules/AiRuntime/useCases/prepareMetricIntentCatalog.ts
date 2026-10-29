@@ -23,12 +23,11 @@ type Objective = {
 };
 export type MetricIntentCatalog = ReturnType<typeof prepareMetricIntentCatalog>;
 
-/** Lexical numeric candidates and authored policies, never a second semantic classifier. */
-export function prepareMetricIntentCatalog(input: { prompt: string; answer: AnswerInterpretationCatalog }) {
-    const catalog = getMixRecipeCatalog();
-    const metricIds = getAgentMeasurementMetricIds();
-    const scopes = input.answer.scopes;
-    const allScopeIds = scopes.filter((scope) => scope.kind !== 'clips').map((scope) => scope.candidateId);
+type RecipeCatalog = ReturnType<typeof getMixRecipeCatalog>;
+type MetricIds = ReturnType<typeof getAgentMeasurementMetricIds>;
+type AnswerScopes = AnswerInterpretationCatalog['scopes'];
+
+function policyObjectives(scopes: AnswerScopes, allScopeIds: string[]): Objective[] {
     const objectives: Objective[] = [
         {
             id: 'loudness-match',
@@ -103,6 +102,16 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
             ],
         },
     ];
+    return objectives;
+}
+
+function recipeObjectives(
+    answer: AnswerInterpretationCatalog,
+    catalog: RecipeCatalog,
+    metricIds: MetricIds
+): Objective[] {
+    const scopes = answer.scopes;
+    const objectives: Objective[] = [];
     for (const recipe of catalog.recipes) {
         if (recipe.origin !== undefined || recipe.metrics.length === 0) {
             continue;
@@ -112,20 +121,12 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
             scopes.filter((scope) => scope.kind !== 'clips').flatMap((scope) => scope.objectIds)
         )) {
             const defaultAllowed =
-                expandMixRecipe(
-                    { recipeId: recipe.id, targetId, role: null, values: [] },
-                    input.answer.context,
-                    1,
-                    catalog
-                ).status === 'expanded';
+                expandMixRecipe({ recipeId: recipe.id, targetId, role: null, values: [] }, answer.context, 1, catalog)
+                    .status === 'expanded';
             const roles = recipe.roles.filter(
                 (role) =>
-                    expandMixRecipe(
-                        { recipeId: recipe.id, targetId, role, values: [] },
-                        input.answer.context,
-                        1,
-                        catalog
-                    ).status === 'expanded'
+                    expandMixRecipe({ recipeId: recipe.id, targetId, role, values: [] }, answer.context, 1, catalog)
+                        .status === 'expanded'
             );
             eligibility.set(targetId, { defaultAllowed, roles });
         }
@@ -173,13 +174,18 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
             })),
         });
     }
+    return objectives;
+}
+
+function numericObjectives(prompt: string, allScopeIds: string[]): Objective[] {
+    const objectives: Objective[] = [];
     const numericMetrics = new Map([
         ['LUFS', 'integratedLoudness'],
         ['dBTP', 'truePeak'],
         ['dBFS', 'rms'],
         ['Hz', 'spectralCentroid'],
     ] as const);
-    for (const match of input.prompt.matchAll(/(?<![\w.])(-?\d+(?:\.\d+)?)\s*(LUFS|dBTP|dBFS|Hz)\b/gu)) {
+    for (const match of prompt.matchAll(/(?<![\w.])(-?\d+(?:\.\d+)?)\s*(LUFS|dBTP|dBFS|Hz)\b/gu)) {
         const value = Number(match[1]);
         const metricId = [...numericMetrics].find(([unit]) => unit === match[2])?.[1];
         if (!Number.isFinite(value) || metricId === undefined) {
@@ -205,6 +211,20 @@ export function prepareMetricIntentCatalog(input: { prompt: string; answer: Answ
             ],
         });
     }
+    return objectives;
+}
+
+/** Lexical numeric candidates and authored policies, never a second semantic classifier. */
+export function prepareMetricIntentCatalog(input: { prompt: string; answer: AnswerInterpretationCatalog }) {
+    const catalog = getMixRecipeCatalog();
+    const metricIds = getAgentMeasurementMetricIds();
+    const scopes = input.answer.scopes;
+    const allScopeIds = scopes.filter((scope) => scope.kind !== 'clips').map((scope) => scope.candidateId);
+    const objectives = [
+        ...policyObjectives(scopes, allScopeIds),
+        ...recipeObjectives(input.answer, catalog, metricIds),
+        ...numericObjectives(input.prompt, allScopeIds),
+    ];
     return {
         schemaVersion: 1 as const,
         catalogId: input.answer.catalogId,
