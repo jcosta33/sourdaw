@@ -15,11 +15,11 @@ const io = {
 let restoreIo = () => {};
 
 function deferred() {
-    let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-        resolve = done;
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
     });
-    return { promise, resolve };
+    return { promise, resolve: release };
 }
 
 type Writable = { write: (bytes: Uint8Array) => Promise<void>; close: () => Promise<void>; abort: () => Promise<void> };
@@ -30,6 +30,13 @@ function createBrowserBoundary() {
     const bindings = new Map<string, (...args: unknown[]) => unknown>();
     const scripts = new Set<() => void>();
     let worlds: Record<string, unknown>[] = [{}, {}];
+    const worldAt = (frame: number): Record<string, unknown> => {
+        const world = worlds[frame];
+        if (!world) {
+            throw new TypeError('Calibration frame is unavailable');
+        }
+        return world;
+    };
     const resource = (release: () => void) => {
         const dispose = async () => {
             release();
@@ -38,7 +45,7 @@ function createBrowserBoundary() {
     };
     const execute = (script: unknown, arg: unknown, world: Record<string, unknown>) => {
         if (typeof script !== 'function') {
-            throw new Error('Expected the serialized picker callback');
+            throw new TypeError('Expected the serialized picker callback');
         }
         return runInNewContext(`(${script.toString()})(options)`, { window: world, options: structuredClone(arg) });
     };
@@ -81,7 +88,7 @@ function createBrowserBoundary() {
         page,
         bindingCount: () => bindings.size,
         installerCount: () => scripts.size,
-        hasPicker: (frame = 1) => typeof worlds[frame].showSaveFilePicker === 'function',
+        hasPicker: (frame = 1) => typeof worldAt(frame).showSaveFilePicker === 'function',
         navigate() {
             worlds = [{}, {}];
             for (const [name, binding] of bindings) {
@@ -94,9 +101,9 @@ function createBrowserBoundary() {
             }
         },
         async pick(filename = 'Sourdaw_Bake_1.wav', frame = 1): Promise<PickerHandle> {
-            const picker = Reflect.get(worlds[frame], 'showSaveFilePicker');
+            const picker = Reflect.get(worldAt(frame), 'showSaveFilePicker');
             if (typeof picker !== 'function') {
-                throw new Error('Picker missing in current frame');
+                throw new TypeError('Picker missing in current frame');
             }
             return Reflect.apply(picker, undefined, [{ suggestedName: filename }]);
         },
@@ -132,14 +139,14 @@ beforeEach(async () => {
     const nativeSync = prototype.sync;
     Object.defineProperty(prototype, 'write', {
         configurable: true,
-        value: async function (this: FileHandle, bytes: Uint8Array, offset: number, length: number, position: number) {
+        async value(this: FileHandle, bytes: Uint8Array, offset: number, length: number, position: number) {
             await io.beforeWrite();
             return nativeWrite.bind(this)(bytes, offset, Math.min(length, io.limit), position);
         },
     });
     Object.defineProperty(prototype, 'sync', {
         configurable: true,
-        value: async function (this: FileHandle) {
+        async value(this: FileHandle) {
             await io.beforeSync();
             await nativeSync.bind(this)();
         },
