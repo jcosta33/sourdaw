@@ -1,4 +1,5 @@
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
@@ -34,6 +35,10 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
     const root = captureProjectRootIdentity();
     const tempo = transportStore.value?.tempo;
     const editorClip = elasticAudioStore.value?.openClipId;
+    const preference = preferencesStore.value?.elasticTransientSensitivity;
+    const unsubscribePreference = preferencesStore.subscribe((state) => {
+        if (state?.elasticTransientSensitivity !== preference) abort();
+    });
     let editorChanged = false;
     const unsubscribe = elasticAudioStore.subscribe((state) => {
         if (state?.openClipId !== editorClip) {
@@ -46,12 +51,14 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         active.get(clipId) === controller &&
         !editorChanged &&
         elasticAudioStore.value?.openClipId === editorClip &&
+        preferencesStore.value?.elasticTransientSensitivity === preference &&
         captureProjectRootIdentity() === root &&
         getSettledProjectId() === projectId &&
         transportStore.value?.tempo === tempo;
     const dispose = (): void => {
         signal?.removeEventListener('abort', abort);
         unsubscribe();
+        unsubscribePreference();
     };
     if (!projectId || !tempo || !Number.isFinite(tempo) || tempo <= 0) {
         dispose();

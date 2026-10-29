@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { elasticAudioStore, defaultElasticAudioState } from '../../../stores/elasticAudio';
 import { cancelTransientDetection, detectTransientsForClip } from '../detectTransientsForClip';
 
@@ -17,6 +19,7 @@ vi.mock('#/modules/Transport/stores', () => ({
 describe('product transient Worker source lifetime', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        preferencesStore.trySet(defaultPreferences);
         mocks.root = 'root-1';
         mocks.tempo = 120;
         elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
@@ -39,12 +42,14 @@ describe('product transient Worker source lifetime', () => {
         mocks.tempo = 128;
         expect(result.isCurrent()).toBe(false);
     });
-    it.each(['root', 'editor', 'cancel', 'successor'] as const)(
+    it.each(['root', 'editor', 'cancel', 'successor', 'preference'] as const)(
         'revokes an earlier completed read on %s',
         async (change) => {
             const result = await detectTransientsForClip('clip-1', 0.5);
             if (result.status !== 'complete') throw new Error('Expected completed analysis');
             if (change === 'root') mocks.root = 'root-2';
+            if (change === 'preference')
+                preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
             if (change === 'editor') elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-2' });
             if (change === 'cancel') cancelTransientDetection('clip-1');
             if (change === 'successor') await detectTransientsForClip('clip-1', 0.82);

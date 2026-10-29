@@ -467,4 +467,99 @@ describe('locked transient markers through the real Elastic editor', () => {
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(1);
     });
+    it('aborts a scoped post-await write while preserving a separately committed command', async () => {
+        supplyBuffer(burstSamples());
+        let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
+        const started = new Promise<void>((resolve) =>
+            worker.mockImplementationOnce(() => {
+                resolve();
+                return new Promise((done) => {
+                    finish = done;
+                });
+            })
+        );
+        const controller = new AbortController();
+        const execution = executeAppAction(
+            { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+            { signal: controller.signal }
+        );
+        const refused = expect(execution).rejects.toThrow(
+            'Action conflicts with current project state: detectTransients'
+        );
+        await started;
+        await executeAppAction({ type: 'renameTrack', payload: { trackId: 'audio-track', name: 'Independent edit' } });
+        const original = warpStateStore.set.bind(warpStateStore);
+        const setter = vi.spyOn(warpStateStore, 'set').mockImplementationOnce((value) => {
+            original(value);
+            controller.abort();
+        });
+        const before = JSON.stringify(getCrdtDoc('root'));
+        finish?.({ status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] });
+        await refused;
+        expect(setter).toHaveBeenCalledOnce();
+        setter.mockRestore();
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+        expect(getWarpState(CLIP_ID).markers).toEqual([lockedMarker]);
+        expect(trackStore.value?.tracks[0]?.name).toBe('Independent edit');
+        await undo();
+        expect(trackStore.value?.tracks[0]?.name).toBe('Audio');
+        expect(getWarpState(CLIP_ID).markers).toEqual([lockedMarker]);
+    });
+
+    it('refuses Undo rather than replacing a later unrelated clip marker', async () => {
+        supplyBuffer(burstSamples());
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        setWarpState('other-clip', {
+            ...otherWarpState,
+            markers: [
+                ...otherWarpState.markers,
+                { id: 'unrelated-later', originalBeat: 3, warpedBeat: 4, origin: 'user' },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const before = JSON.stringify(getCrdtDoc('root'));
+        expect((await undo()).headConsumed).toBe(false);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+        expect(getWarpState('other-clip').markers).toContainEqual({
+            id: 'unrelated-later',
+            originalBeat: 3,
+            warpedBeat: 4,
+            origin: 'user',
+        });
+    });
+    it('registered sensitivity awaits its child command without capturing independent writes', async () => {
+        supplyBuffer(burstSamples());
+        let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
+        const started = new Promise<void>((resolve) =>
+            worker.mockImplementationOnce(() => {
+                resolve();
+                return new Promise((done) => {
+                    finish = done;
+                });
+            })
+        );
+        let settled = false;
+        const execution = executeAppAction({ type: 'elasticSetSensitivity', payload: { sensitivity: 0.82 } }).then(
+            () => {
+                settled = true;
+            }
+        );
+        await started;
+        expect(settled).toBe(false);
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        await executeAppAction({
+            type: 'renameTrack',
+            payload: { trackId: 'audio-track', name: 'During sensitivity' },
+        });
+        finish?.({ status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] });
+        await execution;
+        expect(elasticAudioStore.value?.detected).toBe(true);
+        expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+        expect(getWarpState(CLIP_ID).markers).toContainEqual(lockedMarker);
+        await undo();
+        expect(getWarpState(CLIP_ID).markers).toEqual([lockedMarker]);
+        expect(trackStore.value?.tracks[0]?.name).toBe('During sensitivity');
+        await undo();
+        expect(trackStore.value?.tracks[0]?.name).toBe('Audio');
+    });
 });

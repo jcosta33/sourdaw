@@ -32,14 +32,17 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
         };
         const timer = setTimeout(() => {
             pending = null;
+            if (!clipId) {
+                finish();
+                return;
+            }
             if (
-                !clipId ||
                 elasticAudioStore.value?.openClipId !== clipId ||
                 request !== generation ||
                 signal?.aborted ||
                 transientDetectionRevision(clipId) !== revision
             ) {
-                finish();
+                fail(new DOMException('Transient detection was cancelled', 'AbortError'));
                 return;
             }
             const currentSensitivity =

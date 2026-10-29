@@ -248,7 +248,10 @@ async function readSource(input: ReadInput, channelSampleCeiling: number): Promi
                 ? copySourceChannels(source)
                 : await copyProductChannels(source, isCurrent);
         if (channels === null) {
-            return { status: 'failed', code: input.signal?.aborted ? 'cancelled' : 'invalid-source' };
+            return {
+                status: 'failed',
+                code: input.signal?.aborted ? 'cancelled' : !isCurrent() ? 'stale-source' : 'invalid-source',
+            };
         }
         if (!isCurrent()) return { status: 'failed', code: 'stale-source' };
         input.onAnalysisStarted();

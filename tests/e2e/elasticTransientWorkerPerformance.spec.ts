@@ -115,10 +115,11 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             start: number;
             end: number;
             frames: number[];
+            observedFrames: number[];
             tasks: { start: number; duration: number }[];
             measures: { name: string; duration: number }[];
         };
-        const metrics: Metrics = { start: 0, end: 0, frames: [], tasks: [], measures: [] };
+        const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
         const target = window as Window & { elasticMeasurement?: Promise<Metrics> };
         const button = document.querySelector('[data-testid="elastic-detect-button"]');
         const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
@@ -126,6 +127,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         let stop = false;
         const frame = (time: number): void => {
             metrics.frames.push(time);
+            metrics.observedFrames.push(performance.now());
             if (!stop) requestAnimationFrame(frame);
         };
         requestAnimationFrame(frame);
@@ -154,8 +156,10 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 observer.disconnect();
                 requestAnimationFrame((time) => {
                     metrics.frames.push(time);
+                    metrics.observedFrames.push(performance.now());
                     requestAnimationFrame((tailTime) => {
                         metrics.frames.push(tailTime);
+                        metrics.observedFrames.push(performance.now());
                         stop = true;
                         tasks.disconnect();
                         measures.disconnect();
@@ -182,6 +186,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
                 start: number;
                 end: number;
                 frames: number[];
+                observedFrames: number[];
                 tasks: { start: number; duration: number }[];
                 measures: { name: string; duration: number }[];
             }>;
@@ -194,6 +199,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         const previous = measured.frames[index]!;
         return time >= measured.start ? [time - previous] : [];
     });
+    const observedGaps = measured.observedFrames
+        .slice(1)
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
     const commit = measured.measures.filter((entry) => entry.name === 'elastic-transient-commit');
     const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
     const commitTasks = measured.measures.filter(
@@ -208,6 +216,8 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         ...measured,
         elapsedMs: measured.end - measured.start,
         gaps,
+        observedGaps,
+        maxObservedGapMs: Math.max(...observedGaps),
         maxGapMs: Math.max(...gaps),
         commit,
         copy,
@@ -242,6 +252,7 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(commitTasks).toHaveLength(2);
     expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(result.maxGapMs).toBeLessThanOrEqual(25);
+    expect(result.maxObservedGapMs).toBeLessThanOrEqual(25);
     expect(longTasks).toEqual([]);
     await page.keyboard.press(`${modifier}+z`);
     await expect.poll(async () => (await sourceState(page)).projected.length).toBe(0);

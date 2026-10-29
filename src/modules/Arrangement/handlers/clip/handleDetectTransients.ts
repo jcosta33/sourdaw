@@ -2,7 +2,7 @@ import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/c
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
-import { digest } from '#/utils/canonicalDigest';
+import { canonicalJson, digest } from '#/utils/canonicalDigest';
 import { createHandler } from '#/utils/createHandler';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -67,6 +67,7 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
         });
         performance.measure('elastic-transient-preparation-task', { start: commitStarted, end: performance.now() });
         performance.clearMeasures('elastic-transient-preparation-task');
+        const expectedWarpState = canonicalJson(replacement);
         let storageCommitStarted: number | undefined;
         const refusal = (): string | null =>
             result.isCurrent() && !context?.signal?.aborted ? null : 'Transient detection source changed before commit';
@@ -102,17 +103,23 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
                         : undefined;
                     const bufferId = record(clip)?.audioBufferId;
                     const states = record(record(document.warpStates)?.states);
-                    return (
+                    const validationStarted = performance.now();
+                    const reason =
                         refusal() ??
                         (record(document.projectMeta)?.projectId === result.identity.projectId &&
                         record(clip)?.type === 'audio' &&
                         typeof bufferId === 'string' &&
                         digest(bufferId) === result.identity.bufferId &&
                         record(document.transport)?.tempo === result.tempo &&
-                        digest(states?.[clipId]) === digest(replacement)
+                        canonicalJson(states?.[clipId]) === expectedWarpState
                             ? null
-                            : 'Transient detection authority changed inside commit')
-                    );
+                            : 'Transient detection authority changed inside commit');
+                    performance.measure('elastic-transient-validation-task', {
+                        start: validationStarted,
+                        end: performance.now(),
+                    });
+                    performance.clearMeasures('elastic-transient-validation-task');
+                    return reason;
                 },
                 release: () => undefined,
             },

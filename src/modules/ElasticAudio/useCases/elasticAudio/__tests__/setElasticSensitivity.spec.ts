@@ -150,4 +150,15 @@ describe('setElasticSensitivity', () => {
         await promise;
         expect(mocks.execute).not.toHaveBeenCalled();
     });
+    it('settles queued cancellation as cancellation rather than completion', async () => {
+        elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
+        const controller = new AbortController();
+        const request = setElasticSensitivity(0.82, controller.signal);
+        const refused = expect(request).rejects.toMatchObject({ name: 'AbortError' });
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(150);
+        await refused;
+        expect(mocks.execute).not.toHaveBeenCalled();
+        expect(elasticAudioStore.value?.detected).toBe(false);
+    });
 });
