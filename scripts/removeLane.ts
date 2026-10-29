@@ -11,6 +11,7 @@ import {
     isAuthorBotNodeId,
     originMainBlob,
     removalLockPid,
+    REQUIRED_BASE_BRANCH,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
 import { laneIsActive } from './laneActivity.ts';
@@ -35,6 +36,7 @@ export type PullRequest = {
     headRefName: string;
     headRefOid: string;
     headRepository: string | null;
+    baseRefName: string | null;
     mergedAt: string | null;
 };
 
@@ -48,6 +50,7 @@ export type IssueComment = {
 export type ReplacementPullRequest = {
     number: number;
     state: string;
+    baseRefName: string | null;
     mergedAt: string | null;
 };
 
@@ -299,9 +302,35 @@ type OwnershipSnapshot = {
     branch: string | null;
     ignored: string[];
     pullRequest: number;
+    landedAt: string;
     supersededBy?: number;
     remoteHead?: string;
 };
+
+function mergedTimestamp(value: unknown): string | null {
+    if (
+        typeof value !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+        !Number.isFinite(Date.parse(value))
+    ) {
+        return null;
+    }
+    // Date.parse normalizes nonexistent dates such as February 30 instead of rejecting them.
+    const day = value.slice(0, 10);
+    return new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day ? value : null;
+}
+
+function restPullRequestState(state: unknown, mergedAt: unknown): string {
+    const normalized = typeof state === 'string' ? state.toUpperCase() : 'UNKNOWN';
+    if (normalized === PR_STATE.MERGED && mergedTimestamp(mergedAt) === null) return 'UNKNOWN';
+    return normalized === PR_STATE.CLOSED && mergedTimestamp(mergedAt) !== null ? PR_STATE.MERGED : normalized;
+}
+
+function assertMainMergeBase(number: number, baseRefName: string | null): void {
+    if (baseRefName !== REQUIRED_BASE_BRANCH) {
+        fail(`PR #${number} is not proven merged into ${REQUIRED_BASE_BRANCH}`);
+    }
+}
 
 /**
  * A lane is spent once the work it holds is on `main`. Merging is the ordinary way there; being
@@ -320,7 +349,7 @@ type OwnershipSnapshot = {
  * that it arrived, so the named replacement must itself be merged before this lane counts as
  * spent.
  */
-function supersededReplacement(number: number, port: LaneRemovalPort): number {
+function supersededReplacement(number: number, port: LaneRemovalPort): { number: number; mergedAt: string } {
     const receipts = port
         .comments(number)
         .filter((comment) => comment.authorType === 'Bot' && isAuthorBotNodeId(comment.authorNodeId))
@@ -334,10 +363,12 @@ function supersededReplacement(number: number, port: LaneRemovalPort): number {
         fail(`PR #${number} names itself as its replacement`);
     }
     const landed = port.replacement(replacement);
-    if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || landed.mergedAt === null) {
+    const mergedAt = mergedTimestamp(landed.mergedAt);
+    if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || mergedAt === null) {
         fail(`PR #${number} was superseded by #${replacement}, which is not merged`);
     }
-    return replacement;
+    assertMainMergeBase(landed.number, landed.baseRefName);
+    return { number: replacement, mergedAt };
 }
 
 function validateOwnership(
@@ -404,7 +435,8 @@ function validateOwnership(
         if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
             fail(`PR #${pullRequest.number} is foreign`);
         }
-        const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
+        const mergedAt = mergedTimestamp(pullRequest.mergedAt);
+        const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
         if (!merged) {
             fail(
                 pullRequest.state === PR_STATE.OPEN
@@ -412,6 +444,7 @@ function validateOwnership(
                     : `PR #${pullRequest.number} is not merged`
             );
         }
+        assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
         if (port.dirty(target) || port.active(target)) {
             fail('worktree changed during removal');
         }
@@ -420,6 +453,7 @@ function validateOwnership(
             branch: null,
             ignored: [...ignored].sort(),
             pullRequest: pullRequest.number,
+            landedAt: mergedAt,
         };
     }
 
@@ -438,7 +472,8 @@ function validateOwnership(
     if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
         fail(`PR #${pullRequest.number} is foreign`);
     }
-    const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
+    const mergedAt = mergedTimestamp(pullRequest.mergedAt);
+    const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
     // The draft flag says nothing about whether the work landed: an OPEN draft is already refused
     // below because it is neither merged nor closed, and GitHub cannot merge a pull request while
     // it is still a draft, so a MERGED pull request is never a draft either. A CLOSED draft is the
@@ -448,7 +483,14 @@ function validateOwnership(
     if (!merged && pullRequest.state !== PR_STATE.CLOSED) {
         fail(`PR #${pullRequest.number} is still active`);
     }
-    const supersededBy = merged ? undefined : supersededReplacement(pullRequest.number, port);
+    if (merged) {
+        assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
+    }
+    const replacement = merged ? undefined : supersededReplacement(pullRequest.number, port);
+    const landedAt = replacement?.mergedAt ?? mergedAt;
+    if (landedAt === null) {
+        fail(`PR #${pullRequest.number} merge completion is unproven`);
+    }
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -465,7 +507,8 @@ function validateOwnership(
         branch,
         ignored: [...ignored].sort(),
         pullRequest: pullRequest.number,
-        supersededBy,
+        landedAt,
+        supersededBy: replacement?.number,
         remoteHead,
     };
 }
@@ -869,7 +912,8 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
                         state: string;
                         draft: boolean;
                         head: { ref: string; sha: string; repo: { full_name: string } | null };
-                        merged_at: string | null;
+                        base?: { ref?: string | null } | null;
+                        merged_at?: unknown;
                     }>
                 >
             >(
@@ -883,12 +927,13 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
             );
             return pages.flat().map((pullRequest) => ({
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
+                state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
                 isDraft: pullRequest.draft,
                 headRefName: pullRequest.head.ref,
                 headRefOid: pullRequest.head.sha,
                 headRepository: pullRequest.head.repo?.full_name ?? null,
-                mergedAt: pullRequest.merged_at,
+                baseRefName: pullRequest.base?.ref ?? null,
+                mergedAt: mergedTimestamp(pullRequest.merged_at),
             }));
         },
         commitPullRequests: (sha) => {
@@ -901,7 +946,8 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
                             state: string;
                             draft: boolean;
                             head: { ref: string; sha: string; repo: { full_name: string } | null };
-                            merged_at: string | null;
+                            base?: { ref?: string | null } | null;
+                            merged_at?: unknown;
                         }>
                     >
                 >(
@@ -915,12 +961,13 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
                 );
                 return pages.flat().map((pullRequest) => ({
                     number: pullRequest.number,
-                    state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
+                    state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
                     isDraft: pullRequest.draft,
                     headRefName: pullRequest.head.ref,
                     headRefOid: pullRequest.head.sha,
                     headRepository: pullRequest.head.repo?.full_name ?? null,
-                    mergedAt: pullRequest.merged_at,
+                    baseRefName: pullRequest.base?.ref ?? null,
+                    mergedAt: mergedTimestamp(pullRequest.merged_at),
                 }));
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
@@ -950,14 +997,17 @@ export function shellPort(shell: ShellRunner = { capture, run }, root?: string):
             }));
         },
         replacement: (number) => {
-            const pullRequest = parseJson<{ number: number; state: string; merged_at: string | null }>(
-                shell.capture('gh', ['api', `repos/${repository()}/pulls/${number}`]),
-                `PR #${number} query`
-            );
+            const pullRequest = parseJson<{
+                number: number;
+                state?: string;
+                base?: { ref?: string | null } | null;
+                merged_at?: unknown;
+            }>(shell.capture('gh', ['api', `repos/${repository()}/pulls/${number}`]), `PR #${number} query`);
             return {
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
-                mergedAt: pullRequest.merged_at,
+                state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
+                baseRefName: pullRequest.base?.ref ?? null,
+                mergedAt: mergedTimestamp(pullRequest.merged_at),
             };
         },
         lock: (path, reason = `lane-remove:${process.pid}`) =>

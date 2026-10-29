@@ -13,7 +13,7 @@ import {
     withCleanupLock,
     type CleanupPort,
 } from '../cleanupLanes.ts';
-import { AUTHOR_LOCK_REASON, githubAuthorizationGitEnv } from '../githubAppIdentity.ts';
+import { AUTHOR_BOT_NODE_ID, AUTHOR_LOCK_REASON, githubAuthorizationGitEnv } from '../githubAppIdentity.ts';
 import { laneIsActive } from '../laneActivity.ts';
 import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 
@@ -37,6 +37,7 @@ function fixture() {
         headRefName: 'fix/fixture',
         headRefOid: head,
         headRepository: 'jcosta33/sourdaw',
+        baseRefName: 'main',
         state: 'MERGED',
         isDraft: false,
         mergedAt: '2026-10-28T00:00:00Z',
@@ -100,6 +101,77 @@ describe('automatic lane cleanup', () => {
             expect(existsSync(review)).toBe(false);
             expect(f.git(['branch', '--list', 'fix/fixture'])).toContain('fix/fixture');
             expect(readCleanupRecords(f.root).every((record) => record.status === 'removed')).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each(
+        ['author', 'review', 'replacement'].flatMap((route) =>
+            [
+                { name: 'non-main base', invalid: { baseRefName: 'feature/still-open' } },
+                { name: 'unknown base', invalid: { baseRefName: null } },
+                { name: 'missing base', invalid: { baseRefName: undefined } },
+                { name: 'missing timestamp', invalid: { mergedAt: undefined } },
+                { name: 'null timestamp', invalid: { mergedAt: null } },
+                { name: 'blank timestamp', invalid: { mergedAt: '' } },
+                { name: 'invalid timestamp', invalid: { mergedAt: 'not-a-timestamp' } },
+                { name: 'nonexistent calendar date', invalid: { mergedAt: '2026-02-30T00:00:00Z' } },
+            ].map((proof) => ({ route, ...proof }))
+        )
+    )('retains $name for the $route route with a durable reason', ({ route, invalid }) => {
+        const f = fixture();
+        try {
+            const target = route === 'review' ? join(f.root, '.agents/review-worktrees/review-42') : f.lane;
+            if (route === 'review') f.git(['worktree', 'add', '--detach', target, f.head]);
+            if (route === 'replacement') {
+                f.pr.state = 'CLOSED';
+                f.pr.mergedAt = null;
+                f.port.removal.comments = () => [
+                    {
+                        body: 'Superseded by #99.',
+                        authorNodeId: AUTHOR_BOT_NODE_ID,
+                        authorType: 'Bot',
+                        authorLogin: 'fixture',
+                    },
+                ];
+                f.port.removal.replacement = (number) =>
+                    Object.assign(
+                        { number, state: 'MERGED', baseRefName: 'main', mergedAt: '2026-08-20T00:00:00Z' },
+                        invalid
+                    );
+            } else Object.assign(f.pr, invalid);
+            const outcome = cleanupLanes(f.port).find((item) => item.lane === target);
+            expect(outcome?.status).toBe('protected');
+            expect(existsSync(target)).toBe(true);
+            expect(readCleanupRecords(f.root).find((record) => record.identity.path === target)?.reason).not.toBe('');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('removes a closed stack lane only when its truthful replacement merged into main', () => {
+        const f = fixture();
+        try {
+            f.pr.state = 'CLOSED';
+            f.pr.mergedAt = null;
+            f.pr.baseRefName = 'feature/old-parent';
+            f.port.removal.comments = () => [
+                {
+                    body: 'Superseded by #99.',
+                    authorNodeId: AUTHOR_BOT_NODE_ID,
+                    authorType: 'Bot',
+                    authorLogin: 'fixture',
+                },
+            ];
+            f.port.removal.replacement = (number) => ({
+                number,
+                state: 'MERGED',
+                baseRefName: 'main',
+                mergedAt: '2026-08-20T00:00:00Z',
+            });
+            expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+            expect(existsSync(f.lane)).toBe(false);
         } finally {
             f.dispose();
         }

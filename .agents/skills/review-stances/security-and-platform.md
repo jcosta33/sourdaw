@@ -464,3 +464,12 @@ Inject a native removal refusal after unlock and require the original author loc
 Kill the worker after durable queue publication and require a later process to reclaim only after
 fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
 with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.
+
+Merge state alone does not prove that work reached `main`: an exact PR head merged into an open
+stack parent is still unlanded. Require a live `main` base and valid merge timestamp for author and
+review heads, and for the merged replacement of a closed superseded lane. Missing metadata stays
+unproven; a missing `merged_at` must never map to merged. Probe non-main and unknown bases, missing
+or malformed timestamps, open-state/timestamp contradictions and a base transition between the two
+ownership reads. Preserve valid main merges and closed stack lanes whose truthful replacement landed
+on main. The pre-publication integration probe exposed this eligibility gap before automatic cleanup
+was shipped; historical review dispatch details remain unestablished.
