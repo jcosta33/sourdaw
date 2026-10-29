@@ -63,7 +63,7 @@ export function requestProspectiveMutation(
                 new Set(data.heads).size === data.heads.length
             ) {
                 finish({
-                    bytes: data.bytes,
+                    bytes: new Uint8Array(data.bytes.buffer),
                     heads: data.heads,
                 });
                 return;
