@@ -72,7 +72,7 @@ describe('active sample and waveform pairing', () => {
         const peaks = [-0.9, 0.8];
         setActiveSample(DEVICE, first);
         setWaveformPeaks(DEVICE, peaks);
-        const replay = { ...first };
+        const replay = structuredClone(first);
 
         setActiveSample(DEVICE, replay);
 

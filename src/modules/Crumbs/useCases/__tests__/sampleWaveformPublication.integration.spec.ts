@@ -196,7 +196,7 @@ describe('sample waveform publication ownership', () => {
             throw new Error('Expected accepted metadata before the peak wait');
         }
         setWaveformPeaks(DEVICE, FIRST_PEAKS);
-        const replacement = { ...accepted };
+        const replacement = structuredClone(accepted);
         setActiveSample(DEVICE, replacement);
         setLoading(DEVICE, true);
         await first.finish(SECOND_PEAKS);

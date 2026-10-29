@@ -35,7 +35,7 @@ const native = vi.hoisted(() => ({
     invoke: vi.fn<(command: string, input?: unknown) => Promise<unknown>>(() => Promise.resolve(undefined)),
 }));
 vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
+    ...(await importOriginal<Record<string, unknown>>()),
     isDesktopRuntime: () => native.available,
     desktopInvoke: native.invoke,
 }));
@@ -348,7 +348,7 @@ describe('Crumbs waveform authority from the actual application producer', () =>
         await act(async () => {
             await executeAppAction({
                 type: 'setDeviceParameter',
-                payload: { trackId: TRACK, deviceId, paramId: 'tune', value: 5 },
+                payload: { expectedTrackId: TRACK, deviceId, paramId: 'tune', value: 5 },
             });
             await executeAppAction({ type: 'renameTrack', payload: { trackId: 'ordinary-track', name: 'Renamed' } });
             flushAutomergeStorageWrites();

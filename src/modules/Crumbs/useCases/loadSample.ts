@@ -13,7 +13,7 @@ import { crumbsSampleProjectAccess } from '../stores/crumbsSampleProjectAccess';
 import { crumbsStore, setActiveSample, setLoading, setWaveformPeaks } from '../stores/crumbsStore';
 import { beginCrumbsSampleLoad, isLatestCrumbsSampleLoad } from '../stores/sampleLoadGate';
 
-import type { SampleCategory, SampleMeta } from '../models/CrumbsTypes';
+import type { CrumbsLoadResult, SampleCategory, SampleMeta } from '../models/CrumbsTypes';
 
 /** The backend's level-0 mipmap block size (`MIPMAP_BASE_BLOCK` in daw-dsp). */
 const MIPMAP_BASE_BLOCK = 64;
@@ -73,6 +73,17 @@ function selectMipmapLevel(frameCount: number, targetWidth: number): number {
     return maxLevel;
 }
 
+function warnAboutSkippedAudioPackets(result: CrumbsLoadResult): void {
+    if (!(result.decodeWarningCount > 0)) {
+        return;
+    }
+    const packetLabel = result.decodeWarningCount === 1 ? 'packet' : 'packets';
+    logger.warn(
+        `Sample imported after skipping ${String(result.decodeWarningCount)} corrupt audio ${packetLabel}:`,
+        result.decodeWarnings
+    );
+}
+
 export async function loadSampleFromPath(
     instanceId: string,
     filePath: string,
@@ -106,13 +117,7 @@ export async function loadSampleFromPath(
             return;
         }
 
-        if (result.decodeWarningCount > 0) {
-            const packetLabel = result.decodeWarningCount === 1 ? 'packet' : 'packets';
-            logger.warn(
-                `Sample imported after skipping ${String(result.decodeWarningCount)} corrupt audio ${packetLabel}:`,
-                result.decodeWarnings
-            );
-        }
+        warnAboutSkippedAudioPackets(result);
 
         const fileName = basename_from_path(filePath);
         const meta: SampleMeta = {
