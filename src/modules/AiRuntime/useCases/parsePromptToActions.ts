@@ -1303,11 +1303,12 @@ const planPromptIntent = inject({ logger })(
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const inheritedMetricState = metricGoalStateCodec(refinedCard?.approvalSnapshot.metricGoalState);
                 const authorities = [...(inheritedMetricState?.authorities ?? [])];
+                const admittedMetricAuthority = metricAuthority;
                 if (
-                    metricAuthority !== undefined &&
-                    !authorities.some((authority) => authority.authorityId === metricAuthority.authorityId)
+                    admittedMetricAuthority !== undefined &&
+                    !authorities.some((authority) => authority.authorityId === admittedMetricAuthority.authorityId)
                 ) {
-                    authorities.push(metricAuthority);
+                    authorities.push(admittedMetricAuthority);
                 }
                 const metricProofs = collectMetricGoalProof({
                     authorities,

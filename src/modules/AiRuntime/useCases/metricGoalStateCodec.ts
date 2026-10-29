@@ -222,11 +222,12 @@ function authority(entry: unknown, metricIds: readonly string[]): entry is Metri
             'creativeAuthority',
         ]) &&
         authorityIdentity(entry) &&
-        oneOf(entry.kind, ['literal', 'perceptual', 'comparative']) &&
+        oneOf(entry.kind, ['literal', 'non-acoustic', 'perceptual', 'comparative']) &&
         Array.isArray(entry.goals) &&
         entry.goals.every((goalEntry: unknown) => goal(goalEntry, metricIds)) &&
         (entry.creativeAuthority === null || creative(entry.creativeAuthority)) &&
-        (entry.kind !== 'literal' || entry.goals.length === 0) &&
+        ((entry.kind !== 'literal' && entry.kind !== 'non-acoustic') || entry.goals.length === 0) &&
+        (entry.kind !== 'non-acoustic' || entry.creativeAuthority !== null) &&
         configuredIntake(entry)
     );
 }

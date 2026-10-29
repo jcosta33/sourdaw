@@ -38,6 +38,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
@@ -608,6 +609,7 @@ function propose(
             )
         ),
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id,
         prompt: 'color the drums red',
@@ -615,7 +617,8 @@ function propose(
         actions,
         actionLabels: actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         projectRevision,
         matchSelectorPredicates,

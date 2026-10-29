@@ -492,17 +492,19 @@ const MEASURE_AND_RADIO_PROMPT = 'create a jazz MIDI track for 2 measures and ma
 const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
 function beatAndRadioProviderTurns(literal = false): ScriptedTurn[] {
+    let intake: ScriptedTurn = creativeMetricIntakeTurn({
+        modeId: 'create',
+        targetObjectIds: [GUITAR_TRACK_ID],
+        dimensions: ['arrangement', 'midi-content', 'processing'],
+        creationSlotObjectTypes: ['track', 'device'],
+        nestedCreationSlotObjectTypes: ['clip'],
+    });
+    if (literal) {
+        intake = literalMetricIntakeTurn;
+    }
     return [
+        intake,
         () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
-        literal
-            ? literalMetricIntakeTurn
-            : creativeMetricIntakeTurn({
-                  modeId: 'create',
-                  targetObjectIds: [GUITAR_TRACK_ID],
-                  dimensions: ['arrangement', 'midi-content', 'processing'],
-                  creationSlotObjectTypes: ['track', 'device'],
-                  nestedCreationSlotObjectTypes: ['clip'],
-              }),
         (userMessage) => {
             assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
             return [

@@ -413,11 +413,12 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
         criteria: metricEvaluation.criteria.map((criterion) => {
             const names = (ids: readonly string[]) =>
                 ids
-                    .map((id) =>
-                        id === 'master'
-                            ? 'Master output'
-                            : (trackStore.value?.tracks.find((track) => track.id === id)?.name ?? id)
-                    )
+                    .map((id) => {
+                        if (id === 'master') {
+                            return 'Master output';
+                        }
+                        return trackStore.value?.tracks.find((track) => track.id === id)?.name ?? id;
+                    })
                     .map((name) => `“${name}”`)
                     .join(', ');
             let unit = criterion.unit ?? '';

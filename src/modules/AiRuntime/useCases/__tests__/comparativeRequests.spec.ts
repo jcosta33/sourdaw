@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { logger } from '#/infra/logger/appLogger';
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
@@ -128,6 +127,321 @@ afterEach(() => {
 });
 
 describe('actual current-preview comparison approval', () => {
+    it('keeps a literal mute beside an unsupported perceptual gain proposal visible with Confirm blocked', async () => {
+        const prompt = 'mute Vocals and lower Guitar';
+        const runId = 'mixed-literal-perceptual';
+        configureMetricGoalProject({
+            label: runId,
+            tracks: [
+                createTrack({ id: 'vocals', name: 'Vocals', kind: 'audio' }),
+                createTrack({ id: 'guitar', name: 'Guitar', kind: 'audio' }),
+            ],
+            sections: [],
+        });
+        const context = getProjectContext();
+        const revision = captureProjectRevision();
+        const before = {
+            tracks: structuredClone(trackStore.value),
+            undo: structuredClone(undoHistoryStore.value),
+            revision,
+        };
+        expect(agentRunLifecycle.create({ runId, request: prompt, mode: 'apply', createdRevision: revision })).toEqual({
+            status: 'created',
+        });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+        let turn = 0;
+        vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, message, schemas) => {
+            const phase = turn % 3;
+            turn += 1;
+            if (phase === 0) {
+                const catalog = readCreativeInterpretationCatalog(message, schemas);
+                const base = selectCreativeInterpretationCall({
+                    catalog,
+                    modeId: 'edit',
+                    targetObjectIds: ['vocals', 'guitar'],
+                    dimensions: ['processing'],
+                });
+                const schema = schemas.find((entry) => entry.function.name === base.name);
+                if (schema === undefined) {
+                    throw new TypeError('Expected the actual published joint selector.');
+                }
+                const objective = readMetricPublication(schema).find((entry) => entry.kind === 'unsupported');
+                if (objective === undefined) {
+                    throw new TypeError('Expected the actual published unsupported metric objective.');
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            ...base,
+                            id: 'mixed-intake',
+                            arguments: {
+                                ...base.arguments,
+                                answer: null,
+                                metricIntent: {
+                                    kind: 'perceptual',
+                                    uncertainty: 'none',
+                                    objectives: [
+                                        {
+                                            objectiveId: objective.id,
+                                            scopeCandidateId: null,
+                                            referenceScopeCandidateId: null,
+                                            rangeCandidateId: null,
+                                        },
+                                    ],
+                                },
+                            },
+                        },
+                    ],
+                };
+            }
+            if (phase === 1) {
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'mixed-discovery',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['muteTrack', 'setTrackGain'] },
+                        },
+                    ],
+                };
+            }
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'mixed-proposal',
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: [
+                                { name: 'muteTrack', arguments: { trackId: 'vocals', muted: true } },
+                                { name: 'setTrackGain', arguments: { trackId: 'guitar', gain: 0.6 } },
+                            ],
+                            plan: metricGoalProviderPlan(prompt, ['vocals', 'guitar']),
+                        },
+                    },
+                ],
+            };
+        });
+        const planned = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: revision,
+            streamIdentity: { runId, requestId: runId, cancellationGeneration: 0 },
+        });
+        expect(planned.planningOutcome, planned.rejectionReason).toEqual({ kind: 'proposal' });
+        expect(planned.actions.map((action) => action.type)).toEqual(['muteTrack', 'setTrackGain']);
+        expect(metricGoalStateCodec(planned.metricGoalState)?.authorities).toMatchObject([
+            {
+                kind: 'perceptual',
+                goals: [{ relation: 'unsupported' }],
+            },
+        ]);
+        expect(
+            metricGoalStateCodec(planned.metricGoalState)?.authorities[0]?.creativeAuthority?.targets
+        ).toContainEqual(expect.objectContaining({ objectIds: ['guitar'] }));
+        const materialized = materializePromptCommandPlan({
+            userText: prompt,
+            runId,
+            assistantMessageId: runId,
+            interactionMode: 'apply',
+            resume: undefined,
+            onResumedPlanAccepted: undefined,
+            projectRevision: revision,
+            context,
+            result: planned,
+            actionLabels: planned.actions.map((action) => action.type),
+            protectedTargetIds: [],
+        });
+        if (materialized.status !== 'prepared' || materialized.compiledActionExecution.agentApproval === null) {
+            throw new TypeError('Expected the whole mixed plan to remain available for review.');
+        }
+        const compiled = materialized.compiledActionExecution;
+        chatStore.set({
+            messages: [{ id: runId, role: 'assistant', content: prompt, timestamp: 1 }],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        });
+        const confirmationId = persistPromptActionConfirmation({
+            runId,
+            prompt,
+            assistantMessageId: runId,
+            actions: planned.actions,
+            actionLabels: planned.actions.map((action) => action.type),
+            commandEnvelopes: compiled.commandEnvelopes,
+            commandBatch: compiled.commandBatch,
+            agentApproval: compiled.agentApproval,
+            metricGoalState: compiled.metricGoalState,
+            affectedIds: ['vocals', 'guitar'],
+            protectedUnchanged: [],
+            groundingBasis: planned.groundingBasis,
+            executionMode: 'atomic',
+            group: materialized.commandGroup,
+            projectRevision: revision,
+            parsedCommandBatch: materialized.parsedCommandBatch,
+            content: prompt,
+        });
+        if (confirmationId === null) {
+            throw new TypeError('Expected a persisted mixed proposal.');
+        }
+        expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
+        agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
+        expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringMatching(/objective|metric|measure/u),
+        });
+        expect(trackStore.value).toEqual(before.tracks);
+        expect(undoHistoryStore.value).toEqual(before.undo);
+        expect(captureProjectRevision()).toBe(before.revision);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('keeps an unadmitted numeric true-peak constraint visible but blocks Confirm before gain writes', async () => {
+        const prompt = 'Raise Drums by 1 dB while keeping true peak below -1 dBTP';
+        const runId = 'literal-numeric-run';
+        const context = getProjectContext();
+        const revision = captureProjectRevision();
+        expect(agentRunLifecycle.create({ runId, request: prompt, mode: 'apply', createdRevision: revision })).toEqual({
+            status: 'created',
+        });
+        agentRunLifecycle.transitionPhase({ runId, phase: 'planning' });
+
+        let turns = 0;
+        vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+            turns += 1;
+            if (turns === 1) {
+                expect(userMessage).toContain(prompt);
+                expect(JSON.stringify(schemas)).toContain('-1 dBTP');
+                const calls = literalMetricIntakeTurn(userMessage, schemas);
+                expect(calls[0]?.arguments.metricIntent).toEqual({
+                    kind: 'literal',
+                    uncertainty: 'none',
+                    objectives: [],
+                });
+                return { status: 'complete', toolCalls: calls.map((call) => ({ ...call, id: 'numeric-intake' })) };
+            }
+            if (turns === 2) {
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'numeric-discovery',
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['setTrackGain'] },
+                        },
+                    ],
+                };
+            }
+            if (turns === 3) {
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'numeric-proposal',
+                            name: 'command.batch.propose',
+                            arguments: {
+                                commands: [
+                                    {
+                                        name: 'setTrackGain',
+                                        arguments: { trackId: 'drums', deltaDb: 1 },
+                                    },
+                                ],
+                                plan: metricGoalProviderPlan(prompt, ['drums']),
+                            },
+                        },
+                    ],
+                };
+            }
+            throw new Error('The literal numeric route exceeded its three scripted provider turns.');
+        });
+
+        const before = structuredClone(trackStore.value);
+        const planned = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: revision,
+            streamIdentity: { runId, requestId: 'literal-numeric-request', cancellationGeneration: 0 },
+            onMeasurementAttempt: agentWorkBudget.admitMeasurement(runId),
+        });
+        expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
+        expect(planned.actions).toMatchObject([
+            { type: 'setTrackGain', payload: { trackId: 'drums', deltaDb: 1, expectedGain: 0.8 } },
+        ]);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+        expect(audio.renderOfflineInput).not.toHaveBeenCalled();
+
+        const state = metricGoalStateCodec(planned.metricGoalState);
+        expect(state?.authorities).toMatchObject([{ kind: 'literal', goals: [] }]);
+        expect(state?.proofs).toEqual([]);
+        const materialized = materializePromptCommandPlan({
+            userText: prompt,
+            runId,
+            assistantMessageId: 'literal-numeric-assistant',
+            interactionMode: 'apply',
+            resume: undefined,
+            onResumedPlanAccepted: undefined,
+            projectRevision: revision,
+            context,
+            result: { ...planned, requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+            actionLabels: planned.actions.map((action) => action.type),
+            protectedTargetIds: [],
+        });
+        if (materialized.status !== 'prepared' || materialized.compiledActionExecution.agentApproval === null) {
+            throw new Error('Expected a persisted approval card for the literal numeric command.');
+        }
+        const compiled = materialized.compiledActionExecution;
+        expect(
+            evaluateMetricGoalAdmission({
+                state: metricGoalStateCodec(compiled.metricGoalState),
+                commandBatch: compiled.commandBatch,
+                currentRevision: revision,
+            })
+        ).toMatchObject({
+            status: 'blocked',
+            failure: 'missing',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        chatStore.set({
+            messages: [{ id: 'literal-numeric-assistant', role: 'assistant', content: 'Literal plan', timestamp: 1 }],
+            isGenerating: false,
+            enableReasoning: true,
+            chatMode: 'prompt',
+        });
+        const confirmationId = persistPromptActionConfirmation({
+            runId,
+            prompt,
+            assistantMessageId: 'literal-numeric-assistant',
+            actions: planned.actions,
+            actionLabels: planned.actions.map((action) => action.type),
+            commandEnvelopes: compiled.commandEnvelopes,
+            commandBatch: compiled.commandBatch,
+            agentApproval: compiled.agentApproval,
+            metricGoalState: compiled.metricGoalState,
+            affectedIds: ['drums'],
+            protectedUnchanged: [],
+            groundingBasis: planned.groundingBasis,
+            executionMode: 'atomic',
+            group: materialized.commandGroup,
+            projectRevision: revision,
+            parsedCommandBatch: materialized.parsedCommandBatch,
+            content: 'Raise Drums by 1 dB while keeping true peak below -1 dBTP',
+        });
+        if (confirmationId === null) {
+            throw new Error('The actual pending confirmation was not persisted.');
+        }
+        expect(getAgentApprovalView({ confirmationId })?.canConfirm).toBe(false);
+        agentRunLifecycle.transitionPhase({ runId, phase: 'waiting-for-approval' });
+        expect(await confirmPendingChatActions({ confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(trackStore.value).toEqual(before);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
     it.each([
         'matched',
         'reference-changed',
@@ -295,10 +609,14 @@ describe('actual current-preview comparison approval', () => {
                     commands: [],
                     compiledCallIds: ['comparison-preview'],
                 };
+                let targetIds = ['drums-trim'];
                 if (mode === 'unsupported-fader') {
                     argumentsValue = {
                         commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', gain: 0.4 } }],
                     };
+                    targetIds = ['drums'];
+                } else if (mode === 'reference-changed') {
+                    targetIds = ['drums-trim', 'bass-trim'];
                 }
                 return {
                     status: 'complete',
@@ -308,14 +626,7 @@ describe('actual current-preview comparison approval', () => {
                             name: 'command.batch.propose',
                             arguments: {
                                 ...argumentsValue,
-                                plan: metricGoalProviderPlan(
-                                    prompt,
-                                    mode === 'unsupported-fader'
-                                        ? ['drums']
-                                        : mode === 'reference-changed'
-                                          ? ['drums-trim', 'bass-trim']
-                                          : ['drums-trim']
-                                ),
+                                plan: metricGoalProviderPlan(prompt, targetIds),
                             },
                         },
                     ],
@@ -422,8 +733,54 @@ describe('actual current-preview comparison approval', () => {
                 failure: mode === 'reference-changed' ? 'out-of-tolerance' : 'incomparable',
             });
             expect(compiled.requiresConfirmation).toBe(true);
-            const refused = await executeVersionedCommandBatchEnvelope(compiled.commandBatch);
-            expect(refused.status).toBe('rejected');
+            if (mode === 'reference-changed') {
+                if (compiled.agentApproval === null) {
+                    throw new Error('Expected approval');
+                }
+                chatStore.set({
+                    messages: [
+                        { id: 'comparison-assistant', role: 'assistant', content: 'Comparison plan', timestamp: 1 },
+                    ],
+                    isGenerating: false,
+                    enableReasoning: true,
+                    chatMode: 'prompt',
+                });
+                const id = persistPromptActionConfirmation({
+                    runId: RUN_ID,
+                    prompt,
+                    assistantMessageId: 'comparison-assistant',
+                    actions: planned.actions,
+                    actionLabels: planned.actions.map((action) => action.type),
+                    commandEnvelopes: compiled.commandEnvelopes,
+                    commandBatch: compiled.commandBatch,
+                    agentApproval: compiled.agentApproval,
+                    metricGoalState: compiled.metricGoalState,
+                    affectedIds: ['drums', 'bass'],
+                    protectedUnchanged: [],
+                    groundingBasis: planned.groundingBasis,
+                    executionMode: 'atomic',
+                    group: materialized.commandGroup,
+                    projectRevision: revision,
+                    parsedCommandBatch: materialized.parsedCommandBatch,
+                    content: 'Compare Drums with Bass',
+                });
+                if (id === null) {
+                    throw new Error('Expected persisted comparison');
+                }
+                expect(getAgentApprovalView({ confirmationId: id })?.canConfirm).toBe(false);
+                agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'waiting-for-approval' });
+                const writesBefore = audio.updateDeviceParam.mock.calls.length;
+                const refused = await confirmPendingChatActions({ confirmationId: id });
+                expect(refused).toMatchObject({
+                    status: 'failed',
+                    reason: expect.stringContaining('Actual preview measurements do not satisfy'),
+                });
+                expect(audio.updateDeviceParam.mock.calls.length).toBe(writesBefore);
+                expect(captureProjectRevision()).toBe(revision);
+            } else {
+                const refused = await executeVersionedCommandBatchEnvelope(compiled.commandBatch);
+                expect(refused.status).toBe('rejected');
+            }
             expect(trackStore.value).toEqual(before.tracks);
             expect(undoHistoryStore.value).toEqual(before.undo);
             return;

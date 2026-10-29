@@ -26,12 +26,15 @@ export function validateAgentRiskApproval(input: ValidateAgentRiskApprovalInput)
         return { status: 'invalid', reason: 'The approved source revision is stale.', stale: true };
     }
     const serializedGoals = input.approval.metricGoalState ?? null;
-    const pending = pendingActionConfirmationStore.value?.confirmations.find((confirmation) =>
-        input.confirmationId === undefined
-            ? (confirmation.status === 'proposed' || confirmation.status === 'accepted') &&
-              confirmation.approvalSnapshot.commandBatch?.serialized === input.commandBatch.serialized
-            : confirmation.id === input.confirmationId
-    );
+    const pending = pendingActionConfirmationStore.value?.confirmations.find((confirmation) => {
+        if (input.confirmationId !== undefined) {
+            return confirmation.id === input.confirmationId;
+        }
+        return (
+            (confirmation.status === 'proposed' || confirmation.status === 'accepted') &&
+            confirmation.approvalSnapshot.commandBatch?.serialized === input.commandBatch.serialized
+        );
+    });
     if (
         input.confirmationId !== undefined &&
         (pending === undefined ||

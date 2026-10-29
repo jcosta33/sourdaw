@@ -7,6 +7,7 @@ import { type AnswerInterpretationCatalog } from '../models/AnswerInterpretation
 
 import { expandMixRecipe } from './expandMixRecipe';
 import { type MetricGoal } from './metricGoalContractTypes';
+import { readRequestMetricNumbers } from './readRequestMetricNumbers';
 
 type Objective = {
     id: string;
@@ -179,34 +180,23 @@ function recipeObjectives(
 
 function numericObjectives(prompt: string, allScopeIds: string[]): Objective[] {
     const objectives: Objective[] = [];
-    const numericMetrics = new Map([
-        ['LUFS', 'integratedLoudness'],
-        ['dBTP', 'truePeak'],
-        ['dBFS', 'rms'],
-        ['Hz', 'spectralCentroid'],
-    ] as const);
-    for (const match of prompt.matchAll(/(?<![\w.])(-?\d+(?:\.\d+)?)\s*(LUFS|dBTP|dBFS|Hz)\b/gu)) {
-        const value = Number(match[1]);
-        const metricId = [...numericMetrics].find(([unit]) => unit === match[2])?.[1];
-        if (!Number.isFinite(value) || metricId === undefined) {
-            continue;
-        }
-        const id = `number:${String(match.index)}`;
+    for (const number of readRequestMetricNumbers(prompt)) {
+        const id = number.candidateId;
         objectives.push({
             id,
-            label: match[0],
+            label: number.token,
             eligibleScopeIds: allScopeIds,
             defaultScopeIds: allScopeIds,
             roles: [],
             goals: [
                 {
-                    metricId,
-                    metricName: metricId,
+                    metricId: number.metricId,
+                    metricName: number.metricId,
                     band: null,
                     relation: 'target',
-                    targetValue: value,
+                    targetValue: number.value,
                     tolerance: 0,
-                    source: { kind: 'request-number', candidateId: id, token: match[0] },
+                    source: { kind: 'request-number', candidateId: id, token: number.token },
                 },
             ],
         });

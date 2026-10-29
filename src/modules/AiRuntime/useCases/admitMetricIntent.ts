@@ -35,7 +35,7 @@ function intentValue(value: unknown): value is IntentValue {
         record(value) &&
         Object.keys(value).length === 3 &&
         ['kind', 'objectives', 'uncertainty'].every((key) => Object.hasOwn(value, key)) &&
-        oneOf(value.kind, ['literal', 'perceptual', 'comparative']) &&
+        oneOf(value.kind, ['literal', 'non-acoustic', 'perceptual', 'comparative']) &&
         Array.isArray(value.objectives) &&
         value.objectives.length <= MAX_LLM_ACTIONS_PER_BATCH &&
         oneOf(value.uncertainty, ['none', 'meaning', 'target', 'range'])
@@ -49,10 +49,16 @@ function semanticIntentRefusal(value: IntentValue, authority: CreativeRequestAut
             reason: 'The whole request needs an unambiguous objective, subject and range before approval.',
         };
     }
-    if (value.kind === 'literal' && value.objectives.length !== 0) {
-        return { status: 'rejected', reason: 'A literal intake cannot carry acoustic objectives.' };
+    if ((value.kind === 'literal' || value.kind === 'non-acoustic') && value.objectives.length > 0) {
+        return { status: 'rejected', reason: 'An intake without acoustic intent cannot carry acoustic objectives.' };
     }
-    if (value.kind !== 'literal' && (value.objectives.length === 0 || authority === null)) {
+    if (value.kind === 'non-acoustic' && authority === null) {
+        return { status: 'rejected', reason: 'Non-acoustic creative intent requires bounded creative authority.' };
+    }
+    if (
+        (value.kind === 'perceptual' || value.kind === 'comparative') &&
+        (value.objectives.length === 0 || authority === null)
+    ) {
         return {
             status: 'rejected',
             reason: 'A perceptual intake requires bounded creative authority and a published objective.',
@@ -133,16 +139,18 @@ function selectedGoals({ candidate, scope, reference, range }: SelectionCandidat
                 stepId = `recipe:${goal.source.recipeId}:${targetIds[0] ?? 'unavailable'}`;
             }
             const { metricName: _metricName, ...frozenGoal } = goal;
+            const referenceTargetIds = reference?.objectIds ?? [];
+            let selectedRange: MetricGoal['range'] = null;
+            if (range !== undefined) {
+                selectedRange = { startBeat: range.startBeat, endBeat: range.endBeat, sectionId: range.sectionId };
+            }
             goals.push({
                 ...structuredClone(frozenGoal),
                 goalId: `${String(index)}:${String(targetIndex)}:${String(expectationIndex)}`,
                 stepId,
                 targetIds,
-                referenceTargetIds: [...(reference?.objectIds ?? [])],
-                range:
-                    range === undefined
-                        ? null
-                        : { startBeat: range.startBeat, endBeat: range.endBeat, sectionId: range.sectionId },
+                referenceTargetIds: [...referenceTargetIds],
+                range: selectedRange,
             });
         }
     }
@@ -175,7 +183,7 @@ export function admitMetricIntent(
         goals.push(...selectedGoals(resolved.candidates, index));
     }
     const kind = value.kind;
-    if (kind !== 'literal' && kind !== 'perceptual' && kind !== 'comparative') {
+    if (kind !== 'literal' && kind !== 'non-acoustic' && kind !== 'perceptual' && kind !== 'comparative') {
         return { status: 'rejected', reason: 'Metric intent has no semantic kind.' };
     }
     return {

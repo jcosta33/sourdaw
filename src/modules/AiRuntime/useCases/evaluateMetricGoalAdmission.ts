@@ -1,14 +1,19 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { getExecutableAppActionEffect, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MetricGoalEvaluation, type MetricGoalProof } from '../models/MetricGoalAdmission';
 
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
+import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
+import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
+import { readRequestMetricNumbers, type RequestMetricNumber } from './readRequestMetricNumbers';
+import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
 
 type AdmissionInput = {
     state: MetricGoalState | null | undefined;
@@ -26,6 +31,149 @@ type ObservableMetric = Pick<MetricGoal, 'band'> & {
     metricId: NonNullable<MetricGoal['metricId']>;
     range: NonNullable<MetricGoal['range']>;
 };
+
+function coversToken(request: string, name: string, candidate: RequestMetricNumber): boolean {
+    if (name.length === 0 || !name.includes(candidate.token)) {
+        return false;
+    }
+    for (const match of request.matchAll(new RegExp(escapeRegExp(name), 'giu'))) {
+        if (
+            candidate.start >= match.index &&
+            candidate.start + candidate.token.length <= match.index + match[0].length
+        ) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function numericLiteralWitness(
+    candidate: RequestMetricNumber,
+    envelope: Envelope,
+    usedArguments: Set<string>
+): boolean {
+    const tracks = trackStore.value?.tracks ?? [];
+    const namedObjects = tracks.flatMap((track) => [
+        { id: track.id, name: track.name },
+        ...track.clips.map((clip) => ({ id: clip.id, name: clip.name })),
+        ...track.devices.map((device) => ({ id: device.id, name: device.name ?? '' })),
+    ]);
+    for (const command of envelope.commands) {
+        const referencedIds = new Set(command.objectReferences.map((reference) => reference.id));
+        if (
+            namedObjects.some(
+                (object) => referencedIds.has(object.id) && coversToken(envelope.intent, object.name, candidate)
+            )
+        ) {
+            return true;
+        }
+        const newName = command.arguments.name;
+        if (typeof newName === 'string' && coversToken(envelope.intent, newName, candidate)) {
+            return true;
+        }
+        const clause = getPromptClauses(envelope.intent, envelope.intent).find(
+            (entry) => candidate.start >= entry.start && candidate.start < entry.end
+        );
+        const names = tracks.flatMap((track) => {
+            if (
+                referencedIds.has(track.id) ||
+                track.devices.some((device) => referencedIds.has(device.id)) ||
+                track.clips.some((clip) => referencedIds.has(clip.id))
+            ) {
+                return [
+                    track.name,
+                    ...namedObjects.filter((object) => referencedIds.has(object.id)).map((object) => object.name),
+                ];
+            }
+            return [];
+        });
+        if (clause === undefined) {
+            continue;
+        }
+        const normalizedClause = ` ${normalizeAgentReferenceText(clause.text)} `;
+        const namedTarget = names.some((name) => {
+            const normalizedName = normalizeAgentReferenceText(name);
+            return normalizedName.length > 0 && normalizedClause.includes(` ${normalizedName} `);
+        });
+        if (!namedTarget) {
+            continue;
+        }
+        const argumentKey = `${command.commandId}:${candidate.unit}`;
+        if (usedArguments.has(argumentKey)) {
+            continue;
+        }
+        if (
+            candidate.unit === 'LUFS' &&
+            command.operation === 'normalizeClip' &&
+            command.arguments.mode === 'lufs' &&
+            command.arguments.targetDb === candidate.value
+        ) {
+            usedArguments.add(argumentKey);
+            return true;
+        }
+        if (
+            candidate.unit === 'Hz' &&
+            command.operation === 'setDeviceParameter' &&
+            command.arguments.value === candidate.value &&
+            command.parameterUnits.some((entry) => entry.argument === 'value' && entry.unit === 'Hz')
+        ) {
+            usedArguments.add(argumentKey);
+            return true;
+        }
+    }
+    return false;
+}
+
+function unaccountedNumericRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
+    const selected = state.authorities.flatMap((authority) => authority.goals);
+    const usedArguments = new Set<string>();
+    for (const candidate of readRequestMetricNumbers(envelope.intent)) {
+        const selectedGoal = selected.find(
+            (goal) =>
+                goal.source.kind === 'request-number' &&
+                goal.source.candidateId === candidate.candidateId &&
+                goal.source.token === candidate.token &&
+                goal.metricId === candidate.metricId &&
+                goal.targetValue === candidate.value &&
+                goal.relation === 'target' &&
+                goal.tolerance === 0
+        );
+        if (selectedGoal === undefined && !numericLiteralWitness(candidate, envelope, usedArguments)) {
+            return {
+                failure: 'missing',
+                reason: `The request's ${candidate.token} candidate has no selected metric goal or grounded literal use.`,
+            };
+        }
+    }
+    return null;
+}
+
+function nonAcousticScopeRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
+    if (!state.authorities.some((authority) => authority.kind === 'non-acoustic')) {
+        return null;
+    }
+    const invalidAuthority = state.authorities.some(
+        (authority) =>
+            authority.kind === 'non-acoustic' &&
+            (authority.creativeAuthority === null || authority.creativeAuthority.editDimensions.includes('processing'))
+    );
+    const acousticEffect = envelope.commands.some((command) => {
+        const effect = getExecutableAppActionEffect(command.operation);
+        return (
+            effect === null ||
+            effect.dimensions.some((dimension) =>
+                ['processing', 'clip-audio', 'master', 'monitoring'].includes(dimension)
+            )
+        );
+    });
+    if (invalidAuthority || acousticEffect) {
+        return {
+            failure: 'missing',
+            reason: 'A non-acoustic creative intake cannot exempt an acoustic processing plan from measured goals.',
+        };
+    }
+    return null;
+}
 
 function blocked(criteria: Criterion[], refusal: Refusal): MetricGoalEvaluation {
     return { status: 'blocked', ...refusal, criteria };
@@ -170,6 +318,9 @@ function scopeContains(
         return id === 'master' && kind === 'master' && preview.targets.length === 1;
     }
     const scope = preview.scope;
+    if (scope.kind !== 'tracks' && scope.kind !== 'buses') {
+        return false;
+    }
     return (
         scope.ids.includes(id) &&
         scope.ids.length === preview.targets.length &&
@@ -231,9 +382,10 @@ function proofFigure(
         return null;
     }
     const target = compatibleProofTarget(preview, provenance, targetId);
-    return target === null
-        ? null
-        : objectiveMetricProjection(metric.metricId, target[side][metric.metricId], metric.band);
+    if (target === null) {
+        return null;
+    }
+    return objectiveMetricProjection(metric.metricId, target[side][metric.metricId], metric.band);
 }
 
 function observation(
@@ -306,7 +458,7 @@ function goalReferences(
         reference.push(figure.value);
     }
     if (
-        goal.referenceTargetIds.length !== 0 &&
+        goal.referenceTargetIds.length > 0 &&
         goal.referenceTargetIds.length !== 1 &&
         goal.referenceTargetIds.length !== goal.targetIds.length
     ) {
@@ -376,10 +528,12 @@ function evaluateCriterion(
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null } {
     const { binding } = context;
-    const prefix =
-        goal.stepId === 'overall'
-            ? { stepId: 'overall', before: null, after: binding.contentHash }
-            : binding.prefixes.find((entry) => entry.stepId === goal.stepId);
+    let prefix: Binding['prefixes'][number] | undefined = binding.prefixes.find(
+        (entry) => entry.stepId === goal.stepId
+    );
+    if (goal.stepId === 'overall') {
+        prefix = { stepId: 'overall', before: null, after: binding.contentHash };
+    }
     let values: {
         baseline: number[];
         observed: number[];
@@ -433,7 +587,20 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
         return blocked(criteria, bound.refusal);
     }
     const binding = bound.binding;
-    if (state.authorities.every((authority) => authority.kind === 'literal' && authority.goals.length === 0)) {
+    const unaccounted = unaccountedNumericRefusal(state, parsed.envelope);
+    if (unaccounted !== null) {
+        return blocked(criteria, unaccounted);
+    }
+    const nonAcousticScope = nonAcousticScopeRefusal(state, parsed.envelope);
+    if (nonAcousticScope !== null) {
+        return blocked(criteria, nonAcousticScope);
+    }
+    if (
+        state.authorities.every(
+            (authority) =>
+                (authority.kind === 'literal' || authority.kind === 'non-acoustic') && authority.goals.length === 0
+        )
+    ) {
         return { status: 'not-required', failure: null, reason: null, criteria };
     }
     const goals = state.authorities.flatMap((authority) => authority.goals);

@@ -32,6 +32,8 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
@@ -143,6 +145,10 @@ describe('transform.compile Command approval', () => {
 
     it('previews without mutation, commits on approval, and undoes the selected transform', async () => {
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -242,6 +248,10 @@ describe('transform.compile Command approval', () => {
             ],
         };
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => ({
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+            }))
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [

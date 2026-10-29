@@ -54,6 +54,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 
 const PROMPT =
     'On every selected MIDI clip, shorten only overlaps strictly below 30 ms and leave overlaps exactly at or above 30 ms unchanged.';
@@ -353,7 +355,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -388,12 +390,15 @@ function createFinalProviderCalls(userMessage: string): ProviderCall[] {
 
 function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (turn === 1) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (turn === 2) {
             const discoveryCalls = withWorkflowCapabilitySelection(
                 'midi-overlap-shortening',
                 asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
@@ -446,11 +451,15 @@ function useHostedFixture(): void {
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
         const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(literalMetricIntakeTurn(userMessage, request.tools)));
+        }
+        if (turn === 2) {
             const discoveryCalls = withWorkflowCapabilitySelection(
                 'midi-overlap-shortening',
                 asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
@@ -575,7 +584,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
 
     it('routes a semantic paraphrase to the MIDI-overlap capability', async () => {
         await sendChatMessage(PARAPHRASE);
-        expect(getConfirmationId()).not.toBe('');
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
     });
 
     it('confirms and commits only sub-30 ms same-pitch/channel overlaps as one guarded history group', async () => {
@@ -739,7 +748,7 @@ describe('EX-04 selected MIDI overlap prompt workflow', () => {
             type: 'removeShortMidiOverlaps',
             payload: { clipId: 'clip-strings', maximumOverlapMs: 30 },
         });
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
     });
 
     it.each([

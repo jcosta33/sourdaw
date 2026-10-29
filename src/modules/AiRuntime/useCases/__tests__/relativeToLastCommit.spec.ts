@@ -50,6 +50,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 /**
  * AC-003 (#4380): a request relative to the thread's last commit compiles a new batch from the
@@ -79,6 +80,8 @@ const runtimeMocks = vi.hoisted(() => ({
     setTrackPan: vi.fn(),
     setTrackSoloGate: vi.fn(),
 }));
+
+const scriptState = { requestTurn: 0, planningTurn: 0 };
 
 type GroupRevert = Awaited<ReturnType<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>>;
 type GroupRevertOptions = Parameters<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>[1];
@@ -213,27 +216,36 @@ function asCommandBatchProposal(calls: readonly ProviderCall[]): ProviderCall {
 }
 
 /**
- * Each planning run the provider answers is a discovery turn and a proposal turn; the runs take the
- * plans in order, and any later run takes the last plan again.
+ * The first provider turn admits the whole request; subsequent planning attempts discover command
+ * schemas and propose. The attempts take the plans in order, and later attempts repeat the last plan.
  */
 function scriptProvider(plans: ReadonlyArray<readonly ProviderCall[]>): void {
-    let turn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {
-        turn += 1;
-        const plan = plans[Math.min(Math.floor((turn - 1) / 2), plans.length - 1)];
+    scriptState.requestTurn = 0;
+    scriptState.planningTurn = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation(async (systemPrompt: string, userMessage: string) => {
+        if (scriptState.requestTurn === 0) {
+            scriptState.requestTurn += 1;
+            return JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt));
+        }
+        scriptState.requestTurn += 1;
+        const plan = plans[Math.min(Math.floor(scriptState.planningTurn / 2), plans.length - 1)];
         if (plan === undefined) {
             throw new Error('Expected a scripted planning run.');
         }
-        if (turn % 2 === 1) {
+        if (scriptState.planningTurn % 2 === 0) {
+            scriptState.planningTurn += 1;
             const names = [...new Set(plan.map((call) => call.name))];
             return JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }]);
         }
+        scriptState.planningTurn += 1;
         return JSON.stringify([asCommandBatchProposal(plan)]);
     });
 }
 
 async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
     flushAutomergeStorageWrites();
+    // Each chat request has its own required first-turn intake; planning corrections stay scripted in sequence.
+    scriptState.requestTurn = 0;
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
 
@@ -1603,6 +1615,7 @@ describe('relative to the last commit', () => {
             await commitVocalsDown3Db();
             const calls = providerCallCount();
 
+            scriptState.requestTurn = 0;
             await submitAdmittedPromptRequest({ prompt: 'undo that', source: 'prompt-bar' });
 
             expect(providerCallCount()).toBeGreaterThan(calls);

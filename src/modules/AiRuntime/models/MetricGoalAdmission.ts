@@ -50,7 +50,7 @@ export type MetricRequestAuthority<MetricId extends string> = {
     readonly revision: string;
     readonly projectId: string;
     readonly selection: CreativeSelectionSnapshot;
-    readonly kind: 'literal' | 'perceptual' | 'comparative';
+    readonly kind: 'literal' | 'non-acoustic' | 'perceptual' | 'comparative';
     readonly goals: readonly MetricGoal<MetricId>[];
     readonly creativeAuthority: CreativeRequestAuthority | null;
 };
@@ -61,25 +61,6 @@ export type MetricGoalStep = {
     readonly operationTypes: readonly string[];
     /** Exact cumulative commands compiled from successful authored expansions; null for an overall policy. */
     readonly recipePrefixHash: string | null;
-};
-
-/** Only a successful, bounded producer projection can supply these render identities. */
-export type MetricPreviewProvenance = {
-    readonly origin: 'planner' | 'approval-preview';
-    readonly callId: string;
-    readonly turn: number;
-    readonly runId: string;
-    readonly targets: readonly {
-        readonly targetId: string;
-        readonly baseline: {
-            readonly route: 'mixdown' | 'isolated-subgraph';
-            readonly artifact: { readonly contentAddress: string };
-        };
-        readonly preview: {
-            readonly route: 'mixdown' | 'isolated-subgraph';
-            readonly artifact: { readonly contentAddress: string };
-        };
-    }[];
 };
 
 export type MetricGoalProof = {

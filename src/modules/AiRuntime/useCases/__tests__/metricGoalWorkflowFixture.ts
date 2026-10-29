@@ -22,6 +22,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 
 import { chatStore } from '../../stores/chatStore';
 import { clearPendingActionConfirmations } from '../../stores/pendingActionConfirmationStore';
+import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
@@ -34,6 +35,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
 import {
     type ScriptedTurn,
     readCreativeInterpretationCatalog,
@@ -44,7 +46,7 @@ function object(value: unknown): Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Expected a published object.');
     }
-    return value;
+    return value as Record<string, unknown>;
 }
 function array(value: unknown): unknown[] {
     if (!Array.isArray(value)) {
@@ -270,6 +272,33 @@ export const literalMetricIntakeTurn: ScriptedTurn = (userMessage, providerView)
         },
     ];
 };
+
+/** A fixture declares creative work with no acoustic claim; the provider still consumes live candidate ids. */
+export function nonAcousticMetricIntakeTurn(input: {
+    modeId: 'edit' | 'create';
+    targetObjectIds?: readonly string[];
+    dimensions?: readonly string[];
+    creationSlotObjectTypes?: readonly string[];
+    nestedCreationSlotObjectTypes?: readonly string[];
+}): ScriptedTurn {
+    return (userMessage, providerView) => {
+        const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+        const base = selectCreativeInterpretationCall({ catalog, ...input });
+        const call = {
+            ...base,
+            arguments: {
+                ...base.arguments,
+                answer: null,
+                metricIntent: { kind: 'non-acoustic', uncertainty: 'none', objectives: [] },
+            },
+        };
+        const schema = advertisedAnswerSchema(providerView);
+        if (!matchesJsonSchema(call.arguments, schema.parameters)) {
+            throw new TypeError('The declared non-acoustic intake does not match the published selector.');
+        }
+        return [call];
+    };
+}
 
 /** Call only for an explicitly authored whole literal fixture; batch shape never classifies intent. */
 export function configuredLiteralMetricState(commandBatch: {

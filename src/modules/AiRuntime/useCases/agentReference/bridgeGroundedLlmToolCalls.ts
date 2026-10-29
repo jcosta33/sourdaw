@@ -7897,7 +7897,15 @@ function bridgeUnrefinedLlmToolCalls(
                       )
                       .map((candidate) => candidate.arguments)
                 : undefined;
-        const creativeAdmission = creativeAdmissionsByCallIndex?.get(index);
+        const effect = getExecutableAppActionEffect(call.name);
+        // A mixed request may state literal transport or monitoring controls beside creative work.
+        // These effects confer no creative authority: ordinary grounding must prove the command,
+        // target and value, and a read-only interpretation still forbids every write.
+        const ordinaryLiteralControl =
+            creativeAuthority?.mode !== 'read-only' &&
+            effect?.dimensions.length === 1 &&
+            (effect.dimensions[0] === 'project-timing' || effect.dimensions[0] === 'monitoring');
+        const creativeAdmission = ordinaryLiteralControl ? undefined : creativeAdmissionsByCallIndex?.get(index);
         const createdTargetIntent = getExplicitCreatedTargetIntent({
             bindings: visibleBindings,
             call,
