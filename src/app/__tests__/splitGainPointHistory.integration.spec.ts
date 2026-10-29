@@ -57,8 +57,8 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { productionBriefActionBatchAdmission } from '#/modules/Project/useCases';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
-import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
+import { getYeastHandlers } from '#/modules/Yeast/useCases';
 import {
     type ConfirmPayload,
     type NotifyPayload,
