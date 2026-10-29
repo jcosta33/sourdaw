@@ -501,6 +501,12 @@ last-owner case, the old input must stop. Neither case may recreate `a`'s strip 
 permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
 and capture. Testing deletion and selector changes separately misses this authority crossing.
 
+## Lesson from direct commit 61adb8: redetection dropped locked automatic markers
+
+Commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised to preserve locked markers, but its predicate retained only markers whose origin was not `transient-auto`, dropping locked automatic rows too. The original preservation fixture covered a user row and an unlocked automatic row, so it could not expose that loss. Current main retains `locked === true` rows and suppresses detections within `1e-3` of a retained original beat (PR #5515).
+
+Exercise real Detect, sensitivity re-detection and the registered Command with a moved locked automatic row beside user, grid and unlocked automatic rows. Require the exact ID, original and warped beats, lock and confidence to survive in raw CRDT and projected state. Vary the input or sensitivity so redetection changes the detected population; visible counts, draws and hit state must reflect that new projection, while other clips and source PCM remain unchanged. Then unlock that same held automatic marker and detect again; the marker must be replaceable, so retaining it after unlock fails the control. Independently remove locked-row retention and equal/near-hit suppression; the row-preservation and collision probes must each fail. This is source-and-fixture guidance only: it claims no Worker or performance acceptance, new runtime test, or full #4630 acceptance.
+
 ## Lesson from the PR #645 selected-range undo escape
 
 PR #645 made selected-range deletion retain prepared publication handles for durable Undo. Ordinary CRDT settlement

@@ -12033,9 +12033,10 @@ mod tests {
         /// (`ConvolutionProcessor::process_stereo` returns early when no body
         /// is chosen), so the stage would be named and never run.
         ///
-        /// Eight 512-frame callbacks, because this patch reports 2048 samples
-        /// of latency (band 1's spectral window is the deepest, and `Parallel`
-        /// pads every band and the dry tap out to the worst case), so a
+        /// Both patches select Parallel explicitly, independent of the engine
+        /// default. Eight 512-frame callbacks, because this patch reports 2048
+        /// samples of latency (band 1's spectral window is the deepest, and
+        /// `Parallel` pads every band and the dry tap out to the worst case), so a
         /// single callback would render nothing but the alignment rings
         /// filling and the assertions below would pass against silence. The
         /// precondition below checks the 2048 figure directly rather than
@@ -12044,9 +12045,9 @@ mod tests {
         /// The oracle is a second render of the identical graph, built from a
         /// patch that repeats every name `BacteriaEngine::latency_samples`
         /// and `realign_bands` read to size a band's delay —
-        /// `bandCount`, `band0_oversampling`, `band0_distortionMode`,
-        /// `band0_codecArtifact`, `band1_spectralEnabled` and
-        /// `band0_convolutionIr` — so both patches drive every band to the
+        /// `globalRouting`, `bandCount`, `band0_oversampling`,
+        /// `band0_distortionMode`, `band0_codecArtifact`,
+        /// `band1_spectralEnabled` and `band0_convolutionIr` — so both patches drive every band to the
         /// same reported delay; the precondition below proves that equality
         /// rather than assuming it. `band1_spectralEnabled` in particular has
         /// to stay on in both patches, not off: it is the one enable flag
@@ -12090,6 +12091,7 @@ mod tests {
 
             let material = bacteria_guard_material(RENDERED);
             let patch_engaged = bacteria_guard_writes(&[
+                ("globalRouting", 1.0),
                 ("bandCount", 2.0),
                 ("band0_distortionEnabled", 1.0),
                 ("band0_drive", 8.0),
@@ -12107,13 +12109,14 @@ mod tests {
                 ("band1_grainMix", 1.0),
             ]);
             // Repeats every latency-moving name from `patch_engaged` at the
-            // same value — `bandCount`, `band0_oversampling`,
+            // same value — `globalRouting`, `bandCount`, `band0_oversampling`,
             // `band0_distortionMode`, `band0_codecArtifact`,
             // `band1_spectralEnabled`, `band0_convolutionIr` — and every
             // other stage's enable flag at the same value too, so the only
             // differences left are the four wet-only controls the doc above
             // names.
             let patch_muted = bacteria_guard_writes(&[
+                ("globalRouting", 1.0),
                 ("bandCount", 2.0),
                 ("band0_distortionEnabled", 1.0),
                 ("band0_drive", 0.0),
