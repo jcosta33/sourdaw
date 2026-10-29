@@ -1037,6 +1037,55 @@ describe('project directory save and cold Recent open', () => {
         expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
     }, 70_000);
 
+    it('roundtrips distinct frozen PCM and its raw reference through a directory cold reopen', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const ordinarySamples = Array.from(
+            runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })!.getChannelData(0)
+        );
+        const render = await import('#/modules/Arrangement/useCases/freezeBounce/renderOffline');
+        const frozenSamples = new Float32Array([0.125, -0.25, 0.75, -0.625]);
+        const freezeId = 'freeze-directory-distinct';
+        vi.spyOn(render, 'renderTrackOffline').mockResolvedValueOnce(makePcm(frozenSamples));
+        expect(await runtime.arrangement.freezeTrack(runtime.clip.trackId, freezeId)).toBe(true);
+        expect(freezeId).not.toBe(runtime.clip.audioBufferId);
+        const readFrozenTrack = () =>
+            runtime.arrangementStores.trackStore.value?.tracks.find((track) => track.id === runtime.clip.trackId);
+        expect(readFrozenTrack()?.freezeState).toMatchObject({ status: 'frozen', frozenBufferId: freezeId });
+        expect(await runtime.project.saveProject()).toBe(true);
+        const { projectDirectory } = await import('../../../../repositories/project/projectDirectory');
+        const saved = await projectDirectory.read(runtime.directory, runtime.projectId);
+        expect(saved.pcm.has(runtime.clip.audioBufferId!)).toBe(true);
+        expect(saved.pcm.has(freezeId)).toBe(true);
+        const readRawFrozenReference = () => {
+            const raw = runtime.crdt.getCrdtDoc<{
+                tracks: { tracks: Array<{ id: string; freezeState: { frozenBufferId?: string } }> };
+            }>(runtime.crdt.DOC_PREFIX_ROOT);
+            if (!raw) throw new Error('Expected the actual raw project root');
+            return runtime.automerge.toJS(raw).tracks.tracks.find((track) => track.id === runtime.clip.trackId)
+                ?.freezeState.frozenBufferId;
+        };
+        expect(readRawFrozenReference()).toBe(freezeId);
+        await runtime.audio.clearRuntimeCachedAudioBuffers();
+        expect(runtime.audio.getCachedAudioBuffer({ bufferId: freezeId })).toBeNull();
+        runtime.crdt.resetCrdtProjectAuthority('Cold boot');
+        runtime.helpers.resetModuleStoresToDefault();
+        await expect(runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).resolves.toBe(
+            true
+        );
+        expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+        expect(readFrozenTrack()?.freezeState).toMatchObject({ status: 'frozen', frozenBufferId: freezeId });
+        expect(readRawFrozenReference()).toBe(freezeId);
+        expect(Array.from(runtime.audio.getCachedAudioBuffer({ bufferId: freezeId })!.getChannelData(0))).toEqual(
+            Array.from(frozenSamples)
+        );
+        expect(
+            Array.from(runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })!.getChannelData(0))
+        ).toEqual(ordinarySamples);
+        const { audioBufferCache } = await import('#/modules/AudioEngine/stores');
+        const exported = await audioBufferCache.exportBuffers([freezeId]);
+        expect(exported[freezeId]?.freezeProjectId).toBe(runtime.projectStores.projectStore.value?.createdAt);
+    }, 70_000);
+
     it('keeps real saved clip Undo and Redo executable after a directory boot reopen', async () => {
         const runtime = await createSavedDirectoryProject();
         const originalStart = runtime.clip.startBeat;

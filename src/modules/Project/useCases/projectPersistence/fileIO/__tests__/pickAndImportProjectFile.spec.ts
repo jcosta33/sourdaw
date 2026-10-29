@@ -194,6 +194,83 @@ describe('pickAndImportProjectFile', () => {
         );
     });
 
+    it.each(['missing', 'extra'] as const)(
+        'refuses an archive with %s originals before restoring or replacing the open project',
+        async (mismatch) => {
+            const bytes = new Uint8Array([1, 2, 3, 4]);
+            const hash = `sha256:${'1'.repeat(64)}`;
+            const data = {
+                version: 2,
+                meta: {
+                    projectId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+                    name: 'Imported original',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    keyRoot: 0,
+                    scaleName: 'Major',
+                    tuning: { name: '12-TET', frequencies: [] },
+                },
+                arrangement: {
+                    tracks: [
+                        {
+                            id: 'track',
+                            name: 'Audio',
+                            kind: 'audio',
+                            clips: [
+                                {
+                                    id: 'clip',
+                                    trackId: 'track',
+                                    name: 'Take',
+                                    startBeat: 0,
+                                    endBeat: 4,
+                                    type: 'audio',
+                                    bufferId: 'pcm',
+                                    assetHash: hash,
+                                    fadeInBeats: 0,
+                                    fadeOutBeats: 0,
+                                    gain: 1,
+                                    color: '#fff',
+                                    locked: false,
+                                    muted: false,
+                                },
+                            ],
+                        },
+                    ],
+                },
+                originalMedia: {
+                    format: 'sourdaw-original-media-v1',
+                    assets: [{ hash, bytes: btoa(String.fromCharCode(...bytes)) }],
+                    unavailable: [],
+                },
+            };
+            data.originalMedia.assets =
+                mismatch === 'missing'
+                    ? []
+                    : [
+                          ...data.originalMedia.assets,
+                          { hash: `sha256:${'2'.repeat(64)}`, bytes: btoa('extra original') },
+                      ];
+            const openProject = { name: 'Open project', createdAt: 42, dirty: false };
+            mocks.projectStoreValue.value = openProject;
+            mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(data))]);
+            mocks.applyImportedProjectData.mockResolvedValue(true);
+
+            await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+            expect(originalMedia.restore).not.toHaveBeenCalled();
+            expect(originalMedia.activate).not.toHaveBeenCalled();
+            expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+            expect(mocks.projectStoreValue.value).toBe(openProject);
+            expect(mocks.loggerError).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    cause: expect.objectContaining({
+                        message: 'Project archive originals differ from its clip references',
+                    }),
+                })
+            );
+        }
+    );
+
     it('notifies the user and returns false when the decoded data is rejected as unhydratable', async () => {
         mocks.pickFiles.mockResolvedValue([makeFile('{"version":1}')]);
         mocks.applyImportedProjectData.mockResolvedValue(false);
