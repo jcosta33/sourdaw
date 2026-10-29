@@ -49,6 +49,17 @@ export function transientStateMatches(actual: unknown, expected: unknown): boole
     return canonicalJson(actual) === canonicalJson(expected);
 }
 
+function captureTransientClipStates(trackId: string, clipId: string): TrackClipStateSnapshot[] {
+    return captureTrackClipStates([trackId]).map((entry) => ({
+        ...entry,
+        // A first detection creates this satellite. Its inverse must name absence,
+        // otherwise the restore's replacement-only noop check cannot see the new rows.
+        clipSatellites: entry.clipSatellites.some((satellite) => satellite.clipId === clipId)
+            ? entry.clipSatellites
+            : [...entry.clipSatellites, { clipId, gainEnvelope: null, warpState: null }],
+    }));
+}
+
 export const handleDetectTransients = createHandler<'detectTransients'>({
     execute: async (action, context) => {
         const scope = captureAutomergeStorageTransactionScope();
@@ -73,7 +84,7 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
         }
         const { clipId, trackId } = result.identity;
         const commitStarted = performance.now();
-        const before = captureTrackClipStates([trackId]);
+        const before = captureTransientClipStates(trackId, clipId);
         const existing = getWarpState(clipId);
         const preserved = existing.markers.filter(
             (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'

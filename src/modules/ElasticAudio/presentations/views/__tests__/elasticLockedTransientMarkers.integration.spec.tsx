@@ -403,6 +403,31 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(samples).toEqual(originalPcm);
         }
     );
+    it('undoes the first detection from absent warp state and guards the absent-state redo', async () => {
+        supplyBuffer(burstSamples());
+        warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+        flushAutomergeStorageWrites();
+        const before = JSON.parse(JSON.stringify(getCrdtDoc('root')));
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        const after = structuredClone(rawWarpState());
+        expect(after.markers).toHaveLength(1);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(getWarpState(CLIP_ID).markers).toEqual([]);
+        await redo();
+        expect(rawWarpState()).toEqual(after);
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+        await undo();
+        addManualMarker(CLIP_ID, 1.5);
+        flushAutomergeStorageWrites();
+        const diverged = JSON.stringify(getCrdtDoc('root'));
+        const history = JSON.stringify(undoHistoryStore.value);
+        await redo();
+        expect(JSON.stringify(undoHistoryStore.value)).toBe(history);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(diverged);
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+    });
+
     it('captures the inverse after the Worker and keeps concurrent edits through real Undo and Redo', async () => {
         supplyBuffer(burstSamples());
         let finish: ((result: TransientOnsetWorkerResult) => void) | undefined;
