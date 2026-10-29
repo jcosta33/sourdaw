@@ -2061,6 +2061,7 @@ const schemaDefinitions = [
             replacement: 257,
             retiredTakeLanes: 129,
             retiredTakeSourceProof: 130,
+            splitSourceProof: 130,
             reKeyedTakeLanes: 259,
         },
         required: ['clipId', 'rightClipId', 'expected', 'replacement'],

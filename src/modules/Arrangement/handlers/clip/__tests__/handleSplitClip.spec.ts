@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     getNextAppActionClipId: vi.fn(),
     prepareClipSplit: vi.fn(),
     splitClip: vi.fn(),
+    captureClipSplitSource:
+        vi.fn<typeof import('../../../useCases/clipEditing/captureClipSplitSource').captureClipSplitSource>(),
     getTrackStoreState: vi.fn<typeof import('../../../useCases/getTrackStoreState').getTrackStoreState>(),
     resolveZeroCrossingPosition:
         vi.fn<typeof import('../../../useCases/timelineInteractions/snapToZeroCrossing').resolveZeroCrossingPosition>(),
@@ -27,6 +29,10 @@ vi.mock('../../../useCases/clipEditing/splitClip', () => ({
     splitClip: mocks.splitClip,
 }));
 
+vi.mock('../../../useCases/clipEditing/captureClipSplitSource', () => ({
+    captureClipSplitSource: mocks.captureClipSplitSource,
+}));
+
 vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: mocks.getTrackStoreState,
 }));
@@ -41,6 +47,15 @@ describe('handleSplitClip', () => {
         mocks.getNextAppActionClipId.mockReturnValue('right-clip');
         mocks.prepareClipSplit.mockReturnValue(null);
         mocks.splitClip.mockReturnValue('right-clip');
+        mocks.captureClipSplitSource.mockReturnValue({
+            validation: {
+                documentId: 'root',
+                beforeCommit: () => null,
+                validateDocument: () => null,
+                release: () => undefined,
+            },
+            captureWrittenState: () => true,
+        });
         mocks.getTrackStoreState.mockReturnValue(null);
         mocks.resolveZeroCrossingPosition.mockImplementation((_clip, beat) => ({ beat }));
     });
@@ -147,6 +162,8 @@ describe('handleSplitClip', () => {
         const redo = desc.redoAction as Extract<AppAction, { type: 'restoreClipSplitState' }>;
         expect(inverse.payload.retiredTakeLanes).toEqual([]);
         expect(inverse.payload.retiredTakeLanes).toBe(redo.payload.retiredTakeLanes);
+        expect(inverse.payload.splitSourceProof).toEqual({ changeHash: '', memberId: '' });
+        expect(inverse.payload.splitSourceProof).toBe(redo.payload.splitSourceProof);
         expect(inverse.payload.reKeyedTakeLanes).toEqual([]);
         expect(inverse.payload.reKeyedTakeLanes).toBe(redo.payload.reKeyedTakeLanes);
     });

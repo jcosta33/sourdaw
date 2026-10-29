@@ -11,6 +11,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
+import { clipSplitSourceMatches } from '../../useCases/clipEditing/clipSplitSource';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
 import { retiredTakeSourceMatches } from '../../useCases/comping/retiredTakeSourceMatches';
@@ -495,6 +496,7 @@ function splitReplaySnapshotsMatch(
         valuesEqual(inverse.replacement, redo.expected) &&
         valuesEqual(inverse.retiredTakeLanes, redo.retiredTakeLanes) &&
         valuesEqual(inverse.retiredTakeSourceProof, redo.retiredTakeSourceProof) &&
+        valuesEqual(inverse.splitSourceProof, redo.splitSourceProof) &&
         valuesEqual(inverse.reKeyedTakeLanes, redo.reKeyedTakeLanes)
     );
 }
@@ -515,6 +517,44 @@ function splitResolvedBeatMatches(
     );
 }
 
+function savedSplitSourceMatches(
+    entryId: string | undefined,
+    inverse: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload'],
+    redo: Extract<AppAction, { type: 'restoreClipSplitState' }>['payload']
+): boolean {
+    const whole = inverse.replacement;
+    const split = inverse.expected;
+    const snapshots = [inverse.expected, inverse.replacement, redo.expected, redo.replacement];
+    const canonical = [
+        'audioOffsetSeconds',
+        'audioUnwrappedOffsetSeconds',
+        'audioLoopStartSeconds',
+        'audioLoopPassEntrySeconds',
+        'audioLoopPassOriginBeat',
+    ];
+    const modern =
+        Object.hasOwn(inverse, 'splitSourceProof') ||
+        Object.hasOwn(redo, 'splitSourceProof') ||
+        snapshots.some(
+            (snapshot) =>
+                Object.hasOwn(snapshot, 'audioSourceTempoAtStart') ||
+                [snapshot.leftClip, snapshot.rightClip].some(
+                    (clip) => clip && canonical.some((key) => Object.hasOwn(clip, key))
+                )
+        );
+    if (modern) {
+        return (
+            whole.leftClip.type === 'audio' &&
+            valuesEqual(inverse.splitSourceProof, redo.splitSourceProof) &&
+            clipSplitSourceMatches(entryId, whole, split, inverse.reKeyedTakeLanes ?? [], inverse.splitSourceProof)
+        );
+    }
+    // Shipped wholly beat-only history keeps its independent original producer
+    // law. Complete removal of every modern marker is the declared legacy
+    // ambiguity; this branch does not authenticate an unknown event's origin.
+    return splitRightSourceMatches(inverse.clipId, split, whole);
+}
+
 export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boolean {
     if (
         entry.action.type !== 'splitClip' ||
@@ -533,7 +573,7 @@ export function isSplitClipSessionEntry(entry: HandlerSessionActionEntry): boole
         action.rightClipId === redo.rightClipId &&
         isRestoreClipSplitSessionPayload(inverse) &&
         isRestoreClipSplitSessionPayload(redo) &&
-        splitRightSourceMatches(action.clipId, inverse.expected, inverse.replacement) &&
+        savedSplitSourceMatches(entry.id, inverse, redo) &&
         retiredTakeSourceMatches(
             'splitClipUndo',
             [inverse.rightClipId],

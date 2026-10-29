@@ -164,3 +164,28 @@ actions and current retained-owner authority. Do not pretend the later audible
 fragment authenticates a first entry deliberately discarded across a seam.
 Reject malformed or mismatched retained tuples and wrong owners before writes,
 and preserve unrelated live clip facets, peer rows and independent comp anchors.
+
+## Saved split source authority
+
+Paired history snapshots can agree on an invented source window. Corrupt both
+copies with finite valid source seconds, including zero, or replace their media,
+loop reset or pass origin while retaining the genuine forward proof. Hydration
+must compare the originating entry and source facets with the actual forward
+publication before aliasing replay holders. Borrow a different real split's
+member and change only the entry ID as independent controls. A proof of a late
+take retirement does not attest the forward split's source window.
+
+Split through the real command, save the binary root and session mirror, reopen,
+Undo and Redo. Require the selected 48 kHz source frame and the original loop
+reset through later ordinary publications and grouped tempo edits. A source or
+clock intervention before publication must leave the intervening root intact
+and publish no source member. A reported split success without its actual
+source effect must also publish none. Removing historical source verification
+must make the paired finite-source corruption case fail.
+
+Keep the unmodified beat-only audio fixture emitted by Undo5812 as a compatibility
+control. Wholly beat-only history retains that producer's law. Complete removal
+of every modern field, marker and proof remains the declared legacy ambiguity;
+these checks do not establish arbitrary history authenticity or classify erased
+and renamed events. Keep that characterization separate from the historical
+fixture and from positive modern source authentication.

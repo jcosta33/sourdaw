@@ -1621,6 +1621,8 @@ export type AppAction =
                */
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
               retiredTakeSourceProof?: CommandSourceProof;
+              /** Actual forward audio split publication; immutable through replay. */
+              splitSourceProof?: CommandSourceProof;
               /**
                * Shared holder for the take/comp-region re-key the forward split
                * captured (#5048), filled in place by its `execute()`. The undo

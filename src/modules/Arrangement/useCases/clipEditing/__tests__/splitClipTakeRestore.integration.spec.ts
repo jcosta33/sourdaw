@@ -81,6 +81,7 @@ describe('splitClipWithUndo take restore', () => {
         const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 8 });
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
