@@ -295,7 +295,8 @@ describe('offline device-param automation capability coverage', () => {
         // parameter pairs from that count.
         // 182 → 180: #2076 removed the bacteria `morphX`/`morphY` descriptor
         // entries, taking their two device-level-exempt pairs with them.
-        expect(census.deviceLevelExemptions).toBe(180);
+        // Retiring inert breakdown depth removes one more exempt pair.
+        expect(census.deviceLevelExemptions).toBe(179);
         // 17 → 23: #1539's six `decay_eq_*` bands on `dutch-oven`. They land in
         // this class rather than in `verdicts` because the Dutch Oven declares
         // exactly two offline ordinals (`mix`, `decay`) and always has — the
