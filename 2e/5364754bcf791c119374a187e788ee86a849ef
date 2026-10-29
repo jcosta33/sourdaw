@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_1ae8e82c9ec228 151-155,577-581
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_3168504f6ce387::t_1ae8e82c9ec228 520-526
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2e5364754bcf791c119374a187e788ee86a849ef",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
