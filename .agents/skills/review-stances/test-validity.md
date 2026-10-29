@@ -1,5 +1,19 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
+`tREG` name `/tmp/no info.txt`. Its public final review lists borrower and incomplete-evidence
+coverage, but the pathname-versus-diagnostic admission probe was missing; historical private prompts
+and tiers are unestablished. A later clean catalog does not explain an earlier unrecorded failure.
+
+Run `keeps diagnostic words in absolute Darwin` and require exact path preservation plus owned-storage
+retention for a borrower. Use injected catalogs only: opening an adversarial filename can poison
+other lanes' global guards. Run `reports bounded Darwin inspection context`, the whole/scoped
+replacement and stable-reason sequences, and the receipt cases with detailed obstruction reasons.
+Revert the pathname distinction to make the new parser assertion fail; remove context propagation
+to make the census assertions fail. Never weaken malformed, missing-type or unknown-type admission.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
@@ -1241,6 +1255,12 @@ later, fake that host receiver-sensitively — a plain function or class method 
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
 
+### Fermenter filter chips changed state without recording Undo
+
+Filter Type originated in `c40d444ff96520cb2f718dd2a397173d72dc1b50` and Filter Model in `66b0569af54525fc983a0632ce0c12d92f83fe90`, both through the direct bridge. Neither source origin has an evidenced public PR association, and historical reviewer prompts and tiers are unknown. A handler-only test cannot observe a panel callback that never dispatches that handler.
+
+Mount the real panel with unconditional entry-point admission and the real registered Command/CRDT path. Assert raw absent-versus-explicit defaults, projected values, pressed chips, independent Model/Type history entries, live macro preservation and both Undo/Redo legs. Hold the actual snapshot wait for latest same-parameter choices and independent different-parameter choices, and vary each stale authority guard separately. Restore only the panel's direct-bridge branch on a committed head: the unchanged owning test must fail its history assertion even while the chip and document update. Controlled engine calls prove parameter-boundary behavior; they do not prove audible, native or hardware acceptance.
+
 ### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
 
 The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
@@ -1851,6 +1871,21 @@ The native live automation real-store test held an apply, changed a store, settl
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
 
+## 2026-10-29 — a delegation spy could not observe partial AI history replay (#5565)
+
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` tested that the history caller delegated to
+Command and marked its row, while the member loop introduced by
+`22a84b216658f593391e7e141d90f7c84d13648b` could partially revert a group. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. A mocked void result could not expose project or history corruption.
+
+Run the public caller against real Command replay, registered handlers and a CRDT root.
+Use gain plus mute, make the older inverse conflict, and compare complete project and
+history state before asserting that the UI promise resolves with refusal feedback. Also
+exercise absent, partially undone and nonreplayable groups, a committed warning, runtime
+inertness and a valid group with Redo. Replacing only atomic replay with the member loop
+must fail preservation; removing result admission must fail the metadata assertions.
+
 ### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
 PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
@@ -1866,6 +1901,32 @@ source lifecycle boundaries. Remove the actual mid or side compensation separate
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
 
+## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
+returned. #5849's pre-commit snapshot-wait cases missed the later asynchronous effects. A
+provisional live-entry reference filter also missed a real captured project/history restoration,
+because captureUndoHistory and restoreUndoHistory retain the original entry objects. Historical
+private review prompts and model tiers are unknown.
+
+Observe the real inverse commit, hold afterCommit or actual afterAmbiguousCommit, then restore
+both the captured project and original-reference history through public producers. Compare the
+restored past, future and tree after release; assert the original commit truth separately rather
+than requiring false unchanged AI metadata. Keep new-object restoration, ordinary success,
+post-commit warnings and a real musician edit as independent controls. Mutating finalization back
+to after the wait must fail these oracles. Check notification timing before publication callbacks,
+exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
+throw that retains the original committed error without rollback or retry.
+
+A mock returning no-op cannot observe the async gap after a real handler skips execution.
+Use a real inverse that the handler already considers applied, delegate its actual isNoop
+boolean unchanged, and signal that observation before replacing or editing the project.
+Require no handler/engine write and compare project, projections, both history stacks, tree
+and AI metadata together after completion. A same-lineage edit retaining the exact Undo
+snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
+Pair it with clear-only and original-reference restore, normal no-op consumption and caller
+cancellation. Await the observation and completion, never a chosen number of microtasks.
+
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
 Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
@@ -1879,6 +1940,12 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — inventory merge dropped a curated reference (PR #5851)
+
+PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
+
+When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
 
 ### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
 
@@ -1894,3 +1961,18 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
+
+The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
+production route (`33a3549990`), integrated on the first-parent history at `adfc95a453`.
+GitHub associates none of these commits with a PR; historical reviewer prompts, stance
+and tier are unavailable. #5371 delivered the fix. The original consumer test asserted
+the requested end even with a shorter returned buffer, so its oracle could preserve silence.
+
+In `renderToClip.spec.ts`, require the one-frame cap-boundary case for both tail settings:
+`2^30 + 1` requested frames and `2^30` returned. Reverting the returned-frame endpoint
+branch must fail that case. Also retain short-buffer conversion across a tempo change from
+a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
+end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
+a six-hour PCM render or listening result from it.

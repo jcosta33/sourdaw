@@ -1,4 +1,8 @@
 import { revertActionGroupAtomically } from '#/modules/Command/useCases';
+import {
+    captureProjectMutationAuthorization,
+    settlePendingProjectWritesAndCaptureRevision,
+} from '#/modules/CrdtDocument/useCases';
 
 import { aiActionHistoryStore, markGroupReverted } from '../../stores/aiActionHistoryStore';
 
@@ -42,7 +46,11 @@ export async function revertThreadCommit(
             reason: 'The AI history no longer holds the last committed change, so nothing was undone.',
         };
     }
-    const reverted = await revertActionGroupAtomically(revertGroupId, { shouldExecute });
+    settlePendingProjectWritesAndCaptureRevision();
+    const projectAllowsReplay = captureProjectMutationAuthorization();
+    const reverted = await revertActionGroupAtomically(revertGroupId, {
+        shouldExecute: () => projectAllowsReplay() && (shouldExecute?.() ?? true),
+    });
     if (reverted.status === 'refused') {
         return { status: 'refused', reason: describeRefusal(reverted) };
     }
