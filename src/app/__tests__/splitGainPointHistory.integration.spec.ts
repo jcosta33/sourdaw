@@ -99,7 +99,9 @@ let stopProjection: () => void = () => undefined;
 
 function root() {
     const document = getCrdtDoc<Root>('root');
-    if (!document) throw new Error('Expected the production project root');
+    if (!document) {
+        throw new Error('Expected the production project root');
+    }
     return document;
 }
 
@@ -142,9 +144,11 @@ function expectValidProject() {
 
 // An independent reference: bracket by distance, then weight the two endpoint values.
 function referenceGain(beat: number) {
-    const lower = AUTHORED.filter((point) => point.beatOffset <= beat).at(-1) ?? AUTHORED[0]!;
+    const lower = AUTHORED.findLast((point) => point.beatOffset <= beat) ?? AUTHORED[0]!;
     const upper = AUTHORED.find((point) => point.beatOffset >= beat) ?? AUTHORED.at(-1)!;
-    if (lower === upper) return lower.gainDb;
+    if (lower === upper) {
+        return lower.gainDb;
+    }
     const width = upper.beatOffset - lower.beatOffset;
     return (lower.gainDb * (upper.beatOffset - beat) + upper.gainDb * (beat - lower.beatOffset)) / width;
 }
@@ -154,7 +158,9 @@ function expectCurve(clipId: string, offset: number, duration: number) {
     const samples = new Set([0, duration, ...Array.from({ length: 41 }, (_, index) => (duration * index) / 40)]);
     for (const point of AUTHORED) {
         const beat = point.beatOffset - offset;
-        if (beat >= 0 && beat <= duration) samples.add(beat);
+        if (beat >= 0 && beat <= duration) {
+            samples.add(beat);
+        }
     }
     for (const beat of samples) {
         const actual = sampleGainEnvelopeSeries(points, beat, beat);
@@ -333,7 +339,9 @@ describe('audio split gain identity with production repair admission and saved h
         const divided = owners();
         const dividedRaw = rawOwners();
         for (const saved of [false, true]) {
-            if (saved) await reloadSavedProject();
+            if (saved) {
+                await reloadSavedProject();
+            }
             expect((await undo()).headConsumed).toBe(true);
             expectValidProject();
             expect(owners()).toEqual(original);
@@ -342,7 +350,9 @@ describe('audio split gain identity with production repair admission and saved h
             expect(undoHistoryStore.value!.future).toHaveLength(1);
             expect(root().actionHistory).toEqual(actionHistoryStore.value);
             expect(actionHistoryStore.value!.entries).toHaveLength(1);
-            if (saved) await reloadSavedProject();
+            if (saved) {
+                await reloadSavedProject();
+            }
             await redo();
             expectSplit();
             expect(owners()).toEqual(divided);
