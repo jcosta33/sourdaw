@@ -3421,6 +3421,9 @@ export type HandlerCommitValidation = {
     /** Authenticate only the authoritative owners this write was admitted against. */
     readonly beforeCommit: () => string | null;
     readonly documentId: string;
+    /** Optional causal inspection of published truth immediately before the candidate opens.
+     * Prospective validation must not query history on a backend with an open change. */
+    readonly beforeMutation?: (document: Readonly<Record<string, unknown>>) => string | null;
     /** Runs against the prospective document inside its atomic storage change. */
     readonly validateDocument: (document: Readonly<Record<string, unknown>>) => string | null;
     /** Idempotent, nonthrowing cleanup once this handler's transaction has finished executing. */

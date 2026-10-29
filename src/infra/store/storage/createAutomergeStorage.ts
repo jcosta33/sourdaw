@@ -46,6 +46,8 @@ type AutomergeStorageMutationInput = {
  */
 type AutomergeStoragePortMutationInput = {
     docId: AutomergeStorageDocId;
+    /** Invoke against published truth immediately before opening the atomic change. */
+    beforeChange?: (document: AutomergeStorageReadableDoc) => void;
     changedKeys: readonly string[];
     changeFn: (doc: AutomergeStorageMutableDoc) => void;
     message?: string;
@@ -355,7 +357,11 @@ type AutomergeStorageTransactionControl = {
     abort(): void;
     commit(): void;
     validateCommit(validator: () => string | null): void;
-    validateDocument(docId: AutomergeStorageDocId, validator: AutomergeStorageDocumentValidator): void;
+    validateDocument(
+        docId: AutomergeStorageDocId,
+        validator: AutomergeStorageDocumentValidator,
+        beforeMutation?: AutomergeStorageDocumentValidator
+    ): void;
 };
 
 type AutomergeStorageTransactionOutcome<Result> =
@@ -799,7 +805,8 @@ function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
     owner: object | undefined,
     validateDocument?: AutomergeStorageDocumentValidator,
-    publicationMetadata?: readonly unknown[]
+    publicationMetadata?: readonly unknown[],
+    beforeMutation?: AutomergeStorageDocumentValidator
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
@@ -822,6 +829,14 @@ function commitAutomergeStorageMutations(
         try {
             port.mutateDoc({
                 docId: firstMutation.docId,
+                beforeChange: beforeMutation
+                    ? (document) => {
+                          const reason = beforeMutation(document);
+                          if (reason) {
+                              throw new AutomergeStorageTransactionValidationError(reason);
+                          }
+                      }
+                    : undefined,
                 changedKeys,
                 changeFn: (doc) => {
                     const observesMetadata =
@@ -958,6 +973,7 @@ export function runWithAutomergeStorageTransaction<Result>(
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
     const commitValidators: Array<() => string | null> = [];
     const documentValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
+    const beforeMutationValidators = new Map<AutomergeStorageDocId, AutomergeStorageDocumentValidator>();
     let outcome: AutomergeStorageTransactionOutcome<Result>;
 
     const scope: AutomergeStorageTransactionScope = (scopedCallback) => {
@@ -1017,7 +1033,8 @@ export function runWithAutomergeStorageTransaction<Result>(
                         pending.snapshotTransaction === transaction.snapshotTransaction,
                     documentValidators,
                     undefined,
-                    transaction.publicationMetadata
+                    transaction.publicationMetadata,
+                    beforeMutationValidators
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
@@ -1043,12 +1060,15 @@ export function runWithAutomergeStorageTransaction<Result>(
             assertAutomergeStorageTransactionOpen(transaction);
             commitValidators.push(validator);
         },
-        validateDocument(docId, validator): void {
+        validateDocument(docId, validator, beforeMutation): void {
             assertAutomergeStorageTransactionOpen(transaction);
             if (documentValidators.has(docId)) {
                 throw new Error(`Automerge storage transaction already has a validator for document: ${docId}`);
             }
             documentValidators.set(docId, validator);
+            if (beforeMutation) {
+                beforeMutationValidators.set(docId, beforeMutation);
+            }
         },
     };
 
@@ -1067,7 +1087,8 @@ function flushMatchingAutomergeStorageWrites(
      * lands unowned, exactly like any foreign buffered write.
      */
     attributeMutationsTo?: object,
-    publicationMetadata: ReadonlyMap<string, readonly unknown[]> = new Map()
+    publicationMetadata: ReadonlyMap<string, readonly unknown[]> = new Map(),
+    beforeMutationValidators: ReadonlyMap<AutomergeStorageDocId, AutomergeStorageDocumentValidator> = new Map()
 ): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
@@ -1182,7 +1203,8 @@ function flushMatchingAutomergeStorageWrites(
                     mutations,
                     firstWrite.scoped ? firstWrite.commitOwner : attributeMutationsTo,
                     documentValidators.get(docId),
-                    publicationMetadata.get(docId)
+                    publicationMetadata.get(docId),
+                    beforeMutationValidators.get(docId)
                 );
                 if (documentValidators.has(docId)) {
                     validatedDocumentIds.add(docId);
@@ -1241,7 +1263,8 @@ function flushMatchingAutomergeStorageWrites(
             }
             try {
                 const document = port?.getDoc(docId);
-                const validationFailure = validateDocument(document ?? {});
+                const beforeFailure = beforeMutationValidators.get(docId)?.(document ?? {}) ?? null;
+                const validationFailure = beforeFailure ?? validateDocument(document ?? {});
                 if (validationFailure) {
                     firstError ??= new AutomergeStorageTransactionValidationError(validationFailure);
                 }

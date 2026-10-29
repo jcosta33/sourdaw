@@ -87,6 +87,7 @@ function owners() {
         throw new Error('Expected the authoritative project');
     }
     const project = Automerge.toJS(document);
+    expect(document.tracks).toEqual(project.tracks);
     // The owning track adapter writes `{ tracks }` through createAutomergeStorage's JSON-safe projection.
     expect(project.tracks).toEqual(tracks);
     const value = {
@@ -603,6 +604,61 @@ describe('ordered tempo and audio split source preparation', () => {
             expect(owners()).toEqual(after);
         }
     );
+
+    it('attests a second split whose source is an unpublished fragment of the owned prefix', async () => {
+        const before = owners();
+        const handler = getArrangementHandlers().splitClip;
+        const execute = handler.execute;
+        let rawAbsentSourceObserved = false;
+        const spy = vi.spyOn(handler, 'execute').mockImplementation(async (action, context) => {
+            if (action.payload.clipId === 'right') {
+                expect(
+                    getCrdtDoc<{ tracks: { tracks: { clips: Clip[] }[] } }>('root')?.tracks.tracks[0]?.clips.some(
+                        (clip) => clip.id === 'right'
+                    )
+                ).toBe(false);
+                expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === 'right')).toMatchObject({
+                    startBeat: 4,
+                    endBeat: 8,
+                    audioOffsetSeconds: 2,
+                });
+                rawAbsentSourceObserved = true;
+            }
+            return execute(action, context);
+        });
+        try {
+            const result = await executeAppActionBatch(
+                [
+                    {
+                        type: 'splitClip',
+                        payload: { clipId: 'source', beat: 4, resolvedBeat: 4, rightClipId: 'right' },
+                    },
+                    {
+                        type: 'splitClip',
+                        payload: { clipId: 'right', beat: 6, resolvedBeat: 6, rightClipId: 'other-right' },
+                    },
+                ],
+                { source: 'manual', requireCompensation: true, groupId: 'owned-fragment-source' }
+            );
+            expect(rawAbsentSourceObserved).toBe(true);
+            expect(result.status).toBe('committed');
+        } finally {
+            spy.mockRestore();
+        }
+        expect(trackStore.value?.tracks[0]?.clips).toMatchObject([
+            { id: 'source', startBeat: 0, endBeat: 4, audioOffsetSeconds: 0 },
+            { id: 'right', startBeat: 4, endBeat: 6, audioOffsetSeconds: 2 },
+            { id: 'other-right', startBeat: 6, endBeat: 8, audioOffsetSeconds: 3 },
+        ]);
+        const after = owners();
+        await reopen(2);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(owners()).toEqual(before);
+        await reopen(0);
+        await redo();
+        expect(owners()).toEqual(after);
+        await reopen(2);
+    });
 
     it('derives a new preparation for reused forward objects after decline and a replacement root', async () => {
         const actions: AppAction[] = [

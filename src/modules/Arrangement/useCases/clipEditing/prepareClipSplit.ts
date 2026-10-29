@@ -102,7 +102,9 @@ export function prepareClipSplit({
     ) {
         return null;
     }
-    const resolution = resolveEligibleClipWriteTarget({ clipId });
+    const resolution = owners
+        ? resolveEligibleClipWriteTarget({ clipId }, { tracks: Array.from(owners.tracks), selectedTrackId: null })
+        : resolveEligibleClipWriteTarget({ clipId });
     if (resolution.status !== 'eligible') {
         return null;
     }
@@ -110,7 +112,7 @@ export function prepareClipSplit({
     const tracks = owners?.tracks ?? state?.tracks;
     const track = tracks?.find((candidate) => candidate.id === resolution.trackId);
     const clip = track?.clips.find((candidate) => candidate.id === clipId);
-    if (!state || !tracks || !track || !clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
+    if (!tracks || !track || !clip || splitBeat <= clip.startBeat || splitBeat >= clip.endBeat) {
         return null;
     }
     const effectiveRightClipId = rightClipId ?? getNextClipId();

@@ -1,5 +1,3 @@
-import { getHeads } from '@automerge/automerge';
-
 import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
 import { isExactAutomationLaneSnapshots } from '#/modules/Automation/useCases';
 import {
@@ -25,10 +23,17 @@ import { audioClipStartTrimState } from './audioClipStartTrimState';
 import { clipSplitSource } from './clipSplitSource';
 import { type PreparedClipSplit } from './preparedClipSplit';
 import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { observeClipSplitSource } from './observeClipSplitSource';
+import { readClipSplitSourceAuthority } from './readClipSplitSourceAuthority';
 
 type Root = Readonly<Record<string, unknown>>;
 
-function readSplitSourceOwners(document: Root, clipIds: ReadonlySet<string>, laneIds: ReadonlySet<string>) {
+function readSplitSourceOwners(
+    document: Root,
+    trackId: string,
+    clipIds: ReadonlySet<string>,
+    laneIds: ReadonlySet<string>
+) {
     const tracks: readonly unknown[] =
         isRecord(document.tracks) && Array.isArray(document.tracks.tracks) ? document.tracks.tracks : [];
     const lanes: readonly unknown[] =
@@ -43,7 +48,7 @@ function readSplitSourceOwners(document: Root, clipIds: ReadonlySet<string>, lan
                 .map((clip) => ({ trackId: track.id, clip: isRecord(clip) ? clipSplitSource.fields(clip) : null }));
         }),
         lanes: Array.from(lanes)
-            .filter((lane) => isRecord(lane) && laneIds.has(String(lane.id)))
+            .filter((lane) => isRecord(lane) && (lane.trackId === trackId || laneIds.has(String(lane.id))))
             .map((lane) => {
                 if (!isRecord(lane)) {
                     return null;
@@ -147,20 +152,6 @@ function matchesWrittenSplitSource(
     return true;
 }
 
-function subscribeSplitSourceOwners(observe: () => void): () => void {
-    const releases = [
-        trackStore.subscribe(observe),
-        takeLaneStore.subscribe(observe),
-        transportStore.subscribe(observe),
-        tempoMapStore.subscribe(observe),
-    ];
-    return () => {
-        for (const unsubscribe of releases.splice(0)) {
-            unsubscribe();
-        }
-    };
-}
-
 /** Only the retained forward plan in its entered command owner can attest this event. */
 export function captureClipSplitSource(
     plan: PreparedClipSplit,
@@ -185,7 +176,7 @@ export function captureClipSplitSource(
     const clipIds = new Set([plan.previous.leftClip.id, plan.rightClipId]);
     const transitions = plan.takeReKeyTransitions ?? [];
     const laneIds = new Set(transitions.map((row) => row.laneId));
-    const read = (document: Root) => readSplitSourceOwners(document, clipIds, laneIds);
+    const read = (document: Root) => readSplitSourceOwners(document, plan.previous.trackId, clipIds, laneIds);
     const projected = () =>
         read({
             ...getCrdtDoc('root'),
@@ -194,39 +185,24 @@ export function captureClipSplitSource(
             transport: transportStore.value,
             tempoMap: tempoMapStore.value,
         });
-    const before = read(root);
-    let observed = projected();
-    let expected: unknown;
-    const basisHeads = getHeads(root).toSorted();
-    let heads = basisHeads;
-    let intervened = false;
-    const observe = () => {
-        const current = getCrdtDoc('root');
-        const next = projected();
-        const nextHeads = current ? getHeads(current).toSorted() : [];
-        const changed = !valuesEqual(next, observed);
-        intervened ||=
-            !current ||
-            captureProjectRootIdentity() !== identity ||
-            !valuesEqual(heads, nextHeads) ||
-            (changed && getCurrentAutomergeStorageMutationOwner() !== owner);
-        if (expected !== undefined && changed && !intervened) {
-            expected = next;
-        }
-        observed = next;
-        heads = nextHeads;
+    const takeIds = new Set(
+        transitions.flatMap((row) => [...row.takesBefore, ...row.takesAfter].map((take) => take.id))
+    );
+    const readOwners = (document: Root) => {
+        const authority = readClipSplitSourceAuthority(document, {
+            trackId: plan.previous.trackId,
+            rightClipId: plan.rightClipId,
+            clipIds,
+            laneIds,
+            takeIds,
+        });
+        return authority === null ? null : { source: read(document), authority };
     };
-    const release = subscribeSplitSourceOwners(observe);
-    const unchanged = () => {
-        const current = getCrdtDoc<Root>('root');
-        return (
-            !intervened &&
-            captureProjectRootIdentity() === identity &&
-            current !== undefined &&
-            valuesEqual(getHeads(current).toSorted(), basisHeads) &&
-            valuesEqual(read(current), before)
-        );
-    };
+    const before = readOwners(root);
+    if (!before) {
+        return null;
+    }
+    const observation = observeClipSplitSource({ root, before, identity, owner, read, projected, readOwners });
     let publish: () => void;
     try {
         publish = stageCommandSourcePublication(
@@ -235,7 +211,7 @@ export function captureClipSplitSource(
             reference
         );
     } catch (error) {
-        release();
+        observation.release();
         throw error;
     }
     return {
@@ -244,17 +220,14 @@ export function captureClipSplitSource(
             if (!matchesWrittenSplitSource(plan, transitions, current)) {
                 return false;
             }
-            expected = current;
-            return !intervened;
+            return observation.recordWrittenState(current);
         },
         validation: {
             documentId: 'root',
-            beforeCommit: () => (unchanged() ? null : 'Split source owners or clock changed before commit'),
-            validateDocument: (document) =>
-                unchanged() && expected !== undefined && valuesEqual(read(document), expected)
-                    ? null
-                    : 'Split source effect did not reach committed owners',
-            release,
+            beforeCommit: observation.beforeCommit,
+            beforeMutation: observation.beforeMutation,
+            validateDocument: observation.validateDocument,
+            release: observation.release,
             afterPublication: publish,
         },
     };

@@ -33,6 +33,7 @@ export { prepareTimelineMapTimeOperation } from './tempoMap/prepareTimelineMapTi
 export { removeTempoChange } from './tempoMap/removeTempoChange';
 export { projectEngineTransportMaps } from './tempoMap/projectEngineTransportMaps';
 export { replaceTempoMap } from './tempoMap/replaceTempoMap';
+export { resolveTempoMapNoopRows } from './tempoMap/resolveTempoMapNoopRows';
 export { resolveTempoAtBeat } from './tempoMap/resolveTempoAtBeat';
 export { shiftTimelineMapsAfterBeat } from './tempoMap/shiftTimelineMapsAfterBeat';
 export { updateTempoChange } from './tempoMap/updateTempoChange';

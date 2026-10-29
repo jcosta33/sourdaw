@@ -50,6 +50,9 @@ export type ExecuteAppActionOptions = ExecuteOptions & {
     authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
+    /** Observe an isolated copy of final owner arguments, including a successful noop's arguments.
+     * This grants no commit authority; callers consume it only after dispatch succeeds. */
+    observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
 };
 
@@ -191,6 +194,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
 
+                options?.observeMaterializedAction?.(structuredClone(action));
                 if (handler.isNoop?.(action)) {
                     return;
                 }
@@ -279,6 +283,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type);
             }
 
+            options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
                 return;
             }
