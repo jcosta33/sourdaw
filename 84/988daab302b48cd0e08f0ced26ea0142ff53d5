@@ -1,0 +1,20 @@
+.agents/skills/review-stances/correctness.md
+  s_59e31a5c6f3e31::t_a90d6d02522dec 400-401,413
+  s_59e31a5c6f3e31::t_df5bfe0aa710aa 402-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "84988daab302b48cd0e08f0ced26ea0142ff53d5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
