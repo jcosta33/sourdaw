@@ -56,6 +56,31 @@ dispatch.
 
 ## Lessons from escapes
 
+### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
+
+PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455
+section 1.2 WebSocket nonce. Replacement #5748 composed it at runtime and excluded the original
+commit from its PR range, but Nightly's `--all` scan still reached the retained original branch.
+The missed proof route was retained history after replacement; private reviewer prompts and tiers
+are unestablished. The value is a published protocol example, not an issued credential.
+
+Read the exact historical finding and its public source. Prove detection with the pinned scanner,
+then admit only that commit/path/rule/line fingerprint. A wrong fingerprint and independent synthetic
+credentials, including `gitleaks:allow`, must remain detected under the same trusted configuration
+and flags. A clean replacement diff does not establish a clean full-history scan.
+
+### 2026-10-28 — PR security scan lacked its main comparison configurations (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer from Health gates to Nightly, leaving the older main
+configuration in its analysis history. PR #4854 later added a PR scan under Health gates' default
+identity, distinct from Nightly's main category. Successful scans and Gate did not prove all main
+configurations were compared. Historical private reviewer prompts and tiers are not established.
+
+Paginate all main analysis configurations, not just the newest results, and compare their identities,
+scan scope and the hosted PR summary with actual uploads. Before any authorized retirement, inspect
+alert continuity and the documented deletion and historical-data consequences. Mutate or omit the
+PR category and require the independent contract to fail after re-recording the workflow snapshot.
+
 ### 2026-10-28 — desktop fallback filenames lost the selected File authority (issue #5767)
 
 Commit `4f410257b212` introduced a native-dialog rejection fallback that returned browser

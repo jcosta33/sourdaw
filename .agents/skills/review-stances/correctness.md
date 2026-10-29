@@ -11,6 +11,34 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
+
+Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
+detector; the hold added in `2b080af5adc16f6fb9013ebd1d582e3cbe5b2238` still began only after
+threshold acquisition. GitHub reports no associated PR for either commit; their review stance,
+prompt and tier are unestablished. Steady-state fade checks did not observe the enable transition.
+
+Compare short-window output and gain with an already-open reference while enabling during a
+sustained note, including a zero crossing, slow attack/fast release and a settled detector barely
+above the opening hysteresis threshold. Whole-note RMS can hide the dip. Remove only
+bypass detector tracking: the near-threshold constant and bipolar-square cases must fail.
+Independently remove enable-time hold seeding: the silence/replay case must fail. Replay enabled
+on silence and after reset to prove replay cannot rearm the hold, and pin disabled input bits.
+Report component and served-WASM engine output separately from audible application acceptance.
+
+### 2026-10-28 — output scrubbing hid poisoned recursive gate state
+
+Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
+samples into detector recursion. GitHub reports no associated PR; the historical review stance,
+prompt and tier are unestablished. An output scrub or clamped meter cannot prove recursive state
+survived.
+
+Drive the enabled gate from open and closed states with one NaN or infinity, then compare finite
+output and raw detector, gain, hold and open state sample-for-sample with a healthy reference that
+omitted the invalid sample through attack, hold, release, closure and reopening. Removing the
+pre-recursion nonfinite fence must fail those cases. Trace upstream stateful stages separately:
+a pure gate probe establishes no whole-engine recovery claim.
+
 ### Explicit preservation must retain its whole owner and every forbidden operation
 
 Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
@@ -97,6 +125,20 @@ passing sample of the original enumerated families cannot prove the remaining ca
   the single unit that actually failed.
 
 ## Lessons from escapes
+
+### 2026-10-09 — a global ID detector rejected clip-local gain points (introduced in `83be56e84ee`; retained by PR #3032)
+
+The recursive project ID walker treated every nested `id` as globally unique.
+PR #3032 (`93710471aa`) gave arrangement snapshots separate namespaces but left
+canonical live gain points in the global set. Split and duplicate deliberately
+retain point IDs, and gain edits address clipId plus pointId. A saved rich split
+therefore failed project inspection and withheld every owner projection on reload.
+The missing invariant clause was the producer's identity scope. Binary-load old
+projects with repeated gain point IDs across clips, including a point ID equal to
+a track ID, and require normal inspection and genuine rich split Undo/Redo.
+Keep same-envelope point duplicates, global track/clip/device collisions, and
+repeated arrangement IDs repair-required; only canonical gain point rows have
+this local scope.
 
 ### 2026-10-25 — a protected clip or control became a whole track (introduced by PR #2811)
 
@@ -363,6 +405,25 @@ Blind spot: the review treated a successful call attempt as the hardware outcome
 
 Probe that would have caught it: drive the real use case with fake hardware and observe the store and notification after rejection, absent or non-callable `setSinkId`, deferred success, and ordered overlapping requests; require every failed request to retain the last applied ID and every later request to wait for its predecessor.
 
+### Elastic marker views must follow their owner projection
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot that did not follow deferred sensitivity detection in the warp store. No associated introducing PR or private review prompt or tier is established. Probe the selected clip's real store projection after detection and an external update: drawing, detail counts, availability and hit-testing must agree on the same current markers without an incidental pointer refresh. Switch clips and preserve locked identity, a control clip and PCM; removing the subscription must fail the real varied-pulse regression. This establishes no Worker or performance acceptance.
+
+### Stored modulation reached an Inspector target the engine refused (PR #831; exposed by #5379)
+
+Merged PR #831 (`b47d1244c2791b80f581d659cf8618d576f0944b`) made `resolveModulationBinding`
+refuse stored mappings to nonautomatable parameters, but the existing Inspector still selected
+enabled mappings by target IDs and could draw a cyan halo from nonzero runtime output for that
+rejected mapping. #831's public history does not establish the reviewer stance, prompt, or tier.
+Blind spot: no probe compared the engine's refusal with the Inspector projection for the same
+persisted mapping. Probe: seed an enabled LFO mapping directly in project state for a valid track,
+device, and nonautomatable parameter, with nonzero runtime output and mapping depth; require binding
+refusal, an unchanged base parameter, and no cyan Inspector halo. Keep an otherwise identical
+eligible mapping as a positive control and ordinary knob and keyboard writes working. The pending
+UI change in open PR #5379 introduces a target announcement, so require that affordance not to
+announce the rejected mapping as well; removing its eligibility filter must fail the owning
+subscription spec. The #5379 repair has not landed.
+
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
 PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
@@ -442,6 +503,10 @@ deliver that thing to the stub, drive each with the smallest project that hits i
 that device, nothing else) and require either the new carrier to take it or a notice that names
 why not. Then find the product's own standing consumers of that path — the nightly harness
 project, the smoke set — and run them through the same rule.
+
+### A lossless encoder must use the format's residual grammar
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced FLAC Rice quotients as one bits terminated by zero, opposite RFC 9639's zero bits terminated by one. No associated introducing PR or historical private review prompt or tier is established. Compare real encoded residuals through the shipped decoder against the originating PCM at both 16 and 24 bits, including STREAMINFO MD5 and decoder warnings. Require the unchanged named parity case to fail when the unary polarity fix is reverted; format metadata alone cannot establish lossless decoding.
 
 ### 2026-09-06 — a new device body admitted against the engine's vocabulary, never against the record its producer sends (escaped via 07102e912)
 
@@ -671,6 +736,62 @@ must produce a right-channel peak; Widener at non-unity width must emit equal le
 samples. Keep a two-channel asymmetric source as a control that still produces stereo difference.
 Removing the explicit speakers upmix at either input must turn its mono assertion red.
 
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.
+
+### Saved replay authority refinements measured in PR #5064
+
+A saved clip inverse must use its MIDI owner's complete snapshot law before hydration or any
+Arrangement write. Duplicate note identities, malformed CC or pitch-bend rows, and a missing
+required capture are not an empty or null capture. Probe a real removal's saved inverse through
+production hydration, then require no raw, projection or history write; retain separate valid null
+and present-empty controls. Minimal mocked rows cannot establish that the restore owner admitted
+what the earlier Arrangement write already published.
+
+For split replay, recreate either target identity under another track after Undo and binary reload,
+then require direct and grouped Redo to preserve every owner and the pending history. Delete just
+one side of a mirrored optional satellite or automation guard: reject the group before a later peer
+value can be replaced. Both historically absent sides remain valid, and present empty is distinct.
+A durable-head change alone cannot authorize refresh of a removal inverse; roll the root back in
+its lineage from a committed observer before the finalizer, and require the old inverse to survive
+on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
+
+PR #1425 (`9aebb8837ddc9c6640a7a8037c2b7b25eaea204d`) compared an absent split right clip's
+remembered insertion slot with current track length; PR #2287 later extracted that guard. The missed
+probe was valid saved Redo after unrelated same-track growth: split, Undo, append a peer clip, binary
+reload, then Redo twice. Preserve the peer clip and captured insertion position; a present right
+clip still requires its exact slot and value, and an invalid replacement slot still refuses.
+
+PR #515 (`58847d9a26e4c59772441bd23ae3a587f3573b2c`) captured a cross-track move's beats but missed
+its source clip order. The missed stance was real saved middle-clip return after binary reload: Undo
+must restore `[a,b,c]` and the actual beat-5 overlap hit on `b`, including after a peer removes `a`;
+Redo and a second saved cycle must preserve unrelated clips.
+
+Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
+Preoccupy the preferred generated identity under an unrelated owner before the split, then require
+binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer
+claim an actual captured identity and require zero-write refusal rather than reminting that saved
+capture. A census only against the source lane misses both collisions. Include nested object points
+and cross-domain clip owners, while preserving clip-local gain point and arrangement namespaces.
+For a batch-admitted restored clip preceding a split, compare captured IDs with the actual committed
+IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
+replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
+execution. Read executable entries from the full history owner rather than its label-only UI view.
+
 ### 2026-10-12 — near-zero tempo identity escape (PR #5199)
 
 Commit `77f11923e6bb9906c14d84d3709dac4c97dd5a61` relocated the projected opening
@@ -708,8 +829,49 @@ Blind spot: delivery validation treats the reviewed head as the merged content. 
 
 Probe: before merging, when the base tip has moved since the head's last Gate, require fresh CI evidence that covers the resulting base-plus-head tree, not just the earlier head. Reverting either contributing hunk should make that combined-tree typecheck fail, which is what no validated run observed here.
 
+### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
+
+PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
+At #5613 head `af579c26`, real Undo-first peer sync could publish an unrelated surviving-clip
+rename after restoreClip staged its track write but before Command committed. Hydration erased
+the local restoration; Undo still consumed history. Historical introducing-review stance coverage
+is unverified. The missing probe was actual commit preservation after replay admission.
+
+Drive real Command removal/Undo and actual AutomergeSync continuations in both admission orders.
+Require either both edits in raw authority/projection or zero-write refusal with past retained.
+Repeat with identical and different same-ID recreation, plus no-peer, fully published unrelated
+peer, grouped/ripple and same-target placement/split controls. A setter-injected microtask alone
+does not establish the production receive protocol. Authenticate affected raw pre-images and the
+prospective committed owners; a written handler result or optimistic store does not prove either.
+A projection may run inside an entered transaction scope, so ambient owner equality cannot
+certify its data as newly authored intent. Interpose publication and hydration there, with an
+unrelated notification before hydration, and require the original restoration obligation to remain.
+
+Track presence does not certify the restored source programme. Independently race MIDI notes,
+controllers/bend, clip-scoped automation, gain and warp owners without changing raw tracks; a late
+peer owner must survive refusal and history must remain pending. Preserve captured child-ID
+availability in its existing namespace, including unrelated owner buckets. Exercise the prospective
+mutable document as well as the immutable root: proxy identity is not an ownership witness, and
+canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
+unrelated programme edit and a valid same-target successor that commits the final owning projection.
+
 ### 2026-10-27 — device deltas assumed live eligibility meant an initialized strip (introduced by PR #2083)
 
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
+
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.

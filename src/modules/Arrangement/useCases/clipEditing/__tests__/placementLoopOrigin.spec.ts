@@ -147,6 +147,7 @@ describe('placement keeps a looped clip anchored (#4988)', () => {
         // `applied` from the clip rewrite this spec asserts on.
         const unchanged = { status: 'ready' as const, hasChanges: false, apply: () => true, revert: () => true };
         setTimeOperationDependencies({
+            savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
             prepareAutomationTimeOperation: () => ({ ...unchanged, inversePlan: null }),
             prepareAutomationTimeStateRestore: () => unchanged,
             prepareTimelineMapTimeOperation: () => ({ ...unchanged, inversePlan: null }),

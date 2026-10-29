@@ -311,6 +311,36 @@ that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Th
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
 
+### An aborted graph repair must rearm committed monitoring intent (issue #5286)
+
+Start a connected On track, hold same-project graph repair at plugin reset, then project Off before
+repair and during reset in separate real version restores that abort. While held, observe committed
+root On beside projected Off. After abort, require rebuilt-strip monitoring to acquire a fresh
+source, connect it only to the rebuilt gain, stop the old source once, and leave history empty.
+Also commit Off during reset and replace the root: neither may reopen monitoring or rearm the
+successor strip. Keep pending and refused permission controls, and require armed Auto to follow the
+final transport state. The controlled media and graph ports prove lifecycle ownership, not physical
+hardware audio; the connected oracle is in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts`
+and `repairRuntimeGraphFromProject.autoMonitoring.spec.ts`.
+
+### Obsolete input owners during a held removal (issue #5283)
+
+With track `a` already monitoring On at input `null`, hold its real registered removal in a
+storage transaction and independently commit `replacement-input` through `mutateCrdtDoc` while
+`a` is absent from the optimistic projection. Before commit or abort, retire `a`'s obsolete key and
+edge immediately. A shared eligible `b` must retain the same capture, edge, and stream. In the
+last-owner case, the old input must stop. Do not recreate the absent strip or request permission
+again. On abort, re-admit the current input; on commit, remove `a`. A same-input abort must retain its original
+owner and capture.
+
+PR #4449 first introduced the keyed-owner form after #576's held transactions and #4255's shared
+edges. Its source retargeted a key only on explicit start, and its public tests and review covered
+start, grant, shared ownership, and stop, not an independent committed selector change under
+optimistic absence. Older code already retained stale singleton audio, so the earliest origin of all
+stale physical edges is unproven. PR #5011 later added an Auto-only sweep that left direct On
+outside it; #5091 fixed retirement. The #5380 proof uses controlled media and graph ports, not
+physical hardware.
+
 ### 2026-10-09 — monitor release must be paired with committed Undo restoration (caught in PR #5091)
 
 The committed-deletion probes proved release and refused-deletion preservation but omitted the
@@ -438,6 +468,10 @@ success that settled just before replacement.
 The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
 
 Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+
+### Deferred sensitivity must redraw the current clip's markers
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
 
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 

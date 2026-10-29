@@ -6,6 +6,8 @@ import {
     FADER_MAX_GAIN,
     clampFaderGain,
     dbToGain,
+    faderPositionToValue,
+    faderValueToPosition,
     formatGainDb,
     fromStereoPan,
     gainLaneLevelLaw,
@@ -74,6 +76,50 @@ describe('FADER_MAX_GAIN', () => {
         expect(FADER_HEADROOM_DB).toBe(6);
         expect(FADER_MAX_GAIN).toBeCloseTo(dbToGain(6), 10);
         expect(FADER_MAX_GAIN).toBeCloseTo(1.995_262_3, 6);
+    });
+});
+
+describe('audio fader travel', () => {
+    it('places unity at 70 percent while preserving true silence and the +6 dB endpoint', () => {
+        expect(faderValueToPosition(0, 0, FADER_MAX_GAIN, 'gain')).toBe(0);
+        expect(faderValueToPosition(1, 0, FADER_MAX_GAIN, 'gain')).toBeCloseTo(0.7, 12);
+        expect(faderValueToPosition(FADER_MAX_GAIN, 0, FADER_MAX_GAIN, 'gain')).toBe(1);
+        expect(faderPositionToValue(0.7, 0, FADER_MAX_GAIN, 'gain')).toBeCloseTo(1, 12);
+    });
+
+    it('uses the same unity position for a decibel range without changing either bound', () => {
+        expect(faderValueToPosition(-70, -70, 6, 'decibels')).toBe(0);
+        expect(faderValueToPosition(0, -70, 6, 'decibels')).toBeCloseTo(0.7, 12);
+        expect(faderValueToPosition(6, -70, 6, 'decibels')).toBe(1);
+        expect(faderPositionToValue(0.7, -70, 6, 'decibels')).toBeCloseTo(0, 12);
+    });
+
+    it('round-trips finite values monotonically on either side of unity', () => {
+        for (const scale of ['gain', 'decibels'] as const) {
+            const min = scale === 'gain' ? 0 : -70;
+            const max = 6;
+            const values =
+                scale === 'gain' ? [0, 0.02, 0.2, 0.8, 1, 1.5, FADER_MAX_GAIN] : [-70, -48, -24, -6, 0, 3, 6];
+            const positions = values.map((value) => faderValueToPosition(value, min, max, scale));
+            expect(positions).toEqual([...positions].sort((a, b) => a - b));
+            for (const value of values) {
+                const position = faderValueToPosition(value, min, max, scale);
+                expect(faderPositionToValue(position, min, max, scale)).toBeCloseTo(value, 9);
+            }
+        }
+    });
+
+    it('keeps finite endpoints for nonfinite values and falls back to linear for invalid bounds', () => {
+        expect(faderValueToPosition(Number.NaN, 0, FADER_MAX_GAIN, 'gain')).toBe(0);
+        expect(faderValueToPosition(Number.POSITIVE_INFINITY, 0, FADER_MAX_GAIN, 'gain')).toBe(1);
+        expect(faderValueToPosition(Number.NEGATIVE_INFINITY, -70, 6, 'decibels')).toBe(0);
+        expect(faderPositionToValue(Number.NaN, 0, 2, 'gain')).toBe(0);
+        expect(faderValueToPosition(1, 1, 1, 'gain')).toBe(0);
+    });
+
+    it('leaves the default linear mapping unchanged', () => {
+        expect(faderValueToPosition(0, -70, 6)).toBeCloseTo(70 / 76, 12);
+        expect(faderPositionToValue(0.5, -70, 6)).toBe(-32);
     });
 });
 

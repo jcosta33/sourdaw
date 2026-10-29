@@ -9,7 +9,7 @@
 
 import { shouldCreateLiveTrackStrip, trackStore } from '#/modules/Arrangement/stores';
 import { applySoloLogic, projectTrackToLiveStrip } from '#/modules/Arrangement/useCases';
-import { ensureBusStrip, setBusGain, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { ensureBusStrip, wireSidechainRoutes } from '#/modules/Routing/useCases';
 
 function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['tracks']): boolean {
     return tracks.some(
@@ -17,10 +17,14 @@ function hasAmbiguousBusOwner(tracks: NonNullable<typeof trackStore.value>['trac
     );
 }
 
+type StripProjectionInput = Parameters<typeof projectTrackToLiveStrip>[0];
+// Rebuild consumers share only status/reason; native failure stages stay internal.
+type ExternalPluginActivation = Promise<{ status: 'active' } | { status: 'failed'; reason: string }>;
+
 export type EnsureTrackStripsResult =
     | {
           status: 'ready';
-          externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[];
+          externalPluginActivations: ExternalPluginActivation[];
       }
     | { status: 'failed'; reason: string };
 
@@ -68,32 +72,39 @@ export function ensureTrackStrips(input?: { collectExternalPluginActivations?: b
     const busTracks = tracks.filter((track) => track.kind === 'bus');
     const liveTracks = tracks.filter(shouldCreateLiveTrackStrip);
 
-    for (const bus of busTracks) {
-        ensureBusStrip(bus.id);
-    }
-
-    for (const bus of busTracks) {
-        setBusGain(bus.id, bus.gain);
-    }
-
-    const externalPluginActivations: Promise<{ status: 'active' } | { status: 'failed'; reason: string }>[] = [];
+    const externalPluginActivations: ExternalPluginActivation[] = [];
     for (const track of orderLiveTracksForInitialization(liveTracks)) {
-        const outcome = projectTrackToLiveStrip({
+        const projection: StripProjectionInput = {
             trackId: track.id,
             deferSidechainWiring: true,
+            deferSends: true,
             activateDormantExternalPlugins: true,
-            ...(input?.collectExternalPluginActivations
-                ? { onExternalPluginActivation: (activation) => externalPluginActivations.push(activation) }
-                : {}),
-        });
-        if (
-            input?.collectExternalPluginActivations &&
-            (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied')
-        ) {
+        };
+        if (input?.collectExternalPluginActivations) {
+            projection.onExternalPluginActivation = (activation) => {
+                externalPluginActivations.push(activation);
+            };
+        }
+        const outcome = projectTrackToLiveStrip(projection);
+        if (outcome?.acceptance !== 'accepted' || outcome.application !== 'applied') {
             return {
                 status: 'failed',
                 reason: outcome?.reason ?? `Track strip initialization did not produce an outcome for ${track.id}`,
             };
+        }
+    }
+
+    // A facade or send can create an empty paired strip. Publish them only
+    // after all full chains have been admitted, including later send targets.
+    // BusNode shares the track fader: projection already restored gain and PFL,
+    // so replaying raw bus gain here would overwrite the solo audition gain.
+    for (const bus of busTracks) {
+        ensureBusStrip(bus.id);
+    }
+    for (const track of liveTracks) {
+        const routing = projectTrackToLiveStrip({ mode: 'sends', trackId: track.id });
+        if (routing.status === 'rejected') {
+            return { status: 'failed', reason: routing.reason };
         }
     }
 
