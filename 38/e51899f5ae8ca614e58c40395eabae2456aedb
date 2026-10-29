@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_3168504f6ce387::t_df772202554a8c 730,739
+src/modules/Arrangement/handlers/vca/__tests__/handleSetVcaGain.spec.ts
+  s_3168504f6ce387::t_8d0f601dd95f19 8
+  s_3168504f6ce387::t_fd3d9741fdda06 30
+  s_3168504f6ce387::t_df772202554a8c 3,7,11,19-20,24,31-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38e51899f5ae8ca614e58c40395eabae2456aedb",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
