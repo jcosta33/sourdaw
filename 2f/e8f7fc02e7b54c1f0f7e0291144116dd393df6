@@ -1,0 +1,23 @@
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_3168504f6ce387::t_8b075320723f07 98-116,123
+tests/e2e/agentMixingRequest.spec.ts
+  s_3168504f6ce387::t_00284c22891928 10-11,150-178,346-348,497-548,553
+  s_3168504f6ce387::t_2500cf452a608e 549-552
+  s_3168504f6ce387::t_f7347053cc8990 554-556
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2fe8f7fc02e7b54c1f0f7e0291144116dd393df6",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
