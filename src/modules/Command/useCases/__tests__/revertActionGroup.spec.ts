@@ -517,15 +517,13 @@ describe('revertActionGroupAtomically', () => {
             mocks.executeAppActionBatch.mockImplementation(async (_actions, options) => {
                 options?.onAmbiguousCommit?.();
                 expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [older, newer] });
-                mocks.undoStoreValue.value = {
-                    past:
-                        transition === 'cleared'
-                            ? []
-                            : transition === 'restored copies'
-                              ? structuredClone([older, newer])
-                              : [older, newer],
-                    future: [],
-                };
+                let past: UndoEntry[] = [older, newer];
+                if (transition === 'cleared') {
+                    past = [];
+                } else if (transition === 'restored copies') {
+                    past = structuredClone([older, newer]);
+                }
+                mocks.undoStoreValue.value = { past, future: [] };
                 return { status: 'ambiguous', reason: 'Publication observer failed', actions: [] };
             });
 
