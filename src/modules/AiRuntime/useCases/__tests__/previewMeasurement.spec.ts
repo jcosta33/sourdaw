@@ -4,7 +4,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { markerStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import {
     createTrack,
     getArrangementHandlers,
@@ -33,6 +33,7 @@ import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
 import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
+import { type MeasurementAdmitter } from '../../models/MeasurementBudget';
 import { chatStore } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
@@ -43,7 +44,7 @@ import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
 import { persistPromptActionConfirmation } from '../agentRequestOrchestration/persistPromptActionConfirmation';
 import { agentRunLifecycle } from '../agentRunLifecycle';
-import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import * as batchDigest from '../digestCommandBatchContent';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
@@ -59,7 +60,8 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { advertisedAnswerSchema } from './answerWireFixture';
+import { advertisedAnswerCandidateId, advertisedAnswerSchema } from './answerWireFixture';
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
 
 // Only the engine's render boundary is replaced: compilation, grounding, the isolated preview,
@@ -101,7 +103,7 @@ const RUN_ID = 'run-preview';
 const ASSISTANT_ID = 'assistant-preview';
 const RANGE = { startBeat: 0, endBeat: 8 };
 
-type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string };
+type SubgraphRequest = { renderTracks: readonly Track[]; trackId?: string; targetTrackId?: string };
 
 const DRUMS_TRIM_ID = 'drums-trim';
 const DEVICE_NAMES: Readonly<Record<string, string>> = {
@@ -178,9 +180,9 @@ function drumsLevel(): number | undefined {
 }
 
 /** The interpretation a hosted run admits for the prompt: edit the drums' processing. */
-function interpretationCall(revision: string): ToolCallResult {
+function interpretationCall(revision: string, prompt = PROMPT): ToolCallResult {
     const catalog = prepareCreativeInterpretationCatalog({
-        prompt: PROMPT,
+        prompt,
         context: getProjectContext(),
         projectRevision: revision,
     });
@@ -300,16 +302,23 @@ function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void
 }
 
 /** The interpretation turn, then each scripted turn in order. */
-function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
+function scriptTurns(
+    revision: string,
+    turns: ReadonlyArray<ToolCallResult[]>,
+    criterion: 'unsupported' | 'match' = 'unsupported',
+    prompt = PROMPT
+): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
-    planning.mockImplementationOnce(async (_systemPrompt, _userMessage, toolSchemas) => {
-        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find(
-            (row) => row.kind === 'unsupported'
+    planning.mockImplementationOnce(async (_systemPrompt, userMessage, toolSchemas) => {
+        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find((row) =>
+            criterion === 'unsupported'
+                ? row.kind === 'unsupported'
+                : row.goals.some((goal) => goal.relation === 'match-current')
         );
         if (unsupported === undefined) {
             throw new TypeError('Expected the actual published unsupported acoustic objective.');
         }
-        const call = interpretationCall(revision);
+        const call = interpretationCall(revision, prompt);
         return {
             status: 'complete',
             toolCalls: [
@@ -319,14 +328,27 @@ function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): 
                         ...call.arguments,
                         answer: null,
                         metricIntent: {
-                            kind: 'perceptual',
+                            kind: criterion === 'match' ? 'comparative' : 'perceptual',
                             uncertainty: 'none',
                             objectives: [
                                 {
                                     objectiveId: unsupported.id,
-                                    scopeCandidateId: null,
-                                    referenceScopeCandidateId: null,
-                                    rangeCandidateId: null,
+                                    scopeCandidateId:
+                                        criterion === 'match'
+                                            ? advertisedAnswerCandidateId([toolSchemas, userMessage], 'drums')
+                                            : null,
+                                    referenceScopeCandidateId:
+                                        criterion === 'match'
+                                            ? advertisedAnswerCandidateId([toolSchemas, userMessage], 'bass')
+                                            : null,
+                                    rangeCandidateId:
+                                        criterion === 'match'
+                                            ? advertisedAnswerCandidateId(
+                                                  [toolSchemas, userMessage],
+                                                  'Passage',
+                                                  'ranges'
+                                              )
+                                            : null,
                                 },
                             ],
                         },
@@ -450,8 +472,8 @@ async function approvalMeasuredPreview(revision: string) {
 }
 
 /** Persist a planned result for approval as the prompt route does, under a run that is planning. */
-function persistForApproval(planned: IntentResult, revision: string): string {
-    agentRunLifecycle.create({ runId: RUN_ID, request: PROMPT, mode: 'apply', createdRevision: null, createdAt: 1 });
+function persistForApproval(planned: IntentResult, revision: string, prompt = PROMPT): string {
+    agentRunLifecycle.create({ runId: RUN_ID, request: prompt, mode: 'apply', createdRevision: null, createdAt: 1 });
     agentRunLifecycle.transitionPhase({ runId: RUN_ID, phase: 'planning' });
     const group = { groupId: 'group-preview', groupLabel: 'Punchier drums' };
     const actionLabels = planned.actions.map((action) => action.type);
@@ -461,7 +483,7 @@ function persistForApproval(planned: IntentResult, revision: string): string {
         actionCommandGraph: planned.actionCommandGraph,
         actionLabels,
         group,
-        intent: PROMPT,
+        intent: prompt,
         projectRevision: revision,
         runId: RUN_ID,
         context: getProjectContext(),
@@ -479,7 +501,7 @@ function persistForApproval(planned: IntentResult, revision: string): string {
     }
     const confirmationId = persistPromptActionConfirmation({
         runId: RUN_ID,
-        prompt: PROMPT,
+        prompt,
         assistantMessageId: ASSISTANT_ID,
         actions: planned.actions,
         actionLabels,
@@ -563,6 +585,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    markerStore.set({ markers: [], sections: [] });
     vi.restoreAllMocks();
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
@@ -774,6 +797,8 @@ describe('a measured preview through proposal and approval', () => {
             failedReads: [],
         });
         expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[1]?.[8]).toEqual({ mode: 'auto' });
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({ mode: 'auto' });
         const replay: HostedTurnHistory | undefined = vi
             .mocked(generateToolPlanningOutcome)
             .mock.calls.at(-1)?.[9]?.history;
@@ -1288,5 +1313,597 @@ describe('recipe previews retain existing render controls', () => {
         });
         expect(settle).toHaveBeenCalledTimes(1);
         expect((await measureRecipe()).receipt.status).toBe('success');
+    });
+});
+
+describe('real caller sequential measurement opportunity', () => {
+    function queryCall(): ToolCallResult {
+        return { id: 'sequence-query', name: 'project.query', arguments: { type: 'project-summary' } };
+    }
+
+    function scriptOpportunity(revision: string, calls: ToolCallResult[] = [recipePreviewCall()]) {
+        scriptTurns(revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            calls,
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+    }
+
+    function assertUnchanged(before: { tracks: unknown; history: unknown; transport: unknown; revision: string }) {
+        expect(trackStore.value).toEqual(before.tracks);
+        expect(undoHistoryStore.value).toEqual(before.history);
+        expect(transportStore.value).toEqual(before.transport);
+        expect(captureProjectRevision()).toBe(before.revision);
+    }
+
+    function captureBefore() {
+        return {
+            tracks: structuredClone(trackStore.value),
+            history: structuredClone(undoHistoryStore.value),
+            transport: structuredClone(transportStore.value),
+            revision: captureProjectRevision(),
+        };
+    }
+
+    it('awaits the real dispatcher and admits its receipt before requesting a normal visible proposal', async () => {
+        const before = captureBefore();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
+        scriptOpportunity(before.revision);
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        await entered.promise;
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        assertUnchanged(before);
+        released.resolve();
+        const planned = await pending;
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const receipt = planned.applicationToolReceipts?.find((entry) => entry.callId === 'measure-recipe');
+        expect(receipt).toMatchObject({
+            status: 'success',
+            turn: 4,
+            toolName: 'analysis.measure',
+            revision: before.revision,
+        });
+        const final = vi.mocked(generateToolPlanningOutcome).mock.calls[4];
+        expect(final?.[8]).toMatchObject({
+            mode: 'required',
+            toolNames: expect.arrayContaining(['command.batch.propose', 'command.batch.decline']),
+        });
+        expect(final?.[8]).not.toHaveProperty('parallelToolCalls');
+        expect(final?.[9]?.history.flatMap((turn) => turn.receipts)).toContainEqual(
+            expect.objectContaining({
+                callId: 'measure-recipe',
+                toolName: 'analysis.measure',
+                turn: 4,
+                status: 'success',
+                revision: before.revision,
+            })
+        );
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it.each(['typed refusal', 'render error'] as const)(
+        'retains the valid visible plan after actual %s evidence without authorizing it',
+        async (kind) => {
+            const before = captureBefore();
+            if (kind === 'render error') {
+                engine.renderTrackSubgraphOffline.mockRejectedValue(new Error('Controlled render failure.'));
+            }
+            scriptOpportunity(before.revision);
+            const admission = vi.fn<MeasurementAdmitter>(() => ({ status: 'refused', category: 'maxRenderJobs' }));
+            const planned = await parsePromptToActions({
+                prompt: PROMPT,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+                onMeasurementAttempt: kind === 'typed refusal' ? admission : undefined,
+            });
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            const receipt = planned.applicationToolReceipts?.find((entry) => entry.callId === 'measure-recipe');
+            expect(receipt).toMatchObject({ toolName: 'analysis.measure', turn: 4, status: 'failure' });
+            if (kind === 'typed refusal') {
+                expect(admission).toHaveBeenCalledOnce();
+                expect(receipt?.error?.code).toBe('measurement-budget-exhausted');
+                expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            } else {
+                expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+            }
+            expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+            const confirmationId = persistForApproval(planned, before.revision);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                status: 'proposed',
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            assertUnchanged(before);
+        }
+    );
+
+    it.each([{ calls: [] }, { calls: [queryCall()] }, { calls: [recipePreviewCall(), queryCall()] }])(
+        'rejects a nonconforming constrained caller turn before dispatch: $calls',
+        async ({ calls }) => {
+            const before = captureBefore();
+            scriptOpportunity(before.revision, calls);
+            const planned = await parsePromptToActions({
+                prompt: PROMPT,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+            });
+            expect(planned.actions).toEqual([]);
+            expect(planned.rejectionReason).toMatch(/required|single-call/);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+            expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            assertUnchanged(before);
+        }
+    );
+
+    it.each(['matched', 'contradicted', 'incomparable'] as const)(
+        'keeps sequencing separate from actual %s frozen metric proof',
+        async (kind) => {
+            markerStore.set({
+                markers: [],
+                sections: [
+                    { id: 'private-sequence-section', name: 'Passage', startBeat: 0, endBeat: 8, color: '#ffffff' },
+                ],
+            });
+            const state = trackStore.value;
+            if (state === null) {
+                throw new TypeError('Expected the actual configured tracks.');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => (track.id === 'bass' ? { ...track, gain: 0.4 } : track)),
+            });
+            flushAutomergeStorageWrites();
+            const before = captureBefore();
+            engine.renderTrackSubgraphOffline.mockImplementation(async (request: SubgraphRequest) => {
+                if (kind === 'incomparable') {
+                    return sineBuffer(0);
+                }
+                const target = request.renderTracks.find((track) => track.id === request.targetTrackId);
+                if (target === undefined) {
+                    throw new TypeError('Expected the actual rendered current subject.');
+                }
+                const levelDb = target.devices.reduce(
+                    (sum, device) => sum + (device.parameterValues['gain-level'] ?? 0),
+                    0
+                );
+                return sineBuffer(0.5 * target.gain * 10 ** (levelDb / 20));
+            });
+            const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, kind === 'matched' ? -6 : -12));
+            const prompt = 'Make Drums match Bass loudness over Passage';
+            scriptTurns(
+                before.revision,
+                [
+                    [queryCall()],
+                    [recipeExpansionCall()],
+                    [
+                        {
+                            ...measureCallFor('sequence-preview', proposal),
+                            arguments: { ...previewArgs(proposal), scope: { kind: 'tracks', ids: ['drums', 'bass'] } },
+                        },
+                    ],
+                    [proposeCall({ commands: [], compiledCallIds: ['sequence-preview'] })],
+                ],
+                'match',
+                prompt
+            );
+            const planned = await parsePromptToActions({
+                prompt,
+                context: getProjectContext(),
+                projectRevision: before.revision,
+                streamIdentity: { runId: RUN_ID, requestId: 'sequence-request', cancellationGeneration: 0 },
+            });
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(planned.actions).toHaveLength(1);
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            expect(
+                planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'sequence-preview')
+            ).toMatchObject({ status: 'success', turn: 4 });
+            const confirmationId = persistForApproval(planned, before.revision, prompt);
+            const view = getAgentApprovalView({ confirmationId });
+            expect(view?.status).toBe('proposed');
+            expect(view?.canConfirm).toBe(kind === 'matched');
+            expect(view?.metricGoals.status).toBe(kind === 'matched' ? 'verified' : 'blocked');
+            if (kind === 'contradicted') {
+                expect(view?.metricGoals.failure).toBe('out-of-tolerance');
+            }
+            if (kind === 'incomparable') {
+                expect(view?.metricGoals.failure).toBe('incomparable');
+            }
+            assertUnchanged(before);
+        }
+    );
+
+    it('keeps a valid blocked plan when the genuine raw preview receipt exceeds the unchanged per-call bound', async () => {
+        const state = trackStore.value;
+        if (state === null) {
+            throw new TypeError('Expected configured source tracks.');
+        }
+        const extraIds = Array.from({ length: 2 }, (_, index) => `receipt-track-${String(index)}`);
+        // Bounded IDs and distinct controls overflow the genuine receipt without violating scope or composition limits.
+        const devices = Array.from({ length: 16 }, (_, index) => ({
+            ...gainDevice(`gain-${String(index)}-${'a'.repeat(200)}`),
+            name: `Receipt Gain ${String(index)}`,
+        }));
+        trackStore.set({
+            ...state,
+            tracks: [
+                ...state.tracks.map((track) =>
+                    track.id === 'drums' ? { ...track, devices: [...track.devices, ...devices] } : track
+                ),
+                ...extraIds.map((id) => createTrack({ id, name: id, kind: 'audio' })),
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const before = captureBefore();
+        const proposal = {
+            schemaVersion: 1,
+            items: devices.map((device, index) => ({
+                id: `receipt-step-${String(index)}`,
+                name: 'setDeviceParameter',
+                arguments: { paramId: 'gain-level', value: -1 },
+                selector: {
+                    targetArgument: 'deviceId',
+                    entity: 'device',
+                    where: { name: device.name },
+                    quantity: { unit: 'targets', exactly: 1 },
+                },
+            })),
+        };
+        const argumentsValue = {
+            subject: 'preview',
+            proposal,
+            scope: { kind: 'tracks', ids: ['drums', 'bass', ...extraIds] },
+            range: RANGE,
+        };
+        const raw = await measure(argumentsValue, before.revision);
+        expect(raw.receipt).toMatchObject({ status: 'success', error: null });
+        expect(new TextEncoder().encode(JSON.stringify(raw.receipt)).byteLength).toBeGreaterThan(
+            APPLICATION_OWNED_TOOL_LOOP_LIMITS.maxReceiptBytesPerCall
+        );
+        engine.renderTrackSubgraphOffline.mockClear();
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [{ id: 'oversized-preview', name: 'analysis.measure', arguments: argumentsValue }],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(
+            planned.applicationToolReceipts?.find((receipt) => receipt.callId === 'oversized-preview')
+        ).toMatchObject({ status: 'failure', data: null, error: { code: 'tool-receipt-too-large' } });
+        expect(planned.measuredPreview).toBeUndefined();
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalledTimes(8);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('cancels a held real measurement before receipt admission without a later proposal or write', async () => {
+        const before = captureBefore();
+        const controller = new AbortController();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
+        scriptOpportunity(before.revision);
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+            signal: controller.signal,
+        });
+        await entered.promise;
+        controller.abort();
+        released.resolve();
+        const planned = await pending;
+        expect(planned.actions).toEqual([]);
+        expect(planned.requiresConfirmation).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.callId === 'measure-recipe')).toBe(false);
+        assertUnchanged(before);
+    });
+
+    it('keeps an admitted literal workflow selector and proposal together on the final real caller turn', async () => {
+        const before = captureBefore();
+        const prompt = 'Import the prepared stem selection and build its starting mix';
+        const context = getProjectContext();
+        const scope: NonNullable<Parameters<typeof parsePromptToActions>[0]['stemImportScope']> = {
+            capability: {
+                schemaVersion: 1,
+                baseRevision: before.revision,
+                actionType: 'importStemSet',
+                selectionId: 'sequence-stems',
+                projectTempo: 120,
+                stems: [
+                    { stemId: 'stem-kick', sourceName: 'Kick.wav', durationSeconds: 2, detectedTempo: 120 },
+                    { stemId: 'stem-bass', sourceName: 'Bass.wav', durationSeconds: 2, detectedTempo: 120 },
+                ],
+                allowedRoles: ['kick', 'bass'],
+                constraints: {
+                    requireCompleteSelection: true,
+                    preserveExistingProject: true,
+                    requireFreshConfirmation: true,
+                    providerCannotAssignProjectIds: true,
+                },
+            },
+            actionSeed: {
+                selectionId: 'sequence-stems',
+                groupName: 'Imported Stems',
+                projectTempo: 120,
+                folderId: 'sequence-imported-folder',
+                stems: [
+                    {
+                        stemId: 'stem-kick',
+                        sourceName: 'Kick.wav',
+                        role: 'other',
+                        sourceTempo: 120,
+                        durationSeconds: 2,
+                        sourceBytes: 1024,
+                        decodedBytes: 4096,
+                        audioBufferId: 'sequence-kick-buffer',
+                        trackId: 'sequence-kick-track',
+                        trackName: 'Kick',
+                        trackGain: 1,
+                        trackPan: 0,
+                        clipId: 'sequence-kick-clip',
+                    },
+                    {
+                        stemId: 'stem-bass',
+                        sourceName: 'Bass.wav',
+                        role: 'other',
+                        sourceTempo: 120,
+                        durationSeconds: 2,
+                        sourceBytes: 1024,
+                        decodedBytes: 4096,
+                        audioBufferId: 'sequence-bass-buffer',
+                        trackId: 'sequence-bass-track',
+                        trackName: 'Bass',
+                        trackGain: 1,
+                        trackPan: 0,
+                        clipId: 'sequence-bass-clip',
+                    },
+                ],
+            },
+        };
+        vi.mocked(generateToolPlanningOutcome).mockImplementationOnce(async (_system, message, schemas) => {
+            const catalog = readCreativeInterpretationCatalog(message, schemas);
+            expect(catalog.modes).toContain('literal');
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: 'literal-intake',
+                        name: 'selectCreativeInterpretation',
+                        arguments: {
+                            catalogId: catalog.catalogId,
+                            modeId: 'literal',
+                            targetCandidateIds: [],
+                            editDimensionCandidateIds: [],
+                            constraintCandidateIds: [],
+                            creationSlotIds: [],
+                            uncertainty: 'none',
+                            answer: null,
+                            metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                        },
+                    },
+                ],
+            };
+        });
+        for (const calls of [
+            [
+                {
+                    id: 'import-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['importStemSet'] },
+                },
+            ],
+            [{ ...queryCall(), id: 'import-query-3' }],
+            [{ ...queryCall(), id: 'import-query-4' }],
+            [
+                {
+                    id: 'workflow',
+                    name: 'selectWorkflowCapability',
+                    arguments: { capabilityId: 'stem-import-starting-mix' },
+                },
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'importStemSet',
+                            arguments: {
+                                selectionId: 'sequence-stems',
+                                groupName: 'Imported Stems',
+                                stems: [
+                                    { stemId: 'stem-kick', role: 'kick' },
+                                    { stemId: 'stem-bass', role: 'bass' },
+                                ],
+                            },
+                        },
+                    ],
+                }),
+            ],
+        ]) {
+            vi.mocked(generateToolPlanningOutcome).mockResolvedValueOnce({ status: 'complete', toolCalls: calls });
+        }
+        const planned = await parsePromptToActions({
+            prompt,
+            context,
+            projectRevision: before.revision,
+            stemImportScope: scope,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([{ type: 'importStemSet', payload: { selectionId: 'sequence-stems' } }]);
+        expect(planned.workflowCapabilityId).toBe('stem-import-starting-mix');
+        expect(planned.requiresConfirmation).toBe(true);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        const final = vi.mocked(generateToolPlanningOutcome).mock.calls[4]?.[8];
+        expect(final).toMatchObject({
+            mode: 'required',
+            toolNames: expect.arrayContaining(['selectWorkflowCapability', 'command.batch.propose']),
+        });
+        expect(final).not.toHaveProperty('parallelToolCalls');
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
+    it('keeps a valid plan visible when the actual caller has no revision-bound measurement executor', async () => {
+        const before = captureBefore();
+        scriptTurns('', [
+            [
+                {
+                    id: 'ordinary-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['setDeviceParameter'] },
+                },
+            ],
+            [{ ...queryCall(), id: 'unavailable-query-3' }],
+            [{ ...queryCall(), id: 'unavailable-query-4' }],
+            [
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 },
+                        },
+                    ],
+                }),
+            ],
+        ]);
+        const planned = await parsePromptToActions({ prompt: PROMPT, context: getProjectContext() });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 } },
+        ]);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.measuredPreview).toBeUndefined();
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('refuses a provider-named measurement before dispatch when the actual caller has no executor', async () => {
+        const before = captureBefore();
+        scriptTurns('', [
+            [{ id: 'unavailable-measure', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } }],
+        ]);
+        const planned = await parsePromptToActions({ prompt: PROMPT, context: getProjectContext() });
+        expect(planned.rejectionReason).toBe(
+            'Provider planning rejected: Provider requested an unavailable application tool.'
+        );
+        expect(planned.actions).toEqual([]);
+        expect(planned.requiresConfirmation).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(2);
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        assertUnchanged(before);
+    });
+
+    it('keeps a candidate first prepared on the penultimate turn visible and unverified within five turns', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [
+                {
+                    id: 'sequence-discovery',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [recipeExpansionCall()],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({ mode: 'auto' });
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('retains an early valid inert proposal with no invented measurement or metric proof', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [recipeExpansionCall()],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions.length).toBeGreaterThan(0);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
     });
 });

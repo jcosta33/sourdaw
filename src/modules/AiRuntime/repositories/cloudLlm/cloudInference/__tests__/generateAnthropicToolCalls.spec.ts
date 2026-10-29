@@ -164,6 +164,41 @@ describe('generateAnthropicToolCalls', () => {
         expect(body.tools[0]?.cache_control).toEqual({ type: 'ephemeral' });
     });
 
+    it.each(['auto', 'required'] as const)('nests the single-call control for an explicit %s step', async (mode) => {
+        returnPayload({
+            content: [{ type: 'tool_use', id: 'single', name: 'setTempo', input: { bpm: 120 } }],
+            stop_reason: 'tool_use',
+        });
+        const directive =
+            mode === 'required'
+                ? { mode, toolNames: ['setTempo'], parallelToolCalls: false }
+                : { mode, parallelToolCalls: false };
+        await generateAnthropicToolCalls({
+            runtime,
+            systemPrompt: 'system',
+            userMessage: 'faster',
+            toolSchemas,
+            maxOutputTokens: 8192,
+            directive,
+            signal: new AbortController().signal,
+        });
+        const request: unknown = requestProvider.mock.calls[0]?.[0];
+        if (
+            typeof request !== 'object' ||
+            request === null ||
+            !('body' in request) ||
+            typeof request.body !== 'string'
+        ) {
+            throw new TypeError('Expected the actual provider request.');
+        }
+        const body: unknown = JSON.parse(request.body);
+        expect(body).toHaveProperty('tool_choice', {
+            type: mode === 'required' ? 'any' : 'auto',
+            disable_parallel_tool_use: true,
+        });
+        expect(body).not.toHaveProperty('disable_parallel_tool_use');
+    });
+
     it('narrows to exactly the directive-named tools, in their advertised order, dropping an unnamed one', async () => {
         const threeTools = [
             toolSchemas[0]!,

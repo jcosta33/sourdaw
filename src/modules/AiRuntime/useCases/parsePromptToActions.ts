@@ -1,7 +1,7 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
 import { requiresAppActionConfirmation } from '#/modules/Command/useCases';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
+import { captureProjectIdentity, captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases';
 import { canonicalJson, digest } from '#/utils/canonicalDigest';
 
@@ -897,6 +897,24 @@ const planPromptIntent = inject({ logger })(
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
+                    readMeasurementOpportunity: () => {
+                        if (
+                            readonly ||
+                            metricAuthority === undefined ||
+                            metricAuthority.callId === null ||
+                            metricAuthority.turn === null
+                        ) {
+                            return null;
+                        }
+                        return {
+                            authorityId: metricAuthority.authorityId,
+                            callId: metricAuthority.callId,
+                            turn: metricAuthority.turn,
+                            revision: metricAuthority.revision,
+                            required: metricAuthority.kind !== 'literal',
+                            available: metricAuthority.revision === captureProjectRevision(),
+                        };
+                    },
                     transientOnsetRead: transientRead,
                     textReceiptCharacterBudget: AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS,
                     loopId: `planning-${crypto.randomUUID()}`,
