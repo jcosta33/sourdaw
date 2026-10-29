@@ -1,0 +1,42 @@
+src/infra/store/storage/__tests__/createAutomergeStorage.prospectivePreparation.spec.ts
+  h_beb54bf43b47b7 1-210
+src/infra/store/storage/createAutomergeStorage.ts
+  h_beb54bf43b47b7 40,56-79,116,119,270,348-367,829-874,916-919,922-925,930-948,959-966,968-972,1529,2033-2046,2058,2666-2825
+src/modules/Arrangement/handlers/clip/__tests__/handleDetectTransients.spec.ts
+  h_beb54bf43b47b7 39
+src/modules/Arrangement/handlers/clip/handleDetectTransients.ts
+  h_beb54bf43b47b7 1-4,10,14,78-87,91,96-271,273-275,277-278,280-281
+src/modules/Arrangement/stores/__tests__/warpStates.prospectivePreparation.spec.ts
+  h_beb54bf43b47b7 1-132
+src/modules/Arrangement/stores/warpStates.ts
+  h_beb54bf43b47b7 435-458,460
+src/modules/Command/useCases/__tests__/commandBatchIdempotency.spec.ts
+  h_beb54bf43b47b7 1173-1318
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 365-531
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 41-53,321,476-592,612-619,629-630,647
+src/modules/CrdtDocument/useCases/mutateCrdtDoc.ts
+  h_beb54bf43b47b7 53-65
+src/modules/CrdtDocument/useCases/registerCrdtStorageRuntime.ts
+  h_beb54bf43b47b7 8,15-16,33-58,68,70-101
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 131-147,470,484-516,562
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 37-38,110-192
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 61-86,95-99,123,133-136,145-151,164-166,170,175-194
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  h_beb54bf43b47b7 141-144,218-225,228-229,263-265,510-513,598-605,608-609,631-633
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "994409147008893f8f093eb93105e63fa8042a02",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
