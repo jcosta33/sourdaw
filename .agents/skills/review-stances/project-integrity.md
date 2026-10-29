@@ -460,6 +460,17 @@ Require the authoritative document, Automation projection, links, samples, and u
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
 
+### Restore monitoring from the authoritative root after aborted repair (issue #5286)
+
+During a held same-project repair, compare the committed project root with its optimistic
+projection: a projected Off must not erase committed On intent. After the version restore aborts,
+require the rebuilt strip to receive a newly acquired source and the old stream to stop once; the
+aborted operation must add no history. A committed Off during reset stays Off, and a root
+replacement must not reset or rearm its successor. Preserve pending and refused permission cases
+and armed Auto's final-transport behavior. Read these root, projection, connection, stream, and
+history assertions in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; controlled ports do not prove hardware audio.
+
 ### A projected absence is not a committed deletion (issue #5283)
 
 Hold the production registered removal handler for an On track `a` in a real storage transaction.

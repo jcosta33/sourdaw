@@ -311,6 +311,18 @@ that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Th
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
 
+### An aborted graph repair must rearm committed monitoring intent (issue #5286)
+
+Start a connected On track, hold same-project graph repair at plugin reset, then project Off before
+repair and during reset in separate real version restores that abort. While held, observe committed
+root On beside projected Off. After abort, require rebuilt-strip monitoring to acquire a fresh
+source, connect it only to the rebuilt gain, stop the old source once, and leave history empty.
+Also commit Off during reset and replace the root: neither may reopen monitoring or rearm the
+successor strip. Keep pending and refused permission controls, and require armed Auto to follow the
+final transport state. The controlled media and graph ports prove lifecycle ownership, not physical
+hardware audio; the connected oracle is in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts`
+and `repairRuntimeGraphFromProject.autoMonitoring.spec.ts`.
+
 ### Obsolete input owners during a held removal (issue #5283)
 
 With track `a` already monitoring On at input `null`, hold its real registered removal in a
