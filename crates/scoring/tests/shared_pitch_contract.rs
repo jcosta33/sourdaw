@@ -79,6 +79,33 @@ fn scoring_yin_mpm_and_cached_pair_match_frozen_source_and_failure_state() {
 }
 
 #[test]
+fn short_yin_input_clears_readings_after_valid_pitch_and_retains_period() {
+    for invalid_len in [1, 0] {
+        let mut actual = YinDetector::new(44100.0, 40.0, 5000.0);
+        let mut expected = baseline::yin::YinDetector::new(44100.0, 40.0, 5000.0);
+        let tone = frame(44100.0, 82.41, 0.37, 4096);
+        let actual_before = actual.detect(&tone);
+        let expected_before = expected.detect(&tone);
+        assert!(actual_before.0 > 0.0 && actual_before.1 > 0.0);
+        assert_eq!(pair_bits(actual_before), pair_bits(expected_before));
+        let actual_period = actual.period.to_bits();
+        let expected_period = expected.period.to_bits();
+        assert!(actual.period > 0.0);
+
+        let invalid = vec![0.0; invalid_len];
+        assert_eq!(
+            pair_bits(actual.detect(&invalid)),
+            pair_bits(expected.detect(&invalid))
+        );
+        assert_eq!(actual.frequency.to_bits(), expected.frequency.to_bits());
+        assert_eq!(actual.confidence.to_bits(), expected.confidence.to_bits());
+        assert_eq!(actual.period.to_bits(), expected.period.to_bits());
+        assert_eq!(actual.period.to_bits(), actual_period);
+        assert_eq!(expected.period.to_bits(), expected_period);
+    }
+}
+
+#[test]
 fn mono_poly_calibration_release_and_passthrough_match_frozen_consumers() {
     for (sample_rate, frequency, instrument) in [
         (44100.0, 82.41, 0.0),
