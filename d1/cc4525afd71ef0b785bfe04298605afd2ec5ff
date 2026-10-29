@@ -1,0 +1,52 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 39-62,70-72,74-80,82-85
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 852-865,894-907
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 138-148,827-869
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1874-1888,1904-1929,1943-1957
+AGENTS.md
+  h_beb54bf43b47b7 114-118
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 9-10,18-20,290-344,405,494,497-512,516-517,520-550,552-572,574-576,578-579,581-584,588-594,603
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 20,24,29,43-44,55-60,62-90,92-116,126-135,137-143,145-150,154,164-166,168-193,195-196,199-266,269-283
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  h_beb54bf43b47b7 1-2,4-49,52-64,67-69,72-191,195-224,227-271,273-390,392-410,412-434,437-450,452-716,719-746
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  h_beb54bf43b47b7 2-5,49-53
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  h_beb54bf43b47b7 1-6,14-31
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  h_beb54bf43b47b7 1317,1320,1340,1368,1385,1389-1399,1401-1429,1431,1433-1436,1438-1451,1982-1983,1988,2000-2001,2012,2016,2023,2025-2052
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  h_beb54bf43b47b7 284-287,300-307,442-449,480-487,490-626
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  h_beb54bf43b47b7 51-54
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 121-122,1041,1043-1048,1065-1070
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  h_beb54bf43b47b7 43-57,72-90,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1cc4525afd71ef0b785bfe04298605afd2ec5ff",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
