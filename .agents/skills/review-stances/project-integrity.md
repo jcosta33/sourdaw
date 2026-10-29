@@ -787,3 +787,19 @@ placement with a negative anchor: the selected takes and their comp regions
 must survive real hydration unchanged, including an active saved arrangement's
 top-level fallback. Reverting placement admission must fail the rejection cases;
 a sanitizer-only assertion cannot establish safe file admission.
+
+## 2026-10-29 — an AI group revert committed a newer inverse before an older conflict (#5565)
+
+The history caller introduced by `22a84b216658f593391e7e141d90f7c84d13648b` replayed
+members separately; `78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` moved that loop into
+Command without making it atomic. GitHub reports no associated PR for either commit;
+historical private reviewer prompts, models and tiers are unknown. The missing failure
+mode was a later inverse refusing after a newer member had already changed the project.
+
+Apply Keys gain and Bass mute in one real group, remove Keys, then invoke the public AI
+history revert. Require unchanged raw project, projections, both Undo stacks, tree and AI
+metadata, plus a visible refusal and no Bass engine write. Pair an intact multi-member
+group with a later unrelated musician edit and real Redo. Hold the actual snapshot wait,
+replace the root with identical content or discard same-lineage history, then require
+zero-write refusal. Capture existing mutation-owner authorization before the first await;
+permit the replay's own writes and settle already-visible queued writes synchronously.

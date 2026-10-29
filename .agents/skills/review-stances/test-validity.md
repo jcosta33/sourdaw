@@ -1806,3 +1806,18 @@ alone cannot observe the file admission gap.
 The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
+
+## 2026-10-29 — a delegation spy could not observe partial AI history replay (#5565)
+
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` tested that the history caller delegated to
+Command and marked its row, while the member loop introduced by
+`22a84b216658f593391e7e141d90f7c84d13648b` could partially revert a group. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. A mocked void result could not expose project or history corruption.
+
+Run the public caller against real Command replay, registered handlers and a CRDT root.
+Use gain plus mute, make the older inverse conflict, and compare complete project and
+history state before asserting that the UI promise resolves with refusal feedback. Also
+exercise absent, partially undone and nonreplayable groups, a committed warning, runtime
+inertness and a valid group with Redo. Replacing only atomic replay with the member loop
+must fail preservation; removing result admission must fail the metadata assertions.
