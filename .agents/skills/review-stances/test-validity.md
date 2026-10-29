@@ -420,11 +420,16 @@ The generic macro strip originated in commit `90bc7995e44e809aa96d810bdf8b5e0b5f
 PR #4804 later made Space a no-op without a loaded Room microphone but left the control looking
 live. Historical private review prompts and tiers are unavailable.
 
+PR #5370 (`e6b349151e755dccf8c4c2f2833377dc72ea0076`) added the panel case but sent pointer
+move and release to `window`, while the knob listens on its root. A disabled-pointer guard removal
+left that case green; the test did not establish that a valid drag reached the consumer.
+
 Exercise the real panel and knob with no Room and a reordered Room-present projection in
-`LevainPanel.spec.tsx`. Require the accessible disabled state and pointer/keyboard refusal, then
-an enabled control and callback for Room. Remove the panel availability wiring or knob disabled
-guard and require the unchanged owning case to fail. The mocked projection does not prove an
-actual Room bank load or audible output.
+`LevainPanel.spec.tsx`. Require the accessible disabled state and separate keyboard and pointer
+refusal. Send a primary drag with matching pointer ID and coordinates to the knob root, and require
+a Room-enabled drag to capture that pointer and change the macro. Remove only the pointer-down
+disabled guard and require the unchanged no-Room callback assertion to fail. Retain the availability
+and keyboard guard probes. The mocked projection does not prove an actual Room bank load or audio.
 
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
