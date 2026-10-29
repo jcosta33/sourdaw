@@ -1,0 +1,54 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 865-879
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1824-1838
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 134-248,1018-1022,1121-1123,1137-1138,1140-1148,1189,1196,1219-1222,1276,1278-1294,1298-1326,1666-1667,1783-1785,1840-1847,3251-3255,3286-3290,3320-3436
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  h_beb54bf43b47b7 1-668
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1137-1152,1158,1270,1334-1373
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5-20,26,138,202-241
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 140,536,2111,2282,2894,3125-3133,3785,4721,5054,5477,5630,6494,6557,6827,7229-7237,7358,7556,8420,8861,8960,9203,10310,11543,12002,13127,13847,14090,15296,15620,15629,16142,16601,17312,17564,17762,17969,19814,19904,20300,20948,22091,23351,23594,24323,24854,24899,25043
+src/components/daw/RotaryKnob.tsx
+  h_beb54bf43b47b7 48-50,494-500,504-506,508,510-513
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_beb54bf43b47b7 676-740
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1137-1152,1158,1270,1334-1373
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  h_beb54bf43b47b7 3,11,25,28,570-602,606-619
+src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx
+  h_beb54bf43b47b7 6,82,86-89,147,187-220
+src/modules/Automation/stores/index.ts
+  h_beb54bf43b47b7 6
+src/modules/Automation/stores/modulationDragPreviewStore.ts
+  h_beb54bf43b47b7 1-9
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 1-9,11,25,74-82,85-130,163,178,181-183,185,188-198,205-215,258-297,367-487,594-632
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  h_beb54bf43b47b7 3,6-38,69-74,110-119,177-178,186-481,483-515
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 65,203-206
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 20
+tests/e2e/modulationHaloInteraction.spec.ts
+  h_beb54bf43b47b7 1-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41f58de862f900bbdd3dc33c09f19270c1033589",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
