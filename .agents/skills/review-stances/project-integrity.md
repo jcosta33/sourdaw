@@ -803,3 +803,21 @@ group with a later unrelated musician edit and real Redo. Hold the actual snapsh
 replace the root with identical content or discard same-lineage history, then require
 zero-write refusal. Capture existing mutation-owner authorization before the first await;
 permit the replay's own writes and settle already-visible queued writes synchronously.
+
+## 2026-10-29 — deferred replay effects could finalize history into a restored project (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) finalized atomic group history only
+after awaiting replay and its deferred effects. Review of #5849 caught a committed inverse
+whose held effect allowed project replacement and Undo clear before old entries entered the
+replacement's Redo. Historical private reviewer prompts, models and tiers are unknown.
+
+Hold a real post-commit effect after proving the inverse's raw writes committed. Replace or
+restore the captured project, clear history and release the effect; require the replacement's
+past, future and tree unchanged. Repeat through actual ambiguous publication reconciliation,
+including restoreUndoHistory with the original captured entry objects, not only cloned IDs.
+Object identity is not history ownership: capture and compensation preserve those objects.
+Finalize once at the normal or distinct ambiguous publication boundary before effects can
+re-enter; a committed inverse stays committed truth even if later effects warn. A later musician
+edit must retain its entry and invalidate Redo normally. Keep normal onCommitted silent for
+no-op, cancelled, rejected and ambiguous outcomes, and retain the original ambiguity if its
+separate observer throws.

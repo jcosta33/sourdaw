@@ -17,11 +17,13 @@ import {
     undoTreeStore,
 } from '#/modules/Command/stores';
 import {
+    captureUndoHistory,
     clearUndoHistory,
     executeAppAction,
     pushUndoEntry,
     redo,
     resetActionReplayAuthority,
+    restoreUndoHistory,
     setActionHistoryMetadataPort,
 } from '#/modules/Command/useCases';
 import {
@@ -130,6 +132,59 @@ async function applyMix(): Promise<AiActionGroup> {
     return group;
 }
 
+function holdRevertEffect(warning: boolean = false) {
+    const entered = Promise.withResolvers<void>();
+    const release = Promise.withResolvers<void>();
+    const handlers = getArrangementHandlers();
+    const waitForEffect = async () => {
+        entered.resolve();
+        await release.promise;
+        if (warning) {
+            throw new Error('Held revert follow-up unavailable');
+        }
+    };
+    clearHandlerRegistry();
+    registerHandlerMap({
+        ...handlers,
+        setTrackGain: {
+            ...handlers.setTrackGain,
+            execute: async (action, context) => {
+                const result = await handlers.setTrackGain.execute(action, context);
+                if (result?.status !== 'written') {
+                    return result;
+                }
+                return {
+                    status: result.status,
+                    reason: result.reason,
+                    commitValidation: result.commitValidation,
+                    postCommitEffect: result.postCommitEffect,
+                    afterCommit: waitForEffect,
+                    afterAmbiguousCommit: waitForEffect,
+                };
+            },
+        },
+    });
+    return { entered: entered.promise, release: () => release.resolve() };
+}
+
+function failAfterProjectPublication(): () => void {
+    const configuration = vi.spyOn(automergeStorage, 'configureAutomergeStoragePort');
+    registerCrdtStorageRuntime();
+    const port = configuration.mock.calls.at(-1)?.[0];
+    configuration.mockRestore();
+    if (!port) {
+        throw new Error('Expected the production CRDT storage runtime');
+    }
+    configureAutomergeStoragePort({
+        ...port,
+        mutateDoc: (input) => {
+            port.mutateDoc(input);
+            throw new Error('Project published before observer failure');
+        },
+    });
+    return () => configureAutomergeStoragePort(port);
+}
+
 describe('revertAiActionGroup', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -161,7 +216,7 @@ describe('revertAiActionGroup', () => {
             ghostClips: [],
         });
         automationStore.set({ lanes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         flushAutomergeStorageWrites();
     });
 
@@ -175,7 +230,7 @@ describe('revertAiActionGroup', () => {
         clearAiHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         automationStore.set({ lanes: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(structuredClone(defaultTransportState));
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.unstubAllGlobals();
@@ -184,7 +239,7 @@ describe('revertAiActionGroup', () => {
     it('reverts every member once, retains a later musician edit, and keeps the group redoable', async () => {
         const beforeMix = structuredClone(trackStore.value?.tracks);
         const group = await applyMix();
-        const groupEntries = [...(undoHistoryStore.value?.past ?? [])];
+        const groupEntries = captureUndoHistory().past;
         await executeAppAction({ type: 'muteTrack', payload: { trackId: 'drums', muted: true, expectedMuted: false } });
         const musicianEntry = undoHistoryStore.value?.past.at(-1);
 
@@ -340,9 +395,177 @@ describe('revertAiActionGroup', () => {
         }
     );
 
+    it.each([
+        { transition: 'replacement', warning: false },
+        { transition: 'same-lineage discard', warning: false },
+        { transition: 'earlier snapshot', warning: false },
+        { transition: 'unchanged', warning: false },
+        { transition: 'replacement', warning: true },
+    ])(
+        'keeps history coherent during a post-commit $transition (warning: $warning)',
+        async ({ transition, warning }) => {
+            const group = await applyMix();
+            const appliedRoot = clone(requireRoot());
+            const originalProject = captureProjectIdentity();
+            const entries = captureUndoHistory().past;
+            const effect = holdRevertEffect(warning);
+            const revert = revertAiActionGroup(group);
+            await effect.entered;
+            let beforeRelease: ReturnType<typeof captureState> | undefined;
+            let historyAtCommit: typeof undoHistoryStore.value;
+            try {
+                expect(trackStore.value?.tracks.find((track) => track.id === 'keys')?.gain).toBe(1);
+                expect(trackStore.value?.tracks.find((track) => track.id === 'bass')?.muted).toBe(false);
+                expect(toJS(requireRoot())).toMatchObject({
+                    tracks: {
+                        tracks: expect.arrayContaining([
+                            expect.objectContaining({ id: 'keys', gain: 1 }),
+                            expect.objectContaining({ id: 'bass', muted: false }),
+                        ]),
+                    },
+                });
+                historyAtCommit = structuredClone(undoHistoryStore.value);
+                if (transition === 'replacement') {
+                    replaceCrdtDoc({ id: 'root', doc: clone(requireRoot()) });
+                } else if (transition === 'same-lineage discard') {
+                    replaceCrdtDocInLineage({ id: 'root', doc: appliedRoot });
+                    expect(captureProjectIdentity()).toBe(originalProject);
+                } else if (transition === 'earlier snapshot') {
+                    replaceCrdtDoc({ id: 'root', doc: appliedRoot });
+                }
+                if (transition !== 'unchanged') {
+                    clearUndoHistory();
+                }
+                beforeRelease = captureState();
+            } finally {
+                effect.release();
+                await revert;
+            }
+            const after = captureState();
+            expect({ ...after, ai: beforeRelease?.ai }).toEqual(beforeRelease);
+            expect(historyAtCommit).toEqual({ past: [], future: entries });
+            expect(aiActionHistoryStore.value?.groups).toEqual([{ ...group, reverted: true }]);
+            if (warning) {
+                expect(notificationEventBus.emit).toHaveBeenCalledWith(
+                    'ui.notify',
+                    expect.objectContaining({
+                        level: 'warning',
+                        message: expect.stringContaining('Held revert follow-up unavailable'),
+                    })
+                );
+            } else {
+                expect(notificationEventBus.emit).not.toHaveBeenCalled();
+            }
+        }
+    );
+
+    it('lets a musician edit during a committed effect clear the reverted group from Redo', async () => {
+        const group = await applyMix();
+        const entries = captureUndoHistory().past;
+        const effect = holdRevertEffect();
+        const revert = revertAiActionGroup(group);
+        await effect.entered;
+        let musicianEntry: NonNullable<typeof undoHistoryStore.value>['past'][number] | undefined;
+        let historyAtCommit: typeof undoHistoryStore.value;
+        try {
+            historyAtCommit = structuredClone(undoHistoryStore.value);
+            await executeAppAction({
+                type: 'muteTrack',
+                payload: { trackId: 'drums', muted: true, expectedMuted: false },
+            });
+            musicianEntry = undoHistoryStore.value?.past.at(-1);
+        } finally {
+            effect.release();
+            await revert;
+        }
+
+        expect(historyAtCommit).toEqual({ past: [], future: entries });
+        expect(undoHistoryStore.value).toEqual({ past: [musicianEntry], future: [] });
+        expect(trackStore.value?.tracks.find((track) => track.id === 'keys')?.gain).toBe(1);
+        expect(trackStore.value?.tracks.find((track) => track.id === 'bass')?.muted).toBe(false);
+        expect(trackStore.value?.tracks.find((track) => track.id === 'drums')?.muted).toBe(true);
+        expect(aiActionHistoryStore.value?.groups).toEqual([{ ...group, reverted: true }]);
+        expect(notificationEventBus.emit).not.toHaveBeenCalled();
+    });
+
+    it.each(['cleared', 'restored copies', 'restored original entries', 'musician edit'] as const)(
+        'preserves history changed during ambiguous reconciliation with %s history',
+        async (transition) => {
+            const group = await applyMix();
+            const appliedRoot = clone(requireRoot());
+            const snapshot = captureUndoHistory();
+            const entries = [...snapshot.past];
+            const effect = holdRevertEffect();
+            const restorePort = failAfterProjectPublication();
+            const revert = revertAiActionGroup(group);
+            await effect.entered;
+            let beforeRelease: ReturnType<typeof captureState> | undefined;
+            let musicianEntry: NonNullable<typeof undoHistoryStore.value>['past'][number] | undefined;
+            try {
+                restorePort();
+                expect(trackStore.value?.tracks.find((track) => track.id === 'keys')?.gain).toBe(1);
+                expect(trackStore.value?.tracks.find((track) => track.id === 'bass')?.muted).toBe(false);
+                expect(toJS(requireRoot())).toMatchObject({
+                    tracks: {
+                        tracks: expect.arrayContaining([
+                            expect.objectContaining({ id: 'keys', gain: 1 }),
+                            expect.objectContaining({ id: 'bass', muted: false }),
+                        ]),
+                    },
+                });
+                expect(undoHistoryStore.value?.future).toEqual(entries);
+                if (transition === 'musician edit') {
+                    await executeAppAction({
+                        type: 'muteTrack',
+                        payload: { trackId: 'drums', muted: true, expectedMuted: false },
+                    });
+                    musicianEntry = undoHistoryStore.value?.past.at(-1);
+                    expect(undoHistoryStore.value?.past).toEqual([musicianEntry]);
+                } else {
+                    replaceCrdtDoc({ id: 'root', doc: appliedRoot });
+                    clearUndoHistory();
+                    if (transition === 'restored copies') {
+                        const copies = structuredClone(snapshot);
+                        restoreUndoHistory(copies);
+                        expect(undoHistoryStore.value?.past[0]?.id).toBe(entries[0]?.id);
+                        expect(undoHistoryStore.value?.past[0]).not.toBe(entries[0]);
+                    } else if (transition === 'restored original entries') {
+                        restoreUndoHistory(snapshot);
+                        expect(undoHistoryStore.value?.past[0]).toBe(entries[0]);
+                    }
+                }
+                beforeRelease = captureState();
+            } finally {
+                restorePort();
+                effect.release();
+                await revert;
+            }
+
+            const after = captureState();
+            if (transition !== 'musician edit') {
+                expect({ ...after, ai: beforeRelease?.ai }).toEqual(beforeRelease);
+            } else {
+                expect(after.undo).toEqual({ past: musicianEntry ? [musicianEntry] : [], future: [] });
+                expect(after.project).toEqual(beforeRelease?.project);
+                expect(after.tracks).toEqual(beforeRelease?.tracks);
+            }
+            expect(aiActionHistoryStore.value?.groups).toEqual([{ ...group, reverted: true }]);
+            expect(notificationEventBus.emit).toHaveBeenCalledWith(
+                'ui.notify',
+                expect.objectContaining({
+                    level: 'warning',
+                    message: expect.stringContaining('Automerge storage transaction committed'),
+                })
+            );
+        }
+    );
+
     it('reports a committed warning while keeping the whole revert consumed', async () => {
         const group = await applyMix();
         const handlers = getArrangementHandlers();
+        const failEffect = () => {
+            throw new Error('Revert follow-up unavailable');
+        };
         clearHandlerRegistry();
         registerHandlerMap({
             ...handlers,
@@ -354,10 +577,12 @@ describe('revertAiActionGroup', () => {
                         return result;
                     }
                     return {
-                        ...result,
-                        afterCommit: () => {
-                            throw new Error('Revert follow-up unavailable');
-                        },
+                        status: result.status,
+                        reason: result.reason,
+                        commitValidation: result.commitValidation,
+                        postCommitEffect: result.postCommitEffect,
+                        afterCommit: failEffect,
+                        afterAmbiguousCommit: failEffect,
                     };
                 },
             },

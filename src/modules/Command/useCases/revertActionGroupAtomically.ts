@@ -40,7 +40,21 @@ async function revertActionGroupAtomicallyImpl(
             detail: 'Part of the group has no inverse command to replay',
         };
     }
-    const outcome = await executeActionGroupUndo(entries, options);
+    let historyFinalized = false;
+    const finalizeHistory = () => {
+        if (historyFinalized) {
+            return;
+        }
+        // History follows publication before an asynchronous effect can clear it or a later
+        // musician edit can invalidate its Redo, including an ambiguous publication's effects.
+        historyFinalized = true;
+        commitRevertedEntries(entries);
+    };
+    const outcome = await executeActionGroupUndo(entries, {
+        ...options,
+        onCommitted: finalizeHistory,
+        onAmbiguousCommit: finalizeHistory,
+    });
     if (outcome.status === 'conflict') {
         return {
             status: 'refused',
@@ -55,7 +69,10 @@ async function revertActionGroupAtomicallyImpl(
             detail: 'Part of the group has no inverse command to replay',
         };
     }
-    commitRevertedEntries(entries);
+    if (!historyFinalized) {
+        // A no-op replay publishes nothing and runs no deferred effects, but consumes its entries.
+        finalizeHistory();
+    }
     return { status: 'reverted', warning: outcome.status === 'committed' ? readCommittedWarning(outcome.error) : null };
 }
 

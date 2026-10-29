@@ -1836,3 +1836,20 @@ enable states. Include raw side, settled dry/mixed output, unread crossover cont
 source lifecycle boundaries. Remove the actual mid or side compensation separately: the
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
+returned. #5849's pre-commit snapshot-wait cases missed the later asynchronous effects. A
+provisional live-entry reference filter also missed a real captured project/history restoration,
+because captureUndoHistory and restoreUndoHistory retain the original entry objects. Historical
+private review prompts and model tiers are unknown.
+
+Observe the real inverse commit, hold afterCommit or actual afterAmbiguousCommit, then restore
+both the captured project and original-reference history through public producers. Compare the
+restored past, future and tree after release; assert the original commit truth separately rather
+than requiring false unchanged AI metadata. Keep new-object restoration, ordinary success,
+post-commit warnings and a real musician edit as independent controls. Mutating finalization back
+to after the wait must fail these oracles. Check notification timing before publication callbacks,
+exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
+throw that retains the original committed error without rollback or retry.

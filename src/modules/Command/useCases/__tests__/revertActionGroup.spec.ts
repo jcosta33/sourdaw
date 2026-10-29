@@ -281,7 +281,10 @@ describe('revertActionGroupAtomically', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.undoStoreValue.value = { past: [], future: [] };
-        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
+        mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+            options?.onCommitted?.(actions);
+            return { status: 'committed', actions: [] };
+        });
     });
 
     it('replays the whole group newest-first as one batch and moves it to future', async () => {
@@ -294,7 +297,14 @@ describe('revertActionGroupAtomically', () => {
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
             [newer.inverseAction, older.inverseAction],
-            { skipUndo: true, skipMacroRecording: true, source: 'ai', undoEntryIds: [newer.id, older.id] }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'ai',
+                undoEntryIds: [newer.id, older.id],
+                onCommitted: expect.any(Function),
+                onAmbiguousCommit: expect.any(Function),
+            }
         );
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [other], future: [older, newer] });
@@ -429,7 +439,14 @@ describe('revertActionGroupAtomically', () => {
             const older = groupEntry('older', 'track-a');
             const newer = groupEntry('newer', 'track-b');
             holdGroupOf(older, newer);
-            mocks.executeAppActionBatch.mockResolvedValue(result);
+            mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+                if (result.status === 'ambiguous') {
+                    options?.onAmbiguousCommit?.();
+                } else {
+                    options?.onCommitted?.(actions);
+                }
+                return result;
+            });
 
             await expect(revertActionGroupAtomically('g1')).resolves.toEqual({
                 status: 'reverted',
@@ -460,7 +477,75 @@ describe('revertActionGroupAtomically', () => {
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledExactlyOnceWith(
             [newer.inverseAction, older.inverseAction],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual', undoEntryIds: [newer.id, older.id] }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+                undoEntryIds: [newer.id, older.id],
+                onCommitted: expect.any(Function),
+                onAmbiguousCommit: expect.any(Function),
+            }
         );
+    });
+
+    it('finalizes once at commit before later effects clear the history', async () => {
+        const older = groupEntry('older', 'track-a');
+        const newer = groupEntry('newer', 'track-b');
+        holdGroupOf(older, newer);
+        mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+            options?.onCommitted?.(actions);
+            expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [older, newer] });
+            mocks.undoStoreValue.value = { past: [], future: [] };
+            return { status: 'committed-with-warning', warning: 'Effect failed after clear', actions: [] };
+        });
+
+        await expect(revertActionGroupAtomically('g1')).resolves.toEqual({
+            status: 'reverted',
+            warning: 'Effect failed after clear',
+        });
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledOnce();
+        expect(mocks.undoTreeMoveTo).toHaveBeenCalledOnce();
+    });
+
+    it.each(['cleared', 'restored copies', 'restored originals'] as const)(
+        'does not finalize again after ambiguous %s history',
+        async (transition) => {
+            const older = groupEntry('older', 'track-a');
+            const newer = groupEntry('newer', 'track-b');
+            holdGroupOf(older, newer);
+            mocks.executeAppActionBatch.mockImplementation(async (_actions, options) => {
+                options?.onAmbiguousCommit?.();
+                expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [older, newer] });
+                mocks.undoStoreValue.value = {
+                    past:
+                        transition === 'cleared'
+                            ? []
+                            : transition === 'restored copies'
+                              ? structuredClone([older, newer])
+                              : [older, newer],
+                    future: [],
+                };
+                return { status: 'ambiguous', reason: 'Publication observer failed', actions: [] };
+            });
+
+            await expect(revertActionGroupAtomically('g1')).resolves.toEqual({
+                status: 'reverted',
+                warning: 'Publication observer failed',
+            });
+
+            expect(mocks.undoStoreSet).toHaveBeenCalledOnce();
+            expect(mocks.undoTreeMoveTo).toHaveBeenCalledOnce();
+        }
+    );
+
+    it('settles a no-op replay without requiring a commit observer', async () => {
+        const entry = groupEntry('already-at-value', 'track-a');
+        holdGroupOf(entry);
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'no-op', actions: [] });
+
+        await expect(revertActionGroupAtomically('g1')).resolves.toEqual({ status: 'reverted', warning: null });
+
+        expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [entry] });
     });
 });
