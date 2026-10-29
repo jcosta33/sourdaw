@@ -194,6 +194,12 @@ old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
 
+## Escape: repairing attached composite conflicts cloned live proxies (PR #4292)
+
+PR #4292 (`ac8e123b5e`) introduced a repair path that passed attached Automerge map and list proxies to `structuredClone`. The map input throws `DataCloneError: '#<Object> could not be cloned.'`; the list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar conflict case did not exercise either composite shape. Keep this escape distinct from the actor-order flake in `test-validity.md`.
+
+For project integrity, create real concurrent conflicts at the `tracks` map and `tracks.tracks` list with two fixed actors, then run the registered `repairProjectData` action. Verify the conflict and repair gate clear while the complete resolved tracks and MIDI remain identical in the raw document and projected stores, including exact `0.9999999999999999` gain, MIDI offset, and duration leaves. Save and reload actual Automerge bytes, rebuild projections, then run the registered `setTrackPan` action; the raw document and projection must agree and the edit must create one undo entry.
+
 ## Lesson from PR #4111 and PR #2169 snapshot-guard escapes
 
 PR #4111 introduced Yeast processor undo guards without exercising the codec's distinction between an empty persisted `params` map and its omitted store projection. PR #2169 introduced strip-silence's serialized restore guard and a replacement clone that materialized absent optional clip fields. A later conditional clone repair preserved optional-field presence but reinserted populated fields in a different key order. These shape changes made otherwise unchanged durable projections fail the guards during undo or redo.
@@ -453,6 +459,28 @@ Drive follower-point refusal through both `executeAppAction` and its supported s
 Require the authoritative document, Automation projection, links, samples, and undo history to stay unchanged after
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
+
+### Restore monitoring from the authoritative root after aborted repair (issue #5286)
+
+During a held same-project repair, compare the committed project root with its optimistic
+projection: a projected Off must not erase committed On intent. After the version restore aborts,
+require the rebuilt strip to receive a newly acquired source and the old stream to stop once; the
+aborted operation must add no history. A committed Off during reset stays Off, and a root
+replacement must not reset or rearm its successor. Preserve pending and refused permission cases
+and armed Auto's final-transport behavior. Read these root, projection, connection, stream, and
+history assertions in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; controlled ports do not prove hardware audio.
+
+### A projected absence is not a committed deletion (issue #5283)
+
+Hold the production registered removal handler for an On track `a` in a real storage transaction.
+While its optimistic projection hides `a`, independently commit `replacement-input` with
+`mutateCrdtDoc`. At that held interval observe the raw committed root still containing `a`, the
+visible projection omitting it, and runtime ownership together: the obsolete `a` key and edge
+must already be retired, while eligible shared `b` keeps the same capture, edge, and stream. In a
+last-owner case, the old input must stop. Neither case may recreate `a`'s strip or request
+permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
+and capture. Testing deletion and selector changes separately misses this authority crossing.
 
 ## Lesson from the PR #645 selected-range undo escape
 
