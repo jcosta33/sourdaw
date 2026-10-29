@@ -1,0 +1,30 @@
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_2bde4710bb7b12 9-21
+.agents/skills/review-stances/security-and-platform.md
+  s_567a084d0540c4::t_2bde4710bb7b12 59-71
+.agents/skills/review-stances/README.md
+  s_567a084d0540c4::t_2bde4710bb7b12 65-71
+pnpm-workspace.yaml
+  s_567a084d0540c4::t_2bde4710bb7b12 4-7
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_567a084d0540c4::t_d1aa82498f4c7d 426
+  s_567a084d0540c4::t_7252acc2a41cc6 375,378
+  s_567a084d0540c4::t_1e0b36ac058bcc 1-2,372-374,376-377,379-402,415-419,431-443,464-473
+  s_567a084d0540c4::t_5436bd21975961 3-12,403-414,420-425,427-430,444-463
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "40da6e3578e62cb3dfc36fef1896da85b7ddc12a",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
