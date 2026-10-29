@@ -1,0 +1,30 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 224-229
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1244-1249
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 29,507-510
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-766
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_beb54bf43b47b7 110-138
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  h_beb54bf43b47b7 11,36-37,59-74
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  h_beb54bf43b47b7 13-16
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 67,71-76
+src/modules/Fermenter/useCases/selectFermenterFilterChoice.ts
+  h_beb54bf43b47b7 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5782a976f80811c17f3ff444dbc437d9b333d1f0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
