@@ -334,7 +334,7 @@ describe('app main first paint', () => {
         expect(mocks.render).toHaveBeenCalled();
         expectFirstPaintRendered();
         expect(mocks.resetBrowserDisplayScaleForChildStartup).toHaveBeenCalledOnce();
-        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
         expect(mocks.failIdentityTransition).not.toHaveBeenCalled();
         expect(document.getElementById('root')).not.toBeNull();
     });
@@ -354,7 +354,7 @@ describe('app main first paint', () => {
 
         expectFirstPaintRendered();
         expect(mocks.render).toHaveBeenCalledOnce();
-        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        expect(mocks.bootstrap).not.toHaveBeenCalled();
     });
 
     it('fails identity-transition configuration closed when bootstrap import rejects', async () => {

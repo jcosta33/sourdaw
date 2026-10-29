@@ -1,4 +1,12 @@
+import { ApplicationStartupError } from './ApplicationStartupError';
 import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
+import {
+    APP_RENDER_ISSUED_ATTRIBUTE,
+    APP_IMPORT_RETRY_ISSUED_ATTRIBUTE,
+    BOOTSTRAP_STARTED_ATTRIBUTE,
+    claimInitialAppImportRetry,
+    clearInitialAppImportRetry,
+} from './initialAppImportRecovery';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
@@ -54,17 +62,6 @@ async function renderApplication(): Promise<void> {
 
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
     // includes WASM and must not occupy that window; AppShell effects await init.
-    void import('./bootstrap').catch((error: unknown) => {
-        void import('./rejectIdentityTransitionOnBootstrapFailure')
-            .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
-                reject(error);
-            })
-            .catch(() => {
-                void import('#/modules/Project/useCases').then(({ failProjectIdentityTransitionDependencies }) => {
-                    failProjectIdentityTransitionDependencies(error);
-                });
-            });
-    });
     const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
@@ -74,9 +71,55 @@ async function renderApplication(): Promise<void> {
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    void import('./App').then(({ App }) => {
-        reactRoot.render(<App />);
-    });
+    void import('./App').then(
+        ({ App }) => {
+            if (document.documentElement.hasAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE)) {
+                return;
+            }
+            // Document markers survive module re-evaluation and precede every runtime invocation.
+            document.documentElement.setAttribute(BOOTSTRAP_STARTED_ATTRIBUTE, '');
+            void import('./bootstrap').catch((error: unknown) => {
+                void import('./rejectIdentityTransitionOnBootstrapFailure')
+                    .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
+                        reject(error);
+                    })
+                    .catch(() => {
+                        void import('#/modules/Project/useCases').then(
+                            ({ failProjectIdentityTransitionDependencies }) => {
+                                failProjectIdentityTransitionDependencies(error);
+                            }
+                        );
+                    });
+            });
+            document.documentElement.setAttribute(APP_RENDER_ISSUED_ATTRIBUTE, '');
+            reactRoot.render(<App />);
+        },
+        () => {
+            if (
+                claimInitialAppImportRetry({
+                    protocol: window.location.protocol,
+                    userAgent: navigator.userAgent,
+                    hasDesktopBridge,
+                    bootstrapStarted: document.documentElement.hasAttribute(BOOTSTRAP_STARTED_ATTRIBUTE),
+                    appRenderIssued: document.documentElement.hasAttribute(APP_RENDER_ISSUED_ATTRIBUTE),
+                    retryIssued: document.documentElement.hasAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE),
+                    storage: () => window.sessionStorage,
+                })
+            ) {
+                document.documentElement.setAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE, '');
+                reloadApplication(window.location);
+                return;
+            }
+            reactRoot.render(
+                <ApplicationStartupError
+                    onReload={() => {
+                        clearInitialAppImportRetry(() => window.sessionStorage);
+                        reloadApplication(window.location);
+                    }}
+                />
+            );
+        }
+    );
 }
 
 async function renderDesktopStartupError(): Promise<void> {
