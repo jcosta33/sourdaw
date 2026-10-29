@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+
 import {
     applyChanges,
     change,
@@ -12,16 +15,21 @@ import {
     merge,
     save,
 } from '@automerge/automerge';
-import * as native from '@automerge/automerge';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import * as native from '@automerge/automerge/slim';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
 
-vi.mock('@automerge/automerge', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@automerge/automerge')>();
+vi.mock('@automerge/automerge/slim', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@automerge/automerge/slim')>();
     return { ...actual, free: vi.fn(actual.free) };
+});
+beforeAll(async () => {
+    const require = createRequire(import.meta.url);
+    const binary = readFileSync(require.resolve('@automerge/automerge/automerge.wasm'));
+    await native.initializeWasm(Uint8Array.from(binary));
 });
 beforeEach(() => {
     vi.mocked(native.free).mockClear();

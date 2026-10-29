@@ -135,8 +135,8 @@ export default defineConfig({
         },
     },
     resolve: {
-        alias: {
-            '#': fileURLToPath(new URL('./src', import.meta.url)),
+        alias: [
+            { find: '#', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
             // @automerge/automerge v3's `browser` export condition resolves to
             // `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` —
             // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
@@ -145,10 +145,12 @@ export default defineConfig({
             // Resolve through `import.meta.resolve` so Node walks up from this config
             // file to the checkout that owns the install (a review worktree has no
             // `node_modules` of its own), then pin the base64 sibling in that entrypoint.
-            '@automerge/automerge': fileURLToPath(
-                new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))
-            ),
-        },
+            {
+                // Public slim and raw-WASM subpaths initialize only their owning Worker.
+                find: /^@automerge\/automerge$/,
+                replacement: fileURLToPath(new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))),
+            },
+        ],
     },
     preview: {
         headers: {

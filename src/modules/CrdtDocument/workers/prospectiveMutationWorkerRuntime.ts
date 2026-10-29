@@ -1,4 +1,4 @@
-import { change, free, getHeads, getMissingDeps, load, save, type Doc } from '@automerge/automerge';
+import { change, free, getHeads, getMissingDeps, load, save, type Doc } from '@automerge/automerge/slim';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
