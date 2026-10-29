@@ -1,0 +1,117 @@
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  s_3168504f6ce387::t_cf030d4fcbaea0 1-6,14-31
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_61a99d33dc50bb 1,5,11,131,236,239,438,442,449,451-464,468-503,505,507,509
+  s_3168504f6ce387::t_75b12d4a962cf2 2,4,6-10,12-19,21-25,27,36-48,52-64,67-69,72-130,132-135,195-222,224-235,238,240,243-245,247-248,250-272,394-400,402-405,408-416,439-441,443-448,450,465-466
+  s_3168504f6ce387::t_cf030d4fcbaea0 419-437,504
+  s_3168504f6ce387::t_b29a2e473f0000 28-35
+  s_3168504f6ce387::t_cc03cc6360c68d 418
+  s_3168504f6ce387::t_d3cb90fb19c144 467
+  s_3168504f6ce387::t_66c77542755afb 506
+  s_3168504f6ce387::t_1d7aba1393ef36 508
+  s_3168504f6ce387::t_311559ce054e55 510-512
+  s_3168504f6ce387::t_332e5035479765 161-164,691-693,708-713
+  s_3168504f6ce387::t_179660151418d6 523-528,568,583-584,586-588,590-596,601-614,687
+  s_3168504f6ce387::t_540c301ddabd4c 223,237,246,529-567,569-582,585,589,597-600,634-639,643-646,678-684
+  s_3168504f6ce387::t_a7f8a2f57cbb61 20,26,140-146,165-166,172-189,615-616,618-633,640,642,647,649,651-669,671-672,674-677,685-686
+  s_3168504f6ce387::t_347b7628b9b089 617,673
+  s_3168504f6ce387::t_353cc6bf33b04b 136-139,147-151,157-160,167-171,190-191
+  s_3168504f6ce387::t_5c90706984a140 641,648
+  s_3168504f6ce387::t_cf3cbfb128978c 650,670
+  s_3168504f6ce387::t_1ae8e82c9ec228 152-154,156,699-701,703
+  s_3168504f6ce387::t_2688a571e7296a 155,702
+  s_3168504f6ce387::t_5dffc9243876b9 303,356,365
+  s_3168504f6ce387::t_fa5ef0a9e8795b 284,290,295,327,392-393
+  s_3168504f6ce387::t_aac147c074824a 274-283,285-289,291-294,296-302,304-326,328-355,357-364,366-379,381-389,391
+  s_3168504f6ce387::t_dc4887e08fd5b8 49,273,380,390
+  s_3168504f6ce387::t_51295370eea87c 50
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 865-879
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1868-1882
+  s_3168504f6ce387::t_5dffc9243876b9 1900-1908
+  s_3168504f6ce387::t_4a9f1aad1f9484 9-42,530-535,632-635,1909-1922
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 134-248,1018-1022,1121-1123,1137-1138,1140-1148,1189,1196,1219-1222,1276,1278-1294,1298-1326,1666-1667,1783-1785,1840-1847,3274-3278,3309-3311,3313,3343-3459
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  h_beb54bf43b47b7 1-668
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1137-1152,1158,1270,1334-1373
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 5-20,26,138,202-241
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 140,536,2111,2282,2894,3125-3133,3785,4721,5054,5477,5630,6494,6557,6827,7229-7237,7358,7556,8420,8861,8960,9203,10310,11543,12002,13127,13847,14090,15296,15620,15629,16142,16601,17312,17564,17762,17969,19814,19904,20300,20948,22091,23351,23594,24323,24854,24899,25043
+src/components/daw/RotaryKnob.tsx
+  h_beb54bf43b47b7 48-50,494-500,504-506,508,510-513
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_beb54bf43b47b7 676-740
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1137-1152,1158,1270,1334-1373
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  h_beb54bf43b47b7 3,11,25,28,570-602,606-619
+src/modules/Automation/presentations/views/__tests__/ModulationMatrix.spec.tsx
+  h_beb54bf43b47b7 6,82,86-89,147,187-220
+src/modules/Automation/stores/index.ts
+  h_beb54bf43b47b7 6
+src/modules/Automation/stores/modulationDragPreviewStore.ts
+  h_beb54bf43b47b7 1-9
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  h_beb54bf43b47b7 1-9,11,25,74-82,85-130,163,178,181-183,185,188-198,205-215,258-297,367-487,594-632
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.modulationSubscription.spec.tsx
+  h_beb54bf43b47b7 3,6-38,69-74,110-119,177-178,186-481,483-515
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  h_beb54bf43b47b7 65,203-206
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 20
+tests/e2e/modulationHaloInteraction.spec.ts
+  h_beb54bf43b47b7 1-160
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_3168504f6ce387::t_347b7628b9b089 120-121,1016,1018-1023,1040
+  s_3168504f6ce387::t_ede14a8024d00b 1041-1043
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3168504f6ce387::t_347b7628b9b089 44-52,55-56,89
+  s_3168504f6ce387::t_af7ea029e40ce6 43,53-54,57,72,90
+  s_3168504f6ce387::t_f1aa6cdde7828c 73-88,102
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_3168504f6ce387::t_347b7628b9b089 51
+  s_3168504f6ce387::t_56a0374ca2ca8a 52-54
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_3168504f6ce387::t_738ad32f6beed8 1301,1304,1324,1352,1369,1373-1383,1385-1413,1415,1417-1420,1422-1435,1966-1967,1972,1984-1985,1996,2000,2007,2009-2011,2015,2019
+  s_3168504f6ce387::t_fb51b5ef756cf1 2012-2014
+  s_3168504f6ce387::t_fd2a0d8b1a7f7e 2016-2018
+  s_3168504f6ce387::t_c9ab1f5e84c6b5 2020-2022
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_3168504f6ce387::t_b3ad3f1d84f580 284-287,480-487,490-491,493-495,500-504,507-516,519
+  s_3168504f6ce387::t_bd3ff5c3f9b91c 300-307,442,447,492,496-499,505-506
+  s_3168504f6ce387::t_8d9a2786ba9b75 443-446
+  s_3168504f6ce387::t_ab6fe0528bc8e6 448-449
+  s_3168504f6ce387::t_1a38c72dac5637 517-518
+  s_3168504f6ce387::t_1ae8e82c9ec228 520-526
+  s_3168504f6ce387::t_874482a5e5c1e6 549-605,608-610,612-614,616-626
+  s_3168504f6ce387::t_aac147c074824a 606-607,611,615
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_3168504f6ce387::t_f1aa6cdde7828c 2-5,49-53
+.agents/skills/review-stances/project-integrity.md
+  s_3168504f6ce387::t_5dffc9243876b9 834-843
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f2745d43b80743c597bc46f8db09fe05f39349f7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
