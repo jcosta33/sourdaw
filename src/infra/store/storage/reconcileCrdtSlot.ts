@@ -196,6 +196,10 @@ function writeAssignedFractionalLeaves(written: unknown, intended: unknown): voi
         return;
     }
     for (const [field, value] of Object.entries(intended)) {
+        // Re-emission only owns fields installed by the accepted composite assignment.
+        if (!Object.hasOwn(written, field)) {
+            continue;
+        }
         if (typeof value === 'number' && Number.isFinite(value) && !Number.isInteger(value)) {
             written[field] = value;
         } else {
