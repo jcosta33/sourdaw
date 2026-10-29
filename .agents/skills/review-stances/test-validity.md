@@ -1319,6 +1319,12 @@ Blind spot: the fixture's chosen actor looked deterministic, and the stance neve
 
 Probe that would have caught it: for any fixture that merges two concurrent writes to one key and asserts the surviving value, name both actors; if either is random, require the fixture to fix the ordering (an actor that sorts above or below every possible peer) and run the spec with the chosen actor flipped to the opposite extreme, expecting it to redden.
 
+### Escape: attached composite conflicts were not exercised by the repair spec (PR #4292)
+
+PR #4292 (`ac8e123b5e`) introduced `structuredClone` of an attached Automerge proxy in project repair. That fails for map and list conflict values with `Cannot create a reference to an existing document object`; the scalar-only repair case did not reveal it. This is separate from the concurrent-actor ordering flake above.
+
+Probe both real concurrent shapes (`tracks` map and `tracks.tracks` list) using two fixed actors and the registered `repairProjectData` action. Require the repair gate to reject an edit before repair, then require conflicts and the gate to clear without changing the full resolved tracks or MIDI, including exact `0.9999999999999999` leaves. After real Automerge save/load and reprojection, a registered `setTrackPan` edit must update raw and projected state and create one undo entry. Replace only the behavioral repair with direct assignment of the attached proxy: both unchanged composite cases must fail. A scalar-only case or a detached plain-object clone is not this oracle.
+
 ### 2026-09-17 — an arm click waited for a track a fresh project never has (escaped via commit 32179299b)
 
 Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').first().click()` right after `launch_new_project(page)`. A new project starts with zero tracks, so the locator never resolved and both tests hit the 90 s suite timeout on every nightly run. E2E never runs on pull requests, only on approving-review runs and the nightly train, so Gate never executed the edited specs.
