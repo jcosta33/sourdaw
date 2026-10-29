@@ -994,6 +994,70 @@ describe('applyImportedProjectData round-trip hydration', () => {
         }
     );
 
+    it('rejects a MIDI clip carrying canonical audio source seconds in a JSON file without replacing the open project', async () => {
+        hydrateArrangementStoreFromProjectData({ data: makeProject() });
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
+            selectedClipIds: ['clip-a'],
+            selectedClipId: 'clip-a',
+        });
+        const previousProject = structuredClone(projectStore.value);
+        const previousTracks = structuredClone(trackStore.value);
+        const previousArrangement = structuredClone(arrangementStore.value);
+        const previousTakes = structuredClone(takeLaneStore.value);
+        const previousSelection = structuredClone(clipSelectionStore.value);
+        const previousMidi = structuredClone(midiStore.value);
+        const previousTransport = structuredClone(transportStore.value);
+        const previousEpoch = crdtAuthority.epoch;
+        const project = makeProject();
+        const clip = project.arrangement.tracks[0]?.clips[0];
+        if (!clip) {
+            throw new Error('Expected the project fixture to contain its first audio clip');
+        }
+        clip.type = 'midi';
+        clip.audioOffsetSeconds = 0;
+        const serialized: unknown = JSON.parse(JSON.stringify(project));
+
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(importCachedAudioBuffers).not.toHaveBeenCalled();
+        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+        expect(crdtAuthority.epoch).toBe(previousEpoch);
+        expect(projectStore.value).toEqual(previousProject);
+        expect(trackStore.value).toEqual(previousTracks);
+        expect(arrangementStore.value).toEqual(previousArrangement);
+        expect(takeLaneStore.value).toEqual(previousTakes);
+        expect(clipSelectionStore.value).toEqual(previousSelection);
+        expect(midiStore.value).toEqual(previousMidi);
+        expect(transportStore.value).toEqual(previousTransport);
+    });
+
+    it('imports the equivalent MIDI clip without canonical audio source seconds from a JSON file', async () => {
+        const project = makeProject();
+        const clip = project.arrangement.tracks[0]?.clips[0];
+        if (!clip) {
+            throw new Error('Expected the project fixture to contain its first audio clip');
+        }
+        clip.type = 'midi';
+        expect(clip).not.toHaveProperty('audioOffsetSeconds');
+        const serialized: unknown = JSON.parse(JSON.stringify(project));
+
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(crdtAuthority.value).toBe('Round Trip');
+        expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({ id: 'clip-a', type: 'midi' });
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+    });
+
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();
         Reflect.set(malformedMidi.midi.notesByClipId, 'clip-midi', null);
