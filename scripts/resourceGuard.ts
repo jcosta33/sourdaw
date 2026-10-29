@@ -162,7 +162,8 @@ const measuredScriptBudgets = new Map<string, number>([
     ['test:command-schema', 2 * 1024 ** 3],
     ['typecheck', 3072 * 1024 ** 2],
     ['typecheck:test', 6 * 1024 ** 3],
-    ['test:e2e', 5.5 * 1024 ** 3],
+    // A single-worker targeted browser diagnostic peaked at 7034 MiB under the guard.
+    ['test:e2e', 8 * 1024 ** 3],
     ['test:e2e:browser-ai-webgpu-admission', 5.5 * 1024 ** 3],
     ['deps:validate', 6.5 * 1024 ** 3],
 ]);

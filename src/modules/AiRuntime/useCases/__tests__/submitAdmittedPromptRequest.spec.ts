@@ -33,6 +33,7 @@ import { readChatThreadContext } from '../readChatThreadContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
+    stopMeasuredPreviewAudition: vi.fn(async () => ({ status: 'idle' })),
     settlePendingProjectWritesAndCaptureRevision: vi.fn(() => 'revision-1'),
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
@@ -43,6 +44,8 @@ const mocks = vi.hoisted(() => ({
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
 }));
+
+vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureActiveBranchReference: vi.fn(),
@@ -203,6 +206,7 @@ describe('submitAdmittedPromptRequest', () => {
     it('claims provider work before planning and records real intermediate and final budget usage', async () => {
         const claim = vi.spyOn(agentRunWorkLease, 'claim');
         mocks.planPromptActions.mockImplementation(async (input) => {
+            expect(mocks.stopMeasuredPreviewAudition).toHaveBeenCalledTimes(1);
             expect(
                 input.onProviderAttempt?.({
                     backend: 'cloud',

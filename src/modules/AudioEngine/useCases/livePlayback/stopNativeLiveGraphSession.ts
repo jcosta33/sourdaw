@@ -27,7 +27,11 @@ import { describeEngineNotRenderingRefusal } from './describeEngineNotRenderingR
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
-import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import {
+    invalidateNativeAuditionMonitoring,
+    nativeLiveGraphSession,
+    queueOnNativeLiveGraphSession,
+} from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
@@ -42,6 +46,7 @@ export type StopNativeLiveGraphSessionResult =
 export function stopNativeLiveGraphSession(
     input: StopNativeLiveGraphSessionInput
 ): Promise<StopNativeLiveGraphSessionResult> {
+    invalidateNativeAuditionMonitoring();
     return queueOnNativeLiveGraphSession(async (): Promise<StopNativeLiveGraphSessionResult> => {
         // First, and unconditionally — see the header.
         claimCarriedStrips(new Set());

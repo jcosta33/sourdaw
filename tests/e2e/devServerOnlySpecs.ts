@@ -7,6 +7,7 @@
  * both directions.
  */
 export const devServerOnlySpecs: readonly string[] = [
+    'tests/e2e/agentMixingRequest.spec.ts',
     'tests/e2e/agentWorkspace.spec.ts',
     'tests/e2e/aiConfirmApplyUndo.spec.ts',
     'tests/e2e/aiProviderToolAuthority.spec.ts',

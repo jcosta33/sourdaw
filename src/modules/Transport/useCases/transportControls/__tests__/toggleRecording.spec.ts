@@ -78,6 +78,32 @@ const mocks = vi.hoisted(() => {
         panicYeastRuntime: vi.fn<() => Promise<void>>(),
     };
 });
+const previewIntents = vi.hoisted(() => {
+    let exclusive: AbortController | null = null;
+    let ordinarySignal: AbortSignal | null = null;
+    return {
+        get ordinarySignal() {
+            return ordinarySignal;
+        },
+        beginExclusive() {
+            const controller = new AbortController();
+            exclusive = controller;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        beginOrdinary() {
+            const previous = exclusive;
+            exclusive = null;
+            previous?.abort('preempted');
+            const controller = new AbortController();
+            ordinarySignal = controller.signal;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        reset() {
+            exclusive?.abort('reset');
+            exclusive = null;
+        },
+    };
+});
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({
     getTransportState: vi.fn(),
@@ -113,6 +139,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
+        beginAudioPreviewIntent: previewIntents.beginOrdinary,
+        beginExclusiveAudioPreviewIntent: previewIntents.beginExclusive,
         setTransportInfo: vi.fn(),
     },
     resumeEngine: mocks.resumeEngine,
@@ -151,6 +179,7 @@ describe('toggleRecording', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        previewIntents.reset();
         vi.useFakeTimers();
         // resumeEngine returns Promise<void>; default to resolved so the `.catch`
         // chain in the count-in path has a thenable.
@@ -200,6 +229,29 @@ describe('toggleRecording', () => {
         toggleRecording();
 
         expect(update).not.toHaveBeenCalled();
+    });
+
+    it('retires an exclusive preview before a pending recording admission', () => {
+        const events: string[] = [];
+        const exclusive = previewIntents.beginExclusive();
+        exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
+        vi.mocked(getTransportState).mockReturnValue({
+            ...defaultTransportState,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+        });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: armedAudioTrack() });
+        mocks.startAudioRecording.mockImplementationOnce(() => {
+            expect(previewIntents.ordinarySignal?.aborted).toBe(true);
+            events.push('recording-admission');
+            return new Promise<boolean>(() => undefined);
+        });
+
+        toggleRecording();
+
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(events).toEqual(['preview-abort', 'recording-admission']);
     });
 
     it('should count in using the resolved meter at the playhead, not the flat numerator', () => {

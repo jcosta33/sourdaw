@@ -56,7 +56,7 @@ describe('getEngineTransportPosition', () => {
         const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
         vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: identity });
         expect((await getEngineTransportPosition()).engineIncarnation).toBe(identity);
-        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, running: false, engineIncarnation: null });
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, running: false, playing: false, batchesApplied: 0, engineIncarnation: null });
         expect((await getEngineTransportPosition()).engineIncarnation).toBeNull();
         vi.mocked(desktopInvoke).mockResolvedValue(NATIVE_PAYLOAD);
         expect(await getEngineTransportPosition()).not.toHaveProperty('engineIncarnation');
@@ -67,6 +67,45 @@ describe('getEngineTransportPosition', () => {
         const position = await getEngineTransportPosition();
         expect(position).toEqual(NATIVE_PAYLOAD);
         expect(position).not.toHaveProperty('engineIncarnation');
+    });
+
+    it.each([
+        { running: 'stopped', playing: false, batchesApplied: 0 },
+        { running: false, playing: 'stopped', batchesApplied: 0 },
+        { running: false, playing: false, batchesApplied: 'zero' },
+        { running: false, playing: false, batchesApplied: Number.POSITIVE_INFINITY },
+        { running: false, playing: false, batchesApplied: Number.MAX_SAFE_INTEGER + 1 },
+        { running: false, playing: false, batchesApplied: 42 },
+        { running: true, playing: false, batchesApplied: 0 },
+        { running: false, playing: true, batchesApplied: 0 },
+        {},
+    ])('withholds a readiness witness over malformed raw facts while retaining ordinary fallback: %o', async (raw) => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ engineIncarnation: null, ...raw });
+        const reading = await getEngineTransportPosition();
+        expect(reading).not.toHaveProperty('engineIncarnation');
+        expect(typeof reading.running).toBe('boolean');
+        expect(typeof reading.playing).toBe('boolean');
+        expect(Number.isFinite(reading.batchesApplied)).toBe(true);
+    });
+
+    it.each([
+        { running: 'running' },
+        { playing: 1 },
+        { batchesApplied: 'eleven' },
+        { batchesApplied: Number.POSITIVE_INFINITY },
+        { batchesApplied: Number.MAX_SAFE_INTEGER + 1 },
+        { batchesApplied: -1 },
+    ])('withholds a live identity over malformed readiness facts without dropping ordinary telemetry: %o', async (raw) => {
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:42',
+            ...raw,
+        });
+        const reading = await getEngineTransportPosition();
+        expect(reading).not.toHaveProperty('engineIncarnation');
+        expect(reading.positionSeconds).toBe(1.5);
+        expect(reading.stripPeaks).toEqual(NATIVE_PAYLOAD.stripPeaks);
+        expect(reading.tunerTelemetry).toEqual(NATIVE_PAYLOAD.tunerTelemetry);
     });
 
     it('reports the stopped shape in a browser build without reaching the bridge', async () => {

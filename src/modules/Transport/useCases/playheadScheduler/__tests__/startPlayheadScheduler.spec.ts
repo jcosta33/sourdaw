@@ -1,5 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { stoppedEngineTransportPosition } from '#/modules/AudioEngine/models/EngineTransportPosition';
+import { nativeLiveGraphSession } from '#/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState';
+import { readNativeEnginePlayheadSeconds as readNativeProgrammeClock } from '#/modules/AudioEngine/useCases/livePlayback/readNativeEnginePlayheadSeconds';
+
+const nativeProgrammeClock = vi.hoisted(() => ({
+    running: false,
+    reading:
+        null as typeof import('#/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState').nativeEnginePlayheadFeed.reading,
+}));
+vi.mock('#/modules/AudioEngine/useCases/livePlayback/nativeEnginePlayheadFeedState', () => ({
+    nativeEnginePlayheadFeed: nativeProgrammeClock,
+}));
+
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
 import { playheadPositionRef } from '../../../stores/playheadPositionRef';
@@ -390,6 +403,49 @@ describe('startPlayheadScheduler', () => {
         // The scheduling clock is untouched: the engine reading moves the
         // cursor, not the window notes are emitted into.
         expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
+    });
+
+    it('keeps the actual native programme reader through temporary audition suppression and a loop seam', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0, isLooping: true, loopStart: 0, loopEnd: 4 });
+        Object.assign(nativeLiveGraphSession, {
+            audibleCarrier: false,
+            programmeCarrier: true,
+            auditionOwner: Symbol('retained-audition'),
+            auditionOutputSuppressed: true,
+        });
+        nativeProgrammeClock.running = true;
+        nativeProgrammeClock.reading = {
+            ...stoppedEngineTransportPosition,
+            running: true,
+            playing: true,
+            positionSeconds: 1.9,
+        };
+        audioEngineMocks.readNativeEnginePlayheadSeconds.mockImplementation(readNativeProgrammeClock);
+        try {
+            startPlayheadScheduler();
+            const worker = schedulerSession.worker as unknown as {
+                onmessage: ((event: { data: unknown }) => void) | null;
+            };
+            ctxTime.now = 0.1;
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(playheadPositionRef.current).toBeCloseTo(3.8, 6));
+            await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
+            nativeLiveGraphSession.auditionOwner = null;
+            nativeProgrammeClock.reading = { ...nativeProgrammeClock.reading, positionSeconds: 0.1, loopWraps: 1 };
+            ctxTime.now = 0.2;
+            emitSchedulerTick(worker);
+            await vi.waitFor(() => expect(playheadPositionRef.current).toBeCloseTo(0.2, 6));
+            expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
+        } finally {
+            nativeProgrammeClock.running = false;
+            nativeProgrammeClock.reading = null;
+            Object.assign(nativeLiveGraphSession, {
+                audibleCarrier: false,
+                programmeCarrier: false,
+                auditionOwner: null,
+                auditionOutputSuppressed: false,
+            });
+        }
     });
 
     it('keeps the cursor on its own integration when no engine answers', async () => {

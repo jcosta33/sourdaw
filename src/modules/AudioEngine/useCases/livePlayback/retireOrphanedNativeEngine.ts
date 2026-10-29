@@ -62,7 +62,11 @@ import { forgetRetiredPluginInstances } from '#/modules/PluginHost/useCases';
 import { retireNativeEngine } from '../../repositories/engineLifecycle/retireNativeEngine';
 import { defaultNativeEngineRearmState, nativeEngineRearmStore } from '../../stores/nativeEngineRearmStore';
 
-import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import {
+    invalidateNativeAuditionMonitoring,
+    nativeLiveGraphSession,
+    queueOnNativeLiveGraphSession,
+} from './nativeLiveGraphSessionState';
 
 import type { AudioGraphBackend } from '../../models/AudioGraphBackend';
 
@@ -77,6 +81,7 @@ function reasonOf(error: unknown): string {
  * find the field already moved out from under them.
  */
 function releaseOrphan(orphan: AudioGraphBackend): void {
+    invalidateNativeAuditionMonitoring(false);
     orphan.dispose();
     nativeLiveGraphSession.orphanedBackend = null;
 }
@@ -86,6 +91,7 @@ function offerNativeSessionRearm(): void {
 }
 
 export function retireOrphanedNativeEngine(): Promise<void> {
+    invalidateNativeAuditionMonitoring();
     return queueOnNativeLiveGraphSession(async (): Promise<void> => {
         const orphan = nativeLiveGraphSession.orphanedBackend;
         if (orphan === null) {

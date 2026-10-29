@@ -3,12 +3,15 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { createAudioPreviewIntents } from '#/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents';
+
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => {
     let idCounter = 0;
     return {
         nextId: (): string => `gen-${++idCounter}`,
+        previewIntents: null as ReturnType<typeof createAudioPreviewIntents> | null,
         playAuditionNote: vi.fn(),
         auditionStop: vi.fn(),
         pushUndoEntry: vi.fn(),
@@ -62,6 +65,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: {
+        beginAudioPreviewIntent: () => {
+            if (mocks.previewIntents === null) throw new Error('Missing actual hover registry.');
+            return mocks.previewIntents.beginOrdinary();
+        },
+    },
     playAuditionNote: mocks.playAuditionNote,
 }));
 
@@ -249,6 +258,8 @@ describe('usePianoRollInteractions', () => {
             })
         );
         mocks.getNotesForClip.mockReturnValue([]);
+        mocks.previewIntents?.dispose();
+        mocks.previewIntents = createAudioPreviewIntents();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
         mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
         mocks.stepRecordState = { currentPitch: 62 };
@@ -751,12 +762,25 @@ describe('usePianoRollInteractions', () => {
             act(() => {
                 vi.advanceTimersByTime(200);
             });
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-1', 60, 100, group);
 
             act(() => {
                 vi.advanceTimersByTime(500);
             });
             expect(mocks.auditionStop).toHaveBeenCalledTimes(1);
+        });
+
+        it('a newer exclusive gesture retires the armed hover before its timer can dispatch a note', () => {
+            vi.useFakeTimers();
+            const { canvas } = renderRoll({ notePreviewEnabled: true });
+            fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
+            const exclusive = mocks.previewIntents?.beginExclusive();
+            expect(exclusive?.isCurrent()).toBe(true);
+            act(() => vi.advanceTimersByTime(1_000));
+            expect(mocks.playAuditionNote).not.toHaveBeenCalled();
+            expect(exclusive?.isCurrent()).toBe(true);
         });
 
         it('moving off the note before the debounce fires cancels the preview', () => {
@@ -1372,7 +1396,9 @@ describe('usePianoRollInteractions', () => {
                 vi.advanceTimersByTime(200);
             });
 
-            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80);
+            const group = mocks.playAuditionNote.mock.calls[0]?.[3];
+            expect(group?.isCurrent()).toBe(true);
+            expect(mocks.playAuditionNote).toHaveBeenCalledWith('track-2', 65, 80, group);
         });
     });
 

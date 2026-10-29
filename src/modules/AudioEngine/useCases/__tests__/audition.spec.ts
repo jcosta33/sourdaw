@@ -7,6 +7,7 @@ import {
     scheduleKitNote as scheduleKitNoteReal,
 } from '#/modules/Synth/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
+import { createAudioPreviewIntents } from '../../services/audioPreview/createAudioPreviewIntents';
 
 import { getDrumKitByIndex as getDrumKitByIndexReal } from '../audioEngineQueries/getDrumKitByIndex';
 import { playAuditionNote } from '../audition';
@@ -55,6 +56,12 @@ type MockTrackStrip = {
 };
 
 const { mocks } = vi.hoisted(() => {
+    const previewIntents: {
+        current: ReturnType<
+            typeof import('../../services/audioPreview/createAudioPreviewIntents').createAudioPreviewIntents
+        > | null;
+    } = { current: null };
+    const previewReady: { current: Promise<void> | undefined } = { current: undefined };
     const cancelScheduledValues = vi.fn();
     const setTargetAtTime = vi.fn();
     const stop = vi.fn();
@@ -71,6 +78,8 @@ const { mocks } = vi.hoisted(() => {
 
     return {
         mocks: {
+            previewIntents,
+            previewReady,
             trackStoreValue,
             audioContext,
             synthParams,
@@ -105,12 +114,26 @@ const { mocks } = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../repositories/createWebAudioEngine', () => ({
-    audioEngine: {
-        ensureTrackStrip: mocks.ensureTrackStrip,
-        context: mocks.audioContext,
-    },
-}));
+vi.mock('../../repositories/createWebAudioEngine', async () => {
+    const { createAudioPreviewIntents } = await import('../../services/audioPreview/createAudioPreviewIntents');
+    mocks.previewIntents.current = createAudioPreviewIntents();
+    return {
+        audioEngine: {
+            ensureTrackStrip: mocks.ensureTrackStrip,
+            context: mocks.audioContext,
+            beginAudioPreviewIntent: () => {
+                const registry = mocks.previewIntents.current;
+                if (registry === null) {
+                    throw new Error('The real preview intent fixture is unavailable.');
+                }
+                const intent = registry.beginOrdinary();
+                return mocks.previewReady.current === undefined
+                    ? intent
+                    : { ...intent, ready: mocks.previewReady.current };
+            },
+        },
+    };
+});
 
 vi.mock('#/modules/Synth/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Synth/useCases')>();
@@ -142,6 +165,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
 
 describe('playAuditionNote', () => {
     beforeEach(() => {
+        mocks.previewIntents.current?.dispose();
+        mocks.previewIntents.current = createAudioPreviewIntents();
+        mocks.previewReady.current = undefined;
         mocks.trackStoreValue = null;
         mocks.trackStrips.clear();
         mocks.ensureTrackStrip.mockClear();
@@ -150,6 +176,55 @@ describe('playAuditionNote', () => {
         mocks.stop.mockClear();
         mocks.scheduleNote.mockClear();
         mocks.getSynthParamsFromDevices.mockClear();
+    });
+
+    it('cannot start a stopped pending note after actual restoration settles', async () => {
+        let restore = () => {};
+        const readiness = new Promise<void>((resolve) => {
+            restore = resolve;
+        });
+        mocks.previewReady.current = readiness;
+        const stop = playAuditionNote('track-a', 60, 100);
+        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+        stop();
+        restore();
+        await readiness;
+        expect(mocks.ensureTrackStrip).not.toHaveBeenCalled();
+        expect(mocks.scheduleNote).not.toHaveBeenCalled();
+    });
+
+    it('a newer exclusive intent cancels pending preparation and only its own sounding notes', async () => {
+        playAuditionNote('track-a', 60, 100);
+        expect(mocks.scheduleNote).toHaveBeenCalledTimes(1);
+        let restore = () => {};
+        const readiness = new Promise<void>((resolve) => {
+            restore = resolve;
+        });
+        mocks.previewReady.current = readiness;
+        playAuditionNote('track-a', 64, 100);
+        const exclusive = mocks.previewIntents.current?.beginExclusive();
+        expect(exclusive?.isCurrent()).toBe(true);
+        expect(mocks.stop).toHaveBeenCalledTimes(1);
+        restore();
+        await readiness;
+        expect(mocks.scheduleNote).toHaveBeenCalledTimes(1);
+        expect(mocks.ensureTrackStrip).toHaveBeenCalledTimes(1);
+    });
+
+    it('stopping one inherited child preserves its group and permits the later note', () => {
+        const group = mocks.previewIntents.current?.beginOrdinary();
+        if (group === undefined) throw new Error('The actual group registry must be installed.');
+        const first = playAuditionNote('track-a', 60, 100, group);
+        first();
+        expect(group.isCurrent()).toBe(true);
+        expect(mocks.stop).toHaveBeenCalledTimes(1);
+        const later = playAuditionNote('track-a', 64, 80, group);
+        expect(mocks.scheduleNote).toHaveBeenCalledTimes(2);
+        expect(group.isCurrent()).toBe(true);
+        group.release();
+        expect(mocks.stop).toHaveBeenCalledTimes(2);
+        later();
+        expect(mocks.stop).toHaveBeenCalledTimes(2);
     });
 
     it('falls back to scheduled note when track is missing', () => {

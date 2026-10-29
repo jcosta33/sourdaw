@@ -116,7 +116,11 @@ import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWr
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { latchedPedalCommands } from './latchedPedalCommands';
-import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import {
+    invalidateNativeAuditionMonitoring,
+    nativeLiveGraphSession,
+    queueOnNativeLiveGraphSession,
+} from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
     projectLiveGraphTopology,
@@ -522,7 +526,13 @@ async function applyTopologyBatch(input: {
     commands: readonly AudioGraphCommand[];
 }): Promise<TopologyBatchOutcome> {
     const { backend } = input;
-    const commands = [...input.commands, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
+    const projected = input.commands.map((command): AudioGraphCommand => {
+        if (command.kind !== 'set-monitor-shadow') {
+            return command;
+        }
+        return { ...command, shadowed: command.shadowed || nativeLiveGraphSession.auditionOwner !== null };
+    });
+    const commands = [...projected, ...latchedPedalCommands(builtDeviceAddresses(input.commands))];
     const result = await backend.apply({ schemaVersion: 1, replaceTopology: true, commands });
     // A batch that starts the engine takes over the plugin instances loaded
     // before there was one — reported to their devices as loaded but processing
@@ -644,6 +654,7 @@ function reasonOf(error: unknown): string {
 function abandonSessionStart(backend: ReturnType<typeof createNativeLiveGraphBackend>): void {
     claimCarriedStrips(new Set());
     nativeLiveGraphSession.audibleCarrier = false;
+    nativeLiveGraphSession.programmeCarrier = false;
     // A topology batch may already have written its chains before the throw,
     // and they describe a graph this start is walking away from.
     clearNativeChains();
@@ -1008,6 +1019,9 @@ async function installRolledSession(input: {
     monitor: LiveGraphMonitorMode;
 }): Promise<void> {
     const { session, backend, topology, installed, rebound, monitor } = input;
+    // Its admission already preempted older gestures. Installing that request
+    // is not a new gesture over an audition admitted while this start waited.
+    invalidateNativeAuditionMonitoring(false);
     nativeLiveGraphSession.backend?.dispose();
     // This session's `replaceTopology` batch has already replaced the whole
     // topology a still-orphaned handle was left rolling, so that handle has
@@ -1024,7 +1038,10 @@ async function installRolledSession(input: {
     // contributing strip, and the note writer has to agree with the engine
     // rather than with what Web Audio was told to give up.
     const reboundStripIds = carriedStripIds(rebound.commands);
-    nativeLiveGraphSession.audibleCarrier = reboundStripIds.size > 0 && !shadowed;
+    nativeLiveGraphSession.programmeCarrier = reboundStripIds.size > 0 && !shadowed;
+    nativeLiveGraphSession.auditionOutputSuppressed = nativeLiveGraphSession.auditionOwner !== null;
+    nativeLiveGraphSession.audibleCarrier =
+        nativeLiveGraphSession.programmeCarrier && !nativeLiveGraphSession.auditionOutputSuppressed;
     nativeLiveGraphSession.rolling = false;
     disarmNativeLiveAutomationWriter();
     disarmNativeLiveMidiWriter();
@@ -1047,6 +1064,7 @@ async function installRolledSession(input: {
         // Only the audio goes back.
         releaseCarriedStrips();
         nativeLiveGraphSession.audibleCarrier = false;
+        nativeLiveGraphSession.programmeCarrier = false;
         notifyNativeDecline(parkedReason);
     }
     startNativeEnginePlayheadFeed();
@@ -1076,6 +1094,7 @@ function createSessionBackend(
 export function startNativeLiveGraphSession(
     input: StartNativeLiveGraphSessionInput
 ): Promise<NativeLiveGraphSessionResult> {
+    invalidateNativeAuditionMonitoring();
     // Synchronously, before anything is queued: a start is the session for the
     // play running now, so any recovery in flight for an earlier one — a claim
     // already taken, or a retire about to publish its offer — has to stand

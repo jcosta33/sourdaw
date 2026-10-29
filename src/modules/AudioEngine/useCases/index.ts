@@ -42,6 +42,8 @@ export { importCachedAudioBuffers } from './importCachedAudioBuffers';
 export { prepareCachedAudioBuffersFromIdb } from './prepareCachedAudioBuffersFromIdb';
 export { cachePreviewAudioBuffer } from './cachePreviewAudioBuffer';
 export { playCachedAudioBufferPreview } from './playCachedAudioBufferPreview';
+export { playAudioBufferPreview } from './playAudioBufferPreview';
+export { playExclusiveAudioBufferPreview } from './playExclusiveAudioBufferPreview';
 export { persistPreparedAudioBuffer } from './persistPreparedAudioBuffer';
 export { reclaimPreparedAudioBufferOrphans } from './reclaimPreparedAudioBufferOrphans';
 export { releaseCheckpointAudioRetention } from './releaseCheckpointAudioRetention';

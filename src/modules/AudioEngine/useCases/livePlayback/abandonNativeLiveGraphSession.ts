@@ -37,10 +37,11 @@ import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
-import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { invalidateNativeAuditionMonitoring, nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export function abandonNativeLiveGraphSession(reason: string): void {
+    invalidateNativeAuditionMonitoring();
     // First, and unconditionally — see the header, and ADR 0044's own wording:
     // the gate releases whether or not a backend exists, so a call that finds
     // no session still leaves nothing gated shut on its account.
@@ -58,6 +59,7 @@ export function abandonNativeLiveGraphSession(reason: string): void {
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.rolling = false;
     nativeLiveGraphSession.audibleCarrier = false;
+    nativeLiveGraphSession.programmeCarrier = false;
     clearNativeChains();
     const message =
         `Native audio engine stopped rendering: ${reason}. ` +

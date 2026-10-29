@@ -1,6 +1,8 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { audioEngine } from '#/modules/AudioEngine/useCases';
+
 import { aiStore, type AiTaskResult } from '#/modules/AiGeneration/stores';
 
 import { GenerativeAiPanel } from '../GenerativeAiPanel';
@@ -86,10 +88,14 @@ describe('GenerativeAiPanel — result card clip actions (integration)', () => {
     });
 
     afterEach(() => {
+        act(() => {
+            audioEngine.beginExclusiveAudioPreviewIntent().release();
+            audioEngine.setAudioPreviewProgrammeSuppressed(false);
+        });
         vi.useRealTimers();
     });
 
-    it('auditions the committed generated clip through the real audition use case', () => {
+    it('dispatches the committed clip notes through the real hook with one current group intent', () => {
         seedTasks([committedTask()]);
         render(<GenerativeAiPanel />);
 
@@ -99,11 +105,14 @@ describe('GenerativeAiPanel — result card clip actions (integration)', () => {
         act(() => {
             vi.advanceTimersByTime(0);
         });
-        expect(mocks.playAuditionNote).toHaveBeenNthCalledWith(1, 'track-1', 60, 100);
+        const intent = mocks.playAuditionNote.mock.calls[0]?.[3];
+        expect(intent?.isCurrent()).toBe(true);
+        expect(mocks.playAuditionNote).toHaveBeenNthCalledWith(1, 'track-1', 60, 100, intent);
         act(() => {
             vi.advanceTimersByTime(1000);
         });
-        expect(mocks.playAuditionNote).toHaveBeenNthCalledWith(2, 'track-1', 64, 80);
+        expect(intent?.isCurrent()).toBe(true);
+        expect(mocks.playAuditionNote).toHaveBeenNthCalledWith(2, 'track-1', 64, 80, intent);
     });
 
     it('offers no Apply affordance for already-committed material', () => {

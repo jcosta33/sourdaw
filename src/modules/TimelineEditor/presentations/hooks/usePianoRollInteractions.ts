@@ -17,7 +17,7 @@ import {
 } from 'react';
 
 import { trackStore } from '#/modules/Arrangement/stores';
-import { playAuditionNote } from '#/modules/AudioEngine/useCases';
+import { audioEngine, playAuditionNote } from '#/modules/AudioEngine/useCases';
 import { pushUndoEntry } from '#/modules/Command/useCases';
 import { stepRecordStore } from '#/modules/MIDI/stores';
 import {
@@ -369,6 +369,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     const auditionRef = useRef<(() => void) | null>(null);
     /** R-A13: debounce timer for note-hover audition. */
     const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const hoverIntentRef = useRef<ReturnType<typeof audioEngine.beginAudioPreviewIntent> | null>(null);
     /** R-A13: ID of the note currently under the debounce timer. */
     const hoverNoteIdRef = useRef<string | null>(null);
     /** Auto-stop timer for the audition the hover preview started. */
@@ -456,6 +457,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                 clearTimeout(hoverTimerRef.current);
                 hoverTimerRef.current = null;
             }
+            hoverIntentRef.current?.release();
+            hoverIntentRef.current = null;
             hoverNoteIdRef.current = null;
             if (previewStopTimerRef.current !== null) {
                 clearTimeout(previewStopTimerRef.current);
@@ -569,6 +572,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
             clearTimeout(hoverTimerRef.current);
             hoverTimerRef.current = null;
         }
+        hoverIntentRef.current?.release();
+        hoverIntentRef.current = null;
         hoverNoteIdRef.current = null;
 
         const canvas = canvasRef.current;
@@ -792,22 +797,57 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         if (hoverTimerRef.current !== null) {
                             clearTimeout(hoverTimerRef.current);
                         }
+                        hoverIntentRef.current?.release();
+                        const intent = audioEngine.beginAudioPreviewIntent();
+                        hoverIntentRef.current = intent;
                         hoverNoteIdRef.current = hit.note.id;
-                        hoverTimerRef.current = setTimeout(() => {
-                            hoverTimerRef.current = null;
+                        const abort = () => {
+                            clearTimeout(timer);
+                            if (hoverIntentRef.current === intent) {
+                                hoverIntentRef.current = null;
+                                hoverTimerRef.current = null;
+                            }
+                        };
+                        const timer = setTimeout(() => {
+                            intent.signal.removeEventListener('abort', abort);
+                            if (hoverIntentRef.current === intent) {
+                                hoverIntentRef.current = null;
+                                hoverTimerRef.current = null;
+                            }
+                            if (!intent.isCurrent()) {
+                                return;
+                            }
                             const auditionTrackId = resolveTrackIdForClip(hit.ownerClipId, trackId);
-                            const stopFn = playAuditionNote(auditionTrackId, hit.note.pitch, hit.note.velocity);
-                            previewStopRef.current = stopFn;
-                            // Auto-stop after 500ms to keep audition brief. Both the
-                            // timer and the stop are held in refs so the unmount
-                            // cleanup below can end this preview when the clip view
-                            // closes mid-audition.
-                            previewStopTimerRef.current = setTimeout(() => {
-                                previewStopTimerRef.current = null;
-                                previewStopRef.current = null;
-                                stopFn();
+                            const stopNote = playAuditionNote(
+                                auditionTrackId,
+                                hit.note.pitch,
+                                hit.note.velocity,
+                                intent
+                            );
+                            const stop = () => {
+                                try {
+                                    stopNote();
+                                } finally {
+                                    intent.release();
+                                }
+                            };
+                            previewStopRef.current = stop;
+                            const stopTimer = setTimeout(() => {
+                                if (previewStopTimerRef.current === stopTimer) {
+                                    previewStopTimerRef.current = null;
+                                }
+                                if (previewStopRef.current === stop) {
+                                    previewStopRef.current = null;
+                                }
+                                stop();
                             }, 500);
+                            previewStopTimerRef.current = stopTimer;
                         }, 200);
+                        hoverTimerRef.current = timer;
+                        intent.signal.addEventListener('abort', abort, { once: true });
+                        if (!intent.isCurrent()) {
+                            abort();
+                        }
                     }
                 } else {
                     // No note under cursor — clear timer
@@ -815,6 +855,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         clearTimeout(hoverTimerRef.current);
                         hoverTimerRef.current = null;
                     }
+                    hoverIntentRef.current?.release();
+                    hoverIntentRef.current = null;
                     hoverNoteIdRef.current = null;
                 }
             } else {
@@ -823,6 +865,8 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                     clearTimeout(hoverTimerRef.current);
                     hoverTimerRef.current = null;
                 }
+                hoverIntentRef.current?.release();
+                hoverIntentRef.current = null;
                 hoverNoteIdRef.current = null;
             }
             return;

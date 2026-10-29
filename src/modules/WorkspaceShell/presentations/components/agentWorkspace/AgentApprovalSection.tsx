@@ -2,6 +2,8 @@ import { type ReactElement, useState } from 'react';
 
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
+import { MeasuredPreviewAudition } from '#/modules/AiRuntime/presentations/views';
+import { stopMeasuredPreviewAudition } from '#/modules/AiRuntime/useCases';
 
 type ApprovalIntentGroup = {
     id: string;
@@ -408,6 +410,9 @@ const ApprovalCard = ({
             </ul>
             {renderRecipes(view.recipes)}
             {renderMeasuredPreview(view.measuredPreview)}
+            {view.status === 'proposed' ? (
+                <MeasuredPreviewAudition confirmationId={view.confirmationId} selectedIntentGroupIds={includedGroupIds} />
+            ) : null}
             <div aria-label="Metric goal verification">
                 <p>{`Objective verification: ${view.metricGoals.status}`}</p>
                 {view.metricGoals.reason === null ? null : <p>{view.metricGoals.reason}</p>}
@@ -486,6 +491,7 @@ export const AgentApprovalSection = ({
     );
 
     const toggleGroup = (view: AgentApprovalView, groupId: string, included: boolean): void => {
+        void stopMeasuredPreviewAudition({ confirmationId: view.confirmationId });
         setExcludedByConfirmation((current) => ({
             ...current,
             [view.confirmationId]: nextExclusion(

@@ -43,6 +43,32 @@ const {
     mockStartNativeSession: vi.fn(() => Promise.resolve()),
     mockLogger: { warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
+const previewIntents = vi.hoisted(() => {
+    let exclusive: AbortController | null = null;
+    let ordinarySignal: AbortSignal | null = null;
+    return {
+        get ordinarySignal() {
+            return ordinarySignal;
+        },
+        beginExclusive() {
+            const controller = new AbortController();
+            exclusive = controller;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        beginOrdinary() {
+            const previous = exclusive;
+            exclusive = null;
+            previous?.abort('preempted');
+            const controller = new AbortController();
+            ordinarySignal = controller.signal;
+            return { signal: controller.signal, release: () => controller.abort('released') };
+        },
+        reset() {
+            exclusive?.abort('reset');
+            exclusive = null;
+        },
+    };
+});
 
 vi.mock('../../../repositories/transport/getTransportState', () => ({ getTransportState: mockGetTransportState }));
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
@@ -107,6 +133,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     startNoteExpression: vi.fn(),
 
     audioEngine: {
+        beginAudioPreviewIntent: previewIntents.beginOrdinary,
+        beginExclusiveAudioPreviewIntent: previewIntents.beginExclusive,
         setTransportInfo: mockSetTransportInfo,
     },
     cacheAudioBuffer: vi.fn(() => 'recorded-audio-buffer'),
@@ -157,6 +185,7 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 describe('executePlayheadSeek', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        previewIntents.reset();
         vi.mocked(audioEngine.setTransportInfo).mockClear();
         playheadWrapCountRef.current = 0;
     });
@@ -188,6 +217,23 @@ describe('executePlayheadSeek', () => {
         mockGetTransportState.mockReturnValue(null);
         await executePlayheadSeek(8);
         expect(mockUpdateTransportState).not.toHaveBeenCalled();
+    });
+
+    it('retires an exclusive preview before waiting for the recording flush', () => {
+        const events: string[] = [];
+        const exclusive = previewIntents.beginExclusive();
+        exclusive.signal.addEventListener('abort', () => events.push('preview-abort'));
+        mockGetTransportState.mockReturnValue({ isPlaying: false, isRecording: true });
+        mockStopActiveRecording.mockImplementationOnce(() => {
+            expect(previewIntents.ordinarySignal?.aborted).toBe(true);
+            events.push('recording-flush');
+            return new Promise<void>(() => undefined);
+        });
+
+        void executePlayheadSeek(8);
+
+        expect(exclusive.signal.aborted).toBe(true);
+        expect(events).toEqual(['preview-abort', 'recording-flush']);
     });
 
     it('seeks without stopping playback when not playing and not recording', async () => {
