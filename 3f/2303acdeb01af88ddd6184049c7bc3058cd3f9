@@ -1,0 +1,26 @@
+src/modules/Arrangement/handlers/recording/__tests__/recordingReplayOwnership.integration.spec.ts
+  s_59e31a5c6f3e31::t_150e1222414621 37,57-64,167,169-170,173-174,176-178,183,279-283,381,383,386,388-389,394-397,404,409-412,420,422,442,444,524,526
+src/modules/Command/useCases/readUndoEntryForInverse.ts
+  s_59e31a5c6f3e31::t_150e1222414621 24,28-30
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_59e31a5c6f3e31::t_150e1222414621 46-51,67
+  s_59e31a5c6f3e31::t_fbecc793c30ce6 24
+src/modules/Command/useCases/__tests__/readUndoEntryForInverse.spec.ts
+  s_59e31a5c6f3e31::t_150e1222414621 95,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3f2303acdeb01af88ddd6184049c7bc3058cd3f9",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
