@@ -236,14 +236,14 @@ describe('loadProject', () => {
     });
 
     it('does not prepare a revoked initialization and permits a current successor', async () => {
-        const transaction = runProjectLoadTransaction();
+        const transaction = runProjectLoadTransaction({ yieldToInFlight: true });
         const prepare = vi.spyOn(transaction, 'prepare');
         await expect(loadProject({ transaction, shouldContinue: () => false })).resolves.toBe(false);
         expect(prepare).not.toHaveBeenCalled();
         expect(loadCrdtProject).not.toHaveBeenCalled();
         expect(projectCrdtToStores).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
-        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+        await expect(loadProject()).resolves.toBe(true);
     });
 
     it('settles a prepared admission when initialization is revoked during collaboration shutdown', async () => {
@@ -256,7 +256,7 @@ describe('loadProject', () => {
             },
         });
         let live = true;
-        const transaction = runProjectLoadTransaction();
+        const transaction = runProjectLoadTransaction({ yieldToInFlight: true });
         const activate = vi.spyOn(transaction, 'activate');
         const loading = loadProject({ transaction, shouldContinue: () => live });
         await entered.promise;
@@ -270,7 +270,7 @@ describe('loadProject', () => {
         expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
-        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+        await expect(loadProject()).resolves.toBe(true);
     });
 
     it('cancels staged legacy PCM when initialization is revoked before publication', async () => {
@@ -283,7 +283,10 @@ describe('loadProject', () => {
             return { cancel: mocks.cancelPreparedBuffers, publish };
         });
         let live = true;
-        const loading = loadProject({ transaction: runProjectLoadTransaction(), shouldContinue: () => live });
+        const loading = loadProject({
+            transaction: runProjectLoadTransaction({ yieldToInFlight: true }),
+            shouldContinue: () => live,
+        });
         await entered.promise;
         live = false;
         release.resolve();
@@ -294,7 +297,7 @@ describe('loadProject', () => {
         expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
         expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).not.toHaveBeenCalled();
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
-        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+        await expect(loadProject()).resolves.toBe(true);
     });
 
     it('revokes the live owner recovery callback when initialization is disposed', async () => {
@@ -307,7 +310,10 @@ describe('loadProject', () => {
             await release.promise;
         });
         let live = true;
-        const loading = loadProject({ transaction: runProjectLoadTransaction(), shouldContinue: () => live });
+        const loading = loadProject({
+            transaction: runProjectLoadTransaction({ yieldToInFlight: true }),
+            shouldContinue: () => live,
+        });
         await entered.promise;
         expect(recovery?.ownerId).toBe(CANONICAL_PROJECT_ID);
         expect(recovery?.isCurrent()).toBe(true);
@@ -316,7 +322,7 @@ describe('loadProject', () => {
         release.resolve();
         await expect(loading).resolves.toBe(false);
         expect(startCrdtAutoSave).not.toHaveBeenCalled();
-        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+        await expect(loadProject()).resolves.toBe(true);
     });
 
     it('should hydrate only after collaboration exits and persistence activates', async () => {
