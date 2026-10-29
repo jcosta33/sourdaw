@@ -1134,8 +1134,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 audioOffsetBeats: 0.5,
                 stretchMode: 'repitch',
                 stretchRatio: 2,
-                ...(looped ? { loopEnabled: true, loopLength: 4, loopOriginBeat: 0 } : {}),
             };
+            if (looped) {
+                source.loopEnabled = true;
+                source.loopLength = 4;
+                source.loopOriginBeat = 0;
+            }
             const other: Clip = { ...source, id: 'clip-b', startBeat: 4, endBeat: 8 };
             trackStore.set({
                 tracks: [
@@ -1161,7 +1165,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 duration: channelData.length / 48000,
                 copyFromChannel: () => undefined,
                 copyToChannel: () => undefined,
-            } as unknown as AudioBuffer);
+            });
             flushAutomergeStorageWrites();
             stopProjectionBridge = setupProjectionBridge();
             projectCrdtToStores();
@@ -1172,10 +1176,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         clipId: 'clip-a',
                         beat: 2.5,
                         rightClipId: 'clip-right',
-                        ...(looped ? { resolvedBeat: 2.5 } : {}),
                     },
                 },
             ];
+            const firstAction = actions[0];
+            if (looped && firstAction?.type === 'splitClip') {
+                firstAction.payload.resolvedBeat = 2.5;
+            }
             if (grouped) {
                 actions.push({ type: 'splitClip', payload: { clipId: 'clip-b', beat: 6, rightClipId: 'other-right' } });
             }
@@ -1263,7 +1270,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 if (
                     ['finite-source', 'zero-source', 'unwrapped', 'legacy-seam', 'media', 'provenance'].includes(change)
                 ) {
-                    if (!isRecord(snapshot.rightClip)) throw new Error('Expected saved right clip');
+                    if (!isRecord(snapshot.rightClip)) {
+                        throw new Error('Expected saved right clip');
+                    }
                     const changedFields: Readonly<Record<string, readonly [string, string | number]>> = {
                         'finite-source': ['audioOffsetSeconds', 3.125],
                         'zero-source': ['audioOffsetSeconds', 0],
@@ -1315,7 +1324,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     if (!isRecord(snapshot.rightClip)) {
                         throw new Error('Expected loop right clip');
                     }
-                    snapshot.rightClip[field] = field === 'loopLength' ? 6 : field.includes('Origin') ? 1 : 0;
+                    let corruptValue = 0;
+                    if (field === 'loopLength') {
+                        corruptValue = 6;
+                    } else if (field.includes('Origin')) {
+                        corruptValue = 1;
+                    }
+                    snapshot.rightClip[field] = corruptValue;
                 }
                 sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
                 reloadSavedProject();
@@ -1469,7 +1484,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
         it('keeps forward proof frozen when Undo captures a later right take', async () => {
             await splitAudio();
             const past = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-            if (!Array.isArray(past.past) || !isRecord(past.past[0])) throw new Error('Expected saved split');
+            if (!Array.isArray(past.past) || !isRecord(past.past[0])) {
+                throw new Error('Expected saved split');
+            }
             const forward = structuredClone(payload(past.past[0], 'inverseAction').splitSourceProof);
             expect(forward).toBeDefined();
             const take = createTake('clip-right', 'Late right take', 2.5, 4);
@@ -1695,8 +1712,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
             );
             const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-            if (!Array.isArray(saved.future) || !isRecord(saved.future[0]))
+            if (!Array.isArray(saved.future) || !isRecord(saved.future[0])) {
                 throw new Error('Expected saved trim future');
+            }
             for (const key of ['inverseAction', 'redoAction']) {
                 const action = saved.future[0][key];
                 if (
@@ -1704,16 +1722,23 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     !isRecord(action.payload) ||
                     !Array.isArray(action.payload.takeSourceTransitions) ||
                     !isRecord(action.payload.takeSourceTransitions[0])
-                )
+                ) {
                     throw new Error('Expected saved trim take capture');
+                }
                 const transition = action.payload.takeSourceTransitions[0];
                 for (const side of ['takesBefore', 'takesAfter']) {
                     const takes = transition[side];
-                    if (!Array.isArray(takes)) throw new Error('Expected captured takes');
+                    if (!Array.isArray(takes)) {
+                        throw new TypeError('Expected captured takes');
+                    }
                     const take = takes.find((value) => isRecord(value) && value.id === 'trim-unplaced');
-                    if (!isRecord(take)) throw new Error('Expected captured unplaced take');
+                    if (!isRecord(take)) {
+                        throw new Error('Expected captured unplaced take');
+                    }
                     take.sourceOffsetBeats = 12;
-                    if (side === 'takesAfter') take.sourceOffsetSeconds = 6;
+                    if (side === 'takesAfter') {
+                        take.sourceOffsetSeconds = 6;
+                    }
                 }
             }
             sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
@@ -1745,8 +1770,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             typeof result !== 'object' ||
                             !('commitValidation' in result) ||
                             !result.commitValidation
-                        )
+                        ) {
                             return result;
+                        }
                         const validation = result.commitValidation;
                         return {
                             ...result,
@@ -1754,13 +1780,21 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                                 ...validation,
                                 beforeCommit: () => {
                                     const raw = getCrdtDoc<TakeProject>('root');
-                                    if (!raw) throw new Error('Expected raw owner');
+                                    if (!raw) {
+                                        throw new Error('Expected raw owner');
+                                    }
                                     peer = Automerge.change(Automerge.clone(raw), (doc) => {
                                         const lane = doc.takeLanes.lanes[0]!;
                                         const index = lane.takes.findIndex((take) => take.id === 'trim-unplaced');
-                                        if (change === 'missing') lane.takes.splice(index, 1);
-                                        if (change === 'replaced') lane.takes[index] = { ...lane.takes[index]! };
-                                        if (change === 'diverged') lane.takes[index]!.sourceOffsetBeats = 12;
+                                        if (change === 'missing') {
+                                            lane.takes.splice(index, 1);
+                                        }
+                                        if (change === 'replaced') {
+                                            lane.takes[index] = { ...lane.takes[index]! };
+                                        }
+                                        if (change === 'diverged') {
+                                            lane.takes[index]!.sourceOffsetBeats = 12;
+                                        }
                                     });
                                     replaceCrdtDocInLineage({ id: 'root', doc: peer });
                                     return validation.beforeCommit();
@@ -1798,8 +1832,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             typeof result !== 'object' ||
                             !('commitValidation' in result) ||
                             !result.commitValidation
-                        )
+                        ) {
                             return result;
+                        }
                         const validation = result.commitValidation;
                         return {
                             ...result,
@@ -1807,19 +1842,29 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                                 ...validation,
                                 validateDocument: (document) => {
                                     const changed = Automerge.change(Automerge.clone(document), (doc) => {
-                                        if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes))
+                                        if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes)) {
                                             throw new Error('Expected prospective lanes');
+                                        }
                                         const lane = doc.takeLanes.lanes[0];
-                                        if (!isRecord(lane) || !Array.isArray(lane.takes))
+                                        if (!isRecord(lane) || !Array.isArray(lane.takes)) {
                                             throw new Error('Expected prospective takes');
+                                        }
                                         const index = lane.takes.findIndex(
                                             (take) => isRecord(take) && take.id === 'trim-unplaced'
                                         );
                                         const take = lane.takes[index];
-                                        if (!isRecord(take)) throw new Error('Expected prospective owner');
-                                        if (change === 'missing') lane.takes.splice(index, 1);
-                                        if (change === 'replaced') lane.takes[index] = { ...take };
-                                        if (change === 'diverged') take.sourceOffsetBeats = 12;
+                                        if (!isRecord(take)) {
+                                            throw new Error('Expected prospective owner');
+                                        }
+                                        if (change === 'missing') {
+                                            lane.takes.splice(index, 1);
+                                        }
+                                        if (change === 'replaced') {
+                                            lane.takes[index] = { ...take };
+                                        }
+                                        if (change === 'diverged') {
+                                            take.sourceOffsetBeats = 12;
+                                        }
                                     });
                                     observedRefusal = validation.validateDocument(changed);
                                     return observedRefusal;
@@ -1843,10 +1888,14 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             const { before } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
             const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
             const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-            if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) throw new Error('Expected saved trim');
+            if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) {
+                throw new Error('Expected saved trim');
+            }
             for (const key of ['inverseAction', 'redoAction']) {
                 const action = saved.past[0][key];
-                if (!isRecord(action) || !isRecord(action.payload)) throw new Error('Expected saved capture');
+                if (!isRecord(action) || !isRecord(action.payload)) {
+                    throw new Error('Expected saved capture');
+                }
                 delete action.payload.takeSourceTransitions;
             }
             sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
@@ -1932,8 +1981,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
                 );
                 const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
-                if (!Array.isArray(saved.future) || !isRecord(saved.future[0]))
+                if (!Array.isArray(saved.future) || !isRecord(saved.future[0])) {
                     throw new Error('Expected saved trim future');
+                }
                 for (const key of ['inverseAction', 'redoAction']) {
                     const action = saved.future[0][key];
                     if (
@@ -1941,8 +1991,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         !isRecord(action.payload) ||
                         !Array.isArray(action.payload.takeSourceTransitions) ||
                         !isRecord(action.payload.takeSourceTransitions[0])
-                    )
+                    ) {
                         throw new Error('Expected region capture');
+                    }
                     const transition = action.payload.takeSourceTransitions[0];
                     if (
                         !Array.isArray(transition.regionsBefore) ||
@@ -1950,14 +2001,18 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         !Array.isArray(transition.regionsAfter) ||
                         !isRecord(transition.regionsAfter[0]) ||
                         !isRecord(transition.regionsAfter[0].audioSource)
-                    )
+                    ) {
                         throw new Error('Expected region source');
+                    }
                     transition.regionsAfter[0].audioSource.audioOffsetSeconds = 9;
-                    if (change === 'before-and-after')
+                    if (change === 'before-and-after') {
                         transition.regionsBefore[0].audioSource = structuredClone(
                             transition.regionsAfter[0].audioSource
                         );
-                    if (change === 'malformed') action.payload.takeSourceTransitions = null;
+                    }
+                    if (change === 'malformed') {
+                        action.payload.takeSourceTransitions = null;
+                    }
                 }
                 sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
                 reloadSavedProject();
@@ -2000,20 +2055,28 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             let observed = false;
             const alter = (document: Readonly<Record<string, unknown>>) =>
                 Automerge.change(Automerge.clone(document), (doc) => {
-                    if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes))
+                    if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes)) {
                         throw new Error('Expected raw lanes');
+                    }
                     const lane = doc.takeLanes.lanes[0];
-                    if (!isRecord(lane) || !Array.isArray(lane.activeCompRegions))
+                    if (!isRecord(lane) || !Array.isArray(lane.activeCompRegions)) {
                         throw new Error('Expected raw regions');
+                    }
                     const region = lane.activeCompRegions[0];
-                    if (!isRecord(region)) throw new Error('Expected raw region');
-                    if (change.endsWith('missing')) lane.activeCompRegions.splice(0, 1);
+                    if (!isRecord(region)) {
+                        throw new Error('Expected raw region');
+                    }
+                    if (change.endsWith('missing')) {
+                        lane.activeCompRegions.splice(0, 1);
+                    }
                     if (change.endsWith('replaced')) {
                         const replacement = { ...region };
-                        if (isRecord(region.audioSource)) replacement.audioSource = { ...region.audioSource };
+                        if (isRecord(region.audioSource)) {
+                            replacement.audioSource = { ...region.audioSource };
+                        }
                         lane.activeCompRegions[0] = replacement;
                     }
-                    if (change.endsWith('diverged'))
+                    if (change.endsWith('diverged')) {
                         region.audioSource = {
                             startBeat: 8,
                             audioOffsetSeconds: 9,
@@ -2023,6 +2086,7 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             loopOriginBeat: 8,
                             loopLength: 4,
                         };
+                    }
                 });
             const spy = vi.spyOn(handleRestoreAudioClipStartTrim, 'execute').mockImplementation((action, context) => {
                 const result = execute(action, context);
@@ -2031,8 +2095,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     typeof result !== 'object' ||
                     !('commitValidation' in result) ||
                     !result.commitValidation
-                )
+                ) {
                     return result;
+                }
                 const validation = result.commitValidation;
                 return {
                     ...result,
@@ -2041,7 +2106,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         beforeCommit: () => {
                             if (change.startsWith('raw-')) {
                                 const current = getCrdtDoc('root');
-                                if (!current) throw new Error('Expected raw root');
+                                if (!current) {
+                                    throw new Error('Expected raw root');
+                                }
                                 peer = alter(current);
                                 replaceCrdtDocInLineage({ id: 'root', doc: peer });
                                 observed = true;
@@ -2049,7 +2116,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                             return validation.beforeCommit();
                         },
                         validateDocument: (document) => {
-                            if (!change.startsWith('prospective-')) return validation.validateDocument(document);
+                            if (!change.startsWith('prospective-')) {
+                                return validation.validateDocument(document);
+                            }
                             observed = true;
                             const refusal = validation.validateDocument(alter(document));
                             expect(refusal).toBe('Audio trim did not reach its owned source fields');

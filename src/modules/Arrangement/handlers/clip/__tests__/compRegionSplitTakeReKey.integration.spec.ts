@@ -5,8 +5,7 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { projectOfflineAudioClipPlaybacks } from '#/modules/AudioEngine/useCases/offlineRender/projectOfflineAudioClipPlaybacks';
-import { resolveTrackClipsWithComping } from '#/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping';
+import { projectOfflineAudioClipPlaybacks, resolveTrackClipsWithComping } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore as undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,

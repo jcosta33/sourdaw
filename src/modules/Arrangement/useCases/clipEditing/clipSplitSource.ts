@@ -55,8 +55,11 @@ export function clipSplitTakeSourceFields(
     return Object.fromEntries(fields.filter((key) => take[key] !== undefined).map((key) => [key, take[key]]));
 }
 
-/** JSON drops unset optionals. Selection and later insertion witnesses are not source authority. */
+/** JSON drops unset optionals and the sign of zero. Selection and later insertion witnesses are not source authority. */
 export function clipSplitSourceJson(value: unknown): unknown {
+    if (typeof value === 'number' && Object.is(value, -0)) {
+        return 0;
+    }
     if (Array.isArray(value)) {
         return Array.from(value).map(clipSplitSourceJson);
     }

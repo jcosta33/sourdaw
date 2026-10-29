@@ -54,7 +54,9 @@ export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipSt
                 proof.release();
                 return { status: 'conflict' };
             }
-            if (capture.takeSourceTransitions.length) takeLaneStore.set({ lanes });
+            if (capture.takeSourceTransitions.length > 0) {
+                takeLaneStore.set({ lanes });
+            }
         }
         const written = updateClip(capture.clipId, (clip) => {
             const updated = { ...clip, startBeat: replacement.startBeat };

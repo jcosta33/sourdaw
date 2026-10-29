@@ -101,7 +101,9 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 proof.release();
                 return { status: 'conflict' };
             }
-            if (capture.takeSourceTransitions?.length) takeLaneStore.set({ lanes });
+            if (capture.takeSourceTransitions?.length) {
+                takeLaneStore.set({ lanes });
+            }
             const written = trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);
             if (!written) {
                 proof.release();

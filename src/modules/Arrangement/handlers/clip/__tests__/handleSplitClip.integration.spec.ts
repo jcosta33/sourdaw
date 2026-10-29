@@ -10,6 +10,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { projectOfflineAudioClipPlaybacks, resolveTrackClipsWithComping } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -37,6 +38,9 @@ import {
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+
+import { createTake, createTakeLane } from '../../../models/TakeLane';
+import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 
 import { type Track } from '../../../models/Track';
 import { handleSplitClip } from '../handleSplitClip';
@@ -127,6 +131,7 @@ describe('handleSplitClip atomic integration', () => {
         });
         transportStore.set({ ...defaultTransportState, tempo: 120 });
         tempoMapStore.set({ changes: [] });
+        takeLaneStore.set({ lanes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         flushAutomergeStorageWrites();
@@ -140,6 +145,7 @@ describe('handleSplitClip atomic integration', () => {
         Container.clear();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         midiStore.set({ probabilitySeed: 1, notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
+        takeLaneStore.set({ lanes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         vi.restoreAllMocks();
@@ -292,6 +298,88 @@ describe('handleSplitClip atomic integration', () => {
             expect(transportStore.value?.tempo).toBe(60);
         }
     );
+
+    it('accepts a raw signed-zero take through its canonical projected split prefix', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            type: 'audio',
+            startBeat: 0,
+            endBeat: 8,
+            audioBufferId: 'signed-zero-buffer',
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const take = { ...createTake(clip.id, 'Signed zero pass', 0, 8, -0), id: 'signed-zero-take' };
+        const lane = {
+            ...createTakeLane('track-1'),
+            id: 'signed-zero-lane',
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+        };
+        takeLaneStore.set({ lanes: [lane] });
+        flushAutomergeStorageWrites();
+        // Ordinary store writes use JSON-safe values. Seed the historical raw
+        // Automerge value directly, then use the normal hydration boundary.
+        mutateCrdtDoc<{ takeLanes: TakeLaneStoreState }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.takeLanes = { lanes: [lane] };
+            },
+        });
+        takeLaneStore.hydrate();
+        const raw = getCrdtDoc<{ takeLanes: TakeLaneStoreState }>('root');
+        expect(Object.is(raw?.takeLanes.lanes[0]?.takes[0]?.sourceOffsetBeats, -0)).toBe(true);
+        expect(Object.is(takeLaneStore.value?.lanes[0]?.takes[0]?.sourceOffsetBeats, 0)).toBe(true);
+        const sampleRate = 48000;
+        const scale = 2 ** 20;
+        const pcm = Float32Array.from({ length: 4 * sampleRate }, (_, frame) => frame / scale);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(pcm, sampleRate));
+        const sourceFrameAtCut = (clips: Track['clips']): number => {
+            const programme = resolveTrackClipsWithComping('track-1', clips);
+            const selected = programme.find((part) => part.startBeat <= 4 && part.endBeat > 4);
+            if (!selected) {
+                throw new Error('Expected source at the cut');
+            }
+            const [playback] = projectOfflineAudioClipPlaybacks({
+                clip: selected,
+                bufferDurationSeconds: pcm.length / sampleRate,
+                regionStartBeat: 4,
+                regionStartSec: 2,
+                durationSeconds: 2,
+                compensationDelay: 0,
+                projectBeatToSeconds: (beat) => beat / 2,
+                resolveTempoAtBeat: () => 120,
+            });
+            if (!playback) {
+                throw new Error('Expected the physical source read');
+            }
+            expect(playback.bufferOffsetSec).toBe(2);
+            const frame = Math.round(playback.bufferOffsetSec * sampleRate);
+            expect(frame).toBe(96000);
+            expect(pcm[frame]).toBe(96000 / scale);
+            return frame;
+        };
+        const originalFrame = sourceFrameAtCut([clip]);
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: { clipId: clip.id, beat: 4, resolvedBeat: 4, rightClipId: 'signed-zero-right' },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result.status).toBe('committed');
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeDefined();
+        expect(sourceFrameAtCut(trackStore.value!.tracks[0]!.clips)).toBe(originalFrame);
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((item) => item.clipId)).toEqual([clip.id, 'signed-zero-right']);
+        expect(takeLaneStore.value?.lanes[0]?.takes.every((item) => item.sourceOffsetBeats === 0)).toBe(true);
+    });
 
     it('refuses an admitted source projection that differs from the authoritative raw prefix', async () => {
         const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });

@@ -3,6 +3,8 @@ import {
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 
+import { type TempoAudioSourcePresenceSnapshot } from '#/utils/handlerContract';
+
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
 import {
@@ -152,26 +154,31 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
     return operations;
 }
 
+function captureRegionSourcePresence(region: CompRegion): TempoAudioSourcePresenceSnapshot {
+    if (region.audioSource === undefined) {
+        return { present: false };
+    }
+    return { present: true, value: cloneValue(region.audioSource) };
+}
+
 export function captureCompRegionSourceOperations(
     laneId: string,
     before: readonly CompRegion[],
     next: readonly CompRegion[]
 ): TakeLaneWriteOperation[] | null {
     const geometry = (regions: readonly CompRegion[]) => regions.map(({ audioSource: _source, ...row }) => row);
-    if (!valuesEqual(geometry(before), geometry(next))) return null;
+    if (!valuesEqual(geometry(before), geometry(next))) {
+        return null;
+    }
     const operations: TakeLaneWriteOperation[] = [];
     for (const [index, region] of before.entries()) {
         const replacement = next[index];
-        if (!replacement) return null;
-        const expected =
-            region.audioSource === undefined
-                ? { present: false as const }
-                : { present: true as const, value: cloneValue(region.audioSource) };
-        const source =
-            replacement.audioSource === undefined
-                ? { present: false as const }
-                : { present: true as const, value: cloneValue(replacement.audioSource) };
-        if (!valuesEqual(expected, source))
+        if (!replacement) {
+            return null;
+        }
+        const expected = captureRegionSourcePresence(region);
+        const source = captureRegionSourcePresence(replacement);
+        if (!valuesEqual(expected, source)) {
             operations.push({
                 kind: 'comp-region-audio-source',
                 laneId,
@@ -181,6 +188,7 @@ export function captureCompRegionSourceOperations(
                 expected,
                 replacement: source,
             });
+        }
     }
     return operations;
 }
@@ -233,14 +241,16 @@ function captureLaneOperations(before: TakeLane, next: TakeLane): TakeLaneWriteO
             before.activeCompRegions,
             next.activeCompRegions
         );
-        if (sourceOperations) operations.push(...sourceOperations);
-        else
+        if (sourceOperations) {
+            operations.push(...sourceOperations);
+        } else {
             operations.push({
                 kind: 'replace-comp-regions',
                 laneId: before.id,
                 expected: cloneValue(before.activeCompRegions),
                 replacement: cloneValue(next.activeCompRegions),
             });
+        }
     }
     const beforeGaps = captureBaseGapAudioSources(before);
     const nextGaps = captureBaseGapAudioSources(next);
@@ -532,8 +542,9 @@ function applyLaneOperation(
                 region.endBeat === operation.endBeat
         );
         const region = owners[0];
-        if (owners.length !== 1 || !region || !matchesPresence(region.audioSource, operation.expected))
+        if (owners.length !== 1 || !region || !matchesPresence(region.audioSource, operation.expected)) {
             return undefined;
+        }
         return replaceLane(state, {
             ...lane,
             activeCompRegions: lane.activeCompRegions.map((row) =>

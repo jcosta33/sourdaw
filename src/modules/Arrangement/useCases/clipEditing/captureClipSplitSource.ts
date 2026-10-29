@@ -15,6 +15,7 @@ import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
 import { readTempoMapRows } from '#/utils/tempoMapRowPlan';
 import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
+import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { projectAudioSourcePrefixTracks } from '../../stores/projectAudioSourcePrefixTracks';
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
@@ -54,12 +55,14 @@ function readSplitSourceOwners(document: Root, clipIds: ReadonlySet<string>, lan
                 if (!isRecord(lane)) {
                     return null;
                 }
+                let takes: ReturnType<typeof clipSplitTakeSourceFields>[] | null = null;
+                if (Array.isArray(lane.takes)) {
+                    takes = Array.from(lane.takes).filter(isRecord).map(clipSplitTakeSourceFields);
+                }
                 return {
                     id: lane.id,
                     trackId: lane.trackId,
-                    takes: Array.isArray(lane.takes)
-                        ? Array.from(lane.takes).filter(isRecord).map(clipSplitTakeSourceFields)
-                        : null,
+                    takes,
                     regions: lane.activeCompRegions,
                     gaps: lane.baseGapAudioSources,
                 };
@@ -78,7 +81,7 @@ function matchesAuthoritativeSplitPrefix(
     priorActions: readonly AppAction[]
 ): boolean {
     const lanes = isRecord(root.takeLanes) ? root.takeLanes.lanes : [];
-    const takes = Array.isArray(lanes) ? decodeExactTakeLaneSnapshots(Array.from(lanes), 'split-source-prefix') : null;
+    const takes = Array.isArray(lanes) ? decodeExactTakeLaneSnapshots(Array.from(lanes), 'source-prefix') : null;
     const automation = isRecord(root.automation) ? root.automation.lanes : [];
     const changes = readTempoMapRows(root);
     const tempo = isRecord(root.transport) ? root.transport.tempo : DEFAULT_TEMPO_BPM;
@@ -104,6 +107,7 @@ function matchesAuthoritativeSplitPrefix(
         prefix !== null &&
         owners?.length === 1 &&
         current?.owningTrackId === plan.previous.trackId &&
+        isExactClipSnapshot(current.clip, plan.previous.leftClip.id, current.owningTrackId) &&
         current.clip.locked === plan.previous.leftClip.locked &&
         valuesEqual(clipSplitSourceFields(current.clip), clipSplitSourceFields(plan.previous.leftClip)) &&
         !prefix.clips.some((row) => row.clip.id === plan.rightClipId) &&
@@ -201,8 +205,10 @@ export function captureClipSplitSource(
     }
     return {
         captureWrittenState: () => {
-            const expectedClips = [plan.next.leftClip, plan.next.rightClip].flatMap((clip) =>
-                clip ? [{ trackId: plan.next.trackId, clip: clipSplitSourceFields(clip) }] : []
+            const expectedClips = clipSplitSourceJson(
+                [plan.next.leftClip, plan.next.rightClip].flatMap((clip) =>
+                    clip ? [{ trackId: plan.next.trackId, clip: clipSplitSourceFields(clip) }] : []
+                )
             );
             const current = projected();
             if (!isRecord(current) || !valuesEqual(current.clips, expectedClips)) {

@@ -144,19 +144,21 @@ export const handleSplitClip = createHandler<'splitClip'>({
         const pending = pendingDescriptions.get(action);
         const clock = preparedSourceClocks.get(action);
         const audio = plan?.previous.leftClip.type === 'audio';
-        const source =
+        let source: ReturnType<typeof captureClipSplitSource> = null;
+        if (
             audio &&
             clock &&
             preparedSourceRoots.get(action) === captureProjectRootIdentity() &&
             pending?.splitSourceProof
-                ? captureClipSplitSource(
-                      plan,
-                      clock,
-                      context?.undoEntryId,
-                      pending.splitSourceProof,
-                      context?.actions.slice(0, context.actionIndex) ?? []
-                  )
-                : null;
+        ) {
+            source = captureClipSplitSource(
+                plan,
+                clock,
+                context?.undoEntryId,
+                pending.splitSourceProof,
+                context?.actions.slice(0, context.actionIndex) ?? []
+            );
+        }
         if (audio && !source) {
             return { status: 'conflict' };
         }
@@ -172,11 +174,15 @@ export const handleSplitClip = createHandler<'splitClip'>({
                 ) !== null;
             if (!written || (source && !source.captureWrittenState())) {
                 source?.validation.release();
-                return source ? { status: 'conflict' } : toHandlerExecutionResult(written);
+                if (source) {
+                    return { status: 'conflict' };
+                }
+                return toHandlerExecutionResult(written);
             }
-            return source
-                ? { status: 'written', commitValidation: source.validation }
-                : toHandlerExecutionResult(written);
+            if (source) {
+                return { status: 'written', commitValidation: source.validation };
+            }
+            return toHandlerExecutionResult(written);
         } catch (error) {
             source?.validation.release();
             throw error;
@@ -206,35 +212,35 @@ export const handleSplitClip = createHandler<'splitClip'>({
         const reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[] = [];
         const splitSourceProof = plan.previous.leftClip.type === 'audio' ? { changeHash: '', memberId: '' } : undefined;
         pendingDescriptions.set(action, { reKeyedTakeLanes, splitSourceProof });
-        return {
-            label,
-            inverseAction: {
-                type: 'restoreClipSplitState',
-                payload: {
-                    clipId: action.payload.clipId,
-                    rightClipId: plan.rightClipId,
-                    expected: snapshots.next,
-                    replacement: snapshots.previous,
-                    retiredTakeLanes,
-                    retiredTakeSourceProof,
-                    ...(splitSourceProof ? { splitSourceProof } : {}),
-                    reKeyedTakeLanes,
-                },
-            },
-            redoAction: {
-                type: 'restoreClipSplitState',
-                payload: {
-                    clipId: action.payload.clipId,
-                    rightClipId: plan.rightClipId,
-                    expected: snapshots.previous,
-                    replacement: snapshots.next,
-                    retiredTakeLanes,
-                    retiredTakeSourceProof,
-                    ...(splitSourceProof ? { splitSourceProof } : {}),
-                    reKeyedTakeLanes,
-                },
+        const inverseAction: Extract<AppAction, { type: 'restoreClipSplitState' }> = {
+            type: 'restoreClipSplitState',
+            payload: {
+                clipId: action.payload.clipId,
+                rightClipId: plan.rightClipId,
+                expected: snapshots.next,
+                replacement: snapshots.previous,
+                retiredTakeLanes,
+                retiredTakeSourceProof,
+                reKeyedTakeLanes,
             },
         };
+        const redoAction: Extract<AppAction, { type: 'restoreClipSplitState' }> = {
+            type: 'restoreClipSplitState',
+            payload: {
+                clipId: action.payload.clipId,
+                rightClipId: plan.rightClipId,
+                expected: snapshots.previous,
+                replacement: snapshots.next,
+                retiredTakeLanes,
+                retiredTakeSourceProof,
+                reKeyedTakeLanes,
+            },
+        };
+        if (splitSourceProof) {
+            inverseAction.payload.splitSourceProof = splitSourceProof;
+            redoAction.payload.splitSourceProof = splitSourceProof;
+        }
+        return { label, inverseAction, redoAction };
     },
     previewExecution: 'isolated-project',
     requiresAbortCompensation: false,

@@ -37,8 +37,9 @@ function capturedRegions(clip: Clip, lane: TakeLane, timeline: TempoTimeline): C
     const programme = resolveCompingProgramme(lane.trackId, [clip], { lanes: [lane] }, timeline);
     return lane.activeCompRegions.map((region) => {
         const take = lane.takes.find((candidate) => candidate.id === region.takeId);
-        if (region.audioSource !== undefined || !take || take.passAnchorSeconds !== undefined)
+        if (region.audioSource !== undefined || !take || take.passAnchorSeconds !== undefined) {
             return structuredClone(region);
+        }
         const fragment = programme.find(
             (part) => part.id === clip.id && part.startBeat >= region.startBeat && part.endBeat <= region.endBeat
         );
@@ -80,7 +81,9 @@ export function isAudioClipTrimTakeSources(
     clip: Clip,
     timeline: TempoTimeline
 ): value is TakeReKeyLaneTransitionSnapshot[] {
-    if (!Array.isArray(value) || !value.every(isReKeyLaneTransition)) return false;
+    if (!Array.isArray(value) || !value.every(isReKeyLaneTransition)) {
+        return false;
+    }
     const laneIds = new Set<string>();
     const takeIds = new Set<string>();
     for (const transition of value) {
@@ -90,11 +93,14 @@ export function isAudioClipTrimTakeSources(
             transition.takesBefore.length === 0 ||
             Object.hasOwn(transition, 'baseGapAudioSourcesBefore') ||
             Object.hasOwn(transition, 'baseGapAudioSourcesAfter')
-        )
+        ) {
             return false;
+        }
         laneIds.add(transition.laneId);
         for (const take of transition.takesBefore) {
-            if (take.clipId !== clip.id || takeIds.has(take.id)) return false;
+            if (take.clipId !== clip.id || takeIds.has(take.id)) {
+                return false;
+            }
             takeIds.add(take.id);
         }
         if (
@@ -102,15 +108,18 @@ export function isAudioClipTrimTakeSources(
                 transition.takesAfter,
                 transition.takesBefore.map((take) => captureTakeSource(take, clip, timeline))
             )
-        )
+        ) {
             return false;
+        }
         const lane: TakeLane = {
             id: transition.laneId,
             trackId: transition.trackId,
             takes: [...transition.takesBefore],
             activeCompRegions: [...transition.regionsBefore],
         };
-        if (!valuesEqual(transition.regionsAfter, capturedRegions(clip, lane, timeline))) return false;
+        if (!valuesEqual(transition.regionsAfter, capturedRegions(clip, lane, timeline))) {
+            return false;
+        }
     }
     return true;
 }
@@ -126,16 +135,22 @@ export function audioClipTrimTakeSourcesMatch(
     const actual = lanes.flatMap((lane) =>
         lane.takes.filter((take) => take.clipId === clipId || expectedIds.has(take.id)).map((take) => ({ lane, take }))
     );
-    if (actual.length !== expectedIds.size) return false;
+    if (actual.length !== expectedIds.size) {
+        return false;
+    }
     return transitions.every((transition) => {
         const owners = lanes.filter((lane) => lane.id === transition.laneId);
         const owner = owners[0];
-        if (owners.length !== 1 || !owner || owner.trackId !== transition.trackId) return false;
+        if (owners.length !== 1 || !owner || owner.trackId !== transition.trackId) {
+            return false;
+        }
         const expected = direction === 'apply' ? transition.takesBefore : transition.takesAfter;
         const takeIds = new Set(expected.map((take) => take.id));
         const regions = owner.activeCompRegions.filter((region) => takeIds.has(region.takeId));
         const expectedRegions = direction === 'apply' ? transition.regionsBefore : transition.regionsAfter;
-        if (!valuesEqual(regions, expectedRegions)) return false;
+        if (!valuesEqual(regions, expectedRegions)) {
+            return false;
+        }
         return expected.every((take) => {
             const matches = actual.filter((owner) => owner.take.id === take.id);
             return (
@@ -159,7 +174,9 @@ export function projectAudioClipTrimTakeSources(
     transitions: readonly TakeReKeyLaneTransitionSnapshot[],
     direction: 'apply' | 'restore'
 ): TakeLane[] | null {
-    if (!audioClipTrimTakeSourcesMatch(lanes, clipId, transitions, direction)) return null;
+    if (!audioClipTrimTakeSourcesMatch(lanes, clipId, transitions, direction)) {
+        return null;
+    }
     const operations: TakeLaneWriteOperation[] = [];
     for (const transition of transitions) {
         const sourceOperations = captureCompRegionSourceOperations(
@@ -167,15 +184,21 @@ export function projectAudioClipTrimTakeSources(
             direction === 'apply' ? transition.regionsBefore : transition.regionsAfter,
             direction === 'apply' ? transition.regionsAfter : transition.regionsBefore
         );
-        if (!sourceOperations) return null;
+        if (!sourceOperations) {
+            return null;
+        }
         operations.push(...sourceOperations);
         for (const [index, before] of transition.takesBefore.entries()) {
             const after = transition.takesAfter[index];
-            if (!after) return null;
+            if (!after) {
+                return null;
+            }
             for (const field of writtenFields) {
                 const original = presence(before, field);
                 const captured = presence(after, field);
-                if (valuesEqual(original, captured)) continue;
+                if (valuesEqual(original, captured)) {
+                    continue;
+                }
                 operations.push({
                     kind: 'take-optional-number-field',
                     laneId: transition.laneId,

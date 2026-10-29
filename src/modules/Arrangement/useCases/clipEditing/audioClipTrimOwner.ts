@@ -52,24 +52,38 @@ function rawClockMatches(root: Root, clock: TempoSourceClock): boolean {
 }
 
 function rawTakeSources(root: Root) {
-    if (root.takeLanes === undefined) return { lanes: [], identities: new Map<string, string | undefined>() };
-    if (!isRecord(root.takeLanes) || !Array.isArray(root.takeLanes.lanes)) return null;
+    if (root.takeLanes === undefined) {
+        return { lanes: [], identities: new Map<string, string | null>() };
+    }
+    if (!isRecord(root.takeLanes) || !Array.isArray(root.takeLanes.lanes)) {
+        return null;
+    }
     const lanes = decodeExactTakeLaneSnapshots(root.takeLanes.lanes);
-    if (!lanes) return null;
-    const identities = new Map<string, string | undefined>();
+    if (!lanes) {
+        return null;
+    }
+    const identities = new Map<string, string | null>();
     for (const lane of root.takeLanes.lanes) {
-        if (!isRecord(lane) || typeof lane.id !== 'string' || !Array.isArray(lane.takes)) return null;
+        if (!isRecord(lane) || typeof lane.id !== 'string' || !Array.isArray(lane.takes)) {
+            return null;
+        }
         identities.set(`lane:${lane.id}`, getObjectId(lane));
-        if (!Array.isArray(lane.activeCompRegions)) return null;
+        if (!Array.isArray(lane.activeCompRegions)) {
+            return null;
+        }
         for (const region of lane.activeCompRegions) {
-            if (!isRecord(region)) return null;
+            if (!isRecord(region)) {
+                return null;
+            }
             identities.set(
                 `region:${lane.id}:${JSON.stringify([region.takeId, region.startBeat, region.endBeat])}`,
                 getObjectId(region)
             );
         }
         for (const take of lane.takes) {
-            if (!isRecord(take) || typeof take.id !== 'string') return null;
+            if (!isRecord(take) || typeof take.id !== 'string') {
+                return null;
+            }
             identities.set(`take:${take.id}`, getObjectId(take));
         }
     }
@@ -82,7 +96,9 @@ function takeSourcesMatch(
     transitions: readonly TakeReKeyLaneTransitionSnapshot[] | undefined,
     direction: 'apply' | 'restore'
 ): boolean {
-    if (transitions === undefined) return true;
+    if (transitions === undefined) {
+        return true;
+    }
     const raw = rawTakeSources(root);
     return raw !== null && audioClipTrimTakeSourcesMatch(raw.lanes, clipId, transitions, direction);
 }
@@ -130,7 +146,9 @@ function captureAudioClipTrimCommitValidation(
     if (!objectId || !root || !rawClockMatches(root, clock)) {
         return null;
     }
-    if (!takeSourcesMatch(root, expected.id, transitions, direction)) return null;
+    if (!takeSourcesMatch(root, expected.id, transitions, direction)) {
+        return null;
+    }
     const originalSources = transitions === undefined ? null : rawTakeSources(root);
     const identityKeys = (transitions ?? []).flatMap((lane) => [
         `lane:${lane.laneId}`,
@@ -139,7 +157,9 @@ function captureAudioClipTrimCommitValidation(
             (region) => `region:${lane.laneId}:${JSON.stringify([region.takeId, region.startBeat, region.endBeat])}`
         ),
     ]);
-    if (identityKeys.some((key) => !originalSources?.identities.get(key))) return null;
+    if (identityKeys.some((key) => !originalSources?.identities.get(key))) {
+        return null;
+    }
     const matches = (document: Root, clip: Clip, side: 'apply' | 'restore'): boolean => {
         const current = rawOwner(document, clip);
         const sources = transitions === undefined ? null : rawTakeSources(document);

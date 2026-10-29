@@ -344,11 +344,15 @@ describe('comp region source-only journal ownership', () => {
                 ],
             },
         });
-        if (projected.status !== 'applied') throw new Error('Expected region source replay');
+        if (projected.status !== 'applied') {
+            throw new Error('Expected region source replay');
+        }
         const inverse = captureTakeLaneWriteJournal({ beforeValue: after, nextValue: before });
         const restored = replayTakeLaneWriteJournal(projected.value, inverse);
         expect(restored).toEqual({ status: 'applied', value: { lanes: [peer] } });
-        if (restored.status !== 'applied') throw new Error('Expected exact source absence');
+        if (restored.status !== 'applied') {
+            throw new Error('Expected exact source absence');
+        }
         expect(Object.hasOwn(restored.value!.lanes[0]!.activeCompRegions[0]!, 'audioSource')).toBe(false);
     });
 
@@ -357,10 +361,18 @@ describe('comp region source-only journal ownership', () => {
         (change) => {
             const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: after });
             const peer = structuredClone(firstLane);
-            if (change === 'missing') peer.activeCompRegions = [];
-            if (change === 'duplicate') peer.activeCompRegions.push({ ...peer.activeCompRegions[0]! });
-            if (change === 'geometry') peer.activeCompRegions[0]!.endBeat = 7;
-            if (change === 'source') peer.activeCompRegions[0]!.audioSource = { ...source, audioOffsetSeconds: 5 };
+            if (change === 'missing') {
+                peer.activeCompRegions = [];
+            }
+            if (change === 'duplicate') {
+                peer.activeCompRegions.push(structuredClone(peer.activeCompRegions[0]!));
+            }
+            if (change === 'geometry') {
+                peer.activeCompRegions[0]!.endBeat = 7;
+            }
+            if (change === 'source') {
+                peer.activeCompRegions[0]!.audioSource = { ...source, audioOffsetSeconds: 5 };
+            }
             const original = structuredClone(peer);
             expect(replayTakeLaneWriteJournal({ lanes: [peer] }, journal)).toEqual({ status: 'conflict' });
             expect(peer).toEqual(original);
