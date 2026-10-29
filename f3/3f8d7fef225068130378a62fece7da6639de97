@@ -1,0 +1,32 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_26f70b851e8f7a::t_49aa74780b79ec 430,1597,1611,1627
+  s_26f70b851e8f7a::t_2ced8f8302ecbc 1628-1630
+scripts/healthGateWorkflowContract.ts
+  s_26f70b851e8f7a::t_475b11a5cf0c0e 44,323-336,394
+scripts/test-health-gate-scripts.sh
+  s_26f70b851e8f7a::t_cd6fa1c9748571 213,477,524,599,1148,1206,1642
+scripts/__tests__/reloadCancellationRegisteredWorkflow.spec.ts
+  s_26f70b851e8f7a::t_6e5f1971daddb6 124
+  s_26f70b851e8f7a::t_9784a5274ebd87 79-82,134-141,143-152,154-173,175-178,181-185,187-193,196-198
+  s_26f70b851e8f7a::t_046e4b63682cbd 1-78,83-123,125-133,142,153,174,179-180,186,194-195,199-203
+.github/workflows/reload-cancellation-diagnostic.yml
+  s_26f70b851e8f7a::t_475b11a5cf0c0e 1-101
+scripts/workflowSecuritySurfaceContract.ts
+  s_26f70b851e8f7a::t_475b11a5cf0c0e 76-78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f33f8d7fef225068130378a62fece7da6639de97",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
