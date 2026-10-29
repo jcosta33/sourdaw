@@ -1,0 +1,116 @@
+scripts/diagnostics/reloadCancellation/journal.ts
+  s_26f70b851e8f7a::t_b97e52738468c3 1-38
+scripts/diagnostics/reloadCancellation/history.ts
+  s_26f70b851e8f7a::t_d70433014103c1 101-105
+  s_26f70b851e8f7a::t_08e8a03e0b2e0f 46-47
+  s_26f70b851e8f7a::t_b251d1214277ba 75,87-89,91-100,111
+  s_26f70b851e8f7a::t_cedbcb659e90de 1-45,48-74,76-86,112-131
+  s_26f70b851e8f7a::t_f54a63c14702be 90,106-110
+  s_26f70b851e8f7a::t_66afcdd983d60d 132-134
+scripts/diagnostics/reloadCancellation/serverObserver.ts
+  s_26f70b851e8f7a::t_c88d4ae27ec27f 12-23,36-42,66
+  s_26f70b851e8f7a::t_00b14acdd3da94 1-11,24-35,43-65,67-98
+scripts/diagnostics/reloadCancellation/sourceBinding.ts
+  s_26f70b851e8f7a::t_1e845c61db270f 13-21,29-48
+  s_26f70b851e8f7a::t_36af2cd6187d63 1-12,22-28,49-59
+scripts/diagnostics/reloadCancellation/listReporter.ts
+  s_26f70b851e8f7a::t_f54a63c14702be 4,23,60-71
+  s_26f70b851e8f7a::t_27836cbc9c75a7 7,38
+  s_26f70b851e8f7a::t_55b087b8303acf 1-3,5-6,8-9,15-19,21-22,24-37,40-59,72-77
+  s_26f70b851e8f7a::t_f1150dc8505ab7 10-14,20
+  s_26f70b851e8f7a::t_72175d7c50651c 39
+  s_26f70b851e8f7a::t_161a1ad19ddd2f 78-80
+scripts/diagnostics/reloadCancellation/processPhase.ts
+  s_26f70b851e8f7a::t_36af2cd6187d63 1-66
+  s_26f70b851e8f7a::t_6f3040d428ff2f 67-69
+scripts/diagnostics/reloadCancellation/prelude.ts
+  s_26f70b851e8f7a::t_f54a63c14702be 9,24
+  s_26f70b851e8f7a::t_55b087b8303acf 1-8,10-23,25
+  s_26f70b851e8f7a::t_a7ff760ef431ed 26-28
+scripts/diagnostics/reloadCancellation/qualification.ts
+  s_26f70b851e8f7a::t_08e8a03e0b2e0f 58-59,62-71
+  s_26f70b851e8f7a::t_f54a63c14702be 1-6,8-49,57,60-61,72-73
+  s_26f70b851e8f7a::t_68908e35ab9a09 7,50-56
+  s_26f70b851e8f7a::t_d304d0f1a94fcd 74-76
+scripts/__tests__/reloadCancellationDiagnosticWorkflow.spec.ts
+  s_26f70b851e8f7a::t_08e8a03e0b2e0f 1-2,4-8,22-31,35-46,51,62-72,79-91,103-116,125-127,144-150,155-193,205-208,217-218
+  s_26f70b851e8f7a::t_95aa861a419208 9-18,21,32-34,47-50,52-61,73-78,92-102,117-124,130-143,151-154,209-216
+  s_26f70b851e8f7a::t_a6b94793d05ecc 3
+  s_26f70b851e8f7a::t_c1e45555b2be7e 19-20,128-129,194-204
+  s_26f70b851e8f7a::t_d928f31b03f8a6 219-221
+scripts/diagnostics/reloadCancellation/identity.ts
+  s_26f70b851e8f7a::t_b97e52738468c3 1-41
+scripts/diagnostics/reloadCancellation/run.ts
+  s_26f70b851e8f7a::t_14a6dc5424ced0 20-24,33-38,44-50,56-59,64-74,76-81,93-98
+  s_26f70b851e8f7a::t_36af2cd6187d63 1-5,8-11,13-19,26-32,39,41-42,83-92,99-101
+  s_26f70b851e8f7a::t_7a012693b68bc5 25,53-54,60-62,75,82
+  s_26f70b851e8f7a::t_b251d1214277ba 6,55,63
+  s_26f70b851e8f7a::t_f54a63c14702be 7,12,40,43,51-52
+scripts/diagnostics/reloadCancellation/browserSignals.ts
+  s_26f70b851e8f7a::t_cedbcb659e90de 1-35
+  s_26f70b851e8f7a::t_c88f0f952c8432 36-38
+scripts/diagnostics/reloadCancellation/materialize.ts
+  s_26f70b851e8f7a::t_271bc6212112b1 3-6,8,11-19,31,33,35-52
+  s_26f70b851e8f7a::t_08e8a03e0b2e0f 1-2,7,9-10,20-30,32,34
+  s_26f70b851e8f7a::t_040938f103d14a 53-55
+scripts/diagnostics/reloadCancellation/linuxResources.ts
+  s_26f70b851e8f7a::t_7539032ed2d125 1,63-89,92,105,107-108
+  s_26f70b851e8f7a::t_00b14acdd3da94 2-62,90-91,93-104,106,109-110
+  s_26f70b851e8f7a::t_d6c5f9ac0385bd 111-113
+scripts/diagnostics/reloadCancellation/configure.ts
+  s_26f70b851e8f7a::t_271bc6212112b1 1-54
+  s_26f70b851e8f7a::t_b3c3a609a240bb 55-57
+scripts/diagnostics/reloadCancellation/qualify.ts
+  s_26f70b851e8f7a::t_50ea4d0d5e5b02 2,39-40,69-72
+  s_26f70b851e8f7a::t_b251d1214277ba 25,27
+  s_26f70b851e8f7a::t_8e72b9da66854a 35-38,41-46
+  s_26f70b851e8f7a::t_e79ddc75d130c9 68
+  s_26f70b851e8f7a::t_36af2cd6187d63 1,3-24,26,28-34,47-67,73-74
+  s_26f70b851e8f7a::t_c4296cbaa255d3 75-77
+scripts/diagnostics/reloadCancellation/telemetry.ts
+  s_26f70b851e8f7a::t_b251d1214277ba 1-5,14-22,29
+  s_26f70b851e8f7a::t_e32fc8f027a6cf 30-31
+  s_26f70b851e8f7a::t_26c71335532944 6-12,36-42,45-52,54-57
+  s_26f70b851e8f7a::t_08e8a03e0b2e0f 13
+  s_26f70b851e8f7a::t_d0ba8ca375a430 23-28,33-35,43-44,53
+  s_26f70b851e8f7a::t_ae9c88482a21bb 32
+scripts/diagnostics/reloadCancellation/websocket.ts
+  s_26f70b851e8f7a::t_b97e52738468c3 1-118
+  s_26f70b851e8f7a::t_954dc6407cf1d7 119-121
+scripts/diagnostics/reloadCancellation/paths.ts
+  s_26f70b851e8f7a::t_55b087b8303acf 1-19
+scripts/diagnostics/reloadCancellation/diagnostic.config.ts
+  s_26f70b851e8f7a::t_271bc6212112b1 1-8
+  s_26f70b851e8f7a::t_7ab845dbf32ed7 9-11
+scripts/__tests__/reloadCancellationCollector.spec.ts
+  s_26f70b851e8f7a::t_3e1f73c0d1f5c5 1-2,9-11,17,20,25-30,43-51,55-68,75-77,93-111,121-123,127-130,138-141,144-145,147-149,190-191
+  s_26f70b851e8f7a::t_6dfc01712e30be 4-8,12-16,18-19,21-24,31-42,52-54,69-74,78-92,112-120,124-126,131-137,146,154-161,163-172,174-180,182-189
+  s_26f70b851e8f7a::t_9f62a35ce739a5 142-143,173,181
+  s_26f70b851e8f7a::t_3a7bc221979910 3,150-153,162
+scripts/diagnostics/reloadCancellation/trigger.ts
+  s_26f70b851e8f7a::t_cedbcb659e90de 1-31
+  s_26f70b851e8f7a::t_371cccd95a3a1c 32-34
+scripts/diagnostics/reloadCancellation/pageCollector.ts
+  s_26f70b851e8f7a::t_7f85b4be195755 1-19,22-68,70-85,90-101,123-132,134-135
+  s_26f70b851e8f7a::t_55b087b8303acf 20-21,69
+  s_26f70b851e8f7a::t_b251d1214277ba 86-89,102-110,116-122
+  s_26f70b851e8f7a::t_7ca5b4b622684e 133
+  s_26f70b851e8f7a::t_4b69a40bad6e0d 111-115
+  s_26f70b851e8f7a::t_84d7af52b69441 136-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd166e411be2a3fee98954e365ff6ab4c3a72818",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
