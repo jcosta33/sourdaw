@@ -1,0 +1,94 @@
+crates/daw-dsp/src/toaster/transient.rs
+  h_beb54bf43b47b7 71-130
+crates/daw-dsp/tests/device_process_rt.rs
+  h_beb54bf43b47b7 2162-2178
+crates/daw-dsp/tests/transient_shaper_effect.rs
+  h_beb54bf43b47b7 1-143
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 308,329,350,389,416,1149,1189-1191,1405-1420,1434,1466,1497,1535,1561,1614,4524-4558,4620-4622,6611-6617,8360-8370,8476-8478,9601,9617-9618,28303-28492
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 2312-2320,2425-2432,2494-2498,2887-2896,3896-3900,17360-17492
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1154-1183,1199-1243,1245-1287,1351-1394
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 2397-2452,2589-2591
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,6-35,51-95,97-139,203-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,15-18,20-21
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  h_beb54bf43b47b7 254-255
+src/app/nativeBuiltinParameterNames.ts
+  h_beb54bf43b47b7 50
+src/app/nativeModAssignments.ts
+  h_beb54bf43b47b7 53
+src/app/nativeSampleBanks.ts
+  h_beb54bf43b47b7 55
+src/app/prepareOfflineDeviceSetup.ts
+  h_beb54bf43b47b7 204
+src/app/projectNativeDeviceState.ts
+  h_beb54bf43b47b7 146
+src/modules/Arrangement/models/DeviceParameter.ts
+  h_beb54bf43b47b7 20,186
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptor.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptorGuidance.ts
+  h_beb54bf43b47b7 1-42
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  h_beb54bf43b47b7 292-295,523-526,565,574-581
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 184,202,239-243,605-608,701-733,735-737
+src/modules/Arrangement/models/PluginDescriptors/__tests__/transientShaperDescriptor.spec.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  h_beb54bf43b47b7 405-445
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 1-185
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 1-279
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 40,2003-2084,2086
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  h_beb54bf43b47b7 16,337-346
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 1-130
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  h_beb54bf43b47b7 1-105
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_beb54bf43b47b7 1135-1161
+src/modules/AudioEngine/useCases/livePlayback/__tests__/transientShaperCarrierAdmission.spec.ts
+  h_beb54bf43b47b7 1-135
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_beb54bf43b47b7 630-649
+src/modules/AudioEngine/useCases/offlineRender/__tests__/transientShaperOfflineAdmission.spec.ts
+  h_beb54bf43b47b7 1-70
+src/modules/AudioEngine/wasm/__tests__/dawDspTransientShaper.spec.ts
+  h_beb54bf43b47b7 1-30
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1154-1183,1199-1243,1245-1287,1351-1394
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 2574-2629,2766-2768
+src/utils/nativeDspDeviceTypes.ts
+  h_beb54bf43b47b7 45,74
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 24
+tests/e2e/transientShaperEffect.spec.ts
+  h_beb54bf43b47b7 1-1046
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "492762a023e4f03b9d849eae6177d9aa9203b562",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
