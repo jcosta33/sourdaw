@@ -181,12 +181,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         validation: null,
     },
     'validation.yml': {
-        decide: [
-            'Checkout',
-            'Filter changed paths',
-            'Retry changed-paths filter after a transient API failure',
-            'Resolve scope',
-        ],
+        decide: ['Filter changed paths', 'Retry changed-paths filter after a transient API failure', 'Resolve scope'],
         static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
