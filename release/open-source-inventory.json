@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:fc9814fd4bed8aef4053e23c42e0aa60342ed4769993b89df376145fb2644c3d:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:459297f808dbca6aa7de554c29166071cfb12759e444b0948c42cc7232b4de31:release/dependency-license-proofs.json"
+                "sha256:d4d1d1bce5006c215192e05905ecab8e145e72a25b3e938408212943544a5243:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:afa2aa0bfab10b673797bcfed615eceb1faf9ddc33f224bbb66da1a47c5a714e:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -218,15 +218,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 44.4.5 694f45852a0f1726cd23bfd379854de489cccb65",
-                "Chromium 152.0.7977.130 2c592105bbcd9490a9894df48d0fe59b2c512651",
-                "Node v24.21.0 955266bfdd854cd280dffd47548673914484e4c0",
+                "electron 44.9.1 e02265be96c5e13ae43644ef482b718e1e800499",
+                "Chromium 152.0.7977.167 dd78960ccd8a03a2fe1f629543d27783885b78e9",
+                "Node v24.22.0 f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93",
                 "FFmpeg 2b68d2babae73714846961fb0ee47e3b3d2e39a9",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==",
+                "npm-integrity:sha512-x/tECFFDa2OFNjMObFH0EGKWrCnFZPOR1wP2iMIVt0STecGl8FmDXdaiaryY0kf8mtw9kSLP2yK8dfdaWkfDmw==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -277,7 +277,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294",
+                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -353,7 +353,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -582,7 +582,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -792,7 +792,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1119,7 +1119,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:642c2e1791935fa0fec27191791dc998394533febbbdf3d3f982069e8f57fdd6:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1738,7 +1738,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "1fc6bf310a4ac510b3c7604bcf88cd82d27c40145bcff6e6f90afa70beeeb93f"
+            "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1750,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294"
+            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
         },
         {
             "path": "Cargo.toml",
