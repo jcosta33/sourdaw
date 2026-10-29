@@ -1,0 +1,26 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 866-879
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1824-1837
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "04373aa52215d8331bf53f57cfda7b2432f0f1b7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
