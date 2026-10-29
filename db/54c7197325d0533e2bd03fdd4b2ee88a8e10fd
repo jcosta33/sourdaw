@@ -1,0 +1,18 @@
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  h_beb54bf43b47b7 3-13,34,51,59-80,83,88-103,105-106
+src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts
+  h_beb54bf43b47b7 185-221
+tests/e2e/grinderStackedLstmAdmission.spec.ts
+  h_beb54bf43b47b7 1-178
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db54c7197325d0533e2bd03fdd4b2ee88a8e10fd",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
