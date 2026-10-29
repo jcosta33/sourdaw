@@ -102,9 +102,15 @@ export function prepareClipSplit({
     ) {
         return null;
     }
-    const resolution = owners
-        ? resolveEligibleClipWriteTarget({ clipId }, { tracks: Array.from(owners.tracks), selectedTrackId: null })
-        : resolveEligibleClipWriteTarget({ clipId });
+    let resolution: ReturnType<typeof resolveEligibleClipWriteTarget>;
+    if (owners) {
+        resolution = resolveEligibleClipWriteTarget(
+            { clipId },
+            { tracks: Array.from(owners.tracks), selectedTrackId: null }
+        );
+    } else {
+        resolution = resolveEligibleClipWriteTarget({ clipId });
+    }
     if (resolution.status !== 'eligible') {
         return null;
     }

@@ -5,11 +5,7 @@ import { valuesEqual } from '#/utils/structuralEquality';
 type Root = Readonly<Record<string, unknown>>;
 
 /** Call only on published truth before a backend change opens; history queries can settle an active candidate. */
-export function createClipSplitSourceFrontier(
-    root: Root,
-    before: unknown,
-    readOwners: (document: Root) => unknown | null
-) {
+export function createClipSplitSourceFrontier(root: Root, before: unknown, readOwners: (document: Root) => unknown) {
     const basisHeads = getHeads(root).toSorted();
     return (document: Root): boolean => {
         const current = readOwners(document);

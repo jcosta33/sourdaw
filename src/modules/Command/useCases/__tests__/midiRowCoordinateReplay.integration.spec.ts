@@ -197,15 +197,10 @@ function tempoMacroRequest(kind: TempoMacroKind): AppAction {
             },
         };
     }
-    return {
-        type: 'editTempoMap',
-        payload: {
-            edit:
-                kind === 'remove'
-                    ? { type: 'remove', id: 'original-row' }
-                    : { type: 'update', id: 'original-row', tempo: 60 },
-        },
-    };
+    if (kind === 'remove') {
+        return { type: 'editTempoMap', payload: { edit: { type: 'remove', id: 'original-row' } } };
+    }
+    return { type: 'editTempoMap', payload: { edit: { type: 'update', id: 'original-row', tempo: 60 } } };
 }
 function tempoProduct() {
     return {
@@ -829,13 +824,13 @@ describe('exact row captures through real Command history and persistence (#5695
         async (kind) => {
             seed(8, 'audio');
             transportStore.set({ ...defaultTransportState, tempo: 120, playheadPosition: 0 });
-            const rows =
-                kind === 'base' || kind === 'add'
-                    ? []
-                    : [
-                          { id: 'original-row', beat: 4, tempo: 90, curve: 'instant' as const },
-                          { id: 'unrelated-row', beat: 12, tempo: 150, curve: 'instant' as const },
-                      ];
+            let rows: NonNullable<typeof tempoMapStore.value>['changes'] = [];
+            if (kind !== 'base' && kind !== 'add') {
+                rows = [
+                    { id: 'original-row', beat: 4, tempo: 90, curve: 'instant' },
+                    { id: 'unrelated-row', beat: 12, tempo: 150, curve: 'instant' },
+                ];
+            }
             tempoMapStore.set({ changes: rows });
             await settleMirror();
             const { saved, serialized } = await recordTempoMacro(kind);
@@ -911,15 +906,14 @@ describe('exact row captures through real Command history and persistence (#5695
             if (!created) {
                 throw new Error('Expected actual recorded tempo row');
             }
-            await executeAppAction({
-                type: 'editTempoMap',
-                payload: {
-                    edit:
-                        operation === 'remove'
-                            ? { type: 'remove', id: created.id }
-                            : { type: 'replace', changes: [{ beat: 6, tempo: 100, curve: 'instant' }] },
-                },
-            });
+            let edit: Extract<AppAction, { type: 'editTempoMap' }>['payload']['edit'] = {
+                type: 'remove',
+                id: created.id,
+            };
+            if (operation === 'replace') {
+                edit = { type: 'replace', changes: [{ beat: 6, tempo: 100, curve: 'instant' }] };
+            }
+            await executeAppAction({ type: 'editTempoMap', payload: { edit } });
             await settleMirror();
             const entryId = actionHistoryStore.value?.entries.at(-1)?.id;
             if (!entryId) {

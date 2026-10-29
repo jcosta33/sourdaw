@@ -128,4 +128,20 @@ describe('macro tempo row aliases use admitted arguments only after success', ()
         await expect(replayTempoMapMacroAction(action, new Map(), {})).rejects.toBeInstanceOf(AppActionConflictError);
         expect(execute).not.toHaveBeenCalled();
     });
+
+    it.each(['non-noop', 'missing-owner'] as const)('does not bind an unqualified %s target', async (condition) => {
+        tempoMapStore.set({ changes: [{ id: 'different-owner', beat: 4, tempo: 100, curve: 'instant' }] });
+        execute.mockImplementation(async (_action, options) => {
+            if (condition === 'missing-owner') {
+                clearHandlerRegistry();
+            }
+            options?.observeMaterializedAction?.({
+                type: 'editTempoMap',
+                payload: { edit: { type: 'add', beat: 4, tempo: 90, curve: 'instant' } },
+            });
+        });
+        const ids = new Map([['recorded', 'previous']]);
+        await replayTempoMapMacroAction(inverseRemove(), ids, {});
+        expect(ids).toEqual(new Map([['recorded', 'previous']]));
+    });
 });

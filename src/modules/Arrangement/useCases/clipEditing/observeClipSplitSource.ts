@@ -16,7 +16,7 @@ type Input = {
     owner: object;
     read: (document: Root) => unknown;
     projected: () => unknown;
-    readOwners: (document: Root) => unknown | null;
+    readOwners: (document: Root) => unknown;
 };
 type Context = Input & { rawOwnersUnchanged: (document: Root) => boolean };
 type State = { observed: unknown; expected?: unknown; certifiedRaw?: Root; intervened: boolean };

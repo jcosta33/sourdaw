@@ -22,10 +22,10 @@ export function lowerSourceMacroAction(action: AppAction, tempoIds: ReadonlyMap<
         if (action.type === 'restoreAudioClipSlip') {
             const { before, clock, direction } = action.payload;
             const tempo = readTempoAtBeat({ beat: before.clip.startBeat, clock });
-            const offset =
-                direction === 'apply'
-                    ? action.payload.offset
-                    : (resolveAudioUnwrappedOffsetSeconds(before.clip, tempo) * tempo) / 60;
+            let offset = action.payload.offset;
+            if (direction === 'restore') {
+                offset = (resolveAudioUnwrappedOffsetSeconds(before.clip, tempo) * tempo) / 60;
+            }
             return { type: 'slipClipContent', payload: { clipId: action.payload.clipId, clipType: 'audio', offset } };
         }
         const target = action.payload.tempoChangeId;

@@ -1,5 +1,5 @@
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
-import { settlePendingProjectWritesAndCaptureRevision } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { macroStore } from '../../stores/macroStore';
@@ -427,7 +427,7 @@ export async function playMacro(macroId: string): Promise<void> {
     for (const action of macro.actions) {
         // The preceding step records history after its product transaction.
         // Settle that pending truth before the next owner captures its source.
-        settlePendingProjectWritesAndCaptureRevision();
+        flushAutomergeStorageWrites();
         await executeMacroAction(action, replayIdMappings, { groupId, groupLabel });
     }
 }

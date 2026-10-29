@@ -1,4 +1,4 @@
-import { resolveTempoMapNoopRows } from '#/modules/Transport/useCases';
+import { readTempoMapEditTargets } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import { type TempoMapEdit, type TempoMapRow, type TempoMapRowPlan } from '#/utils/tempoMapRowPlan';
 
@@ -79,8 +79,11 @@ export async function replayTempoMapMacroAction(
                 if (canonical.type === 'editTempoMap') {
                     // Noop admission has no plan. Read its actual owner in this same
                     // synchronous phase, before dispatch can yield to later edits.
-                    observation.rows =
-                        canonical.payload.rowPlan?.after ?? resolveTempoMapNoopRows(canonical.payload.edit);
+                    if (canonical.payload.rowPlan) {
+                        observation.rows = canonical.payload.rowPlan.after;
+                    } else if (getCommandHandler(canonical)?.isNoop?.(canonical)) {
+                        observation.rows = readTempoMapEditTargets(canonical.payload.edit);
+                    }
                 }
             },
         }

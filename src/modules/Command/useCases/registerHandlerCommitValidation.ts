@@ -53,6 +53,18 @@ export function registerHandlerCommitValidation(
         documentChecks.set(postcondition.documentId, checks);
     }
     for (const [documentId, checks] of documentChecks) {
+        let beforeMutation: HandlerCommitValidation['beforeMutation'];
+        if (beforeMutationChecks.has(documentId)) {
+            beforeMutation = (document) => {
+                for (const check of beforeMutationChecks.get(documentId) ?? []) {
+                    const reason = check(document);
+                    if (reason) {
+                        return reason;
+                    }
+                }
+                return null;
+            };
+        }
         transaction.validateDocument(
             documentId,
             (document) => {
@@ -64,17 +76,7 @@ export function registerHandlerCommitValidation(
                 }
                 return null;
             },
-            beforeMutationChecks.has(documentId)
-                ? (document) => {
-                      for (const check of beforeMutationChecks.get(documentId) ?? []) {
-                          const reason = check(document);
-                          if (reason) {
-                              return reason;
-                          }
-                      }
-                      return null;
-                  }
-                : undefined
+            beforeMutation
         );
     }
 }

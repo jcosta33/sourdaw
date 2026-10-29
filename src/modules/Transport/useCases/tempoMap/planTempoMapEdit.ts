@@ -6,7 +6,8 @@ import {
     type TempoMapRowPlan,
 } from '#/utils/tempoMapRowPlan';
 
-import { BEAT_EPSILON, MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
+import { findTempoMapAddTarget } from '../../models/findTempoMapAddTarget';
+import { MAX_TEMPO_MAP_TEMPO, MIN_TEMPO_MAP_TEMPO } from '../../models/TempoMap';
 
 import { applyTempoMapRowPlan } from './applyTempoMapRowPlan';
 import { timelineMapTimeStateCodec } from './timelineMapTimeStateCodec';
@@ -66,7 +67,7 @@ function prepareEditedRows(input: Input, changes: readonly TempoMapRow[]): EditR
         if (!Number.isFinite(edit.beat) || edit.beat < 0 || !Number.isFinite(edit.tempo)) {
             return { status: 'rejected' };
         }
-        const existing = changes.findLast((row) => Math.abs(row.beat - edit.beat) <= BEAT_EPSILON);
+        const existing = findTempoMapAddTarget(changes, edit.beat);
         collision = { beat: edit.beat, targetId: existing?.id ?? null };
         if (existing) {
             before = [existing];
