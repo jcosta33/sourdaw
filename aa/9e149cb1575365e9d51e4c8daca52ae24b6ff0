@@ -1,0 +1,66 @@
+Cargo.lock
+  h_beb54bf43b47b7 2366
+crates/daw-dsp/src/knead/utils.rs
+  h_beb54bf43b47b7 3
+crates/daw-dsp/src/knead/yin.rs
+  h_beb54bf43b47b7 1-2
+crates/daw-dsp/src/primitives/mod.rs
+  h_beb54bf43b47b7 10
+crates/daw-dsp/src/primitives/pitch/mod.rs
+  h_beb54bf43b47b7 1-16
+crates/daw-dsp/src/primitives/pitch/mpm.rs
+  h_beb54bf43b47b7 1-308
+crates/daw-dsp/src/primitives/pitch/overlap.rs
+  h_beb54bf43b47b7 1-77
+crates/daw-dsp/src/primitives/pitch/pipeline.rs
+  h_beb54bf43b47b7 1-158
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  h_beb54bf43b47b7 1-59
+crates/daw-dsp/src/primitives/pitch/scoring.rs
+  h_beb54bf43b47b7 1-348
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  h_beb54bf43b47b7 1-144
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  h_beb54bf43b47b7 1-77
+crates/daw-dsp/tests/support/pitch_baseline/crumbs.rs
+  h_beb54bf43b47b7 1-158
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  h_beb54bf43b47b7 1-572
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  h_beb54bf43b47b7 1-26
+crates/daw-dsp/tests/support/pitch_baseline/psola.rs
+  h_beb54bf43b47b7 1-212
+crates/daw-dsp/tests/support/pitch_baseline/yin.rs
+  h_beb54bf43b47b7 1-119
+crates/scoring/AGENTS.md
+  h_beb54bf43b47b7 7-12
+crates/scoring/Cargo.toml
+  h_beb54bf43b47b7 14
+crates/scoring/src/lib.rs
+  h_beb54bf43b47b7 48,371-374
+crates/scoring/src/mpm.rs
+  h_beb54bf43b47b7 1-2
+crates/scoring/src/yin.rs
+  h_beb54bf43b47b7 1-2
+crates/scoring/tests/shared_pitch_contract.rs
+  h_beb54bf43b47b7 1-113
+crates/scoring/tests/support/pitch_baseline/mod.rs
+  h_beb54bf43b47b7 1-633
+crates/scoring/tests/support/pitch_baseline/mpm.rs
+  h_beb54bf43b47b7 1-215
+crates/scoring/tests/support/pitch_baseline/poly.rs
+  h_beb54bf43b47b7 1-225
+crates/scoring/tests/support/pitch_baseline/yin.rs
+  h_beb54bf43b47b7 1-343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa9e149cb1575365e9d51e4c8daca52ae24b6ff0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
