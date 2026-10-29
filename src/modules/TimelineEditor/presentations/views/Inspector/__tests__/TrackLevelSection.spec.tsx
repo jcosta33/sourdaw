@@ -22,9 +22,12 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     executeUserAppAction: vi.fn(),
     executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
     executeAppActionBatch: vi.fn(),
+    getExecutableAppActionEffect: vi.fn(),
     REDO_NOT_APPLIED: Symbol('REDO_NOT_APPLIED'),
     isAppActionCommittedError: vi.fn(() => false),
     pushUndoEntry: vi.fn(),
@@ -32,28 +35,33 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 
-vi.mock('#/modules/Automation/useCases', () => ({
-    buildOfflineModulatorPlans: vi.fn(() => []),
-    captureAutomationRecordingRollback: vi.fn(),
-    clipAutomationMoveStateMatches: vi.fn(),
-    cloneClipAutomationLanes: vi.fn(),
-    duplicateClipAutomation: vi.fn(),
-    duplicateClipAutomationBatch: vi.fn(),
-    getAutomationLaneCeiling: vi.fn(),
-    getAutomationLanes: vi.fn(),
-    getAutomationValueAtBeat: vi.fn(),
-    getClipAutomationMoveState: vi.fn(),
-    recordAutomationValue: vi.fn(),
-    releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
-    removeAutomationLane: vi.fn(),
-    removeAutomationLanesForTrack: vi.fn(),
-    removeMapping: vi.fn(),
-    removeModulator: vi.fn(),
-    restoreAutomationLanes: vi.fn(),
-    restoreClipAutomationMoveState: vi.fn(),
-    restoreTrackModulationReferences: vi.fn(),
-    shiftClipAutomation: vi.fn(),
-}));
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Automation/useCases')>();
+    return {
+        buildOfflineModulatorPlans: vi.fn(() => []),
+        captureAutomationRecordingRollback: vi.fn(),
+        clipAutomationMoveStateMatches: vi.fn(),
+        cloneClipAutomationLanes: vi.fn(),
+        duplicateClipAutomation: vi.fn(),
+        duplicateClipAutomationBatch: vi.fn(),
+        getAutomationLaneCeiling: vi.fn(),
+        getAutomationLanes: vi.fn(),
+        getAutomationValueAtBeat: vi.fn(),
+        getClipAutomationMoveState: vi.fn(),
+        isExactAutomationLaneSnapshots: actual.isExactAutomationLaneSnapshots,
+        isExactClipAutomationMoveSnapshots: actual.isExactClipAutomationMoveSnapshots,
+        recordAutomationValue: vi.fn(),
+        releaseTouchAutomation: (...args: unknown[]) => mockReleaseTouchAutomation(...args),
+        removeAutomationLane: vi.fn(),
+        removeAutomationLanesForTrack: vi.fn(),
+        removeMapping: vi.fn(),
+        removeModulator: vi.fn(),
+        restoreAutomationLanes: vi.fn(),
+        restoreClipAutomationMoveState: vi.fn(),
+        restoreTrackModulationReferences: vi.fn(),
+        shiftClipAutomation: vi.fn(),
+    };
+});
 
 vi.mock('#/components/daw/DawHeaderBand', () => ({
     DawHeaderBand: ({ title }: { title?: string }) => <div data-testid="header-band">{title}</div>,

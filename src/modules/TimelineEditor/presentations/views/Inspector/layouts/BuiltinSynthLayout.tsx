@@ -17,6 +17,7 @@ import { Button } from '#/components/ui/button';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
+import { useDeviceParameterGesture } from '../../../hooks/useDeviceParameterGesture';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
 import { SectionHeader } from '../SectionHeader';
@@ -91,6 +92,59 @@ const Collapsible = ({
     );
 };
 
+type EnvelopeStage = 'attack' | 'decay' | 'sustain' | 'release';
+
+const InteractiveSynthEnvelope = ({
+    device,
+    trackId,
+    stages,
+}: Pick<DeviceLayoutProps, 'device' | 'trackId'> & { stages: Record<EnvelopeStage, P> }): ReactElement => {
+    const attack = useDeviceParameterGesture({ param: stages.attack, device, trackId });
+    const decay = useDeviceParameterGesture({ param: stages.decay, device, trackId });
+    const sustain = useDeviceParameterGesture({ param: stages.sustain, device, trackId });
+    const release = useDeviceParameterGesture({ param: stages.release, device, trackId });
+    const gestures = { attack, decay, sustain, release };
+
+    return (
+        <ADSREnvelope
+            attack={attack.value}
+            decay={decay.value}
+            sustain={sustain.value}
+            release={release.value}
+            width={200}
+            height={80}
+            onParamChange={(stage, value) => {
+                if (stage === 'attack' || stage === 'decay' || stage === 'sustain' || stage === 'release') {
+                    gestures[stage].change(value, true);
+                }
+            }}
+            onGestureStart={(stage) => gestures[stage].isGestureCurrent(gestures[stage].startGesture())}
+            onGestureCommit={(stage) => gestures[stage].settleGesture()}
+            onGestureCancel={(stage) => gestures[stage].cancel()}
+        />
+    );
+};
+
+const SynthEnvelope = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
+    const attack = parameters.find((param) => param.id === 'attack');
+    const decay = parameters.find((param) => param.id === 'decay');
+    const sustain = parameters.find((param) => param.id === 'sustain');
+    const release = parameters.find((param) => param.id === 'release');
+    if (!attack || !decay || !sustain || !release) {
+        return (
+            <ADSREnvelope
+                attack={device.parameterValues.attack ?? attack?.value ?? 0.01}
+                decay={device.parameterValues.decay ?? decay?.value ?? 0.2}
+                sustain={device.parameterValues.sustain ?? sustain?.value ?? 0.7}
+                release={device.parameterValues.release ?? release?.value ?? 0.3}
+                width={200}
+                height={80}
+            />
+        );
+    }
+    return <InteractiveSynthEnvelope device={device} trackId={trackId} stages={{ attack, decay, sustain, release }} />;
+};
+
 const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactElement => {
     const pv = device.parameterValues;
     const wf1Idx = Math.round(pv.waveform ?? 2);
@@ -135,19 +189,10 @@ const BuiltinSynthLayout = ({ device, trackId, parameters }: DeviceLayoutProps):
                 </Row>
                 <Row2 ids={['filterCutoff', 'filterResonance']} params={parameters} device={device} trackId={trackId} />
             </div>
-            {/* Envelope — interactive */}
             <div>
                 <SectionHeader title="Envelope" />
                 <Row align="stretch" justify="center" className="mb-3">
-                    <ADSREnvelope
-                        attack={pv.attack ?? 0.01}
-                        decay={pv.decay ?? 0.2}
-                        sustain={pv.sustain ?? 0.7}
-                        release={pv.release ?? 0.3}
-                        width={200}
-                        height={80}
-                        onParamChange={change}
-                    />
+                    <SynthEnvelope device={device} trackId={trackId} parameters={parameters} />
                 </Row>
                 <Row2 ids={['attack', 'decay']} params={parameters} device={device} trackId={trackId} />
                 <div className="mt-2">

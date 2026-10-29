@@ -106,6 +106,7 @@ describe('revertAction', () => {
         expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
         expect(order).toEqual(['execute', 'mark']);
         expect(mocks.execute_app_action).toHaveBeenCalledWith(inverse_action, {
+            undoEntryId: entry.id,
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });

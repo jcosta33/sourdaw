@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
+import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import {
     automationStore,
     modulationStore,
@@ -26,6 +26,7 @@ import { cn } from '#/utils/Styles/cn';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
+import { useDeviceParameterGesture } from '../../hooks/useDeviceParameterGesture';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
@@ -199,14 +200,16 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         );
     const hasAutomation = !!activeLane;
 
-    const value = device.parameterValues[param.id] ?? param.value;
+    const {
+        value,
+        gestureOwner,
+        startGesture,
+        isGestureCurrent,
+        change: handleKnobChange,
+    } = useDeviceParameterGesture({ param, device, trackId });
     const step = deriveStep(param);
     const fineStep = step / 10;
     const displayValue = formatDisplayValue(value, param);
-
-    const handleKnobChange = (value1: number) => {
-        setDeviceParameter(device.id, param.id, value1);
-    };
 
     // Shared by both select branches, which put different numbers in `value`:
     // a `choice` option carries its index, a legal-set option carries the
@@ -322,23 +325,38 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
             ? toLinear(param.defaultValue ?? param.value)
             : (param.defaultValue ?? param.value);
 
-        const onChange = (value1: number) => {
-            handleKnobChange(isLog ? toLog(value1) : value1);
+        const onChange = (value1: number, isTransient = false, recordingSample = true) => {
+            handleKnobChange(isLog ? toLog(value1) : value1, isTransient, recordingSample);
         };
 
         if (isSlider) {
             return (
-                <BipolarSlider
-                    value={mappedValue}
-                    onValueChange={onChange}
-                    min={min}
-                    max={max}
-                    step={mappedStep}
-                    defaultValue={mappedDefaultValue}
-                    aria-label={param.name}
-                    formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                <div
                     className="w-full"
-                />
+                    onPointerDownCapture={() => startGesture()}
+                    onKeyDownCapture={(event) => {
+                        if (
+                            ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter'].includes(
+                                event.key
+                            )
+                        ) {
+                            startGesture();
+                        }
+                    }}
+                >
+                    <BipolarSlider
+                        value={mappedValue}
+                        onValueChange={(nextValue) => onChange(nextValue, true)}
+                        onValueCommit={(nextValue) => onChange(nextValue, false, false)}
+                        min={min}
+                        max={max}
+                        step={mappedStep}
+                        defaultValue={mappedDefaultValue}
+                        aria-label={param.name}
+                        formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                        className="w-full"
+                    />
+                </div>
             );
         }
 
@@ -350,6 +368,11 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 deviceId={device.id}
                 value={mappedValue}
                 onChange={onChange}
+                gestureOwner={gestureOwner}
+                gestureAuthority={{
+                    acquire: startGesture,
+                    isCurrent: isGestureCurrent,
+                }}
                 min={min}
                 max={max}
                 step={mappedStep}

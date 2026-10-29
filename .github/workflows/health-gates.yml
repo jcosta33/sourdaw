@@ -111,6 +111,7 @@ jobs:
     needs: scope
     uses: ./.github/workflows/validation.yml
     with:
+      mode: full
       browser: ${{ needs.scope.outputs.browser == 'true' }}
       profile: ${{ needs.scope.outputs.profile }}
 
@@ -145,6 +146,9 @@ jobs:
 
       - name: Analyse
         uses: github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef # codeql-bundle-v2.26.3
+        with:
+          # Match the existing nightly main analysis for PR alert comparison.
+          category: .github/workflows/nightly.yml:codeql
 
   gate:
     name: Gate

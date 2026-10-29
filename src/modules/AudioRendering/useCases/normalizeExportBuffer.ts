@@ -4,7 +4,8 @@ import {
 } from '../repositories/audioEncoders/applyExportNormalization';
 
 type NormalizeExportBufferInput = {
-    buffer: AudioBuffer;
+    buffer: Parameters<typeof applyExportNormalization>[0]['buffer'];
+    apply?: boolean;
     targetLufs: number;
     ceilingDbTp: number;
 };

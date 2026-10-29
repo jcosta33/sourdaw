@@ -169,6 +169,7 @@ function registerDependencies(input?: { automation?: TestHandle; transport?: Tes
         () => midi
     );
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation,
         prepareAutomationTimeStateRestore: vi.fn(() => createHandle('automation-restore', false)),
         prepareTimelineMapTimeOperation,
