@@ -1,0 +1,38 @@
+src/modules/AiRuntime/AGENTS.md
+  h_beb54bf43b47b7 58-59
+src/modules/AiRuntime/repositories/cloudLlm/__tests__/anthropicThinkingWithTools.spec.ts
+  h_beb54bf43b47b7 298-348
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateAnthropicToolCalls.spec.ts
+  h_beb54bf43b47b7 167-201
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiCompatibleToolCalls.spec.ts
+  h_beb54bf43b47b7 164-179,182-189,191-198,200-211,213
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/__tests__/generateOpenAiResponsesToolCalls.spec.ts
+  h_beb54bf43b47b7 254-277
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateAnthropicToolCalls.ts
+  h_beb54bf43b47b7 65-72,74-75,77
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/generateOpenAiResponsesToolCalls.ts
+  h_beb54bf43b47b7 183,195,198
+src/modules/AiRuntime/repositories/cloudLlm/cloudInference/hostedToolPlan.ts
+  h_beb54bf43b47b7 31-32,34-36
+src/modules/AiRuntime/repositories/providerAdapterRegistry.ts
+  h_beb54bf43b47b7 33-36
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  h_beb54bf43b47b7 7,36,47,63-64,106,183,185,305-310,312-316,321,331,336-351,475-476,486,504,588,800-801,1318-1909
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  h_beb54bf43b47b7 5,151-546
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 197-213,217-218,236,1378-1387,1395,1408,1418,2118-2234,2262,2339-2359,2400-2403,2912,2915-2932
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 4,900-917
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ffdd12698c6770a13aa31b800abb0c40a03c34bc",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
