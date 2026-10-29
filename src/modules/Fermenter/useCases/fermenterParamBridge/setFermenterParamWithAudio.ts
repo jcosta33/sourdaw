@@ -1,18 +1,9 @@
-import { createRafBatcher } from '#/utils/DOM/createRafBatcher';
-
 import { type FermenterPatch } from '../../models/FermenterPatch';
 import { setFermenterParam } from '../../stores/fermenterStore';
 import { getFermenterDependencies } from '../getFermenterDependencies';
 
+import { type FermenterBatchEntry, fermenterParamBatcher } from './fermenterParamBatcher';
 import { mapFermenterParamToDspParam } from './mapFermenterParamToDspParam';
-
-// §33.2 — Shared rAF-batch primitive.
-type FermenterBatchEntry = { deviceId: string; dspKey: string; key: string; value: number };
-const paramBatcher = createRafBatcher<FermenterBatchEntry>();
-
-export function cancelPendingFermenterParam(deviceId: string, key: keyof FermenterPatch): void {
-    paramBatcher.cancel(`${deviceId}:${key}`);
-}
 
 function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
     const { updateDeviceParam, persistDeviceParam, resolveEligibleDeviceWriteTarget } = getFermenterDependencies();
@@ -50,5 +41,9 @@ export function setFermenterParamWithAudio(deviceId: string, key: keyof Fermente
 
     const compositeKey = `${deviceId}:${key}`;
     const dspKey = mapFermenterParamToDspParam({ paramId: key });
-    paramBatcher.schedule(compositeKey, { deviceId: target.deviceId, dspKey, key, value: boundedValue }, flushParam);
+    fermenterParamBatcher.schedule(
+        compositeKey,
+        { deviceId: target.deviceId, dspKey, key, value: boundedValue },
+        flushParam
+    );
 }

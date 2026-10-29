@@ -7,7 +7,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { DEFAULT_PATCH, FILTER_MODEL_NAMES, FILTER_MODE_NAMES } from '../models/FermenterPatch';
 import { setFermenterParam } from '../stores/fermenterStore';
 
-import { cancelPendingFermenterParam } from './fermenterParamBridge/setFermenterParamWithAudio';
+import { cancelPendingFermenterParam } from './fermenterParamBridge/cancelPendingFermenterParam';
 
 type FilterChoice = 'filterModel' | 'filterMode';
 

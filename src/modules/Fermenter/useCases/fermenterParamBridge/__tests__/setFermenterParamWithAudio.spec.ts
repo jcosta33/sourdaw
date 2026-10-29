@@ -8,7 +8,8 @@ import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
 import { setFermenterParam } from '../../../stores/fermenterStore';
 import { setFermenterDependencies } from '../../fermenterDependencies';
-import { cancelPendingFermenterParam, setFermenterParamWithAudio } from '../setFermenterParamWithAudio';
+import { cancelPendingFermenterParam } from '../cancelPendingFermenterParam';
+import { setFermenterParamWithAudio } from '../setFermenterParamWithAudio';
 
 describe('setFermenterParamWithAudio', () => {
     const updateDeviceParam = vi.fn();
