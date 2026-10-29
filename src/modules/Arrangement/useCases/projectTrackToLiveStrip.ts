@@ -9,6 +9,7 @@ import {
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
 import { getAllSidechainRoutes, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
+import { getSidechainTargetCapability } from '#/utils/getSidechainTargetCapability';
 import { hasRoutingCycle } from '#/utils/routingCycle';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
@@ -113,6 +114,16 @@ function replayTrackSends(track: Track, owners: TrackOwners): void {
 function hasPersistedLiveRoutingCycle(tracks: readonly Track[], owners: TrackOwners): boolean {
     const liveTracks = tracks.filter((track) => shouldCreateLiveTrackStrip(track) && owners.get(track.id) === track);
     const liveIds = new Set(liveTracks.map((track) => track.id));
+    const sidechainTargets = new Map<string, Set<string>>();
+    for (const track of liveTracks) {
+        const deviceIds = new Set<string>();
+        for (const device of track.devices) {
+            if (getSidechainTargetCapability(device.type)) {
+                deviceIds.add(device.id);
+            }
+        }
+        sidechainTargets.set(track.id, deviceIds);
+    }
     return hasRoutingCycle({
         tracks: liveTracks.map((track) => ({
             id: track.id,
@@ -126,8 +137,12 @@ function hasPersistedLiveRoutingCycle(tracks: readonly Track[], owners: TrackOwn
                     : undefined,
             sends: track.sends.filter((send) => acceptsRoutingEndpoint(owners, send.busId)),
         })),
+        // The engine drops orphan and unsupported detector targets. Their saved
+        // metadata is retained, but it contributes no replayed sidechain edge.
         sidechainRoutes: getAllSidechainRoutes().filter(
-            (route) => liveIds.has(route.sourceTrackId) && liveIds.has(route.targetTrackId)
+            (route) =>
+                liveIds.has(route.sourceTrackId) &&
+                sidechainTargets.get(route.targetTrackId)?.has(route.targetDeviceId) === true
         ),
     });
 }
