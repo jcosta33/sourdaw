@@ -1,0 +1,14 @@
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.gain.integration.spec.tsx
+  h_beb54bf43b47b7 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e8805a023a785e214a81dbb89b85035726d43fc9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
