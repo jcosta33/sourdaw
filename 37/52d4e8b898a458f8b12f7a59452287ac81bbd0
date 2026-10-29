@@ -1,0 +1,16 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 423-426,428-432
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,411-414,430-435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3752d4e8b898a458f8b12f7a59452287ac81bbd0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
