@@ -10,44 +10,169 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
 
-class MemoryDirectory implements ProjectDirectoryHandle {
+function filePosition(value: number | undefined): number {
+    if (value === undefined || !Number.isSafeInteger(value) || value < 0) {
+        throw new TypeError('Expected a nonnegative file position');
+    }
+    return value;
+}
+
+async function fileBytes(data: Blob | BufferSource | string): Promise<Uint8Array<ArrayBuffer>> {
+    if (typeof data === 'string') {
+        return new TextEncoder().encode(data);
+    }
+    if (data instanceof Blob) {
+        const bytes = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                if (reader.result === null || typeof reader.result === 'string') {
+                    reject(new TypeError('Expected file bytes'));
+                    return;
+                }
+                resolve(reader.result);
+            };
+            reader.onerror = () => reject(reader.error);
+            reader.readAsArrayBuffer(data);
+        });
+        return new Uint8Array(bytes);
+    }
+    if (ArrayBuffer.isView(data)) {
+        return Uint8Array.from(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    }
+    return Uint8Array.from(new Uint8Array(data));
+}
+
+function createMemoryWritable(
+    initial: Uint8Array,
+    commit: (bytes: Uint8Array<ArrayBuffer>) => void
+): FileSystemWritableFileStream {
+    let pending = Uint8Array.from(initial);
+    let position = 0;
+    const resize = (size: number) => {
+        const next = new Uint8Array(size);
+        next.set(pending.subarray(0, size));
+        pending = next;
+    };
+    const stream = new WritableStream<FileSystemWriteChunkType>({
+        async write(chunk) {
+            let data: Blob | BufferSource | string;
+            if (typeof chunk === 'object' && !(chunk instanceof Blob) && 'type' in chunk) {
+                if (chunk.type === 'seek') {
+                    position = filePosition(chunk.position);
+                    return;
+                }
+                if (chunk.type === 'truncate') {
+                    const size = filePosition(chunk.size);
+                    resize(size);
+                    position = Math.min(position, size);
+                    return;
+                }
+                if (chunk.data === undefined || chunk.data === null) {
+                    throw new TypeError('A file write requires data');
+                }
+                if (chunk.position !== undefined) {
+                    position = filePosition(chunk.position);
+                }
+                data = chunk.data;
+            } else if (
+                typeof chunk === 'string' ||
+                chunk instanceof Blob ||
+                chunk instanceof ArrayBuffer ||
+                ArrayBuffer.isView(chunk)
+            ) {
+                data = chunk;
+            } else {
+                throw new TypeError('Unsupported file write');
+            }
+            const bytes = await fileBytes(data);
+            if (position + bytes.byteLength > pending.byteLength) {
+                resize(position + bytes.byteLength);
+            }
+            pending.set(bytes, position);
+            position += bytes.byteLength;
+        },
+        close: () => commit(Uint8Array.from(pending)),
+    });
+    const write = async (data: FileSystemWriteChunkType) => {
+        const writer = stream.getWriter();
+        try {
+            await writer.write(data);
+        } finally {
+            writer.releaseLock();
+        }
+    };
+    return Object.assign(stream, {
+        write,
+        seek: (position: number) => write({ type: 'seek', position }),
+        truncate: (size: number) => write({ type: 'truncate', size }),
+    });
+}
+
+class MemoryDirectory implements FileSystemDirectoryHandle, ProjectDirectoryHandle {
+    readonly kind: 'directory' = 'directory';
     readonly files = new Map<string, Uint8Array>();
     readonly directories = new Map<string, MemoryDirectory>();
+    private readonly fileHandles = new Map<string, FileSystemFileHandle>();
+    private removed = false;
     beforeRead: ((name: string) => Promise<void>) | undefined;
 
     constructor(readonly name: string) {}
 
-    async getFileHandle(name: string, options?: { create?: boolean }) {
+    private requireEntry(): void {
+        if (this.removed) {
+            throw new DOMException('Missing directory', 'NotFoundError');
+        }
+    }
+
+    async getFileHandle(name: string, options?: FileSystemGetFileOptions): Promise<FileSystemFileHandle> {
+        this.requireEntry();
+        if (this.directories.has(name)) {
+            throw new DOMException('Entry is a directory', 'TypeMismatchError');
+        }
+        const existing = this.fileHandles.get(name);
+        if (existing) {
+            return existing;
+        }
         if (!this.files.has(name) && !options?.create) {
             throw new DOMException('Missing file', 'NotFoundError');
         }
-        return {
-            getFile: async () => ({
-                arrayBuffer: async () => {
-                    await this.beforeRead?.(name);
-                    return Uint8Array.from(this.files.get(name) ?? []).buffer;
-                },
-            }),
-            createWritable: async () => {
-                let pending: Uint8Array | null = null;
-                return {
-                    write: async (bytes: Uint8Array) => {
-                        pending = Uint8Array.from(bytes);
+        const handle: FileSystemFileHandle = {
+            kind: 'file',
+            name,
+            getFile: async () => {
+                this.requireEntry();
+                if (this.fileHandles.get(name) !== handle) {
+                    throw new DOMException('Missing file', 'NotFoundError');
+                }
+                const file = new File([Uint8Array.from(this.files.get(name) ?? [])], name);
+                Object.defineProperty(file, 'arrayBuffer', {
+                    value: async () => {
+                        await this.beforeRead?.(name);
+                        return Uint8Array.from(this.files.get(name) ?? []).buffer;
                     },
-                    close: async () => {
-                        if (pending) {
-                            this.files.set(name, pending);
-                        }
-                    },
-                    abort: async () => {
-                        pending = null;
-                    },
-                };
+                });
+                return file;
             },
+            createWritable: async (options) =>
+                createMemoryWritable(
+                    options?.keepExistingData ? (this.files.get(name) ?? new Uint8Array()) : new Uint8Array(),
+                    (bytes) => this.files.set(name, bytes)
+                ),
+            createSyncAccessHandle: () =>
+                Promise.reject(new DOMException('This fixture runs outside a worker', 'NotSupportedError')),
+            isSameEntry: (other) => Promise.resolve(other === handle),
+            queryPermission: () => this.queryPermission(),
+            requestPermission: () => this.requestPermission(),
         };
+        this.fileHandles.set(name, handle);
+        return handle;
     }
 
-    async getDirectoryHandle(name: string, options?: { create?: boolean }): Promise<MemoryDirectory> {
+    async getDirectoryHandle(name: string, options?: FileSystemGetDirectoryOptions): Promise<MemoryDirectory> {
+        this.requireEntry();
+        if (this.files.has(name) || this.fileHandles.has(name)) {
+            throw new DOMException('Entry is a file', 'TypeMismatchError');
+        }
         const existing = this.directories.get(name);
         if (existing) {
             return existing;
@@ -58,6 +183,87 @@ class MemoryDirectory implements ProjectDirectoryHandle {
         const next = new MemoryDirectory(name);
         this.directories.set(name, next);
         return next;
+    }
+
+    isSameEntry(other: FileSystemHandle): Promise<boolean> {
+        return Promise.resolve(other === this);
+    }
+
+    queryPermission(): Promise<PermissionState> {
+        return Promise.resolve(folder.permission ? 'granted' : 'denied');
+    }
+
+    requestPermission(): Promise<PermissionState> {
+        return this.queryPermission();
+    }
+
+    async *entries(): AsyncGenerator<[string, FileSystemDirectoryHandle | FileSystemFileHandle], undefined, unknown> {
+        this.requireEntry();
+        yield* this.directories;
+        for (const name of new Set([...this.files.keys(), ...this.fileHandles.keys()])) {
+            yield [name, await this.getFileHandle(name)];
+        }
+        return undefined;
+    }
+
+    [Symbol.asyncIterator]() {
+        return this.entries();
+    }
+
+    async *keys(): AsyncGenerator<string, undefined, unknown> {
+        for await (const [name] of this.entries()) {
+            yield name;
+        }
+        return undefined;
+    }
+
+    async *values(): AsyncGenerator<FileSystemDirectoryHandle | FileSystemFileHandle, undefined, unknown> {
+        for await (const [, entry] of this.entries()) {
+            yield entry;
+        }
+        return undefined;
+    }
+
+    async resolve(possibleDescendant: FileSystemHandle): Promise<string[] | null> {
+        if (possibleDescendant === this) {
+            return [];
+        }
+        for await (const [name, entry] of this.entries()) {
+            if (await entry.isSameEntry(possibleDescendant)) {
+                return [name];
+            }
+            if (entry.kind === 'directory') {
+                const nested = await entry.resolve(possibleDescendant);
+                if (nested) {
+                    return [name, ...nested];
+                }
+            }
+        }
+        return null;
+    }
+
+    async removeEntry(name: string, options?: FileSystemRemoveOptions): Promise<void> {
+        this.requireEntry();
+        const directory = this.directories.get(name);
+        if (directory) {
+            if (
+                !options?.recursive &&
+                (directory.directories.size || directory.files.size || directory.fileHandles.size)
+            ) {
+                throw new DOMException('Directory is not empty', 'InvalidModificationError');
+            }
+            for await (const child of directory.keys()) {
+                await directory.removeEntry(child, { recursive: true });
+            }
+            directory.removed = true;
+            this.directories.delete(name);
+            return;
+        }
+        if (!this.files.has(name) && !this.fileHandles.has(name)) {
+            throw new DOMException('Missing entry', 'NotFoundError');
+        }
+        this.files.delete(name);
+        this.fileHandles.delete(name);
     }
 }
 
