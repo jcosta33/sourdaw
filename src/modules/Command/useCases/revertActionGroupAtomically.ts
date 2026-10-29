@@ -70,7 +70,22 @@ async function revertActionGroupAtomicallyImpl(
         };
     }
     if (!historyFinalized) {
-        // A no-op replay publishes nothing and runs no deferred effects, but consumes its entries.
+        // No-op replay still yields. It may consume history only while the caller's project
+        // authority and the untouched history snapshot both remain current.
+        if (options?.shouldExecute && !options.shouldExecute()) {
+            return {
+                status: 'refused',
+                reason: 'conflict',
+                detail: 'The project state has changed since the group was applied',
+            };
+        }
+        if (undoStore.value !== state) {
+            return {
+                status: 'refused',
+                reason: 'not-applied',
+                detail: 'The undo history changed before the group could be reverted',
+            };
+        }
         finalizeHistory();
     }
     return { status: 'reverted', warning: outcome.status === 'committed' ? readCommittedWarning(outcome.error) : null };
@@ -84,6 +99,7 @@ async function revertActionGroupAtomicallyImpl(
  * command, and one whose inverses conflict with the project as it is now are refused and stay
  * exactly where they were. A caller's `shouldExecute` is the batch's own last authority check
  * before it writes: once it answers false, nothing is written and the group is refused as a conflict.
+ * A replay that writes nothing rechecks that authority before consuming its unchanged history.
  */
 export function revertActionGroupAtomically(
     groupId: string,

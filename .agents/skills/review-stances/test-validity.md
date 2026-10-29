@@ -1853,3 +1853,12 @@ post-commit warnings and a real musician edit as independent controls. Mutating 
 to after the wait must fail these oracles. Check notification timing before publication callbacks,
 exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
 throw that retains the original committed error without rollback or retry.
+
+A mock returning no-op cannot observe the async gap after a real handler skips execution.
+Use a real inverse that the handler already considers applied, delegate its actual isNoop
+boolean unchanged, and signal that observation before replacing or editing the project.
+Require no handler/engine write and compare project, projections, both history stacks, tree
+and AI metadata together after completion. A same-lineage edit retaining the exact Undo
+snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
+Pair it with clear-only and original-reference restore, normal no-op consumption and caller
+cancellation. Await the observation and completion, never a chosen number of microtasks.

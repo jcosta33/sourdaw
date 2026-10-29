@@ -47,6 +47,7 @@ import {
     type AiActionGroup,
 } from '../../stores/aiActionHistoryStore';
 import { revertAiActionGroup } from '../aiHistoryActions';
+import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -267,6 +268,127 @@ describe('revertAiActionGroup', () => {
         expect(trackStore.value?.tracks.find((track) => track.id === 'bass')?.muted).toBe(true);
         expect(trackStore.value?.tracks.find((track) => track.id === 'drums')?.muted).toBe(true);
         expect(undoHistoryStore.value?.future).toEqual([]);
+    });
+
+    describe.each(['panel', 'thread'] as const)('%s no-op history revert', (caller) => {
+        const transitions = [
+            'unchanged',
+            'replacement',
+            'cleared history',
+            'same-lineage discard',
+            'restored original entries',
+            'same-lineage edit',
+        ];
+        if (caller === 'thread') {
+            transitions.push('cancelled request');
+        }
+        it.each(transitions)('settles a real no-op inverse with %s project history', async (transition) => {
+            const group = recordGroup();
+            const tracks = trackStore.value;
+            if (!tracks) {
+                throw new Error('Expected the track projection');
+            }
+            // A legacy out-of-range gain clamps to the same value as this inverse and its redo.
+            trackStore.set({
+                ...tracks,
+                tracks: tracks.tracks.map((track) => (track.id === 'keys' ? { ...track, gain: 10 } : track)),
+            });
+            flushAutomergeStorageWrites();
+            await executeAppAction(
+                { type: 'setTrackGain', payload: { trackId: 'keys', gain: 2, expectedGain: 10 } },
+                { source: 'ai', groupId: group.groupId }
+            );
+            const snapshot = captureUndoHistory();
+            expect(snapshot.past).toHaveLength(1);
+            const appliedHistory = undoHistoryStore.value;
+            const applied = captureState();
+            const appliedRoot = clone(requireRoot());
+            const originalProject = captureProjectIdentity();
+            const observed = Promise.withResolvers<void>();
+            const handlers = getArrangementHandlers();
+            const actualIsNoop = handlers.setTrackGain.isNoop;
+            if (!actualIsNoop) {
+                throw new Error('Expected the real track gain no-op predicate');
+            }
+            const execute = vi.spyOn(handlers.setTrackGain, 'execute');
+            clearHandlerRegistry();
+            registerHandlerMap({
+                ...handlers,
+                setTrackGain: {
+                    ...handlers.setTrackGain,
+                    isNoop: (action) => {
+                        const result = actualIsNoop(action);
+                        if (result) {
+                            observed.resolve();
+                        }
+                        return result;
+                    },
+                },
+            });
+            runtimeMocks.setTrackGain.mockClear();
+            let requestIsLive = true;
+            const revert = () => {
+                if (caller === 'thread') {
+                    return revertThreadCommit(group.groupId, () => requestIsLive);
+                }
+                return revertAiActionGroup(group);
+            };
+            const completion = revert();
+            await observed.promise;
+            if (transition === 'replacement' || transition === 'restored original entries') {
+                replaceCrdtDoc({ id: 'root', doc: appliedRoot });
+                clearUndoHistory();
+                if (transition === 'restored original entries') {
+                    restoreUndoHistory(snapshot);
+                    expect(undoHistoryStore.value?.past[0]).toBe(snapshot.past[0]);
+                }
+            } else if (transition === 'cleared history') {
+                clearUndoHistory();
+            } else if (transition === 'same-lineage discard') {
+                replaceCrdtDocInLineage({
+                    id: 'root',
+                    doc: change(clone(appliedRoot), (doc) => {
+                        doc.temporaryEdit = true;
+                    }),
+                });
+                replaceCrdtDocInLineage({ id: 'root', doc: appliedRoot });
+                expect(captureProjectIdentity()).toBe(originalProject);
+                expect(undoHistoryStore.value).toBe(appliedHistory);
+            } else if (transition === 'same-lineage edit') {
+                replaceCrdtDocInLineage({
+                    id: 'root',
+                    doc: change(clone(appliedRoot), (doc) => {
+                        doc.temporaryEdit = true;
+                    }),
+                });
+                expect(captureProjectIdentity()).toBe(originalProject);
+                expect(undoHistoryStore.value).toBe(appliedHistory);
+            } else if (transition === 'cancelled request') {
+                requestIsLive = false;
+            }
+            const beforeCompletion = captureState();
+            const result = await completion;
+            const after = captureState();
+            expect(execute).not.toHaveBeenCalled();
+            expect(runtimeMocks.setTrackGain).not.toHaveBeenCalled();
+            if (transition === 'unchanged') {
+                expect(after.project).toEqual(applied.project);
+                expect(after.tracks).toEqual(applied.tracks);
+                expect(after.undo).toEqual({ past: [], future: snapshot.past });
+                expect(after.ai?.groups).toEqual([{ ...group, reverted: true }]);
+                expect(notificationEventBus.emit).not.toHaveBeenCalled();
+            } else {
+                expect(after).toEqual({ ...beforeCompletion, ai: applied.ai });
+                if (caller === 'thread') {
+                    expect(result).toMatchObject({
+                        status: 'refused',
+                        reason: expect.stringContaining('nothing was undone'),
+                    });
+                } else {
+                    expectRefusal('Nothing was undone');
+                }
+            }
+        });
     });
 
     it('refuses a conflicting older inverse before the newer Bass inverse can write', async () => {

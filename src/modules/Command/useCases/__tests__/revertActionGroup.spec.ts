@@ -546,4 +546,82 @@ describe('revertActionGroupAtomically', () => {
 
         expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [entry] });
     });
+
+    it('refuses a no-op whose caller authority was revoked before history settlement', async () => {
+        const entry = groupEntry('already-at-value', 'track-a');
+        holdGroupOf(entry);
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let authorized = true;
+        const shouldExecute = vi.fn(() => authorized);
+        mocks.executeAppActionBatch.mockImplementation(async () => {
+            entered.resolve();
+            await release.promise;
+            return { status: 'no-op', actions: [] };
+        });
+
+        const revert = revertActionGroupAtomically('g1', { shouldExecute });
+        await entered.promise;
+        authorized = false;
+        release.resolve();
+
+        await expect(revert).resolves.toMatchObject({ status: 'refused', reason: 'conflict' });
+        expect(shouldExecute).toHaveBeenCalledOnce();
+        expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+        expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+    });
+
+    it.each(['cleared', 'restored originals', 'appended entry'] as const)(
+        'refuses a no-op whose history was %s without relying on project authority',
+        async (transition) => {
+            const entry = groupEntry('already-at-value', 'track-a');
+            holdGroupOf(entry);
+            const appended = actionEntry('later-musician-edit', undefined);
+            mocks.executeAppActionBatch.mockImplementation(async () => {
+                let past: UndoEntry[] = [entry];
+                if (transition === 'cleared') {
+                    past = [];
+                } else if (transition === 'appended entry') {
+                    past = [entry, appended];
+                }
+                mocks.undoStoreValue.value = { past, future: [] };
+                return { status: 'no-op', actions: [] };
+            });
+
+            await expect(revertActionGroupAtomically('g1')).resolves.toMatchObject({
+                status: 'refused',
+                reason: 'not-applied',
+            });
+
+            expect(mocks.undoStoreSet).not.toHaveBeenCalled();
+            expect(mocks.undoTreeMoveTo).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(['committed', 'ambiguous'] as const)(
+        'retains a %s publication when authority changes afterward',
+        async (status) => {
+            const entry = groupEntry('written', 'track-a');
+            holdGroupOf(entry);
+            let authorized = true;
+            const shouldExecute = vi.fn(() => authorized);
+            mocks.executeAppActionBatch.mockImplementation(async (actions, options) => {
+                if (status === 'ambiguous') {
+                    options?.onAmbiguousCommit?.();
+                    authorized = false;
+                    return { status: 'ambiguous', reason: 'Publication observer failed', actions: [] };
+                }
+                options?.onCommitted?.(actions);
+                authorized = false;
+                return { status: 'committed', actions: [] };
+            });
+
+            await expect(revertActionGroupAtomically('g1', { shouldExecute })).resolves.toMatchObject({
+                status: 'reverted',
+            });
+
+            expect(shouldExecute).not.toHaveBeenCalled();
+            expect(mocks.undoStoreSet).toHaveBeenCalledExactlyOnceWith({ past: [], future: [entry] });
+        }
+    );
 });

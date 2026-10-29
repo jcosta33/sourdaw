@@ -821,3 +821,13 @@ re-enter; a committed inverse stays committed truth even if later effects warn. 
 edit must retain its entry and invalidate Redo normally. Keep normal onCommitted silent for
 no-op, cancelled, rejected and ambiguous outcomes, and retain the original ambiguity if its
 separate observer throws.
+
+The same late-finalization route also admitted stale no-op history: replay can skip every
+inverse yet still yield before history settlement. In #5849, a real legacy clamped-gain
+inverse proved no project or track write occurred while replacement and clear installed a
+different history; old entries still entered its future and AI metadata claimed a revert.
+Keep the unchanged no-op control, but require caller project mutation authority and the
+untouched Undo snapshot again before consuming a no-publication result. Exercise both panel
+and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
+discard, original-reference restoration and request cancellation. This fence applies only
+before publication: a real committed inverse remains committed truth.
