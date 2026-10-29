@@ -1,0 +1,19 @@
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_2688a571e7296a 154,580
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "808a82afb7c3c09980ff27fc6f6a617765bcbdd2",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
