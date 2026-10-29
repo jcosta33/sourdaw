@@ -1,0 +1,21 @@
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  s_59e31a5c6f3e31::t_5d7f7bec292502 34,63,154-158,164,174,196,206,264,267,271,282-286,323-324,498
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  s_59e31a5c6f3e31::t_5d7f7bec292502 11-12,62-66
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d314eaa0eaeb704ca937efecd6ff6c023a4ccc17",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
