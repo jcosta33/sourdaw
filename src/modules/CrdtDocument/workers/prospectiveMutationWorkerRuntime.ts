@@ -1,10 +1,13 @@
-import { change, free, getHeads, load, save, type Doc } from '@automerge/automerge';
+import { change, free, getChanges, getHeads, load, type Doc } from '@automerge/automerge';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
-import { parseProspectiveMutationWorkerRequest } from '../models/ProspectiveMutationWorkerProtocol';
+import {
+    parseProspectiveMutationWorkerRequest,
+    type ProspectiveMutationWorkerResult,
+} from '../models/ProspectiveMutationWorkerProtocol';
 
-export function materializeProspectiveMutation(request: unknown): Uint8Array<ArrayBuffer> {
+export function materializeProspectiveMutation(request: unknown): ProspectiveMutationWorkerResult {
     const input = parseProspectiveMutationWorkerRequest(request);
     let document: Doc<Record<string, unknown>> | undefined;
     try {
@@ -17,8 +20,12 @@ export function materializeProspectiveMutation(request: unknown): Uint8Array<Arr
             input.time === undefined
                 ? { message: input.message || undefined }
                 : { message: input.message || undefined, time: input.time };
+        const seed = document;
         document = change(document, options, (draft) => applyCanonicalStorageSlotMutation(draft, input.mutation));
-        return Uint8Array.from(save(document));
+        return {
+            changes: getChanges(seed, document).map((bytes) => Uint8Array.from(bytes)),
+            heads: getHeads(document),
+        };
     } finally {
         if (document) {
             free(document);

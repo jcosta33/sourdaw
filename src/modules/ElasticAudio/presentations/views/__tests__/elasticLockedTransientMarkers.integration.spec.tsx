@@ -1,4 +1,4 @@
-import { change, clone, load, save, toJS } from '@automerge/automerge';
+import { change, clone, free, getChanges, getHeads, load, toJS } from '@automerge/automerge';
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -58,8 +58,9 @@ type MaterializationRequest = {
     message?: string;
     mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
 };
+type MaterializationResult = { changes: Uint8Array<ArrayBuffer>[]; heads: string[] };
 const materialization = vi.hoisted(() =>
-    vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>>()
+    vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<MaterializationResult>>()
 );
 vi.mock('#/modules/CrdtDocument/repositories/prospectiveMutationWorkerClient', () => ({
     requestProspectiveMutation: materialization,
@@ -170,12 +171,18 @@ describe('locked transient markers through the real Elastic editor', () => {
         materialization.mockReset();
         materialization.mockImplementation(async (request) => {
             // Only transport is substituted; the same canonical helper and native codec remain real.
-            const candidate = change(
-                load<Record<string, unknown>>(request.seed, { actor: request.actor }),
-                { message: request.message },
-                (draft) => applyCanonicalStorageSlotMutation(draft, request.mutation)
+            const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+            const candidate = change(seed, { message: request.message }, (draft) =>
+                applyCanonicalStorageSlotMutation(draft, request.mutation)
             );
-            return Uint8Array.from(save(candidate));
+            try {
+                return {
+                    changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+                    heads: getHeads(candidate),
+                };
+            } finally {
+                free(candidate);
+            }
         });
         resetPreferences();
         const bus = createEventBus<{
@@ -510,7 +517,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         const complete = materialization.getMockImplementation();
         if (!complete) throw new Error('Expected real native codec transport fixture');
         const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
-        const result = Promise.withResolvers<Uint8Array<ArrayBuffer>>();
+        const result = Promise.withResolvers<MaterializationResult>();
         materialization.mockImplementationOnce((request, signal) => {
             entered.resolve({ request, signal });
             return result.promise;
@@ -550,7 +557,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             const complete = materialization.getMockImplementation();
             if (!complete) throw new Error('Expected native codec fixture');
             const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
-            const result = Promise.withResolvers<Uint8Array<ArrayBuffer>>();
+            const result = Promise.withResolvers<MaterializationResult>();
             materialization.mockImplementationOnce((request, signal) => {
                 entered.resolve({ request, signal });
                 return result.promise;

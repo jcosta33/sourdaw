@@ -3,17 +3,19 @@ import {
     change,
     clone,
     decodeChange,
+    encodeChange,
     free,
     from,
     getActorId,
     getChanges,
     getHeads,
-    getLastLocalChange,
+    getObjectId,
     load,
     loadIncremental,
     save,
     type Doc,
 } from '@automerge/automerge';
+import * as native from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -28,7 +30,10 @@ import {
     runWithAutomergeStorageTransaction,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { type ProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
+import {
+    type ProspectiveMutationWorkerRequest,
+    type ProspectiveMutationWorkerResult,
+} from '../../models/ProspectiveMutationWorkerProtocol';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
 import { commandSourcePublicationContains } from '../../useCases/commandSourcePublicationContains';
 import { registerCrdtStorageRuntime } from '../../useCases/registerCrdtStorageRuntime';
@@ -39,22 +44,34 @@ import { readChangesSinceHeads } from '../readChangesSinceHeads';
 
 const mocks = vi.hoisted(() => ({
     request:
-        vi.fn<(request: ProspectiveMutationWorkerRequest, signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>>(),
+        vi.fn<
+            (request: ProspectiveMutationWorkerRequest, signal: AbortSignal) => Promise<ProspectiveMutationWorkerResult>
+        >(),
     database: vi.fn(),
 }));
 vi.mock('../prospectiveMutationWorkerClient', () => ({ requestProspectiveMutation: mocks.request }));
 vi.mock('../crdtPersistence/helpers', () => ({ STORE_NAME: 'documents', openDatabase: mocks.database }));
+vi.mock('@automerge/automerge', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@automerge/automerge')>();
+    return { ...actual, clone: vi.fn(actual.clone), free: vi.fn(actual.free) };
+});
 
-type Document = { slot: { count: number }; other?: boolean; _storagePublicationEvidence?: unknown[] };
+type Document = {
+    slot: { count: number; rows?: { id: string; value: number }[] };
+    other?: boolean;
+    _storagePublicationEvidence?: unknown[];
+};
 const actor = 'aaaaaaaaaaaaaaaa';
-function response(request: ProspectiveMutationWorkerRequest): Uint8Array<ArrayBuffer> {
-    const candidate = change(
-        load<Record<string, unknown>>(request.seed, { actor: request.actor }),
-        { message: request.message },
-        (doc) => applyCanonicalStorageSlotMutation(doc, request.mutation)
+function response(request: ProspectiveMutationWorkerRequest): ProspectiveMutationWorkerResult {
+    const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+    const candidate = change(seed, { message: request.message }, (doc) =>
+        applyCanonicalStorageSlotMutation(doc, request.mutation)
     );
     try {
-        return Uint8Array.from(save(candidate));
+        return {
+            changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+            heads: getHeads(candidate),
+        };
     } finally {
         free(candidate);
     }
@@ -75,7 +92,7 @@ function plan(original: Doc<Document>, unchanged = false) {
         kind: 'canonical-json-slot-v1',
         key: 'slot',
         baseValue: original.slot,
-        value: { count: unchanged ? 0 : 1 },
+        value: { ...original.slot, count: unchanged ? 0 : 1 },
         documentPresence: { slot: original.slot },
     };
     const candidate = repository.cloneProspectiveMutation<Document>(
@@ -115,6 +132,78 @@ afterEach(() => {
 });
 
 describe('repository canonical Worker candidate adoption', () => {
+    it('persists an unsaved prior edit and accepted delta from the older IDB baseline with retained row identities', async () => {
+        const original = from<Document>(
+            {
+                slot: {
+                    count: 0,
+                    rows: [
+                        { id: 'locked', value: 1.25 },
+                        { id: 'user', value: 0.9 },
+                    ],
+                },
+                _storagePublicationEvidence: [{ version: 1, kind: 'source', memberId: 'member', digest: 'digest' }],
+            },
+            { actor }
+        );
+        repository.insertDoc('root', original);
+        const oldHeads = getHeads(original);
+        const persistence = new TransactionalPersistence();
+        persistence.seed('root', Uint8Array.from(save(clone(original))));
+        mocks.database.mockResolvedValue(persistence.database);
+        repository.saveDocIncremental('root');
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.other = true;
+        });
+        const prior = repository.getDoc<Document>('root');
+        if (!prior) throw new Error('Expected unsaved prior edit');
+        const prepared = plan(prior);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        expect(repository.getDoc('root')).toBe(prior);
+        publish(prepared.materialize());
+        const actual = repository.getDoc<Document>('root');
+        if (!actual) throw new Error('Expected adoption');
+        expect(actual.other).toBe(true);
+        expect(actual.slot.count).toBe(1);
+        expect(getObjectId(actual.slot.rows)).toBe(getObjectId(original.slot.rows));
+        expect(actual.slot.rows?.map((row) => getObjectId(row))).toEqual(
+            original.slot.rows?.map((row) => getObjectId(row))
+        );
+        const [delta] = getChanges(prior, actual);
+        if (!delta) throw new Error('Expected one canonical delta');
+        expect(decodeChange(delta)).toMatchObject({ actor, seq: 3, deps: getHeads(prior), message: 'Detect' });
+        const peer = change(clone(prior, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
+            doc.slot.rows![0]!.value = 9.5;
+        });
+        const [merged] = applyChanges(peer, [delta]);
+        expect(merged.slot.rows![0]!.value).toBe(9.5);
+        expect(merged.slot.rows![1]).toEqual(actual.slot.rows![1]);
+        expect(commandSourcePublicationContains(oldHeads[0]!, 'member', 'source', 'digest')).toBe(true);
+        expect(commandSourcePublicationContains(getHeads(actual)[0]!, 'member', 'source', 'digest')).toBe(false);
+        const graph = readChangesSinceHeads('root', oldHeads);
+        expect(graph).toHaveLength(2);
+        const chunk = repository.saveDocIncremental('root');
+        if (!chunk) throw new Error('Expected both unsaved changes');
+        const saving = saveIncrementalsToIdb([{ id: 'root', chunk }]);
+        (await persistence.waitForTransaction('readwrite', 1)).complete();
+        expect(await saving).toMatchObject({ status: 'committed' });
+        const reading = loadAllFromIdb();
+        (await persistence.waitForTransaction('readonly', 1)).complete();
+        const bundle = await reading;
+        if (!bundle) throw new Error('Expected saved bundle');
+        await repository.loadAll({ bundle });
+        const reloaded = repository.getDoc<Document>('root');
+        expect(reloaded).toEqual(actual);
+        expect(readChangesSinceHeads('root', oldHeads)).toEqual(graph);
+        repository.insertDoc('root', actual);
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.slot.count = 2;
+        });
+        const next = repository.getDoc<Document>('root');
+        if (!next) throw new Error('Expected next same-actor change');
+        expect(decodeChange(getChanges(actual, next)[0]!)).toMatchObject({ actor, seq: 4, deps: getHeads(actual) });
+    });
+
     it('preserves native graph/source readers, real incremental persistence/reload and the next actual actor sequence', async () => {
         const original = seed();
         const oldHeads = getHeads(original);
@@ -169,7 +258,7 @@ describe('repository canonical Worker candidate adoption', () => {
         const next = repository.getDoc<Document>('root');
         if (!next) throw new Error('Expected next change');
         expect(getActorId(next)).toBe(actor);
-        const last = getLastLocalChange(next);
+        const [last] = getChanges(actual, next);
         if (!last) throw new Error('Expected native actor continuation');
         expect(decodeChange(last)).toMatchObject({ actor, seq: 3, deps: getHeads(actual) });
     });
@@ -213,20 +302,40 @@ describe('repository canonical Worker candidate adoption', () => {
         'invalid bytes',
         'wrong actor',
         'extra change',
+        'sequence',
+        'dependencies',
+        'message',
+        'heads',
+        'missing change',
         'transport',
     ] as const)('refuses %s without fallback/publication', async (kind) => {
         const original = seed();
         const observer = vi.fn();
         repository.onChange(observer);
         const prepared = plan(original);
-        if (kind === 'invalid bytes') mocks.request.mockResolvedValueOnce(Uint8Array.of(1));
+        if (kind === 'invalid bytes')
+            mocks.request.mockResolvedValueOnce({ changes: [Uint8Array.of(1)], heads: getHeads(original) });
         if (kind === 'transport') mocks.request.mockRejectedValueOnce(new Error('transport failed'));
+        if (['sequence', 'dependencies', 'message', 'heads', 'missing change'].includes(kind))
+            mocks.request.mockImplementationOnce(async (request) => {
+                const result = response(request);
+                if (kind === 'heads') return { ...result, heads: request.heads };
+                if (kind === 'missing change') return { ...result, changes: [] };
+                const decoded = decodeChange(result.changes[0]!);
+                const bytes = encodeChange({
+                    ...decoded,
+                    seq: kind === 'sequence' ? decoded.seq + 1 : decoded.seq,
+                    deps: kind === 'dependencies' ? ['0'.repeat(64)] : decoded.deps,
+                    message: kind === 'message' ? 'Other mutation' : decoded.message,
+                });
+                return { changes: [Uint8Array.from(bytes)], heads: result.heads };
+            });
         if (kind === 'wrong actor' || kind === 'extra change')
             mocks.request.mockImplementationOnce(async (request) => {
-                let candidate = load<Document>(request.seed, {
+                const seed = load<Document>(request.seed, {
                     actor: kind === 'wrong actor' ? 'bbbbbbbbbbbbbbbb' : request.actor,
                 });
-                candidate = change(candidate, { message: request.message }, (draft) =>
+                let candidate = change(seed, { message: request.message }, (draft) =>
                     applyCanonicalStorageSlotMutation(draft, request.mutation)
                 );
                 if (kind === 'extra change')
@@ -234,7 +343,10 @@ describe('repository canonical Worker candidate adoption', () => {
                         draft.other = true;
                     });
                 try {
-                    return Uint8Array.from(save(candidate));
+                    return {
+                        changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+                        heads: getHeads(candidate),
+                    };
                 } finally {
                     free(candidate);
                 }
@@ -270,6 +382,59 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(observer).not.toHaveBeenCalled();
         expect(mocks.request).toHaveBeenCalledTimes(1);
     });
+
+    it.each(['discard', 'abort', 'transport', 'stale', 'validator'] as const)(
+        'frees both private clones exactly once after %s and leaves the live handle writable',
+        async (kind) => {
+            const original = seed();
+            const clones = vi.mocked(native.clone).mockClear();
+            const releases = vi.mocked(native.free).mockClear();
+            if (kind === 'transport' || kind === 'abort')
+                mocks.request.mockImplementationOnce(async (_request, signal) => {
+                    if (kind === 'abort')
+                        await new Promise<void>((resolve) =>
+                            signal.addEventListener('abort', () => resolve(), { once: true })
+                        );
+                    throw new Error(kind);
+                });
+            const prepared = plan(original);
+            const controller = new AbortController();
+            const request = prepared.requestMaterialization!(controller.signal);
+            if (kind === 'transport' || kind === 'abort') {
+                const rejected = expect(request).rejects.toThrow(kind);
+                controller.abort();
+                await rejected;
+            } else {
+                await request;
+                if (kind === 'stale') {
+                    repository.insertDoc('root', clone(original));
+                    repository.insertDoc('root', original);
+                    expect(prepared.materialize).toThrow();
+                }
+                if (kind === 'validator') {
+                    const candidate = prepared.materialize();
+                    expect(() =>
+                        publish(candidate, () => {
+                            throw new Error('refused');
+                        })
+                    ).toThrow('refused');
+                    candidate.discard();
+                }
+            }
+            prepared.discard();
+            prepared.discard();
+            const retained = clones.mock.results[0]!.value;
+            const encoding = clones.mock.results[1]!.value;
+            expect(releases.mock.calls.filter(([doc]) => doc === encoding)).toHaveLength(1);
+            if (kind !== 'validator') expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
+            expect(releases.mock.calls.some(([doc]) => doc === original)).toBe(false);
+            expect(releases).toHaveBeenCalledTimes(kind === 'transport' || kind === 'abort' ? 2 : 3);
+            repository.changeDoc<Document>('root', (doc) => {
+                doc.slot.count = 7;
+            });
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(7);
+        }
+    );
 
     it('retains the actual storage callback fallback when publication metadata appears after Worker adoption', async () => {
         seed();

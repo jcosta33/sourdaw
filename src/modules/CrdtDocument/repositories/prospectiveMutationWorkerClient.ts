@@ -1,10 +1,13 @@
-import { type ProspectiveMutationWorkerRequest } from '../models/ProspectiveMutationWorkerProtocol';
+import {
+    type ProspectiveMutationWorkerRequest,
+    type ProspectiveMutationWorkerResult,
+} from '../models/ProspectiveMutationWorkerProtocol';
 
 /** Each private job owns its transferable seed, callbacks, deadline and Worker. */
 export function requestProspectiveMutation(
     request: ProspectiveMutationWorkerRequest,
     signal: AbortSignal
-): Promise<Uint8Array<ArrayBuffer>> {
+): Promise<ProspectiveMutationWorkerResult> {
     if (signal.aborted) {
         return Promise.reject(signal.reason ?? new DOMException('Prospective mutation cancelled', 'AbortError'));
     }
@@ -19,7 +22,7 @@ export function requestProspectiveMutation(
             return;
         }
         let settled = false;
-        const finish = (bytes: Uint8Array<ArrayBuffer> | undefined, error?: unknown): void => {
+        const finish = (result: ProspectiveMutationWorkerResult | undefined, error?: unknown): void => {
             if (settled) {
                 return;
             }
@@ -30,8 +33,8 @@ export function requestProspectiveMutation(
             worker.onerror = null;
             worker.onmessageerror = null;
             worker.terminate();
-            if (bytes) {
-                resolve(bytes);
+            if (result) {
+                resolve(result);
             } else {
                 reject(error);
             }
@@ -46,12 +49,26 @@ export function requestProspectiveMutation(
             }
             if (
                 data.status === 'complete' &&
-                'bytes' in data &&
-                data.bytes instanceof Uint8Array &&
-                data.bytes.buffer instanceof ArrayBuffer &&
-                data.bytes.byteLength > 0
+                'changes' in data &&
+                Array.isArray(data.changes) &&
+                data.changes.length <= 1 &&
+                data.changes.every(
+                    (bytes: unknown): bytes is Uint8Array<ArrayBuffer> =>
+                        bytes instanceof Uint8Array && bytes.buffer instanceof ArrayBuffer && bytes.byteLength > 0
+                ) &&
+                'heads' in data &&
+                Array.isArray(data.heads) &&
+                data.heads.every(
+                    (head: unknown): head is string => typeof head === 'string' && /^[a-f0-9]{64}$/.test(head)
+                ) &&
+                new Set(data.heads).size === data.heads.length
             ) {
-                finish(new Uint8Array(data.bytes.buffer, data.bytes.byteOffset, data.bytes.byteLength));
+                finish({
+                    changes: data.changes.map(
+                        (bytes) => new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+                    ),
+                    heads: data.heads,
+                });
                 return;
             }
             const message =

@@ -8,14 +8,22 @@ import {
     getChanges,
     getHeads,
     getObjectId,
-    load,
     save,
 } from '@automerge/automerge';
-import { describe, expect, it } from 'vitest';
+import * as native from '@automerge/automerge';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
+
+vi.mock('@automerge/automerge', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@automerge/automerge')>();
+    return { ...actual, free: vi.fn(actual.free) };
+});
+beforeEach(() => {
+    vi.mocked(native.free).mockClear();
+});
 
 type Row = { id: string; value: number };
 type Document = { slot: { rows: Row[] }; _storagePublicationEvidence?: unknown[] };
@@ -54,8 +62,9 @@ describe('private canonical materialization Worker runtime', () => {
                 time: 7,
                 mutation,
             };
-            const bytes = materializeProspectiveMutation(request);
-            const result = load<Document>(bytes, { actor });
+            const response = materializeProspectiveMutation(request);
+            const [result] = applyChanges(clone(initial, { actor }), response.changes);
+            expect(getHeads(result)).toEqual(response.heads);
             const baseline = change(clone(initial, { actor }), { message: message || undefined, time: 7 }, (doc) =>
                 applyCanonicalStorageSlotMutation(doc, mutation)
             );
@@ -76,20 +85,24 @@ describe('private canonical materialization Worker runtime', () => {
             expect(merged).toEqual(expected);
             expect(merged.slot.rows.find((row) => row.id === 'locked')?.value).toBe(9.5);
             expect(merged.slot.rows.some((row) => row.id === 'peer')).toBe(true);
+            expect(native.free).toHaveBeenCalledTimes(1);
         }
     );
 
     it('preserves a genuine canonical zero-change no-op', () => {
         const { initial, mutation } = fixture();
-        const bytes = materializeProspectiveMutation({
+        const response = materializeProspectiveMutation({
             seed: save(clone(initial)),
             actor,
             heads: getHeads(initial),
             mutation: { ...mutation, value: mutation.baseValue },
         });
-        const result = load<Document>(bytes, { actor });
+        expect(response.changes).toEqual([]);
+        const [result] = applyChanges(clone(initial, { actor }), response.changes);
+        expect(getHeads(result)).toEqual(response.heads);
         expect(getChanges(initial, result)).toEqual([]);
         expect(result).toEqual(initial);
+        expect(native.free).toHaveBeenCalledTimes(1);
     });
 
     it.each(['heads', 'actor', 'kind', 'callback'] as const)(
@@ -107,6 +120,7 @@ describe('private canonical materialization Worker runtime', () => {
                         : { ...request, mutation: { ...mutation, value: { callback: () => undefined } } };
             expect(() => materializeProspectiveMutation(invalid)).toThrow();
             expect(initial.slot.rows.map((row) => row.id)).toEqual(['locked', 'old', 'user']);
+            expect(native.free).toHaveBeenCalledTimes(kind === 'heads' ? 1 : 0);
         }
     );
 });

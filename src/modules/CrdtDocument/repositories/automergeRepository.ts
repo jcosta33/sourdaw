@@ -9,6 +9,7 @@ import {
     saveSince,
     loadIncremental,
     merge,
+    applyChanges,
     change,
     getChanges,
     getChangesMetaSince,
@@ -30,6 +31,7 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
+import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
@@ -545,7 +547,7 @@ class AutomergeRepository {
         authority.assertCurrent();
         let cloneConsumed = false;
         let workerRequested = false;
-        let workerBytes: Uint8Array<ArrayBuffer> | undefined;
+        let workerResult: ProspectiveMutationWorkerResult | undefined;
         const controller = new AbortController();
         const releaseClone = (): void => {
             if (candidate) {
@@ -561,19 +563,32 @@ class AutomergeRepository {
                   authority.assertCurrent();
                   workerRequested = true;
                   try {
-                      // The save cursor and transferred buffer belong only to this private clone.
-                      const seed = Uint8Array.from(save(candidate));
+                      // Encoding must not consume the retained adoption clone's persistence cursor.
+                      const encodingClone = clone(candidate, { actor });
+                      let seed: Uint8Array<ArrayBuffer>;
+                      try {
+                          seed = Uint8Array.from(save(encodingClone));
+                      } finally {
+                          free(encodingClone);
+                      }
                       authority.assertCurrent();
                       return requestProspectiveMutation(
                           { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
                           AbortSignal.any([signal, controller.signal])
-                      ).then((bytes) => {
-                          if (!cloneConsumed) {
-                              workerBytes = bytes;
+                      ).then(
+                          (result) => {
+                              if (!cloneConsumed) {
+                                  workerResult = result;
+                              }
+                          },
+                          (error: unknown) => {
+                              releaseClone();
+                              throw error;
                           }
-                      });
-                  } finally {
+                      );
+                  } catch (error) {
                       releaseClone();
+                      throw error;
                   }
               }
             : undefined;
@@ -583,7 +598,7 @@ class AutomergeRepository {
             discard: (): void => {
                 cloneConsumed = true;
                 controller.abort();
-                workerBytes = undefined;
+                workerResult = undefined;
                 releaseClone();
             },
             materialize: (): PreparedProspectiveMutation<TDoc> => {
@@ -591,30 +606,64 @@ class AutomergeRepository {
                     throw new Error('Prospective clone has already settled');
                 }
                 cloneConsumed = true;
-                authority.assertCurrent();
+                try {
+                    authority.assertCurrent();
+                } catch (error) {
+                    releaseClone();
+                    throw error;
+                }
                 let updated: Doc<TDoc>;
                 if (workerRequested) {
-                    if (!workerBytes) {
-                        throw new Error('Prospective mutation Worker has not completed');
-                    }
-                    updated = load<TDoc>(workerBytes, { actor });
-                    workerBytes = undefined;
+                    let expectedHeads = previousHeads;
                     try {
-                        const changes = getChanges(doc, updated);
-                        if (getActorId(updated) !== actor || changes.length > 1) {
+                        if (!workerResult || !candidate) {
+                            throw new Error('Prospective mutation Worker has not completed');
+                        }
+                        const { changes, heads } = workerResult;
+                        workerResult = undefined;
+                        if (changes.length > 1) {
                             throw new Error('Prospective mutation Worker changed native authorship');
                         }
                         const bytes = changes[0];
                         if (bytes) {
                             const decoded = decodeChange(bytes);
+                            const nextSequence = getChangesMetaSince(doc, []).reduce(
+                                (next, entry) => (entry.actor === actor ? Math.max(next, entry.seq + 1) : next),
+                                1
+                            );
                             if (
                                 decoded.actor !== actor ||
+                                decoded.seq !== nextSequence ||
                                 decoded.message !== (message || null) ||
                                 decoded.deps.length !== previousHeads.length ||
                                 decoded.deps.some((head) => !previousHeads.includes(head))
                             ) {
                                 throw new Error('Prospective mutation Worker changed native authority');
                             }
+                            expectedHeads = [decoded.hash];
+                        }
+                        if (
+                            heads.length !== expectedHeads.length ||
+                            heads.some((head) => !expectedHeads.includes(head))
+                        ) {
+                            throw new Error('Prospective mutation Worker changed native heads');
+                        }
+                        updated = bytes ? applyChanges(candidate, [bytes])[0] : candidate;
+                        candidate = undefined;
+                    } catch (error) {
+                        releaseClone();
+                        throw error;
+                    }
+                    try {
+                        const heads = getHeads(updated);
+                        // Applying one complete change must leave no queued or uninstalled dependencies.
+                        if (
+                            getActorId(updated) !== actor ||
+                            getMissingDeps(updated, []).length > 0 ||
+                            heads.length !== expectedHeads.length ||
+                            heads.some((head) => !expectedHeads.includes(head))
+                        ) {
+                            throw new Error('Prospective mutation Worker left missing native dependencies');
                         }
                         authority.assertCurrent();
                     } catch (error) {

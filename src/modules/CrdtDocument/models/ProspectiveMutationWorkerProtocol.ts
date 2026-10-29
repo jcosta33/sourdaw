@@ -9,8 +9,13 @@ export type ProspectiveMutationWorkerRequest = {
     readonly mutation: CanonicalStorageSlotMutation;
 };
 
+export type ProspectiveMutationWorkerResult = {
+    readonly changes: readonly Uint8Array<ArrayBuffer>[];
+    readonly heads: readonly string[];
+};
+
 export type ProspectiveMutationWorkerResponse =
-    | { readonly status: 'complete'; readonly bytes: Uint8Array<ArrayBuffer> }
+    | ({ readonly status: 'complete' } & ProspectiveMutationWorkerResult)
     | { readonly status: 'failed'; readonly message: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -5,9 +5,12 @@ import { materializeProspectiveMutation } from './prospectiveMutationWorkerRunti
 
 self.onmessage = ({ data }: MessageEvent<unknown>): void => {
     try {
-        const bytes = materializeProspectiveMutation(data);
-        const response: ProspectiveMutationWorkerResponse = { status: 'complete', bytes };
-        self.postMessage(response, [bytes.buffer]);
+        const result = materializeProspectiveMutation(data);
+        const response: ProspectiveMutationWorkerResponse = { status: 'complete', ...result };
+        self.postMessage(
+            response,
+            result.changes.map((bytes) => bytes.buffer)
+        );
     } catch (error) {
         const response: ProspectiveMutationWorkerResponse = {
             status: 'failed',
