@@ -12,7 +12,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { hasExactKeys, isFiniteNumber, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
+import { hasExactKeys, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 /** The master level in the form the request stated, for the handler to resolve. */

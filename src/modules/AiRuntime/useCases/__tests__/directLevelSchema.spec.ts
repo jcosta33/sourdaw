@@ -31,7 +31,7 @@ describe('direct-level command schemas', () => {
             expect(strict.function.parameters.additionalProperties).toBe(false);
             const validator = PAYLOAD_VALIDATORS[name];
             if (typeof validator !== 'function') {
-                throw new Error(`Missing ${name} validator`);
+                throw new TypeError(`Missing ${name} validator`);
             }
             expect(validator(valid)).toBe(true);
             expect(validator(invalid)).toBe(false);
