@@ -1935,3 +1935,18 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
+
+The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
+production route (`33a3549990`), integrated on the first-parent history at `adfc95a453`.
+GitHub associates none of these commits with a PR; historical reviewer prompts, stance
+and tier are unavailable. #5371 delivered the fix. The original consumer test asserted
+the requested end even with a shorter returned buffer, so its oracle could preserve silence.
+
+In `renderToClip.spec.ts`, require the one-frame cap-boundary case for both tail settings:
+`2^30 + 1` requested frames and `2^30` returned. Reverting the returned-frame endpoint
+branch must fail that case. Also retain short-buffer conversion across a tempo change from
+a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
+end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
+a six-hour PCM render or listening result from it.
