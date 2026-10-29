@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-30 — fixture transactions consumed the receipt test's deadline (PR #5191)
+
+PR #5191 (`c3ad77924b10613195d1aec01059a19ff4dbb344`) introduced the newest-receipt case with 26
+separately committed track fixtures. A later macro pre-step storage flush exposed that setup cost
+under hosted load: the 5-second test deadline expired during confirmation even though all three
+batches and the final undo completed. The missed risk was fixture transaction overhead consuming
+the behavioral deadline; the trace does not establish CPU-versus-async attribution.
+
+Keep the exact 26-track topology and execute its real `addTrack` handlers in one compensated
+`executeAppActionBatch` transaction. Assert commit and exact ordered track names, then retain the
+three-batch, protection, newest-receipt and one-undo assertions at the existing 5-second deadline.
+Run the whole affected file so the changed setup is exercised with its normal hooks. Direct store
+seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
+both realistic and bounded.
+
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
 The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
