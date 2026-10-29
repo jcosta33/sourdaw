@@ -145,7 +145,15 @@ describe('project context level units', () => {
         expect(second.evidence.snapshot.identity).not.toBe(first.evidence.snapshot.identity);
         for (const message of [first.message, first.localMessage]) {
             expect(message).toContain('"metronomeVolumeDb":-6.020599913279624');
-            expect(message).toContain('"gainDb":-6.020599913279624');
+            const project = JSON.parse(
+                message
+                    .slice(message.indexOf('<project_context>\n') + '<project_context>\n'.length)
+                    .split('\n</project_context>')[0] ?? '{}'
+            ) as { vcaGroups: Array<{ id: string; gain: number; gainDb: number | null }> };
+            expect(project.vcaGroups.find((candidate) => candidate.id === group.id)).toMatchObject({
+                gain: 0.5,
+                gainDb: -6.020599913279624,
+            });
         }
         for (const message of [second.message, second.localMessage]) {
             expect(message).toContain('"metronomeVolume":0');
