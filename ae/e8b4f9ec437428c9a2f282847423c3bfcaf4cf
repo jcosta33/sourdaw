@@ -1,0 +1,37 @@
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_4a92fcb4f3e922::t_595ac9fbdf9837 160-175,204
+  s_4a92fcb4f3e922::t_f4df96be759d4e 2-12,177-203,205-206,209-210
+  s_4a92fcb4f3e922::t_074c677a82ad53 23
+  s_4a92fcb4f3e922::t_d197f626a0f969 176
+  s_4a92fcb4f3e922::t_7df029e958d7ad 207-208
+  s_4a92fcb4f3e922::t_fc12a0dc423dd3 211
+scripts/installCleanupLanes.ts
+  s_4a92fcb4f3e922::t_4a22bbcc68b328 134-151,154,161-163,176,179-182
+scripts/__tests__/cleanupLanes.spec.ts
+  s_4a92fcb4f3e922::t_63c22d67a7a32a 25-26,101-102,115-117,404-421,425-434
+  s_4a92fcb4f3e922::t_4ad05bea10165f 3,7,27,435-444,448,451-455,465-467,509-515,518-522,526-533,538-551,563-569
+  s_4a92fcb4f3e922::t_66af280a91871c 103-114,422-424,445-447,449-450,456-464,468-508,516-517,523-525,534-537,552-562
+  s_4a92fcb4f3e922::t_67c25746c39b81 570-571
+scripts/cleanupLanes.ts
+  s_4a92fcb4f3e922::t_2c0b80015063d2 176,185-199,248,311-323,325-326,503-504,547
+  s_4a92fcb4f3e922::t_b341cd22343f73 15,18,48-49,56-57,67,204-247,249-266,268-310,324,327-329
+  s_4a92fcb4f3e922::t_fe83062de22d4d 330,455-484,526
+  s_4a92fcb4f3e922::t_37b621ac91ea66 267
+  s_4a92fcb4f3e922::t_a2c827728a7d08 331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aee8b4f9ec437428c9a2f282847423c3bfcaf4cf",
+  "prompts": {},
+  "sessions": {
+    "s_4a92fcb4f3e922": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188d4-5e00-7b41-a25f-393f9e294d9d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
