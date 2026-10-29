@@ -362,3 +362,170 @@ describe('private prospective Automerge candidates', () => {
         expect(observed?.count).toBe(1);
     });
 });
+
+describe('separated single-change prospective phases', () => {
+    it('keeps clone and change private and installs exactly one same-actor change on validated publication', () => {
+        const original = seed();
+        const before = epochs();
+        const observer = vi.fn();
+        repository.onChange(observer);
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            repository.cloneProspectiveMutation<State>(
+                'root',
+                (draft) => {
+                    draft.count = 120;
+                },
+                'prepared',
+                undefined,
+                ['count']
+            )
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const prepared = transaction.scope(transaction.value.materialize);
+        expect(repository.getDoc('root')).toBe(original);
+        expect(epochs()).toEqual(before);
+        expect(observer).not.toHaveBeenCalled();
+        let accepted: Doc<State> | undefined;
+        const callbacks = validation((candidate) => {
+            accepted = candidate;
+        });
+        const unused = vi.fn();
+        transaction.scope(() =>
+            repository.changeDoc<State>('root', unused, 'prepared', undefined, ['count'], {
+                ...callbacks,
+                preparedCandidate: prepared,
+            })
+        );
+        transaction.commit();
+        const installed = repository.getDoc<State>('root');
+        expect(installed).toBe(accepted);
+        expect(unused).not.toHaveBeenCalled();
+        expect(callbacks.onPublished).toHaveBeenCalledOnce();
+        expect(observer).toHaveBeenCalledOnce();
+        if (!installed) {
+            throw new Error('Expected publication');
+        }
+        const last = getLastLocalChange(installed);
+        if (!last) {
+            throw new Error('Expected single change');
+        }
+        const decoded = decodeChange(last);
+        expect(decoded.actor).toBe(ACTOR);
+        expect(decoded.seq).toBe(2);
+        expect(decoded.deps).toEqual(getHeads(original));
+        expect(() =>
+            transaction.scope(() =>
+                prepared.publish({
+                    id: 'root',
+                    message: 'prepared',
+                    snapshotTransaction: undefined,
+                    localSlots: ['count'],
+                    validation: callbacks,
+                })
+            )
+        ).toThrow();
+    });
+
+    it.each(['replace', 'mutate', 'peer ABA'] as const)('refuses a stale private candidate after %s', (kind) => {
+        const original = seed();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            repository.cloneProspectiveMutation<State>('root', (draft) => {
+                draft.count = 1;
+            })
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const prepared = transaction.scope(transaction.value.materialize);
+        if (kind === 'mutate') {
+            repository.changeDoc<State>('root', (draft) => {
+                draft.peer = true;
+            });
+        } else {
+            repository.insertDoc(
+                'root',
+                change(clone(original, { actor: PEER }), (draft) => {
+                    draft.peer = true;
+                })
+            );
+            if (kind === 'peer ABA') {
+                repository.insertDoc('root', original);
+            }
+        }
+        const foreign = repository.getDoc('root');
+        expect(prepared.isCurrent()).toBe(false);
+        expect(() =>
+            transaction.scope(() =>
+                repository.changeDoc<State>('root', () => undefined, undefined, undefined, undefined, {
+                    ...validation(),
+                    preparedCandidate: prepared,
+                })
+            )
+        ).toThrow('authority changed');
+        expect(repository.getDoc('root')).toBe(foreign);
+        transaction.abort();
+    });
+
+    it('refuses reentrant full validation of an already materialized candidate', () => {
+        const original = seed();
+        const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+            repository.cloneProspectiveMutation<State>('root', (draft) => {
+                draft.count = 2;
+            })
+        );
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
+        const prepared = transaction.scope(transaction.value.materialize);
+        const callbacks = validation(() => repository.insertDoc('root', clone(original, { actor: PEER })));
+        expect(() =>
+            transaction.scope(() =>
+                repository.changeDoc<State>('root', () => undefined, undefined, undefined, undefined, {
+                    ...callbacks,
+                    preparedCandidate: prepared,
+                })
+            )
+        ).toThrow('authority changed');
+        expect(callbacks.onPublished).not.toHaveBeenCalled();
+        expect(repository.getDoc<State>('root')?.count).toBe(0);
+        transaction.abort();
+    });
+});
+
+it('acknowledges a privately prepared candidate before a throwable observer tail', () => {
+    seed();
+    const transaction = runWithAutomergeStorageTransaction(undefined, () =>
+        repository.cloneProspectiveMutation<State>('root', (draft) => {
+            draft.count = 3;
+        })
+    );
+    if (transaction.status !== 'returned') {
+        throw transaction.error;
+    }
+    const prepared = transaction.scope(transaction.value.materialize);
+    const callbacks = validation();
+    let installed: Doc<State> | undefined;
+    callbacks.onPublished.mockImplementation(() => {
+        installed = repository.getDoc<State>('root');
+    });
+    repository.onChange(() => {
+        throw new Error('observer');
+    });
+    vi.spyOn(logger, 'warn').mockImplementation(() => {
+        throw new Error('logger after install');
+    });
+    expect(() =>
+        transaction.scope(() =>
+            repository.changeDoc<State>('root', () => undefined, undefined, undefined, undefined, {
+                ...callbacks,
+                preparedCandidate: prepared,
+            })
+        )
+    ).toThrow('logger after install');
+    expect(callbacks.onPublished).toHaveBeenCalledOnce();
+    expect(repository.getDoc('root')).toBe(installed);
+    expect(installed?.count).toBe(3);
+    transaction.abort();
+});

@@ -58,8 +58,32 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
     });
 }
 
-/** Read-only owned-copy Worker stage; Arrangement's registered action owns the write. */
-export async function detectTransientsForClip(clipId: string, sensitivity: number, signal?: AbortSignal) {
+type ProductRead = Awaited<ReturnType<typeof readProductTransientOnsets>>;
+type DetectionReady = Extract<ProductRead, { status: 'complete' }> & { tempo: number };
+type DetectionLifetime = {
+    readonly signal: AbortSignal;
+    isCurrent(): boolean;
+    waitForFrame(): Promise<boolean>;
+};
+
+export function detectTransientsForClip(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal
+): Promise<Extract<ProductRead, { status: 'failed' }> | DetectionReady>;
+export function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal: AbortSignal | undefined,
+    consume: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+): Promise<Extract<ProductRead, { status: 'failed' }> | { status: 'consumed'; value: Result }>;
+/** Keep source and abort ownership alive throughout an async product consumer; Arrangement owns its final write. */
+export async function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal,
+    consume?: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+) {
     cancelTransientDetection(clipId);
     const captureRootIdentity = elasticRootIdentityProviderState.captureRootIdentity;
     if (!captureRootIdentity) {
@@ -68,6 +92,11 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
     const controller = new AbortController();
     active.set(clipId, controller);
     const abort = (): void => controller.abort();
+    const deadline = performance.now() + 30_000;
+    let timedOut = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const expired = (): boolean => timedOut || performance.now() >= deadline;
+    window.addEventListener('pagehide', abort, { once: true });
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) {
         abort();
@@ -91,6 +120,7 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
     });
     const isCurrent = (): boolean =>
         !controller.signal.aborted &&
+        !expired() &&
         active.get(clipId) === controller &&
         !editorChanged &&
         elasticAudioStore.value?.openClipId === editorClip &&
@@ -100,6 +130,10 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         getSettledProjectId() === projectId &&
         transportStore.value?.tempo === tempo;
     const dispose = (): void => {
+        if (deadlineTimer !== undefined) {
+            clearTimeout(deadlineTimer);
+        }
+        window.removeEventListener('pagehide', abort);
         signal?.removeEventListener('abort', abort);
         unsubscribe();
         unsubscribePreference();
@@ -108,6 +142,13 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         dispose();
         return { status: 'failed' as const, code: 'stale-source' as const };
     }
+    deadlineTimer = setTimeout(
+        () => {
+            timedOut = true;
+            abort();
+        },
+        Math.max(0, deadline - performance.now())
+    );
     try {
         const result = await readProductTransientOnsets({
             clipId,
@@ -120,18 +161,37 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
             signal: controller.signal,
             onAnalysisStarted: () => undefined,
         });
+        if (expired()) {
+            return { status: 'failed' as const, code: 'analysis-timed-out' as const };
+        }
         if (result.status === 'failed') {
             return result;
+        }
+        const ready: DetectionReady = {
+            ...result,
+            tempo,
+            isCurrent: () => isCurrent() && result.isCurrent(),
+        };
+        if (consume) {
+            const value = await consume(ready, {
+                signal: controller.signal,
+                isCurrent: ready.isCurrent,
+                waitForFrame: async () =>
+                    ready.isCurrent() && (await waitForCommitFrame(controller.signal)) && ready.isCurrent(),
+            });
+            if (expired()) {
+                return { status: 'failed' as const, code: 'analysis-timed-out' as const };
+            }
+            return { status: 'consumed' as const, value };
         }
         if (!(await waitForCommitFrame(controller.signal))) {
             abort();
             return { status: 'failed' as const, code: 'cancelled' as const };
         }
-        return {
-            ...result,
-            tempo,
-            isCurrent: () => isCurrent() && result.isCurrent(),
-        };
+        if (expired()) {
+            return { status: 'failed' as const, code: 'analysis-timed-out' as const };
+        }
+        return ready;
     } finally {
         dispose();
         // Retain the identity through final commit validation. The next request or

@@ -38,6 +38,19 @@ type ProspectiveValidation<TDoc> = {
     beforePublication: () => void;
     /** Nonthrowing acknowledgement of actual installation, before publication observers run. */
     onPublished: () => void;
+    preparedCandidate?: PreparedProspectiveMutation<TDoc>;
+};
+
+type PreparedProspectiveMutation<TDoc> = {
+    isCurrent(): boolean;
+    discard(): void;
+    publish(input: {
+        id: DocId;
+        message: string | undefined;
+        snapshotTransaction: object | undefined;
+        localSlots: readonly string[] | undefined;
+        validation: ProspectiveValidation<TDoc>;
+    }): void;
 };
 
 type OwnedDocumentPublication = {
@@ -305,6 +318,7 @@ class AutomergeRepository {
     private mutationEpochByOwner = new WeakMap<object, number>();
     private documentPublicationsByOwner = new WeakMap<object, readonly OwnedDocumentPublication[]>();
     private changeListeners = new Set<ChangeListener>();
+    private preparedCandidates = new WeakSet<object>();
     /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
     /**
@@ -459,6 +473,123 @@ class AutomergeRepository {
         }
     }
 
+    private publishMutation<TDoc>(
+        id: DocId,
+        updated: Doc<TDoc>,
+        previousHeads: Heads,
+        localSlots: readonly string[] | undefined,
+        prospectiveValidation?: ProspectiveValidation<TDoc>
+    ): void {
+        this.docs.set(id, updated);
+        prospectiveValidation?.onPublished();
+        this.markMutation();
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        const heads = getHeads(updated);
+        if (owner && (heads.length !== previousHeads.length || heads.some((head) => !previousHeads.includes(head)))) {
+            const publications = this.documentPublicationsByOwner.get(owner) ?? [];
+            this.documentPublicationsByOwner.set(
+                owner,
+                Object.freeze([...publications, Object.freeze({ docId: id, heads: Object.freeze(heads) })])
+            );
+        }
+        this.notifyListeners(id, localSlots ? { localSlots } : undefined);
+    }
+
+    private captureProspectiveAuthority<TDoc>(id: DocId, doc: Doc<TDoc>, snapshotTransaction?: object) {
+        const identityEpoch = this.documentIdentityEpoch;
+        const rootIdentityEpoch = this.rootIdentityEpoch;
+        const mutationEpoch = this.mutationEpoch;
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        const transaction = this.activeTransaction;
+        const hasCurrentIdentity = (): boolean =>
+            this.docs.get(id) === doc &&
+            this.documentIdentityEpoch === identityEpoch &&
+            this.rootIdentityEpoch === rootIdentityEpoch &&
+            this.mutationEpoch === mutationEpoch &&
+            this.activeTransaction === transaction;
+        const isCurrent = (): boolean =>
+            hasCurrentIdentity() && !this.isMutationBlockedBySnapshotTransaction(id, snapshotTransaction);
+        const assertCurrent = (): void => {
+            if (!hasCurrentIdentity() || getCurrentAutomergeStorageMutationOwner() !== owner) {
+                throw new Error('[AutomergeRepository] Document authority changed during prospective validation');
+            }
+            if (this.isMutationBlockedBySnapshotTransaction(id, snapshotTransaction)) {
+                throw createSnapshotTransactionOverlapError(id);
+            }
+        };
+        return { isCurrent, assertCurrent };
+    }
+
+    /** Clone and materialize privately in separate synchronous turns; only publish can affect live truth. */
+    cloneProspectiveMutation<TDoc = AnyDoc>(
+        id: DocId,
+        changeFn: ChangeFn<TDoc>,
+        message?: string,
+        snapshotTransaction?: object,
+        localSlots?: readonly string[]
+    ) {
+        const doc = this.docs.get(id) as Doc<TDoc> | undefined;
+        if (!doc) {
+            throw new Error(`Document not found: ${id}`);
+        }
+        const authority = this.captureProspectiveAuthority(id, doc, snapshotTransaction);
+        authority.assertCurrent();
+        const candidate = clone(doc, { actor: getActorId(doc) });
+        authority.assertCurrent();
+        let cloneConsumed = false;
+        return {
+            isCurrent: (): boolean => !cloneConsumed && authority.isCurrent(),
+            discard: (): void => {
+                cloneConsumed = true;
+            },
+            materialize: (): PreparedProspectiveMutation<TDoc> => {
+                if (cloneConsumed) {
+                    throw new Error('Prospective clone has already settled');
+                }
+                cloneConsumed = true;
+                authority.assertCurrent();
+                const updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
+                authority.assertCurrent();
+                const previousHeads = getHeads(doc);
+                let consumed = false;
+                const prepared: PreparedProspectiveMutation<TDoc> = {
+                    isCurrent: () => !consumed && authority.isCurrent(),
+                    discard: () => {
+                        consumed = true;
+                        this.preparedCandidates.delete(prepared);
+                    },
+                    publish: (input) => {
+                        if (consumed || !this.preparedCandidates.has(prepared)) {
+                            throw new Error('Prospective candidate has already settled');
+                        }
+                        consumed = true;
+                        this.preparedCandidates.delete(prepared);
+                        const slotsMatch =
+                            input.localSlots?.length === localSlots?.length &&
+                            (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
+                        if (
+                            input.id !== id ||
+                            input.message !== message ||
+                            input.snapshotTransaction !== snapshotTransaction ||
+                            !slotsMatch
+                        ) {
+                            throw new Error('Prospective candidate publication input changed');
+                        }
+                        authority.assertCurrent();
+                        input.validation.validateDocument(updated);
+                        authority.assertCurrent();
+                        input.validation.beforePublication();
+                        authority.assertCurrent();
+                        this.captureBeforeMutation(id, snapshotTransaction);
+                        this.publishMutation(id, updated, previousHeads, localSlots, input.validation);
+                    },
+                };
+                this.preparedCandidates.add(prepared);
+                return prepared;
+            },
+        };
+    }
+
     /**
      * Apply a mutation to a document.
      * This is the primary mutation entry point — all CRDT writes go through here.
@@ -478,6 +609,14 @@ class AutomergeRepository {
         localSlots?: readonly string[],
         prospectiveValidation?: ProspectiveValidation<TDoc>
     ): void {
+        if (prospectiveValidation?.preparedCandidate) {
+            const prepared = prospectiveValidation.preparedCandidate;
+            if (!this.preparedCandidates.has(prepared)) {
+                throw new Error('Unknown prospective candidate');
+            }
+            prepared.publish({ id, message, snapshotTransaction, localSlots, validation: prospectiveValidation });
+            return;
+        }
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
@@ -487,26 +626,8 @@ class AutomergeRepository {
         let updated: Doc<TDoc>;
         if (prospectiveValidation) {
             previousHeads = getHeads(doc);
-            const identityEpoch = this.documentIdentityEpoch;
-            const rootIdentityEpoch = this.rootIdentityEpoch;
-            const mutationEpoch = this.mutationEpoch;
-            const owner = getCurrentAutomergeStorageMutationOwner();
-            const transaction = this.activeTransaction;
-            const assertCurrentAuthority = (): void => {
-                if (
-                    this.docs.get(id) !== doc ||
-                    this.documentIdentityEpoch !== identityEpoch ||
-                    this.rootIdentityEpoch !== rootIdentityEpoch ||
-                    this.mutationEpoch !== mutationEpoch ||
-                    getCurrentAutomergeStorageMutationOwner() !== owner ||
-                    this.activeTransaction !== transaction
-                ) {
-                    throw new Error('[AutomergeRepository] Document authority changed during prospective validation');
-                }
-                if (this.isMutationBlockedBySnapshotTransaction(id, snapshotTransaction)) {
-                    throw createSnapshotTransactionOverlapError(id);
-                }
-            };
+            const authority = this.captureProspectiveAuthority(id, doc, snapshotTransaction);
+            const assertCurrentAuthority = authority.assertCurrent;
             assertCurrentAuthority();
             // The original stays writable on refusal. Continue its actual actor's
             // sequence only when this independently backed candidate is installed.
@@ -523,19 +644,7 @@ class AutomergeRepository {
             previousHeads = getHeads(doc);
             updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         }
-        this.docs.set(id, updated);
-        prospectiveValidation?.onPublished();
-        this.markMutation();
-        const owner = getCurrentAutomergeStorageMutationOwner();
-        const heads = getHeads(updated);
-        if (owner && (heads.length !== previousHeads.length || heads.some((head) => !previousHeads.includes(head)))) {
-            const publications = this.documentPublicationsByOwner.get(owner) ?? [];
-            this.documentPublicationsByOwner.set(
-                owner,
-                Object.freeze([...publications, Object.freeze({ docId: id, heads: Object.freeze(heads) })])
-            );
-        }
-        this.notifyListeners(id, localSlots ? { localSlots } : undefined);
+        this.publishMutation(id, updated, previousHeads, localSlots, prospectiveValidation);
     }
 
     /**

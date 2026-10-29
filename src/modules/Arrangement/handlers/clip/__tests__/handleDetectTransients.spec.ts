@@ -36,7 +36,7 @@ describe('Arrangement Detect owns async admission and notification', () => {
         handleDetectTransients.describe(action);
         const result = handleDetectTransients.execute(action);
         expect(mocks.notice).not.toHaveBeenCalled();
-        expect(mocks.detect).toHaveBeenCalledWith('clip-1', sensitivity ?? 0.82, undefined);
+        expect(mocks.detect).toHaveBeenCalledWith('clip-1', sensitivity ?? 0.82, undefined, expect.any(Function));
         fail?.({ status: 'failed', code: 'analysis-failed' });
         expect(await result).toEqual({ status: 'conflict', reason: 'Transient detection failed: analysis-failed' });
         expect(mocks.notice).toHaveBeenCalledWith('Transient detection failed: analysis-failed', 'error');

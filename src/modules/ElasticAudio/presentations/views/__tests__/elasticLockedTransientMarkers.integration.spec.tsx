@@ -128,6 +128,23 @@ function holdAnimationFrames() {
     const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
     return {
         cancelled,
+        complete: async (execution: Promise<void>): Promise<void> => {
+            let settled = false;
+            const finished = execution.then(() => {
+                settled = true;
+            });
+            while (!settled) {
+                const callback = callbacks.shift();
+                const next = callback
+                    ? Promise.resolve(callback)
+                    : new Promise<FrameRequestCallback>((resolve) => waiters.push(resolve));
+                const result = await Promise.race([next, finished]);
+                if (result) {
+                    result(performance.now());
+                }
+            }
+            await finished;
+        },
         next: (): Promise<FrameRequestCallback> => {
             const callback = callbacks.shift();
             return callback ? Promise.resolve(callback) : new Promise((resolve) => waiters.push(resolve));
@@ -450,7 +467,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         const latestLocked = before.markers.find((marker) => marker.id === lockedMarker.id);
         expect(latestLocked).toMatchObject({ warpedBeat: 1.3, locked: true });
         frame(performance.now());
-        await execution;
+        await frames.complete(execution);
         const after = structuredClone(rawWarpState());
         expect(after.markers).toHaveLength(3);
         for (const marker of before.markers) {
@@ -462,6 +479,39 @@ describe('locked transient markers through the real Elastic editor', () => {
         await redo();
         expect(rawWarpState()).toEqual(after);
         expect(getWarpState(CLIP_ID)).toEqual(after);
+    });
+
+    it('replans a materialized private candidate from latest retained and unrelated edits before real Undo', async () => {
+        supplyBuffer(burstSamples());
+        const frames = holdAnimationFrames();
+        const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        (await frames.next())(performance.now());
+        (await frames.next())(performance.now());
+        const admission = await frames.next();
+        expect(rawWarpState().markers).toEqual([lockedMarker]);
+        await executeAppAction({
+            type: 'renameTrack',
+            payload: { trackId: 'audio-track', name: 'Latest independent name' },
+        });
+        addManualMarker(CLIP_ID, 1.5);
+        setWarpState('other-clip', { ...getWarpState('other-clip'), originalTempo: 99 });
+        flushAutomergeStorageWrites();
+        const latest = structuredClone(rawWarpState());
+        admission(performance.now());
+        await frames.complete(execution);
+        const after = structuredClone(rawWarpState());
+        for (const marker of latest.markers) {
+            expect(after.markers).toContainEqual(marker);
+        }
+        expect(getWarpState('other-clip').originalTempo).toBe(99);
+        expect(trackStore.value?.tracks[0]?.name).toBe('Latest independent name');
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+        await undo();
+        expect(rawWarpState()).toEqual(latest);
+        expect(trackStore.value?.tracks[0]?.name).toBe('Latest independent name');
+        expect(getWarpState('other-clip').originalTempo).toBe(99);
+        await redo();
+        expect(rawWarpState()).toEqual(after);
     });
 
     it.each(['abort', 'editor disposal', 'editor switch', 'preference reset', 'pagehide', 'successor'] as const)(
@@ -509,8 +559,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             staleFrame(performance.now());
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
             if (successor) {
-                (await frames.next())(performance.now());
-                await successor;
+                await frames.complete(successor);
                 expect(rawWarpState().markers).toHaveLength(2);
             }
         }

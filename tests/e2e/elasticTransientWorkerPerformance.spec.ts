@@ -138,7 +138,10 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         tasks.observe({ type: 'longtask', buffered: false });
         const measures = new PerformanceObserver((list) => {
             for (const entry of list.getEntries())
-                if (entry.name.startsWith('elastic-transient-'))
+                if (
+                    entry.name.startsWith('elastic-transient-') ||
+                    entry.name === 'automerge-storage-prepared-publication'
+                )
                     metrics.measures.push({ name: entry.name, duration: entry.duration });
         });
         measures.observe({ type: 'measure', buffered: false });
@@ -212,8 +215,18 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const longTasks = measured.tasks.filter(
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
+    const preparationTasks = measured.measures.filter((entry) =>
+        ['elastic-transient-plan-task', 'elastic-transient-clone-task', 'elastic-transient-change-task'].includes(
+            entry.name
+        )
+    );
+    const preparedPublications = measured.measures.filter(
+        (entry) => entry.name === 'automerge-storage-prepared-publication'
+    );
     const result = {
         ...measured,
+        preparationTasks,
+        preparedPublications,
         elapsedMs: measured.end - measured.start,
         gaps,
         observedGaps,
@@ -247,6 +260,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(commit).toHaveLength(1);
     expect(copy.length).toBeGreaterThan(1);
     expect(gaps.length).toBeGreaterThan(1);
+    expect(preparedPublications).toHaveLength(1);
+    expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(result.elapsedMs).toBeLessThan(1000);
     expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(commitTasks).toHaveLength(2);
@@ -491,7 +507,10 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
         tasks.observe({ type: 'longtask', buffered: false });
         const measures = new PerformanceObserver((list) => {
             for (const entry of list.getEntries())
-                if (entry.name.startsWith('elastic-transient-'))
+                if (
+                    entry.name.startsWith('elastic-transient-') ||
+                    entry.name === 'automerge-storage-prepared-publication'
+                )
                     metrics.measures.push({ name: entry.name, duration: entry.duration });
         });
         measures.observe({ type: 'measure', buffered: false });
@@ -576,8 +595,18 @@ async function assertPopulatedMeasurement(
     const longTasks = measured.tasks.filter(
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
+    const preparationTasks = measured.measures.filter((entry) =>
+        ['elastic-transient-plan-task', 'elastic-transient-clone-task', 'elastic-transient-change-task'].includes(
+            entry.name
+        )
+    );
+    const preparedPublications = measured.measures.filter(
+        (entry) => entry.name === 'automerge-storage-prepared-publication'
+    );
     const result = {
         ...measured,
+        preparationTasks,
+        preparedPublications,
         phase,
         elapsedMs: measured.end - measured.start,
         maxGapMs: Math.max(...gaps),
@@ -599,6 +628,9 @@ async function assertPopulatedMeasurement(
     expect(onsets).toHaveLength(ATTACKS.length);
     for (const [index, marker] of onsets.entries())
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index]!)).toBeLessThan(0.04);
+    expect(preparedPublications).toHaveLength(1);
+    expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+    expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(result.elapsedMs).toBeLessThan(1000);
     expect(copy.length).toBeGreaterThan(1);
     expect(commitTasks).toHaveLength(2);
