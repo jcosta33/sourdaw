@@ -4,14 +4,21 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { createJournal, recordOf, requiredText } from './journal.ts';
+import { PRIVATE_DIRECTORY } from './identity.ts';
 import { sampleLinuxResources } from './linuxResources.ts';
 import { phaseOutput } from './paths.ts';
 
 export function observeOriginalServer(root: string, output: string, runnerPid: number): void {
     const record = createJournal(resolve(output, 'server-process.jsonl'));
+    const probe = pathToFileURL(resolve(root, PRIVATE_DIRECTORY, 'viteTransportProbe.ts')).href;
     const child = spawn(process.execPath, ['scripts/e2eDevServer.ts', '5174'], {
         cwd: root,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ''} --import=${probe}`.trim(),
+            RELOAD_TRANSPORT_PROBE_OUTPUT: resolve(output, 'vite-transport.jsonl'),
+        },
     });
     record('wrapper-spawn', {
         pid: child.pid,

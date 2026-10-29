@@ -25,12 +25,18 @@ export async function admitTargetAndObserve(
     if (info.retry !== 0 || info.workerIndex !== 1) {
         throw new Error('Target must retain original worker1 and retry0');
     }
-    await attachPassiveObservations(page, context, browser, output);
+    if (process.env.RELOAD_DIAGNOSTIC_PROFILE !== 'transport') {
+        throw new Error('Transport profile is required for this hosted observation');
+    }
+    await attachPassiveObservations(page, context, browser, output, 'transport');
     writeReceipt(resolve(output, 'target-admission.json'), {
         originalHistoryAdmitted: true,
         instrumentationReady: true,
+        receiptMode: 'transport',
+        coverage: 'from-target-beforeEach-only',
+        AppFulfilledWhenUnobserved: 'unknown',
         workerIndex: info.workerIndex,
         retry: info.retry,
-        priorSuccessfulCases: 90,
+        priorSuccessfulCases: originalHistory().length - 1,
     });
 }

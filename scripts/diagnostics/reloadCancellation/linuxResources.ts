@@ -68,6 +68,9 @@ function cgroupSample(pid: number): Record<string, unknown> {
         'memory.events.local',
         'memory.swap.current',
         'memory.swap.max',
+        'cpu.stat',
+        'cpu.max',
+        'cpu.pressure',
     ];
     return {
         membership,
@@ -106,6 +109,7 @@ export function sampleLinuxResources(
         listenerTables: { tcp: readObservation('/proc/net/tcp'), tcp6: readObservation('/proc/net/tcp6') },
         memory: readObservation('/proc/meminfo'),
         pressure: readObservation('/proc/pressure/memory'),
+        cpuPressure: readObservation('/proc/pressure/cpu'),
         disk: diskSample(sourceRoot),
         cgroup: cgroupSample(serverPid ?? rootPid),
         kernelOomAttribution:

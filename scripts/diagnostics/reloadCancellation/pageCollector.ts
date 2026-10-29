@@ -23,6 +23,66 @@ const PASSIVE_EVENTS = [
     'Inspector.targetCrashed',
 ] as const;
 
+function safeUrl(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    try {
+        const url = new URL(value);
+        url.username = '';
+        url.password = '';
+        url.search = '';
+        url.hash = '';
+        return url.href;
+    } catch {
+        return value.split('?')[0];
+    }
+}
+
+export function transportEvent(name: string, payload: unknown): Record<string, unknown> {
+    const event = recordOf(payload, name);
+    const request = event.request && typeof event.request === 'object' ? recordOf(event.request, 'request') : {};
+    const response = event.response && typeof event.response === 'object' ? recordOf(event.response, 'response') : {};
+    const frame = event.frame && typeof event.frame === 'object' ? recordOf(event.frame, 'frame') : {};
+    const initiator =
+        event.initiator && typeof event.initiator === 'object' ? recordOf(event.initiator, 'initiator') : {};
+    const stack = initiator.stack && typeof initiator.stack === 'object' ? recordOf(initiator.stack, 'stack') : {};
+    const callFrames = Array.isArray(stack.callFrames) ? stack.callFrames : [];
+    return {
+        requestId: event.requestId,
+        timestamp: event.timestamp,
+        wallTime: event.wallTime,
+        type: event.type,
+        frameId: event.frameId ?? frame.id,
+        loaderId: event.loaderId ?? frame.loaderId,
+        parentId: frame.parentId,
+        url: safeUrl(request.url ?? response.url ?? event.url ?? frame.url),
+        method: request.method,
+        status: response.status,
+        mimeType: response.mimeType,
+        encodedDataLength: event.encodedDataLength,
+        errorText: event.errorText,
+        canceled: event.canceled,
+        name: event.name,
+        reason: event.reason,
+        initiator: {
+            type: initiator.type,
+            url: safeUrl(initiator.url),
+            callFrames: callFrames.map((item: unknown) => {
+                const call = recordOf(item, 'call frame');
+                return {
+                    functionName: call.functionName,
+                    url: safeUrl(call.url),
+                    lineNumber: call.lineNumber,
+                    columnNumber: call.columnNumber,
+                };
+            }),
+        },
+        exceptionText:
+            typeof event.exceptionDetails === 'object' && event.exceptionDetails !== null
+                ? recordOf(event.exceptionDetails, 'exception').text
+                : undefined,
+    };
+}
+
 async function observeAppSettlement(session: CDPSession, event: unknown, record: RecordObservation): Promise<void> {
     const parsed = recordOf(event, 'scriptParsed');
     const url = parsed.url;
@@ -94,42 +154,50 @@ export async function attachPassiveObservations(
     page: Page,
     context: BrowserContext,
     browser: Browser,
-    output: string
+    output: string,
+    profile: 'full' | 'transport' = 'full'
 ): Promise<void> {
     if (browser.version() !== ORIGINAL_BROWSER) {
         throw new Error(`Expected original Chromium ${ORIGINAL_BROWSER}, got ${browser.version()}`);
     }
     const record = createJournal(resolve(output, 'browser-observations.jsonl'));
     const session = await context.newCDPSession(page);
-    const websocket = createWebSocketObserver(record);
+    const websocket = createWebSocketObserver(record, profile === 'full');
     const counts: Record<string, number> = {};
     const errors: string[] = [];
     for (const name of PASSIVE_EVENTS) {
         session.on(name, (payload: unknown) => {
             counts[name] = (counts[name] ?? 0) + 1;
-            record(name, payload);
+            try {
+                record(name, profile === 'transport' ? transportEvent(name, payload) : payload);
+            } catch (error) {
+                errors.push(String(error));
+                record('collector-event-unknown', { name, error: String(error) });
+            }
         });
     }
     for (const name of WEBSOCKET_EVENTS) {
         session.on(name, (payload: unknown) => websocket.observe(name, payload));
     }
-    session.on('Debugger.scriptParsed', (payload: unknown) => {
-        void observeAppSettlement(session, payload, (kind, data) => {
-            counts[kind] = (counts[kind] ?? 0) + 1;
-            record(kind, data);
-        }).catch((error: unknown) => {
-            errors.push(String(error));
-            record('App-logpoint-unknown', String(error));
+    if (profile === 'full')
+        session.on('Debugger.scriptParsed', (payload: unknown) => {
+            void observeAppSettlement(session, payload, (kind, data) => {
+                counts[kind] = (counts[kind] ?? 0) + 1;
+                record(kind, data);
+            }).catch((error: unknown) => {
+                errors.push(String(error));
+                record('App-logpoint-unknown', String(error));
+            });
         });
-    });
-    session.on('Debugger.paused', (payload: unknown) => {
-        errors.push('Unexpected debugger pause');
-        record('unexpected-debugger-pause', payload);
-    });
+    if (profile === 'full')
+        session.on('Debugger.paused', (payload: unknown) => {
+            errors.push('Unexpected debugger pause');
+            record('unexpected-debugger-pause', payload);
+        });
     await session.send('Network.enable');
     await session.send('Page.enable');
     await session.send('Runtime.enable');
-    await session.send('Debugger.enable');
+    if (profile === 'full') await session.send('Debugger.enable');
     await session.send('Page.setLifecycleEventsEnabled', { enabled: true });
     page.on('console', (message) => {
         const text = message.text();
@@ -153,29 +221,47 @@ export async function attachPassiveObservations(
                 errors.push(String(error));
             }
         }
-        record('console', { type: message.type(), text, location: message.location() });
+        if (profile === 'full') {
+            record('console', { type: message.type(), text, location: message.location() });
+        } else if (text.startsWith('[vite]') || text.includes('Failed to fetch dynamically imported module')) {
+            record('console', { type: message.type(), text: text.slice(0, 512).replace(/\?[^\s]+/g, '?<redacted>') });
+        }
     });
-    page.on('pageerror', (error) => record('page-error', { message: error.message, stack: error.stack }));
+    page.on('pageerror', (error) =>
+        record('page-error', {
+            message:
+                profile === 'full' ? error.message : error.message.slice(0, 512).replace(/\?[^\s]+/g, '?<redacted>'),
+        })
+    );
     page.on('crash', () => record('page-crash', {}));
     page.on('framenavigated', (frame) =>
-        record('playwright-navigation', { url: frame.url(), main: frame === page.mainFrame() })
+        record('playwright-navigation', {
+            url: profile === 'full' ? frame.url() : safeUrl(frame.url()),
+            main: frame === page.mainFrame(),
+        })
     );
     page.on('requestfailed', (request) =>
         record('playwright-request-failed', {
-            url: request.url(),
+            url: profile === 'full' ? request.url() : safeUrl(request.url()),
             method: request.method(),
             failure: request.failure(),
         })
     );
-    await page.addInitScript(observeBrowserDocument);
+    if (profile === 'full') await page.addInitScript(observeBrowserDocument);
     const stop = await sampleBrowserProcesses(browser, record);
     page.once('close', () => {
         stop();
         writeReceipt(resolve(output, 'collector-health.json'), {
             counts,
             errors,
+            profile,
             websocket: websocket.health(),
-            limits: ['Absent events do not establish a cause; debugger and DOM observation can affect timing.'],
+            limits:
+                profile === 'transport'
+                    ? [
+                          'No debugger or DOM observer is installed. App fulfillment and public control visibility are unknown when unobserved. Missing CDP events cannot prove absence before collector readiness.',
+                      ]
+                    : ['Absent events do not establish a cause; debugger and DOM observation can affect timing.'],
         });
     });
     counts['collector-ready'] = 1;

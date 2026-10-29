@@ -20,6 +20,7 @@ const RUNTIME_FILES = [
     'diagnostic.config.ts',
     'linuxResources.ts',
     'serverObserver.ts',
+    'viteTransportProbe.ts',
     'original-history.json',
 ];
 

@@ -1,5 +1,5 @@
-export const ORIGINAL_HEAD = '1587850a91b3cb729f5e59492829d297840eeb9d';
-export const ORIGINAL_TREE = '7c52e860adbfd09c9158106494209d1f9a4cd792';
+export const ORIGINAL_HEAD = '94aa5ab19a617fc7a3de83fa7aa8afde8b3361b9';
+export const ORIGINAL_TREE = '06b54aebbe87cf3e9ac09b247580b0e6dceb15fa';
 export const ORIGINAL_SPEC = 'tests/e2e/persistedClipEditAcceptance.spec.ts';
 export const ORIGINAL_SPEC_SHA256 = '288b3316fe4e0dd2aa2d4a6fc78d217b15f5a1e8243845f5f979e9b9200f9f9e';
 export const ORIGINAL_NODE = 'v24.19.0';
@@ -8,34 +8,34 @@ export const ORIGINAL_PLAYWRIGHT = '1.63.0';
 export const WRAPPER = 'tests/e2e/test-results/reloadCancellation/zzPersistedClip.diagnostic.spec.ts';
 export const PRIVATE_DIRECTORY = 'test-results/reloadCancellation/harness';
 
-// Frozen selectors from run40823175639 attempt1, rather than a fresh affected-plan calculation.
+// Frozen selectors from run40908733061 attempt1, rather than a fresh affected-plan calculation.
 export const ORIGINAL_SELECTORS = [
-    'tests/e2e/agentExecutionMode.spec.ts',
-    'tests/e2e/aiProviderToolAuthority.spec.ts',
-    'tests/e2e/audioMidiMisc.spec.ts',
-    'tests/e2e/bacteriaCulturesSearchTestId.spec.ts',
-    'tests/e2e/branchManager.spec.ts',
+    'tests/e2e/additionalUi.spec.ts',
+    'tests/e2e/agentWorkspace.spec.ts',
+    'tests/e2e/automationPointDrawUndo.spec.ts',
+    'tests/e2e/bakeryControlGeometry.spec.ts',
+    'tests/e2e/browserAiTestId.spec.ts',
     'tests/e2e/browserAiWebGpuAdmission.spec.ts',
-    'tests/e2e/crustChannelLinkTestId.spec.ts',
-    'tests/e2e/exportFidelityTestId.spec.ts',
-    'tests/e2e/fermenterEnvelopeKnobsTestId.spec.ts',
-    'tests/e2e/fermenterFxDelayKnobsTestId.spec.ts',
-    'tests/e2e/inspectorAndRouting.spec.ts',
-    'tests/e2e/inspectorPanKeyboardTestId.spec.ts',
-    'tests/e2e/inspectorTrack.spec.ts',
-    'tests/e2e/launchFlows.spec.ts',
-    'tests/e2e/midiScaleRootTestId.spec.ts',
-    'tests/e2e/midiVelocityKeyboardTestId.spec.ts',
-    'tests/e2e/mixerSendsRoutingTestId.spec.ts',
-    'tests/e2e/mixerSnapshotTestId.spec.ts',
+    'tests/e2e/chatComposerTestId.spec.ts',
+    'tests/e2e/clipTrimFadeKeyboardTestId.spec.ts',
+    'tests/e2e/crdtPersistence.native.spec.ts',
+    'tests/e2e/crustInputGainTestId.spec.ts',
+    'tests/e2e/crustStreamingPresetTestId.spec.ts',
+    'tests/e2e/dynamicAndEdge.spec.ts',
+    'tests/e2e/e2eWorkflow.spec.ts',
+    'tests/e2e/fermenterFxDistKnobsDepthTestId.spec.ts',
+    'tests/e2e/generatePanelTestId.spec.ts',
+    'tests/e2e/importErrorPathsTestId.spec.ts',
+    'tests/e2e/kneadPitchDeepTestId.spec.ts',
+    'tests/e2e/llmBadgeDownload.spec.ts',
+    'tests/e2e/masterChannelTestId.spec.ts',
+    'tests/e2e/midiClipDeepTestId.spec.ts',
+    'tests/e2e/midiUndoPlaybackTestId.spec.ts',
+    'tests/e2e/multiTrackWorkflowTestId.spec.ts',
     ORIGINAL_SPEC,
-    'tests/e2e/proofModuleTogglesTestId.spec.ts',
-    'tests/e2e/recording.spec.ts',
-    'tests/e2e/setlistLoopStationTestId.spec.ts',
-    'tests/e2e/setlistMoveReorder.spec.ts',
-    'tests/e2e/timelineClipTestId.spec.ts',
-    'tests/e2e/timelineNavigation.spec.ts',
-    'tests/e2e/timelineNavigationTestId.spec.ts',
-    'tests/e2e/toasterPadDriveTestId.spec.ts',
-    'tests/e2e/virtualKeyboardTestId.spec.ts',
+    'tests/e2e/pianoRollZoomTestId.spec.ts',
+    'tests/e2e/proofEqKnobsTestId.spec.ts',
+    'tests/e2e/toasterPadMixerTestId.spec.ts',
+    'tests/e2e/trackContextMenuTestId.spec.ts',
+    'tests/e2e/transportDeep.spec.ts',
 ] as const;

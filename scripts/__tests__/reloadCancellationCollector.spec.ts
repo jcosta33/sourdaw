@@ -1,4 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createServer, get } from 'node:http';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { AddressInfo } from 'node:net';
 
 import {
     assertSuccessfulAppCoverage,
@@ -10,6 +15,8 @@ import {
     summarizeWebSocket,
     WEBSOCKET_EVENTS,
 } from '../diagnostics/reloadCancellation/websocket';
+import { installViteTransportProbe } from '../diagnostics/reloadCancellation/viteTransportProbe';
+import { transportEvent } from '../diagnostics/reloadCancellation/pageCollector';
 
 const requestId = 'fixture-socket';
 const privateValue = ['synthetic', 'private', 'fixture'].join('-');
@@ -48,6 +55,127 @@ function completeTelemetry(): Record<string, unknown> {
 }
 
 describe('passive reload-cancellation evidence', () => {
+    it('observes real HTTP finish, error, socket close and redacts query data', async () => {
+        const directory = mkdtempSync(join(tmpdir(), 'reload-transport-'));
+        const file = join(directory, 'vite.jsonl');
+        const stop = installViteTransportProbe(file);
+        let resolveAborted!: () => void;
+        const abortedClosed = new Promise<void>((resolve) => {
+            resolveAborted = resolve;
+        });
+        let resolveSocketClosed!: () => void;
+        const socketClosed = new Promise<void>((resolve) => {
+            resolveSocketClosed = resolve;
+        });
+        const server = createServer((request, response) => {
+            if (request.url?.startsWith('/aborted')) {
+                request.socket.once('close', resolveSocketClosed);
+                response.on('error', () => {});
+                response.once('close', resolveAborted);
+                response.write('partial');
+                response.emit('error', new Error('synthetic-response-error'));
+                response.destroy(new Error('synthetic-response-error'));
+            } else {
+                response.end('finished');
+            }
+        });
+        try {
+            await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+            const port = (server.address() as AddressInfo).port;
+            expect(
+                await fetch(`http://127.0.0.1:${port}/finished?token=secret-fixture`).then((response) =>
+                    response.text()
+                )
+            ).toBe('finished');
+            await new Promise<void>((resolve) => {
+                const request = get(`http://127.0.0.1:${port}/aborted?token=secret-fixture`);
+                request.on('error', () => resolve());
+                request.on('response', (response) => {
+                    response.resume();
+                    response.on('close', () => resolve());
+                });
+            });
+            await abortedClosed;
+            await socketClosed;
+        } finally {
+            await new Promise<void>((resolve) => server.close(() => resolve()));
+            stop();
+        }
+        try {
+            const events = readFileSync(file, 'utf8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as { kind: string; data: Record<string, unknown> });
+            expect(events.some((event) => event.kind === 'http-request-start' && event.data.path === '/finished')).toBe(
+                true
+            );
+            expect(events.some((event) => event.kind === 'http-response-finish' && event.data.statusCode === 200)).toBe(
+                true
+            );
+            expect(
+                events.some((event) => event.kind === 'http-response-close' && event.data.writableFinished === false)
+            ).toBe(true);
+            expect(events.some((event) => event.kind === 'http-response-error')).toBe(true);
+            expect(events.some((event) => event.kind === 'socket-close')).toBe(true);
+            expect(readFileSync(file, 'utf8')).not.toContain('secret-fixture');
+        } finally {
+            rmSync(directory, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps unobserved App fulfillment unknown in the transport profile', () => {
+        const health = completeTelemetry();
+        health.profile = 'transport';
+        health.counts = { 'collector-ready': 1, 'Network.requestWillBeSent': 1, 'Page.frameNavigated': 1 };
+        expect(() => assertTelemetryHealth(health)).not.toThrow();
+        expect(telemetryOutcomes(health)['App-fulfilled']).toBe('unknown');
+        expect(telemetryOutcomes(health)['public-transport-visible']).toBe('unknown');
+        expect(telemetryOutcomes(health)['Network.webSocketCreated']).toBe('observed');
+        health.websocket = { errors: [], missingCreation: [], created: 0 };
+        expect(telemetryOutcomes(health)['Network.webSocketCreated']).toBe('unknown');
+        health.websocket = { errors: [], missingCreation: [requestId], created: 0 };
+        expect(() => assertTelemetryHealth(health)).not.toThrow();
+    });
+
+    it('keeps CDP initiators and timestamps without request headers or bodies', () => {
+        const event = transportEvent('Network.requestWillBeSent', {
+            requestId: 'module-1',
+            timestamp: 12.5,
+            wallTime: 100,
+            request: {
+                url: 'http://127.0.0.1:5174/src/app/App.tsx?token=private',
+                method: 'GET',
+                headers: { Authorization: privateValue },
+                postData: privateValue,
+            },
+            initiator: {
+                type: 'script',
+                stack: {
+                    callFrames: [
+                        {
+                            functionName: 'handleMessage',
+                            url: 'http://127.0.0.1:5174/@vite/client?token=private',
+                            lineNumber: 1094,
+                            columnNumber: 0,
+                        },
+                    ],
+                },
+            },
+        });
+        expect(event).toMatchObject({
+            requestId: 'module-1',
+            timestamp: 12.5,
+            wallTime: 100,
+            url: 'http://127.0.0.1:5174/src/app/App.tsx',
+            initiator: {
+                callFrames: [
+                    { functionName: 'handleMessage', url: 'http://127.0.0.1:5174/@vite/client', lineNumber: 1094 },
+                ],
+            },
+        });
+        expect(JSON.stringify(event)).not.toContain(privateValue);
+        expect(JSON.stringify(event)).not.toContain('token=private');
+    });
     it('records all pinned websocket forms while summaries omit secret-shaped values', () => {
         const { events, observer } = capture();
         const fixtures = [

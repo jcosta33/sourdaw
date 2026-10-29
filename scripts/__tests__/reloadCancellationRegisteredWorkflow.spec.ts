@@ -7,7 +7,7 @@ import { parseDocument } from 'yaml';
 
 type Mapping = Record<string, unknown>;
 
-const originalMerge = '1587850a91b3cb729f5e59492829d297840eeb9d';
+const originalMerge = '94aa5ab19a617fc7a3de83fa7aa8afde8b3361b9';
 const originalImage =
     'mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
 const checkout = 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1';
@@ -52,7 +52,7 @@ function assertRegisteredDiagnostic(value: Mapping): void {
     const events = mapping(value.on, 'events');
     assert.deepEqual(Object.keys(events), ['pull_request']);
     assert.deepEqual(mapping(events.pull_request, 'pull_request'), {
-        types: ['opened'],
+        types: ['synchronize'],
         paths: [
             '.github/workflows/reload-cancellation-diagnostic.yml',
             'scripts/diagnostics/reloadCancellation/**',
@@ -65,7 +65,10 @@ function assertRegisteredDiagnostic(value: Mapping): void {
 
     const job = diagnosticJob(value);
     assert.equal(job.name, 'Diagnose original reload cancellation');
-    assert.equal(job.if, "${{ github.event.action == 'opened' && github.run_attempt == 1 }}");
+    assert.equal(
+        job.if,
+        "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.run_attempt == 1 }}"
+    );
     assert.equal(job['runs-on'], 'ubuntu-latest');
     assert.deepEqual(job.container, { image: originalImage, options: '--init --ipc=host' });
     assert.deepEqual(job.defaults, { run: { shell: 'bash' } });
@@ -135,9 +138,7 @@ describe('registered reload cancellation advisory workflow', () => {
         [
             'later pull-request action',
             (value: Mapping) =>
-                (mapping(mapping(value.on, 'events').pull_request, 'pull_request').types as string[]).push(
-                    'synchronize'
-                ),
+                (mapping(mapping(value.on, 'events').pull_request, 'pull_request').types as string[]).push('opened'),
         ],
         ['write grant', (value: Mapping) => (mapping(value.permissions, 'permissions').contents = 'write')],
         [
@@ -171,7 +172,10 @@ describe('registered reload cancellation advisory workflow', () => {
             (value: Mapping) =>
                 (mapping(stepsOf(diagnosticJob(value))[2]?.with, 'checkout')['persist-credentials'] = true),
         ],
-        ['no attempt guard', (value: Mapping) => (diagnosticJob(value).if = "${{ github.event.action == 'opened' }}")],
+        [
+            'no attempt guard',
+            (value: Mapping) => (diagnosticJob(value).if = "${{ github.event.action == 'synchronize' }}"),
+        ],
         [
             'wrong install directory',
             (value: Mapping) => (stepsOf(diagnosticJob(value))[6]!['working-directory'] = 'harness'),

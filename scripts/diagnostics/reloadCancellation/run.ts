@@ -66,9 +66,10 @@ export async function runHostedDiagnostic(harness: string, root: string, output:
         qualified,
         passingHistory,
         qualification,
+        receiptMode: 'transport',
         advisoryOnly: true,
         sourceBefore: before,
-        originalRequiredRun: { id: 40823175639, attempt: 1, remainsUnresolved: true },
+        originalRequiredRun: { id: 40908733061, attempt: 1, job: 123584034609, remainsUnresolved: true },
         causeClassification:
             'No automatic causal match: inspect actual target steps/errors, network/socket/navigation and process evidence.',
     };

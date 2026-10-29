@@ -26,6 +26,11 @@ export function qualifyExecution(root: string, output: string, childCode: number
     const expected = historicalCases(frozen);
     const runtime = (): ReturnType<typeof parseHistoryEvents> =>
         parseHistoryEvents(readFileSync(resolve(output, 'run/test-history.jsonl'), 'utf8'));
+    const events = (path: string): Record<string, unknown>[] =>
+        readFileSync(resolve(output, 'run', path), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => recordOf(JSON.parse(line) as unknown, path));
     return {
         source: observe(() => assertOriginalSource(root)),
         prefix: observe(() => {
@@ -34,20 +39,22 @@ export function qualifyExecution(root: string, output: string, childCode: number
                 (event) => event.kind === 'test-begin' && event.data.file === 'persistedClipEditAcceptance.spec.ts'
             );
             if (target < 0) {
-                throw new Error('Target case91 never began');
+                throw new Error('Frozen target case never began');
             }
             assertRuntimePrefix(expected, events.slice(0, target + 1));
-            return { original90Passed: true };
+            return { originalPredecessorsPassed: expected.length - 1 };
         }),
         runtimeOrder: observe(() => {
             assertRuntimeOrder(expected, runtime());
-            return { original91CompletedInOrder: true };
+            return { originalCasesCompletedInOrder: expected.length };
         }),
         targetAdmission: observe(() => {
             const admission = recordOf(json(resolve(output, 'run/target-admission.json')), 'target admission');
             if (
                 admission.originalHistoryAdmitted !== true ||
                 admission.instrumentationReady !== true ||
+                admission.receiptMode !== 'transport' ||
+                admission.coverage !== 'from-target-beforeEach-only' ||
                 admission.workerIndex !== 1 ||
                 admission.retry !== 0
             ) {
@@ -58,7 +65,9 @@ export function qualifyExecution(root: string, output: string, childCode: number
         collector: observe(() => {
             const health = json(resolve(output, 'run/collector-health.json'));
             assertTelemetryHealth(health);
-            assertSuccessfulAppCoverage(health, childCode);
+            if (recordOf(health, 'collector health').profile !== 'transport') {
+                assertSuccessfulAppCoverage(health, childCode);
+            }
             const observations = readFileSync(resolve(output, 'run/browser-observations.jsonl'), 'utf8')
                 .split('\n')
                 .filter(Boolean)
@@ -72,7 +81,11 @@ export function qualifyExecution(root: string, output: string, childCode: number
                         '[reload-cancellation-app-fulfilled] '
                     )
             );
-            if (callback >= 0 && (installed < 0 || installed >= callback)) {
+            if (
+                recordOf(health, 'collector health').profile !== 'transport' &&
+                callback >= 0 &&
+                (installed < 0 || installed >= callback)
+            ) {
                 throw new Error('App fulfillment was observed before its source-bound logpoint installation');
             }
             return {
@@ -80,6 +93,25 @@ export function qualifyExecution(root: string, output: string, childCode: number
                 outcomes: telemetryOutcomes(health),
                 logpointPrecededObservedCallback: callback < 0 || installed < callback,
             };
+        }),
+        serverTransport: observe(() => {
+            const observations = events('vite-transport.jsonl');
+            for (const kind of ['vite-probe-ready', 'http-request-start', 'vite-heartbeat']) {
+                if (!observations.some((event) => event.kind === kind)) {
+                    throw new Error(`Vite transport probe did not emit ${kind}`);
+                }
+            }
+            return { observedEvents: observations.length };
+        }),
+        runnerHeartbeat: observe(() => {
+            const observations = events('process.jsonl');
+            if (
+                !observations.some((event) => event.kind === 'runner-heartbeat') ||
+                !observations.some((event) => event.kind === 'exit-receipt-written')
+            ) {
+                throw new Error('Runner heartbeat or close receipt was not emitted');
+            }
+            return { observedEvents: observations.length };
         }),
         targetResults: observe(() => {
             const lines = readFileSync(resolve(output, 'run/test-errors.jsonl'), 'utf8').split('\n');

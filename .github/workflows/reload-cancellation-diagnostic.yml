@@ -1,9 +1,9 @@
 name: Reload cancellation advisory diagnostic
 
-# One advisory observation of the original failed merge; this job never mints Gate.
+# One advisory observation of the later failed merge; this job never mints Gate.
 on:
   pull_request:
-    types: [opened]
+    types: [synchronize]
     paths:
       - .github/workflows/reload-cancellation-diagnostic.yml
       - scripts/diagnostics/reloadCancellation/**
@@ -15,7 +15,7 @@ permissions:
 jobs:
   diagnose:
     name: Diagnose original reload cancellation
-    if: ${{ github.event.action == 'opened' && github.run_attempt == 1 }}
+    if: ${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.run_attempt == 1 }}
     runs-on: ubuntu-latest
     container:
       image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
@@ -45,7 +45,7 @@ jobs:
       - name: Checkout original source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 1587850a91b3cb729f5e59492829d297840eeb9d
+          ref: 94aa5ab19a617fc7a3de83fa7aa8afde8b3361b9
           path: original
           persist-credentials: false
 
@@ -82,9 +82,9 @@ jobs:
         timeout-minutes: 2
         run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
 
-      # run.ts independently checks the opened event, attempt 1, exact harness
+      # run.ts independently checks PR5847 synchronize attempt 1, exact harness
       # head, original merge/tree/spec bytes, physical target install, runtime,
-      # 28 selectors/91 collected cases and exclusive execution claim.
+      # 28 selectors/83 collected cases and exclusive execution claim.
       # The original target config itself builds and serves the e2e preview.
       - name: Run one advisory diagnostic
         run: |

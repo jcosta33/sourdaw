@@ -4,8 +4,8 @@ import { isDeepStrictEqual } from 'node:util';
 import { recordOf, requiredText } from './journal.ts';
 
 export type CaseIdentity = { project: string; file: string; title: string };
-export type HistoricalCase = CaseIdentity & { workerIndex: number };
-export type RuntimeCase = CaseIdentity & { workerIndex: number; retry: number; status?: string };
+export type HistoricalCase = CaseIdentity & { workerIndex: number; testId: string };
+export type RuntimeCase = CaseIdentity & { workerIndex: number; retry: number; testId: string; status?: string };
 export type HistoryEvent = { kind: string; data: RuntimeCase };
 
 export function caseIdentity(value: unknown): CaseIdentity {
@@ -18,15 +18,19 @@ export function caseIdentity(value: unknown): CaseIdentity {
 }
 
 export function historicalCases(value: unknown): HistoricalCase[] {
-    if (!Array.isArray(value) || value.length !== 91) {
-        throw new Error('Original history must contain exactly91 cases');
+    if (!Array.isArray(value) || value.length !== 83) {
+        throw new Error('Original history must contain exactly83 cases');
     }
     return value.map((item: unknown) => {
         const entry = recordOf(item, 'history case');
         if (entry.workerIndex !== 0 && entry.workerIndex !== 1) {
             throw new Error('Original history has an invalid worker');
         }
-        return { ...caseIdentity(entry), workerIndex: entry.workerIndex };
+        return {
+            ...caseIdentity(entry),
+            workerIndex: entry.workerIndex,
+            testId: requiredText(entry.testId, 'original test ID'),
+        };
     });
 }
 
@@ -50,6 +54,7 @@ function runtimeCase(value: unknown): RuntimeCase {
         ...caseIdentity(entry),
         workerIndex: entry.workerIndex,
         retry: 0,
+        testId: requiredText(entry.testId, 'runtime test ID'),
         status: typeof entry.status === 'string' ? entry.status : undefined,
     };
 }
@@ -84,6 +89,7 @@ export function assertRuntimePrefix(expected: readonly HistoricalCase[], events:
                 ended.length + 1 !== begun.length ||
                 !isDeepStrictEqual(caseIdentity(current), caseIdentity(event.data)) ||
                 current?.workerIndex !== event.data.workerIndex ||
+                current?.testId !== event.data.testId ||
                 event.data.retry !== 0
             ) {
                 throw new Error('Runtime completion is missing, duplicate or out of order');
@@ -92,10 +98,17 @@ export function assertRuntimePrefix(expected: readonly HistoricalCase[], events:
         }
     }
     assertCollectedHistory(expected, begun);
-    if (ended.length !== 90 || ended.some((entry) => entry.status !== 'passed')) {
-        throw new Error('Original90 successful predecessors were not observed before the target');
+    if (ended.length !== expected.length - 1 || ended.some((entry) => entry.status !== 'passed')) {
+        throw new Error('Original successful predecessors were not observed before the target');
     }
-    if (begun.some((entry, index) => entry.workerIndex !== expected[index]?.workerIndex || entry.retry !== 0)) {
+    if (
+        begun.some(
+            (entry, index) =>
+                entry.workerIndex !== expected[index]?.workerIndex ||
+                entry.retry !== 0 ||
+                (index < expected.length - 1 && entry.testId !== expected[index]?.testId)
+        )
+    ) {
         throw new Error('Original worker transition or retry0 was not preserved');
     }
 }

@@ -75,7 +75,7 @@ function originalConfig(): PlaywrightTestConfig {
 
 describe('reload diagnostic admission (workflow registration remains separately sequenced)', () => {
     const head = 'a'.repeat(40);
-    const event = { action: 'opened', pull_request: { head: { sha: head } } };
+    const event = { action: 'synchronize', pull_request: { number: 5847, head: { sha: head } } };
     const env = {
         GITHUB_ACTIONS: 'true',
         GITHUB_EVENT_NAME: 'pull_request',
@@ -83,14 +83,20 @@ describe('reload diagnostic admission (workflow registration remains separately 
         GITHUB_RUN_ID: '123',
     };
 
-    it('admits only the original Linux opened event on its exact harness head', () => {
+    it('admits only PR5847 Linux synchronize attempt1 on its exact harness head', () => {
         expect(() => admitHostedAttempt(event, env, 'linux', head)).not.toThrow();
         expect(() => admitHostedAttempt(event, env, 'darwin', head)).toThrow('hosted Linux');
         expect(() => admitHostedAttempt(event, env, 'linux', 'b'.repeat(40))).toThrow('harness head');
     });
 
-    it.each(['synchronize', 'reopened', 'labeled'])('refuses a later %s event', (action) => {
-        expect(() => admitHostedAttempt({ ...event, action }, env, 'linux', head)).toThrow('original PR-opened');
+    it.each(['opened', 'reopened', 'labeled'])('refuses a different %s event', (action) => {
+        expect(() => admitHostedAttempt({ ...event, action }, env, 'linux', head)).toThrow('first synchronize');
+    });
+
+    it('refuses another pull request', () => {
+        expect(() =>
+            admitHostedAttempt({ ...event, pull_request: { ...event.pull_request, number: 5848 } }, env, 'linux', head)
+        ).toThrow('PR5847');
     });
 
     it('refuses a workflow rerun and missing hosted identity', () => {
@@ -106,7 +112,7 @@ describe('reload diagnostic admission (workflow registration remains separately 
             'original CI merge'
         );
         expect(() => assertPinnedSourceIdentity(ORIGINAL_HEAD, 'b'.repeat(40), '', ORIGINAL_SPEC_SHA256)).toThrow(
-            'c3 tree'
+            'frozen tree'
         );
         expect(() =>
             assertPinnedSourceIdentity(ORIGINAL_HEAD, ORIGINAL_TREE, ' M src/app/App.tsx', ORIGINAL_SPEC_SHA256)
@@ -169,14 +175,14 @@ describe('reload diagnostic admission (workflow registration remains separately 
         expect(() => configureDiagnostic(reused, '/source', '/evidence', false)).toThrow('reuse');
     });
 
-    it('observes the original91 names,85 built and five dev predecessors before case91', () => {
+    it('observes the original83 names,73 built and nine dev predecessors before case83', () => {
         const expected = expectedHistory();
         const runtime = events();
         expect(() => assertCollectedHistory(expected, expected)).not.toThrow();
         expect(() => assertRuntimePrefix(expected, runtime.slice(0, -1))).not.toThrow();
         expect(() => assertCompletedHistory(expected, runtime)).not.toThrow();
-        expect(expected.slice(0, 85).every((entry) => entry.project === 'chromium')).toBe(true);
-        expect(expected.slice(85).every((entry) => entry.project === 'chromium-dev')).toBe(true);
+        expect(expected.slice(0, 73).every((entry) => entry.project === 'chromium')).toBe(true);
+        expect(expected.slice(73).every((entry) => entry.project === 'chromium-dev')).toBe(true);
     });
 
     it('refuses missing, reordered and retry-dependent predecessor history', () => {
@@ -210,7 +216,7 @@ describe('reload diagnostic admission (workflow registration remains separately 
     it('refuses an unrelated early failure and malformed or changed worker history', () => {
         const earlyFailure = events();
         earlyFailure[1]!.data.status = 'failed';
-        expect(() => assertRuntimeOrder(expectedHistory(), earlyFailure)).toThrow('Original90 successful predecessors');
+        expect(() => assertRuntimeOrder(expectedHistory(), earlyFailure)).toThrow('Original successful predecessors');
         const wrongWorker = events();
         wrongWorker[0]!.data.workerIndex = 1;
         expect(() => assertRuntimeOrder(expectedHistory(), wrongWorker)).toThrow('worker');

@@ -12,7 +12,7 @@ export function gitRead(root: string, args: string[]): string {
 
 export function assertPinnedSourceIdentity(head: string, tree: string, status: string, specSha256: string): void {
     if (head !== ORIGINAL_HEAD || tree !== ORIGINAL_TREE || status !== '') {
-        throw new Error('Target must be the clean original CI merge and exact c3 tree');
+        throw new Error('Target must be the clean original CI merge and exact frozen tree');
     }
     if (specSha256 !== ORIGINAL_SPEC_SHA256) {
         throw new Error('Maintained case bytes changed');

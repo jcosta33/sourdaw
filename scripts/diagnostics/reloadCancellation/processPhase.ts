@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
 import { createJournal, writeReceipt } from './journal.ts';
 
@@ -28,6 +29,20 @@ export async function runPhase(
     return new Promise((_resolve) => {
         const child = spawn('pnpm', args, { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         record('spawn', { pid: child.pid, argv: child.spawnargs });
+        const delay = monitorEventLoopDelay({ resolution: 20 });
+        delay.enable();
+        let lastHeartbeat = performance.now();
+        const heartbeat = setInterval(() => {
+            const now = performance.now();
+            record('runner-heartbeat', {
+                pid: process.pid,
+                intervalMs: now - lastHeartbeat,
+                eventLoopDelayMaxMs: delay.max / 1e6,
+            });
+            lastHeartbeat = now;
+            delay.reset();
+        }, 2_000);
+        heartbeat.unref();
         let stopping = false;
         let completed = false;
         let escalation: NodeJS.Timeout | undefined;
@@ -68,6 +83,8 @@ export async function runPhase(
             if (escalation) {
                 clearTimeout(escalation);
             }
+            clearInterval(heartbeat);
+            delay.disable();
             process.off('SIGTERM', stop);
             process.off('SIGINT', stop);
             child.stdout.destroy();
@@ -78,6 +95,7 @@ export async function runPhase(
                 completeClose: child.exitCode !== null,
                 time: new Date().toISOString(),
             });
+            record('exit-receipt-written', { pid: child.pid, code });
             _resolve(code);
         };
         process.on('SIGTERM', stop);

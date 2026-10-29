@@ -18,6 +18,7 @@ export function diagnosticEnvironment(root: string, output: string): NodeJS.Proc
         RELOAD_DIAGNOSTIC_ROOT: root,
         RELOAD_DIAGNOSTIC_OUTPUT: output,
         RELOAD_DIAGNOSTIC_RUNNER_PID: String(process.pid),
+        RELOAD_DIAGNOSTIC_PROFILE: 'transport',
         DEBUG: 'pw:browser',
     };
 }
@@ -99,8 +100,35 @@ export async function qualifyOriginalHistory(
     const expected = historicalCases(saved);
     assertCollectedHistory(expected, original.tests);
     assertCollectedHistory(expected, candidate.tests);
+    const originalIds = (original.tests as unknown[]).map((entry) => recordOf(entry, 'original collected case').testId);
+    const candidateIds = (candidate.tests as unknown[]).map(
+        (entry) => recordOf(entry, 'candidate collected case').testId
+    );
+    if (
+        !isDeepStrictEqual(
+            originalIds,
+            expected.map((entry) => entry.testId)
+        )
+    ) {
+        throw new Error('Original collected test IDs/order differ from the failed blob');
+    }
+    if (
+        !isDeepStrictEqual(candidateIds.slice(0, -1), originalIds.slice(0, -1)) ||
+        typeof candidateIds.at(-1) !== 'string'
+    ) {
+        throw new Error('Diagnostic changed a predecessor test ID or lost the wrapped target ID');
+    }
     assertProjectSemantics(original.projects, candidate.projects, resolve(root, WRAPPER), resolve(root, ORIGINAL_SPEC));
-    if (original.workers !== 1 || candidate.workers !== 1 || !isDeepStrictEqual(original.tests, candidate.tests)) {
+    const withoutIds = (items: unknown[]): unknown[] =>
+        items.map((item) => {
+            const { testId: _testId, ...options } = recordOf(item, 'collected case');
+            return options;
+        });
+    if (
+        original.workers !== 1 ||
+        candidate.workers !== 1 ||
+        !isDeepStrictEqual(withoutIds(original.tests as unknown[]), withoutIds(candidate.tests as unknown[]))
+    ) {
         throw new Error('Collected case options or worker count changed');
     }
     if (!isDeepStrictEqual(original.sourceFiles, candidate.sourceFiles)) {
@@ -110,6 +138,8 @@ export async function qualifyOriginalHistory(
     writeReceipt(resolve(output, 'collection-admission.json'), {
         admitted: true,
         cases: expected.length,
+        originalTestIdsMatched: true,
+        predecessorTestIdsPreserved: true,
         selectors: ORIGINAL_SELECTORS.length,
         workers: 1,
         retries: 0,

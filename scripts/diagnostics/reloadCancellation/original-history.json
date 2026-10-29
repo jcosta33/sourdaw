@@ -1,548 +1,583 @@
 [
     {
         "project": "chromium",
-        "file": "agentExecutionMode.spec.ts",
-        "title": "switching modes updates the select and the composer contract",
+        "file": "additionalUi.spec.ts",
+        "title": "Pop Song template shows chord track with seeded chords and add button",
+        "testId": "054d44d06d79f80aba6e-6d8e608c70d3e45f20cd",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "audioMidiMisc.spec.ts",
-        "title": "Routing tab replaces the mixer with the routing matrix",
+        "file": "additionalUi.spec.ts",
+        "title": "Tempo BPM display shows the template tempo",
+        "testId": "054d44d06d79f80aba6e-9300dc78e7c5ee58c58c",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "bacteriaCulturesSearchTestId.spec.ts",
-        "title": "filling a narrow query drops the shown count; clearing restores it",
+        "file": "additionalUi.spec.ts",
+        "title": "Time signature readout shows 4/4",
+        "testId": "054d44d06d79f80aba6e-a7825e47fdbf537382cc",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "branchManager.spec.ts",
-        "title": "Running \"Open Branch Manager\" from the command palette opens the branch dialog",
+        "file": "additionalUi.spec.ts",
+        "title": "Browser search accepts typed text",
+        "testId": "054d44d06d79f80aba6e-7900340a13dd3c733f0a",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "crustChannelLinkTestId.spec.ts",
-        "title": "Link Trans slider flips aria-valuenow off max then back",
+        "file": "additionalUi.spec.ts",
+        "title": "Prompt bar accepts typed text",
+        "testId": "054d44d06d79f80aba6e-c6b65d7a1ddaff49ec60",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "exportFidelityTestId.spec.ts",
-        "title": "export dialog shows all 3 render modes",
+        "file": "additionalUi.spec.ts",
+        "title": "Undo history panel opens and shows entries after an action",
+        "testId": "054d44d06d79f80aba6e-3210c13e731e03d1783e",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "exportFidelityTestId.spec.ts",
-        "title": "switching to stems mode changes active button",
+        "file": "automationPointDrawUndo.spec.ts",
+        "title": "drawing adds a point and double-click deletes it with an undo round-trip",
+        "testId": "fa224b1ea6b067febf5e-1a24cb14831648a06d40",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "exportFidelityTestId.spec.ts",
-        "title": "render range radio group has Whole project checked",
+        "file": "bakeryControlGeometry.spec.ts",
+        "title": "the dither Off choice activates and remains selected after reopening",
+        "testId": "01e6defdef7bf7f4b923-e79bd6f4d6f5b35efc25",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "exportFidelityTestId.spec.ts",
-        "title": "cancel button closes export dialog",
+        "file": "bakeryControlGeometry.spec.ts",
+        "title": "all Fidelity controls remain reachable by scrolling the dialog",
+        "testId": "01e6defdef7bf7f4b923-a9eb20f7adbea6ea984a",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "exportFidelityTestId.spec.ts",
-        "title": "start baking button text reflects current mode",
+        "file": "browserAiTestId.spec.ts",
+        "title": "Generate and chat can stay open together; closing Generate leaves chat",
+        "testId": "93b9c8cfe762db3e3680-dc909edc97be48105e13",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "fermenterEnvelopeKnobsTestId.spec.ts",
-        "title": "ArrowUp steps amp Attack 0.01 to 0.016 and Sustain 0.7 to 0.71",
+        "file": "chatComposerTestId.spec.ts",
+        "title": "reports local AI admission state and closes on toggle",
+        "testId": "10beb63069edbea72936-dfbf1712c1c1f4044e2e",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "fermenterFxDelayKnobsTestId.spec.ts",
-        "title": "ArrowUp steps Delay Time 375 to 376 and Feedback 0.35 to 0.36",
+        "file": "clipTrimFadeKeyboardTestId.spec.ts",
+        "title": "Fade in slider responds to keyboard",
+        "testId": "58e77f4ca49103ed42d1-d91c4b1899b115954267",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Adding a Gain automation lane creates a removable lane row",
+        "file": "clipTrimFadeKeyboardTestId.spec.ts",
+        "title": "Clip gain slider responds to keyboard",
+        "testId": "58e77f4ca49103ed42d1-43bff94de6e0b13a1663",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Creating an alternative adds a row and reveals delete buttons",
+        "file": "crustInputGainTestId.spec.ts",
+        "title": "input gain slider responds to keyboard",
+        "testId": "0772f6ee1b284cf299f7-c5df32226d2473d8c7b6",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Signal Flow button toggles aria-expanded and reveals the routing graph",
+        "file": "crustStreamingPresetTestId.spec.ts",
+        "title": "selecting a streaming preset flips aria-selected and changes the LUFS readout",
+        "testId": "f06aed71b0ce3f96c39c-ba7b07f867f3ad649c54",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Create Bus button adds a bus track to the track list",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Input monitoring cycles Auto → On → Off → Auto",
+        "testId": "054b90f416a3df675c2c-1d89ebe53d1b6f60ec86",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "MIDI clip context menu exposes the exact operation names",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Overdub toggle flips aria-pressed when a MIDI track is armed",
+        "testId": "054b90f416a3df675c2c-3e25c6450527fc92366c",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Rename Clip opens an inline editor that commits the new name",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Two tracks each expose independent mute buttons",
+        "testId": "054b90f416a3df675c2c-ff02d2692709d26c272b",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Fold-to-scale toggle flips aria-pressed",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Double-clicking the piano roll enables the Undo button (a note was created)",
+        "testId": "054b90f416a3df675c2c-2e21ae23f8e641b6ac3d",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Expression view toggle reveals the Active expression lane combobox",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Chord-stamp-mode toggle flips aria-pressed",
+        "testId": "054b90f416a3df675c2c-4f8ad865439732bb6003",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Input monitoring cycles Auto → On → Off → Auto via aria-label",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Renaming the project to empty keeps the previous name",
+        "testId": "054b90f416a3df675c2c-fb88cabf16d92b87d34c",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Clicking a routing cell flips its aria-label Connect → Disconnect",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Rapid play/stop toggling leaves transport in a stable state",
+        "testId": "054b90f416a3df675c2c-acd94a6f3a66ee3dd726",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorAndRouting.spec.ts",
-        "title": "Clear all chords removes every chord block and hides itself",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Track context menu lists operations on right-click",
+        "testId": "054b90f416a3df675c2c-77d9d6b98664aead508b",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorPanKeyboardTestId.spec.ts",
-        "title": "track pan slider responds to ArrowRight",
+        "file": "dynamicAndEdge.spec.ts",
+        "title": "Toggling opens the collaboration dialog and toggling again dismisses it",
+        "testId": "054b90f416a3df675c2c-e94c97df546cb183c48f",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Inspector shows track properties with interactive controls for selected track",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Template load yields multiple tracks",
+        "testId": "a94fa3858699e9215b0a-29001a3c832ff85df348",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can toggle track arm from track header",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Undo button is enabled after adding a track",
+        "testId": "a94fa3858699e9215b0a-29ebb667107ef1b626f7",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can toggle track mute from track header",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Default Synth device bypass round-trips Bypass → Enable → Bypass",
+        "testId": "a94fa3858699e9215b0a-fd63c0b989effa89e4f3",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can toggle track solo from track header",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Adding an automation lane creates a removable Gain lane",
+        "testId": "a94fa3858699e9215b0a-29b7baf4dcceaa05d627",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Track gain slider shows a numeric value",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Track notes accept and display typed text",
+        "testId": "a94fa3858699e9215b0a-70a4cea41e3579ad528c",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can add a device to the track chain",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Switching to Project tab shows project metadata",
+        "testId": "a94fa3858699e9215b0a-8e78cc1f22db07b3b816",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can write notes for the track",
+        "file": "e2eWorkflow.spec.ts",
+        "title": "Browser search accepts and clears text",
+        "testId": "a94fa3858699e9215b0a-de82b3636db9e2b48369",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can create a VCA group",
+        "file": "fermenterFxDistKnobsDepthTestId.spec.ts",
+        "title": "ArrowUp steps Dist Drive 0 to 0.1 and Mix 0 to 0.01",
+        "testId": "be7b6100bb20a0eed6fb-b9fd21c7897ff5fb9c20",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Add automation lane opens a nonempty menu",
+        "file": "generatePanelTestId.spec.ts",
+        "title": "opening generate panel shows Patterns and AI tabs",
+        "testId": "fab6cfb825f2eef993ba-c82d8e01d340dfdd82ad",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can toggle Follow Chord Track",
+        "file": "generatePanelTestId.spec.ts",
+        "title": "Patterns tab is active by default",
+        "testId": "fab6cfb825f2eef993ba-5d67b6ded6db80c5b873",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "inspectorTrack.spec.ts",
-        "title": "Can close and reopen the inspector",
+        "file": "generatePanelTestId.spec.ts",
+        "title": "switching to AI tab changes active variant",
+        "testId": "fab6cfb825f2eef993ba-b3d83c31d357620fa25e",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can browse the template grid and filter by category",
+        "file": "generatePanelTestId.spec.ts",
+        "title": "switching back to Patterns tab restores active state",
+        "testId": "fab6cfb825f2eef993ba-718ccecd4e516254d353",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can load a template from the grid and enter the workspace",
+        "file": "generatePanelTestId.spec.ts",
+        "title": "generate panel shows content below tabs",
+        "testId": "fab6cfb825f2eef993ba-45e1fc39d180d16083e7",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can browse demos and load Nebula Drift",
+        "file": "importErrorPathsTestId.spec.ts",
+        "title": "a corrupt .mid surfaces an error toast and adds no track",
+        "testId": "2bcac683d4978c86d8ca-d9f4e4a0cf58b1fbd03b",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can navigate back from grid view to home",
+        "file": "kneadPitchDeepTestId.spec.ts",
+        "title": "analysis exposes the Correct All action",
+        "testId": "6bf2eb61e843ae4681e1-fb87656d70619ce8bc22",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can open the project menu and see all items",
+        "file": "kneadPitchDeepTestId.spec.ts",
+        "title": "Correct All reports a scale-correction result",
+        "testId": "6bf2eb61e843ae4681e1-7faf234f9649d4e23cc7",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can close the project menu with Escape",
+        "file": "kneadPitchDeepTestId.spec.ts",
+        "title": "Formants checkbox toggles its checked state",
+        "testId": "6bf2eb61e843ae4681e1-077d94c52bfb4c0385ae",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can open template chooser from the project menu",
+        "file": "llmBadgeDownload.spec.ts",
+        "title": "offers model onboarding only when this browser admits a WebGPU device",
+        "testId": "4d58855f5eea91af244e-dd970ede386480889755",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Saving the project clears the unsaved changes indicator",
+        "file": "masterChannelTestId.spec.ts",
+        "title": "master gain steps down from 0.8 with ArrowDown",
+        "testId": "7d2bdb41686c64f4de86-e3b86c8c8aa9a9865dd4",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "launchFlows.spec.ts",
-        "title": "Can rename the project from the transport bar",
+        "file": "midiClipDeepTestId.spec.ts",
+        "title": "Pop Song template has tracks with MIDI clips",
+        "testId": "23ec7c4dfee2b1c5cf09-a6326a05d27aaf22dc17",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "midiScaleRootTestId.spec.ts",
-        "title": "selecting a different root updates the readout and the active option",
+        "file": "midiClipDeepTestId.spec.ts",
+        "title": "double-clicking a clip on timeline opens piano roll",
+        "testId": "23ec7c4dfee2b1c5cf09-4f5e079dfa98e7049ab1",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "midiScaleRootTestId.spec.ts",
-        "title": "changing the root with fold-to-scale shifts the in-scale keyboard rows",
+        "file": "midiClipDeepTestId.spec.ts",
+        "title": "paint mode toggle works in piano roll",
+        "testId": "23ec7c4dfee2b1c5cf09-cc14e79eb59c4fd4e6d2",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "midiVelocityKeyboardTestId.spec.ts",
-        "title": "default velocity slider responds to ArrowUp",
+        "file": "midiClipDeepTestId.spec.ts",
+        "title": "ghost notes toggle works in piano roll",
+        "testId": "23ec7c4dfee2b1c5cf09-754f2aedd41dab97d271",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSendsRoutingTestId.spec.ts",
-        "title": "raising a send level moves the send slider value",
+        "file": "midiClipDeepTestId.spec.ts",
+        "title": "chord stamp mode reveals chord type selector",
+        "testId": "23ec7c4dfee2b1c5cf09-d9a4dbbe742f1641c9ec",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSendsRoutingTestId.spec.ts",
-        "title": "toggling a send flips pre/post latch label and aria-label",
+        "file": "midiUndoPlaybackTestId.spec.ts",
+        "title": "painting a note changes the selected clip count through undo and redo",
+        "testId": "4f9c196626ef73c2e1f5-67e50f42ea681b9bb957",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSendsRoutingTestId.spec.ts",
-        "title": "routing a channel to a bus updates the output readout",
+        "file": "midiUndoPlaybackTestId.spec.ts",
+        "title": "playback advances after inserting a MIDI note and stop returns to the start",
+        "testId": "4f9c196626ef73c2e1f5-096bccbb5393bc09cab3",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSnapshotTestId.spec.ts",
-        "title": "mixer save snapshot button is present via test ID",
+        "file": "midiUndoPlaybackTestId.spec.ts",
+        "title": "step input inserts a note from the focused piano-roll keyboard shortcut",
+        "testId": "4f9c196626ef73c2e1f5-095c154ce0f745d68528",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSnapshotTestId.spec.ts",
-        "title": "mixer AI health button is present via test ID",
+        "file": "midiUndoPlaybackTestId.spec.ts",
+        "title": "fold and constrain remain enabled while painting a note",
+        "testId": "4f9c196626ef73c2e1f5-031f7a8d581be1b922c4",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSnapshotTestId.spec.ts",
-        "title": "mixer recall snapshot button is present via test ID",
+        "file": "multiTrackWorkflowTestId.spec.ts",
+        "title": "soloing one track mutes others visually",
+        "testId": "cc8c46c47d0b65af4f01-e038f02956eca11b0398",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSnapshotTestId.spec.ts",
-        "title": "clicking save snapshot creates a snapshot entry",
+        "file": "multiTrackWorkflowTestId.spec.ts",
+        "title": "switching solo from track 1 to track 2",
+        "testId": "cc8c46c47d0b65af4f01-163112d1d0178a86d321",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "mixerSnapshotTestId.spec.ts",
-        "title": "all 3 mixer header buttons are visible simultaneously",
+        "file": "multiTrackWorkflowTestId.spec.ts",
+        "title": "muting all tracks then unmuting",
+        "testId": "cc8c46c47d0b65af4f01-1010f17cfb3f240e7761",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "proofModuleTogglesTestId.spec.ts",
-        "title": "EQ module bypass round-trips ON to OFF and back",
+        "file": "multiTrackWorkflowTestId.spec.ts",
+        "title": "adding a new track via menu increases count",
+        "testId": "cc8c46c47d0b65af4f01-1c2e82cbf2aac012caab",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "proofModuleTogglesTestId.spec.ts",
-        "title": "Dynamics module bypass round-trips ON to OFF and back",
+        "file": "multiTrackWorkflowTestId.spec.ts",
+        "title": "transport play/stop works with all tracks muted",
+        "testId": "cc8c46c47d0b65af4f01-4101adda4dbe44cb4105",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "proofModuleTogglesTestId.spec.ts",
-        "title": "Imager module bypass round-trips ON to OFF and back",
+        "file": "pianoRollZoomTestId.spec.ts",
+        "title": "zoom slider is present via test ID",
+        "testId": "a82bc4df28b14b05c89a-a5816f0d483fca638737",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "proofModuleTogglesTestId.spec.ts",
-        "title": "Exciter module bypass round-trips OFF to ON and back",
+        "file": "pianoRollZoomTestId.spec.ts",
+        "title": "zoom slider has a numeric value",
+        "testId": "a82bc4df28b14b05c89a-2d3d882c2a3bd50fcdc3",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "recording.spec.ts",
-        "title": "Can toggle global transport recording",
+        "file": "pianoRollZoomTestId.spec.ts",
+        "title": "snap buttons are present (1/4, 1/8, 1/16, 1/32)",
+        "testId": "a82bc4df28b14b05c89a-c8a4afda11f04de78fe7",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "setlistLoopStationTestId.spec.ts",
-        "title": "clicking add creates a setlist item",
+        "file": "pianoRollZoomTestId.spec.ts",
+        "title": "clicking a snap button changes the active variant",
+        "testId": "a82bc4df28b14b05c89a-85b1cc9bfc771f0e03df",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "setlistLoopStationTestId.spec.ts",
-        "title": "loop station region is present",
+        "file": "proofEqKnobsTestId.spec.ts",
+        "title": "ArrowUp raises the first EQ gain knob aria-valuenow",
+        "testId": "49e744778357ccebb9e2-9ea03b464c3ebcd21267",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "setlistLoopStationTestId.spec.ts",
-        "title": "loop station arm button is present when tab is active",
+        "file": "proofEqKnobsTestId.spec.ts",
+        "title": "ArrowUp raises the first EQ frequency knob aria-valuenow",
+        "testId": "49e744778357ccebb9e2-09201e89e6805b370fd2",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "setlistMoveReorder.spec.ts",
-        "title": "Move down swaps the first two items and Move up swaps them back",
+        "file": "toasterPadMixerTestId.spec.ts",
+        "title": "Kick mixer M overlays Mute on the pad and clears it",
+        "testId": "cf941dacb1dfccd13f25-1c6cabcf2ad50413b7dd",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "setlistMoveReorder.spec.ts",
-        "title": "boundary buttons are disabled and follow the item, not the position",
+        "file": "trackContextMenuTestId.spec.ts",
+        "title": "right-clicking a track opens the context menu",
+        "testId": "48166415a5e78ac2948a-927983c36c90f89a0fcf",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineClipTestId.spec.ts",
-        "title": "right-click timeline opens context menu with Add Clip Here",
+        "file": "trackContextMenuTestId.spec.ts",
+        "title": "context menu lists Duplicate Track option",
+        "testId": "48166415a5e78ac2948a-cef8af3a6c91c9247d3e",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineClipTestId.spec.ts",
-        "title": "double-clicking a clip opens the piano roll editor",
+        "file": "trackContextMenuTestId.spec.ts",
+        "title": "clicking Duplicate Track increases track count",
+        "testId": "48166415a5e78ac2948a-d66cfb89d28f6091a9bb",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineClipTestId.spec.ts",
-        "title": "clip context menu shows MIDI-specific items for a MIDI clip",
+        "file": "trackContextMenuTestId.spec.ts",
+        "title": "context menu lists Rename option",
+        "testId": "48166415a5e78ac2948a-31499799d38dc18fe376",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Timeline chrome components are all visible and interactive",
+        "file": "trackContextMenuTestId.spec.ts",
+        "title": "context menu lists Add Clip option",
+        "testId": "48166415a5e78ac2948a-45ba3db36874690524b0",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Zoom in changes timeline scroll position",
+        "file": "transportDeep.spec.ts",
+        "title": "BPM spinbutton changes value when incremented via keyboard",
+        "testId": "96471b0f80ba9999cb1d-a2366785e91db0a34fdd",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Timeline clicks seek the clicked beat at the default zoom",
+        "file": "transportDeep.spec.ts",
+        "title": "Metronome toggle flips aria-pressed on → off → on",
+        "testId": "96471b0f80ba9999cb1d-c30cc6be1931de48b60b",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Timeline clicks seek the clicked beat under zoom and scroll",
+        "file": "transportDeep.spec.ts",
+        "title": "Loop region fill and handles appear while looping and clear when disabled",
+        "testId": "96471b0f80ba9999cb1d-2d72f758e41d12aec22a",
         "workerIndex": 0
     },
     {
         "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Timeline minimap responds to keyboard and changes value",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Can right-click timeline for context menu with actionable items",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigation.spec.ts",
-        "title": "Beat ruler clicks seek the clicked beat under zoom and scroll",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigationTestId.spec.ts",
-        "title": "timeline minimap is in the DOM via test ID",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigationTestId.spec.ts",
-        "title": "minimap has slider role and aria-valuenow",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigationTestId.spec.ts",
-        "title": "timeline canvas surface is present",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "timelineNavigationTestId.spec.ts",
-        "title": "playhead display shows initial position 1.1.000",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "toasterPadDriveTestId.spec.ts",
-        "title": "ArrowUp then ArrowDown steps Kick Crunch by 0.1",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "virtualKeyboardTestId.spec.ts",
-        "title": "virtual keyboard toggle opens and closes via test ID",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "virtualKeyboardTestId.spec.ts",
-        "title": "virtual keyboard renders with keyboard focus area",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "virtualKeyboardTestId.spec.ts",
-        "title": "virtual keyboard close button works",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "virtualKeyboardTestId.spec.ts",
-        "title": "inspector toggle opens and closes via aria-label",
-        "workerIndex": 0
-    },
-    {
-        "project": "chromium",
-        "file": "virtualKeyboardTestId.spec.ts",
-        "title": "bottom dock toggle round-trips via aria-label",
+        "file": "transportDeep.spec.ts",
+        "title": "Play → Pause → Stop → playhead returns to start",
+        "testId": "96471b0f80ba9999cb1d-7c93340dd14846978b6c",
         "workerIndex": 0
     },
     {
         "project": "chromium-dev",
-        "file": "aiProviderToolAuthority.spec.ts",
-        "title": "approved: provider discovery, proposal and exact user approval",
+        "file": "agentWorkspace.spec.ts",
+        "title": "a proposal raised from chat reaches the workspace with its groups and route",
+        "testId": "2a26823c3d34593f5e24-d3d7179f43804f74c3df",
         "workerIndex": 1
     },
     {
         "project": "chromium-dev",
-        "file": "aiProviderToolAuthority.spec.ts",
-        "title": "malformed: provider discovery, proposal and exact user approval",
+        "file": "agentWorkspace.spec.ts",
+        "title": "confirming from the workspace commits the group and offers compare and revert",
+        "testId": "2a26823c3d34593f5e24-4dd82ae1c14bbe1714e7",
         "workerIndex": 1
     },
     {
         "project": "chromium-dev",
-        "file": "aiProviderToolAuthority.spec.ts",
-        "title": "undisclosed: provider discovery, proposal and exact user approval",
+        "file": "agentWorkspace.spec.ts",
+        "title": "the A/B toggle moves the project between before and after and ends on after",
+        "testId": "2a26823c3d34593f5e24-ffcc382a26ee74b1722e",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "agentWorkspace.spec.ts",
+        "title": "reverting from the workspace restores the project and closes comparison off",
+        "testId": "2a26823c3d34593f5e24-e84ebacb3ceb3fc017e9",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "agentWorkspace.spec.ts",
+        "title": "every workspace control is named and the Confirm button is reachable by keyboard",
+        "testId": "2a26823c3d34593f5e24-0bc128234a7612039922",
         "workerIndex": 1
     },
     {
         "project": "chromium-dev",
         "file": "browserAiWebGpuAdmission.spec.ts",
         "title": "proves the live Chromium Browser AI admission boundary without skipping",
+        "testId": "a70d39f442ad214bfa42-67760250eac7d73f7a71",
         "workerIndex": 1
     },
     {
         "project": "chromium-dev",
         "file": "browserAiWebGpuAdmission.spec.ts",
         "title": "renders an exact-duration DDSP preview from verified OPFS artifacts with hardware WebGPU",
+        "testId": "a70d39f442ad214bfa42-c598a10bba7b5a3aeb42",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "crdtPersistence.native.spec.ts",
+        "title": "aborts an in-flight old generation transaction before replacement commit",
+        "testId": "c02951aedfc525d7782a-0dc1a1cd51cb113ed07a",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "crdtPersistence.native.spec.ts",
+        "title": "merges same-lineage realms and rejects a stale different-lineage root",
+        "testId": "c02951aedfc525d7782a-4d79647c7b7bf890f3ea",
         "workerIndex": 1
     },
     {
         "project": "chromium-dev",
         "file": "persistedClipEditAcceptance.spec.ts",
         "title": "persisted clip edits replay exact owners and source material through real same-tab hydration",
+        "testId": "f33a3cb9933a61808364-8dbf227fc7c5f7a9f8b1",
         "workerIndex": 1
     }
 ]

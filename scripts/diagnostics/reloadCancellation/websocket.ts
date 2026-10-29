@@ -108,7 +108,10 @@ export function summarizeWebSocket(name: string, payload: unknown): Record<strin
     return { ...result, frame, classification: frame.opcode === 8 ? 'close-frame-observed' : 'frame-observed' };
 }
 
-export function createWebSocketObserver(record: RecordObservation): {
+export function createWebSocketObserver(
+    record: RecordObservation,
+    retainRaw = true
+): {
     observe: (name: string, payload: unknown) => void;
     health: () => { errors: string[]; missingCreation: string[]; created: number };
 } {
@@ -117,7 +120,9 @@ export function createWebSocketObserver(record: RecordObservation): {
     const missingCreation = new Set<string>();
     return {
         observe(name, payload) {
-            record('websocket-raw', { name, payload });
+            if (retainRaw) {
+                record('websocket-raw', { name, payload });
+            }
             try {
                 const summary = summarizeWebSocket(name, payload);
                 const id = requiredText(summary.requestId, 'requestId');
