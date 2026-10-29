@@ -1,0 +1,42 @@
+crates/proof-chamber/src/lib.rs
+  h_beb54bf43b47b7 510-530
+crates/proof-chamber/tests/automation_ordinals.rs
+  h_beb54bf43b47b7 1-305
+public/wasm/manifest.json
+  h_beb54bf43b47b7 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1347,1351,1769
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  h_beb54bf43b47b7 31-47,132-135
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  h_beb54bf43b47b7 3-29,138-173
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  h_beb54bf43b47b7 27-47
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_beb54bf43b47b7 293,299-301,338-342
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  h_beb54bf43b47b7 26-27
+src/modules/AudioEngine/services/__tests__/proofChamberAutomationOrdinals.spec.ts
+  h_beb54bf43b47b7 1-331
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  h_beb54bf43b47b7 3-10,12-26,237-364,374
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  h_beb54bf43b47b7 149-151
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ebf7b4fddbf23b1a68fd9c94ee4eda905927bbd7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
