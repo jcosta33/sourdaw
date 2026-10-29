@@ -401,7 +401,7 @@ test('auditions one genuine retained measured request before Confirm without pro
     page,
 }) => {
     test.setTimeout(240_000);
-    await setupWorkspace(page);
+    await setupWorkspace(page, { clearLocalStorage: false });
     await launch_new_project(page);
     const subjects = await page.evaluate(async () => {
         const command: typeof import('../../src/modules/Command/useCases') =
@@ -716,7 +716,17 @@ test('auditions one genuine retained measured request before Confirm without pro
             };
         });
         expect(afterReload).toEqual({ retained: 0, playing: false });
-        await page.getByRole('button', { name: /^Revert agent changes / }).click();
+        const agentTab = page.getByTestId('agent-tab-button');
+        if ((await agentTab.count()) === 0) {
+            await page.getByTestId('toggle-bottom-dock').click();
+        }
+        await agentTab.click({ timeout: 10_000 });
+        const history = page.getByTestId('agent-workspace').getByRole('region', { name: 'Agent change history' });
+        await expect(history).toBeVisible();
+        const revert = history.getByRole('button', { name: /^Revert agent changes / });
+        await expect(revert).toHaveCount(1);
+        await expect(revert).toBeEnabled();
+        await revert.click();
         await expect.poll(levels).toEqual([0, 0]);
         expect((await projectTruth(page)).pcm).toEqual(beforeAudition.pcm);
         expect(provider.failures).toEqual([]);
