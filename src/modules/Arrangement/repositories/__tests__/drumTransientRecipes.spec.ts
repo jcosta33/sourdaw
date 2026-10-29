@@ -39,8 +39,7 @@ describe('authored drum transient recipes', () => {
         }
         expect(
             catalog.recipes
-                .filter((r) => r.roles.includes('drums'))
-                .filter((r) => r.steps.some((s) => s.deviceType === 'faust-noise-gate'))
+                .filter((r) => r.roles.includes('drums') && r.steps.some((s) => s.deviceType === 'faust-noise-gate'))
                 .map((r) => ({ id: r.id, descriptor: r.descriptor }))
         ).toEqual([{ id: 'drums-controlled-gate', descriptor: 'controlled' }]);
     });

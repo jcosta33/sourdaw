@@ -116,6 +116,8 @@ describe('controlled authored recipes', () => {
 
         for (const entry of expected) {
             const recipe = controlled.find((candidate) => candidate.id === entry.id);
+            const parameterIdsForRecipe =
+                entry.windows.length === 5 ? [...parameterIds[entry.device], 'comp-knee'] : parameterIds[entry.device];
             expect(recipe).toBeDefined();
             expect(recipe!.roles).toEqual([entry.role]);
             expect(recipe!.steps).toEqual([
@@ -123,9 +125,7 @@ describe('controlled authored recipes', () => {
                     kind: 'insert',
                     deviceType: entry.device,
                     parameters: entry.windows.map(([minimum, maximum], index) => ({
-                        paramId: [...parameterIds[entry.device], ...(entry.windows.length === 5 ? ['comp-knee'] : [])][
-                            index
-                        ],
+                        paramId: parameterIdsForRecipe[index],
                         minimum,
                         maximum,
                     })),
