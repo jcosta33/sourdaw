@@ -1,0 +1,32 @@
+scripts/__tests__/cleanupLanes.spec.ts
+  h_beb54bf43b47b7 10,17-22,99-119,153-155,172-174,226-238,240,254-259,491
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 9933-9935,9944-9946,9955,9957
+scripts/__tests__/githubAppIdentity.spec.ts
+  h_beb54bf43b47b7 19,673-725
+scripts/__tests__/installCleanupLanes.spec.ts
+  h_beb54bf43b47b7 69-71,219-221
+scripts/__tests__/removeLane.spec.ts
+  h_beb54bf43b47b7 1589-1591,1613-1615,1816-1821,1827,1829
+scripts/cleanupLanes.ts
+  h_beb54bf43b47b7 25,73-79,105-107,248-304,315-322,327-330,332,353-355,371-374,379-388,414,421-430,469
+scripts/githubAppIdentity.ts
+  h_beb54bf43b47b7 82-87,161-162
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 141-144,148,150,160-164
+scripts/laneActivity.ts
+  h_beb54bf43b47b7 8-16,54-56,64-68
+scripts/removeLane.ts
+  h_beb54bf43b47b7 325-327,807-814,820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5c5c64068554f9730fe36304d5fed25e972f8970",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
