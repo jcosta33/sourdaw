@@ -59,8 +59,9 @@ export async function loadProject({
     shouldProceed,
     shouldContinue = () => true,
 }: LoadProjectInput = {}): Promise<boolean> {
+    const canContinue = () => shouldContinue() && shouldProceed?.() !== false;
     await whenProjectIdentityTransitionDependenciesConfigured();
-    if (!shouldContinue()) {
+    if (!canContinue()) {
         return false;
     }
     // Boot restore is subordinate: if the user picked a project on the
@@ -68,16 +69,32 @@ export async function loadProject({
     // transition is already preparing and must win. Yield to any mid-flight
     // transition rather than superseding it with the implicit startup restore.
     const transaction = providedTransaction ?? runProjectLoadTransaction({ yieldToInFlight: true });
-    const isCurrent = () => transaction.isCurrent() && shouldContinue();
+    const canActivate = () => transaction.canActivate() && canContinue();
+    const isCurrent = () => transaction.isCurrent() && canContinue();
     let directory = providedDirectory;
-    if (!directory && !explicit && typeof window.showDirectoryPicker === 'function') {
-        const binding: ProjectDirectoryBinding | null = await loadProjectDirectoryBinding('last');
-        if (binding) {
-            directory = await prepareProjectDirectoryRead(binding, transaction.canActivate);
+    try {
+        if (!directory && !explicit && typeof window.showDirectoryPicker === 'function') {
+            const binding: ProjectDirectoryBinding | null = await loadProjectDirectoryBinding('last');
+            if (!canActivate()) {
+                return false;
+            }
+            if (binding) {
+                directory = await prepareProjectDirectoryRead(binding, canActivate);
+            }
         }
+    } catch (error) {
+        if (!canActivate()) {
+            return false;
+        }
+        throw error;
+    }
+    if (!canActivate()) {
+        return false;
     }
     try {
-        if (!(await transaction.prepare()) || !transaction.activate() || !shouldContinue()) {
+        // Activation settles the preparation ticket even if the caller withdrew
+        // during prepare. No document has been committed at this boundary.
+        if (!(await transaction.prepare()) || !transaction.activate() || !canContinue()) {
             return false;
         }
     } catch (error) {
@@ -85,29 +102,34 @@ export async function loadProject({
         return false;
     }
 
-    const isDirectoryCurrent = () => isCurrent() && shouldProceed?.() !== false;
     let preparedDirectoryAudio: Awaited<ReturnType<typeof importCachedAudioBuffers>> | null = null;
     try {
         if (directory) {
             const { restoreProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-            await restoreProjectOriginalMedia(directory.projectId, directory.media, isDirectoryCurrent);
+            await restoreProjectOriginalMedia(directory.projectId, directory.media, isCurrent);
+            if (!isCurrent()) {
+                return false;
+            }
             preparedDirectoryAudio = await importCachedAudioBuffers({
                 audioContext: getAudioContext(),
                 buffers: directory.frozenAudioBuffers,
                 decodedBuffers: directory.decodedAudioBuffers,
                 cacheIds: [...Object.keys(directory.decodedAudioBuffers), ...Object.keys(directory.frozenAudioBuffers)],
-                shouldContinue: isDirectoryCurrent,
+                shouldContinue: isCurrent,
             });
-            if (!preparedDirectoryAudio || !isDirectoryCurrent()) {
+            if (!preparedDirectoryAudio || !isCurrent()) {
                 return false;
             }
             if (explicit) {
                 await stopPlayback();
+                if (!isCurrent()) {
+                    return false;
+                }
             }
         }
         let loaded: boolean;
         if (directory) {
-            loaded = await directory.commitDocument(isDirectoryCurrent);
+            loaded = await directory.commitDocument(isCurrent);
         } else {
             loaded = await loadCrdtProject({ shouldCommit: isCurrent });
         }
@@ -158,9 +180,15 @@ export async function loadProject({
                     ...Object.keys(directory.frozenAudioBuffers),
                 ]),
             });
+            if (!isCurrent()) {
+                return false;
+            }
             resetAudioGraph();
             if (explicit) {
                 await unloadLoadedExternalPlugins();
+                if (!isCurrent()) {
+                    return false;
+                }
             }
         }
         batchStoreUpdates(() => {
@@ -203,11 +231,28 @@ export async function loadProject({
     }
 
     if (directory) {
-        if ('persist' in preparedBuffers && !(await preparedBuffers.persist())) {
-            throw new Error('Project directory PCM could not be persisted');
+        if (!isCurrent()) {
+            return false;
+        }
+        if ('persist' in preparedBuffers) {
+            let persisted: boolean;
+            try {
+                persisted = await preparedBuffers.persist();
+            } catch (error) {
+                if (!isCurrent()) {
+                    return false;
+                }
+                throw error;
+            }
+            if (!isCurrent()) {
+                return false;
+            }
+            if (!persisted) {
+                throw new Error('Project directory PCM could not be persisted');
+            }
         }
         await compactProject();
-        if (!isDirectoryCurrent()) {
+        if (!isCurrent()) {
             return false;
         }
     }
@@ -260,8 +305,8 @@ export async function loadProject({
 
     if (directory) {
         const { activateProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
-        await activateProjectOriginalMedia(directory.projectId, [...directory.media.keys()], isDirectoryCurrent);
-        if (!isDirectoryCurrent()) {
+        await activateProjectOriginalMedia(directory.projectId, [...directory.media.keys()], isCurrent);
+        if (!isCurrent()) {
             return false;
         }
     }
