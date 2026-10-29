@@ -22,6 +22,8 @@ import { setProjectIdentityTransitionDependencies } from '../../projectPersisten
 import { saveProject } from '../../projectPersistence/saveProject/saveProject';
 import { loadRecentProject } from '../loadRecentProject';
 
+const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
+
 const { audioContext } = vi.hoisted(() => ({
     audioContext: { id: 'audio-context' },
 }));
@@ -121,6 +123,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     reconcileSessionUndoForProject: vi.fn(() => {
         throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
     }),
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
@@ -134,10 +138,22 @@ vi.mock('#/modules/Command/useCases', () => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
+    readOwnedProjectPublications: vi.fn(() => []),
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: vi.fn().mockResolvedValue(undefined),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        documentIdentity.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     }),
@@ -207,6 +223,7 @@ const validProject = JSON.stringify(validProjectData);
 
 describe('loadRecentProject', () => {
     beforeEach(() => {
+        documentIdentity.epoch = 0;
         // Each case opens with a project that owes nothing for the takes before it.
         unsavedClosedTakes.acknowledgeAll();
         vi.mocked(stopPlayback).mockReset();

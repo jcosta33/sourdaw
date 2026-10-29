@@ -147,6 +147,7 @@
         "needs": "scope",
         "uses": "./.github/workflows/validation.yml",
         "with": {
+          "mode": "full",
           "browser": "${{ needs.scope.outputs.browser == 'true' }}",
           "profile": "${{ needs.scope.outputs.profile }}"
         }
@@ -189,7 +190,10 @@
           },
           {
             "name": "Analyse",
-            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef"
+            "uses": "github/codeql-action/analyze@c16c0f3f2812ec4bb3750a5ed64873fe2ce0fbef",
+            "with": {
+              "category": ".github/workflows/nightly.yml:codeql"
+            }
           }
         ]
       },
@@ -308,6 +312,7 @@
         "needs": "scope",
         "uses": "./.github/workflows/validation.yml",
         "with": {
+          "mode": "preliminary",
           "browser": "${{ needs.scope.outputs.browser == 'true' }}",
           "profile": "${{ needs.scope.outputs.profile }}"
         }
@@ -571,6 +576,12 @@
     "on": {
       "workflow_call": {
         "inputs": {
+          "mode": {
+            "description": "Full required validation or preliminary push validation.",
+            "required": false,
+            "default": "full",
+            "type": "string"
+          },
           "browser": {
             "description": "Whether the affected plan requires browser smoke.",
             "required": true,
@@ -638,10 +649,6 @@
         },
         "steps": [
           {
-            "name": "Checkout",
-            "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
-          },
-          {
             "name": "Filter changed paths",
             "id": "filter",
             "continue-on-error": true,
@@ -668,13 +675,14 @@
               "EVENT": "${{ github.event_name }}",
               "BROWSER": "${{ inputs.browser }}",
               "PROFILE": "${{ inputs.profile }}",
+              "MODE": "${{ inputs.mode }}",
               "RUST": "${{ steps.filter-retry.outputs.rust || steps.filter.outputs.rust }}",
               "SERVER": "${{ steps.filter-retry.outputs.server || steps.filter.outputs.server }}",
               "E2E": "${{ steps.filter-retry.outputs.e2e || steps.filter.outputs.e2e }}",
               "WEB": "${{ steps.filter-retry.outputs.web || steps.filter.outputs.web }}",
               "UNCLASSIFIED": "${{ steps.filter-retry.outputs.unclassified || steps.filter.outputs.unclassified }}"
             },
-            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
+            "run": "set -euo pipefail\n# An empty verdict means both filter attempts failed or never ran;\n# letting it read as `false` would skip every lane under a green job.\nfor verdict in \"$RUST\" \"$SERVER\" \"$E2E\" \"$WEB\" \"$UNCLASSIFIED\" \"$BROWSER\"; do\n  if [ \"$verdict\" != \"true\" ] && [ \"$verdict\" != \"false\" ]; then\n    printf 'No scope verdict: both \"Filter changed paths\" and \"Retry changed-paths filter after a transient API failure\" failed or produced no output.\\n' >&2\n    exit 1\n  fi\ndone\ncase \"$MODE\" in\n  full|preliminary) ;;\n  *) printf 'Invalid validation mode: %s\\n' \"$MODE\" >&2; exit 1 ;;\nesac\ncase \"$PROFILE\" in\n  docs|tooling|broad) ;;\n  *) printf 'Invalid affected profile: %s\\n' \"$PROFILE\" >&2; exit 1 ;;\nesac\nheavy=false\nif [ \"$EVENT\" = \"pull_request_review\" ]; then heavy=true; fi\nrust=$RUST\nserver=$SERVER\ne2e=$E2E\nweb=$WEB\nif [ \"$UNCLASSIFIED\" = \"true\" ]; then\n  rust=true\n  server=true\n  e2e=true\n  web=true\nfi\ne2e=$BROWSER\ntooling=false\nif [ \"$EVENT\" = \"pull_request\" ]; then\n  case \"$PROFILE\" in\n    docs|tooling)\n      if [ \"$BROWSER\" != \"false\" ]; then\n        printf 'Narrow profile conflicts with browser selection\\n' >&2\n        exit 1\n      fi\n      rust=false\n      server=false\n      e2e=false\n      web=false\n      if [ \"$PROFILE\" = \"tooling\" ]; then tooling=true; fi\n      ;;\n  esac\nfi\n# `code` is the one question the scope-independent jobs ask: does this\n# head carry anything but prose? Only a change that claims no scope at\n# all — documentation — answers no.\ncode=false\nif [ \"$rust\" = \"true\" ] || [ \"$server\" = \"true\" ] || [ \"$e2e\" = \"true\" ] || [ \"$web\" = \"true\" ]; then\n  code=true\nfi\nif [ \"$tooling\" = \"true\" ]; then code=true; fi\n{\n  printf 'heavy=%s\\n' \"$heavy\"\n  printf 'rust=%s\\n' \"$rust\"\n  printf 'server=%s\\n' \"$server\"\n  printf 'e2e=%s\\n' \"$e2e\"\n  printf 'web=%s\\n' \"$web\"\n  printf 'code=%s\\n' \"$code\"\n  printf 'tooling=%s\\n' \"$tooling\"\n} >> \"$GITHUB_OUTPUT\"\n"
           }
         ]
       },
@@ -797,11 +805,11 @@
         "needs": "decide",
         "if": "needs.decide.outputs.code == 'true'",
         "runs-on": "ubuntu-latest",
-        "timeout-minutes": 45,
+        "timeout-minutes": 50,
         "steps": [
           {
             "name": "Checkout",
-            "timeout-minutes": 5,
+            "timeout-minutes": 10,
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
@@ -876,7 +884,7 @@
       "unit": {
         "name": "Unit suite ${{ matrix.shard }}/4",
         "needs": "decide",
-        "if": "needs.decide.outputs.web == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 45,
         "strategy": {
@@ -1038,7 +1046,7 @@
       "build": {
         "name": "Production build",
         "needs": "decide",
-        "if": "needs.decide.outputs.web == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 20,
         "steps": [
@@ -1074,7 +1082,7 @@
       "rust": {
         "name": "Rust workspace and collaboration server",
         "needs": "decide",
-        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1148,7 +1156,7 @@
       "native-macos": {
         "name": "Native audio backend (macOS)",
         "needs": "decide",
-        "if": "needs.decide.outputs.rust == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1229,7 +1237,7 @@
       "native-windows": {
         "name": "Native audio backend (Windows)",
         "needs": "decide",
-        "if": "needs.decide.outputs.rust == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')",
         "runs-on": "windows-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1268,7 +1276,7 @@
       "native-parity": {
         "name": "Native parity (macOS)",
         "needs": "decide",
-        "if": "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'",
+        "if": "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')",
         "runs-on": "macos-latest",
         "timeout-minutes": 60,
         "steps": [
@@ -1368,7 +1376,9 @@
             "with": {
               "ref": "${{ github.event.pull_request.base.sha }}",
               "path": "trusted-scanner",
-              "persist-credentials": false
+              "persist-credentials": false,
+              "sparse-checkout": "/.gitleaks.toml\n/.gitleaksignore\n",
+              "sparse-checkout-cone-mode": false
             }
           },
           {
@@ -1377,14 +1387,14 @@
             "with": {
               "ref": "${{ github.event.pull_request.head.sha }}",
               "path": "scan-target",
-              "fetch-depth": 0,
+              "fetch-depth": 1,
               "persist-credentials": false
             }
           },
           {
             "name": "Fetch immutable base SHA",
             "working-directory": "scan-target",
-            "run": "git fetch --no-tags --depth=1 origin \"$BASE_SHA\""
+            "run": "set -euo pipefail\nif [ \"$(git rev-parse --is-shallow-repository)\" = true ]; then\n  git fetch --no-tags --no-recurse-submodules --unshallow origin \"$BASE_SHA\" \"$HEAD_SHA\"\nelse\n  git fetch --no-tags --no-recurse-submodules origin \"$BASE_SHA\" \"$HEAD_SHA\"\nfi\nif [ \"$(git rev-parse --is-shallow-repository)\" != false ]; then\n  printf 'PR secret scan requires complete pinned histories\\n' >&2\n  exit 1\nfi\ngit cat-file -e \"$BASE_SHA^{commit}\"\ngit cat-file -e \"$HEAD_SHA^{commit}\"\n"
           },
           {
             "name": "Install trusted Gitleaks",
@@ -1433,9 +1443,10 @@
             "if": "${{ always() }}",
             "env": {
               "RESULTS": "${{ toJSON(needs) }}",
-              "PULL_REQUEST": "${{ github.event.pull_request != null }}"
+              "PULL_REQUEST": "${{ github.event.pull_request != null }}",
+              "MODE": "${{ inputs.mode }}"
             },
-            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == selected(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == selected(.decide.outputs.web) and\n  .rust.result == (if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"success\" else \"skipped\" end) and\n  .[\"native-macos\"].result == selected(.decide.outputs.rust) and\n  .[\"native-windows\"].result == selected(.decide.outputs.rust) and\n  .[\"native-parity\"].result == (if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"success\" else \"skipped\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
+            "run": "set -euo pipefail\nprintf '%s' \"$RESULTS\" | jq -e --arg pr \"$PULL_REQUEST\" --arg mode \"$MODE\" '\n  def selected($flag):\n    if $flag == \"true\" then \"success\"\n    elif $flag == \"false\" then \"skipped\"\n    else error(\"missing scope verdict\") end;\n  def broad($flag): if $mode == \"preliminary\" then \"skipped\" else selected($flag) end;\n  ($mode == \"full\" or $mode == \"preliminary\") and\n  (keys | sort) == ([\"decide\", \"static\", \"lint\", \"boundaries\", \"unit\", \"tooling-unit\", \"smoke\", \"build\", \"rust\", \"native-macos\", \"native-windows\", \"native-parity\", \"dependency-review\", \"pr-secrets\"] | sort) and\n  .decide.result == \"success\" and .static.result == \"success\" and\n  (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == \"true\" or . == \"false\")) and\n  .lint.result == selected(.decide.outputs.code) and\n  .boundaries.result == selected(.decide.outputs.code) and\n  .unit.result == broad(.decide.outputs.web) and\n  .[\"tooling-unit\"].result == selected(.decide.outputs.tooling) and\n  .build.result == broad(.decide.outputs.web) and\n  .rust.result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.server == \"true\" then \"true\" else \"false\" end) and\n  .[\"native-macos\"].result == broad(.decide.outputs.rust) and\n  .[\"native-windows\"].result == broad(.decide.outputs.rust) and\n  .[\"native-parity\"].result == broad(if .decide.outputs.rust == \"true\" or .decide.outputs.web == \"true\" then \"true\" else \"false\" end) and\n  .smoke.result == (if $pr == \"true\" then selected(.decide.outputs.e2e) elif $pr == \"false\" then \"skipped\" else error(\"missing PR verdict\") end) and\n  .[\"dependency-review\"].result == selected($pr) and\n  .[\"pr-secrets\"].result == selected($pr)'\n"
           }
         ]
       }

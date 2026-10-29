@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -99,7 +100,8 @@ const NATIVE_PARITY_JOB_NAME = 'Native parity (macOS)';
 const NATIVE_PARITY_RUNNER = 'macos-latest';
 // Parity breaks from either side of the seam: the Rust renderer the addon
 // exposes, or the TypeScript that produces the graph it renders.
-const NATIVE_PARITY_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'";
+const NATIVE_PARITY_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')";
 const NATIVE_PARITY_BUILD_STEP = 'Build the native addon';
 const NATIVE_PARITY_ADDON_STEP = 'Require the built addon the parity specs probe for';
 const NATIVE_PARITY_RUN_STEP = 'Run the addon parity specs';
@@ -320,7 +322,11 @@ const RELEASE_SIDE_EFFECTS = [
 ] as const;
 // Unit and selected E2E both reach the required Gate through reusable callers.
 const SUITE_JOB_WIRING = {
-    unit: { workflow: 'validation', needs: 'decide', if: "needs.decide.outputs.web == 'true'" },
+    unit: {
+        workflow: 'validation',
+        needs: 'decide',
+        if: "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')",
+    },
     e2e: {
         workflow: 'heavy',
         needs: undefined,
@@ -331,10 +337,11 @@ const SUITE_JOB_WIRING = {
 // of when its job may legitimately skip: widening one runs the leg where it
 // proves nothing, and narrowing or dropping one retires the proof while every
 // other pin stays green.
-const BUILD_CONDITION = "needs.decide.outputs.web == 'true'";
-const RUST_CONDITION = "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'";
-const NATIVE_MACOS_CONDITION = "needs.decide.outputs.rust == 'true'";
-const NATIVE_WINDOWS_CONDITION = "needs.decide.outputs.rust == 'true'";
+const BUILD_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.web == 'true')";
+const RUST_CONDITION =
+    "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')";
+const NATIVE_MACOS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
+const NATIVE_WINDOWS_CONDITION = "inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')";
 // The nightly split its combined Rust job along the deploy seam (#3516): the
 // crate leg keeps the `rust` scope alone because the crates it tests ship in
 // the web bundle, and the collaboration-server leg answers to the `server`
@@ -354,7 +361,7 @@ const COLLAB_SERVER_GATE_COMMAND = 'sh scripts/health-gates-server.sh';
 // `success()` that would skip the annotation over the very failure it names.
 const E2E_BLOB_UPLOAD_CONDITION = '${{ !cancelled() }}';
 // The decide job's changed-paths filter lists a pull request's files through
-// the GitHub REST API on its shallow checkout, and that API intermittently
+// the GitHub REST API without a checkout, and that API intermittently
 // answers 500 (#3592). The first attempt may fail softly so the retry step can
 // re-run the identical filter; `Resolve scope` coalesces the retry's verdicts
 // first and refuses an empty one, so a persistent API failure fails the job
@@ -560,12 +567,14 @@ function runScopeScript(
     const outputPath = join(directory, 'github-output');
     try {
         const result = spawnSync('bash', ['-c', script], {
+            cwd: directory,
             encoding: 'utf8',
             env: {
                 ...process.env,
                 EVENT: eventName,
                 BROWSER: 'false',
                 PROFILE: 'broad',
+                MODE: 'full',
                 RUST: 'false',
                 SERVER: 'false',
                 E2E: 'false',
@@ -602,11 +611,11 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
     const tooling = outputs.tooling === 'true';
     const selected: Record<string, boolean> = {
         [CODE_CONDITION]: code,
-        "needs.decide.outputs.web == 'true'": web,
+        [BUILD_CONDITION]: web,
         "needs.decide.outputs.tooling == 'true'": tooling,
         [SMOKE_CONDITION]: e2e,
-        "needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'": rust || server,
-        "needs.decide.outputs.rust == 'true'": rust,
+        [RUST_CONDITION]: rust || server,
+        [NATIVE_MACOS_CONDITION]: rust,
         [NATIVE_PARITY_CONDITION]: rust || web,
         [PULL_REQUEST_PAYLOAD_CONDITION]: true,
     };
@@ -629,8 +638,8 @@ function selectedPrValidationJobs(outputs: UnknownRecord, candidate: UnknownReco
 
 function assertScopeContract(candidate: UnknownRecord): string {
     const callerInputs = recordAt(recordAt(recordAt(candidate, 'on'), 'workflow_call'), 'inputs');
-    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'profile'])) {
-        throw new Error('shared validation must expose only browser and affected profile inputs');
+    if (JSON.stringify(Object.keys(callerInputs).sort()) !== JSON.stringify(['browser', 'mode', 'profile'])) {
+        throw new Error('shared validation must expose browser, mode and affected profile inputs');
     }
     const decide = jobAt(candidate, 'decide');
     if (decide.if !== undefined) {
@@ -659,6 +668,9 @@ function assertScopeContract(candidate: UnknownRecord): string {
     if (scope.id !== 'scope') {
         throw new Error('Resolve scope must retain the scope step id');
     }
+    if (recordAt(scope, 'env').MODE !== '${{ inputs.mode }}') {
+        throw new Error('scope must validate the requested mode');
+    }
     if (recordAt(scope, 'env').BROWSER !== '${{ inputs.browser }}') {
         throw new Error('shared validation must receive the selected browser decision');
     }
@@ -666,6 +678,52 @@ function assertScopeContract(candidate: UnknownRecord): string {
         throw new Error('shared validation must consume the affected profile input');
     }
     return stringAt(scope, 'run');
+}
+
+function assertRepositoryIndependentScope(
+    candidate: UnknownRecord,
+    workflows: Readonly<Record<string, UnknownRecord>>
+): void {
+    const callers: string[] = [];
+    for (const [file, workflow] of Object.entries(workflows)) {
+        for (const value of Object.values(recordAt(workflow, 'jobs'))) {
+            const job = asRecord(value, 'job');
+            if (job.uses !== './.github/workflows/validation.yml') {
+                continue;
+            }
+            callers.push(file);
+            if (JSON.stringify(Object.keys(recordAt(workflow, 'on'))) !== JSON.stringify(['pull_request'])) {
+                throw new Error(`${file} must call validation only on pull_request`);
+            }
+            const permissions = asRecord(job.permissions ?? workflow.permissions, 'caller permissions');
+            if (permissions['pull-requests'] !== 'read') {
+                throw new Error(`${file} must grant the changed-files API read permission`);
+            }
+        }
+    }
+    if (JSON.stringify(callers.sort()) !== JSON.stringify(['health-gates.yml', 'pr-checks.yml'])) {
+        throw new Error('repository-independent scope must account for every validation caller');
+    }
+    const decide = jobAt(candidate, 'decide');
+    const steps = arrayAt(decide, 'steps').map((step) => asRecord(step, 'scope step'));
+    if (
+        JSON.stringify(steps.map((step) => step.name)) !==
+        JSON.stringify([PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP, 'Resolve scope'])
+    ) {
+        throw new Error('API-only scope must not acquire a repository checkout or extra step');
+    }
+    for (const step of steps.slice(0, 2)) {
+        const options = recordAt(step, 'with');
+        if (
+            step.uses !== PATHS_FILTER_ACTION ||
+            JSON.stringify(Object.keys(options).sort()) !== JSON.stringify(['filters', 'predicate-quantifier']) ||
+            !stringAt(options, 'filters').includes('\n')
+        ) {
+            throw new Error(
+                'both scope filters must use the pinned PR API path with its default token and inline filters'
+            );
+        }
+    }
 }
 
 function scopeFilterPatterns(candidate: UnknownRecord, scope: string): string[] {
@@ -840,7 +898,10 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
 
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
     const lint = jobAt(candidate, 'lint');
-    const prep = ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies'];
+    if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
+        throw new Error('lint checkout must have a ten-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -850,8 +911,8 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = prep.length * 5 + 20;
-    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 45) {
+    const stepTotal = 10 + prep.length * 5 + 20;
+    if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
 }
@@ -871,6 +932,123 @@ function assertBoundedHeavyE2eInstall(candidate: UnknownRecord): void {
     assertContainerBrowserRuntime(jobAt(candidate, 'e2e'), 'the heavy E2E job', E2E_JOB_MINUTES);
 }
 
+function fixtureGit(directory: string, args: string[]): string {
+    const result = spawnSync('git', ['-c', 'core.hooksPath=/dev/null', '-C', directory, ...args], {
+        encoding: 'utf8',
+        env: { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' },
+    });
+    if (result.error || result.status !== 0) {
+        throw new Error(`Git fixture ${args[0]} failed: ${result.error?.message ?? result.stderr}`);
+    }
+    return result.stdout.trim();
+}
+
+function withPrSecretHistory(
+    run: (fixture: { root: string; source: string; remote: string; base: string; head: string }) => void
+): void {
+    const root = mkdtempSync(join(tmpdir(), 'sourdaw-pr-secret-history-'));
+    const source = join(root, 'source');
+    mkdirSync(source);
+    try {
+        const git = (...args: string[]) => fixtureGit(source, args);
+        const commit = (name: string) => {
+            git('add', '.');
+            git(
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                '-c',
+                'commit.gpgsign=false',
+                'commit',
+                '-m',
+                name
+            );
+            return git('rev-parse', 'HEAD');
+        };
+        const credential = ['AKIA', 'QAZ2WSX3', 'EDC4RFV5'].join('');
+        git('init', '--initial-branch=main');
+        writeFileSync(join(source, 'excluded-common.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'common\n');
+        commit('common ancestor excluded by base');
+        git('checkout', '-b', 'pr');
+        writeFileSync(join(source, 'intermediate.txt'), `aws_access_key_id = "${credential}"\n`);
+        commit('intermediate credential');
+        git('rm', 'intermediate.txt');
+        commit('remove intermediate credential');
+        git('checkout', '-b', 'side');
+        writeFileSync(join(source, 'side.txt'), `aws_access_key_id = "${credential}"\n`);
+        writeFileSync(join(source, 'conflict.txt'), 'side\n');
+        commit('side parent credential');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'conflict.txt'), 'pr\n');
+        commit('other merge parent');
+        const merge = spawnSync(
+            'git',
+            [
+                '-C',
+                source,
+                '-c',
+                'user.name=Fixture',
+                '-c',
+                'user.email=fixture@example.invalid',
+                'merge',
+                '--no-ff',
+                '--no-commit',
+                'side',
+            ],
+            { encoding: 'utf8' }
+        );
+        expect(merge.status).toBe(1);
+        writeFileSync(join(source, 'conflict.txt'), `aws_access_key_id = "${credential}"\n`);
+        const head = commit('merge resolution credential');
+        git('checkout', 'main');
+        writeFileSync(join(source, 'base-only.txt'), 'newer divergent base\n');
+        const base = commit('pinned newer base');
+        writeFileSync(join(source, 'moved-base.txt'), 'not the pinned base\n');
+        commit('base branch moved');
+        git('checkout', 'pr');
+        writeFileSync(join(source, 'moved-head.txt'), 'not the pinned head\n');
+        commit('head branch moved');
+        git('checkout', '-b', 'unrelated', 'main');
+        writeFileSync(join(source, 'unrelated.txt'), 'outside both pinned histories\n');
+        commit('unrelated branch');
+        git('tag', 'unrelated-tag');
+        const remote = join(root, 'remote.git');
+        git('clone', '--bare', source, remote);
+        run({ root, source, remote, base, head });
+    } finally {
+        rmSync(root, { recursive: true, force: true });
+    }
+}
+
+function acquirePrSecretHistory(
+    fixture: { root: string; remote: string; base: string; head: string },
+    candidate: UnknownRecord,
+    overrides: { base?: string; head?: string; run?: string; depth?: number } = {}
+) {
+    const directory = mkdtempSync(join(fixture.root, 'target-'));
+    const checkout = recordAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Checkout scan target'), 'with');
+    const depth = overrides.depth ?? checkout['fetch-depth'];
+    fixtureGit(directory, ['init', '--initial-branch=main']);
+    fixtureGit(directory, ['remote', 'add', 'origin', pathToFileURL(fixture.remote).href]);
+    // Mirror the pinned checkout action's depth-dependent refspec, using real Git transport.
+    const refs =
+        depth === 0
+            ? ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
+            : [`--depth=${String(depth)}`, fixture.head];
+    fixtureGit(directory, ['fetch', '--no-tags', 'origin', ...refs]);
+    fixtureGit(directory, ['checkout', '--detach', fixture.head]);
+    const script =
+        overrides.run ?? stringAt(stepNamed(jobAt(candidate, 'pr-secrets'), 'Fetch immutable base SHA'), 'run');
+    const result = spawnSync('bash', ['-c', script], {
+        cwd: directory,
+        encoding: 'utf8',
+        env: { ...process.env, BASE_SHA: overrides.base ?? fixture.base, HEAD_SHA: overrides.head ?? fixture.head },
+    });
+    return { directory, result };
+}
+
 function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     const prSecrets = jobAt(candidate, 'pr-secrets');
     if (prSecrets.needs !== 'decide' || prSecrets.if !== PULL_REQUEST_PAYLOAD_CONDITION) {
@@ -883,7 +1061,9 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         trustedScanner.ref !== '${{ github.event.pull_request.base.sha }}' ||
         trustedScanner.path !== 'trusted-scanner' ||
-        trustedScanner['persist-credentials'] !== false
+        trustedScanner['persist-credentials'] !== false ||
+        trustedScanner['sparse-checkout'] !== '/.gitleaks.toml\n/.gitleaksignore\n' ||
+        trustedScanner['sparse-checkout-cone-mode'] !== false
     ) {
         throw new Error('pull-request scanner config must come from the trusted base and retain no credentials');
     }
@@ -893,10 +1073,10 @@ function assertPullRequestSecretScan(candidate: UnknownRecord): void {
     if (
         scanTarget.ref !== '${{ github.event.pull_request.head.sha }}' ||
         scanTarget.path !== 'scan-target' ||
-        scanTarget['fetch-depth'] !== 0 ||
+        scanTarget['fetch-depth'] !== 1 ||
         scanTarget['persist-credentials'] !== false
     ) {
-        throw new Error('pull-request scan target must retain the complete untrusted history without credentials');
+        throw new Error('pull-request scan target must bootstrap only the pinned head without credentials');
     }
     const scan = stringAt(stepNamed(prSecrets, 'Scan pull request diff for secrets'), 'run');
     if (!scan.includes('--log-opts="$BASE_SHA..$HEAD_SHA -m"')) {
@@ -1741,7 +1921,8 @@ function assertJobGraph(set: WorkflowSet): void {
     }
     if (
         recordAt(jobAt(health, 'validation'), 'with').browser !== "${{ needs.scope.outputs.browser == 'true' }}" ||
-        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}'
+        recordAt(jobAt(health, 'validation'), 'with').profile !== '${{ needs.scope.outputs.profile }}' ||
+        recordAt(jobAt(health, 'validation'), 'with').mode !== 'full'
     ) {
         throw new Error('required browser smoke must consume the affected scope');
     }
@@ -1755,6 +1936,17 @@ function assertJobGraph(set: WorkflowSet): void {
         })
     ) {
         throw new Error('shared validation must require the affected browser decision');
+    }
+    if (
+        JSON.stringify(browserInput.mode) !==
+        JSON.stringify({
+            description: 'Full required validation or preliminary push validation.',
+            required: false,
+            default: 'full',
+            type: 'string',
+        })
+    ) {
+        throw new Error('shared validation must default to full');
     }
     const affected = jobAt(health, 'affected');
     if (
@@ -1792,7 +1984,8 @@ function assertJobGraph(set: WorkflowSet): void {
     if (
         pushValidation.uses !== VALIDATION_CALL ||
         pushValidation.needs !== 'scope' ||
-        JSON.stringify(pushValidation.with) !== JSON.stringify(recordAt(jobAt(set.health, 'validation'), 'with'))
+        JSON.stringify(pushValidation.with) !==
+            JSON.stringify({ ...recordAt(jobAt(set.health, 'validation'), 'with'), mode: 'preliminary' })
     ) {
         throw new Error('push validation must consume the affected scope exactly as the required lane does');
     }
@@ -2376,7 +2569,30 @@ function assertCredentiallessScanner(candidate: UnknownRecord): void {
     }
 }
 
+function assertCodeqlComparisonCategory(set: WorkflowSet): void {
+    const analyze = stepNamed(jobAt(set.health, 'codeql'), 'Analyse');
+    if (recordAt(analyze, 'with').category !== '.github/workflows/nightly.yml:codeql') {
+        throw new Error('PR CodeQL must use the existing nightly analysis category');
+    }
+}
+
 describe('health gates workflow contract', () => {
+    it('keeps the PR CodeQL category aligned with the nightly baseline', () => {
+        expect(() => assertCodeqlComparisonCategory(workflowSet())).not.toThrow();
+
+        const missing = cloneWorkflows('missing PR CodeQL category');
+        delete recordAt(stepNamed(jobAt(missing.health, 'codeql'), 'Analyse'), 'with').category;
+        expect(() => assertCodeqlComparisonCategory(missing)).toThrow(
+            'PR CodeQL must use the existing nightly analysis category'
+        );
+
+        const wrong = cloneWorkflows('wrong PR CodeQL category');
+        recordAt(stepNamed(jobAt(wrong.health, 'codeql'), 'Analyse'), 'with').category = 'different';
+        expect(() => assertCodeqlComparisonCategory(wrong)).toThrow(
+            'PR CodeQL must use the existing nightly analysis category'
+        );
+    });
+
     it('registers the hosted quantum producer contract in the global workflow set', () => {
         expect(() => assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement)).not.toThrow();
     });
@@ -2701,6 +2917,49 @@ describe('health gates workflow contract', () => {
         expect(() => assertNoJobLevelConcurrency(shardCancellingNightly, 'nightly.yml', DEPLOY_WEB_JOB)).toThrow(
             'nightly.yml job e2e must not carry job-level concurrency'
         );
+    });
+
+    it('resolves PR scope without a repository checkout for every validation caller', () => {
+        const workflows = Object.fromEntries(
+            readdirSync(join(repositoryRoot, '.github/workflows'))
+                .filter((file) => /\.ya?ml$/.test(file))
+                .map((file) => [file, loadWorkflow(file).parsed])
+        );
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, workflows)).not.toThrow();
+        const checkout = structuredClone(validationWorkflow);
+        arrayAt(jobAt(checkout, 'decide'), 'steps').unshift({ name: 'Checkout', uses: 'actions/checkout@pinned' });
+        expect(() => assertRepositoryIndependentScope(checkout, workflows)).toThrow(
+            'API-only scope must not acquire a repository checkout or extra step'
+        );
+        for (const name of [PATHS_FILTER_FIRST_ATTEMPT_STEP, PATHS_FILTER_RETRY_STEP]) {
+            const noToken = structuredClone(validationWorkflow);
+            recordAt(stepNamed(jobAt(noToken, 'decide'), name), 'with').token = '';
+            expect(() => assertRepositoryIndependentScope(noToken, workflows)).toThrow('pinned PR API path');
+            const localFilters = structuredClone(validationWorkflow);
+            recordAt(stepNamed(jobAt(localFilters, 'decide'), name), 'with').filters = 'filters.yml';
+            expect(() => assertRepositoryIndependentScope(localFilters, workflows)).toThrow('inline filters');
+        }
+        for (const caller of ['health-gates.yml', 'pr-checks.yml']) {
+            const nonPrCaller = structuredClone(workflows);
+            recordAt(nonPrCaller[caller]!, 'on').workflow_dispatch = {};
+            expect(() => assertRepositoryIndependentScope(validationWorkflow, nonPrCaller)).toThrow(
+                `${caller} must call validation only on pull_request`
+            );
+            const unreadable = structuredClone(workflows);
+            recordAt(unreadable[caller]!, 'permissions')['pull-requests'] = 'none';
+            expect(() => assertRepositoryIndependentScope(validationWorkflow, unreadable)).toThrow(
+                'changed-files API read permission'
+            );
+        }
+        const newCaller = { ...workflows, 'another.yml': structuredClone(prChecksWorkflow) };
+        expect(() => assertRepositoryIndependentScope(validationWorkflow, newCaller)).toThrow(
+            'account for every validation caller'
+        );
+        // runScopeScript executes the real inline shell in a fresh empty directory.
+        expect(runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { WEB: 'true' })).toMatchObject({
+            web: 'true',
+            code: 'true',
+        });
     });
 
     it('keeps the required scope and full nightly train separate', () => {
@@ -3071,6 +3330,58 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('acquires only trusted scanner files and starts from the pinned target instead of every ref', () => {
+        const job = jobAt(validationWorkflow, 'pr-secrets');
+        const trusted = recordAt(stepNamed(job, 'Checkout trusted scanner'), 'with');
+        expect(trusted['sparse-checkout']).toBe('/.gitleaks.toml\n/.gitleaksignore\n');
+        expect(trusted['sparse-checkout-cone-mode']).toBe(false);
+        expect(recordAt(stepNamed(job, 'Checkout scan target'), 'with')['fetch-depth']).toBe(1);
+        expect(job['timeout-minutes']).toBe(10);
+    });
+
+    it('acquires the exact complete pinned commit and merge-parent patch set despite moved and unrelated refs', () => {
+        withPrSecretHistory((fixture) => {
+            const { directory, result } = acquirePrSecretHistory(fixture, validationWorkflow);
+            expect(result.error).toBeUndefined();
+            expect(result.status, result.stderr).toBe(0);
+            expect(fixtureGit(directory, ['rev-parse', '--is-shallow-repository'])).toBe('false');
+            const range = `${fixture.base}..${fixture.head}`;
+            const args = ['log', '--format=%H:%P', '-p', '-U0', range, '-m'];
+            const expected = fixtureGit(fixture.source, args);
+            expect(expected).toContain('intermediate.txt');
+            expect(expected).toContain('side.txt');
+            expect(expected).toContain('+aws_access_key_id');
+            expect(expected).not.toContain('excluded-common.txt');
+            expect(expected).not.toContain('moved-head.txt');
+            expect(fixtureGit(directory, args)).toBe(expected);
+            expect(fixtureGit(directory, ['for-each-ref', '--format=%(refname)'])).toBe('');
+            expect(fixtureGit(directory, ['rev-parse', 'HEAD'])).toBe(fixture.head);
+        });
+    });
+
+    it.each(['base', 'head'] as const)('refuses a missing pinned %s before the scan', (endpoint) => {
+        withPrSecretHistory((fixture) => {
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, { [endpoint]: 'f'.repeat(40) });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
+    });
+
+    it('refuses a remaining shallow boundary if history acquisition is omitted', () => {
+        withPrSecretHistory((fixture) => {
+            const script = stringAt(
+                stepNamed(jobAt(validationWorkflow, 'pr-secrets'), 'Fetch immutable base SHA'),
+                'run'
+            );
+            const { result } = acquirePrSecretHistory(fixture, validationWorkflow, {
+                depth: 1,
+                run: script.replaceAll(/git fetch[^\n]+/g, ':'),
+            });
+            expect(result.error).toBeUndefined();
+            expect(result.status).not.toBe(0);
+        });
+    });
+
     it('gives every pull request an offline smoke set and a diff secret scan', () => {
         expect(() => assertOfflineSmokeJob(validationWorkflow)).not.toThrow();
         expect(() => assertPullRequestSecretScan(validationWorkflow)).not.toThrow();
@@ -3368,10 +3679,44 @@ describe('health gates workflow contract', () => {
         expect(() => assertStepInventory(dropped)).toThrow('nightly.yml job static steps drifted');
     });
 
+    it('admits the observed fetch plus full checkout while reserving lint and cleanup phases', () => {
+        const lint = jobAt(validationWorkflow, 'lint');
+        const checkout = stepNamed(lint, 'Checkout');
+        const checkoutMinutes = checkout['timeout-minutes'];
+        if (typeof checkoutMinutes !== 'number') {
+            throw new TypeError('checkout must declare its phase budget');
+        }
+        // Run40743393214 fetched for 298.736s before its five-minute step expired in checkout.
+        // Its parallel full checkout took 7.049s after fetching; neither phase may be omitted.
+        const observedFetchMs = 298_736;
+        const completedPeerCheckoutMs = 7_049;
+        expect(checkoutMinutes * 60_000).toBeGreaterThanOrEqual(observedFetchMs + completedPeerCheckoutMs);
+        expect(checkout.with).toBeUndefined();
+
+        let reservedStepMinutes = 0;
+        for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
+            const minutes = stepNamed(lint, name)['timeout-minutes'];
+            if (typeof minutes !== 'number') {
+                throw new TypeError(`lint phase ${name} must declare its budget`);
+            }
+            reservedStepMinutes += minutes;
+        }
+        const jobMinutes = lint['timeout-minutes'];
+        if (typeof jobMinutes !== 'number') {
+            throw new TypeError('lint must declare its outer budget');
+        }
+        expect(jobMinutes - reservedStepMinutes).toBeGreaterThanOrEqual(5);
+        expect(stepNamed(lint, 'Lint')['timeout-minutes']).toBe(20);
+        expect(stepNamed(lint, 'Lint').run).toBe('pnpm lint:full');
+    });
+
     it('reserves bounded setup, full lint, and cleanup time in the lint job', () => {
         expect(() => assertLintTimeBudgets(validationWorkflow)).not.toThrow();
+        const oldCheckout = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldCheckout, 'lint'), 'Checkout')['timeout-minutes'] = 5;
+        expect(() => assertLintTimeBudgets(oldCheckout)).toThrow('ten-minute timeout');
         const oldJob = structuredClone(validationWorkflow);
-        jobAt(oldJob, 'lint')['timeout-minutes'] = 20;
+        jobAt(oldJob, 'lint')['timeout-minutes'] = 45;
         expect(() => assertLintTimeBudgets(oldJob)).toThrow('five minutes for cleanup');
         for (const name of ['Checkout', 'Set up pnpm', 'Set up Node', 'Install dependencies', 'Lint']) {
             const missing = structuredClone(validationWorkflow);
@@ -3379,7 +3724,7 @@ describe('health gates workflow contract', () => {
             expect(() => assertLintTimeBudgets(missing), name).toThrow();
         }
         const overlong = structuredClone(validationWorkflow);
-        jobAt(overlong, 'lint')['timeout-minutes'] = 46;
+        jobAt(overlong, 'lint')['timeout-minutes'] = 51;
         expect(() => assertLintTimeBudgets(overlong)).toThrow('five minutes for cleanup');
         const lint = jobAt(validationWorkflow, 'lint');
         expect(lint.if).toBe("needs.decide.outputs.code == 'true'");
@@ -4547,6 +4892,7 @@ describe('health gates workflow contract', () => {
         const step = stepNamed(gate, 'Require selected validation jobs to succeed');
         expect(step.if).toBe(GATE_CONDITION);
         expect(recordAt(step, 'env').RESULTS).toBe('${{ toJSON(needs) }}');
+        expect(recordAt(step, 'env').MODE).toBe('${{ inputs.mode }}');
         const script = stringAt(step, 'run');
         const scope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
             PROFILE: 'tooling',
@@ -4562,7 +4908,8 @@ describe('health gates workflow contract', () => {
             ])
         );
         results.decide = { result: 'success', outputs: scope };
-        const run = (value: unknown) => runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true' });
+        const run = (value: unknown) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: 'full' });
         expect(run(results)).toBe(0);
         for (const outcome of ['failure', 'cancelled', 'skipped'] as const) {
             expect(run({ ...results, 'tooling-unit': { result: outcome } })).not.toBe(0);
@@ -4571,6 +4918,48 @@ describe('health gates workflow contract', () => {
         delete missing['tooling-unit'];
         expect(run(missing)).not.toBe(0);
         expect(run({ ...results, unit: { result: 'success' } })).not.toBe(0);
+        const broadScope = runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', {
+            RUST: 'true',
+            SERVER: 'true',
+            WEB: 'true',
+            BROWSER: 'true',
+        });
+        const broadSelected = new Set(selectedPrValidationJobs(broadScope));
+        const full: Record<string, { result: string; outputs?: UnknownRecord }> = Object.fromEntries(
+            VALIDATION_JOBS.filter((job) => job !== 'validation-gate').map((job) => [
+                job,
+                { result: broadSelected.has(job) ? 'success' : 'skipped' },
+            ])
+        );
+        full.decide = { result: 'success', outputs: broadScope };
+        expect(run(full)).toBe(0);
+        const broadJobs = ['unit', 'build', 'rust', 'native-macos', 'native-windows', 'native-parity'];
+        for (const job of broadJobs) {
+            for (const outcome of ['failure', 'cancelled', 'skipped']) {
+                expect(run({ ...full, [job]: { result: outcome } })).not.toBe(0);
+            }
+            const missingJob = { ...full };
+            delete missingJob[job];
+            expect(run(missingJob)).not.toBe(0);
+        }
+        const preliminary = { ...full, ...Object.fromEntries(broadJobs.map((job) => [job, { result: 'skipped' }])) };
+        const runMode = (value: unknown, mode: string) =>
+            runResultsGuard(script, JSON.stringify(value), { PULL_REQUEST: 'true', MODE: mode });
+        expect(runMode(preliminary, 'preliminary')).toBe(0);
+        expect(runMode({ ...preliminary, lint: { result: 'failure' } }, 'preliminary')).not.toBe(0);
+        expect(runMode({ ...preliminary, unit: { result: 'success' } }, 'preliminary')).not.toBe(0);
+        for (const mode of ['', 'invalid']) {
+            expect(runMode(full, mode)).not.toBe(0);
+            expect(() =>
+                runScopeScript(assertScopeContract(validationWorkflow), 'pull_request', { MODE: mode })
+            ).toThrow();
+        }
+        const wrongRequiredMode = cloneWorkflows('preliminary required validation');
+        recordAt(jobAt(wrongRequiredMode.health, 'validation'), 'with').mode = 'preliminary';
+        expect(() => assertJobGraph(wrongRequiredMode)).toThrow();
+        const missingRequiredMode = cloneWorkflows('missing required validation mode');
+        delete recordAt(jobAt(missingRequiredMode.health, 'validation'), 'with').mode;
+        expect(() => assertJobGraph(missingRequiredMode)).toThrow();
     });
 
     it('runs a trusted, credentialless scanner over the untrusted target history', () => {

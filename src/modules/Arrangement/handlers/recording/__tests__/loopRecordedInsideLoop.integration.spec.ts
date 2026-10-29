@@ -5,7 +5,11 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
+import {
+    isValidAutomationTimeStateRestorePlan,
+    prepareAutomationTimeOperation,
+    prepareAutomationTimeStateRestore,
+} from '#/modules/Automation/useCases';
 import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -22,8 +26,16 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { prepareMidiGlobalTimeTransaction, prepareMidiTimeStateRestore } from '#/modules/MIDI/useCases';
-import { prepareTimelineMapStateRestore, prepareTimelineMapTimeOperation } from '#/modules/Transport/useCases';
+import {
+    isValidMidiTimeStateRestorePlan,
+    prepareMidiGlobalTimeTransaction,
+    prepareMidiTimeStateRestore,
+} from '#/modules/MIDI/useCases';
+import {
+    isValidTimelineMapStateRestorePlan,
+    prepareTimelineMapStateRestore,
+    prepareTimelineMapTimeOperation,
+} from '#/modules/Transport/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -152,11 +164,15 @@ describe('MIDI loop recordings under Delete Time', () => {
         registerCrdtStorageRuntime();
         sessionStorage.removeItem('sourdaw-undo-session');
         clearHandlerRegistry();
-        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort(noActionHistoryMetadataPort);
         setTimeOperationDependencies({
+            savedRestorePlanValidators: {
+                automation: isValidAutomationTimeStateRestorePlan,
+                midi: isValidMidiTimeStateRestorePlan,
+                timelineMap: isValidTimelineMapStateRestorePlan,
+            },
             prepareAutomationTimeOperation,
             prepareAutomationTimeStateRestore,
             prepareMidiGlobalTimeTransaction,
@@ -164,6 +180,7 @@ describe('MIDI loop recordings under Delete Time', () => {
             prepareTimelineMapTimeOperation,
             prepareTimelineMapStateRestore,
         });
+        registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true }));
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         trackStore.set({
             tracks: [TrackDummy.create({ id: TRACK_ID, kind: 'midi', armed: true, clips: [] })],

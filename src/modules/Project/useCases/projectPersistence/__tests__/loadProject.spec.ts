@@ -118,9 +118,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
+    captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
     DOC_BRANCHES: '__branches__',
@@ -223,6 +233,90 @@ describe('loadProject', () => {
             leaveCollaborationSession: () => Promise.resolve(),
             resumeDurableAssetOwnerHandoffsAfterProjectLoad: mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad,
         });
+    });
+
+    it('does not prepare a revoked initialization and permits a current successor', async () => {
+        const transaction = runProjectLoadTransaction();
+        const prepare = vi.spyOn(transaction, 'prepare');
+        await expect(loadProject({ transaction, shouldContinue: () => false })).resolves.toBe(false);
+        expect(prepare).not.toHaveBeenCalled();
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+    });
+
+    it('settles a prepared admission when initialization is revoked during collaboration shutdown', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        setProjectIdentityTransitionDependencies({
+            leaveCollaborationSession: async () => {
+                entered.resolve();
+                await release.promise;
+            },
+        });
+        let live = true;
+        const transaction = runProjectLoadTransaction();
+        const activate = vi.spyOn(transaction, 'activate');
+        const loading = loadProject({ transaction, shouldContinue: () => live });
+        await entered.promise;
+        live = false;
+        release.resolve();
+        await expect(loading).resolves.toBe(false);
+        // activate releases the real helper's preparing count even on a refusal.
+        expect(activate).toHaveBeenCalledOnce();
+        expect(loadCrdtProject).not.toHaveBeenCalled();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
+        expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
+        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+    });
+
+    it('cancels staged legacy PCM when initialization is revoked before publication', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const publish = vi.fn();
+        mocks.prepareCachedAudioBuffersFromIdb.mockImplementationOnce(async () => {
+            entered.resolve();
+            await release.promise;
+            return { cancel: mocks.cancelPreparedBuffers, publish };
+        });
+        let live = true;
+        const loading = loadProject({ transaction: runProjectLoadTransaction(), shouldContinue: () => live });
+        await entered.promise;
+        live = false;
+        release.resolve();
+        await expect(loading).resolves.toBe(false);
+        expect(mocks.cancelPreparedBuffers).toHaveBeenCalledOnce();
+        expect(publish).not.toHaveBeenCalled();
+        expect(projectCrdtToStores).not.toHaveBeenCalled();
+        expect(mocks.reconcileSessionUndoForProject).not.toHaveBeenCalled();
+        expect(mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad).not.toHaveBeenCalled();
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
+    });
+
+    it('revokes the live owner recovery callback when initialization is disposed', async () => {
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        let recovery: { ownerId: string; isCurrent: () => boolean; signal: AbortSignal } | undefined;
+        mocks.resumeDurableAssetOwnerHandoffsAfterProjectLoad.mockImplementationOnce(async (authority) => {
+            recovery = authority;
+            entered.resolve();
+            await release.promise;
+        });
+        let live = true;
+        const loading = loadProject({ transaction: runProjectLoadTransaction(), shouldContinue: () => live });
+        await entered.promise;
+        expect(recovery?.ownerId).toBe(CANONICAL_PROJECT_ID);
+        expect(recovery?.isCurrent()).toBe(true);
+        live = false;
+        expect(recovery?.isCurrent()).toBe(false);
+        release.resolve();
+        await expect(loading).resolves.toBe(false);
+        expect(startCrdtAutoSave).not.toHaveBeenCalled();
+        await expect(loadProject({ transaction: runProjectLoadTransaction() })).resolves.toBe(true);
     });
 
     it('should hydrate only after collaboration exits and persistence activates', async () => {

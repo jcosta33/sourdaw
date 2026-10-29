@@ -91,9 +91,19 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     createCrdtDoc: vi.fn(),
     createCrdtProject: mocks.createCrdtProject,
     DOC_BRANCHES: '__branches__',

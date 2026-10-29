@@ -117,6 +117,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     reconcileSessionUndoForProject: vi.fn(() => {
         throw new Error('Unexpected reconcileSessionUndoForProject in this fixture');
     }),
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     clearUndoHistory: vi.fn(),
@@ -136,9 +138,15 @@ vi.mock('#/modules/CrdtDocument/useCases', async () => {
     );
     return {
         ...actual,
+        commandSourcePublicationMatches: actual.commandSourcePublicationMatches,
+        stageCommandSourcePublication: actual.stageCommandSourcePublication,
+        hasForeignPendingProjectWrites: actual.hasForeignPendingProjectWrites,
+        captureDurableDocumentWitness: actual.captureDurableDocumentWitness,
+        captureProjectMutationAuthorization: actual.captureProjectMutationAuthorization,
         captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
         captureProjectRevision: actual.captureProjectRevision,
         captureProjectIdentity: actual.captureProjectIdentity,
+        readOwnedProjectPublications: actual.readOwnedProjectPublications,
         registerCrdtStorageRuntime: actual.registerCrdtStorageRuntime,
         resetCrdtProjectAuthority: actual.resetCrdtProjectAuthority,
         compactProject: vi.fn(),

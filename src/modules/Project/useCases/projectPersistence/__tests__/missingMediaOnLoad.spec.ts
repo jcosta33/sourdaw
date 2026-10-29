@@ -111,9 +111,19 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     prepareExternalProjectDocument: vi.fn(() => {
         throw new Error('Unexpected directory read in this fixture');
     }),
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     captureDurableDocumentWitness: vi.fn(),
+    captureProjectMutationAuthorization: vi.fn<() => () => boolean>(() => () => false),
     captureProjectRevision: vi.fn(),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     createCrdtDoc: vi.fn(),
     createCrdtProject: vi.fn(),
     DOC_BRANCHES: '__branches__',

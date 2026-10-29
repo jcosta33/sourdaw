@@ -12,6 +12,7 @@ import type { ProjectDirectoryHandle } from '../../../../repositories/project/pr
 class MemoryDirectory implements ProjectDirectoryHandle {
     readonly files = new Map<string, Uint8Array>();
     readonly directories = new Map<string, MemoryDirectory>();
+    beforeRead: ((name: string) => Promise<void>) | undefined;
 
     constructor(readonly name: string) {}
 
@@ -20,7 +21,12 @@ class MemoryDirectory implements ProjectDirectoryHandle {
             throw new DOMException('Missing file', 'NotFoundError');
         }
         return {
-            getFile: async () => ({ arrayBuffer: async () => Uint8Array.from(this.files.get(name) ?? []).buffer }),
+            getFile: async () => ({
+                arrayBuffer: async () => {
+                    await this.beforeRead?.(name);
+                    return Uint8Array.from(this.files.get(name) ?? []).buffer;
+                },
+            }),
             createWritable: async () => {
                 let pending: Uint8Array | null = null;
                 return {
@@ -59,14 +65,21 @@ const folder = vi.hoisted(() => ({
     bound: new Map<string, { projectId: string; recentKey: string; root: MemoryDirectory }>(),
     permission: true,
     bindFail: false,
+    beforeBindingRead: null as (() => Promise<void>) | null,
 }));
+
+let stopHistoryMirror: (() => void) | undefined;
 
 vi.mock('../../../../repositories/project/projectDirectoryBinding', () => ({
     projectDirectoryBinding: {
         beginProjectDirectorySelection: () => Promise.resolve(folder.root),
         cachedProjectDirectoryRoot: (projectId: string) => folder.bound.get(projectId)?.root ?? null,
         loadProjectDirectoryRoot: async (projectId: string) => folder.bound.get(projectId)?.root ?? null,
-        loadProjectDirectoryBinding: async (key: string) => folder.bound.get(key) ?? null,
+        loadProjectDirectoryBinding: async (key: string) => {
+            const binding = folder.bound.get(key) ?? null;
+            await folder.beforeBindingRead?.();
+            return binding;
+        },
         bindProjectDirectoryRoot: async (projectId: string, root: MemoryDirectory, recentKey: string) => {
             if (folder.bindFail) {
                 throw new Error('Folder bookmark storage failed');
@@ -133,12 +146,159 @@ function makeWave(samples: Float32Array): File {
     return file;
 }
 
+async function createSavedDirectoryProject() {
+    const [
+        audio,
+        arrangement,
+        project,
+        projectStores,
+        arrangementStores,
+        crdt,
+        helpers,
+        metadata,
+        collaboration,
+        command,
+        plugins,
+        automerge,
+    ] = await Promise.all([
+        import('#/modules/AudioEngine/useCases'),
+        import('#/modules/Arrangement/useCases'),
+        import('#/modules/Project/useCases'),
+        import('#/modules/Project/stores'),
+        import('#/modules/Arrangement/stores'),
+        import('#/modules/CrdtDocument/useCases'),
+        import('../../helpers/resetModuleStoresToDefault'),
+        import('../../../createFreshProjectMetadata'),
+        import('#/modules/Collaboration/useCases'),
+        import('#/modules/Command/useCases'),
+        import('#/modules/PluginHost/useCases'),
+        import('@automerge/automerge'),
+    ]);
+    Object.assign(audio.audioEngine.context, {
+        createBuffer: (_channels: number, length: number) => makePcm(new Float32Array(length)),
+        decodeAudioData: async (bytes: ArrayBuffer) => {
+            const view = new DataView(bytes);
+            const samples = new Float32Array(view.getUint32(40, true) / 2);
+            for (const [index] of samples.entries()) {
+                samples[index] = view.getInt16(44 + index * 2, true) / 0x7fff;
+            }
+            return makePcm(samples);
+        },
+    });
+    arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
+    command.registerProductionCommandHandlers([arrangement.getArrangementHandlers()]);
+    command.setActionHistoryMetadataPort({
+        record: crdt.recordActionHistoryEntry,
+        recordBatch: crdt.recordActionHistoryEntries,
+        markReverted: crdt.markActionHistoryEntryReverted,
+        clear: crdt.clearActionHistory,
+    });
+    crdt.sessionUndoWitnessStampPort.setProvider(command.stampSessionUndoWitness);
+    const { actionHistoryStore } = await import('#/modules/CrdtDocument/stores');
+    stopHistoryMirror = actionHistoryStore.subscribe((state) => command.syncActionReplayMetadata(state?.entries ?? []));
+    crdt.registerCrdtStorageRuntime();
+    collaboration.configureCollaborationAssetOwner({ captureOwnerId: project.getDurableProjectOwnerId });
+    audio.configureDurableAudioBufferOwnership(project.collectDurableOwnedAudioBufferIds);
+    const leave = vi.fn(() => Promise.resolve());
+    project.setProjectIdentityTransitionDependencies({ leaveCollaborationSession: leave });
+    crdt.resetCrdtProjectAuthority('Saved directory');
+    helpers.resetModuleStoresToDefault();
+    projectStores.projectStore.set({
+        ...metadata.createFreshProjectMetadata({ name: 'Saved directory', loading: false, initialized: true }),
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_700_000_000_000,
+        dirty: true,
+    });
+    await arrangement.importAudioFile(makeWave(new Float32Array([0, 0.5, -0.5, 0])), { shouldContinue: () => true });
+    const clip = arrangementStores.trackStore.value?.tracks.flatMap((track) => track.clips)[0];
+    if (!clip?.audioBufferId || !folder.root) {
+        throw new Error('Expected real saved-directory audio');
+    }
+    command.reconcileSessionUndoForProject({
+        projectId: projectStores.projectStore.value?.projectId,
+        captureWitness: crdt.captureDurableDocumentWitness,
+    });
+    expect(await project.saveProject()).toBe(true);
+    const projectId = projectStores.projectStore.value?.projectId;
+    if (!projectId) {
+        throw new Error('Expected saved directory identity');
+    }
+    const directory = await (await folder.root.getDirectoryHandle('projects')).getDirectoryHandle(projectId);
+    const { runProjectLoadTransaction } = await import('../../helpers/runProjectLoadTransaction');
+    return {
+        audio,
+        arrangement,
+        project,
+        projectStores,
+        arrangementStores,
+        crdt,
+        helpers,
+        metadata,
+        command,
+        plugins,
+        automerge,
+        leave,
+        clip,
+        projectId,
+        directory,
+        runProjectLoadTransaction,
+    };
+}
+
+async function createOutgoingDirectoryProject(runtime: Awaited<ReturnType<typeof createSavedDirectoryProject>>) {
+    const { audio, arrangement, projectStores, crdt, helpers, metadata, command } = runtime;
+    crdt.resetCrdtProjectAuthority('Outgoing');
+    helpers.resetModuleStoresToDefault();
+    command.clearUndoHistory();
+    projectStores.projectStore.set({
+        ...metadata.createFreshProjectMetadata({ name: 'Outgoing', loading: false, initialized: true }),
+        createdAt: 1_700_000_000_001,
+        updatedAt: 1_700_000_000_001,
+        dirty: false,
+    });
+    await arrangement.importAudioFile(makeWave(new Float32Array([0.25, -0.25, 0.25, -0.25])), {
+        shouldContinue: () => true,
+    });
+    const { trackStore } = await import('#/modules/Arrangement/stores');
+    const clip = trackStore.value?.tracks.flatMap((track) => track.clips)[0];
+    if (!clip?.audioBufferId) {
+        throw new Error('Expected outgoing audio');
+    }
+    await command.executeAppAction({
+        type: 'moveClip',
+        payload: { clipId: clip.id, trackId: clip.trackId, startBeat: 4 },
+    });
+    expect(audio.getCachedAudioBuffer({ bufferId: clip.audioBufferId })).toBeTruthy();
+    return clip.audioBufferId;
+}
+
+function captureDirectoryLoadBoundary(
+    runtime: Awaited<ReturnType<typeof createSavedDirectoryProject>>,
+    outgoingBufferId: string
+) {
+    const root = runtime.crdt.getCrdtDoc(runtime.crdt.DOC_PREFIX_ROOT);
+    if (!root) {
+        throw new Error('Expected a real project document at the held boundary');
+    }
+    return {
+        root: runtime.automerge.toJS(root),
+        identity: runtime.crdt.captureProjectRootIdentity(),
+        project: structuredClone(runtime.projectStores.projectStore.value),
+        owner: runtime.project.getDurableProjectOwnerId(),
+        tracks: structuredClone(runtime.arrangementStores.trackStore.value),
+        history: structuredClone(runtime.command.captureUndoHistory()),
+        savedAudio: runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! }),
+        outgoingAudio: runtime.audio.getCachedAudioBuffer({ bufferId: outgoingBufferId }),
+    };
+}
+
 describe('project directory save and cold Recent open', () => {
     beforeEach(() => {
         folder.root = new MemoryDirectory('selected-root');
         folder.bound.clear();
         folder.permission = true;
         folder.bindFail = false;
+        folder.beforeBindingRead = null;
         vi.stubGlobal('indexedDB', new IDBFactory());
         vi.stubGlobal('IDBKeyRange', IDBKeyRange);
         const nativeClone = structuredClone;
@@ -168,9 +328,12 @@ describe('project directory save and cold Recent open', () => {
         injectDependencies(notifyUser, { eventBus: { emit: vi.fn(() => Promise.resolve()) } });
         clearHandlerRegistry();
         localStorage.clear();
+        sessionStorage.clear();
     });
 
     afterEach(async () => {
+        stopHistoryMirror?.();
+        stopHistoryMirror = undefined;
         const [{ configureDurableAudioBufferOwnership }, { stopActiveAutoSave }] = await Promise.all([
             import('#/modules/AudioEngine/useCases'),
             import('../../helpers/stopActiveAutoSave'),
@@ -182,6 +345,7 @@ describe('project directory save and cold Recent open', () => {
         vi.unstubAllGlobals();
         Reflect.deleteProperty(window, 'showDirectoryPicker');
         Reflect.deleteProperty(window, 'showSaveFilePicker');
+        vi.restoreAllMocks();
     });
 
     it('writes real document, PCM and original bytes; reopens them after session memory is removed', async () => {
@@ -497,5 +661,196 @@ describe('project directory save and cold Recent open', () => {
         projectStores.projectStore.set({ ...projectStores.projectStore.value!, dirty: true });
         expect(await project.saveProject()).toBe(false);
         expect(projectStores.projectStore.value?.dirty).toBe(true);
+    }, 70_000);
+
+    it.each(['binding', 'read', 'clear-runtime', 'unload', 'persist'] as const)(
+        'withdraws a directory load held at %s without advancing the held state or blocking its successor',
+        async (boundary) => {
+            const runtime = await createSavedDirectoryProject();
+            const outgoingBufferId = await createOutgoingDirectoryProject(runtime);
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const hold = async () => {
+                entered.resolve();
+                await release.promise;
+            };
+            const compact = vi.spyOn(runtime.crdt, 'compactProject');
+            let directory;
+            if (boundary === 'unload') {
+                const binding = folder.bound.get('last');
+                if (!binding) {
+                    throw new Error('Expected a real saved directory binding');
+                }
+                const { prepareProjectDirectoryRead } = await import('../../projectDirectoryRead');
+                directory = await prepareProjectDirectoryRead(binding, () => true);
+            }
+            if (boundary === 'binding') {
+                folder.beforeBindingRead = hold;
+            } else if (boundary === 'read') {
+                runtime.directory.beforeRead = async (name) => {
+                    if (name === 'manifest.json') {
+                        await hold();
+                    }
+                };
+            } else if (boundary === 'clear-runtime') {
+                const clearRuntime = runtime.audio.clearRuntimeCachedAudioBuffers;
+                vi.spyOn(runtime.audio, 'clearRuntimeCachedAudioBuffers').mockImplementationOnce(async (input) => {
+                    await clearRuntime(input);
+                    await hold();
+                });
+            } else if (boundary === 'unload') {
+                const unload = runtime.plugins.unloadPlugin;
+                vi.spyOn(runtime.plugins, 'unloadPlugin').mockImplementationOnce(async (...args) => {
+                    await unload(...args);
+                    await hold();
+                });
+            } else {
+                const importBuffers = runtime.audio.importCachedAudioBuffers;
+                vi.spyOn(runtime.audio, 'importCachedAudioBuffers').mockImplementationOnce(async (input) => {
+                    const candidate = await importBuffers(input);
+                    if (!candidate) {
+                        throw new Error('Expected a real directory audio candidate');
+                    }
+                    return {
+                        ...candidate,
+                        persist: async () => {
+                            const persisted = await candidate.persist();
+                            expect(persisted).toBe(true);
+                            await hold();
+                            return persisted;
+                        },
+                    };
+                });
+            }
+            let live = true;
+            runtime.leave.mockClear();
+            const loading = runtime.project.loadProject({
+                transaction: runtime.runProjectLoadTransaction(),
+                directory,
+                explicit: boundary === 'unload',
+                shouldContinue: () => boundary === 'unload' || live,
+                shouldProceed: () => boundary !== 'unload' || live,
+            });
+            try {
+                await Promise.race([
+                    entered.promise,
+                    loading.then(() => {
+                        throw new Error(`Directory load settled before the held ${boundary} boundary`);
+                    }),
+                ]);
+                const held = captureDirectoryLoadBoundary(runtime, outgoingBufferId);
+                live = false;
+                release.resolve();
+                await expect(loading).resolves.toBe(false);
+                const withdrawn = captureDirectoryLoadBoundary(runtime, outgoingBufferId);
+                expect(withdrawn).toEqual(held);
+                expect(withdrawn.savedAudio).toBe(held.savedAudio);
+                expect(withdrawn.outgoingAudio).toBe(held.outgoingAudio);
+                expect(compact).not.toHaveBeenCalled();
+                if (boundary === 'binding' || boundary === 'read') {
+                    expect(runtime.leave).not.toHaveBeenCalled();
+                }
+            } finally {
+                release.resolve();
+                folder.beforeBindingRead = null;
+                runtime.directory.beforeRead = undefined;
+                vi.restoreAllMocks();
+            }
+            await expect(
+                runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })
+            ).resolves.toBe(true);
+            expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+            expect(
+                runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })?.getChannelData(0)[1]
+            ).toBeCloseTo(0.5, 3);
+        },
+        70_000
+    );
+
+    it('surfaces a corrupt current directory read and still admits a repaired current successor', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const outgoingBufferId = await createOutgoingDirectoryProject(runtime);
+        const held = captureDirectoryLoadBoundary(runtime, outgoingBufferId);
+        const manifest = runtime.directory.files.get('manifest.json');
+        if (!manifest) {
+            throw new Error('Expected a real committed manifest');
+        }
+        runtime.directory.files.set('manifest.json', new TextEncoder().encode('{broken'));
+        await expect(
+            runtime.project.loadProject({
+                transaction: runtime.runProjectLoadTransaction(),
+                shouldContinue: () => true,
+            })
+        ).rejects.toThrow();
+        expect(captureDirectoryLoadBoundary(runtime, outgoingBufferId)).toEqual(held);
+        runtime.directory.files.set('manifest.json', manifest);
+        await expect(runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).resolves.toBe(
+            true
+        );
+        expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+    }, 70_000);
+
+    it('surfaces a current PCM durability refusal without compacting and admits a current successor', async () => {
+        const runtime = await createSavedDirectoryProject();
+        await createOutgoingDirectoryProject(runtime);
+        const importBuffers = runtime.audio.importCachedAudioBuffers;
+        vi.spyOn(runtime.audio, 'importCachedAudioBuffers').mockImplementationOnce(async (input) => {
+            const candidate = await importBuffers(input);
+            if (!candidate) {
+                throw new Error('Expected a real directory audio candidate');
+            }
+            return { ...candidate, persist: () => Promise.resolve(false) };
+        });
+        const compact = vi.spyOn(runtime.crdt, 'compactProject');
+        await expect(
+            runtime.project.loadProject({
+                transaction: runtime.runProjectLoadTransaction(),
+                shouldContinue: () => true,
+            })
+        ).rejects.toThrow('Project directory PCM could not be persisted');
+        expect(compact).not.toHaveBeenCalled();
+        vi.restoreAllMocks();
+        await expect(runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).resolves.toBe(
+            true
+        );
+        expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+    }, 70_000);
+
+    it('keeps real saved clip Undo and Redo executable after a directory boot reopen', async () => {
+        const runtime = await createSavedDirectoryProject();
+        const originalStart = runtime.clip.startBeat;
+        await runtime.command.executeAppAction({
+            type: 'moveClip',
+            payload: { clipId: runtime.clip.id, trackId: runtime.clip.trackId, startBeat: 8 },
+        });
+        expect(await runtime.project.saveProject()).toBe(true);
+        runtime.command.stampSessionUndoWitness();
+        const mirror = sessionStorage.getItem('sourdaw-undo-session');
+        expect(mirror).toBeTruthy();
+        runtime.command.registerProductionCommandHandlers([runtime.arrangement.getArrangementHandlers()]);
+        await runtime.audio.clearRuntimeCachedAudioBuffers();
+        runtime.crdt.resetCrdtProjectAuthority('Boot');
+        runtime.helpers.resetModuleStoresToDefault();
+        runtime.command.registerProductionCommandHandlers([runtime.arrangement.getArrangementHandlers()], {
+            deferSessionRestore: true,
+        });
+        expect(runtime.command.captureUndoHistory().past).toEqual([]);
+        await expect(runtime.project.loadProject({ transaction: runtime.runProjectLoadTransaction() })).resolves.toBe(
+            true
+        );
+        expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+        const readClip = () =>
+            runtime.arrangementStores.trackStore.value?.tracks
+                .flatMap((track) => track.clips)
+                .find((clip) => clip.id === runtime.clip.id);
+        expect(readClip()?.startBeat).toBe(8);
+        expect(await runtime.command.undo()).toEqual({ headConsumed: true });
+        expect(readClip()?.startBeat).toBe(originalStart);
+        await runtime.command.redo();
+        expect(readClip()?.startBeat).toBe(8);
+        expect(runtime.project.getDurableProjectOwnerId()).toBe(runtime.projectId);
+        expect(
+            runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })?.getChannelData(0)[1]
+        ).toBeCloseTo(0.5, 3);
     }, 70_000);
 });

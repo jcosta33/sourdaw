@@ -334,9 +334,9 @@ function readStoredWitness(value: Record<string, unknown>): string | undefined {
     return typeof witness === 'string' && witness.length > 0 ? witness : undefined;
 }
 
-function readStoredStacks(): UndoSessionStacks {
+function readStoredStacks(serialized?: string | null): UndoSessionStacks {
     try {
-        const raw = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const raw = serialized === undefined ? sessionStorage.getItem(UNDO_SESSION_KEY) : serialized;
         if (raw) {
             const parsed: unknown = JSON.parse(raw);
             if (isRecord(parsed) && Array.isArray(parsed.past) && Array.isArray(parsed.future)) {
@@ -356,15 +356,27 @@ function readStoredStacks(): UndoSessionStacks {
     return { past: [], future: [], projectId: undefined, witness: undefined };
 }
 
-/**
- * Establishes the current executable action set, then restores whatever the
- * mirror still proves replayable under it. Called after production handler
- * registration so unknown, retired, and re-shaped actions never enter the live
- * stacks.
- */
-export function hydrateSessionMirror(actionContracts: Iterable<SessionActionContract>): UndoSessionStacks {
+/** Keep boot history opaque until its project and document witness authenticate it. */
+export function captureSessionMirror(actionContracts: Iterable<SessionActionContract>): {
+    readonly projectId: string | undefined;
+    readonly witness: string | undefined;
+    readonly hydrate: () => UndoSessionStacks;
+} {
     sessionActionContracts = new Map([...actionContracts].map((contract) => [contract.actionType, contract] as const));
-    return readStoredStacks();
+    let serialized: string | null = null;
+    let projectId: string | undefined;
+    let witness: string | undefined;
+    try {
+        serialized = sessionStorage.getItem(UNDO_SESSION_KEY);
+        const parsed: unknown = serialized === null ? null : JSON.parse(serialized);
+        if (isRecord(parsed)) {
+            projectId = readStoredProjectId(parsed);
+            witness = readStoredWitness(parsed);
+        }
+    } catch {
+        // Unreadable identity cannot authenticate history.
+    }
+    return { projectId, witness, hydrate: () => readStoredStacks(serialized) };
 }
 
 function serializeSessionStacks(stacks: PersistableUndoStacks, limit: number): string {

@@ -49,6 +49,7 @@ type LoadProjectInput = {
     transaction?: ProjectLoadTransaction;
     explicit?: boolean;
     shouldProceed?: () => boolean;
+    shouldContinue?: () => boolean;
 };
 
 export async function loadProject({
@@ -56,13 +57,18 @@ export async function loadProject({
     transaction: providedTransaction,
     explicit = false,
     shouldProceed,
+    shouldContinue = () => true,
 }: LoadProjectInput = {}): Promise<boolean> {
     await whenProjectIdentityTransitionDependenciesConfigured();
+    if (!shouldContinue()) {
+        return false;
+    }
     // Boot restore is subordinate: if the user picked a project on the
     // LaunchScreen while `initializeAudioEngine()` was resolving, that
     // transition is already preparing and must win. Yield to any mid-flight
     // transition rather than superseding it with the implicit startup restore.
     const transaction = providedTransaction ?? runProjectLoadTransaction({ yieldToInFlight: true });
+    const isCurrent = () => transaction.isCurrent() && shouldContinue();
     let directory = providedDirectory;
     if (!directory && !explicit && typeof window.showDirectoryPicker === 'function') {
         const binding: ProjectDirectoryBinding | null = await loadProjectDirectoryBinding('last');
@@ -71,7 +77,7 @@ export async function loadProject({
         }
     }
     try {
-        if (!(await transaction.prepare()) || !transaction.activate()) {
+        if (!(await transaction.prepare()) || !transaction.activate() || !shouldContinue()) {
             return false;
         }
     } catch (error) {
@@ -79,7 +85,7 @@ export async function loadProject({
         return false;
     }
 
-    const isDirectoryCurrent = () => transaction.isCurrent() && shouldProceed?.() !== false;
+    const isDirectoryCurrent = () => isCurrent() && shouldProceed?.() !== false;
     let preparedDirectoryAudio: Awaited<ReturnType<typeof importCachedAudioBuffers>> | null = null;
     try {
         if (directory) {
@@ -103,9 +109,9 @@ export async function loadProject({
         if (directory) {
             loaded = await directory.commitDocument(isDirectoryCurrent);
         } else {
-            loaded = await loadCrdtProject({ shouldCommit: transaction.isCurrent });
+            loaded = await loadCrdtProject({ shouldCommit: isCurrent });
         }
-        if (!transaction.isCurrent()) {
+        if (!isCurrent()) {
             return false;
         }
         if (!loaded) {
@@ -117,14 +123,14 @@ export async function loadProject({
             return false;
         }
     } catch (error) {
-        if (!transaction.isCurrent()) {
+        if (!isCurrent()) {
             return false;
         }
         logger.error(new Error('[loadProject] CRDT load failed; preserving persisted project', { cause: error }));
         throw error;
     }
 
-    if (!transaction.isCurrent()) {
+    if (!isCurrent()) {
         return false;
     }
 
@@ -135,9 +141,9 @@ export async function loadProject({
         (await prepareCachedAudioBuffersFromIdb({
             audioContext: getAudioContext(),
             bufferIds: referencedBufferIds,
-            shouldContinue: transaction.isCurrent,
+            shouldContinue: isCurrent,
         }));
-    if (!preparedBuffers || !transaction.isCurrent()) {
+    if (!preparedBuffers || !isCurrent()) {
         if (preparedBuffers && 'cancel' in preparedBuffers) {
             preparedBuffers.cancel();
         }
@@ -214,16 +220,16 @@ export async function loadProject({
         // in flight looks to it like a discarded write and it throws. That is
         // not a load failure — `loadProject` rejecting here reaches
         // `useAppInitialization` uncaught and toasts a boot failure over a
-        // recent-project load that succeeded. `transaction.isCurrent()` is the
+        // recent-project load that succeeded. `isCurrent()` is the
         // signal that a different project owns the projection now, so a
         // superseded load ends exactly as the guard below would end it, and a
         // genuine failure of this project's own migration still propagates.
-        if (transaction.isCurrent()) {
+        if (isCurrent()) {
             throw error;
         }
         return false;
     }
-    if (!transaction.isCurrent()) {
+    if (!isCurrent()) {
         return false;
     }
 
@@ -239,16 +245,16 @@ export async function loadProject({
     }
 
     const durableOwnerId = getDurableProjectOwnerId();
-    if (!durableOwnerId || !transaction.isCurrent()) {
+    if (!durableOwnerId || !isCurrent()) {
         return false;
     }
     await projectIdentityTransitionDependencies.resumeDurableAssetOwnerHandoffsAfterProjectLoad?.({
         ownerId: durableOwnerId,
-        isCurrent: () => transaction.isCurrent() && getDurableProjectOwnerId() === durableOwnerId,
+        isCurrent: () => isCurrent() && getDurableProjectOwnerId() === durableOwnerId,
         signal: transaction.signal,
     });
 
-    if (!transaction.isCurrent()) {
+    if (!isCurrent()) {
         return false;
     }
 
@@ -264,15 +270,15 @@ export async function loadProject({
         const migration = readLegacyChordTrackMigration();
         if (migration) {
             await executeAppAction(migration.action, {
-                shouldExecute: transaction.isCurrent,
+                shouldExecute: isCurrent,
                 skipMacroRecording: true,
                 skipUndo: true,
             });
-            if (!transaction.isCurrent()) {
+            if (!isCurrent()) {
                 return false;
             }
             await persistCrdtProject();
-            if (!transaction.isCurrent()) {
+            if (!isCurrent()) {
                 return false;
             }
             migration.remove();

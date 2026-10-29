@@ -76,7 +76,17 @@ vi.mock('../../stores/projectStore', () => ({
 
 vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => 'document-identity'),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureDurableDocumentWitness: mocks.captureDurableDocumentWitness,
     captureProjectRevision: mocks.captureProjectRevision,
     createCrdtDoc: vi.fn(),
@@ -109,6 +119,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     clearUndoHistory: vi.fn(() => {
         throw new Error('Unexpected clearUndoHistory in this fixture');
     }),
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: mocks.executeAppAction,
@@ -120,7 +132,11 @@ vi.mock('#/modules/Command/useCases', () => ({
     pushUndoEntry: vi.fn(),
     syncActionReplayMetadata: vi.fn(),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async () => ({
+    isExactMidiClipDataActionSnapshot: (
+        await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
+    ).isExactMidiClipDataActionSnapshot,
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     projectDrumPreviewCandidateNotes: vi.fn(() => {
         throw new Error('Unexpected projectDrumPreviewCandidateNotes in this fixture');
     }),

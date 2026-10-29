@@ -234,6 +234,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
 
             expect(mocks.executeAppAction).not.toHaveBeenCalled();
             expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([second.inverseAction, first.inverseAction], {
+                undoEntryIds: ['g-second', 'g-first'],
                 skipUndo: true,
                 skipMacroRecording: true,
                 source: 'manual',
@@ -795,6 +796,7 @@ describe('undo/redo replay conflict handling (audit CC-6)', () => {
             // reported and retained whole; the step lands on the flagged single
             // entry behind it.
             expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([first.action, second.action], {
+                undoEntryIds: ['g-first', 'g-second'],
                 skipUndo: true,
                 skipMacroRecording: true,
                 source: 'manual',
