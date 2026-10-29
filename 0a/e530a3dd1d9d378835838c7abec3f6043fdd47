@@ -1,0 +1,20 @@
+crates/daw-dsp/benches/wasm/renderTable.d.mts
+  h_beb54bf43b47b7 6
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  h_beb54bf43b47b7 149-187,306-307
+crates/daw-dsp/benches/wasm/run.mjs
+  h_beb54bf43b47b7 51,108,981,984,994-996,1012,1021,1065,1152-1157,1174
+scripts/__tests__/quantumCostTableRendering.spec.ts
+  h_beb54bf43b47b7 6,10,44-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0ae530a3dd1d9d378835838c7abec3f6043fdd47",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
