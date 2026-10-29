@@ -22,16 +22,24 @@ function record(value: unknown): Record<string, unknown> | undefined {
 
 /** Full canonical equality without serializing every scalar on the common dense JSON path. */
 export function transientStateMatches(actual: unknown, expected: unknown): boolean {
-    if (actual === expected) { return true; }
+    if (actual === expected) {
+        return true;
+    }
     if (Array.isArray(actual) || Array.isArray(expected)) {
-        if (!Array.isArray(actual) || !Array.isArray(expected)) { return false; }
-        if (actual.length !== expected.length) { return canonicalJson(actual) === canonicalJson(expected); }
+        if (!Array.isArray(actual) || !Array.isArray(expected)) {
+            return false;
+        }
+        if (actual.length !== expected.length) {
+            return canonicalJson(actual) === canonicalJson(expected);
+        }
         for (let index = 0; index < actual.length; index++) {
             // Canonical serialization distinguishes holes from explicit undefined.
             if (actual[index] === undefined || expected[index] === undefined) {
                 return canonicalJson(actual) === canonicalJson(expected);
             }
-            if (!transientStateMatches(actual[index], expected[index])) { return false; }
+            if (!transientStateMatches(actual[index], expected[index])) {
+                return false;
+            }
         }
         return true;
     }
@@ -39,10 +47,13 @@ export function transientStateMatches(actual: unknown, expected: unknown): boole
     const expectedRecord = record(expected);
     if (actualRecord && expectedRecord) {
         const keys = Object.keys(actualRecord);
-        if (keys.length !== Object.keys(expectedRecord).length) { return false; }
+        if (keys.length !== Object.keys(expectedRecord).length) {
+            return false;
+        }
         for (const key of keys) {
-            if (!Object.hasOwn(expectedRecord, key) || !transientStateMatches(actualRecord[key], expectedRecord[key]))
-                { return false; }
+            if (!Object.hasOwn(expectedRecord, key) || !transientStateMatches(actualRecord[key], expectedRecord[key])) {
+                return false;
+            }
         }
         return true;
     }
@@ -124,7 +135,9 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
                     return refusal();
                 },
                 afterPublication: () => {
-                    if (storageCommitStarted === undefined) { return; }
+                    if (storageCommitStarted === undefined) {
+                        return;
+                    }
                     performance.measure('elastic-transient-storage-commit-task', {
                         start: storageCommitStarted,
                         end: performance.now(),

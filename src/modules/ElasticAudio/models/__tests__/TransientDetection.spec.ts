@@ -58,18 +58,24 @@ function fixture(kind: string): Float32Array {
     for (let index = 0; index < samples.length; index++) {
         seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
         const noise = (seed / 0x100000000) * 2 - 1;
-        if (kind === 'dense') { samples[index] = noise * 0.4 + Math.sin(index * 0.371) * 0.3; }
-        if (kind === 'quiet') { samples[index] = noise * 1e-37; }
+        if (kind === 'dense') {
+            samples[index] = noise * 0.4 + Math.sin(index * 0.371) * 0.3;
+        }
+        if (kind === 'quiet') {
+            samples[index] = noise * 1e-37;
+        }
         if (
             kind === 'boundaries' &&
             [0, 1, 511, 512, 2047, 2048, 2559, 2560, 4095, 4096, 8192, 16383, 16384, 32767].includes(index)
-        )
-            { samples[index] = noise; }
+        ) {
+            samples[index] = noise;
+        }
         if (
             kind === 'gaps' &&
             ((index >= 3072 && index < 4096) || (index >= 12288 && index < 13312) || (index >= 24576 && index < 25600))
-        )
-            { samples[index] = noise * (index < 16384 ? 0.8 : 0.08); }
+        ) {
+            samples[index] = noise * (index < 16384 ? 0.8 : 0.08);
+        }
     }
     return samples;
 }

@@ -23,15 +23,23 @@ export function cancelTransientDetection(clipId: string): void {
 
 /** Align visible commits; a hidden page can finish without its suspended animation frame. */
 function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
-    if (signal.aborted) { return Promise.resolve(false); }
-    if (document.hidden) { return Promise.resolve(true); }
+    if (signal.aborted) {
+        return Promise.resolve(false);
+    }
+    if (document.hidden) {
+        return Promise.resolve(true);
+    }
     return new Promise((resolve) => {
         let frame: number | undefined;
         let settled = false;
         const finish = (admitted: boolean): void => {
-            if (settled) { return; }
+            if (settled) {
+                return;
+            }
             settled = true;
-            if (frame !== undefined) { cancelAnimationFrame(frame); }
+            if (frame !== undefined) {
+                cancelAnimationFrame(frame);
+            }
             signal.removeEventListener('abort', abort);
             document.removeEventListener('visibilitychange', visibilityChanged);
             window.removeEventListener('pagehide', abort);
@@ -39,7 +47,9 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
         };
         const abort = (): void => finish(false);
         const visibilityChanged = (): void => {
-            if (document.hidden) { finish(true); }
+            if (document.hidden) {
+                finish(true);
+            }
         };
         signal.addEventListener('abort', abort, { once: true });
         document.addEventListener('visibilitychange', visibilityChanged);
@@ -68,7 +78,9 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
     const editorClip = elasticAudioStore.value?.openClipId;
     const preference = preferencesStore.value?.elasticTransientSensitivity;
     const unsubscribePreference = preferencesStore.subscribe((state) => {
-        if (state?.elasticTransientSensitivity !== preference) { abort(); }
+        if (state?.elasticTransientSensitivity !== preference) {
+            abort();
+        }
     });
     let editorChanged = false;
     const unsubscribe = elasticAudioStore.subscribe((state) => {

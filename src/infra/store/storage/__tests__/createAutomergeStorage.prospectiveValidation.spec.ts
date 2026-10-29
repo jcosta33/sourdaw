@@ -68,12 +68,18 @@ function install(withCapability = true): void {
         input.validateDocument(candidate);
         order.push('before');
         input.beforePublication();
-        if (beforePublicationFailure) { throw new Error('before publication failed'); }
-        if (document !== original) { throw new Error('authority changed'); }
+        if (beforePublicationFailure) {
+            throw new Error('before publication failed');
+        }
+        if (document !== original) {
+            throw new Error('authority changed');
+        }
         document = candidate;
         input.onPublished();
         order.push('published');
-        if (throwAfterPublication) { throw new Error('observer after publication'); }
+        if (throwAfterPublication) {
+            throw new Error('observer after publication');
+        }
     });
     const port: Port = {
         getDoc: () => document,
@@ -155,19 +161,45 @@ describe('validated storage capability', () => {
         const value = storage();
         corrupt = (draft) => {
             const row = draft.state.markers[0];
-            if (!row) { throw new Error('Expected reconciled marker'); }
-            if (kind === 'extra state key') { draft.state.unexpected = true; }
-            if (kind === 'extra marker key') { row.unexpected = true; }
-            if (kind === 'missing marker key') { Reflect.deleteProperty(row, 'confidence'); }
-            if (kind === 'id') { row.id = 'changed'; }
-            if (kind === 'originalBeat') { row.originalBeat = 0.10000000000000002; }
-            if (kind === 'warpedBeat') { row.warpedBeat = 0.35000000000000003; }
-            if (kind === 'origin') { row.origin = 'user'; }
-            if (kind === 'confidence') { row.confidence = 0.74; }
-            if (kind === 'locked') { row.locked = false; }
-            if (kind === 'reorder') { draft.state.markers = [structuredClone(expected.markers[1]!), structuredClone(expected.markers[0]!)]; }
-            if (kind === 'extra row') { draft.state.markers.push({ ...marker, id: 'extra' }); }
-            if (kind === 'missing row') { draft.state.markers.pop(); }
+            if (!row) {
+                throw new Error('Expected reconciled marker');
+            }
+            if (kind === 'extra state key') {
+                draft.state.unexpected = true;
+            }
+            if (kind === 'extra marker key') {
+                row.unexpected = true;
+            }
+            if (kind === 'missing marker key') {
+                Reflect.deleteProperty(row, 'confidence');
+            }
+            if (kind === 'id') {
+                row.id = 'changed';
+            }
+            if (kind === 'originalBeat') {
+                row.originalBeat = 0.10000000000000002;
+            }
+            if (kind === 'warpedBeat') {
+                row.warpedBeat = 0.35000000000000003;
+            }
+            if (kind === 'origin') {
+                row.origin = 'user';
+            }
+            if (kind === 'confidence') {
+                row.confidence = 0.74;
+            }
+            if (kind === 'locked') {
+                row.locked = false;
+            }
+            if (kind === 'reorder') {
+                draft.state.markers = [structuredClone(expected.markers[1]!), structuredClone(expected.markers[0]!)];
+            }
+            if (kind === 'extra row') {
+                draft.state.markers.push({ ...marker, id: 'extra' });
+            }
+            if (kind === 'missing row') {
+                draft.state.markers.pop();
+            }
         };
         const transaction = runWithAutomergeStorageTransaction(undefined, () => value.set(expected));
         transaction.validateDocument('root', (candidate) =>

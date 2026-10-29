@@ -205,10 +205,14 @@ async function copyProductChannels(source: CachedSource, isCurrent: () => boolea
     const chunkFrames = 262_144;
     for (let channel = 0; channel < source.identity.channelCount; channel++) {
         const samples = source.buffer.getChannelData(channel);
-        if (samples.length !== source.identity.frameCount) { return null; }
+        if (samples.length !== source.identity.frameCount) {
+            return null;
+        }
         const copy = new Float32Array(samples.length);
         for (let start = 0; start < samples.length; start += chunkFrames) {
-            if (!isCurrent()) { return null; }
+            if (!isCurrent()) {
+                return null;
+            }
             const taskStarted = performance.now();
             copy.set(samples.subarray(start, start + chunkFrames), start);
             performance.measure('elastic-transient-copy-task', { start: taskStarted, end: performance.now() });
@@ -258,7 +262,9 @@ async function readSource(input: ReadInput, channelSampleCeiling: number): Promi
             }
             return { status: 'failed', code };
         }
-        if (!isCurrent()) { return { status: 'failed', code: 'stale-source' }; }
+        if (!isCurrent()) {
+            return { status: 'failed', code: 'stale-source' };
+        }
         input.onAnalysisStarted();
         const result = await runTransientOnsetWorker({
             channels,

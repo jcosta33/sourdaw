@@ -78,9 +78,7 @@ describe('prospective transient-state equality preserves the canonical oracle', 
         { ...state, unexpected: true },
         ...Object.keys(marker).map((key) => ({
             ...state,
-            markers: [
-                { ...marker, [key]: changedMarkerField(key) },
-            ],
+            markers: [{ ...marker, [key]: changedMarkerField(key) }],
         })),
         { ...state, markers: [{ ...marker, unexpected: true }] },
         { ...state, markers: [{ ...marker, confidence: undefined }] },
@@ -112,9 +110,7 @@ describe('prospective transient-state equality preserves the canonical oracle', 
         (key) => {
             const changed = {
                 ...state,
-                markers: [
-                    { ...marker, [key]: changedMarkerField(key) },
-                ],
+                markers: [{ ...marker, [key]: changedMarkerField(key) }],
             };
             expect(transientStateMatches(changed, state)).toBe(false);
         }

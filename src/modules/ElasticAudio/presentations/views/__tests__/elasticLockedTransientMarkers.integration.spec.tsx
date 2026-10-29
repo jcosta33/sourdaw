@@ -118,8 +118,11 @@ function holdAnimationFrames() {
     let handle = 0;
     vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
         const waiter = waiters.shift();
-        if (waiter) { waiter(callback); }
-        else { callbacks.push(callback); }
+        if (waiter) {
+            waiter(callback);
+        } else {
+            callbacks.push(callback);
+        }
         return ++handle;
     });
     const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
@@ -154,8 +157,9 @@ describe('locked transient markers through the real Elastic editor', () => {
                 transfer: channels.map((channel) => channel.buffer as ArrayBuffer),
             });
             const mono = new Float32Array(copied[0]!.length);
-            for (let i = 0; i < mono.length; i++)
-                { mono[i] = copied.reduce((sum, channel) => sum + channel[i]!, 0) / copied.length; }
+            for (let i = 0; i < mono.length; i++) {
+                mono[i] = copied.reduce((sum, channel) => sum + channel[i]!, 0) / copied.length;
+            }
             return { status: 'complete', hits: detectTransients(mono, sampleRate, sensitivity) };
         });
         const track = createTrack({ id: 'audio-track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
@@ -449,7 +453,9 @@ describe('locked transient markers through the real Elastic editor', () => {
         await execution;
         const after = structuredClone(rawWarpState());
         expect(after.markers).toHaveLength(3);
-        for (const marker of before.markers) { expect(after.markers).toContainEqual(marker); }
+        for (const marker of before.markers) {
+            expect(after.markers).toContainEqual(marker);
+        }
         expect(getWarpState(CLIP_ID)).toEqual(after);
         await undo();
         expect(rawWarpState()).toEqual(before);
@@ -464,9 +470,12 @@ describe('locked transient markers through the real Elastic editor', () => {
             supplyBuffer(burstSamples());
             const frames = holdAnimationFrames();
             const controller = new AbortController();
-            if (reason === 'editor disposal') { render(<ElasticEditorPanel />); }
-            if (reason === 'preference reset')
-                { preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 }); }
+            if (reason === 'editor disposal') {
+                render(<ElasticEditorPanel />);
+            }
+            if (reason === 'preference reset') {
+                preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+            }
             const before = JSON.stringify(getCrdtDoc('root'));
             const execution = executeAppAction(
                 { type: 'detectTransients', payload: { clipId: CLIP_ID } },
@@ -475,13 +484,24 @@ describe('locked transient markers through the real Elastic editor', () => {
             const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
             const staleFrame = await frames.next();
             let successor: Promise<void> | undefined;
-            if (reason === 'abort') { controller.abort(); }
-            if (reason === 'editor disposal') { cleanup(); }
-            if (reason === 'editor switch') { openElasticEditor('other-clip'); }
-            if (reason === 'preference reset') { resetPreferences(); }
-            if (reason === 'pagehide') { window.dispatchEvent(new Event('pagehide')); }
-            if (reason === 'successor')
-                { successor = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } }); }
+            if (reason === 'abort') {
+                controller.abort();
+            }
+            if (reason === 'editor disposal') {
+                cleanup();
+            }
+            if (reason === 'editor switch') {
+                openElasticEditor('other-clip');
+            }
+            if (reason === 'preference reset') {
+                resetPreferences();
+            }
+            if (reason === 'pagehide') {
+                window.dispatchEvent(new Event('pagehide'));
+            }
+            if (reason === 'successor') {
+                successor = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            }
             await rejected;
             expect(frames.cancelled).toHaveBeenCalled();
             expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
@@ -527,7 +547,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
             const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
             const frame = await frames.next();
-            if (source === 'tempo') { transportStore.set({ ...defaultTransportState, tempo: 128 }); }
+            if (source === 'tempo') {
+                transportStore.set({ ...defaultTransportState, tempo: 128 });
+            }
             if (source === 'buffer' || source === 'clip') {
                 trackStore.update((state) => {
                     if (!state) {
@@ -549,7 +571,9 @@ describe('locked transient markers through the real Elastic editor', () => {
                     };
                 });
             }
-            if (source === 'root') { createCrdtDoc('root'); }
+            if (source === 'root') {
+                createCrdtDoc('root');
+            }
             flushAutomergeStorageWrites();
             const changed = JSON.stringify(getCrdtDoc('root'));
             frame(performance.now());
@@ -816,7 +840,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             registerCrdtStorageRuntime();
             const port = observePort.mock.calls.at(-1)?.[0];
             observePort.mockRestore();
-            if (!port?.mutateDocValidated) { throw new Error('Production runtime must provide prospective validation'); }
+            if (!port?.mutateDocValidated) {
+                throw new Error('Production runtime must provide prospective validation');
+            }
             const mutateValidated = port.mutateDocValidated;
             configureAutomergeStoragePort({
                 ...port,
@@ -825,16 +851,22 @@ describe('locked transient markers through the real Elastic editor', () => {
                         ...input,
                         validateDocument: (candidate) => {
                             input.validateDocument(candidate);
-                            if (mode === 'reject') { throw new Error('materialized candidate refused'); }
+                            if (mode === 'reject') {
+                                throw new Error('materialized candidate refused');
+                            }
                             const current = getCrdtDoc<{ tracks: { tracks: ReturnType<typeof createTrack>[] } }>(
                                 'root'
                             );
-                            if (!current) { throw new Error('Expected live project'); }
+                            if (!current) {
+                                throw new Error('Expected live project');
+                            }
                             replaceCrdtDocInLineage({
                                 id: 'root',
                                 doc: change(clone(current), (draft) => {
                                     const track = draft.tracks.tracks[0];
-                                    if (!track) { throw new Error('Expected audio track'); }
+                                    if (!track) {
+                                        throw new Error('Expected audio track');
+                                    }
                                     track.name = 'Reentrant rename';
                                 }),
                             });
@@ -862,7 +894,9 @@ describe('locked transient markers through the real Elastic editor', () => {
         flushAutomergeStorageWrites();
         const retained = structuredClone(getWarpState(CLIP_ID).markers);
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
-        for (const marker of retained) { expect(rawWarpState().markers).toContainEqual(marker); }
+        for (const marker of retained) {
+            expect(rawWarpState().markers).toContainEqual(marker);
+        }
         expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
     });
 });
