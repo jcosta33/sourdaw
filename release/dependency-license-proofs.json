@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b",
+        "cargoLockSha256": "eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -4371,7 +4371,7 @@
             },
             {
                 "name": "rustls",
-                "version": "0.23.45",
+                "version": "0.23.46",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR ISC OR MIT",
                 "legalFiles": [

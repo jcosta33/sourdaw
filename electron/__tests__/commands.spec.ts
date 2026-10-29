@@ -58,6 +58,8 @@ const addonMethods = (): string[] =>
  * entirely, and publishes nothing here to plumb.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'with_runtime_scope_v1',
+    'runtime_scope_info_v1',
     'apply_plugin_gui_scale',
     'new',
     'notify_plugin_window_closed',

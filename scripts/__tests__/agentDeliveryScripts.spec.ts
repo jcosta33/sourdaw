@@ -1155,6 +1155,7 @@ describe('package scripts and gitignore', () => {
             'scripts/removeLane.ts',
             'scripts/resourceGuard.ts',
             'scripts/resourceGuardDisk.ts',
+            'scripts/resourceGuardLsofDiagnostics.ts',
             'scripts/resourceGuardProofReasons.ts',
             'scripts/resourceGuardStorage.ts',
             'scripts/reviewBundleLocator.ts',

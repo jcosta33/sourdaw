@@ -187,6 +187,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/removeLane.ts',
         'scripts/resourceGuard.ts',
         'scripts/resourceGuardDisk.ts',
+        'scripts/resourceGuardLsofDiagnostics.ts',
         'scripts/resourceGuardProofReasons.ts',
         'scripts/resourceGuardStorage.ts',
         'scripts/reviewBundleLocator.ts',
