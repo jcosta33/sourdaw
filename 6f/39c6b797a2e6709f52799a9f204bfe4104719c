@@ -1,0 +1,16 @@
+src/modules/Command/useCases/__tests__/midiRowCoordinateReplay.integration.spec.ts
+  h_beb54bf43b47b7 558-559
+src/modules/Transport/useCases/transportControls/__tests__/schedulerTerminalRealQueue.integration.spec.ts
+  h_beb54bf43b47b7 475-480
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f39c6b797a2e6709f52799a9f204bfe4104719c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
