@@ -2,14 +2,14 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { ORIGINAL_NODE, ORIGINAL_PLAYWRIGHT } from './identity.ts';
 import { assertCompletedHistory, historicalCases, parseHistoryEvents } from './history.ts';
+import { ORIGINAL_NODE, ORIGINAL_PLAYWRIGHT } from './identity.ts';
 import { requiredText, writeReceipt } from './journal.ts';
 import { materializeHarness } from './materialize.ts';
 import { runPhase } from './processPhase.ts';
+import { qualifyExecution } from './qualification.ts';
 import { diagnosticArguments, diagnosticEnvironment, qualifyOriginalHistory } from './qualify.ts';
 import { assertOriginalSource, gitRead, installedPlaywrightVersion } from './sourceBinding.ts';
-import { qualifyExecution } from './qualification.ts';
 import { admitHostedAttempt, claimExecution } from './trigger.ts';
 
 export async function runHostedDiagnostic(harness: string, root: string, output: string): Promise<number> {

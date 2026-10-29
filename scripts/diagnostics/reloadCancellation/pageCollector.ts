@@ -153,6 +153,46 @@ async function sampleBrowserProcesses(browser: Browser, record: RecordObservatio
     return () => clearInterval(timer);
 }
 
+function observeConsole(
+    page: Page,
+    profile: 'full' | 'transport',
+    counts: Record<string, number>,
+    errors: string[],
+    record: RecordObservation
+): void {
+    page.on('console', (message) => {
+        const text = message.text();
+        if (text.startsWith('[reload-cancellation-app-fulfilled] ')) {
+            counts['App-fulfilled'] = (counts['App-fulfilled'] ?? 0) + 1;
+        }
+        if (text.startsWith('[reload-cancellation-observation] ')) {
+            try {
+                const parsed: unknown = JSON.parse(text.slice('[reload-cancellation-observation] '.length));
+                const event = recordOf(parsed, 'DOM observation');
+                if (event.kind === 'document-init' || event.kind === 'public-dom-transition') {
+                    counts[event.kind] = (counts[event.kind] ?? 0) + 1;
+                    if (
+                        event.kind === 'public-dom-transition' &&
+                        recordOf(event.data, 'DOM facts').controlsVisible === true
+                    ) {
+                        counts['public-transport-visible'] = (counts['public-transport-visible'] ?? 0) + 1;
+                    }
+                }
+            } catch (error) {
+                errors.push(String(error));
+            }
+        }
+        if (profile === 'full') {
+            record('console', { type: message.type(), text, location: message.location() });
+        } else if (text.startsWith('[vite]') || text.includes('Failed to fetch dynamically imported module')) {
+            record('console', {
+                type: message.type(),
+                text: text.slice(0, 512).replaceAll(/\?[^\s]+/g, '?<redacted>'),
+            });
+        }
+    });
+}
+
 export async function attachPassiveObservations(
     page: Page,
     context: BrowserContext,
@@ -206,37 +246,7 @@ export async function attachPassiveObservations(
         await session.send('Debugger.enable');
     }
     await session.send('Page.setLifecycleEventsEnabled', { enabled: true });
-    page.on('console', (message) => {
-        const text = message.text();
-        if (text.startsWith('[reload-cancellation-app-fulfilled] ')) {
-            counts['App-fulfilled'] = (counts['App-fulfilled'] ?? 0) + 1;
-        }
-        if (text.startsWith('[reload-cancellation-observation] ')) {
-            try {
-                const parsed: unknown = JSON.parse(text.slice('[reload-cancellation-observation] '.length));
-                const event = recordOf(parsed, 'DOM observation');
-                if (event.kind === 'document-init' || event.kind === 'public-dom-transition') {
-                    counts[event.kind] = (counts[event.kind] ?? 0) + 1;
-                    if (
-                        event.kind === 'public-dom-transition' &&
-                        recordOf(event.data, 'DOM facts').controlsVisible === true
-                    ) {
-                        counts['public-transport-visible'] = (counts['public-transport-visible'] ?? 0) + 1;
-                    }
-                }
-            } catch (error) {
-                errors.push(String(error));
-            }
-        }
-        if (profile === 'full') {
-            record('console', { type: message.type(), text, location: message.location() });
-        } else if (text.startsWith('[vite]') || text.includes('Failed to fetch dynamically imported module')) {
-            record('console', {
-                type: message.type(),
-                text: text.slice(0, 512).replaceAll(/\?[^\s]+/g, '?<redacted>'),
-            });
-        }
-    });
+    observeConsole(page, profile, counts, errors, record);
     page.on('pageerror', (error) =>
         record('page-error', {
             message:

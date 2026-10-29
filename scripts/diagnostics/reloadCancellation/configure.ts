@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 
-import type { PlaywrightTestConfig } from '@playwright/test';
-
 import { ORIGINAL_SPEC, PRIVATE_DIRECTORY, WRAPPER } from './identity.ts';
+
+import type { PlaywrightTestConfig } from '@playwright/test';
 
 export function configureDiagnostic(
     original: PlaywrightTestConfig,

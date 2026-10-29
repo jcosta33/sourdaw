@@ -5,15 +5,7 @@ import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 
 import { createJournal, writeReceipt } from './journal.ts';
 
-export async function runPhase(
-    root: string,
-    args: string[],
-    env: NodeJS.ProcessEnv,
-    output: string,
-    timeoutMs: number
-): Promise<number> {
-    mkdirSync(output, { recursive: true });
-    const record = createJournal(resolve(output, 'process.jsonl'));
+function recordCommand(root: string, args: string[], env: NodeJS.ProcessEnv, output: string, timeoutMs: number): void {
     writeReceipt(resolve(output, 'command.json'), {
         command: 'pnpm',
         args,
@@ -26,6 +18,18 @@ export async function runPhase(
             phase: env.RELOAD_DIAGNOSTIC_PHASE,
         },
     });
+}
+
+export async function runPhase(
+    root: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    output: string,
+    timeoutMs: number
+): Promise<number> {
+    mkdirSync(output, { recursive: true });
+    const record = createJournal(resolve(output, 'process.jsonl'));
+    recordCommand(root, args, env, output, timeoutMs);
     return new Promise((_resolve) => {
         const child = spawn('pnpm', args, { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         record('spawn', { pid: child.pid, argv: child.spawnargs });

@@ -2,7 +2,6 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import type { PlaywrightTestConfig } from '@playwright/test';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { configureDiagnostic } from '../diagnostics/reloadCancellation/configure';
@@ -26,6 +25,8 @@ import { reportedFile } from '../diagnostics/reloadCancellation/listReporter';
 import { assertOnlyWrapperOwnsOriginalCase } from '../diagnostics/reloadCancellation/qualify';
 import { assertPinnedSourceIdentity } from '../diagnostics/reloadCancellation/sourceBinding';
 import { admitHostedAttempt, claimExecution } from '../diagnostics/reloadCancellation/trigger';
+
+import type { PlaywrightTestConfig } from '@playwright/test';
 
 const scratch: string[] = [];
 afterEach(() => {

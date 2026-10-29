@@ -1,23 +1,25 @@
-import { describe, expect, it } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createServer, get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
 
+import { describe, expect, it } from 'vitest';
+
+import { transportEvent } from '../diagnostics/reloadCancellation/pageCollector';
 import {
     assertSuccessfulAppCoverage,
     assertTelemetryHealth,
     telemetryOutcomes,
 } from '../diagnostics/reloadCancellation/telemetry';
+import { installViteTransportProbe, monitorTransportError } from '../diagnostics/reloadCancellation/viteTransportProbe';
 import {
     createWebSocketObserver,
     summarizeWebSocket,
     WEBSOCKET_EVENTS,
 } from '../diagnostics/reloadCancellation/websocket';
-import { installViteTransportProbe, monitorTransportError } from '../diagnostics/reloadCancellation/viteTransportProbe';
-import { transportEvent } from '../diagnostics/reloadCancellation/pageCollector';
+
+import type { AddressInfo } from 'node:net';
 
 const requestId = 'fixture-socket';
 const privateValue = ['synthetic', 'private', 'fixture'].join('-');

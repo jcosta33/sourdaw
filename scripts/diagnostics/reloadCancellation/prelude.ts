@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
-
 import { assertRuntimePrefix, historicalCases, parseHistoryEvents } from './history.ts';
+import { writeReceipt } from './journal.ts';
 import { attachPassiveObservations } from './pageCollector.ts';
 import { phaseOutput } from './paths.ts';
-import { writeReceipt } from './journal.ts';
+
+import type { Browser, BrowserContext, Page, TestInfo } from '@playwright/test';
 
 export function originalHistory(): ReturnType<typeof historicalCases> {
     const data: unknown = JSON.parse(readFileSync(new URL('./original-history.json', import.meta.url), 'utf8'));

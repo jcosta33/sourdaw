@@ -3,8 +3,8 @@ import { appendFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { createJournal, recordOf, requiredText } from './journal.ts';
 import { PRIVATE_DIRECTORY } from './identity.ts';
+import { createJournal, recordOf, requiredText } from './journal.ts';
 import { sampleLinuxResources } from './linuxResources.ts';
 import { phaseOutput } from './paths.ts';
 

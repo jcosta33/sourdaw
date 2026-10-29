@@ -21,6 +21,38 @@ function json(path: string): unknown {
     return value;
 }
 
+function observeTargetSteps(output: string): Check {
+    return observe(() => {
+        const steps = readFileSync(resolve(output, 'run/target-steps.jsonl'), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => recordOf(JSON.parse(line) as unknown, 'step event'));
+        return {
+            originalMoveStepObserved: steps.some(
+                (event) => recordOf(event.data, 'step').title === 'Move one MIDI clip through an actual timeline drag'
+            ),
+            events: steps,
+        };
+    });
+}
+
+function observeTargetAdmission(output: string): Check {
+    return observe(() => {
+        const admission = recordOf(json(resolve(output, 'run/target-admission.json')), 'target admission');
+        if (
+            admission.originalHistoryAdmitted !== true ||
+            admission.instrumentationReady !== true ||
+            admission.receiptMode !== 'transport' ||
+            admission.coverage !== 'from-target-beforeEach-only' ||
+            admission.workerIndex !== 1 ||
+            admission.retry !== 0
+        ) {
+            throw new Error('Target was not admitted with original history and ready instrumentation');
+        }
+        return admission;
+    });
+}
+
 export function qualifyExecution(root: string, output: string, childCode: number): Record<string, Check> {
     const frozen: unknown = JSON.parse(readFileSync(new URL('./original-history.json', import.meta.url), 'utf8'));
     const expected = historicalCases(frozen);
@@ -48,20 +80,7 @@ export function qualifyExecution(root: string, output: string, childCode: number
             assertRuntimeOrder(expected, runtime());
             return { originalCasesCompletedInOrder: expected.length };
         }),
-        targetAdmission: observe(() => {
-            const admission = recordOf(json(resolve(output, 'run/target-admission.json')), 'target admission');
-            if (
-                admission.originalHistoryAdmitted !== true ||
-                admission.instrumentationReady !== true ||
-                admission.receiptMode !== 'transport' ||
-                admission.coverage !== 'from-target-beforeEach-only' ||
-                admission.workerIndex !== 1 ||
-                admission.retry !== 0
-            ) {
-                throw new Error('Target was not admitted with original history and ready instrumentation');
-            }
-            return admission;
-        }),
+        targetAdmission: observeTargetAdmission(output),
         collector: observe(() => {
             const health = json(resolve(output, 'run/collector-health.json'));
             assertTelemetryHealth(health);
@@ -128,18 +147,6 @@ export function qualifyExecution(root: string, output: string, childCode: number
             }
             return matches;
         }),
-        targetSteps: observe(() => {
-            const steps = readFileSync(resolve(output, 'run/target-steps.jsonl'), 'utf8')
-                .split('\n')
-                .filter(Boolean)
-                .map((line) => recordOf(JSON.parse(line) as unknown, 'step event'));
-            return {
-                originalMoveStepObserved: steps.some(
-                    (event) =>
-                        recordOf(event.data, 'step').title === 'Move one MIDI clip through an actual timeline drag'
-                ),
-                events: steps,
-            };
-        }),
+        targetSteps: observeTargetSteps(output),
     };
 }

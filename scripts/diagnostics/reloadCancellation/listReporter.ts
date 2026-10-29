@@ -1,11 +1,11 @@
 import { basename, resolve } from 'node:path';
 
+import { ORIGINAL_SPEC, WRAPPER } from './identity.ts';
+import { createJournal, writeReceipt } from './journal.ts';
+import { phaseOutput } from './paths.ts';
+
 import type { FullConfig } from '@playwright/test';
 import type { FullResult, Reporter, Suite, TestCase, TestError, TestResult, TestStep } from '@playwright/test/reporter';
-
-import { createJournal, writeReceipt } from './journal.ts';
-import { ORIGINAL_SPEC, WRAPPER } from './identity.ts';
-import { phaseOutput } from './paths.ts';
 
 export function reportedFile(path: string): string {
     const file = basename(path);

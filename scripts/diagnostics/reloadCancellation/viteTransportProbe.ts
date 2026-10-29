@@ -1,15 +1,46 @@
 import { subscribe, unsubscribe } from 'node:diagnostics_channel';
 import { errorMonitor, type EventEmitter } from 'node:events';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
-import type { IncomingMessage, ServerResponse } from 'node:http';
-import type { Socket } from 'node:net';
 
 import { createJournal } from './journal.ts';
+
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { Socket } from 'node:net';
 
 type HttpMessage = { request: IncomingMessage; response: ServerResponse; socket: Socket };
 
 export function monitorTransportError(emitter: EventEmitter, observe: (error: NodeJS.ErrnoException) => void): void {
     emitter.once(errorMonitor, observe);
+}
+
+function startHeartbeat(record: (kind: string, data: unknown) => void): () => void {
+    const delay = monitorEventLoopDelay({ resolution: 20 });
+    delay.enable();
+    let previousClock = performance.now();
+    let previousCpu = process.cpuUsage();
+    let previousUtilization = performance.eventLoopUtilization();
+    const timer = setInterval(() => {
+        const now = performance.now();
+        const cpu = process.cpuUsage(previousCpu);
+        const utilization = performance.eventLoopUtilization(previousUtilization);
+        record('vite-heartbeat', {
+            pid: process.pid,
+            intervalMs: now - previousClock,
+            eventLoopDelayMaxMs: delay.max / 1e6,
+            cpuUserMicros: cpu.user,
+            cpuSystemMicros: cpu.system,
+            eventLoopUtilization: utilization.utilization,
+        });
+        previousClock = now;
+        previousCpu = process.cpuUsage();
+        previousUtilization = performance.eventLoopUtilization();
+        delay.reset();
+    }, 2_000);
+    timer.unref();
+    return () => {
+        clearInterval(timer);
+        delay.disable();
+    };
 }
 
 export function installViteTransportProbe(output: string): () => void {
@@ -84,33 +115,10 @@ export function installViteTransportProbe(output: string): () => void {
     subscribe('net.server.socket', socket);
     subscribe('http.server.request.start', requestStart);
     subscribe('http.server.response.finish', responseFinish);
-    const delay = monitorEventLoopDelay({ resolution: 20 });
-    delay.enable();
-    let previousClock = performance.now();
-    let previousCpu = process.cpuUsage();
-    let previousUtilization = performance.eventLoopUtilization();
-    const timer = setInterval(() => {
-        const now = performance.now();
-        const cpu = process.cpuUsage(previousCpu);
-        const utilization = performance.eventLoopUtilization(previousUtilization);
-        record('vite-heartbeat', {
-            pid: process.pid,
-            intervalMs: now - previousClock,
-            eventLoopDelayMaxMs: delay.max / 1e6,
-            cpuUserMicros: cpu.user,
-            cpuSystemMicros: cpu.system,
-            eventLoopUtilization: utilization.utilization,
-        });
-        previousClock = now;
-        previousCpu = process.cpuUsage();
-        previousUtilization = performance.eventLoopUtilization();
-        delay.reset();
-    }, 2_000);
-    timer.unref();
+    const stopHeartbeat = startHeartbeat(record);
     record('vite-probe-ready', { pid: process.pid, argv0: process.argv[1] });
     return () => {
-        clearInterval(timer);
-        delay.disable();
+        stopHeartbeat();
         unsubscribe('net.server.socket', socket);
         unsubscribe('http.server.request.start', requestStart);
         unsubscribe('http.server.response.finish', responseFinish);
