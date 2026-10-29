@@ -1,0 +1,19 @@
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_3168504f6ce387::t_f7ea3b93ba4534 397,399-400
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f123fec7d2933132461f1373e15647f73834a621",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
