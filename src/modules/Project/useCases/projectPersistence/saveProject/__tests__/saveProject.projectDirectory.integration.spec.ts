@@ -186,7 +186,9 @@ async function createSavedDirectoryProject() {
         },
     });
     arrangement.setArrangementEventBus({ emit: () => Promise.resolve() });
-    command.registerProductionCommandHandlers([arrangement.getArrangementHandlers()]);
+    const { getProductionCommandHandlerMaps } = await import('#/app/getProductionCommandHandlerMaps');
+    const handlerMaps = getProductionCommandHandlerMaps({ canMutateBranchMetadata: () => true });
+    command.registerProductionCommandHandlers(handlerMaps);
     command.setActionHistoryMetadataPort({
         record: crdt.recordActionHistoryEntry,
         recordBatch: crdt.recordActionHistoryEntries,
@@ -242,6 +244,7 @@ async function createSavedDirectoryProject() {
         projectId,
         directory,
         runProjectLoadTransaction,
+        handlerMaps,
     };
 }
 
@@ -827,11 +830,11 @@ describe('project directory save and cold Recent open', () => {
         runtime.command.stampSessionUndoWitness();
         const mirror = sessionStorage.getItem('sourdaw-undo-session');
         expect(mirror).toBeTruthy();
-        runtime.command.registerProductionCommandHandlers([runtime.arrangement.getArrangementHandlers()]);
+        runtime.command.registerProductionCommandHandlers(runtime.handlerMaps);
         await runtime.audio.clearRuntimeCachedAudioBuffers();
         runtime.crdt.resetCrdtProjectAuthority('Boot');
         runtime.helpers.resetModuleStoresToDefault();
-        runtime.command.registerProductionCommandHandlers([runtime.arrangement.getArrangementHandlers()], {
+        runtime.command.registerProductionCommandHandlers(runtime.handlerMaps, {
             deferSessionRestore: true,
         });
         expect(runtime.command.captureUndoHistory().past).toEqual([]);
