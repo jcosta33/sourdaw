@@ -1,0 +1,29 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_3168504f6ce387::t_a790c0f81a314f 3-18
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_a790c0f81a314f 3-16
+scripts/resourceGuardStorage.ts
+  s_3168504f6ce387::t_cc5d63d730b77b 131,134
+  s_3168504f6ce387::t_84020cf821f899 91-103,107-108,128-130,132-133,135-136,152,165,196,203
+scripts/resourceGuard.ts
+  s_3168504f6ce387::t_84020cf821f899 1211,1215,1217,1221-1225,1734-1735,1737,1743
+scripts/__tests__/resourceGuardStorage.spec.ts
+  s_3168504f6ce387::t_8a986e07ea3954 4536-4548,4550-4562,4564,4576-4578,4588-4602,5119-5122,5128-5131
+  s_3168504f6ce387::t_cc5d63d730b77b 413,2819,2828,2853,2954,2968-2971,4549,4563,4565-4575,4579-4587,4603-4604,4654-4655,5123,5132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f18eb5ccd2d191e4083b77597731e9392503843b",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
