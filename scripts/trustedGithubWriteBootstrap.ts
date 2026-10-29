@@ -172,6 +172,7 @@ export const trustedDependencyGraphs: Record<TrustedGithubWriteCommand, readonly
         'scripts/trustedGithubWriteBootstrap.ts',
         'scripts/deliverPullRequest.ts',
         'scripts/canonicalRecord.ts',
+        'scripts/cleanupLaneBookkeeping.ts',
         'scripts/cleanupLanes.ts',
         'scripts/deliveryLockLegacyIncidents.ts',
         'scripts/deliveryRemoteInspection.ts',

@@ -141,6 +141,7 @@ export const GOVERNANCE_TRANSITION_PATHS = [
     'scripts/acceptReview.ts',
     'scripts/canonicalRecord.ts',
     'scripts/claimTrackerIssue.ts',
+    'scripts/cleanupLaneBookkeeping.ts',
     'scripts/cleanupLanes.ts',
     'scripts/confirmReviewRepairs.ts',
     'scripts/deliverPullRequest.ts',
