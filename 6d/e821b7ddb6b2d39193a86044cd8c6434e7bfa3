@@ -1,0 +1,20 @@
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  h_beb54bf43b47b7 163-168
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  h_beb54bf43b47b7 1-67
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  h_beb54bf43b47b7 226-255
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  h_beb54bf43b47b7 410-412
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6de821b7ddb6b2d39193a86044cd8c6434e7bfa3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
