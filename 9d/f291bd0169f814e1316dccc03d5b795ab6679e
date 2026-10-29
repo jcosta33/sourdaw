@@ -1,0 +1,196 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 908-923
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 250-255
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 3-18
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-16,1281-1286,1987-1992,2007-2021
+Cargo.lock
+  h_beb54bf43b47b7 2257,2259
+crates/daw-dsp/src/toaster/transient.rs
+  h_beb54bf43b47b7 71-130
+crates/daw-dsp/tests/device_process_rt.rs
+  h_beb54bf43b47b7 2162-2178
+crates/daw-dsp/tests/transient_shaper_effect.rs
+  h_beb54bf43b47b7 1-143
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 311,332,353,392,419,1152,1192-1194,1408-1423,1437,1469,1500,1538,1564,1617,4527-4561,4623-4625,6618-6624,8367-8377,8483-8485,9608,9624-9625,28313-28502
+crates/proof-chamber/src/lib.rs
+  h_beb54bf43b47b7 510-530
+crates/proof-chamber/tests/automation_ordinals.rs
+  h_beb54bf43b47b7 1-305
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 32,129-156
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  h_beb54bf43b47b7 12,403-405,528-530,557-600,604-608,611,613-614,616,620-639,686-688,704-706,1305-1451
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 2312-2320,2425-2432,2494-2498,2887-2896,3896-3900,17360-17492
+crates/sourdaw-native/src/host/mod.rs
+  h_beb54bf43b47b7 10
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  h_beb54bf43b47b7 779-781,789-801
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  h_beb54bf43b47b7 208-224,227-230
+crates/sourdaw-native/src/host/runtime_scope.rs
+  h_beb54bf43b47b7 1-315
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 61-62
+electron/__tests__/nativeRuntimeScope.spec.ts
+  h_beb54bf43b47b7 1-159
+electron/__tests__/runtimeScope.spec.ts
+  h_beb54bf43b47b7 1-69
+electron/__tests__/runtimeScopeStartup.spec.ts
+  h_beb54bf43b47b7 1-231
+electron/__tests__/scanWorker.spec.ts
+  h_beb54bf43b47b7 14-17,21,264-346
+electron/createScopedNativeAddon.ts
+  h_beb54bf43b47b7 1-73
+electron/main.ts
+  h_beb54bf43b47b7 47,82,107-110,680,740-744,747-749,817,887-893
+electron/native.ts
+  h_beb54bf43b47b7 67-68
+electron/runtimeScope.ts
+  h_beb54bf43b47b7 1-74
+electron/scanWorker.ts
+  h_beb54bf43b47b7 33,35,171,186-195
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9,191,14651,16338,20012
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1184,1228-1286,1350-1394
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 2397-2452,2589-2591
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5-36,80-138,202-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,15-18,20-21,26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,4374
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,403,1345,1347,1351,1761,1769
+scripts/__tests__/resourceGuardStorage.spec.ts
+  h_beb54bf43b47b7 413,2819,2828,2853,2954,2968-2971,4536-4604,4654-4655,5119-5123,5128-5132
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 1211,1215,1217,1221-1225,1734-1735,1737,1743
+scripts/resourceGuardLsofDiagnostics.ts
+  h_beb54bf43b47b7 1-23
+scripts/resourceGuardStorage.ts
+  h_beb54bf43b47b7 21,95-96,116-119,135,148,179,186
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  h_beb54bf43b47b7 254-255
+src/app/nativeBuiltinParameterNames.ts
+  h_beb54bf43b47b7 50
+src/app/nativeModAssignments.ts
+  h_beb54bf43b47b7 53
+src/app/nativeSampleBanks.ts
+  h_beb54bf43b47b7 55
+src/app/prepareOfflineDeviceSetup.ts
+  h_beb54bf43b47b7 204
+src/app/projectNativeDeviceState.ts
+  h_beb54bf43b47b7 146
+src/modules/Arrangement/models/DeviceParameter.ts
+  h_beb54bf43b47b7 21,186
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptor.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptorGuidance.ts
+  h_beb54bf43b47b7 1-42
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  h_beb54bf43b47b7 292-295,523-526,565,574-581
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 184,202,239-243,605-608,701-744,746-748
+src/modules/Arrangement/models/PluginDescriptors/__tests__/transientShaperDescriptor.spec.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  h_beb54bf43b47b7 405-445
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 81-82
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  h_beb54bf43b47b7 31-47,132-135
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 1-207
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  h_beb54bf43b47b7 3-29,138-173
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 1-299
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 41,2003-2084,2086
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  h_beb54bf43b47b7 27-47
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  h_beb54bf43b47b7 17,337-346
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_beb54bf43b47b7 10,30-31,49,51-52,60,62-69,113,125,298,304-306,343-357
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  h_beb54bf43b47b7 26-27
+src/modules/AudioEngine/services/__tests__/dawDspTransientShaper.spec.ts
+  h_beb54bf43b47b7 1-33
+src/modules/AudioEngine/services/__tests__/proofChamberAutomationOrdinals.spec.ts
+  h_beb54bf43b47b7 1-344
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  h_beb54bf43b47b7 3-10,12-26,237-364,374
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 1-136
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  h_beb54bf43b47b7 149-151
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  h_beb54bf43b47b7 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_beb54bf43b47b7 1135-1163
+src/modules/AudioEngine/useCases/livePlayback/__tests__/transientShaperCarrierAdmission.spec.ts
+  h_beb54bf43b47b7 1-137
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_beb54bf43b47b7 630-649
+src/modules/AudioEngine/useCases/offlineRender/__tests__/transientShaperOfflineAdmission.spec.ts
+  h_beb54bf43b47b7 1-70
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1184,1228-1286,1350-1394
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 2574-2629,2766-2768
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 29,507-510
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 50,82-85,487-491
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-774
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_beb54bf43b47b7 110-138
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  h_beb54bf43b47b7 11,37-38,60-75
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterParam.ts
+  h_beb54bf43b47b7 1-7
+src/modules/Fermenter/useCases/fermenterParamBridge/fermenterParamBatcher.ts
+  h_beb54bf43b47b7 1-5
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  h_beb54bf43b47b7 5,44-48
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 67,71-76
+src/modules/Fermenter/useCases/selectFermenterFilterChoice.ts
+  h_beb54bf43b47b7 1-82
+src/utils/nativeDspDeviceTypes.ts
+  h_beb54bf43b47b7 45,74
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 29
+tests/e2e/transientShaperEffect.spec.ts
+  h_beb54bf43b47b7 1-1044
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9df291bd0169f814e1316dccc03d5b795ab6679e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
