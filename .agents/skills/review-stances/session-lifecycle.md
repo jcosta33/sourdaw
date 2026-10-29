@@ -210,6 +210,22 @@ read each caller and name what stands in for the deleted correction there. A cal
 is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
 the callers.
 
+### Crumbs waveform work must retain its actual root and device incarnation
+
+The sampler continuation introduced by `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+could publish after its device or root was replaced; PR #5041's per-ID decode sequence did
+not establish lifetime authority (#5780). No introducing public PR or historical private
+review prompt/tier is established.
+
+Hold telemetry and peaks through the actual app-injected owner reader. Replace an identical-ID
+root and remove/restore the same device object while its preceding view is still present.
+Observe every committed owner transition before coalescing reconciliation, so absence/type/
+owner/duplicate ABA cannot revive an old token. Do not start a newer load or replace its sample
+leaf before the refusal assertion: those guards would hide a missing lifetime fence. Keep real
+ordinary parameter writes and fresh successor loads as controls. Remove synchronous owner
+refresh and require the unchanged ABA case to fail. This proves display authority, not native
+sample selection or audible last-drop ordering.
+
 ### 2026-09-19 — the acquisition cache keyed by nothing (escaped via PR #4394, fixed in #4423)
 
 PR #4394 let two tracks record from different audio devices, but the input-monitoring session stayed
