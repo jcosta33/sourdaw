@@ -1,0 +1,30 @@
+src/infra/store/storage/applyCanonicalStorageSlotMutation.ts
+  s_59e31a5c6f3e31::t_198af38bab6b7f 1-31
+src/modules/CrdtDocument/workers/prospectiveMutationWorker.ts
+  s_59e31a5c6f3e31::t_198af38bab6b7f 1-18
+src/modules/CrdtDocument/repositories/prospectiveMutationWorkerClient.ts
+  s_59e31a5c6f3e31::t_198af38bab6b7f 1-68
+  s_59e31a5c6f3e31::t_c4e6a5f5ea2fe4 69-71
+src/modules/CrdtDocument/models/ProspectiveMutationWorkerProtocol.ts
+  s_59e31a5c6f3e31::t_198af38bab6b7f 1-75
+  s_59e31a5c6f3e31::t_a02a7550688335 76-78
+src/modules/CrdtDocument/workers/prospectiveMutationWorkerRuntime.ts
+  s_59e31a5c6f3e31::t_198af38bab6b7f 1-24
+  s_59e31a5c6f3e31::t_cfce63f30a2173 25-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "11bb52b7fe6fce6d6569e1cd735057cb2a48cced",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
