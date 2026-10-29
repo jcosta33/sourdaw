@@ -85,6 +85,8 @@ const BASELINE_DESCRIPTOR_VERSION_PINS: Readonly<Record<string, string>> = {
     // which is part of the descriptor fingerprint.
     fermenter: 'descriptor-v1:1101b100',
     toaster: 'descriptor-v1:4badfeb2',
+    // The standalone shaper's two owner-guided gains enter the command registry together.
+    'transient-shaper': 'descriptor-v1:f506c7b5',
     // Levain records that ensembleTiming spreads fresh attacks (#4991).
     levain: 'descriptor-v1:4cd5b078',
     // Gluten, Bacteria and Grinder carry owner-authored parameter guidance
