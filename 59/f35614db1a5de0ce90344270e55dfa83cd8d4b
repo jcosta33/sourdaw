@@ -1,0 +1,14 @@
+src/modules/Automation/presentations/views/ModulationMatrix.tsx
+  h_beb54bf43b47b7 606,608-609,615,619
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59f35614db1a5de0ce90344270e55dfa83cd8d4b",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
