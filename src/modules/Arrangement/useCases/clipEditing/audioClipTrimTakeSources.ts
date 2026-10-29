@@ -4,11 +4,12 @@ import { valuesEqual } from '#/utils/structuralEquality';
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
 import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
-import { captureCompRegionSourceOperations, replayTakeLaneWriteJournal } from '../../stores/takeLaneWriteJournal';
+import { captureCompRegionSourceOperations } from '../../stores/compRegionAudioSourceDelta';
+import { replayTakeLaneWriteJournal } from '../../stores/takeLaneWriteJournal';
 import { type OptionalNumberValue, type TakeLaneWriteOperation } from '../../stores/takeLaneWriteTypes';
 import { captureResolvedAudioSourceSnapshot } from '../comping/captureResolvedAudioSourceSnapshot';
-import { resolveCompingProgramme } from '../comping/resolveCompingProgramme';
 import { captureTakeSource } from '../comping/captureTakeSource';
+import { resolveCompingProgramme } from '../comping/resolveCompingProgramme';
 import { isReKeyLaneTransition } from '../timeOperations/isReKeyLaneTransition';
 
 const writtenFields = ['sourceOffsetSeconds', 'passOriginBeat', 'passOriginSourceSeconds'] as const;
@@ -27,7 +28,7 @@ const inputFields = [
 ] as const;
 
 /** Selection, names and order belong to the live lane, not this source-only edit. */
-export function audioClipTrimTakeInputs(take: Take): Record<string, unknown> {
+function audioClipTrimTakeInputs(take: Take): Record<string, unknown> {
     return Object.fromEntries(inputFields.filter((key) => Object.hasOwn(take, key)).map((key) => [key, take[key]]));
 }
 
@@ -48,7 +49,7 @@ function capturedRegions(clip: Clip, lane: TakeLane, timeline: TempoTimeline): C
     });
 }
 
-export function captureAudioClipTrimTakeSources(
+function captureAudioClipTrimTakeSources(
     clip: Clip,
     lanes: readonly TakeLane[],
     timeline: TempoTimeline
@@ -76,7 +77,7 @@ export function captureAudioClipTrimTakeSources(
 }
 
 /** The existing transition codec plus the exact source-only before-edit law. */
-export function isAudioClipTrimTakeSources(
+function isAudioClipTrimTakeSources(
     value: unknown,
     clip: Clip,
     timeline: TempoTimeline
@@ -125,7 +126,7 @@ export function isAudioClipTrimTakeSources(
 }
 
 /** Authenticate every derivation input and complete target membership, including unchanged takes. */
-export function audioClipTrimTakeSourcesMatch(
+function audioClipTrimTakeSourcesMatch(
     lanes: readonly TakeLane[],
     clipId: string,
     transitions: readonly TakeReKeyLaneTransitionSnapshot[],
@@ -168,7 +169,7 @@ function presence(take: Take, field: (typeof writtenFields)[number]): OptionalNu
 }
 
 /** Replay only source-field operations; never re-key, recover or reorder owners. */
-export function projectAudioClipTrimTakeSources(
+function projectAudioClipTrimTakeSources(
     lanes: readonly TakeLane[],
     clipId: string,
     transitions: readonly TakeReKeyLaneTransitionSnapshot[],
@@ -213,3 +214,11 @@ export function projectAudioClipTrimTakeSources(
     const replayed = replayTakeLaneWriteJournal({ lanes: [...lanes] }, operations);
     return replayed.status === 'applied' && replayed.value ? replayed.value.lanes : null;
 }
+
+export const audioClipTrimTakeSources = {
+    inputs: audioClipTrimTakeInputs,
+    capture: captureAudioClipTrimTakeSources,
+    isValid: isAudioClipTrimTakeSources,
+    matches: audioClipTrimTakeSourcesMatch,
+    project: projectAudioClipTrimTakeSources,
+};

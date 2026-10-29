@@ -39,20 +39,19 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
-import { createTake, createTakeLane } from '../../../models/TakeLane';
-import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
-
-import { type Track } from '../../../models/Track';
-import { handleSplitClip } from '../handleSplitClip';
-import * as splitClipUseCase from '../../../useCases/clipEditing/splitClip';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { gainSeamPointId } from '../../../models/GainSeamPointId';
+import { createTake, createTakeLane } from '../../../models/TakeLane';
+import { type Track } from '../../../models/Track';
 import { readClipSatelliteEntry, serializeClipSatelliteEntries } from '../../../stores/clipSatelliteState';
 import { removeEnvelope, setAllEnvelopes, setEnvelope } from '../../../stores/gainEnvelopeStore';
+import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { setWarpState, warpStates } from '../../../stores/warpStates';
+import * as splitClipUseCase from '../../../useCases/clipEditing/splitClip';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
+import { handleSplitClip } from '../handleSplitClip';
 
 const noActionHistoryMetadataPort = {
     record: () => [],

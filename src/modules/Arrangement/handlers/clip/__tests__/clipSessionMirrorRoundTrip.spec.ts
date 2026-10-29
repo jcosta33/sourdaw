@@ -94,8 +94,8 @@ import { handleRestoreAudioClipStartTrim } from '../handleRestoreAudioClipStartT
 import { handleRestoreClipMoves } from '../handleRestoreClipMoves';
 import { handleRestoreClipSplitState } from '../handleRestoreClipSplitState';
 import { handleRestoreDrawnClip } from '../handleRestoreDrawnClip';
-import { isRestoreClipSessionPayload, isRestoreClipSplitSessionPayload } from '../validateClipEditSessionEntries';
 import { handleTrimClipStart } from '../handleTrimClipStart';
+import { isRestoreClipSessionPayload, isRestoreClipSplitSessionPayload } from '../validateClipEditSessionEntries';
 
 import legacyAudioSplitUndo5812 from './fixtures/legacyAudioSplitUndo5812.json';
 
@@ -7549,6 +7549,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                     };
                     const expected = lane.takes.map((take) => {
                         const media = resolveTakeMedia(take, clip, timeline);
+                        if (!media) {
+                            throw new Error('Expected the captured take source to resolve');
+                        }
                         return {
                             earliestBeat: media.earliestBeat,
                             sourceStartBeat: media.sourceStartBeat,
@@ -7576,6 +7579,9 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                         expect(
                             takeLaneStore.value?.lanes[0]?.takes.map((take) => {
                                 const media = resolveTakeMedia(take, restoredClip, timeline);
+                                if (!media) {
+                                    throw new Error('Expected the restored take source to resolve');
+                                }
                                 return {
                                     earliestBeat: media.earliestBeat,
                                     sourceStartBeat: media.sourceStartBeat,

@@ -4,11 +4,12 @@ import {
     type AppAction,
     type CommandSourceProof,
     type HandlerMaterializationContext,
+    type HandlerValidationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
-import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 import { valuesEqual } from '#/utils/structuralEquality';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
 
 import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
@@ -92,6 +93,32 @@ function prepareAction(action: SplitClipAction, context?: HandlerMaterialization
     return plan;
 }
 
+function capturePreparedSplitSource(
+    action: SplitClipAction,
+    plan: ReturnType<typeof preparedClipSplits.get>,
+    pending: PendingSplitDescription | undefined,
+    context: HandlerValidationContext | undefined
+) {
+    const clock = preparedSourceClocks.get(action);
+    const audio = plan?.previous.leftClip.type === 'audio';
+    let source: ReturnType<typeof captureClipSplitSource> = null;
+    if (
+        audio &&
+        clock &&
+        preparedSourceRoots.get(action) === captureProjectRootIdentity() &&
+        pending?.splitSourceProof
+    ) {
+        source = captureClipSplitSource(
+            plan,
+            clock,
+            context?.undoEntryId,
+            pending.splitSourceProof,
+            context?.actions.slice(0, context.actionIndex) ?? []
+        );
+    }
+    return source;
+}
+
 export const handleSplitClip = createHandler<'splitClip'>({
     validateSessionEntry: (entry) => {
         if (!isSplitClipSessionEntry(entry)) {
@@ -142,23 +169,8 @@ export const handleSplitClip = createHandler<'splitClip'>({
     execute: (action, context) => {
         const plan = preparedClipSplits.get(action);
         const pending = pendingDescriptions.get(action);
-        const clock = preparedSourceClocks.get(action);
         const audio = plan?.previous.leftClip.type === 'audio';
-        let source: ReturnType<typeof captureClipSplitSource> = null;
-        if (
-            audio &&
-            clock &&
-            preparedSourceRoots.get(action) === captureProjectRootIdentity() &&
-            pending?.splitSourceProof
-        ) {
-            source = captureClipSplitSource(
-                plan,
-                clock,
-                context?.undoEntryId,
-                pending.splitSourceProof,
-                context?.actions.slice(0, context.actionIndex) ?? []
-            );
-        }
+        const source = capturePreparedSplitSource(action, plan, pending, context);
         if (audio && !source) {
             return { status: 'conflict' };
         }

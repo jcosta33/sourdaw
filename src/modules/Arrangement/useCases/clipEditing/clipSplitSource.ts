@@ -5,7 +5,7 @@ import {
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
 
-export const CLIP_SPLIT_SOURCE_KIND = 'clipSplitSource';
+const CLIP_SPLIT_SOURCE_KIND = 'clipSplitSource';
 
 const sourceFields = [
     'id',
@@ -32,11 +32,11 @@ const sourceFields = [
     'isLinkedInstance',
 ] as const;
 
-export function clipSplitSourceFields(clip: ClipStateSnapshot | Readonly<Record<string, unknown>>) {
+function clipSplitSourceFields(clip: ClipStateSnapshot | Readonly<Record<string, unknown>>) {
     return Object.fromEntries(sourceFields.filter((key) => clip[key] !== undefined).map((key) => [key, clip[key]]));
 }
 
-export function clipSplitTakeSourceFields(
+function clipSplitTakeSourceFields(
     take: Readonly<Record<string, unknown>> | TakeReKeyLaneTransitionSnapshot['takesBefore'][number]
 ) {
     const fields = [
@@ -56,7 +56,7 @@ export function clipSplitTakeSourceFields(
 }
 
 /** JSON drops unset optionals and the sign of zero. Selection and later insertion witnesses are not source authority. */
-export function clipSplitSourceJson(value: unknown): unknown {
+function clipSplitSourceJson(value: unknown): unknown {
     if (typeof value === 'number' && Object.is(value, -0)) {
         return 0;
     }
@@ -73,7 +73,7 @@ export function clipSplitSourceJson(value: unknown): unknown {
     return value;
 }
 
-export function clipSplitSourceProjection(
+function clipSplitSourceProjection(
     undoEntryId: string,
     whole: ClipSplitActionSnapshot,
     split: ClipSplitActionSnapshot,
@@ -105,7 +105,7 @@ export function clipSplitSourceProjection(
     });
 }
 
-export function clipSplitSourceMatches(
+function clipSplitSourceMatches(
     undoEntryId: string | undefined,
     whole: ClipSplitActionSnapshot,
     split: ClipSplitActionSnapshot,
@@ -121,3 +121,12 @@ export function clipSplitSourceMatches(
         )
     );
 }
+
+export const clipSplitSource = {
+    kind: CLIP_SPLIT_SOURCE_KIND,
+    fields: clipSplitSourceFields,
+    takeFields: clipSplitTakeSourceFields,
+    json: clipSplitSourceJson,
+    projection: clipSplitSourceProjection,
+    matches: clipSplitSourceMatches,
+};

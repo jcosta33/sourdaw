@@ -115,7 +115,9 @@ describe('handleSlipClipContent', () => {
     });
 
     it('records the actual MIDI owner capture and passes reciprocal data on its real inverse', () => {
-        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [{ id: 'cm', type: 'midi' }] }] });
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 't1', clips: [ClipDummy.create({ id: 'cm', trackId: 't1', type: 'midi' })] }],
+        });
         const action = {
             type: 'slipClipContent' as const,
             payload: { clipId: 'cm', clipType: 'midi' as const, offset: -1 },

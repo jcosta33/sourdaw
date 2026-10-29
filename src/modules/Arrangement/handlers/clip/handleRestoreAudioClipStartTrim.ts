@@ -1,9 +1,9 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { projectAudioClipTrimTakeSources } from '../../useCases/clipEditing/audioClipTrimTakeSources';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
+import { audioClipTrimTakeSources } from '../../useCases/clipEditing/audioClipTrimTakeSources';
 import { updateClip } from '../../useCases/updateClip';
 
 export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipStartTrim'>({
@@ -44,7 +44,7 @@ export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipSt
             return { status: 'conflict' };
         }
         if (capture.takeSourceTransitions !== undefined) {
-            const lanes = projectAudioClipTrimTakeSources(
+            const lanes = audioClipTrimTakeSources.project(
                 takeLaneStore.value?.lanes ?? [],
                 capture.clipId,
                 capture.takeSourceTransitions,

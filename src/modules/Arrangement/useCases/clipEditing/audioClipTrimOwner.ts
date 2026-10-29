@@ -13,8 +13,8 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { decodeExactTakeLaneSnapshots, takeLaneStore } from '../../stores/takeLaneStore';
 import { trackStore } from '../../stores/trackStore';
 
-import { audioClipTrimTakeSourcesMatch } from './audioClipTrimTakeSources';
 import { audioClipStartTrimState } from './audioClipStartTrimState';
+import { audioClipTrimTakeSources } from './audioClipTrimTakeSources';
 
 type Root = Readonly<Record<string, unknown>>;
 
@@ -100,7 +100,7 @@ function takeSourcesMatch(
         return true;
     }
     const raw = rawTakeSources(root);
-    return raw !== null && audioClipTrimTakeSourcesMatch(raw.lanes, clipId, transitions, direction);
+    return raw !== null && audioClipTrimTakeSources.matches(raw.lanes, clipId, transitions, direction);
 }
 
 function audioClipTrimOwnerMatches(
@@ -128,7 +128,7 @@ function audioClipTrimOwnerMatches(
         rawClockMatches(root, clock) &&
         takeSourcesMatch(root, expected.id, transitions, direction) &&
         (transitions === undefined ||
-            audioClipTrimTakeSourcesMatch(takeLaneStore.value?.lanes ?? [], expected.id, transitions, direction))
+            audioClipTrimTakeSources.matches(takeLaneStore.value?.lanes ?? [], expected.id, transitions, direction))
     );
 }
 

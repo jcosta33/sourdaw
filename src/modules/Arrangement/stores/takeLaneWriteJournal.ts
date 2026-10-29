@@ -3,9 +3,7 @@ import {
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { type TempoAudioSourcePresenceSnapshot } from '#/utils/handlerContract';
-
-import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
+import { type Take, type TakeLane } from '../models/TakeLane';
 
 import {
     captureBaseGapAudioSources,
@@ -18,6 +16,7 @@ import {
     compSelectionMatchesSources,
     type CompAudioSourceAuthorization,
 } from './compAudioSourcePromotions';
+import { captureCompRegionSourceOperations } from './compRegionAudioSourceDelta';
 import {
     type OptionalStringValue,
     type OptionalNumberValue,
@@ -148,45 +147,6 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
                 field,
                 expected: beforeValue,
                 replacement: nextValue,
-            });
-        }
-    }
-    return operations;
-}
-
-function captureRegionSourcePresence(region: CompRegion): TempoAudioSourcePresenceSnapshot {
-    if (region.audioSource === undefined) {
-        return { present: false };
-    }
-    return { present: true, value: cloneValue(region.audioSource) };
-}
-
-export function captureCompRegionSourceOperations(
-    laneId: string,
-    before: readonly CompRegion[],
-    next: readonly CompRegion[]
-): TakeLaneWriteOperation[] | null {
-    const geometry = (regions: readonly CompRegion[]) => regions.map(({ audioSource: _source, ...row }) => row);
-    if (!valuesEqual(geometry(before), geometry(next))) {
-        return null;
-    }
-    const operations: TakeLaneWriteOperation[] = [];
-    for (const [index, region] of before.entries()) {
-        const replacement = next[index];
-        if (!replacement) {
-            return null;
-        }
-        const expected = captureRegionSourcePresence(region);
-        const source = captureRegionSourcePresence(replacement);
-        if (!valuesEqual(expected, source)) {
-            operations.push({
-                kind: 'comp-region-audio-source',
-                laneId,
-                takeId: region.takeId,
-                startBeat: region.startBeat,
-                endBeat: region.endBeat,
-                expected,
-                replacement: source,
             });
         }
     }

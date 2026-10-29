@@ -36,6 +36,42 @@ function requiresAudioSourceTrim(clip: Clip, restoredAnchor: number | null | und
     );
 }
 
+function canTrimClipStart(clipId: string, newStartBeat: number, restoreAnchorBeat: number | null | undefined): boolean {
+    try {
+        const state = getTrackState();
+        if (state) {
+            const target = findClipById({ clipId, tracks: state.tracks });
+            if (target && newStartBeat >= target.clip.endBeat) {
+                return false;
+            }
+            if (
+                target &&
+                requiresAudioSourceTrim(target.clip, restoreAnchorBeat) &&
+                !prepareAudioClipStartTrim(target.clip, newStartBeat)
+            ) {
+                return false;
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return true;
+}
+
+function trimAudioSource(context: Clip, newStartBeat: number, restoreAnchorBeat: number | null | undefined): Clip {
+    const trimmed = prepareAudioClipStartTrim(context, newStartBeat);
+    if (!trimmed || restoreAnchorBeat === undefined) {
+        return trimmed ?? context;
+    }
+    if (restoreAnchorBeat === null) {
+        delete trimmed.loopOriginBeat;
+    } else {
+        trimmed.loopOriginBeat = restoreAnchorBeat;
+    }
+    return trimmed;
+}
+
 /**
  * Trims a clip's start. `anchorBeat` is the restore leg's exact-anchor form
  * (#5198): a recorded inverse carries the pre-action anchor state so BOTH
@@ -77,22 +113,7 @@ export function trimClipStart(
             ? undefined
             : restoredMidiOffsetBeats;
 
-    try {
-        const state = getTrackState();
-        if (state) {
-            const target = findClipById({ clipId, tracks: state.tracks });
-            if (target && newStartBeat >= target.clip.endBeat) {
-                return false;
-            }
-            if (
-                target &&
-                requiresAudioSourceTrim(target.clip, restoreAnchorBeat) &&
-                !prepareAudioClipStartTrim(target.clip, newStartBeat)
-            ) {
-                return false;
-            }
-        }
-    } catch {
+    if (!canTrimClipStart(clipId, newStartBeat, restoreAnchorBeat)) {
         return false;
     }
 
@@ -109,16 +130,7 @@ export function trimClipStart(
     try {
         const didWrite = updateClip(clipId, (context) => {
             if (requiresAudioSourceTrim(context, restoreAnchorBeat)) {
-                const trimmed = prepareAudioClipStartTrim(context, newStartBeat);
-                if (!trimmed || restoreAnchorBeat === undefined) {
-                    return trimmed ?? context;
-                }
-                if (restoreAnchorBeat === null) {
-                    delete trimmed.loopOriginBeat;
-                } else {
-                    trimmed.loopOriginBeat = restoreAnchorBeat;
-                }
-                return trimmed;
+                return trimAudioSource(context, newStartBeat, restoreAnchorBeat);
             }
             if (newStartBeat < context.endBeat) {
                 const startBeat = Math.max(0, newStartBeat);

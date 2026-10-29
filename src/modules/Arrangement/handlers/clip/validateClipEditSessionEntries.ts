@@ -11,7 +11,7 @@ import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { isExactClipSnapshot as isClipSnapshot } from '../../stores/isExactClipSnapshot';
 import { decodeExactTakeLaneSnapshots } from '../../stores/takeLaneStore';
-import { clipSplitSourceMatches } from '../../useCases/clipEditing/clipSplitSource';
+import { clipSplitSource } from '../../useCases/clipEditing/clipSplitSource';
 import { isClipRestoreOrderSnapshot } from '../../useCases/clipEditing/isClipRestoreOrderSnapshot';
 import { projectClipSplitSourceWindow } from '../../useCases/clipEditing/projectClipSplitSourceWindow';
 import { retiredTakeSourceMatches } from '../../useCases/comping/retiredTakeSourceMatches';
@@ -546,7 +546,7 @@ function savedSplitSourceMatches(
         return (
             whole.leftClip.type === 'audio' &&
             valuesEqual(inverse.splitSourceProof, redo.splitSourceProof) &&
-            clipSplitSourceMatches(entryId, whole, split, inverse.reKeyedTakeLanes ?? [], inverse.splitSourceProof)
+            clipSplitSource.matches(entryId, whole, split, inverse.reKeyedTakeLanes ?? [], inverse.splitSourceProof)
         );
     }
     // Shipped wholly beat-only history keeps its independent original producer

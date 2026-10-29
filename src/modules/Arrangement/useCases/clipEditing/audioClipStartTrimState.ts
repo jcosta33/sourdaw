@@ -16,7 +16,7 @@ import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 
-import { isAudioClipTrimTakeSources } from './audioClipTrimTakeSources';
+import { audioClipTrimTakeSources } from './audioClipTrimTakeSources';
 import { prepareAudioClipStartTrim } from './prepareAudioClipStartTrim';
 
 type RestoreAction = Extract<AppAction, { type: 'restoreAudioClipStartTrim' }>;
@@ -131,7 +131,7 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
     const capture: DecodedTrim = { clipId: value.clipId, ...snapshots, clock: value.clock, direction: value.direction };
     if (Object.hasOwn(value, 'takeSourceTransitions')) {
         if (
-            !isAudioClipTrimTakeSources(
+            !audioClipTrimTakeSources.isValid(
                 value.takeSourceTransitions,
                 snapshots.before,
                 audioClipTrimTimeline(value.clock)
@@ -146,6 +146,16 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
 
 function isAudioClipStartTrimPayload(value: unknown): boolean {
     return decodeAudioClipStartTrimPayload(value) !== null;
+}
+
+function sameTrimCapture(inverse: DecodedTrim, redo: DecodedTrim): boolean {
+    return (
+        valuesEqual(inverse.before, redo.before) &&
+        valuesEqual(inverse.after, redo.after) &&
+        valuesEqual(inverse.clock, redo.clock) &&
+        Object.hasOwn(inverse, 'takeSourceTransitions') === Object.hasOwn(redo, 'takeSourceTransitions') &&
+        valuesEqual(inverse.takeSourceTransitions, redo.takeSourceTransitions)
+    );
 }
 
 function isAudioClipStartTrimSessionEntry(entry: HandlerSessionActionEntry): boolean {
@@ -168,11 +178,7 @@ function isAudioClipStartTrimSessionEntry(entry: HandlerSessionActionEntry): boo
         return false;
     }
     return (
-        valuesEqual(inverse.before, redo.before) &&
-        valuesEqual(inverse.after, redo.after) &&
-        valuesEqual(inverse.clock, redo.clock) &&
-        Object.hasOwn(inverse, 'takeSourceTransitions') === Object.hasOwn(redo, 'takeSourceTransitions') &&
-        valuesEqual(inverse.takeSourceTransitions, redo.takeSourceTransitions) &&
+        sameTrimCapture(inverse, redo) &&
         entry.action.payload.clipId === inverse.clipId &&
         redo.clipId === inverse.clipId &&
         Math.max(0, entry.action.payload.newStartBeat) === inverse.after.startBeat &&
