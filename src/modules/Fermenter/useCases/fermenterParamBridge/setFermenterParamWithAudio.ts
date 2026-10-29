@@ -10,6 +10,10 @@ import { mapFermenterParamToDspParam } from './mapFermenterParamToDspParam';
 type FermenterBatchEntry = { deviceId: string; dspKey: string; key: string; value: number };
 const paramBatcher = createRafBatcher<FermenterBatchEntry>();
 
+export function cancelPendingFermenterParam(deviceId: string, key: keyof FermenterPatch): void {
+    paramBatcher.cancel(`${deviceId}:${key}`);
+}
+
 function flushParam(_compositeKey: string, entry: FermenterBatchEntry): void {
     const { updateDeviceParam, persistDeviceParam, resolveEligibleDeviceWriteTarget } = getFermenterDependencies();
     const target = resolveEligibleDeviceWriteTarget(entry.deviceId);

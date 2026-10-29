@@ -1241,6 +1241,12 @@ later, fake that host receiver-sensitively — a plain function or class method 
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
 
+### Fermenter filter chips changed state without recording Undo
+
+Filter Type originated in `c40d444ff96520cb2f718dd2a397173d72dc1b50` and Filter Model in `66b0569af54525fc983a0632ce0c12d92f83fe90`, both through the direct bridge. Neither source origin has an evidenced public PR association, and historical reviewer prompts and tiers are unknown. A handler-only test cannot observe a panel callback that never dispatches that handler.
+
+Mount the real panel with unconditional entry-point admission and the real registered Command/CRDT path. Assert raw absent-versus-explicit defaults, projected values, pressed chips, independent Model/Type history entries, live macro preservation and both Undo/Redo legs. Hold the actual snapshot wait for latest same-parameter choices and independent different-parameter choices, and vary each stale authority guard separately. Restore only the panel's direct-bridge branch on a committed head: the unchanged owning test must fail its history assertion even while the chip and document update. Controlled engine calls prove parameter-boundary behavior; they do not prove audible, native or hardware acceptance.
+
 ### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
 
 The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
