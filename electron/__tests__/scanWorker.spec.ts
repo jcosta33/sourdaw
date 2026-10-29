@@ -11,8 +11,10 @@
  * The module's `main()` is guarded by an entry check, so importing it here does
  * not load a native addon or claim `parentPort`.
  */
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readFileSync, mkdtempSync, mkdirSync, realpathSync, rmSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +29,7 @@ import {
 } from '../scanWorker.js';
 
 import type { NativeHost } from '../native.js';
+import { resolveRuntimeScope } from '../runtimeScope.js';
 
 const policySource = readFileSync(resolve('crates/sourdaw-native/src/host/plugin_scan_worker.rs'), 'utf8');
 
@@ -256,5 +259,88 @@ describe('reading a method off the addon', () => {
         expect(() => nativeCommand({ shutdown: () => undefined, ...unroutableStubs }, 'scanPlugins')).toThrow(
             /does not implement scanPlugins/u
         );
+    });
+});
+
+describe('actual scoped scan utility entry', () => {
+    it('selects the inherited root through the checked factory and keeps receiver-bound scan dispatch', async () => {
+        const home = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-scan-scope-')));
+        const root = join(home, '.sourdaw-native-runtime-scopes-v1', randomUUID());
+        mkdirSync(root, { recursive: true });
+        const scope = resolveRuntimeScope({ SOURDAW_DESKTOP_RUNTIME_SCOPE_ROOT: root });
+        if (scope === undefined) {
+            throw new Error('fixture scope missing');
+        }
+        for (const path of Object.values(scope.paths)) {
+            mkdirSync(path, { recursive: true });
+        }
+        const oldConstructor = vi.fn();
+        const scan = vi.fn();
+        class Host {
+            static withRuntimeScopeV1 = vi.fn(() => Object.create(Host.prototype));
+            constructor() {
+                oldConstructor();
+            }
+            shutdown() {
+                return undefined;
+            }
+            grantPath() {
+                return undefined;
+            }
+            beginRendererSession() {
+                return 0;
+            }
+            startDictation() {
+                return undefined;
+            }
+            stopDictation() {
+                return undefined;
+            }
+            cancelDictation() {
+                return undefined;
+            }
+            runtimeScopeInfoV1() {
+                return { ...scope?.paths, version: 1, exportStateAvailable: false };
+            }
+            scanPlugins(this: Host, ...args: unknown[]) {
+                expect(this).toBeInstanceOf(Host);
+                scan(...args);
+                return ['scanned'];
+            }
+        }
+        const on = vi.fn();
+        const postMessage = vi.fn();
+        const originalArgv = process.argv;
+        const originalPort = Object.getOwnPropertyDescriptor(process, 'parentPort');
+        vi.resetModules();
+        vi.doMock('../native.js', async (importOriginal) => ({
+            ...(await importOriginal<typeof import('../native.js')>()),
+            loadNativeAddon: () => ({ SourdawNative: Host }),
+        }));
+        vi.stubEnv('SOURDAW_DESKTOP_RUNTIME_SCOPE_ROOT', root);
+        process.argv = [originalArgv[0] ?? '', resolve('electron/scanWorker.ts')];
+        Object.defineProperty(process, 'parentPort', { configurable: true, value: { on, postMessage } });
+        try {
+            await import('../scanWorker.js');
+            expect(Host.withRuntimeScopeV1).toHaveBeenCalledExactlyOnceWith(expect.any(Function), root);
+            expect(oldConstructor).not.toHaveBeenCalled();
+            const listener: unknown = on.mock.calls[0]?.[1];
+            if (typeof listener !== 'function') {
+                throw new Error('utility did not register parentPort');
+            }
+            listener({ data: { paths: ['/fixture/plugin.clap'], retryQuarantined: true } });
+            await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ ok: true, result: ['scanned'] }));
+            expect(scan).toHaveBeenCalledExactlyOnceWith(['/fixture/plugin.clap'], true);
+        } finally {
+            process.argv = originalArgv;
+            if (originalPort === undefined) {
+                Reflect.deleteProperty(process, 'parentPort');
+            } else {
+                Object.defineProperty(process, 'parentPort', originalPort);
+            }
+            vi.unstubAllEnvs();
+            vi.doUnmock('../native.js');
+            rmSync(home, { recursive: true, force: true });
+        }
     });
 });

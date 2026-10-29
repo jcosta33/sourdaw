@@ -64,6 +64,8 @@ export type NativeHost = {
 } & Record<string, NativeCommand>;
 
 export type NativeAddon = {
+    // Runtime scope support is inspected before construction by the main-only factory.
+    // Keeping this legacy constructor contract also admits unscoped older addons.
     readonly SourdawNative: new (onEvent: NativeEventCallback) => NativeHost;
 };
 
