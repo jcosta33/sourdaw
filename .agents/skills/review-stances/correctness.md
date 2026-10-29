@@ -401,15 +401,16 @@ Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot th
 
 Merged PR #831 (`b47d1244c2791b80f581d659cf8618d576f0944b`) made `resolveModulationBinding`
 refuse stored mappings to nonautomatable parameters, but the existing Inspector still selected
-enabled mappings by target IDs and could announce a target and draw a cyan halo from nonzero
-runtime output. Blind spot: no probe compared the engine's refusal with the Inspector projection
-for the same persisted mapping; #831's public history does not establish the reviewer stance,
-prompt, or tier. Probe: seed an enabled LFO mapping directly in project state for a valid track,
+enabled mappings by target IDs and could draw a cyan halo from nonzero runtime output for that
+rejected mapping. #831's public history does not establish the reviewer stance, prompt, or tier.
+Blind spot: no probe compared the engine's refusal with the Inspector projection for the same
+persisted mapping. Probe: seed an enabled LFO mapping directly in project state for a valid track,
 device, and nonautomatable parameter, with nonzero runtime output and mapping depth; require binding
-refusal and an unchanged base parameter alongside no Inspector target announcement or halo. Keep
-an otherwise identical eligible mapping as a positive control and ordinary knob and keyboard writes
-working; removing the Inspector eligibility filter must fail its owning subscription spec. The UI
-repair remains on open PR #5379 and has not landed.
+refusal, an unchanged base parameter, and no cyan Inspector halo. Keep an otherwise identical
+eligible mapping as a positive control and ordinary knob and keyboard writes working. The pending
+UI change in open PR #5379 introduces a target announcement, so require that affordance not to
+announce the rejected mapping as well; removing its eligibility filter must fail the owning
+subscription spec. The #5379 repair has not landed.
 
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
