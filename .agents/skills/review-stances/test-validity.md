@@ -1886,8 +1886,8 @@ and separation from explicit Parallel. Revert only the constructor default: the 
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
 
-### 2026-10-29 — scanner fixture provenance escaped the reference census (PR #5846)
+### 2026-10-29 — inventory merge dropped a curated reference (PR #5851)
 
-PR #5846 (`7af886ce81628f7e25630772b267465bebdf1f6b`) added an RFC URL to a scanner fixture comment without its external-reference inventory entry. Its historical private review prompts and tiers are unknown; the missed coverage was the release census of a newly introduced source reference.
+PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
 
-When a fixture or comment introduces an external URL, verify that the release inventory records its exact file, value and owning surface. A scanner fixture assertion passing does not prove the separate reference census admits that source.
+When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
