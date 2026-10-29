@@ -5,7 +5,8 @@ function isFiniteNonNegativeNumber(value: unknown): value is number {
 /**
  * Legacy takes may omit placement. A placed pass carries its anchor and depth
  * together beside its media offset. Its anchor may precede the media origin;
- * its material depth and offset cannot be negative.
+ * its material depth and offset cannot be negative. An exclusive source end
+ * requires that complete placement and must leave material beyond its depth.
  */
 export function isValidTakePlacement(value: object): boolean {
     if ('sourceOffsetBeats' in value && !isFiniteNonNegativeNumber(value.sourceOffsetBeats)) {
@@ -14,7 +15,7 @@ export function isValidTakePlacement(value: object): boolean {
     const hasAnchor = 'passAnchorSeconds' in value;
     const hasDepth = 'passDepthSeconds' in value;
     if (!hasAnchor && !hasDepth) {
-        return true;
+        return !('passSourceEndSeconds' in value);
     }
     return (
         hasAnchor &&
@@ -22,6 +23,9 @@ export function isValidTakePlacement(value: object): boolean {
         'sourceOffsetBeats' in value &&
         typeof value.passAnchorSeconds === 'number' &&
         Number.isFinite(value.passAnchorSeconds) &&
-        isFiniteNonNegativeNumber(value.passDepthSeconds)
+        isFiniteNonNegativeNumber(value.passDepthSeconds) &&
+        (!('passSourceEndSeconds' in value) ||
+            (isFiniteNonNegativeNumber(value.passSourceEndSeconds) &&
+                value.passSourceEndSeconds > value.passDepthSeconds))
     );
 }

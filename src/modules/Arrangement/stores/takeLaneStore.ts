@@ -26,7 +26,12 @@ const TAKE_LANE_STORE_STATE_KEYS = ['lanes'] as const;
 const TAKE_LANE_REQUIRED_KEYS = ['id', 'trackId', 'takes', 'activeCompRegions'] as const;
 const TAKE_LANE_OPTIONAL_KEYS = ['automationLaneId'] as const;
 const TAKE_KEYS = ['id', 'clipId', 'name', 'startBeat', 'endBeat', 'selected'] as const;
-const TAKE_OPTIONAL_KEYS = ['sourceOffsetBeats', 'passAnchorSeconds', 'passDepthSeconds'] as const;
+const TAKE_OPTIONAL_KEYS = [
+    'sourceOffsetBeats',
+    'passAnchorSeconds',
+    'passDepthSeconds',
+    'passSourceEndSeconds',
+] as const;
 const COMP_REGION_KEYS = ['startBeat', 'endBeat', 'takeId'] as const;
 
 type HasExactKeysInput = {
@@ -108,6 +113,9 @@ function normalize_take(take: Take): Take {
     if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
         sanitized.passAnchorSeconds = take.passAnchorSeconds;
         sanitized.passDepthSeconds = take.passDepthSeconds;
+        if (take.passSourceEndSeconds !== undefined) {
+            sanitized.passSourceEndSeconds = take.passSourceEndSeconds;
+        }
     }
     return sanitized;
 }

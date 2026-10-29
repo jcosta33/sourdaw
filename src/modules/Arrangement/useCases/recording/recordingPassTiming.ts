@@ -1,0 +1,399 @@
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
+import { playheadClockRef, readSecondsAtBeat, transportStore } from '#/modules/Transport/stores';
+
+import { placeTakeOnClipMedia, type Take } from '../../models/TakeLane';
+import { liveTempoTimeline } from '../liveTempoTimeline';
+
+type RecordingEnd = { contextSeconds: number; beatAtContextSeconds: (seconds: number) => number };
+
+type PassStart =
+    { contextSeconds: number; endContextSeconds: number } | { songSeconds: number; endSongSeconds: number };
+type RecordingPassTiming = {
+    rootIdentity: string;
+    pendingNative: boolean;
+    ownedTakeIds: Set<string>;
+    originalTakeId: string | null;
+    endingClock: (() => RecordingEnd | undefined) | null;
+    recordPointBeat: number;
+    firstPassClock: (() => number | null) | undefined;
+    openPassContextSeconds: number | null;
+    openPassBeat: number;
+    previousSeamContextSeconds: number | null;
+    pendingSeam: { takeId: string; contextSeconds: number; nextStartBeat: number; cancelled: boolean } | null;
+    ending: { takeId: string | undefined; receipt: RecordingEnd; endBeat: number; endContextSeconds: number } | null;
+    nextPassStartBeat: number | null;
+    starts: Map<string, PassStart>;
+};
+
+// Capture-clock witnesses belong to a provisional recording, never project truth.
+const recordingPassTimings = new Map<string, RecordingPassTiming>();
+
+function currentRecordingPassTiming(clipId: string): RecordingPassTiming | undefined {
+    const timing = recordingPassTimings.get(clipId);
+    return timing?.rootIdentity === captureProjectRootIdentity() ? timing : undefined;
+}
+
+function beginRecordingPassTiming(
+    clipId: string,
+    recordPointBeat: number,
+    firstPassClock?: () => number | null,
+    pendingNative = false
+): void {
+    const transport = transportStore.value;
+    if (!transport) {
+        return;
+    }
+    const seconds = (beat: number): number => readSecondsAtBeat({ beat });
+    const recordPointSeconds = seconds(recordPointBeat);
+    const openPassBeat = Math.max(recordPointBeat, transport.loopStart);
+    let recordPointContextSeconds: number | null = null;
+    if (transport.isPlaying && !pendingNative) {
+        if (firstPassClock) {
+            recordPointContextSeconds = firstPassClock();
+        } else {
+            recordPointContextSeconds =
+                playheadClockRef.audioTimeSeconds + recordPointSeconds - seconds(playheadClockRef.beat);
+        }
+    }
+    recordingPassTimings.set(clipId, {
+        rootIdentity: captureProjectRootIdentity(),
+        pendingNative,
+        ownedTakeIds: new Set(),
+        originalTakeId: null,
+        endingClock: null,
+        recordPointBeat,
+        firstPassClock,
+        openPassContextSeconds: openPassBeat === recordPointBeat ? recordPointContextSeconds : null,
+        openPassBeat,
+        previousSeamContextSeconds: null,
+        pendingSeam: null,
+        ending: null,
+        nextPassStartBeat: null,
+        starts: new Map(),
+    });
+}
+
+function stageRecordingPassTiming(take: Take, passEndContextSeconds?: number, planned = false): void {
+    const timing = currentRecordingPassTiming(take.clipId);
+    if (!timing || take.sourceOffsetBeats === undefined) {
+        return;
+    }
+    if (passEndContextSeconds !== undefined) {
+        const firstStart =
+            timing.openPassContextSeconds ??
+            (timing.openPassBeat === timing.recordPointBeat ? (timing.firstPassClock?.() ?? null) : null);
+        if (firstStart === null) {
+            throw new Error('Recording pass has no rolling capture clock');
+        }
+        // A cancelled planned ending reuses the captured entry of that take.
+        const priorStart = timing.starts.get(take.id);
+        timing.starts.set(take.id, {
+            contextSeconds: priorStart && 'contextSeconds' in priorStart ? priorStart.contextSeconds : firstStart,
+            endContextSeconds: passEndContextSeconds,
+        });
+        timing.nextPassStartBeat = null;
+        if (planned) {
+            timing.pendingSeam = {
+                takeId: take.id,
+                contextSeconds: passEndContextSeconds,
+                nextStartBeat: transportStore.value?.loopStart ?? take.startBeat,
+                cancelled: false,
+            };
+        } else {
+            timing.pendingSeam = null;
+            beginNextPass(timing, passEndContextSeconds, transportStore.value?.loopStart ?? take.startBeat);
+        }
+        return;
+    }
+    // Musical-only staging freezes its conversion before the capture flush.
+    const placed = placeTakeOnClipMedia(take, {
+        recordPointBeat: timing.recordPointBeat,
+        mediaOriginSeconds: 0,
+        clipMediaOriginSeconds: 0,
+        timeline: liveTempoTimeline,
+    });
+    if (placed.passDepthSeconds !== undefined) {
+        timing.starts.set(take.id, {
+            songSeconds: placed.passDepthSeconds,
+            endSongSeconds:
+                placed.passDepthSeconds +
+                liveTempoTimeline.secondsAtBeat(placed.endBeat) -
+                liveTempoTimeline.secondsAtBeat(placed.startBeat),
+        });
+    }
+}
+
+function beginNextPass(timing: RecordingPassTiming, contextSeconds: number, beat: number): void {
+    timing.previousSeamContextSeconds = contextSeconds;
+    timing.openPassContextSeconds = contextSeconds;
+    timing.openPassBeat = beat;
+}
+
+/** A same-ID successor must never inherit an older staged pass's clock receipt. */
+function capturePlannedPassClock(take: Take): ((contextSeconds: number) => boolean) | undefined {
+    const owner = currentRecordingPassTiming(take.clipId);
+    if (!owner || !owner.ownedTakeIds.has(take.id) || take.sourceOffsetBeats === undefined) {
+        return undefined;
+    }
+    let pending = true;
+    return (contextSeconds) => {
+        if (
+            !pending ||
+            currentRecordingPassTiming(take.clipId) !== owner ||
+            !owner.ownedTakeIds.has(take.id) ||
+            owner.ending !== null
+        ) {
+            return false;
+        }
+        const firstStart =
+            owner.openPassContextSeconds ??
+            (owner.openPassBeat === owner.recordPointBeat ? (owner.firstPassClock?.() ?? null) : null);
+        if (
+            firstStart === null ||
+            !Number.isFinite(firstStart) ||
+            !Number.isFinite(contextSeconds) ||
+            contextSeconds <= firstStart
+        ) {
+            return false;
+        }
+        pending = false;
+        stageRecordingPassTiming(take, contextSeconds, true);
+        return true;
+    };
+}
+
+function recordingPassDepthSeconds(take: Take, sourceContextOriginSeconds: number, mediaOriginSeconds: number): number {
+    const start = currentRecordingPassTiming(take.clipId)?.starts.get(take.id);
+    if (!start) {
+        throw new Error('Recording pass has no captured source timing');
+    }
+    if ('contextSeconds' in start) {
+        return start.contextSeconds - sourceContextOriginSeconds;
+    }
+    return start.songSeconds - mediaOriginSeconds;
+}
+
+function recordingPassSourceEndSeconds(
+    take: Take,
+    sourceContextOriginSeconds: number,
+    mediaOriginSeconds: number
+): number {
+    const timing = currentRecordingPassTiming(take.clipId);
+    const start = timing?.starts.get(take.id);
+    if (!start) {
+        throw new Error('Recording pass has no captured source ending');
+    }
+    if ('contextSeconds' in start) {
+        return (
+            Math.min(start.endContextSeconds, timing?.ending?.endContextSeconds ?? Infinity) -
+            sourceContextOriginSeconds
+        );
+    }
+    return start.endSongSeconds - mediaOriginSeconds;
+}
+
+function observeRecordingPassEntry(
+    clipIds: readonly string[],
+    beat: number,
+    contextSeconds: number,
+    relocated: boolean
+): void {
+    const transport = transportStore.value;
+    if (!transport) {
+        return;
+    }
+    for (const clipId of clipIds) {
+        const timing = currentRecordingPassTiming(clipId);
+        if (!timing || timing.pendingNative) {
+            continue;
+        }
+        if (
+            timing.pendingSeam &&
+            !timing.pendingSeam.cancelled &&
+            contextSeconds >= timing.pendingSeam.contextSeconds
+        ) {
+            beginNextPass(timing, timing.pendingSeam.contextSeconds, timing.pendingSeam.nextStartBeat);
+            timing.pendingSeam = null;
+        }
+        // A staged pass owns its start even if its planned seam is cancelled:
+        // stageRecordingTake reuses that take's geometry when replacing it.
+        if (timing.pendingSeam) {
+            continue;
+        }
+        let openPassBeat = timing.nextPassStartBeat ?? transport.loopStart;
+        if (timing.nextPassStartBeat === null && timing.previousSeamContextSeconds === null) {
+            openPassBeat = Math.max(timing.recordPointBeat, transport.loopStart);
+        }
+        const entryMoved = openPassBeat !== timing.openPassBeat;
+        if (entryMoved) {
+            // Only the still-open pass follows an edited entry. Completed
+            // takes keep their own clocks in starts.
+            timing.openPassBeat = openPassBeat;
+            timing.openPassContextSeconds = null;
+        }
+        if (timing.openPassContextSeconds !== null || beat < openPassBeat) {
+            continue;
+        }
+        if (relocated || entryMoved) {
+            timing.openPassContextSeconds = contextSeconds;
+        } else {
+            timing.openPassContextSeconds =
+                contextSeconds + readSecondsAtBeat({ beat: openPassBeat }) - readSecondsAtBeat({ beat });
+        }
+    }
+}
+
+function cancelRecordingPassBoundary(clipId: string, contextSeconds: number): void {
+    const timing = currentRecordingPassTiming(clipId);
+    if (!timing?.pendingSeam) {
+        return;
+    }
+    if (contextSeconds >= timing.pendingSeam.contextSeconds) {
+        beginNextPass(timing, timing.pendingSeam.contextSeconds, timing.pendingSeam.nextStartBeat);
+        timing.pendingSeam = null;
+        return;
+    }
+    timing.pendingSeam.cancelled = true;
+}
+
+function relocateRecordingPassEntry(clipId: string, beat: number): void {
+    const timing = currentRecordingPassTiming(clipId);
+    if (timing) {
+        timing.nextPassStartBeat = beat;
+        timing.openPassBeat = beat;
+    }
+}
+
+/** Freeze every audio ending; only an unsounded planned pass needs its take shortened here. */
+function finishRecordingPass(clipId: string, receipt: RecordingEnd, intendedEndBeat?: number) {
+    const timing = currentRecordingPassTiming(clipId);
+    if (!timing) {
+        return undefined;
+    }
+    const nativeReceipt = timing.endingClock?.();
+    receipt = nativeReceipt ?? receipt;
+    // A capture still waiting for its first roll has no moving song clock.
+    // Its stopped PCM is retained on the hold's signed placement instead.
+    const firstPassContextSeconds = timing.openPassContextSeconds ?? timing.firstPassClock?.() ?? null;
+    if (firstPassContextSeconds === null && !nativeReceipt) {
+        return undefined;
+    }
+    const pending = timing.pendingSeam;
+    const stoppedBeat = receipt.beatAtContextSeconds(receipt.contextSeconds);
+    const endBeat = intendedEndBeat === undefined ? stoppedBeat : Math.min(intendedEndBeat, stoppedBeat);
+    const endContextSeconds =
+        receipt.contextSeconds - readSecondsAtBeat({ beat: stoppedBeat }) + readSecondsAtBeat({ beat: endBeat });
+    const unsounded = pending && (pending.cancelled || receipt.contextSeconds < pending.contextSeconds);
+    timing.ending = { takeId: unsounded ? pending.takeId : undefined, receipt, endBeat, endContextSeconds };
+    if (!pending) {
+        return undefined;
+    }
+    timing.pendingSeam = null;
+    if (!unsounded) {
+        beginNextPass(timing, pending.contextSeconds, pending.nextStartBeat);
+        return undefined;
+    }
+    return { takeId: pending.takeId, endBeat };
+}
+
+/** Excess producer drain can never extend the frozen intended ending. */
+function recordingPassCaptureEnd(clipId: string, availableEndContextSeconds: number) {
+    const ending = currentRecordingPassTiming(clipId)?.ending;
+    if (!ending) {
+        return undefined;
+    }
+    return {
+        takeId: ending.takeId,
+        endBeat: Math.min(ending.endBeat, ending.receipt.beatAtContextSeconds(availableEndContextSeconds)),
+    };
+}
+
+/** Close the provisional final lap only after its preceding seam sounded. */
+function finalRecordingPass(clipId: string, availableEndContextSeconds: number) {
+    const timing = currentRecordingPassTiming(clipId);
+    if (
+        !timing?.ending ||
+        timing.ending.takeId !== undefined ||
+        timing.previousSeamContextSeconds === null ||
+        timing.openPassContextSeconds === null
+    ) {
+        return undefined;
+    }
+    const passEndContextSeconds = Math.min(availableEndContextSeconds, timing.ending.receipt.contextSeconds);
+    const endBeat = Math.min(timing.ending.endBeat, timing.ending.receipt.beatAtContextSeconds(passEndContextSeconds));
+    if (passEndContextSeconds <= timing.openPassContextSeconds || endBeat <= timing.openPassBeat) {
+        // No incoming PCM: close its existing identity at the entry. Normal
+        // take placement retires this empty geometry before the one commit.
+        return {
+            startBeat: timing.openPassBeat,
+            endBeat: timing.openPassBeat,
+            passEndContextSeconds: timing.openPassContextSeconds,
+        };
+    }
+    return { startBeat: timing.openPassBeat, endBeat, passEndContextSeconds };
+}
+
+function retireRecordingPassTiming(clipId: string): void {
+    recordingPassTimings.delete(clipId);
+}
+
+export const recordingPassTiming = {
+    isCurrent: (clipId: string, kind: 'audio' | 'midi'): boolean => {
+        const timing = recordingPassTimings.get(clipId);
+        return timing ? timing.rootIdentity === captureProjectRootIdentity() : kind === 'midi';
+    },
+    begin: beginRecordingPassTiming,
+    stage: stageRecordingPassTiming,
+    capturePlannedClock: capturePlannedPassClock,
+    depthSeconds: recordingPassDepthSeconds,
+    sourceEndSeconds: recordingPassSourceEndSeconds,
+    retire: retireRecordingPassTiming,
+    retireIfOwner: (clipId: string, owner: RecordingPassTiming | undefined): void => {
+        if (owner && recordingPassTimings.get(clipId) === owner) {
+            recordingPassTimings.delete(clipId);
+        }
+    },
+    finish: finishRecordingPass,
+    captureEnd: recordingPassCaptureEnd,
+    finalPass: finalRecordingPass,
+    observeEntry: observeRecordingPassEntry,
+    cancelBoundary: cancelRecordingPassBoundary,
+    replacementTakeId: (clipId: string): string | undefined => {
+        const pending = currentRecordingPassTiming(clipId)?.pendingSeam;
+        return pending?.cancelled ? pending.takeId : undefined;
+    },
+    nextStartBeat: (clipId: string): number | undefined =>
+        currentRecordingPassTiming(clipId)?.nextPassStartBeat ?? undefined,
+    relocateEntry: relocateRecordingPassEntry,
+    ownTake: (clipId: string, takeId: string): void => {
+        const timing = currentRecordingPassTiming(clipId);
+        if (timing) {
+            timing.ownedTakeIds.add(takeId);
+            timing.originalTakeId ??= takeId;
+        }
+    },
+    ownedTakes: currentRecordingPassTiming,
+    setEndingClock: (clipId: string, read: () => RecordingEnd | undefined): void => {
+        const timing = currentRecordingPassTiming(clipId);
+        if (timing) {
+            timing.endingClock = read;
+        }
+    },
+    admitNative: (
+        clipId: string,
+        beat: number,
+        contextSeconds: number,
+        passEntry?: { beat: number; contextSeconds: number }
+    ): boolean => {
+        const timing = currentRecordingPassTiming(clipId);
+        if (!timing?.pendingNative) {
+            return false;
+        }
+        timing.pendingNative = false;
+        timing.recordPointBeat = beat;
+        timing.openPassBeat = passEntry?.beat ?? beat;
+        timing.openPassContextSeconds = passEntry?.contextSeconds ?? contextSeconds;
+        timing.firstPassClock = () => passEntry?.contextSeconds ?? contextSeconds;
+        return true;
+    },
+};

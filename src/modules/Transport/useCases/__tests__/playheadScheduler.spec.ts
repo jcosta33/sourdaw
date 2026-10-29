@@ -47,10 +47,7 @@ type TestRecordingClip = {
 
 type UpdateClipMock = (clipId: string, updater: (clip: TestRecordingClip) => TestRecordingClip) => void;
 
-type StartAudioRecordingMock = (
-    trackId: string,
-    onTerminal: (result: { kind: 'completed'; buffer: AudioBuffer } | { kind: 'failed'; reason: string }) => void
-) => Promise<boolean>;
+type StartAudioRecordingMock = typeof import('#/modules/AudioEngine/useCases').startAudioRecording;
 
 type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) => string;
 
@@ -72,7 +69,7 @@ const harness = vi.hoisted(() => ({
     panic_yeast_runtime: vi.fn<() => Promise<void>>(() => Promise.resolve()),
     workers: [] as FakeWorker[],
     track_store: {
-        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: [] }[] },
+        value: { tracks: [] as { id: string; kind: 'audio' | 'midi'; armed: boolean; clips: TestRecordingClip[] }[] },
     },
     transport_store: {
         value: null as import('../../stores/transportStore').TransportState | null,
@@ -82,7 +79,7 @@ const harness = vi.hoisted(() => ({
         value: { changes: [] as TempoMapStoreState['changes'] },
     },
     update_clip: vi.fn<UpdateClipMock>(),
-    commit_recording: vi.fn<(clip: TestRecordingClip) => Promise<void>>(() => Promise.resolve()),
+    commit_recording: vi.fn<typeof import('#/modules/Arrangement/useCases').commitRecording>(() => Promise.resolve()),
     stage_recording_take: vi.fn(),
 }));
 
@@ -126,6 +123,12 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: activeRecordingRefState,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingCaptureClock: (clipId: string): string | null =>
+        harness.track_store.value.tracks.some((track) => track.clips.some((clip) => clip.id === clipId))
+            ? `take-${clipId}`
+            : null,
+    observeRecordingPassEntry: vi.fn(),
+    prepareRecoveredRecording: vi.fn(),
     resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
         clips.map((clip) => ({
             ...clip,
@@ -138,7 +141,14 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     addTake: vi.fn(),
     stageRecordingTake: harness.stage_recording_take,
     commitRecording: harness.commit_recording,
-    startRecording: harness.start_recording,
+    startRecording: () => {
+        const clips = harness.start_recording();
+        for (const clip of clips) {
+            harness.track_store.value.tracks.find((track) => track.id === clip.trackId)?.clips.push(clip);
+        }
+        activeRecordingRefState.current = clips.map((clip) => clip.id);
+        return clips;
+    },
     stopRecording: harness.stop_recording,
     updateClip: harness.update_clip,
     takeOwnsRecordingRoot: vi.fn(() => true),
@@ -172,7 +182,14 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     analyzePitchForClip: vi.fn(),
     ensureBusStrip: vi.fn(),
     getEngineState: vi.fn(),
@@ -256,6 +273,7 @@ const OriginalWorker = globalThis.Worker;
 let schedulerTickSequence = 0;
 beforeEach(() => {
     harness.clock = 0;
+    activeRecordingRefState.current = [];
     harness.workers = [];
     schedulerTickSequence = 0;
     class WorkerStub {
@@ -400,7 +418,10 @@ describe('stopPlayheadScheduler', () => {
         stopPlayheadScheduler();
 
         // The ref, not the store, is the live boundary on every teardown route.
-        expect(harness.stop_recording).toHaveBeenCalledWith(1.5);
+        expect(harness.stop_recording).toHaveBeenCalledWith(1.5, {
+            contextSeconds: 0,
+            beatAtContextSeconds: expect.any(Function),
+        });
 
         // A following user-facing stop waits on the lifecycle. While the
         // teardown's commit is held that wait must stay pending, or the stop
@@ -737,12 +758,18 @@ describe('playhead scheduler tick', () => {
             expect(harness.start_audio_recording).toHaveBeenCalledWith(
                 'track-audio-1',
                 expect.any(Function),
-                undefined
+                undefined,
+                expect.any(Function)
             );
 
+            const admitCaptureReader = harness.start_audio_recording.mock.calls[0]![3];
+            if (!admitCaptureReader) {
+                throw new Error('Punch recording did not request its capture reader');
+            }
+            admitCaptureReader(() => ({ status: 'captured', contextSeconds: 0.05 }));
             const complete_recording = harness.start_audio_recording.mock.calls[0]![1];
             const buffer = create_test_audio_buffer();
-            complete_recording({ kind: 'completed', buffer });
+            complete_recording({ kind: 'completed', buffer, sampleZeroContextFrame: 2400, sampleRate: 48000 });
 
             expect(harness.cache_audio_buffer).toHaveBeenCalledWith({
                 buffer,
@@ -754,9 +781,15 @@ describe('playhead scheduler tick', () => {
                     ...recording_clip,
                     audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
                 },
-                undefined,
-                expect.objectContaining({ shouldExecute: expect.any(Function) })
+                {
+                    provisionalStartBeat: 0,
+                    sourceContextOriginSeconds: 0.05,
+                    mediaOriginSeconds: 0.05,
+                    sourceDurationSeconds: 1,
+                },
+                { shouldExecute: expect.any(Function) }
             );
+            expect(harness.commit_recording.mock.calls[0]?.[2]?.shouldExecute?.()).toBe(true);
         } finally {
             random_uuid.mockRestore();
         }
@@ -780,7 +813,12 @@ describe('playhead scheduler tick', () => {
         harness.clock = 0.05;
         await fireTick();
 
-        expect(harness.start_audio_recording).toHaveBeenCalledWith('track-audio-1', expect.any(Function), undefined);
+        expect(harness.start_audio_recording).toHaveBeenCalledWith(
+            'track-audio-1',
+            expect.any(Function),
+            undefined,
+            expect.any(Function)
+        );
 
         // The `.catch` on startAudioRecording must surface the rejection as an
         // Error whose message names the punch-in path and whose cause is the

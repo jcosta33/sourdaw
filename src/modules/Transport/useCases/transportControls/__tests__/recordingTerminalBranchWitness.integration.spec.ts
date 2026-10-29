@@ -1,4 +1,4 @@
-import { clone as cloneAutomergeDoc } from '@automerge/automerge';
+import { clone as cloneAutomergeDoc, getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -7,12 +7,19 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { sanitizeTrackSnapshot, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import {
+    admitRecordingCaptureClock,
+    getArrangementHandlers,
+    observeRecordingPassEntry,
+    stageRecordingTake,
+    stopRecording,
+} from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, resetActionReplayAuthority, setActionHistoryMetadataPort } from '#/modules/Command/useCases';
 import { branchStore } from '#/modules/CrdtDocument/stores';
 import {
     DOC_PREFIX_ROOT,
+    captureProjectRootIdentity,
     createCrdtDoc,
     getCrdtDoc,
     registerCrdtStorageRuntime,
@@ -22,11 +29,19 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { transportStore } from '#/modules/Transport/stores';
 
+import { createNativeRecordingPassClock } from '../../playheadScheduler/createNativeRecordingPassClock';
+import { createRecordingCaptureClocks } from '../createRecordingCaptureClocks';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { toggleRecording } from '../toggleRecording';
+
+import type { NativeCaptureBoundary } from '../nativeRecordingCaptureHistory';
 
 const TRACK_ID = 'track-recording';
 
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' }) => void;
+type StartAudioRecordingFn = (typeof import('#/modules/AudioEngine/useCases'))['startAudioRecording'];
+type RecordingTerminal = Parameters<StartAudioRecordingFn>[1];
+type StartPlaybackFn = (typeof import('../startPlayback'))['startPlayback'];
+type CacheAudioBufferFn = (typeof import('#/modules/AudioEngine/useCases'))['cacheAudioBuffer'];
 
 type CommitRecordingFn = (typeof import('#/modules/Arrangement/useCases'))['commitRecording'];
 
@@ -37,27 +52,28 @@ const mocks = vi.hoisted(() => {
         audioClock,
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
-        cacheAudioBuffer: vi.fn(),
+        cacheAudioBuffer: vi.fn<CacheAudioBufferFn>(),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
-        startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(
-            async (onRoll) => {
-                onRoll?.(audioClock.currentTime, 4);
-            }
-        ),
-        startAudioRecording: vi.fn<(trackId: string, terminal: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, terminal) => {
-                capturedAudioTerminal = terminal;
-                return Promise.resolve(true);
-            }
-        ),
+        startPlayback: vi.fn<StartPlaybackFn>((onRoll) => {
+            // This fixture rolls at admission, before the held terminal returns.
+            onRoll?.(audioClock.currentTime, 4);
+            return Promise.resolve();
+        }),
+        startAudioRecording: vi.fn<StartAudioRecordingFn>((_trackId, terminal, _inputId, onCaptureClock) => {
+            capturedAudioTerminal = terminal;
+            const sampleZeroContextSeconds = audioClock.currentTime;
+            onCaptureClock?.(() => ({ status: 'captured', contextSeconds: sampleZeroContextSeconds }));
+            return Promise.resolve(true);
+        }),
         // The real Stop awaits a recorder flush that settles the capture and
         // invokes its terminal. This mock keeps the terminal captive instead, so
         // the test can move the project to another branch while the outgoing
         // flush is pending — the exact window of #5289 — and release it after.
         stopAudioRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-        releaseHeldTerminal: (result: Parameters<RecordingTerminal>[0]): void => {
+        releaseHeldTerminal: (result: Parameters<RecordingTerminal>[0], nowContextSeconds = 2): void => {
             const terminal = capturedAudioTerminal;
             capturedAudioTerminal = null;
+            audioClock.currentTime = nowContextSeconds;
             terminal?.(result);
         },
         // Delegates to the real commit by default (the factory installs the
@@ -88,6 +104,25 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 });
 vi.mock('../startPlayback', () => ({ startPlayback: mocks.startPlayback }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
+
+/** PCM starts at admission; completion is delivered two seconds later. */
+function completedAudioRecording(
+    sampleZeroContextSeconds = 0,
+    durationSeconds = 2
+): Extract<Parameters<RecordingTerminal>[0], { kind: 'completed' }> {
+    const sampleRate = 48000;
+    const pcm = Float32Array.from({ length: durationSeconds * sampleRate }, (_value, index) => index);
+    const buffer: AudioBuffer = {
+        duration: pcm.length / sampleRate,
+        length: pcm.length,
+        sampleRate,
+        numberOfChannels: 1,
+        getChannelData: () => pcm,
+        copyFromChannel: (target, _channel, offset = 0) => target.set(pcm.subarray(offset, offset + target.length)),
+        copyToChannel: (source, _channel, offset = 0) => pcm.set(source, offset),
+    };
+    return { kind: 'completed', buffer, sampleZeroContextFrame: sampleZeroContextSeconds * sampleRate, sampleRate };
+}
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -168,6 +203,40 @@ function committedEntryCount(): number {
     ).length;
 }
 
+function nativeLoopSnapshot(contextSeconds = 10, loopWraps = 0): NativeCaptureBoundary['outgoing'] {
+    const geometry = {
+        secondsAtBeat: (beat: number) => beat / 2,
+        beatAtSeconds: (seconds: number) => seconds * 2,
+        isLooping: true,
+        loopStart: 4,
+        loopEnd: 8,
+    };
+    return {
+        songSeconds: 2,
+        contextSeconds,
+        audibleContextSeconds: contextSeconds,
+        loopWraps,
+        admission: { geometry, admittedBatch: 0, serial: 1, located: false },
+        geometry,
+        clockIdentity: '1:1',
+        uncertaintySeconds: 0,
+        calibrationAgeSeconds: 0,
+        localUncertaintySeconds: 0,
+        quality: 'estimated',
+    };
+}
+
+function recordingSnapshot(): string {
+    return JSON.stringify({
+        rootIdentity: captureProjectRootIdentity(),
+        rawRoot: getCrdtDoc(DOC_PREFIX_ROOT),
+        storeTracks: trackStore.value,
+        storeTakeLanes: takeLaneStore.value,
+        history: undoHistoryStore.value,
+        isRecording: transportStore.value?.isRecording,
+    });
+}
+
 /** Arm an audio track and open a real recording gesture, so a provisional clip is staged. */
 async function startAudioRecordingGesture(): Promise<void> {
     trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
@@ -179,6 +248,7 @@ async function startAudioRecordingGesture(): Promise<void> {
         countInEnabled: false,
         punchInEnabled: false,
         playheadPosition: 4,
+        tempo: 120,
     });
     flushAutomergeStorageWrites();
     toggleRecording();
@@ -233,6 +303,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
     });
 
     afterEach(() => {
+        recordingLifecycle.endRecording();
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
@@ -266,7 +337,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         const successorClipIdsBeforeRelease = documentClipIds();
         expect(successorClipIdsBeforeRelease).toEqual([]);
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(mocks.notifyUser).toHaveBeenCalled();
         });
@@ -286,7 +357,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
         const successorClipsWithProvisional = documentClipIds();
         expect(successorClipsWithProvisional).toHaveLength(1);
 
-        mocks.releaseHeldTerminal({ kind: 'failed' });
+        mocks.releaseHeldTerminal({ kind: 'failed', reason: 'worker-crash' });
 
         // The cleanup the guard gates is an optimistic store write: the document
         // only moves on the next flush, so the live store is the decisive read.
@@ -308,13 +379,46 @@ describe('recording terminal publishes only under its captured root (issue #5289
             throw new Error('expected a provisional recording clip');
         }
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(committedEntryCount()).toBe(1);
         });
 
         expect(mocks.cacheAudioBuffer).toHaveBeenCalled();
         expect(storeClipIds()).toEqual([provisionalId]);
+        const clip = trackStore.value!.tracks[0]!.clips[0]!;
+        expect(clip).toMatchObject({ id: provisionalId, startBeat: 4, endBeat: 8 });
+        expect(mocks.commitRecording.mock.calls[0]?.[1]).toEqual({
+            provisionalStartBeat: 4,
+            mediaOriginSeconds: 2,
+            sourceContextOriginSeconds: 0,
+            sourceDurationSeconds: 2,
+        });
+        const buffer = mocks.cacheAudioBuffer.mock.calls[0]?.[0].buffer;
+        if (!buffer) {
+            throw new Error('expected the completed PCM to be cached');
+        }
+        expect(buffer.length).toBe(96000);
+        expect(buffer.sampleRate).toBe(48000);
+        expect(buffer.getChannelData(0)[95999]).toBe(95999);
+    });
+
+    it('refuses a manual capture whose root moves before its commit continuation', async () => {
+        await startAudioRecordingGesture();
+        const beforeCount = recordingLifecycle.settledCommitCount;
+        mocks.releaseHeldTerminal(completedAudioRecording());
+        installRootReplacement();
+        const successor = recordingSnapshot();
+
+        await recordingLifecycle.waitForCommits();
+
+        expect(recordingSnapshot()).toBe(successor);
+        expect(committedEntryCount()).toBe(0);
+        expect(recordingLifecycle.settledCommitCount).toBe(beforeCount);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(
+            'Recording stopped — the project switched branches while the take was landing, so it was not kept.',
+            'warning'
+        );
     });
 
     it('keeps the successor clip when the commit itself fails after a branch switch', async () => {
@@ -332,7 +436,7 @@ describe('recording terminal publishes only under its captured root (issue #5289
                 })
         );
 
-        mocks.releaseHeldTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        mocks.releaseHeldTerminal(completedAudioRecording());
         await vi.waitFor(() => {
             expect(mocks.commitRecording).toHaveBeenCalled();
         });
@@ -355,6 +459,158 @@ describe('recording terminal publishes only under its captured root (issue #5289
             'Recording stopped — the project switched branches while the take was finishing, so it was not kept.',
             'warning'
         );
+    });
+
+    it('keeps the successor untouched through a real native wrap producer', async () => {
+        mocks.audioClock.currentTime = 10;
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 4, loopEnd: 8 });
+        await startAudioRecordingGesture();
+        const originalTakeIds = takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id);
+        expect(originalTakeIds).toHaveLength(1);
+        expect(recordingLifecycle.readNativeCaptureSourceStart()).toBe(10);
+        const initial = nativeLoopSnapshot();
+        const passClock = createNativeRecordingPassClock();
+        const observed = vi.spyOn(recordingLifecycle, 'observeCaptureClock');
+        // This spy forwards the actual method; production observe constructs and publishes the boundary.
+        expect(
+            passClock.observe(transportStore.value!, { carrier: 'native', status: 'available', snapshot: initial })
+        ).toBe(true);
+        const outgoingIdentity = captureProjectRootIdentity();
+        installRootReplacement();
+        const successorIdentity = captureProjectRootIdentity();
+        expect(successorIdentity).not.toBe(outgoingIdentity);
+        flushAutomergeStorageWrites();
+        const successorBefore = recordingSnapshot();
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual(originalTakeIds);
+        mocks.audioClock.currentTime = 12;
+        const wrapped = { ...initial, contextSeconds: 12, audibleContextSeconds: 12, loopWraps: 1 };
+        expect(
+            passClock.observe(transportStore.value!, { carrier: 'native', status: 'available', snapshot: wrapped })
+        ).toBe(true);
+        const boundaries = observed.mock.calls.flatMap((call) => (call[6] ? [call[6]] : []));
+        expect(boundaries).toHaveLength(1);
+        const boundary = boundaries[0]!;
+        expect(boundary.outgoing).toBe(wrapped);
+        expect(boundary.incoming).toBe(boundary.outgoing);
+        expect(boundary).toMatchObject({
+            key: '1:1:1:wrap:1',
+            contextSeconds: 12,
+            endBeat: 8,
+            nextPassStartBeat: 4,
+            planned: false,
+        });
+        const storeTakes = takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id);
+        flushAutomergeStorageWrites();
+        const successorAfter = recordingSnapshot();
+        const documentTakes = getCrdtDoc<{ takeLanes: { lanes: Array<{ takes: Array<{ id: string }> }> } }>(
+            DOC_PREFIX_ROOT
+        )?.takeLanes.lanes[0]?.takes.map((take) => take.id);
+        observed.mockRestore();
+        mocks.releaseHeldTerminal({ kind: 'failed', reason: 'worker-crash' }, 12);
+        expect(storeTakes).toEqual(originalTakeIds);
+        expect(documentTakes).toEqual(originalTakeIds);
+        expect(successorAfter).toBe(successorBefore);
+    });
+
+    it('keeps real native wraps and finite capture endings through an edit on the same root', async () => {
+        mocks.audioClock.currentTime = 10;
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 4, loopEnd: 8 });
+        await startAudioRecordingGesture();
+        const clipId = storeClipIds()[0]!;
+        const originalTakeId = takeLaneStore.value!.lanes[0]!.takes[0]!.id;
+        const initial = nativeLoopSnapshot();
+        const passClock = createNativeRecordingPassClock();
+        passClock.observe(transportStore.value!, { carrier: 'native', status: 'available', snapshot: initial });
+        const rootIdentity = captureProjectRootIdentity();
+        const heads = getHeads(getCrdtDoc(DOC_PREFIX_ROOT)!);
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) => ({ ...track, name: 'Edited during capture' })),
+        });
+        flushAutomergeStorageWrites();
+        expect(getHeads(getCrdtDoc(DOC_PREFIX_ROOT)!)).not.toEqual(heads);
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+
+        mocks.audioClock.currentTime = 12;
+        passClock.observe(transportStore.value!, {
+            carrier: 'native',
+            status: 'available',
+            snapshot: nativeLoopSnapshot(12, 1),
+        });
+        expect(takeLaneStore.value!.lanes[0]!.takes).toHaveLength(2);
+        recordingLifecycle.endRecording();
+        await stopRecording(
+            4.5,
+            { contextSeconds: 12.25, beatAtContextSeconds: (seconds) => 4 + (seconds - 12) * 2 },
+            true
+        );
+        mocks.releaseHeldTerminal(completedAudioRecording(10, 2.5), 12.5);
+        await vi.waitFor(() => expect(committedEntryCount()).toBe(1));
+
+        expect(storeClipIds()).toEqual([clipId]);
+        const takes = takeLaneStore.value!.lanes[0]!.takes;
+        expect(takes.map((take) => take.id)).toContain(originalTakeId);
+        expect(takes.find((take) => take.sourceOffsetBeats === 0)).toMatchObject({
+            passDepthSeconds: 0,
+            passSourceEndSeconds: 2,
+        });
+        expect(takes.find((take) => take.id === originalTakeId)).toMatchObject({
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 2.25,
+        });
+        expect(mocks.commitRecording.mock.calls[0]?.[1]).toMatchObject({
+            sourceContextOriginSeconds: 10,
+            sourceDurationSeconds: 2.5,
+        });
+        expect(mocks.cacheAudioBuffer.mock.calls[0]?.[0].buffer.getChannelData(0)[119999]).toBe(119999);
+    });
+
+    it('refuses copied audio owners through browser staging, pass entry, ending and Stop', async () => {
+        mocks.audioClock.currentTime = 10;
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 4, loopEnd: 8 });
+        await startAudioRecordingGesture();
+        const clipId = storeClipIds()[0]!;
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId,
+            name: 'Planned',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 0,
+            passEndContextSeconds: 12,
+            plannedPassEnd: true,
+        });
+        flushAutomergeStorageWrites();
+        installRootReplacement();
+        const successorBefore = recordingSnapshot();
+        const ended = vi.fn();
+        const successor = createRecordingCaptureClocks(mocks.audioClock, (beat) => beat / 2, ended);
+        successor.create(TRACK_ID).setReader(() => ({ status: 'captured', contextSeconds: 33 }));
+        successor.register();
+
+        observeRecordingPassEntry(6, 11, true, true);
+        expect(admitRecordingCaptureClock(clipId, 6, 11, () => undefined)).toBeNull();
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId,
+            name: 'Foreign wrap',
+            startBeat: 4,
+            endBeat: 8,
+            sourceOffsetBeats: 4,
+            passEndContextSeconds: 14,
+            plannedPassEnd: true,
+        });
+        recordingLifecycle.observeCaptureClock(6, 11, true);
+        expect(recordingLifecycle.readNativeCaptureSourceStart()).toBe(33);
+        recordingLifecycle.endRecording();
+        expect(ended).toHaveBeenCalledOnce();
+        await stopRecording(7, { contextSeconds: 11.5, beatAtContextSeconds: () => 7 }, true);
+        flushAutomergeStorageWrites();
+        expect(recordingSnapshot()).toBe(successorBefore);
+        mocks.releaseHeldTerminal({ kind: 'failed', reason: 'worker-crash' }, 11.5);
+        expect(recordingSnapshot()).toBe(successorBefore);
+        expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.commitRecording).not.toHaveBeenCalled();
     });
 
     it('refuses to stage the take when the project forks while admission is pending', async () => {

@@ -679,6 +679,7 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         { sourceOffsetBeats: 0 },
         { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 },
         { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 0 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 3 },
     ])('accepts legacy or complete placement %j', (placement) => {
         expect(isHydratableProjectData(withPlacement(placement))).toBe(true);
     });
@@ -698,6 +699,18 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         { sourceOffsetBeats: Number.POSITIVE_INFINITY },
         { sourceOffsetBeats: '1' },
         { sourceOffsetBeats: 0, passAnchorSeconds: undefined, passDepthSeconds: undefined },
+        { passSourceEndSeconds: 3 },
+        { sourceOffsetBeats: 0, passSourceEndSeconds: 3 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: 1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: Number.NaN },
+        {
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: Number.POSITIVE_INFINITY,
+        },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: undefined },
     ])('rejects malformed placement before hydration %j', (placement) => {
         expect(isHydratableProjectData(withPlacement(placement))).toBe(false);
     });
