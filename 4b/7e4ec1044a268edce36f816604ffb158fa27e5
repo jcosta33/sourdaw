@@ -1,0 +1,33 @@
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  s_3168504f6ce387::t_f1aa6cdde7828c 2-5,49-53
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_3168504f6ce387::t_874482a5e5c1e6 549-605,608-610,612-614,616-626
+  s_3168504f6ce387::t_aac147c074824a 606-607,611,615
+.agents/skills/review-stances/project-integrity.md
+  s_3168504f6ce387::t_5dffc9243876b9 824-833
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_5dffc9243876b9 1856-1864
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_5dffc9243876b9 303,356,365
+  s_3168504f6ce387::t_fa5ef0a9e8795b 284,290,295,327,392-393
+  s_3168504f6ce387::t_aac147c074824a 274-283,285-289,291-294,296-302,304-326,328-355,357-364,366-379,381-389,391
+  s_3168504f6ce387::t_dc4887e08fd5b8 50,273,380,390
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3168504f6ce387::t_f1aa6cdde7828c 73-88,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b7e4ec1044a268edce36f816604ffb158fa27e5",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
