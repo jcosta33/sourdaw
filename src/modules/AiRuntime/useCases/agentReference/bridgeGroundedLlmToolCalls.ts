@@ -1864,7 +1864,14 @@ function readsOnlyReferencedVcaLevel(input: {
     const matches = (input.context.vcaGroups ?? []).filter((candidate) =>
         [candidate.id, candidate.name].some((name) => normalizePromptText(name) === reference)
     );
-    return matches.length === 1 && matches[0]?.id === group.id;
+    const collidesWithTrack = input.context.tracks.some((track) =>
+        [track.id, track.name].some((name) => normalizePromptText(name) === reference)
+    );
+    return (
+        matches.length === 1 &&
+        matches[0]?.id === group.id &&
+        (reference === normalizePromptText(group.id) || !collidesWithTrack)
+    );
 }
 
 function readsOnlyReferencedLevelClauses(input: {
