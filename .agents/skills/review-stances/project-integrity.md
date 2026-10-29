@@ -797,3 +797,47 @@ placement with a negative anchor: the selected takes and their comp regions
 must survive real hydration unchanged, including an active saved arrangement's
 top-level fallback. Reverting placement admission must fail the rejection cases;
 a sanitizer-only assertion cannot establish safe file admission.
+
+## 2026-10-29 — an AI group revert committed a newer inverse before an older conflict (#5565)
+
+The history caller introduced by `22a84b216658f593391e7e141d90f7c84d13648b` replayed
+members separately; `78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` moved that loop into
+Command without making it atomic. GitHub reports no associated PR for either commit;
+historical private reviewer prompts, models and tiers are unknown. The missing failure
+mode was a later inverse refusing after a newer member had already changed the project.
+
+Apply Keys gain and Bass mute in one real group, remove Keys, then invoke the public AI
+history revert. Require unchanged raw project, projections, both Undo stacks, tree and AI
+metadata, plus a visible refusal and no Bass engine write. Pair an intact multi-member
+group with a later unrelated musician edit and real Redo. Hold the actual snapshot wait,
+replace the root with identical content or discard same-lineage history, then require
+zero-write refusal. Capture existing mutation-owner authorization before the first await;
+permit the replay's own writes and settle already-visible queued writes synchronously.
+
+## 2026-10-29 — deferred replay effects could finalize history into a restored project (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) finalized atomic group history only
+after awaiting replay and its deferred effects. Review of #5849 caught a committed inverse
+whose held effect allowed project replacement and Undo clear before old entries entered the
+replacement's Redo. Historical private reviewer prompts, models and tiers are unknown.
+
+Hold a real post-commit effect after proving the inverse's raw writes committed. Replace or
+restore the captured project, clear history and release the effect; require the replacement's
+past, future and tree unchanged. Repeat through actual ambiguous publication reconciliation,
+including restoreUndoHistory with the original captured entry objects, not only cloned IDs.
+Object identity is not history ownership: capture and compensation preserve those objects.
+Finalize once at the normal or distinct ambiguous publication boundary before effects can
+re-enter; a committed inverse stays committed truth even if later effects warn. A later musician
+edit must retain its entry and invalidate Redo normally. Keep normal onCommitted silent for
+no-op, cancelled, rejected and ambiguous outcomes, and retain the original ambiguity if its
+separate observer throws.
+
+The same late-finalization route also admitted stale no-op history: replay can skip every
+inverse yet still yield before history settlement. In #5849, a real legacy clamped-gain
+inverse proved no project or track write occurred while replacement and clear installed a
+different history; old entries still entered its future and AI metadata claimed a revert.
+Keep the unchanged no-op control, but require caller project mutation authority and the
+untouched Undo snapshot again before consuming a no-publication result. Exercise both panel
+and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
+discard, original-reference restoration and request cancellation. This fence applies only
+before publication: a real committed inverse remains committed truth.
