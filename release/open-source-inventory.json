@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a3d7537ae46d6c2ed7648867c2278b06e7c9d17c0446b27444922f453b7a457d:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:ff466c6d7175276a2464cca86b055073254e6554c088bd26129fae8b4cda609d:release/dependency-license-proofs.json"
+                "sha256:1c5e5fcd23034b72def09787b2d0385e43b26757f304045689d5c088be7abf25:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4e80676b1584c3a7aa9b1177ded71c833f21ec240f110f44b7393540b22a8039:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -264,13 +264,15 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml"
+                "pnpm-workspace.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "revisions": [
                 "exact pnpm lock graph",
@@ -289,7 +291,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -400,7 +402,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b",
+                "sha256:eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1758,7 +1760,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b"
+            "sha256": "eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
