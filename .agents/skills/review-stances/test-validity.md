@@ -1851,6 +1851,21 @@ The native live automation real-store test held an apply, changed a store, settl
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
 
+## 2026-10-29 — a delegation spy could not observe partial AI history replay (#5565)
+
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` tested that the history caller delegated to
+Command and marked its row, while the member loop introduced by
+`22a84b216658f593391e7e141d90f7c84d13648b` could partially revert a group. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. A mocked void result could not expose project or history corruption.
+
+Run the public caller against real Command replay, registered handlers and a CRDT root.
+Use gain plus mute, make the older inverse conflict, and compare complete project and
+history state before asserting that the UI promise resolves with refusal feedback. Also
+exercise absent, partially undone and nonreplayable groups, a committed warning, runtime
+inertness and a valid group with Redo. Replacing only atomic replay with the member loop
+must fail preservation; removing result admission must fail the metadata assertions.
+
 ### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
 PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
@@ -1882,6 +1897,32 @@ the aggregate upper-bound verdict everywhere, even when the generated table alre
 PR #974 (`caabe804622df1c116c1545bcbb1fcea88e7e114`) introduced the cost report. The renderer later treated every median as an upper bound even when its retained row marked the median untrustworthy. Historical private review prompts and tiers are unknown; the missed probe joined the measurement's soft calibration flag to the published conclusion.
 
 Render retained data with an unreliable reference audio row and worker row. Require their raw values and valid floors to remain visible, while withholding dependent upper-bound and decisive claims. Independently toggle each flag and preserve a trustworthy reference control; removing the renderer's flag handling must fail the named regression. A hard-gate pass or JSON-to-Markdown consistency check alone does not prove that the report honors the soft flag.
+
+## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
+returned. #5849's pre-commit snapshot-wait cases missed the later asynchronous effects. A
+provisional live-entry reference filter also missed a real captured project/history restoration,
+because captureUndoHistory and restoreUndoHistory retain the original entry objects. Historical
+private review prompts and model tiers are unknown.
+
+Observe the real inverse commit, hold afterCommit or actual afterAmbiguousCommit, then restore
+both the captured project and original-reference history through public producers. Compare the
+restored past, future and tree after release; assert the original commit truth separately rather
+than requiring false unchanged AI metadata. Keep new-object restoration, ordinary success,
+post-commit warnings and a real musician edit as independent controls. Mutating finalization back
+to after the wait must fail these oracles. Check notification timing before publication callbacks,
+exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
+throw that retains the original committed error without rollback or retry.
+
+A mock returning no-op cannot observe the async gap after a real handler skips execution.
+Use a real inverse that the handler already considers applied, delegate its actual isNoop
+boolean unchanged, and signal that observation before replacing or editing the project.
+Require no handler/engine write and compare project, projections, both history stacks, tree
+and AI metadata together after completion. A same-lineage edit retaining the exact Undo
+snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
+Pair it with clear-only and original-reference restore, normal no-op consumption and caller
+cancellation. Await the observation and completion, never a chosen number of microtasks.
 
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
@@ -1917,3 +1958,18 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
+
+The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
+production route (`33a3549990`), integrated on the first-parent history at `adfc95a453`.
+GitHub associates none of these commits with a PR; historical reviewer prompts, stance
+and tier are unavailable. #5371 delivered the fix. The original consumer test asserted
+the requested end even with a shorter returned buffer, so its oracle could preserve silence.
+
+In `renderToClip.spec.ts`, require the one-frame cap-boundary case for both tail settings:
+`2^30 + 1` requested frames and `2^30` returned. Reverting the returned-frame endpoint
+branch must fail that case. Also retain short-buffer conversion across a tempo change from
+a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
+end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
+a six-hour PCM render or listening result from it.
