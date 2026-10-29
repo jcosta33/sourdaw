@@ -1,0 +1,21 @@
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  s_567a084d0540c4::t_f629344e878fb3 7,50-53,58,78-80,92-94,97-99,107-115,123-125
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  s_567a084d0540c4::t_f629344e878fb3 72-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51f75814186cd012307744d81d3ddb43c7b2ad09",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
