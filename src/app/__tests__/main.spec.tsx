@@ -27,13 +27,13 @@ const mocks = vi.hoisted(() => ({
 }));
 
 function deferredGate(): { promise: Promise<void>; release: () => void } {
-    let resolve: (() => void) | undefined;
-    const promise = new Promise<void>((resolvePromise) => {
-        resolve = resolvePromise;
+    let resolveGate: (() => void) | undefined;
+    const promise = new Promise<void>((resolve) => {
+        resolveGate = resolve;
     });
     return {
         promise,
-        release: () => resolve?.(),
+        release: () => resolveGate?.(),
     };
 }
 
@@ -338,9 +338,8 @@ describe('app main composition', () => {
     it('initializes the application directly in a desktop renderer', async () => {
         Reflect.set(window, 'sourdaw', {});
         mocks.resolveAppComposition.mockReturnValue('application');
-        let finishReset: (() => void) | undefined;
         const resetGate = deferredGate();
-        finishReset = resetGate.release;
+        const finishReset = resetGate.release;
         releaseDesktopReset = resetGate.release;
         mocks.resetDisplayScaleForStartup.mockReturnValueOnce(resetGate.promise);
         const rendered = observeNextRender();
