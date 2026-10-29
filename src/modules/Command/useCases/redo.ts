@@ -115,6 +115,7 @@ async function executeActionGroupRedo(entries: readonly UndoEntry[]): Promise<Re
 
     const actions = entries.map((entry) => entry.redoAction ?? entry.action);
     const options: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
+        undoEntryIds: entries.map((entry) => entry.id),
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
@@ -162,6 +163,7 @@ async function executeRedo(entry: UndoEntry): Promise<RedoOutcome> {
     }
 
     const options: NonNullable<Parameters<typeof executeAppAction>[1]> = {
+        undoEntryId: entry.id,
         skipUndo: true,
         skipMacroRecording: true,
         source: entry.source,

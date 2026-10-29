@@ -94,9 +94,15 @@ export const useAppInitialization = (): void => {
                 if (disposed) {
                     return;
                 }
-                await loadProject();
+                await loadProject({ shouldContinue: () => !disposed });
+                if (disposed) {
+                    return;
+                }
                 ensureTrackStrips();
             } catch (error) {
+                if (disposed) {
+                    return;
+                }
                 logger.error(new Error('App initialization failed', { cause: error }));
                 const message = 'App failed to load — please reload the page.';
                 notifyUser(message, 'error');

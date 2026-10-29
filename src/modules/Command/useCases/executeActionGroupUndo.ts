@@ -64,6 +64,7 @@ export async function executeActionGroupUndo(
     // forward law must never touch on a replay.
     const actions = [...entries].reverse().map((entry) => normalizeLegacyLoopAnchorInverse(entry.inverseAction!));
     const batchOptions: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
+        undoEntryIds: [...entries].reverse().map((entry) => entry.id),
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
