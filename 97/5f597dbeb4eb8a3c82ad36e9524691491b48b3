@@ -1,0 +1,76 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 224-229
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 3-18
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-16,1258-1263
+crates/proof-chamber/src/lib.rs
+  h_beb54bf43b47b7 510-530
+crates/proof-chamber/tests/automation_ordinals.rs
+  h_beb54bf43b47b7 1-305
+public/wasm/manifest.json
+  h_beb54bf43b47b7 26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1347,1351,1769
+scripts/__tests__/resourceGuardStorage.spec.ts
+  h_beb54bf43b47b7 413,2819,2828,2853,2954,2968-2971,4536-4604,4654-4655,5119-5123,5128-5132
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 1211,1215,1217,1221-1225,1734-1735,1737,1743
+scripts/resourceGuardLsofDiagnostics.ts
+  h_beb54bf43b47b7 1-23
+scripts/resourceGuardStorage.ts
+  h_beb54bf43b47b7 21,95-96,116-119,135,148,179,186
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  h_beb54bf43b47b7 31-47,132-135
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  h_beb54bf43b47b7 3-29,138-173
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  h_beb54bf43b47b7 27-47
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_beb54bf43b47b7 293,299-301,338-342
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  h_beb54bf43b47b7 26-27
+src/modules/AudioEngine/services/__tests__/proofChamberAutomationOrdinals.spec.ts
+  h_beb54bf43b47b7 1-344
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  h_beb54bf43b47b7 3-10,12-26,237-364,374
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  h_beb54bf43b47b7 149-151
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 29,507-510
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 50,82-85,487-491
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-774
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_beb54bf43b47b7 110-138
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  h_beb54bf43b47b7 11,37-38,60-75
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterParam.ts
+  h_beb54bf43b47b7 1-7
+src/modules/Fermenter/useCases/fermenterParamBridge/fermenterParamBatcher.ts
+  h_beb54bf43b47b7 1-5
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  h_beb54bf43b47b7 5,44-48
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 67,71-76
+src/modules/Fermenter/useCases/selectFermenterFilterChoice.ts
+  h_beb54bf43b47b7 1-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "975f597dbeb4eb8a3c82ad36e9524691491b48b3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
