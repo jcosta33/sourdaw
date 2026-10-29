@@ -877,3 +877,17 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — a sample cap truncated a duration at the highest rate (PR #2055)
+
+PR #2055 (`d2efdde850`) derived the built-in body length from seconds while retaining
+the earlier 4096-sample cap. Its duration fixture stopped at 96 kHz; at 192 kHz the
+23.2 ms response requires 4458 samples. PR #5254 later exposed those prebuilt bodies
+to the musician without changing the cap. Public verification claimed rate-independent
+duration, but historical private stance prompts and tiers are unknown.
+
+Observe the actual engine's fully wet body output at the highest supported context rate.
+Require nonzero late PCM beyond the old cap, the final response window, exact silence
+after the physical duration, and preserved lower-rate decay, energy and spectral shape.
+Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
+served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.

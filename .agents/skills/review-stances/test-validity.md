@@ -1885,3 +1885,18 @@ Parallel so their assertions continue to observe the path they claim.
 PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
 
 When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
+
+### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
+
+PR #2055 (`d2efdde850`) tested built-in body duration only at 44.1, 48 and 96 kHz.
+The rate-derived duration still met an inherited 4096-sample cap, which truncates its
+192 kHz response before the required 4458th frame. PR #5254's body selection retained
+that limit. Public reviews do not establish the historical private prompts or tiers.
+
+Use actual rendered PCM as well as the response length: select Wood through the real
+engine parameter, render 128-frame blocks at 192 kHz, require output in frames
+4096..4457 and the final 64-frame window, then silence at frame 4458. A cap-only revert
+must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-rate
+duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
+Native execution time, offline browser throughput and allocation guards cannot certify
+live AudioWorklet deadline or listening acceptance.
