@@ -1,5 +1,19 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
+`tREG` name `/tmp/no info.txt`. Its public final review lists borrower and incomplete-evidence
+coverage, but the pathname-versus-diagnostic admission probe was missing; historical private prompts
+and tiers are unestablished. A later clean catalog does not explain an earlier unrecorded failure.
+
+Run `keeps diagnostic words in absolute Darwin` and require exact path preservation plus owned-storage
+retention for a borrower. Use injected catalogs only: opening an adversarial filename can poison
+other lanes' global guards. Run `reports bounded Darwin inspection context`, the whole/scoped
+replacement and stable-reason sequences, and the receipt cases with detailed obstruction reasons.
+Revert the pathname distinction to make the new parser assertion fail; remove context propagation
+to make the census assertions fail. Never weaken malformed, missing-type or unknown-type admission.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
@@ -1264,6 +1278,12 @@ later, fake that host receiver-sensitively — a plain function or class method 
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
 
+### Fermenter filter chips changed state without recording Undo
+
+Filter Type originated in `c40d444ff96520cb2f718dd2a397173d72dc1b50` and Filter Model in `66b0569af54525fc983a0632ce0c12d92f83fe90`, both through the direct bridge. Neither source origin has an evidenced public PR association, and historical reviewer prompts and tiers are unknown. A handler-only test cannot observe a panel callback that never dispatches that handler.
+
+Mount the real panel with unconditional entry-point admission and the real registered Command/CRDT path. Assert raw absent-versus-explicit defaults, projected values, pressed chips, independent Model/Type history entries, live macro preservation and both Undo/Redo legs. Hold the actual snapshot wait for latest same-parameter choices and independent different-parameter choices, and vary each stale authority guard separately. Restore only the panel's direct-bridge branch on a committed head: the unchanged owning test must fail its history assertion even while the chip and document update. Controlled engine calls prove parameter-boundary behavior; they do not prove audible, native or hardware acceptance.
+
 ### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
 
 The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
@@ -1964,6 +1984,12 @@ and separation from explicit Parallel. Revert only the constructor default: the 
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
 
+### 2026-10-29 — inventory merge dropped a curated reference (PR #5851)
+
+PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
+
+When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
+
 ### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
 
 PR #2055 (`d2efdde850`) tested built-in body duration only at 44.1, 48 and 96 kHz.
@@ -1978,3 +2004,18 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
+
+The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
+production route (`33a3549990`), integrated on the first-parent history at `adfc95a453`.
+GitHub associates none of these commits with a PR; historical reviewer prompts, stance
+and tier are unavailable. #5371 delivered the fix. The original consumer test asserted
+the requested end even with a shorter returned buffer, so its oracle could preserve silence.
+
+In `renderToClip.spec.ts`, require the one-frame cap-boundary case for both tail settings:
+`2^30 + 1` requested frames and `2^30` returned. Reverting the returned-frame endpoint
+branch must fail that case. Also retain short-buffer conversion across a tempo change from
+a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
+end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
+a six-hour PCM render or listening result from it.

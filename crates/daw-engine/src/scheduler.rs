@@ -308,6 +308,7 @@ pub enum BuiltinEffectType {
     Toaster,
     Levain,
     Scoring,
+    TransientShaper,
 }
 
 impl BuiltinEffectType {
@@ -328,6 +329,7 @@ impl BuiltinEffectType {
             Self::Toaster => "toaster",
             Self::Levain => "levain",
             Self::Scoring => "native-scoring",
+            Self::TransientShaper => "transient-shaper",
         }
     }
 
@@ -348,6 +350,7 @@ impl BuiltinEffectType {
             "toaster" => Some(Self::Toaster),
             "levain" => Some(Self::Levain),
             "native-scoring" => Some(Self::Scoring),
+            "transient-shaper" => Some(Self::TransientShaper),
             _ => None,
         }
     }
@@ -386,6 +389,7 @@ impl BuiltinEffectType {
             // A tuner listens. It hands the block on unchanged and turns the
             // pitch it heard into a reading, so it sounds nothing of its own.
             Self::Scoring => false,
+            Self::TransientShaper => false,
         }
     }
 
@@ -412,7 +416,7 @@ impl BuiltinEffectType {
             Self::DutchOven => DUTCH_OVEN_PATCH_PRECEDENCE,
             Self::Toaster => TOASTER_PATCH_PRECEDENCE,
             Self::Levain => LEVAIN_PATCH_PRECEDENCE,
-            Self::Knead | Self::GrandBoule | Self::Scoring => &[],
+            Self::Knead | Self::GrandBoule | Self::Scoring | Self::TransientShaper => &[],
         }
     }
 }
@@ -1145,6 +1149,7 @@ pub enum PluginCore {
     Toaster(Box<ToasterBody>),
     Levain(Box<LevainBody>),
     Scoring(Box<ScoringBody>),
+    TransientShaper(Box<TransientShaperBody>),
     Native(Box<dyn NativePlugin>),
 }
 
@@ -1184,6 +1189,9 @@ impl PluginCore {
                 Self::levain_with_patch(LevainInstance::new(sample_rate, LEVAIN_MAX_VOICES), &[])
             }
             BuiltinEffectType::Scoring => Self::scoring_with_patch(sample_rate, &[]),
+            BuiltinEffectType::TransientShaper => {
+                Self::transient_shaper_with_patch(sample_rate, &[])
+            }
         }
     }
 
@@ -1397,6 +1405,22 @@ impl PluginCore {
         Self::Scoring(Box::new(body))
     }
 
+    pub fn transient_shaper_with_patch(
+        sample_rate: f32,
+        patch: &[(BuiltinParamName, f32)],
+    ) -> Self {
+        let mut body = TransientShaperBody {
+            engine: daw_dsp::toaster::transient::TransientShaperInstance::new(sample_rate)
+                .expect("native stream sample rate must be positive and finite"),
+            attack_gain: 1.0,
+            sustain_gain: 1.0,
+        };
+        for (name, value) in patch {
+            body.set_param(name.as_str(), *value);
+        }
+        Self::TransientShaper(Box::new(body))
+    }
+
     /// The detection channel of the Tuner this core is, or `None` for every
     /// other core.
     ///
@@ -1410,6 +1434,7 @@ impl PluginCore {
         match self {
             Self::Scoring(body) => Some(body.telemetry()),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Gluten(_)
@@ -1441,6 +1466,7 @@ impl PluginCore {
             Self::Toaster(_) => Some(BuiltinEffectType::Toaster),
             Self::Levain(_) => Some(BuiltinEffectType::Levain),
             Self::Scoring(_) => Some(BuiltinEffectType::Scoring),
+            Self::TransientShaper(_) => Some(BuiltinEffectType::TransientShaper),
             Self::Native(_) => None,
         }
     }
@@ -1471,6 +1497,7 @@ impl PluginCore {
             // name ([`GraphCommand::SetParam`]), and the instruments here take
             // notes alone.
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1508,6 +1535,7 @@ impl PluginCore {
             // The bodies that take no controller in [`Self::control_change`]
             // hold nothing a note-off cannot release.
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::Gluten(_)
             | Self::Crust(_)
@@ -1533,6 +1561,7 @@ impl PluginCore {
         match self {
             Self::Native(plugin) => plugin.runs_while_detached(),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Gluten(_)
@@ -1585,6 +1614,7 @@ impl PluginCore {
             // impulse responses ever made them reachable.
             Self::DutchOven(body) => Some(body.latency_samples() as usize),
             Self::Knead(_)
+            | Self::TransientShaper(_)
             | Self::Fermenter(_)
             | Self::GrandBoule(_)
             | Self::Toaster(_)
@@ -4494,6 +4524,41 @@ impl ScoringBody {
     }
 }
 
+/// The same two-channel scalar adapter the browser exports; gains are the only
+/// persistent state. Construction is control-side, processing and reset are bounded.
+pub struct TransientShaperBody {
+    engine: daw_dsp::toaster::transient::TransientShaperInstance,
+    attack_gain: f32,
+    sustain_gain: f32,
+}
+
+impl TransientShaperBody {
+    fn set_param(&mut self, name: &str, value: f32) -> bool {
+        if !value.is_finite() {
+            return false;
+        }
+        match name {
+            "attackGain" => self.attack_gain = value.clamp(0.0, 2.0),
+            "sustainGain" => self.sustain_gain = value.clamp(0.0, 2.0),
+            _ => return false,
+        }
+        true
+    }
+
+    fn process(&mut self, left: &mut [f32], right: &mut [f32], frames: usize) {
+        for sample in left.iter_mut().take(frames) {
+            *sample = self
+                .engine
+                .process_left(*sample, self.attack_gain, self.sustain_gain);
+        }
+        for sample in right.iter_mut().take(frames) {
+            *sample = self
+                .engine
+                .process_right(*sample, self.attack_gain, self.sustain_gain);
+        }
+    }
+}
+
 /// Apply an addressed device parameter to the built-in body it names,
 /// answering whether the address and the body agreed.
 ///
@@ -4553,6 +4618,9 @@ fn apply_builtin_param(instance: &mut PluginCore, param: DeviceParam, value: f32
             true
         }
         (PluginCore::Proof(body), DeviceParam::BuiltinNamed(name)) => {
+            body.set_param(name.as_str(), value)
+        }
+        (PluginCore::TransientShaper(body), DeviceParam::BuiltinNamed(name)) => {
             body.set_param(name.as_str(), value)
         }
         (PluginCore::Scoring(body), DeviceParam::BuiltinNamed(name)) => {
@@ -6547,6 +6615,13 @@ impl AudioScheduler {
                     if let Some(slot) = self.effect_index.lookup(id) {
                         let was_bypassed = self.effects[slot].bypassed;
                         self.effects[slot].bypassed = bypassed;
+                        if was_bypassed != bypassed {
+                            if let PluginCore::TransientShaper(body) =
+                                &mut self.effects[slot].instance
+                            {
+                                body.engine.reset();
+                            }
+                        }
                         // A body whose declared figure follows its own bypass
                         // re-aims the pass here, because this is where that
                         // figure moves: a bypassed Bacteria delays nothing on
@@ -8289,6 +8364,17 @@ impl AudioScheduler {
 /// always did.
 #[inline]
 fn run_dry_delay(effect: &mut ActiveEffect, left: &mut [f32], right: &mut [f32], frames: usize) {
+    if matches!(effect.instance, PluginCore::TransientShaper(_)) {
+        for sample in left
+            .iter_mut()
+            .take(frames)
+            .chain(right.iter_mut().take(frames))
+        {
+            if !sample.is_finite() {
+                *sample = 0.0;
+            }
+        }
+    }
     if let Some(delay) = effect.dry_delay.as_mut() {
         delay.process(left, right, frames);
     }
@@ -8394,6 +8480,9 @@ fn process_device(
     }
 
     match &mut effect.instance {
+        PluginCore::TransientShaper(body) => {
+            body.process(left, right, frames);
+        }
         PluginCore::Knead(engine) => {
             engine.process_block(left, right);
         }
@@ -9516,6 +9605,7 @@ mod tests {
             BuiltinEffectType::Toaster,
             BuiltinEffectType::Levain,
             BuiltinEffectType::Scoring,
+            BuiltinEffectType::TransientShaper,
         ] {
             // No wildcard: a variant added to the registry and forgotten in
             // the list above fails to compile here rather than going unpinned.
@@ -9531,7 +9621,8 @@ mod tests {
                 | BuiltinEffectType::DutchOven
                 | BuiltinEffectType::Toaster
                 | BuiltinEffectType::Levain
-                | BuiltinEffectType::Scoring => {}
+                | BuiltinEffectType::Scoring
+                | BuiltinEffectType::TransientShaper => {}
             }
             assert_eq!(
                 BuiltinEffectType::from_name(builtin.name()),
@@ -28218,5 +28309,195 @@ mod timeline_tests {
             telemetry.snapshot().active,
             "the guarded pass left the analyser hearing nothing, so it covered no analysis path"
         );
+    }
+
+    fn transient_shaper_harness(frames: usize) -> Harness {
+        let mut harness = Harness::new(64);
+        track_with_constant_clip(&mut harness, 1, 9, 0.5, frames);
+        harness.send(GraphCommand::AddDetachedEffect(
+            7,
+            PluginCore::builtin(BuiltinEffectType::TransientShaper, 48_000.0),
+            None,
+        ));
+        harness.send(insert_track_device(1, effect(7), 0));
+        harness.playing();
+        harness
+    }
+
+    #[test]
+    fn transient_shaper_warm_unity_and_bypass_reset_first_audio_frame() {
+        let mut harness = transient_shaper_harness(96_000);
+        for _ in 0..375 {
+            let (left, right) = harness.render(128);
+            assert!(left.iter().all(|sample| *sample == 0.5));
+            assert_eq!(left, right);
+        }
+        let gain = |name| DeviceParam::BuiltinNamed(BuiltinParamName::parse(name).unwrap());
+        harness.send(GraphCommand::SetParam(7, gain("attackGain"), 2.0));
+        harness.send(GraphCommand::SetParam(7, gain("sustainGain"), 0.25));
+        assert_eq!(
+            harness.render(1).0[0],
+            0.125,
+            "unity must warm the detector"
+        );
+        harness.send_in_one_drain([
+            GraphCommand::SetBypass(7, true),
+            GraphCommand::SetParam(7, gain("attackGain"), 1.5),
+            GraphCommand::SetBypass(7, false),
+        ]);
+        assert_eq!(
+            harness.render(1).0[0],
+            0.75,
+            "first re-entry must use fresh state and latest gain"
+        );
+        for _ in 0..374 {
+            harness.render(128);
+        }
+        harness.send(GraphCommand::SetBypass(7, false));
+        assert_eq!(
+            harness.render(1).0[0],
+            0.125,
+            "redundant bypass must retain detector history"
+        );
+    }
+
+    #[test]
+    fn transient_shaper_stamp_uses_existing_block_steps_and_holds_during_bypass() {
+        let mut harness = transient_shaper_harness(32);
+        let attack = DeviceParamTarget::Builtin(DeviceParam::BuiltinNamed(
+            BuiltinParamName::parse("attackGain").unwrap(),
+        ));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: attack,
+            value: 1.5,
+            at_frame: 6,
+        });
+        assert_eq!(harness.render(4).0, vec![0.5; 4]);
+        assert_eq!(
+            harness.render(4).0,
+            vec![0.75; 4],
+            "stamp 6 applies to the whole [4,8) block"
+        );
+        harness.send(GraphCommand::SetBypass(7, true));
+        harness.send(GraphCommand::AutomateDeviceParam {
+            effect_id: 7,
+            param: attack,
+            value: 2.0,
+            at_frame: 10,
+        });
+        assert_eq!(harness.render(4).0, vec![0.5; 4]);
+        harness.send(GraphCommand::SetBypass(7, false));
+        assert_eq!(harness.render(1).0, vec![1.0]);
+    }
+
+    #[test]
+    fn transient_shaper_native_plugin_both_orders_process_actual_audio() {
+        for shaper_first in [true, false] {
+            let mut harness = transient_shaper_harness(257);
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(BuiltinParamName::parse("attackGain").unwrap()),
+                2.0,
+            ));
+            harness.send(GraphCommand::SetParam(
+                7,
+                DeviceParam::BuiltinNamed(BuiltinParamName::parse("sustainGain").unwrap()),
+                2.0,
+            ));
+            harness.send(GraphCommand::AddPlugin(
+                8,
+                Box::new(ScalingPlugin { factor: 0.5 }),
+                None,
+            ));
+            harness.send(insert_track_device(
+                1,
+                effect(8),
+                if shaper_first { 1 } else { 0 },
+            ));
+            let (left, right) = harness.render(257);
+            assert_eq!(left, vec![0.5; 257]);
+            assert_eq!(left, right);
+        }
+    }
+
+    #[test]
+    fn transient_shaper_nonunity_processing_and_bypass_drain_allocate_nothing() {
+        let mut harness = transient_shaper_harness(257);
+        harness.send(GraphCommand::SetParam(
+            7,
+            DeviceParam::BuiltinNamed(BuiltinParamName::parse("attackGain").unwrap()),
+            1.5,
+        ));
+        let mut left = [0.0; 257];
+        let mut right = [0.0; 257];
+        assert_no_alloc::assert_no_alloc(|| {
+            harness.scheduler.process_block(&mut left, &mut right, 257)
+        });
+        assert_eq!(left[0], 0.75);
+        for command in [
+            GraphCommand::SetBypass(7, true),
+            GraphCommand::SetBypass(7, false),
+        ] {
+            assert!(harness.command_tx.push(command).is_ok());
+        }
+        assert_no_alloc::assert_no_alloc(|| harness.scheduler.update_graph());
+        left.fill(0.0);
+        right.fill(0.0);
+        assert_no_alloc::assert_no_alloc(|| {
+            harness.scheduler.process_block(&mut left, &mut right, 257)
+        });
+        assert_eq!(
+            left[0], 0.0,
+            "the finite clip ended; stale samples cannot be replayed"
+        );
+    }
+
+    #[test]
+    fn transient_shaper_native_plugin_output_and_send_bus_audio() {
+        for send in [false, true] {
+            for shaper_first in [false, true] {
+                let mut harness = Harness::new(64);
+                track_with_constant_clip(&mut harness, 1, 9, 0.5, 8192);
+                harness.send(GraphCommand::AddBus(TimelineBus::new(50)));
+                harness.send(GraphCommand::AddDetachedEffect(
+                    7,
+                    PluginCore::transient_shaper_with_patch(
+                        48_000.0,
+                        &[
+                            (BuiltinParamName::parse("attackGain").unwrap(), 2.0),
+                            (BuiltinParamName::parse("sustainGain").unwrap(), 2.0),
+                        ],
+                    ),
+                    None,
+                ));
+                harness.send(GraphCommand::AddPlugin(
+                    8,
+                    Box::new(ScalingPlugin { factor: 0.5 }),
+                    None,
+                ));
+                let order = if shaper_first { [7, 8] } else { [8, 7] };
+                for (index, id) in order.into_iter().enumerate() {
+                    harness.send(insert_bus_device(50, effect(id), index));
+                }
+                if send {
+                    harness.send(GraphCommand::AddSend {
+                        track_id: 1,
+                        bus_id: 50,
+                        tap: SendTap::PreFader,
+                        level: 1.0,
+                        delay: uncompensated(),
+                    });
+                    harness.send(GraphCommand::SetTrackMute(1, true));
+                } else {
+                    harness.send(GraphCommand::SetTrackOutput(1, RouteTarget::Bus(50)));
+                }
+                harness.playing();
+                harness.render(4096);
+                let (left, right) = harness.render(257);
+                assert_eq!(left, vec![0.5; 257]);
+                assert_eq!(left, right);
+            }
+        }
     }
 }
