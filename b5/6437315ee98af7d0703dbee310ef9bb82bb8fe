@@ -1,0 +1,37 @@
+tests/e2e/browserDisplayScale.spec.ts
+  s_26f70b851e8f7a::t_2bc31c760a9303 647,653-658
+  s_26f70b851e8f7a::t_df2ed0a56d01b4 531-533,572-575,578-585,587-590,597-611,621,634-640,642-645,651,664-666,668-671,685-692,695-700,704-708,716-717,726-729,732-735,742,746-750,772-782,784-788
+  s_26f70b851e8f7a::t_a5fb8e526d9a08 711-714,757-758,783
+  s_26f70b851e8f7a::t_d6bec48d85c043 4-5,451-530,534-571,576-577,586,591-596,612-620,622-633,641,646,648-650,652,659-663,667,672-684,693-694,701-703,709-710,715,718-725,730-731,736-741,743-745,751-756,759-771,789-790
+  s_26f70b851e8f7a::t_2c15726c2e661b 791-793
+src/app/main.tsx
+  s_26f70b851e8f7a::t_69b18e37fd538a 1,3-4,6-9,74-75,79-86,92-104,106-108,110-122
+  s_26f70b851e8f7a::t_7d1d2f1075ad4e 5,76-78,87-91,105,109
+src/app/initialAppImportRecovery.ts
+  s_26f70b851e8f7a::t_7d1d2f1075ad4e 4,14,24-25
+  s_26f70b851e8f7a::t_69b18e37fd538a 1-3,5-13,15-23,26-48
+src/app/__tests__/mainAppImportRecovery.spec.tsx
+  s_26f70b851e8f7a::t_7d1d2f1075ad4e 10,18,37-39,71-91,117,119,126,132,216-221,223-225,229-231,242-253,275-299
+  s_26f70b851e8f7a::t_8ecfb5662fe0e7 23-24,48,53-57,118,300-315
+  s_26f70b851e8f7a::t_01076791bc14e7 1-9,11-17,19-22,25-36,40-47,49-52,58-70,92-116,120-125,127-131,133-215,222,226-228,232-241,254-274,316-317
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_26f70b851e8f7a::t_69b18e37fd538a 337,357
+src/app/ApplicationStartupError.tsx
+  s_26f70b851e8f7a::t_69b18e37fd538a 1-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b56437315ee98af7d0703dbee310ef9bb82bb8fe",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
