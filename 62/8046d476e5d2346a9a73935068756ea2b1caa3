@@ -1,0 +1,14 @@
+crates/scoring/tests/shared_pitch_contract.rs
+  h_beb54bf43b47b7 81-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "628046d476e5d2346a9a73935068756ea2b1caa3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
