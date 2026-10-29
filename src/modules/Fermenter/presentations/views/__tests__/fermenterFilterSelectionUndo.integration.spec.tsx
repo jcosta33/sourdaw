@@ -256,7 +256,7 @@ describe('Fermenter Filter selection through Command', () => {
         expect(audio.updateDeviceParam).toHaveBeenLastCalledWith(TRACK_ID, DEVICE_ID, 'filterModel', 2);
     });
 
-    it('restores raw absence and Wavetable when Undo deletes the first Model selection', async () => {
+    it('restores raw absence and SVF when Undo deletes the first Model selection', async () => {
         replaceValues({ filterCutoff: 600 });
         flushAutomergeStorageWrites();
         renderPanel();
