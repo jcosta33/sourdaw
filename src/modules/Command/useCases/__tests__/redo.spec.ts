@@ -202,6 +202,7 @@ describe('redo', () => {
         await redo();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(guardedRedo, {
+            undoEntryId: entry.id,
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
@@ -242,6 +243,7 @@ describe('redo', () => {
         await redo();
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(entry.action, {
+            undoEntryId: entry.id,
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',
@@ -292,6 +294,7 @@ describe('redo', () => {
         await redo();
 
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith([first.action, second.redoAction, third.action], {
+            undoEntryIds: [first.id, second.id, third.id],
             skipUndo: true,
             skipMacroRecording: true,
             source: 'ai',

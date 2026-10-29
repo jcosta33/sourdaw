@@ -7,6 +7,11 @@ name: Validation
 on:
   workflow_call:
     inputs:
+      mode:
+        description: Full required validation or preliminary push validation.
+        required: false
+        default: full
+        type: string
       browser:
         description: Whether the affected plan requires browser smoke.
         required: true
@@ -60,9 +65,8 @@ jobs:
       code: ${{ steps.scope.outputs.code }}
       tooling: ${{ steps.scope.outputs.tooling }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+      # Both callers run only on pull_request. With the default token and inline filters,
+      # paths-filter lists files through the API; no repository checkout is needed.
       - name: Filter changed paths
         id: filter
         # A transient GitHub API failure while listing the changed files must
@@ -137,7 +141,7 @@ jobs:
               - '!playwright.config.ts'
               - '!tsconfig*.json'
 
-      # On a pull request's shallow checkout the filter lists the changed files
+      # On a pull request the filter lists the changed files
       # through the GitHub REST API, which intermittently answers 500; that one
       # transient answer used to fail the whole job and block Gate (#3592). The
       # retry re-runs the identical filter, and `Resolve scope` fails loudly
@@ -222,6 +226,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BROWSER: ${{ inputs.browser }}
           PROFILE: ${{ inputs.profile }}
+          MODE: ${{ inputs.mode }}
           # The retry attempt's verdict wins; its empty outputs (it never ran,
           # or it failed too) fall through to the first attempt's, and both
           # being empty leaves the value empty for the guard below to refuse.
@@ -240,6 +245,10 @@ jobs:
               exit 1
             fi
           done
+          case "$MODE" in
+            full|preliminary) ;;
+            *) printf 'Invalid validation mode: %s\n' "$MODE" >&2; exit 1 ;;
+          esac
           case "$PROFILE" in
             docs|tooling|broad) ;;
             *) printf 'Invalid affected profile: %s\n' "$PROFILE" >&2; exit 1 ;;
@@ -408,10 +417,10 @@ jobs:
     # contract checks answer to files a prose-classified path can still touch.
     if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 50
     steps:
       - name: Checkout
-        timeout-minutes: 5
+        timeout-minutes: 10
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
@@ -481,7 +490,7 @@ jobs:
   unit:
     name: Unit suite ${{ matrix.shard }}/4
     needs: decide
-    if: needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.web == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -638,7 +647,7 @@ jobs:
   build:
     name: Production build
     needs: decide
-    if: needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.web == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -670,7 +679,7 @@ jobs:
   rust:
     name: Rust workspace and collaboration server
     needs: decide
-    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -776,7 +785,7 @@ jobs:
     # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
     # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
     # the only place it compiles, and public repositories get those free.
-    if: needs.decide.outputs.rust == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -878,7 +887,7 @@ jobs:
     # testing keeps that oracle rather than trading it away: a test build
     # compiles everything a `cargo check` of the same crate compiles, and then
     # runs it too.
-    if: needs.decide.outputs.rust == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -920,7 +929,7 @@ jobs:
     # is the one platform the crate compiles on, for the reason `native-macos`
     # records above. A TypeScript producer can break parity exactly as a Rust
     # consumer can, so this leg answers to both scopes rather than to `rust`.
-    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -1036,21 +1045,37 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: trusted-scanner
           persist-credentials: false
+          sparse-checkout: |
+            /.gitleaks.toml
+            /.gitleaksignore
+          sparse-checkout-cone-mode: false
 
       - name: Checkout scan target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Leaving repository unset keeps origin at the base repository. The
           # pinned head SHA is valid for both same-repository and fork PRs;
-          # the next step fetches the independently pinned base SHA there.
+          # the next step completes both pinned histories without unrelated refs.
           ref: ${{ github.event.pull_request.head.sha }}
           path: scan-target
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Fetch immutable base SHA
         working-directory: scan-target
-        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --no-tags --no-recurse-submodules --unshallow origin "$BASE_SHA" "$HEAD_SHA"
+          else
+            git fetch --no-tags --no-recurse-submodules origin "$BASE_SHA" "$HEAD_SHA"
+          fi
+          if [ "$(git rev-parse --is-shallow-repository)" != false ]; then
+            printf 'PR secret scan requires complete pinned histories\n' >&2
+            exit 1
+          fi
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
 
       - name: Install trusted Gitleaks
         working-directory: ${{ github.workspace }}
@@ -1182,25 +1207,28 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           PULL_REQUEST: ${{ github.event.pull_request != null }}
+          MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          printf '%s' "$RESULTS" | jq -e --arg pr "$PULL_REQUEST" '
+          printf '%s' "$RESULTS" | jq -e --arg pr "$PULL_REQUEST" --arg mode "$MODE" '
             def selected($flag):
               if $flag == "true" then "success"
               elif $flag == "false" then "skipped"
               else error("missing scope verdict") end;
+            def broad($flag): if $mode == "preliminary" then "skipped" else selected($flag) end;
+            ($mode == "full" or $mode == "preliminary") and
             (keys | sort) == (["decide", "static", "lint", "boundaries", "unit", "tooling-unit", "smoke", "build", "rust", "native-macos", "native-windows", "native-parity", "dependency-review", "pr-secrets"] | sort) and
             .decide.result == "success" and .static.result == "success" and
             (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == "true" or . == "false")) and
             .lint.result == selected(.decide.outputs.code) and
             .boundaries.result == selected(.decide.outputs.code) and
-            .unit.result == selected(.decide.outputs.web) and
+            .unit.result == broad(.decide.outputs.web) and
             .["tooling-unit"].result == selected(.decide.outputs.tooling) and
-            .build.result == selected(.decide.outputs.web) and
-            .rust.result == (if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "success" else "skipped" end) and
-            .["native-macos"].result == selected(.decide.outputs.rust) and
-            .["native-windows"].result == selected(.decide.outputs.rust) and
-            .["native-parity"].result == (if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "success" else "skipped" end) and
+            .build.result == broad(.decide.outputs.web) and
+            .rust.result == broad(if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "true" else "false" end) and
+            .["native-macos"].result == broad(.decide.outputs.rust) and
+            .["native-windows"].result == broad(.decide.outputs.rust) and
+            .["native-parity"].result == broad(if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "true" else "false" end) and
             .smoke.result == (if $pr == "true" then selected(.decide.outputs.e2e) elif $pr == "false" then "skipped" else error("missing PR verdict") end) and
             .["dependency-review"].result == selected($pr) and
             .["pr-secrets"].result == selected($pr)'

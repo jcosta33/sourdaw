@@ -25,6 +25,8 @@ const CREATED_AT = 1700000000000;
 const PROJECT_NAME = 'Round Trip Song';
 const RECENT_KEY = `sourdaw:project:${CREATED_AT}`;
 
+const documentIdentity = vi.hoisted(() => ({ epoch: 0 }));
+
 const mocks = vi.hoisted(() => ({
     projectStoreValue: { value: null as ProjectStoreState | null },
     projectStoreSet: vi.fn<(value: ProjectStoreState) => void>(),
@@ -52,13 +54,24 @@ vi.mock('../../../../stores/projectStore', () => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
+    captureDurableDocumentWitness: vi.fn(() => ''),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${documentIdentity.epoch}`),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRevision: mocks.captureProjectRevision,
     compactProject: vi.fn().mockResolvedValue(undefined),
     persistCrdtProject: mocks.persistCrdtProject,
     projectActionHistoryToStore: vi.fn(),
     resetCrdtProject: vi.fn((_name: string, onAuthorityReplaced?: () => void) => {
+        documentIdentity.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     }),
@@ -175,6 +188,8 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     wireSidechainRoute: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
     executeUserAppAction: vi.fn(),
@@ -270,6 +285,7 @@ function makeProjectData(): ProjectData {
 describe('saveProject -> recent list -> loadRecentProject round-trip', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        documentIdentity.epoch = 0;
         vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
         installFakeIndexedDb();
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
