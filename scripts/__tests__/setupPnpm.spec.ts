@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseDocument } from 'yaml';
@@ -74,7 +75,85 @@ function fixture() {
     return { workspace, dest, options, run, implementation, target, exports };
 }
 
+function configFileProcess(input: ReturnType<typeof fixture>, injection?: { name: string; kind: 'file' | 'symlink' }) {
+    const script = join(dirname(input.workspace), 'config-files.mjs');
+    writeFileSync(
+        script,
+        `import fs from 'node:fs';
+import {syncBuiltinESMExports} from 'node:module';
+import {join} from 'node:path';
+process.umask(0);
+const workspace=${JSON.stringify(input.workspace)},dest=${JSON.stringify(input.dest)},env=${JSON.stringify(input.options.env)};
+const injection=${JSON.stringify(injection ?? null)};
+const target=join(workspace,'preserve-config-target');
+fs.writeFileSync(target,'preserve input');
+if(injection){
+ const write=fs.writeFileSync;
+ const requested=join(dest,'config',injection.name);
+ let injected=false;
+ fs.writeFileSync=(file,data,options)=>{
+  if(file===requested&&!injected){
+   injected=true;
+   if(injection.kind==='symlink')fs.symlinkSync(target,file);
+   else write(file,'preserve input');
+  }
+  return write(file,data,options);
+ };
+ syncBuiltinESMExports();
+}
+const {setupPnpm}=await import(${JSON.stringify(pathToFileURL(join(repository, 'scripts/setupPnpm.ts')).href)});
+let commands=0,error;
+try{setupPnpm({workspace,dest,manifest:'package.json',env,node:process.execPath,run:()=>{commands++;return {status:1,stdout:''};}});}
+catch(caught){error={code:caught.code??null,message:caught.message};}
+const files={};
+for(const name of ['user.npmrc','global.npmrc']){
+ const file=join(dest,'config',name);
+ if(fs.existsSync(file))files[name]={mode:fs.statSync(file).mode&0o777,content:fs.readFileSync(file,'utf8'),symlink:fs.lstatSync(file).isSymbolicLink()};
+}
+console.log(JSON.stringify({rootMode:fs.statSync(dest).mode&0o777,configMode:fs.statSync(join(dest,'config')).mode&0o777,files,commands,error,target:fs.readFileSync(target,'utf8'),exports:['GITHUB_PATH','GITHUB_ENV','GITHUB_OUTPUT'].map(name=>fs.readFileSync(env[name],'utf8'))}));
+`
+    );
+    const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 5_000 });
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    const report: unknown = JSON.parse(result.stdout);
+    return report;
+}
+
 describe('verified JavaScript pnpm setup', () => {
+    it('creates private config files readable by their owner even with a permissive umask', () => {
+        const report = configFileProcess(fixture());
+        expect(report).toMatchObject({
+            rootMode: 0o755,
+            configMode: 0o700,
+            files: {
+                'user.npmrc': { mode: 0o600, content: '', symlink: false },
+                'global.npmrc': { mode: 0o600, content: '', symlink: false },
+            },
+            commands: 1,
+            target: 'preserve input',
+            exports: ['', '', ''],
+        });
+    });
+
+    it.each([
+        { name: 'user.npmrc', kind: 'file' },
+        { name: 'global.npmrc', kind: 'file' },
+        { name: 'user.npmrc', kind: 'symlink' },
+        { name: 'global.npmrc', kind: 'symlink' },
+    ] as const)('refuses an existing $name $kind before running any package command', (injection) => {
+        const report = configFileProcess(fixture(), injection);
+        expect(report).toMatchObject({
+            rootMode: 0o755,
+            configMode: 0o700,
+            files: { [injection.name]: { content: 'preserve input', symlink: injection.kind === 'symlink' } },
+            commands: 0,
+            error: { code: 'EEXIST' },
+            target: 'preserve input',
+            exports: ['', '', ''],
+        });
+    });
+
     it('keeps the default job directory stable for cache paths and refuses reuse of populated storage', () => {
         const input = fixture();
         input.options.dest = undefined;

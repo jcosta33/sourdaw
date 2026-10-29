@@ -146,12 +146,12 @@ function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.Proce
         Object.entries(env).filter(([name]) => !/^(npm_|pnpm_|corepack_|node_options$|node_path$)/i.test(name))
     );
     const config = join(root, 'config');
-    mkdirSync(config);
+    mkdirSync(config, { mode: 0o700 });
     mkdirSync(join(root, 'runtime'));
     const userConfig = join(config, 'user.npmrc');
     const globalConfig = join(config, 'global.npmrc');
-    writeFileSync(userConfig, '');
-    writeFileSync(globalConfig, '');
+    writeFileSync(userConfig, '', { mode: 0o600, flag: 'wx' });
+    writeFileSync(globalConfig, '', { mode: 0o600, flag: 'wx' });
     return {
         ...safe,
         XDG_CONFIG_HOME: config,
