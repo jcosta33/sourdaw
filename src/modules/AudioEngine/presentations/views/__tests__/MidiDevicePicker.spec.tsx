@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { MidiDevicePicker } from '../MidiDevicePicker';
@@ -116,23 +116,23 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('MIDI not supported in this browser')).not.toBeInTheDocument();
 
-        await waitFor(() => {
-            expect(mockInitWebMidi).toHaveBeenCalled();
+        expect(mockInitWebMidi).not.toHaveBeenCalled();
+        await act(async () => {
+            fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
         });
-
-        mockInitWebMidi.mockClear();
-        fireEvent.click(screen.getByLabelText('Refresh MIDI devices'));
         expect(mockInitWebMidi).toHaveBeenCalledTimes(1);
     });
 
-    it('should show connected badge when device is selected', () => {
+    it('should show connected badge when device is selected', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
             selectedInputId: 'midi1',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // The component shows "Connected:" when selectedInputId is set
         expect(screen.getByText(/Connected:/)).toBeInTheDocument();
     });
@@ -181,7 +181,8 @@ describe('MidiDevicePicker', () => {
         expect(screen.getByLabelText('Refresh MIDI devices')).toBeInTheDocument();
         expect(screen.queryByText('Detecting devices...')).not.toBeInTheDocument();
         expect(screen.queryByText('Detecting MIDI devices...')).not.toBeInTheDocument();
-        expect(screen.getByText('No MIDI devices found')).toBeInTheDocument();
+        expect(screen.getByRole('option', { name: "Couldn't list MIDI devices" })).toBeInTheDocument();
+        expect(screen.queryByRole('option', { name: 'No MIDI devices found' })).not.toBeInTheDocument();
     });
 
     it('shows the detecting state and a disabled select while devices are empty and not initialised', async () => {
@@ -242,7 +243,7 @@ describe('MidiDevicePicker', () => {
         expect(mockSelectMidiInput).not.toHaveBeenCalled();
     });
 
-    it('renders "Connected: Unknown" when the selected device is no longer in the input list', () => {
+    it('renders "Connected: Unknown" when the selected device is no longer in the input list', async () => {
         (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
             isSupported: true,
             inputs: [{ id: 'midi1', name: 'MIDI Keyboard', manufacturer: 'Roland' }],
@@ -250,7 +251,9 @@ describe('MidiDevicePicker', () => {
             selectedInputId: 'disconnected',
             enumerationError: null,
         });
-        render(<MidiDevicePicker />);
+        await act(async () => {
+            render(<MidiDevicePicker />);
+        });
         // find() returns undefined ⇒ `?? 'Unknown'` fallback ⇒ "Connected: Unknown".
         expect(screen.getByText('Connected: Unknown')).toBeInTheDocument();
     });

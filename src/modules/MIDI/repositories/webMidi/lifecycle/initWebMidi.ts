@@ -399,6 +399,6 @@ export async function initWebMidi({ onMidiMessage }: InitWebMidiInput): Promise<
         }
     }
 
-    setState({ isSupported: false, enumerationError: webMidiFailure });
+    setState({ isSupported: capabilities.webMidiApiPresent, enumerationError: webMidiFailure });
     return false;
 }

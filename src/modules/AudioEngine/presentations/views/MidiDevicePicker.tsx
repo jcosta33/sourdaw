@@ -1,4 +1,4 @@
-import { type ReactElement, useState, useEffect } from 'react';
+import { type ReactElement, useState, useEffect, useRef } from 'react';
 
 import { KeyboardMusic, RefreshCw } from 'lucide-react';
 
@@ -23,16 +23,21 @@ const defaultWebMidiState = {
 export const MidiDevicePicker = (): ReactElement => {
     const state = useStore(webMidiStore, defaultWebMidiState);
     const [initialised, setInitialised] = useState(false);
+    const attemptedInitialisation = useRef(false);
 
     useEffect(() => {
-        if (!state.isSupported) {
+        if (!state.isSupported || attemptedInitialisation.current) {
+            return;
+        }
+        attemptedInitialisation.current = true;
+        if ((state.enumerationError ?? null) !== null) {
             return;
         }
         void initWebMidi().then(() => {
             setInitialised(true);
             return null;
         });
-    }, [state.isSupported]);
+    }, [state.isSupported, state.enumerationError]);
 
     if (!state.isSupported) {
         return (
@@ -45,7 +50,10 @@ export const MidiDevicePicker = (): ReactElement => {
     }
 
     const handleRefresh = () => {
-        void initWebMidi();
+        void initWebMidi().then(() => {
+            setInitialised(true);
+            return null;
+        });
     };
 
     const handleChange = (deviceId: string) => {
@@ -55,7 +63,12 @@ export const MidiDevicePicker = (): ReactElement => {
     };
 
     const listingFailed = (state.enumerationError ?? null) !== null;
-    const emptyInputsOptionLabel = initialised || listingFailed ? 'No MIDI devices found' : 'Detecting devices...';
+    let emptyInputsOptionLabel = 'Detecting devices...';
+    if (listingFailed) {
+        emptyInputsOptionLabel = "Couldn't list MIDI devices";
+    } else if (initialised) {
+        emptyInputsOptionLabel = 'No MIDI devices found';
+    }
 
     return (
         <Stack gap={2}>

@@ -267,7 +267,7 @@ describe('initWebMidi', () => {
         );
     });
 
-    it('should return false if neither is supported', async () => {
+    it('retains capability support when browser access is refused', async () => {
         const onMidiMessage = vi.fn<(event: WebMidiInputMessage) => void>();
         requestMidiAccessMock.mockRejectedValue(new Error('no access'));
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
@@ -275,7 +275,7 @@ describe('initWebMidi', () => {
         const result = await initWebMidi({ onMidiMessage });
 
         expect(result).toBe(false);
-        expect(setStateMock).toHaveBeenCalledWith({ isSupported: false, enumerationError: 'no access' });
+        expect(setStateMock).toHaveBeenCalledWith({ isSupported: true, enumerationError: 'no access' });
     });
 
     it('should remove the active event listener when the selected input disappears', async () => {
