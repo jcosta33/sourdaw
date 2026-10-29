@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { assertTelemetryHealth, telemetryOutcomes } from '../diagnostics/reloadCancellation/telemetry';
+import {
+    assertSuccessfulAppCoverage,
+    assertTelemetryHealth,
+    telemetryOutcomes,
+} from '../diagnostics/reloadCancellation/telemetry';
 import {
     createWebSocketObserver,
     summarizeWebSocket,
@@ -187,5 +191,46 @@ describe('passive reload-cancellation evidence', () => {
         unparsedApp.websocket = { errors: [], missingCreation: [], created: 0 };
         expect(() => assertTelemetryHealth(unparsedApp)).not.toThrow();
         expect(telemetryOutcomes(unparsedApp)['Network.webSocketCreated']).toBe('not-observed');
+    });
+
+    it('marks visible controls without the App callback as a logpoint coverage gap', () => {
+        const contradiction = completeTelemetry();
+        contradiction.counts = {
+            'collector-ready': 1,
+            'Network.requestWillBeSent': 2,
+            'Page.frameNavigated': 1,
+            'App-logpoint-installed': 1,
+            'document-init': 1,
+            'public-dom-transition': 1,
+            'public-transport-visible': 1,
+        };
+        expect(telemetryOutcomes(contradiction)['App-fulfilled']).toBe('unknown');
+        expect(() => assertTelemetryHealth(contradiction)).toThrow('logpoint coverage is incomplete');
+    });
+
+    it('requires the callback on a successful child while preserving failed-load absence', () => {
+        const failedLoad = completeTelemetry();
+        failedLoad.counts = {
+            'collector-ready': 1,
+            'Network.requestWillBeSent': 2,
+            'Page.frameNavigated': 1,
+            'App-logpoint-installed': 1,
+            'document-init': 1,
+            'public-dom-transition': 1,
+        };
+        expect(() => assertTelemetryHealth(failedLoad)).not.toThrow();
+        expect(() => assertSuccessfulAppCoverage(failedLoad, 1)).not.toThrow();
+        expect(() => assertSuccessfulAppCoverage(failedLoad, 0)).toThrow('Successful child lacks');
+        const unparsedApp = completeTelemetry();
+        unparsedApp.counts = {
+            'collector-ready': 1,
+            'Network.requestWillBeSent': 2,
+            'Page.frameNavigated': 1,
+            'document-init': 1,
+            'public-dom-transition': 1,
+        };
+        expect(telemetryOutcomes(unparsedApp)['App-fulfilled']).toBe('unknown');
+        expect(() => assertSuccessfulAppCoverage(unparsedApp, 1)).not.toThrow();
+        expect(() => assertSuccessfulAppCoverage(unparsedApp, 0)).toThrow('Successful child lacks');
     });
 });

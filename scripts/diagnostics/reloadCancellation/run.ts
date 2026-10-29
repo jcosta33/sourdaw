@@ -48,7 +48,7 @@ export async function runHostedDiagnostic(harness: string, root: string, output:
         resolve(output, 'run'),
         60 * 60 * 1_000
     );
-    const qualification = qualifyExecution(root, output);
+    const qualification = qualifyExecution(root, output, code);
     const qualified = Object.values(qualification).every((check) => check.observed);
     let passingHistory: { observed: boolean; reason?: string };
     try {

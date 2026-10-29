@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { assertRuntimeOrder, assertRuntimePrefix, historicalCases, parseHistoryEvents } from './history.ts';
 import { recordOf } from './journal.ts';
 import { assertOriginalSource } from './sourceBinding.ts';
-import { assertTelemetryHealth, telemetryOutcomes } from './telemetry.ts';
+import { assertSuccessfulAppCoverage, assertTelemetryHealth, telemetryOutcomes } from './telemetry.ts';
 
 type Check = { observed: true; value: unknown } | { observed: false; reason: string };
 
@@ -21,7 +21,7 @@ function json(path: string): unknown {
     return value;
 }
 
-export function qualifyExecution(root: string, output: string): Record<string, Check> {
+export function qualifyExecution(root: string, output: string, childCode: number): Record<string, Check> {
     const frozen: unknown = JSON.parse(readFileSync(new URL('./original-history.json', import.meta.url), 'utf8'));
     const expected = historicalCases(frozen);
     const runtime = (): ReturnType<typeof parseHistoryEvents> =>
@@ -58,6 +58,7 @@ export function qualifyExecution(root: string, output: string): Record<string, C
         collector: observe(() => {
             const health = json(resolve(output, 'run/collector-health.json'));
             assertTelemetryHealth(health);
+            assertSuccessfulAppCoverage(health, childCode);
             const observations = readFileSync(resolve(output, 'run/browser-observations.jsonl'), 'utf8')
                 .split('\n')
                 .filter(Boolean)

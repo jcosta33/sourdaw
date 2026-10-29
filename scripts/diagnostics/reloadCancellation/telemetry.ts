@@ -23,6 +23,10 @@ export function assertTelemetryHealth(value: unknown): void {
     if (typeof websocket.created !== 'number' || !Number.isSafeInteger(websocket.created) || websocket.created < 0) {
         throw new Error('Invalid websocket creation count');
     }
+    const outcomes = telemetryOutcomes(value);
+    if (outcomes['public-transport-visible'] === 'observed' && outcomes['App-fulfilled'] !== 'observed') {
+        throw new Error('Playback controls visible without App fulfillment callback: logpoint coverage is incomplete');
+    }
 }
 
 export function telemetryOutcomes(value: unknown): Record<string, 'observed' | 'not-observed' | 'unknown'> {
@@ -32,26 +36,32 @@ export function telemetryOutcomes(value: unknown): Record<string, 'observed' | '
     const logpointCount = counts['App-logpoint-installed'];
     if (
         logpointCount !== undefined &&
-        (typeof logpointCount !== 'number' || !Number.isFinite(logpointCount) || logpointCount < 0)
+        (typeof logpointCount !== 'number' || !Number.isSafeInteger(logpointCount) || logpointCount < 0)
     ) {
         throw new TypeError('Invalid App logpoint coverage count');
     }
+    const observedCount = (name: string): number => {
+        const count = counts[name];
+        if (count === undefined) {
+            return 0;
+        }
+        if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+            throw new TypeError(`Invalid outcome count: ${name}`);
+        }
+        return count;
+    };
+    const callback = observedCount('App-fulfilled');
+    const controls = observedCount('public-transport-visible');
     return {
-        ...Object.fromEntries(
-            ['App-fulfilled', 'public-transport-visible'].map((name) => {
-                const count = counts[name];
-                if (count !== undefined && (typeof count !== 'number' || !Number.isFinite(count) || count < 0)) {
-                    throw new TypeError(`Invalid outcome count: ${name}`);
-                }
-                if (typeof count === 'number' && count > 0) {
-                    return [name, 'observed'];
-                }
-                if (name === 'App-fulfilled' && !(typeof logpointCount === 'number' && logpointCount > 0)) {
-                    return [name, 'unknown'];
-                }
-                return [name, 'not-observed'];
-            })
-        ),
+        'App-fulfilled':
+            callback > 0 ? 'observed' : (logpointCount ?? 0) > 0 && controls === 0 ? 'not-observed' : 'unknown',
+        'public-transport-visible': controls > 0 ? 'observed' : 'not-observed',
         'Network.webSocketCreated': websocket.created === 0 ? 'not-observed' : 'observed',
     };
+}
+
+export function assertSuccessfulAppCoverage(value: unknown, childCode: number): void {
+    if (childCode === 0 && telemetryOutcomes(value)['App-fulfilled'] !== 'observed') {
+        throw new Error('Successful child lacks an observed App fulfillment callback');
+    }
 }
