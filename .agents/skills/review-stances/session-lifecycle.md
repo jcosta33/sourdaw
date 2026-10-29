@@ -311,6 +311,24 @@ that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Th
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
 
+### Obsolete input owners during a held removal (issue #5283)
+
+With track `a` already monitoring On at input `null`, hold its real registered removal in a
+storage transaction and independently commit `replacement-input` through `mutateCrdtDoc` while
+`a` is absent from the optimistic projection. Before commit or abort, retire `a`'s obsolete key and
+edge immediately. A shared eligible `b` must retain the same capture, edge, and stream. In the
+last-owner case, the old input must stop. Do not recreate the absent strip or request permission
+again. On abort, re-admit the current input; on commit, remove `a`. A same-input abort must retain its original
+owner and capture.
+
+PR #4449 first introduced the keyed-owner form after #576's held transactions and #4255's shared
+edges. Its source retargeted a key only on explicit start, and its public tests and review covered
+start, grant, shared ownership, and stop, not an independent committed selector change under
+optimistic absence. Older code already retained stale singleton audio, so the earliest origin of all
+stale physical edges is unproven. PR #5011 later added an Auto-only sweep that left direct On
+outside it; #5091 fixed retirement. The #5380 proof uses controlled media and graph ports, not
+physical hardware.
+
 ### 2026-10-09 — monitor release must be paired with committed Undo restoration (caught in PR #5091)
 
 The committed-deletion probes proved release and refused-deletion preservation but omitted the
