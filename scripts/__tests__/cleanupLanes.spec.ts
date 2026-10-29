@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     authenticateCleanup,
@@ -22,6 +22,9 @@ import {
 } from '../githubAppIdentity.ts';
 import { laneIsActive } from '../laneActivity.ts';
 import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
+import { guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract.ts';
+import { writeGuardFailureReceipt } from '../resourceGuard.ts';
+import * as resourceGuard from '../resourceGuard.ts';
 
 function fixture() {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-')));
@@ -92,6 +95,23 @@ function fixture() {
             now += 100_000_000;
         },
         dispose: () => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }),
+    };
+}
+
+function guardReceipt(head: string, failedAt = '2026-10-28T00:00:00Z'): GuardFailureReceipt {
+    return {
+        version: 1,
+        lane: 'author',
+        branch: 'fix/fixture',
+        headSha: head,
+        failedAt,
+        reason: 'memory',
+        command: 'pnpm',
+        args: ['test:run', 'fixture.spec.ts'],
+        profile: 'focused',
+        peakRssBytes: 10,
+        maxRssBytes: 5,
+        durationMs: 100,
     };
 }
 
@@ -380,6 +400,174 @@ describe('automatic lane cleanup', () => {
             f.dispose();
         }
     });
+
+    it('reconciles a killed worker after native removal and clears only its original guard receipt', async () => {
+        const f = fixture();
+        try {
+            writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+            const script = `
+                const {cleanupLanes, withCleanupLock} = await import(${JSON.stringify(resolve('scripts/cleanupLanes.ts'))});
+                const {shellPort} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
+                const {execFileSync} = await import('node:child_process');
+                const root = ${JSON.stringify(f.root)};
+                const shell = {capture:(command,args,options)=>{const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
+                    run:(command,args)=>execFileSync(command,args,{cwd:root})};
+                const native = shellPort(shell, root);
+                const removal = {...native,fetch:()=>{},repository:()=> 'jcosta33/sourdaw',currentDirectory:()=>root,active:()=>false,
+                    pullRequests:()=>[${JSON.stringify(f.pr)}],remoteHead:()=>undefined,
+                    remove:(path)=>{native.remove(path);process.kill(process.pid,'SIGKILL')}};
+                cleanupLanes({primaryRoot:root,removal,now:()=>1000,serialize:op=>withCleanupLock(root,shell,op),log:()=>{}});
+            `;
+            const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
+                cwd: f.root,
+                env: githubAuthorizationGitEnv(),
+                stdio: 'pipe',
+            });
+            const [, signal] = await once(child, 'exit');
+            expect(signal).toBe('SIGKILL');
+            expect(existsSync(f.lane)).toBe(false);
+            expect(existsSync(guardFailureReceiptPath(f.root, 'author'))).toBe(true);
+            expect(readCleanupRecords(f.root)[0]).toMatchObject({ status: 'pending', attempts: 1 });
+            f.advance();
+            expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+            expect(readCleanupRecords(f.root)[0]?.status).toBe('removed');
+            expect(existsSync(guardFailureReceiptPath(f.root, 'author'))).toBe(false);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('retries failed post-removal guard housekeeping in a fresh worker scan', () => {
+        const f = fixture();
+        const clear = vi.spyOn(resourceGuard, 'clearGuardFailureReceiptIfUnchanged');
+        try {
+            writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+            clear.mockImplementationOnce(() => {
+                throw new Error('guard bookkeeping temporarily unavailable');
+            });
+            expect(cleanupLanes(f.port)[0]).toMatchObject({
+                status: 'pending',
+                reason: 'guard bookkeeping temporarily unavailable',
+            });
+            expect(existsSync(f.lane)).toBe(false);
+            expect(f.port.removal.worktrees().some((lane) => lane.path === f.lane)).toBe(false);
+            expect(existsSync(guardFailureReceiptPath(f.root, 'author'))).toBe(true);
+            f.advance();
+            const fresh = {
+                ...f.port,
+                removal: {
+                    ...f.port.removal,
+                    pullRequests: () => {
+                        throw Error('no PR lookup after removal');
+                    },
+                },
+            };
+            expect(cleanupLanes(fresh)[0]?.status).toBe('removed');
+            expect(readCleanupRecords(f.root)[0]?.status).toBe('removed');
+            expect(existsSync(guardFailureReceiptPath(f.root, 'author'))).toBe(false);
+        } finally {
+            clear.mockRestore();
+            f.dispose();
+        }
+    });
+
+    it('reconciles older absent records without inventing authority to clear guard state', () => {
+        const f = fixture();
+        try {
+            cleanupLanes(f.port, undefined, true);
+            f.git(['worktree', 'unlock', f.lane]);
+            f.git(['worktree', 'remove', f.lane]);
+            writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+            f.advance();
+            expect(cleanupLanes(f.port)[0]).toMatchObject({
+                status: 'removed',
+                reason: expect.stringContaining('unbound guard bookkeeping preserved'),
+            });
+            expect(existsSync(guardFailureReceiptPath(f.root, 'author'))).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('rechecks an atomically claimed receipt and preserves a concurrent replacement with identical bytes', () => {
+        const f = fixture();
+        const original = resourceGuard.clearGuardFailureReceiptIfUnchanged;
+        const clear = vi.spyOn(resourceGuard, 'clearGuardFailureReceiptIfUnchanged');
+        try {
+            const receipt = guardReceipt(f.head);
+            writeGuardFailureReceipt(f.root, receipt);
+            clear.mockImplementationOnce((...args) => {
+                writeGuardFailureReceipt(f.root, receipt);
+                return original(...args);
+            });
+            expect(cleanupLanes(f.port)[0]?.status).toBe('pending');
+            expect(existsSync(f.lane)).toBe(false);
+            const path = guardFailureReceiptPath(f.root, 'author');
+            expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(receipt);
+            f.advance();
+            expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+            expect(JSON.parse(readFileSync(path, 'utf8'))).toEqual(receipt);
+        } finally {
+            clear.mockRestore();
+            f.dispose();
+        }
+    });
+
+    it.each(['new guard receipt', 'same bytes in a new receipt', 'unregistered directory', 'registered worktree'])(
+        'preserves %s when reconciling an interrupted removal',
+        (replacement) => {
+            const f = fixture();
+            const clear = vi.spyOn(resourceGuard, 'clearGuardFailureReceiptIfUnchanged');
+            try {
+                const receipt = guardReceipt(f.head);
+                writeGuardFailureReceipt(f.root, receipt);
+                clear.mockImplementationOnce(() => {
+                    throw Error('interrupted housekeeping');
+                });
+                cleanupLanes(f.port);
+                expect(existsSync(f.lane)).toBe(false);
+                if (replacement === 'registered worktree') {
+                    f.git(['worktree', 'add', f.lane, 'fix/fixture']);
+                } else if (replacement === 'unregistered directory') {
+                    mkdirSync(f.lane);
+                    writeFileSync(join(f.lane, 'notes'), 'replacement work');
+                } else {
+                    writeGuardFailureReceipt(
+                        f.root,
+                        replacement === 'new guard receipt' ? guardReceipt(f.head, '2026-10-29T00:00:00Z') : receipt
+                    );
+                }
+                const path = guardFailureReceiptPath(f.root, 'author');
+                const bytes = readFileSync(path, 'utf8');
+                f.advance();
+                const outcomes = cleanupLanes(f.port);
+                if (replacement.endsWith('directory') || replacement.endsWith('worktree')) {
+                    expect(outcomes.every((outcome) => outcome.status === 'protected')).toBe(true);
+                    expect(existsSync(f.lane)).toBe(true);
+                } else {
+                    expect(outcomes[0]?.status).toBe('removed');
+                }
+                expect(readFileSync(path, 'utf8')).toBe(bytes);
+                if (replacement === 'unregistered directory') {
+                    expect(readFileSync(join(f.lane, 'notes'), 'utf8')).toBe('replacement work');
+                }
+                if (replacement.endsWith('directory') || replacement.endsWith('worktree')) {
+                    expect(readCleanupRecords(f.root).find((record) => record.attempts === 1)?.removal).toBeUndefined();
+                    if (replacement === 'registered worktree') {
+                        f.git(['worktree', 'remove', f.lane]);
+                    } else {
+                        rmSync(f.lane, { recursive: true });
+                    }
+                    f.advance();
+                    cleanupLanes(f.port);
+                    expect(readFileSync(path, 'utf8')).toBe(bytes);
+                }
+            } finally {
+                clear.mockRestore();
+                f.dispose();
+            }
+        }
+    );
 
     it('retains a changed lane immediately before the native removal boundary', () => {
         const f = fixture();

@@ -1,5 +1,15 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readFileSync,
+    realpathSync,
+    renameSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -10,6 +20,7 @@ import {
     CLEANUP_LABEL,
     cleanupRuntimeProgram,
     installCleanupLanes,
+    refreshCleanupLauncher,
     type CleanupInstallationPort,
     type CleanupRuntimeBinding,
 } from '../installCleanupLanes.ts';
@@ -143,6 +154,58 @@ describe('cleanup installation', () => {
             expect(f.events).toHaveLength(0);
         } finally {
             f.dispose();
+        }
+    });
+
+    it('refuses a launcher reached through a symlinked scripts parent before any refresh writes', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-foreign-launcher-')));
+        try {
+            const scripts = join(f.root, 'scripts');
+            renameSync(scripts, join(foreign, 'scripts'));
+            symlinkSync(join(foreign, 'scripts'), scripts, 'dir');
+            writeFileSync(join(foreign, 'unrelated'), 'foreign data');
+            const directory = join(f.root, '.agents/lane-cleanup');
+            mkdirSync(directory, { recursive: true });
+            expect(() => refreshCleanupLauncher(f.port, f.commit, directory)).toThrow('canonical');
+            expect(readFileSync(join(foreign, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')).toBe(
+                'old approved launcher\n'
+            );
+            expect(readFileSync(join(foreign, 'unrelated'), 'utf8')).toBe('foreign data');
+            expect(existsSync(join(directory, 'launcher-installation.json'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
+    it.each(['primary alias', 'launcher symlink'])('refuses a %s before launcher refresh writes', (escape) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-launcher-alias-')));
+        try {
+            mkdirSync(join(f.root, '.agents/lane-cleanup'), { recursive: true });
+            let root = f.root;
+            const launcher = join(f.root, 'scripts/trustedGithubWriteBootstrap.ts');
+            const target = join(foreign, 'launcher');
+            if (escape === 'primary alias') {
+                root = join(foreign, 'primary');
+                symlinkSync(f.root, root, 'dir');
+                writeFileSync(target, 'unrelated foreign data');
+            } else {
+                renameSync(launcher, target);
+                symlinkSync(target, launcher);
+            }
+            expect(() =>
+                refreshCleanupLauncher({ ...f.port, primaryRoot: root }, f.commit, join(root, '.agents/lane-cleanup'))
+            ).toThrow('canonical');
+            expect(readFileSync(target, 'utf8')).toBe(
+                escape === 'primary alias' ? 'unrelated foreign data' : 'old approved launcher\n'
+            );
+            expect(existsSync(join(f.root, '.agents/lane-cleanup/launcher-installation.json'))).toBe(false);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
         }
     });
 

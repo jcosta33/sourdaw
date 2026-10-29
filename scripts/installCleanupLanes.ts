@@ -131,15 +131,36 @@ export function cleanupPlist(binding: CleanupRuntimeBinding, runtime: string): s
 </dict></plist>\n`;
 }
 
+function canonicalLauncherPath(primaryRoot: string, directory: string): string {
+    if (directory !== join(primaryRoot, '.agents/lane-cleanup')) {
+        throw new Error('protected primary launcher requires its canonical installation directory');
+    }
+    for (const parent of [primaryRoot, join(primaryRoot, dirname(BOOTSTRAP_PATH)), directory]) {
+        const stat = lstatSync(parent);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(parent) !== parent) {
+            throw new Error('protected primary launcher requires canonical parent directories');
+        }
+    }
+    const path = join(primaryRoot, BOOTSTRAP_PATH);
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink() || realpathSync(path) !== path) {
+        throw new Error('protected primary launcher must be a canonical regular file');
+    }
+    return path;
+}
+
 /** Refresh only the clean canonical launcher, or the exact blob this installer previously owned. */
 export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: string, directory: string): void {
-    const path = join(port.primaryRoot, BOOTSTRAP_PATH);
+    const path = canonicalLauncherPath(port.primaryRoot, directory);
     const next = port.capture(port.git, ['show', `${commit}:${BOOTSTRAP_PATH}`]);
     const current = readFileSync(path, 'utf8');
     const receiptPath = join(directory, 'launcher-installation.json');
     type InstalledBlob = { commit: string; hash: string };
     let receipt: (InstalledBlob & { previous?: InstalledBlob }) | undefined;
     if (existsSync(receiptPath)) {
+        if (!lstatSync(receiptPath).isFile() || lstatSync(receiptPath).isSymbolicLink()) {
+            throw new Error('protected primary launcher installation receipt is not regular');
+        }
         receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as InstalledBlob & { previous?: InstalledBlob };
     }
     const head = port.capture(port.git, ['show', `HEAD:${BOOTSTRAP_PATH}`]);
@@ -152,8 +173,12 @@ export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: st
         return port.capture(port.git, ['show', `${previous.commit}:${BOOTSTRAP_PATH}`]) === current;
     });
     const previouslyInstalled = installed !== undefined;
-    if (lstatSync(path).isSymbolicLink() || (current !== head && !previouslyInstalled) || index !== head) {
+    if ((current !== head && !previouslyInstalled) || index !== head) {
         throw new Error('protected primary launcher has local changes; refusing to overwrite it');
+    }
+    canonicalLauncherPath(port.primaryRoot, directory);
+    if (readFileSync(path, 'utf8') !== current) {
+        throw new Error('protected primary launcher changed during installation');
     }
     if (current !== next) {
         // Record both the approved replacement and its origin before publication, so interruption is recoverable.
