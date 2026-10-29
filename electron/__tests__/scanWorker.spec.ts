@@ -326,7 +326,7 @@ describe('actual scoped scan utility entry', () => {
             expect(oldConstructor).not.toHaveBeenCalled();
             const listener: unknown = on.mock.calls[0]?.[1];
             if (typeof listener !== 'function') {
-                throw new Error('utility did not register parentPort');
+                throw new TypeError('utility did not register parentPort');
             }
             listener({ data: { paths: ['/fixture/plugin.clap'], retryQuarantined: true } });
             await vi.waitFor(() => expect(postMessage).toHaveBeenCalledWith({ ok: true, result: ['scanned'] }));

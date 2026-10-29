@@ -97,7 +97,13 @@ describe('preconstruction runtime scope admission', () => {
         'exportStateAvailable',
     ])('refuses a mismatching %s receipt without retrying the legacy constructor', (key) => {
         const { scope, receipt, Host, legacy } = fixture();
-        receipt[key] = key === 'version' ? 2 : key === 'exportStateAvailable' ? false : tmpdir();
+        if (key === 'version') {
+            receipt[key] = 2;
+        } else if (key === 'exportStateAvailable') {
+            receipt[key] = false;
+        } else {
+            receipt[key] = tmpdir();
+        }
         expect(() =>
             createScopedNativeAddon({
                 addon: asNativeAddon({ SourdawNative: Host }, 'new.node'),
