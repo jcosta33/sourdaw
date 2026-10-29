@@ -1,0 +1,47 @@
+src/modules/Command/useCases/executeAppActionBatch.ts
+  s_3168504f6ce387::t_347b7628b9b089 120-121,1016,1018-1023,1040
+  s_3168504f6ce387::t_ede14a8024d00b 1041-1043
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  s_3168504f6ce387::t_347b7628b9b089 44-52,55-56,73-74
+  s_3168504f6ce387::t_af7ea029e40ce6 43,53-54,57,72,75
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  s_3168504f6ce387::t_347b7628b9b089 51
+  s_3168504f6ce387::t_56a0374ca2ca8a 52-54
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_3168504f6ce387::t_738ad32f6beed8 1301,1304,1324,1352,1369,1373-1383,1385-1413,1415,1417-1420,1422-1435,1966-1967,1972,1984-1985,1996,2000,2007,2009-2011,2015,2019
+  s_3168504f6ce387::t_fb51b5ef756cf1 2012-2014
+  s_3168504f6ce387::t_fd2a0d8b1a7f7e 2016-2018
+  s_3168504f6ce387::t_c9ab1f5e84c6b5 2020-2022
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_332e5035479765 157-160,566-568,580-585
+  s_3168504f6ce387::t_179660151418d6 398-403,443,458-459,461-463,465-471,476-489,562
+  s_3168504f6ce387::t_540c301ddabd4c 219,233,242,404-442,444-457,460,464,472-475,509-514,518-521,553-559
+  s_3168504f6ce387::t_a7f8a2f57cbb61 20,26,139-145,161-162,168-185,490-491,493-508,515,517,522,524,526-544,546-547,549-552,560-561
+  s_3168504f6ce387::t_347b7628b9b089 492,548
+  s_3168504f6ce387::t_353cc6bf33b04b 135-138,146-156,163-167,186-187
+  s_3168504f6ce387::t_5c90706984a140 516,523
+  s_3168504f6ce387::t_cf3cbfb128978c 525,545
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  s_3168504f6ce387::t_b3ad3f1d84f580 284-287,480-487,490-491,493-495,500-504,507-516,519
+  s_3168504f6ce387::t_bd3ff5c3f9b91c 300-307,442,447,492,496-499,505-506
+  s_3168504f6ce387::t_8d9a2786ba9b75 443-446
+  s_3168504f6ce387::t_ab6fe0528bc8e6 448-449
+  s_3168504f6ce387::t_1a38c72dac5637 517-518
+  s_3168504f6ce387::t_78d6a6f5d294d5 520-522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "95c97c13eaa710eedac726a51c675d09af22b7a3",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
