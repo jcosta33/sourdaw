@@ -9,10 +9,10 @@ probe that would have caught it. Keep each lesson short enough to paste into a d
 ### 2026-10-30 — fixture transactions consumed the receipt test's deadline (PR #5191)
 
 PR #5191 (`c3ad77924b10613195d1aec01059a19ff4dbb344`) introduced the newest-receipt case with 26
-separately committed track fixtures. A later macro pre-step storage flush exposed that setup cost
-under hosted load: the 5-second test deadline expired during confirmation even though all three
-batches and the final undo completed. The missed risk was fixture transaction overhead consuming
-the behavioral deadline; the trace does not establish CPU-versus-async attribution.
+separately committed track fixtures. Hosted validation took 5,411.5 ms against the 5,000 ms
+deadline; confirmation ended at 5,238 ms and Undo at 5,386 ms, with no pending stage in the final
+trace. All stages eventually completed. The missed risk was fixture transaction overhead consuming
+the behavioral deadline; the trace does not establish a blocked await or CPU-versus-async attribution.
 
 Keep the exact 26-track topology and execute its real `addTrack` handlers in one compensated
 `executeAppActionBatch` transaction. Assert commit and exact ordered track names, then retain the
@@ -20,6 +20,14 @@ three-batch, protection, newest-receipt and one-undo assertions at the existing 
 Run the whole affected file so the changed setup is exercised with its normal hooks. Direct store
 seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
 both realistic and bounded.
+
+### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
+
+PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
+normalizes to 120 BPM. Check fixture and hydrated source geometry against each other; the detailed
+source-clock escape and probe are in [audio-source-time](audio-source-time.md#escape-strip-silence-fixture-changed-source-geometry-after-hydration-pr-2169).
+Use supported 300 BPM / 50 Hz geometry and preserve exactly 10 samples per beat through real
+publication and hydration.
 
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 

@@ -8,9 +8,9 @@ playback already use the clip-start tempo; every source reader must agree.
 ## Escape: Strip Silence fixture changed source geometry after hydration (PR #2169)
 
 PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) introduced a Strip Silence fixture at
-600 BPM, outside the supported tempo range. A macro pre-step storage flush made the real hydration
-path observable and exposed that the fixture's source-clock geometry was not a valid persisted
-project case. The missed risk was source-clock equivalence after storage hydration.
+600 BPM; real publication normalizes that tempo to 120 BPM. A macro pre-step storage flush made
+the real hydration path observable and exposed that fixture-time source geometry did not match
+the published project state. The missed risk was source-clock equivalence after storage hydration.
 
 Exercise the analysis path through the real storage flush and hydration with supported geometry:
 at 300 BPM and 50 Hz, one beat is exactly 10 samples. Require the same source-frame window and
