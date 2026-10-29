@@ -21,8 +21,8 @@ import {
     type authenticateRole,
 } from '../githubAppIdentity.ts';
 import { laneIsActive } from '../laneActivity.ts';
-import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 import { guardFailureReceiptPath, type GuardFailureReceipt } from '../prContract.ts';
+import { shellPort, type PullRequest, type ShellRunner } from '../removeLane.ts';
 import { writeGuardFailureReceipt } from '../resourceGuard.ts';
 import * as resourceGuard from '../resourceGuard.ts';
 
@@ -458,7 +458,7 @@ describe('automatic lane cleanup', () => {
                 removal: {
                     ...f.port.removal,
                     pullRequests: () => {
-                        throw Error('no PR lookup after removal');
+                        throw new Error('no PR lookup after removal');
                     },
                 },
             };
@@ -522,7 +522,7 @@ describe('automatic lane cleanup', () => {
                 const receipt = guardReceipt(f.head);
                 writeGuardFailureReceipt(f.root, receipt);
                 clear.mockImplementationOnce(() => {
-                    throw Error('interrupted housekeeping');
+                    throw new Error('interrupted housekeeping');
                 });
                 cleanupLanes(f.port);
                 expect(existsSync(f.lane)).toBe(false);
