@@ -394,7 +394,10 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
         expect(wet.hashes).not.toEqual(dry.hashes);
         expect(wet.rms).toBeLessThan(dry.rms);
         expect(wet.windows.sustainedLeft).toBeGreaterThan(dry.windows.sustainedLeft * 0.5);
+        expect(wet.windows.sustainedRight).toBeGreaterThan(dry.windows.sustainedRight * 0.5);
         expect(wet.windows.gapLeft).toBeLessThan(dry.windows.gapLeft * 0.5);
+        expect(wet.windows.gapRight).toBeLessThan(dry.windows.gapRight * 0.5);
+        expect(wet.windows.gapLeft).toBeCloseTo(wet.windows.gapRight, 12);
         await page.getByTestId('transport-undo').click();
         await expect
             .poll(async () => (await state()).tracks.find((track) => track.name === 'Close Drums')?.devices.length)
