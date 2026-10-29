@@ -1,0 +1,30 @@
+package.json
+  h_beb54bf43b47b7 164
+pnpm-lock.yaml
+  h_beb54bf43b47b7 169-170,3516-3517,8847
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+public/legal/ELECTRON-SOURCES.json
+  h_beb54bf43b47b7 4-6,9,12,14,17,19,30-32,37-39,44-46,51-53
+public/legal/THIRD-PARTY-NOTICES.md
+  h_beb54bf43b47b7 5,7-8
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,221-223,229,280,356,585,795,1122,1741,1753
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_beb54bf43b47b7 119-123
+scripts/electronRuntimeContract.ts
+  h_beb54bf43b47b7 40-42,45,48,50,53,55,66-68,73-75,80-82,87-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "94661445d92d3f45ce6c794d5da43d4ba1f9a6c2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
