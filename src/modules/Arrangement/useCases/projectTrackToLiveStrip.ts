@@ -84,38 +84,34 @@ function replayDeviceToLiveStrip({
     updateDeviceBypass(trackId, device.id, device.bypassed);
 }
 
-function findUniqueTrack(tracks: readonly Track[], trackId: string): Track | null {
-    const matches = tracks.filter((track) => track.id === trackId);
-    if (matches.length !== 1) {
-        return null;
+type TrackOwners = ReadonlyMap<string, Track | null>;
+
+function indexTrackOwners(tracks: readonly Track[]): TrackOwners {
+    const owners = new Map<string, Track | null>();
+    for (const track of tracks) {
+        owners.set(track.id, owners.has(track.id) ? null : track);
     }
-    return matches[0] ?? null;
+    return owners;
 }
 
-function acceptsRoutingEndpoint(tracks: readonly Track[], targetId: string): boolean {
-    const matches = tracks.filter((track) => track.id === targetId);
-    if (matches.length === 0) {
+function acceptsRoutingEndpoint(owners: TrackOwners, targetId: string): boolean {
+    const target = owners.get(targetId);
+    if (target === undefined) {
         return true;
     }
-    if (matches.length !== 1) {
-        return false;
-    }
-    const target = matches[0];
     return target ? getTrackEligibility(target.kind).acceptsRoutingEndpoint : false;
 }
 
-function replayTrackSends(track: Track, tracks: readonly Track[]): void {
+function replayTrackSends(track: Track, owners: TrackOwners): void {
     for (const send of track.sends) {
-        if (acceptsRoutingEndpoint(tracks, send.busId)) {
+        if (acceptsRoutingEndpoint(owners, send.busId)) {
             setSend(track.id, send.busId, send.level, send.preFader);
         }
     }
 }
 
-function hasPersistedLiveRoutingCycle(tracks: readonly Track[]): boolean {
-    const liveTracks = tracks.filter(
-        (track) => shouldCreateLiveTrackStrip(track) && findUniqueTrack(tracks, track.id) === track
-    );
+function hasPersistedLiveRoutingCycle(tracks: readonly Track[], owners: TrackOwners): boolean {
+    const liveTracks = tracks.filter((track) => shouldCreateLiveTrackStrip(track) && owners.get(track.id) === track);
     const liveIds = new Set(liveTracks.map((track) => track.id));
     return hasRoutingCycle({
         tracks: liveTracks.map((track) => ({
@@ -125,10 +121,10 @@ function hasPersistedLiveRoutingCycle(tracks: readonly Track[]): boolean {
             outputId:
                 track.outputId !== 'master' &&
                 track.outputId !== 'hw_out' &&
-                acceptsRoutingEndpoint(tracks, track.outputId)
+                acceptsRoutingEndpoint(owners, track.outputId)
                     ? track.outputId
                     : undefined,
-            sends: track.sends.filter((send) => acceptsRoutingEndpoint(tracks, send.busId)),
+            sends: track.sends.filter((send) => acceptsRoutingEndpoint(owners, send.busId)),
         })),
         sidechainRoutes: getAllSidechainRoutes().filter(
             (route) => liveIds.has(route.sourceTrackId) && liveIds.has(route.targetTrackId)
@@ -152,7 +148,8 @@ export function projectTrackToLiveStrip(
         }
         return undefined;
     }
-    const track = findUniqueTrack(tracks, trackId);
+    const owners = indexTrackOwners(tracks);
+    const track = owners.get(trackId);
     if (!track || !shouldCreateLiveTrackStrip(track)) {
         if (input.mode === 'sends') {
             return { status: 'rejected', reason: `Track ${trackId} has no unique eligible routing owner` };
@@ -162,7 +159,7 @@ export function projectTrackToLiveStrip(
     // Check the complete admitted relation before the first strip can publish
     // an output, and again before sends-only replay. Stored snapshots can carry
     // cycles that the output/send/sidechain mutation guards would reject.
-    if (input.mode !== 'device-controls' && hasPersistedLiveRoutingCycle(tracks)) {
+    if (input.mode !== 'device-controls' && hasPersistedLiveRoutingCycle(tracks, owners)) {
         const reason = 'Persisted live routing contains a routing cycle';
         if (input.mode === 'sends') {
             return { status: 'rejected', reason };
@@ -170,7 +167,7 @@ export function projectTrackToLiveStrip(
         return { acceptance: 'rejected', application: 'not-applied', reason };
     }
     if (input.mode === 'sends') {
-        replayTrackSends(track, tracks);
+        replayTrackSends(track, owners);
         return { status: 'projected' };
     }
     const { activateDormantExternalPlugins = false, onExternalPluginActivation } = input;
@@ -198,7 +195,7 @@ export function projectTrackToLiveStrip(
             return undefined;
         }
     }
-    if (!acceptsRoutingEndpoint(tracks, track.outputId)) {
+    if (!acceptsRoutingEndpoint(owners, track.outputId)) {
         return undefined;
     }
     const snapshot = compileTrackStripInitializationSnapshot(track, tracks);
@@ -224,7 +221,7 @@ export function projectTrackToLiveStrip(
     }
 
     if (!deferSends) {
-        replayTrackSends(track, tracks);
+        replayTrackSends(track, owners);
     }
     if (!deferSidechainWiring) {
         wireSidechainRoutes();
