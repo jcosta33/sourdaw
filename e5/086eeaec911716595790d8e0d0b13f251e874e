@@ -1,0 +1,33 @@
+scripts/diagnostics/reloadCancellation/telemetry.ts
+  s_26f70b851e8f7a::t_7cf50bfddd6a60 6-9,16-19
+scripts/diagnostics/reloadCancellation/viteTransportProbe.ts
+  s_26f70b851e8f7a::t_7cf50bfddd6a60 19-21
+scripts/diagnostics/reloadCancellation/pageCollector.ts
+  s_26f70b851e8f7a::t_7cf50bfddd6a60 27-29,51-54,85,185,195-196,201,205-207,234-237,243,260-262,264-265
+  s_26f70b851e8f7a::t_6c575c0bee9d8a 266-268
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_26f70b851e8f7a::t_d4aa2e93430772 2976
+.github/workflows/reload-cancellation-diagnostic.yml
+  s_26f70b851e8f7a::t_7cf50bfddd6a60 18
+scripts/__tests__/reloadCancellationRegisteredWorkflow.spec.ts
+  s_26f70b851e8f7a::t_d4aa2e93430772 180,185
+  s_26f70b851e8f7a::t_37cfec6b2bfd9b 181-184
+  s_26f70b851e8f7a::t_7cf50bfddd6a60 70
+  s_26f70b851e8f7a::t_60e2386d4f659c 179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5086eeaec911716595790d8e0d0b13f251e874e",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
