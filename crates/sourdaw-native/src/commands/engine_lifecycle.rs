@@ -905,14 +905,25 @@ mod tests {
     fn the_first_batch_on_the_replacing_engine_is_numbered_from_one() {
         let state = AppState::default();
         let _lost_engine_commands = fill_slot_with_capture_engine(&state);
+        let original = state
+            .graph
+            .lock()
+            .expect("registry readable")
+            .engine_incarnation();
         for _ in 0..5 {
-            block_on_test(apply_graph_commands(
+            let applied = block_on_test(apply_graph_commands(
                 empty_batch(),
                 &state,
                 &CrumbsState::default(),
             ))
             .expect("the setup batches resolve");
+            assert_eq!(applied["engineIncarnation"].as_str(), original.as_deref());
         }
+        let position = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("position readable");
+        assert_eq!(position.engine_incarnation, Some(original.clone()));
         assert_eq!(
             state
                 .graph
@@ -924,7 +935,19 @@ mod tests {
         );
         stall_the_engine_in_the_slot(&state);
 
+        let stalled = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("stalled position readable");
+        assert!(!stalled.running);
+        assert_eq!(stalled.engine_incarnation, Some(original.clone()));
+
         retire(&state, &CrumbsState::default(), &NoWindowHost);
+        let empty = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("empty position readable");
+        assert_eq!(empty.engine_incarnation, Some(None));
         let _replacement_commands = fill_slot_with_capture_engine(&state);
         let applied = block_on_test(apply_graph_commands(
             empty_batch(),
@@ -934,6 +957,20 @@ mod tests {
         .expect("the batch on the replacing engine resolves");
 
         assert_eq!(applied["application"], "applied");
+        let replacement = block_on_test(super::super::engine_transport::engine_transport_position(
+            &state,
+        ))
+        .expect("replacement position readable");
+        let replacement_id = applied["engineIncarnation"]
+            .as_str()
+            .expect("live identity emitted");
+        assert_ne!(Some(replacement_id), original.as_deref());
+        assert_eq!(
+            replacement.engine_incarnation,
+            Some(Some(replacement_id.to_string()))
+        );
+        let wire = serde_json::to_value(replacement).expect("replacement serializes");
+        assert_eq!(wire["engineIncarnation"], applied["engineIncarnation"]);
         assert_eq!(
             applied["admittedBatch"].as_u64(),
             Some(1),

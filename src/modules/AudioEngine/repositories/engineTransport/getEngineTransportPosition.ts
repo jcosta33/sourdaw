@@ -5,6 +5,7 @@ import {
     type EngineTransportPosition,
     type NativeTunerReading,
 } from '../../models/EngineTransportPosition';
+import { readNativeEngineIncarnation } from '../nativeEngineIncarnation';
 
 function readNumber(payload: Record<string, unknown>, key: keyof EngineTransportPosition): number {
     const value = payload[key];
@@ -100,7 +101,10 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     }
 
     const payload = response as Record<string, unknown>;
+    const incarnation =
+        payload.engineIncarnation === null ? null : readNativeEngineIncarnation(payload.engineIncarnation);
     return {
+        ...(incarnation === undefined ? {} : { engineIncarnation: incarnation }),
         running: payload.running === true,
         playing: payload.playing === true,
         positionSeconds: readNumber(payload, 'positionSeconds'),

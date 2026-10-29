@@ -52,6 +52,23 @@ describe('getEngineTransportPosition', () => {
         expect(desktopInvoke).toHaveBeenCalledWith('engine_transport_position');
     });
 
+    it('keeps an exact live identity and distinguishes an empty slot from a legacy reply', async () => {
+        const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: identity });
+        expect((await getEngineTransportPosition()).engineIncarnation).toBe(identity);
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, running: false, engineIncarnation: null });
+        expect((await getEngineTransportPosition()).engineIncarnation).toBeNull();
+        vi.mocked(desktopInvoke).mockResolvedValue(NATIVE_PAYLOAD);
+        expect(await getEngineTransportPosition()).not.toHaveProperty('engineIncarnation');
+    });
+
+    it('drops an unusable witness without breaking ordinary legacy position fields', async () => {
+        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: 'engine:42' });
+        const position = await getEngineTransportPosition();
+        expect(position).toEqual(NATIVE_PAYLOAD);
+        expect(position).not.toHaveProperty('engineIncarnation');
+    });
+
     it('reports the stopped shape in a browser build without reaching the bridge', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);
 

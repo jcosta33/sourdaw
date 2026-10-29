@@ -953,6 +953,9 @@ pub struct GraphApplyResultPayload {
     /// a drain that is not coming.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub admitted_batch: Option<u64>,
+    /// Lossless identity of the live engine whose ring admitted this fence.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_incarnation: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reports: Option<Vec<StripReportPayload>>,
     /// Instances that were loaded before any engine was running and that this
@@ -1091,6 +1094,7 @@ impl GraphApplyResultPayload {
             correlation: None,
             runtime_revision: None,
             admitted_batch: None,
+            engine_incarnation: None,
             reports: None,
             attached_plugins: None,
             attached_crumbs: None,
@@ -1115,6 +1119,11 @@ impl GraphApplyResultPayload {
         self
     }
 
+    fn reporting_engine_incarnation(mut self, incarnation: Option<String>) -> Self {
+        self.engine_incarnation = incarnation;
+        self
+    }
+
     fn applied(
         correlation: Option<Value>,
         runtime_revision: u64,
@@ -1130,6 +1139,7 @@ impl GraphApplyResultPayload {
             correlation,
             runtime_revision: Some(runtime_revision),
             admitted_batch: Some(admitted_batch),
+            engine_incarnation: None,
             reports: Some(reports),
             attached_plugins: Some(attached_plugins),
             attached_crumbs: None,
@@ -1151,6 +1161,7 @@ impl GraphApplyResultPayload {
             correlation,
             runtime_revision: None,
             admitted_batch: None,
+            engine_incarnation: None,
             reports: Some(reports),
             attached_plugins: None,
             attached_crumbs: None,
@@ -1171,6 +1182,7 @@ impl GraphApplyResultPayload {
             correlation,
             runtime_revision: Some(runtime_revision),
             admitted_batch: None,
+            engine_incarnation: None,
             reports: Some(reports),
             attached_plugins: None,
             attached_crumbs: None,
@@ -1329,6 +1341,7 @@ pub struct GraphRegistry {
     next_effect_id: usize,
     pub(crate) runtime_revision: u64,
     pub(crate) engine_epoch: u64,
+    engine_lifetime: uuid::Uuid,
     /// Fenced batches this registry has committed onto the live engine's
     /// ring — the control-side twin of the drain's `batches_applied` count.
     /// Every send is one fence ([`daw_engine::EngineHandle::send_graph_batch`])
@@ -1358,6 +1371,7 @@ impl Default for GraphRegistry {
             next_effect_id: FIRST_GRAPH_EFFECT_ID,
             runtime_revision: 0,
             engine_epoch: 0,
+            engine_lifetime: uuid::Uuid::new_v4(),
             batches_sent: 0,
             automation_pending: HashMap::new(),
             device_param_pending: HashMap::new(),
@@ -1373,6 +1387,16 @@ pub(crate) struct EngineReleaseResult {
 }
 
 impl GraphRegistry {
+    /// Control-side only. Clones and topology replacements keep this namespace;
+    /// retirement advances the epoch, and a new NativeHost gets a new namespace.
+    pub(crate) fn engine_incarnation(&self) -> Option<String> {
+        if self.engine_epoch == u64::MAX {
+            // The saturating retirement epoch can no longer witness uniqueness.
+            return None;
+        }
+        Some(format!("{}:{}", self.engine_lifetime, self.engine_epoch))
+    }
+
     /// Number a fence this process published outside [`map_batch`] — the
     /// transport maps install, which sends its own batch
     /// (`commands::engine_transport`).
@@ -5020,6 +5044,8 @@ pub async fn apply_graph_commands(
     //
     // The engine lock goes first: `attach_dormant_plugins` takes it itself, and
     // this one is not reentrant.
+    let engine_incarnation = working.engine_incarnation();
+    let admitted_batch = working.batches_sent;
     drop(engine_guard);
     let attached_plugins =
         match crate::commands::plugins::attach_dormant_plugins(state, dormant_plugin_count) {
@@ -5040,7 +5066,6 @@ pub async fn apply_graph_commands(
     // `map_batch` advanced this count for the fence just published, so it is
     // the number the engine's `batches_applied` reaches when this batch drains
     // — the same number the ledger stamped every write in it with.
-    let admitted_batch = working.batches_sent;
     *registry_guard = working;
     result_json(
         &GraphApplyResultPayload::applied(
@@ -5050,6 +5075,7 @@ pub async fn apply_graph_commands(
             mapped.reports,
             attached_plugins,
         )
+        .reporting_engine_incarnation(engine_incarnation)
         // From the attach that ran ahead of the mapping, unlike the plugins
         // above: the crumbs attach has to precede `map_batch` for the
         // same-batch binding, so it is reported by whichever answer this call
@@ -5517,6 +5543,30 @@ mod tests {
     use crate::block_on_test;
     use crate::commands::plugins::serialize_against_exclusive_gate_holds;
     use serde_json::json;
+
+    #[test]
+    fn audition_incarnation_keeps_its_namespace_until_engine_retirement() {
+        let mut registry = GraphRegistry::default();
+        let initial = registry
+            .engine_incarnation()
+            .expect("epoch zero is witnessed");
+        assert!(initial.ends_with(":0"));
+        assert_eq!(
+            registry.clone().engine_incarnation().as_deref(),
+            Some(initial.as_str())
+        );
+        assert_ne!(
+            GraphRegistry::default().engine_incarnation().as_deref(),
+            Some(initial.as_str())
+        );
+        registry.reset_for_engine_restart();
+        let replacement = registry.engine_incarnation().expect("restart is witnessed");
+        assert_ne!(replacement, initial);
+        assert_eq!(replacement.split(':').next(), initial.split(':').next());
+        assert!(replacement.ends_with(":1"));
+        registry.engine_epoch = u64::MAX;
+        assert_eq!(registry.engine_incarnation(), None);
+    }
 
     /// Map a batch against an engine holding no hosted plugin instances and a
     /// process holding no Levain bank — the state every case below is about
