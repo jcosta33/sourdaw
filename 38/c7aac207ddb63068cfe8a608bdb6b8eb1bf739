@@ -1,0 +1,14 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 1020-1021,1052-1053
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38c7aac207ddb63068cfe8a608bdb6b8eb1bf739",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
