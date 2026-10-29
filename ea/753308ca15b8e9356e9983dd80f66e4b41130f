@@ -1,0 +1,33 @@
+src/modules/AudioEngine/useCases/livePlayback/__tests__/transientShaperCarrierAdmission.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 80-82,105
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 1154-1156
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 708-713
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 22-24,26-28,85-87
+  s_3168504f6ce387::t_4143cd88bec9a9 39
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  s_3168504f6ce387::t_4143cd88bec9a9 10-15
+  s_3168504f6ce387::t_7de06d48b7c0ea 16
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 45-47,70-72,119-121,129-131,208-210,232-237,242-244,262-264,290-292
+src/modules/AudioEngine/wasm/__tests__/dawDspTransientShaper.spec.ts
+  s_3168504f6ce387::t_66e9d6606724a6 17-19,29,31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea753308ca15b8e9356e9983dd80f66e4b41130f",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
