@@ -1,0 +1,85 @@
+crates/sourdaw-native/src/addon/mod.rs
+  s_59e31a5c6f3e31::t_ad567564d6315e 32,129-156
+electron/scanWorker.ts
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 191
+  s_59e31a5c6f3e31::t_da1657c90374fa 171,186
+  s_59e31a5c6f3e31::t_f4020d1e7c559c 187-190
+  s_59e31a5c6f3e31::t_6546f47dccf782 192-194
+  s_59e31a5c6f3e31::t_09caedb5fe092b 33,35
+crates/sourdaw-native/src/host/mod.rs
+  s_59e31a5c6f3e31::t_ad567564d6315e 10
+electron/main.ts
+  s_59e31a5c6f3e31::t_c1894acf019146 887-890
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 47,82,107-110,680,740-744,747-749
+  s_59e31a5c6f3e31::t_073c94f2a8f2b8 891-893
+  s_59e31a5c6f3e31::t_09caedb5fe092b 48,83
+crates/sourdaw-native/src/host/runtime_scope.rs
+  s_59e31a5c6f3e31::t_ad567564d6315e 1-16,19-25,39-40,48-50,56-60,67-69,75-81,104-106,119,150-156,163-166,212-220,223-236,299-302,305-308,313-315
+  s_59e31a5c6f3e31::t_4a9b008a907515 243-249,253-257,265-268,272-281,290-298
+  s_59e31a5c6f3e31::t_febc3f1eeb5590 90-94,237-242,250-252,258-264,269-271,282-289
+  s_59e31a5c6f3e31::t_bdb870009785d7 17-18,41-47,51-55,61-66,70-74,82-89,95-103,113-118,121-125,128-132,134-135,137-140,146-148,157-162,171-177,179-182,199-211,309-312
+  s_59e31a5c6f3e31::t_983bb4e040897e 26-38,120,126-127,133,136,141-145,149,167-170,178,183-198,221-222,303-304
+  s_59e31a5c6f3e31::t_9ee27f9f758a74 107-112
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  s_59e31a5c6f3e31::t_ad567564d6315e 779-781
+  s_59e31a5c6f3e31::t_c1894acf019146 789-795
+  s_59e31a5c6f3e31::t_fa99fbb4485748 796-798
+electron/createScopedNativeAddon.ts
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 1-50
+  s_59e31a5c6f3e31::t_be8523e45ab6d3 51-53
+electron/__tests__/runtimeScope.spec.ts
+  s_59e31a5c6f3e31::t_41645ce5ba5fc5 2-4,5-57
+  s_59e31a5c6f3e31::t_de9fa68d032031 58-60
+  s_59e31a5c6f3e31::t_09caedb5fe092b 1
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  s_59e31a5c6f3e31::t_c1894acf019146 208-218
+  s_59e31a5c6f3e31::t_ad567564d6315e 221-223
+  s_59e31a5c6f3e31::t_bac8ece2ca07d2 219-220
+  s_59e31a5c6f3e31::t_cf8b2cd5cff067 224
+electron/__tests__/commands.spec.ts
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 61-62
+electron/__tests__/scanWorker.spec.ts
+  s_59e31a5c6f3e31::t_da1657c90374fa 15,16,264-319
+  s_59e31a5c6f3e31::t_41242f3932e8ee 320-322
+  s_59e31a5c6f3e31::t_f6e3d6d577081e 329
+  s_59e31a5c6f3e31::t_09caedb5fe092b 14,17,21
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_59e31a5c6f3e31::t_386cfd27fde330 12,558-562,568-572,578-581,594-597,611,613-614,616,620-625,636-637,1316-1345,1350-1367,1375-1378,1383-1397,1403-1405,1410-1415,1420-1436
+  s_59e31a5c6f3e31::t_ad50f9376ea57d 1308
+  s_59e31a5c6f3e31::t_c1894acf019146 1305,1315,1346-1349,1379-1382,1416-1419,1437-1439
+  s_59e31a5c6f3e31::t_4a9b008a907515 626-635,1306-1307,1309-1314,1368-1374,1398-1402,1406-1409
+  s_59e31a5c6f3e31::t_6dfaf26e4b7b26 403-405,528-530,557,563-567,573-577,582-593,598-600,604-608,638,686-688,704-706,1446,1449
+  s_59e31a5c6f3e31::t_056b9f99c0f70e 639
+  s_59e31a5c6f3e31::t_81038e60650c68 1440-1445
+  s_59e31a5c6f3e31::t_77a09f14ba4532 1447-1448
+  s_59e31a5c6f3e31::t_3cc3a2b1bf8142 1450-1451
+electron/runtimeScope.ts
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 1-54,56-61
+  s_59e31a5c6f3e31::t_9ee27f9f758a74 55
+  s_59e31a5c6f3e31::t_8baeb3717faeab 62-64
+electron/native.ts
+  s_59e31a5c6f3e31::t_05d494bd1fba6e 67-68
+electron/__tests__/nativeRuntimeScope.spec.ts
+  s_59e31a5c6f3e31::t_41645ce5ba5fc5 2-4,5-96
+  s_59e31a5c6f3e31::t_3349b2711251e1 97-99
+  s_59e31a5c6f3e31::t_f6e3d6d577081e 100-106
+  s_59e31a5c6f3e31::t_09caedb5fe092b 1
+electron/__tests__/runtimeScopeStartup.spec.ts
+  s_59e31a5c6f3e31::t_09caedb5fe092b 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ddbc7281ed22fa7feaa05c4e24a150ec3152875",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
