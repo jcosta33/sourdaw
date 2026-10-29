@@ -71,12 +71,6 @@ jobs:
                   set -o pipefail
                   node scripts/verifyPlaywrightRuntime.ts 1.63.0 2>&1 | tee -a ../provenance.txt
                   node -e "const p=require('@playwright/test'); console.log('playwright=' + require('@playwright/test/package.json').version); console.log('chromium=' + p.chromium.executablePath())" | tee -a ../provenance.txt
-            - name: Verify original collection
-              working-directory: source
-              env:
-                  CAPTURE_BASELINE: ../control/.github/diagnostics/5860/baseline.json
-                  LIST_RECEIPT: ../collection-list.txt
-              run: node ../control/.github/diagnostics/5860/collection-preflight.mjs
             - name: Prepare private debug files
               run: |
                   mkdir -p "$RUNNER_TEMP/sourdaw-debug"
@@ -84,6 +78,12 @@ jobs:
                   cp control/.github/diagnostics/5860/baseline.json baseline-provenance.json
                   echo "SOURDAW_DEBUG_DIR=$RUNNER_TEMP/sourdaw-debug" >> "$GITHUB_ENV"
                   echo "NODE_OPTIONS=${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs" >> "$GITHUB_ENV"
+            - name: Verify original collection
+              working-directory: source
+              env:
+                  CAPTURE_BASELINE: ../control/.github/diagnostics/5860/baseline.json
+                  LIST_RECEIPT: ../collection-list.txt
+              run: node ../control/.github/diagnostics/5860/collection-preflight.mjs
             - name: Sample memory before shard
               run: |
                   for file in /proc/self/cgroup /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.max; do

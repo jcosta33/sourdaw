@@ -308,6 +308,10 @@
             "run": "set -o pipefail\nnode scripts/verifyPlaywrightRuntime.ts 1.63.0 2>&1 | tee -a ../provenance.txt\nnode -e \"const p=require('@playwright/test'); console.log('playwright=' + require('@playwright/test/package.json').version); console.log('chromium=' + p.chromium.executablePath())\" | tee -a ../provenance.txt\n"
           },
           {
+            "name": "Prepare private debug files",
+            "run": "mkdir -p \"$RUNNER_TEMP/sourdaw-debug\"\nnode -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\necho \"SOURDAW_DEBUG_DIR=$RUNNER_TEMP/sourdaw-debug\" >> \"$GITHUB_ENV\"\necho \"NODE_OPTIONS=${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\" >> \"$GITHUB_ENV\"\n"
+          },
+          {
             "name": "Verify original collection",
             "working-directory": "source",
             "env": {
@@ -315,10 +319,6 @@
               "LIST_RECEIPT": "../collection-list.txt"
             },
             "run": "node ../control/.github/diagnostics/5860/collection-preflight.mjs"
-          },
-          {
-            "name": "Prepare private debug files",
-            "run": "mkdir -p \"$RUNNER_TEMP/sourdaw-debug\"\nnode -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\necho \"SOURDAW_DEBUG_DIR=$RUNNER_TEMP/sourdaw-debug\" >> \"$GITHUB_ENV\"\necho \"NODE_OPTIONS=${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\" >> \"$GITHUB_ENV\"\n"
           },
           {
             "name": "Sample memory before shard",

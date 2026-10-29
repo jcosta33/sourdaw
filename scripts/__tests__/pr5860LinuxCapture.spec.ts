@@ -29,6 +29,10 @@ describe('PR 5860 Linux capture', () => {
     it('requires frozen source and original collection before the unchanged shard command', () => {
         expect(step('Verify frozen source').run).toContain('e572f46dfae5c8147d9985a7770d97b4f4883222');
         expect(step('Verify frozen source after capture').run).toContain('git status --porcelain --untracked-files=no');
+        expect(steps.indexOf(step('Prepare private debug files'))).toBeLessThan(
+            steps.indexOf(step('Verify original collection'))
+        );
+        expect(step('Prepare private debug files').run).toContain("E2E_SPECS='+JSON.stringify(b.specs)");
         expect(steps.indexOf(step('Verify original collection'))).toBeLessThan(
             steps.indexOf(step('Run original shard'))
         );
