@@ -21,9 +21,13 @@ use poly::PolyStringTracker;
 use preprocess::{normalize, Bandpass, DcBlocker, RmsTracker};
 use tone::ToneGenerator;
 use tuning::TuningSystem;
-use tuning::{A4_MIDI_NOTE, SEMITONES_PER_OCTAVE};
 use wasm_bindgen::prelude::*;
 use yin::YinDetector;
+
+// Private tuning constants frozen from crates/scoring/src/tuning.rs at
+// cdf56ae23082998f2f3be0264309ca2c6025dee2, alongside this source oracle.
+const A4_MIDI_NOTE: f32 = 69.0;
+const SEMITONES_PER_OCTAVE: f32 = 12.0;
 
 /// Replace every non-finite sample (NaN, +Inf, -Inf) in `block` with silence,
 /// returning the count scrubbed (DSP-8). The tuner passes audio through, so a

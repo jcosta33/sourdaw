@@ -10,6 +10,8 @@ Reference-grade chromatic tuner and pitch detection DSP engine compiling to WebA
   producers, CMND, candidate policies, interpolation and detector scratch; `scoring::yin` and
   `scoring::mpm` retain compatibility exports. Mono analysis uses `YinDetector::detect_with_mpm` to
   share exactly one autocorrelation without exposing mutable scratch.
+- WASM builds disable `daw-dsp`'s default `wasm-runtime` feature so shared primitives do not add
+  device bindings or a second startup hook to Scoring. Native runtime APIs remain available.
 - Compiles via `wasm-pack` (`pnpm wasm:scoring`) and generates worklet glue via `scripts/gen-scoring-worklet.ts`.
 - Does not own tuner UI presentation (`src/modules/Tuner`) or WebAudio node graph lifecycle (`AudioEngine`).
 

@@ -1,5 +1,5 @@
-//! UNRUN draft preservation contracts against pre-extraction source, not
-//! generated numerical goldens. Frozen sources identify their exact base.
+//! Preservation contracts against pre-extraction source, not generated numerical goldens.
+//! Frozen sources identify their exact base.
 #[path = "support/pitch_baseline/mod.rs"]
 mod baseline;
 
@@ -7,7 +7,9 @@ use daw_dsp::primitives::pitch;
 use scoring::{mpm::MpmDetector, yin::YinDetector, ScoringInstance};
 
 fn frame(sample_rate: f32, frequency: f32, phase: f32, length: usize) -> Vec<f32> {
-    (0..length).map(|i| ((i as f32 * frequency * std::f32::consts::TAU / sample_rate) + phase).sin() * 0.5).collect()
+    (0..length)
+        .map(|i| ((i as f32 * frequency * std::f32::consts::TAU / sample_rate) + phase).sin() * 0.5)
+        .collect()
 }
 
 fn pair_bits(pair: (f32, f32)) -> (u32, u32) {
@@ -16,8 +18,14 @@ fn pair_bits(pair: (f32, f32)) -> (u32, u32) {
 
 #[test]
 fn public_detector_paths_are_shared_nominal_types() {
-    assert_eq!(std::any::TypeId::of::<YinDetector>(), std::any::TypeId::of::<pitch::YinDetector>());
-    assert_eq!(std::any::TypeId::of::<MpmDetector>(), std::any::TypeId::of::<pitch::MpmDetector>());
+    assert_eq!(
+        std::any::TypeId::of::<YinDetector>(),
+        std::any::TypeId::of::<pitch::YinDetector>()
+    );
+    assert_eq!(
+        std::any::TypeId::of::<MpmDetector>(),
+        std::any::TypeId::of::<pitch::MpmDetector>()
+    );
 }
 
 #[test]
@@ -39,13 +47,27 @@ fn scoring_yin_mpm_and_cached_pair_match_frozen_source_and_failure_state() {
                 assert_eq!(pair_bits(actual_yin), pair_bits(expected_yin));
                 assert_eq!(pair_bits(actual_mpm), pair_bits(expected_mpm));
                 assert_eq!(yin.period.to_bits(), old_yin.period.to_bits());
-                assert_eq!(pair_bits(standalone.detect(&input)), pair_bits(old_standalone.detect(&input)));
+                assert_eq!(
+                    pair_bits(standalone.detect(&input)),
+                    pair_bits(old_standalone.detect(&input))
+                );
             }
         }
-        assert!(yin.period > 0.0, "successful frame must establish period before failures");
-        for input in [vec![0.0; length], vec![0.25; length], vec![0.0; 1], Vec::new()] {
+        assert!(
+            yin.period > 0.0,
+            "successful frame must establish period before failures"
+        );
+        for input in [
+            vec![0.0; length],
+            vec![0.25; length],
+            vec![0.0; 1],
+            Vec::new(),
+        ] {
             let period = yin.period.to_bits();
-            assert_eq!(pair_bits(yin.detect(&input)), pair_bits(old_yin.detect(&input)));
+            assert_eq!(
+                pair_bits(yin.detect(&input)),
+                pair_bits(old_yin.detect(&input))
+            );
             assert_eq!(yin.period.to_bits(), old_yin.period.to_bits());
             // A failed/short detection clears readings, but retains last period.
             if input.len() < 2 || yin.frequency == 0.0 {
@@ -58,7 +80,11 @@ fn scoring_yin_mpm_and_cached_pair_match_frozen_source_and_failure_state() {
 
 #[test]
 fn mono_poly_calibration_release_and_passthrough_match_frozen_consumers() {
-    for (sample_rate, frequency, instrument) in [(44100.0, 82.41, 0.0), (48000.0, 329.63, 0.0), (96000.0, 41.2, 1.0)] {
+    for (sample_rate, frequency, instrument) in [
+        (44100.0, 82.41, 0.0),
+        (48000.0, 329.63, 0.0),
+        (96000.0, 41.2, 1.0),
+    ] {
         let mut actual = ScoringInstance::new(sample_rate);
         let mut expected = baseline::ScoringInstance::new(sample_rate);
         for (name, value) in [("poly", 1.0), ("instrument", instrument), ("tone", 0.0)] {
@@ -92,17 +118,35 @@ fn mono_poly_calibration_release_and_passthrough_match_frozen_consumers() {
                 assert_eq!(output, old_output);
                 assert_eq!(output, left);
             }
-            assert_eq!(actual.get_frequency().to_bits(), expected.get_frequency().to_bits());
-            assert_eq!(actual.get_confidence().to_bits(), expected.get_confidence().to_bits());
+            assert_eq!(
+                actual.get_frequency().to_bits(),
+                expected.get_frequency().to_bits()
+            );
+            assert_eq!(
+                actual.get_confidence().to_bits(),
+                expected.get_confidence().to_bits()
+            );
             assert_eq!(actual.get_cents().to_bits(), expected.get_cents().to_bits());
             assert_eq!(actual.get_midi_note(), expected.get_midi_note());
             assert_eq!(actual.is_active(), expected.is_active());
             observed_mono |= actual.is_active();
-            assert_eq!(actual.get_poly_string_count(), expected.get_poly_string_count());
+            assert_eq!(
+                actual.get_poly_string_count(),
+                expected.get_poly_string_count()
+            );
             for index in 0..actual.get_poly_string_count() {
-                assert_eq!(actual.get_poly_string_cents(index).to_bits(), expected.get_poly_string_cents(index).to_bits());
-                assert_eq!(actual.get_poly_string_confidence(index).to_bits(), expected.get_poly_string_confidence(index).to_bits());
-                assert_eq!(actual.is_poly_string_active(index), expected.is_poly_string_active(index));
+                assert_eq!(
+                    actual.get_poly_string_cents(index).to_bits(),
+                    expected.get_poly_string_cents(index).to_bits()
+                );
+                assert_eq!(
+                    actual.get_poly_string_confidence(index).to_bits(),
+                    expected.get_poly_string_confidence(index).to_bits()
+                );
+                assert_eq!(
+                    actual.is_poly_string_active(index),
+                    expected.is_poly_string_active(index)
+                );
                 observed_poly |= actual.is_poly_string_active(index);
             }
         }

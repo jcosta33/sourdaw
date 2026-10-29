@@ -2,10 +2,10 @@
 // Captured before the shared-pitch extraction; never used by production.
 #![allow(dead_code)]
 
-pub mod yin;
-pub mod psola;
-pub mod engine;
 pub mod crumbs;
+pub mod engine;
+pub mod psola;
+pub mod yin;
 
 /// Refines an integer peak to a floating-point minimum by fitting a parabola.
 pub fn parabolic_minimum(x: &[f32], i: usize, max_idx: usize) -> (f32, f32) {

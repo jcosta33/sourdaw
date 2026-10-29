@@ -5,8 +5,8 @@
 //! Top-level engine wrapper for Knead Real-time pitch manipulation.
 
 use super::psola::{psola_process_span, PsolaConfig};
-use daw_dsp::knead::voicing::{is_voiced, VoicingConfig};
 use super::yin::{yin_frame, YinConfig};
+use daw_dsp::knead::voicing::{is_voiced, VoicingConfig};
 
 /// Distance from the retune target, in semitones, at which the glide snaps.
 const RETUNE_SETTLE_SEMITONES: f32 = 0.001;

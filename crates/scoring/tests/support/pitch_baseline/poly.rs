@@ -2,12 +2,12 @@
 // Captured before the shared-pitch extraction; never used by production.
 #![allow(dead_code)]
 
+use super::yin::{max_analysis_window, YinDetector, MAX_TAU};
 /// Polyphonic string detection — band-pass per string + mono detector per band.
 ///
 /// Targets known string frequencies (guitar, bass, custom). Much cheaper than
 /// NMF or transcription because the problem is constrained to known pitches.
 use scoring::preprocess::Bandpass;
-use super::yin::{max_analysis_window, YinDetector, MAX_TAU};
 
 pub const MAX_STRINGS: usize = 8;
 

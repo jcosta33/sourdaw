@@ -1,5 +1,4 @@
-//! Dedicated draft contract for actual analysis ticks, not a setter-only guard.
-//! UNRUN: debug allocation and output/telemetry obligations remain unverified.
+//! Debug allocation and frozen-consumer parity contract for active 128-frame processing.
 #![cfg(debug_assertions)]
 #[path = "support/pitch_baseline/mod.rs"]
 mod baseline;
@@ -55,12 +54,21 @@ fn shared_overlap_analysis_runs_in_active_128_frame_instance_without_allocation(
                         assert!((*output.add(i)).is_finite());
                         assert!((*output_right.add(i)).is_finite());
                         assert_eq!((*output.add(i)).to_bits(), expected_left[i].to_bits());
-                        assert_eq!((*output_right.add(i)).to_bits(), expected_right[i].to_bits());
+                        assert_eq!(
+                            (*output_right.add(i)).to_bits(),
+                            expected_right[i].to_bits()
+                        );
                         peak = peak.max((*output.add(i)).abs());
                     }
                 }
-                assert_eq!(instance.get_f0().to_bits(), expected.get_f0().unwrap_or(0.0).to_bits());
-                assert_eq!(instance.get_periodicity().to_bits(), expected.get_periodicity().to_bits());
+                assert_eq!(
+                    instance.get_f0().to_bits(),
+                    expected.get_f0().unwrap_or(0.0).to_bits()
+                );
+                assert_eq!(
+                    instance.get_periodicity().to_bits(),
+                    expected.get_periodicity().to_bits()
+                );
                 assert_eq!(instance.is_voiced(), expected.is_voiced());
                 if (block + 1) % 16 == 0 {
                     assert!(instance.get_f0() > 0.0);
