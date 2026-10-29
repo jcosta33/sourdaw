@@ -402,4 +402,32 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Older kit sounds come mostly from soft transient rounding plus reduced high-frequency bandwidth, so modest drive is paired with a top-end roll rather than with obvious distortion. The negative output trim keeps the added harmonics from flattering the comparison through level alone.',
     },
+    {
+        id: 'drums-controlled-gate',
+        descriptor: 'controlled',
+        roles: ['drums'],
+        title: 'Reduce close-drum bleed between distinct strikes',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'faust-noise-gate',
+                parameters: [
+                    { paramId: 'threshold', minimum: -55, maximum: -30 },
+                    { paramId: 'attack', minimum: 0.0002, maximum: 0.01 },
+                    { paramId: 'hold', minimum: 0.02, maximum: 0.1 },
+                    { paramId: 'release', minimum: 0.05, maximum: 0.25 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'Distinct wanted close-mic strikes exceed threshold and bleed between them falls below it.',
+            'Fit hold and release in seconds to the wanted decay and space between hits.',
+        ],
+        contraindications: [
+            'Skip ghost notes or wanted tails close to threshold, brushed playing, and sustained room or overhead material.',
+            'Skip a continuously keyed dense loop or a chain whose earlier gate already chops the tail.',
+        ],
+        metrics: [{ metric: 'rms', direction: 'decrease' }],
+        source: 'The existing linked stereo Noise Gate shares the louder-channel detector across both channels. Its authored threshold, attack, hold, and release windows attenuate quiet bleed after strikes while leaving wanted loud passages open; it does not compress peaks or promise higher loudness.',
+    },
 ];
