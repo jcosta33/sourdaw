@@ -765,6 +765,28 @@ describe('projectTrackToLiveStrip', () => {
         expect(mocks.updateDeviceParam).not.toHaveBeenCalled();
     });
 
+    it('keeps captured device-control replay independent from routing admission', () => {
+        const source = createTrack({ id: 'source', name: 'Source', kind: 'audio' });
+        const target = createTrack({ id: 'bus', name: 'Bus', kind: 'bus' });
+        source.devices = [
+            {
+                id: 'eq',
+                name: 'EQ',
+                type: 'builtin-eq',
+                bypassed: false,
+                parameterValues: { 'eq-low-gain': 2 },
+            },
+        ];
+        source.outputId = target.id;
+        target.sends = [{ busId: source.id, level: 0.4, preFader: false }];
+        trackStore.set({ tracks: [source, target], selectedTrackId: null });
+        projectTrackToLiveStrip({ mode: 'device-controls', trackId: source.id, deviceId: 'eq' });
+        expect(mocks.updateDeviceParam).toHaveBeenCalledWith(source.id, 'eq', 'eq-low-gain', 2);
+        expect(mocks.initializeTrackStripFromSnapshot).not.toHaveBeenCalled();
+        expect(mocks.setSend).not.toHaveBeenCalled();
+        expect(mocks.wireSidechainRoutes).not.toHaveBeenCalled();
+    });
+
     it.each(['builtin-synth', 'drum-kit'])('initializes source and routed target without %s nodes', (type) => {
         const source = createTrack({ id: 'midi', name: 'MIDI', kind: 'midi' });
         source.devices = [{ id: 'source-instrument', type, name: 'Instrument', bypassed: false, parameterValues: {} }];

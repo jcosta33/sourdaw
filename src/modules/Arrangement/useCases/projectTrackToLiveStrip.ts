@@ -7,8 +7,9 @@ import {
     updateDeviceParam,
 } from '#/modules/AudioEngine/useCases';
 import { activateExternalPlugin } from '#/modules/PluginHost/useCases';
-import { setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
+import { getAllSidechainRoutes, setSend, wireSidechainRoutes } from '#/modules/Routing/useCases';
 import { orderDeviceParametersForReplay } from '#/utils/devicePatchPrecedence';
+import { hasRoutingCycle } from '#/utils/routingCycle';
 
 import { resolveEligibleDeviceWriteTarget } from '../stores/resolveEligibleDeviceWriteTarget';
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../stores/trackEligibility';
@@ -111,6 +112,30 @@ function replayTrackSends(track: Track, tracks: readonly Track[]): void {
     }
 }
 
+function hasPersistedLiveRoutingCycle(tracks: readonly Track[]): boolean {
+    const liveTracks = tracks.filter(
+        (track) => shouldCreateLiveTrackStrip(track) && findUniqueTrack(tracks, track.id) === track
+    );
+    const liveIds = new Set(liveTracks.map((track) => track.id));
+    return hasRoutingCycle({
+        tracks: liveTracks.map((track) => ({
+            id: track.id,
+            // These output ids address engine terminals, even if a project row
+            // happens to share their name. Dormant rows never replay their edges.
+            outputId:
+                track.outputId !== 'master' &&
+                track.outputId !== 'hw_out' &&
+                acceptsRoutingEndpoint(tracks, track.outputId)
+                    ? track.outputId
+                    : undefined,
+            sends: track.sends.filter((send) => acceptsRoutingEndpoint(tracks, send.busId)),
+        })),
+        sidechainRoutes: getAllSidechainRoutes().filter(
+            (route) => liveIds.has(route.sourceTrackId) && liveIds.has(route.targetTrackId)
+        ),
+    });
+}
+
 export function projectTrackToLiveStrip(input: ProjectTrackSendsInput): ProjectTrackSendsResult;
 export function projectTrackToLiveStrip(input: ProjectDeviceControlsInput): void;
 export function projectTrackToLiveStrip(
@@ -133,6 +158,16 @@ export function projectTrackToLiveStrip(
             return { status: 'rejected', reason: `Track ${trackId} has no unique eligible routing owner` };
         }
         return undefined;
+    }
+    // Check the complete admitted relation before the first strip can publish
+    // an output, and again before sends-only replay. Stored snapshots can carry
+    // cycles that the output/send/sidechain mutation guards would reject.
+    if (input.mode !== 'device-controls' && hasPersistedLiveRoutingCycle(tracks)) {
+        const reason = 'Persisted live routing contains a routing cycle';
+        if (input.mode === 'sends') {
+            return { status: 'rejected', reason };
+        }
+        return { acceptance: 'rejected', application: 'not-applied', reason };
     }
     if (input.mode === 'sends') {
         replayTrackSends(track, tracks);
