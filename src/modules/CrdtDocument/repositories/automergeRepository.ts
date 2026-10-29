@@ -18,9 +18,12 @@ import {
     getHeads,
     clone,
     getActorId,
+    decodeChange,
+    free,
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
+import { type CanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import {
     getCurrentAutomergeStorageMutationOwner,
     runOutsideAutomergeStoragePublisherScope,
@@ -30,6 +33,7 @@ import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
+import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
 
 type AnyDoc = Record<string, unknown>;
 
@@ -520,13 +524,14 @@ class AutomergeRepository {
         return { isCurrent, assertCurrent };
     }
 
-    /** Clone and materialize privately in separate synchronous turns; only publish can affect live truth. */
+    /** Only publication installs a privately materialized same-actor candidate. */
     cloneProspectiveMutation<TDoc = AnyDoc>(
         id: DocId,
         changeFn: ChangeFn<TDoc>,
         message?: string,
         snapshotTransaction?: object,
-        localSlots?: readonly string[]
+        localSlots?: readonly string[],
+        canonicalMutation?: CanonicalStorageSlotMutation
     ) {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
@@ -534,13 +539,52 @@ class AutomergeRepository {
         }
         const authority = this.captureProspectiveAuthority(id, doc, snapshotTransaction);
         authority.assertCurrent();
-        const candidate = clone(doc, { actor: getActorId(doc) });
+        const actor = getActorId(doc);
+        const previousHeads = getHeads(doc);
+        let candidate: Doc<TDoc> | undefined = clone(doc, { actor });
         authority.assertCurrent();
         let cloneConsumed = false;
+        let workerRequested = false;
+        let workerBytes: Uint8Array<ArrayBuffer> | undefined;
+        const controller = new AbortController();
+        const releaseClone = (): void => {
+            if (candidate) {
+                free(candidate);
+                candidate = undefined;
+            }
+        };
+        const requestMaterialization = canonicalMutation
+            ? (signal: AbortSignal): Promise<void> => {
+                  if (cloneConsumed || workerRequested || !candidate) {
+                      throw new Error('Prospective clone has already settled');
+                  }
+                  authority.assertCurrent();
+                  workerRequested = true;
+                  try {
+                      // The save cursor and transferred buffer belong only to this private clone.
+                      const seed = Uint8Array.from(save(candidate));
+                      authority.assertCurrent();
+                      return requestProspectiveMutation(
+                          { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
+                          AbortSignal.any([signal, controller.signal])
+                      ).then((bytes) => {
+                          if (!cloneConsumed) {
+                              workerBytes = bytes;
+                          }
+                      });
+                  } finally {
+                      releaseClone();
+                  }
+              }
+            : undefined;
         return {
+            requestMaterialization,
             isCurrent: (): boolean => !cloneConsumed && authority.isCurrent(),
             discard: (): void => {
                 cloneConsumed = true;
+                controller.abort();
+                workerBytes = undefined;
+                releaseClone();
             },
             materialize: (): PreparedProspectiveMutation<TDoc> => {
                 if (cloneConsumed) {
@@ -548,15 +592,68 @@ class AutomergeRepository {
                 }
                 cloneConsumed = true;
                 authority.assertCurrent();
-                const updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
-                authority.assertCurrent();
-                const previousHeads = getHeads(doc);
+                let updated: Doc<TDoc>;
+                if (workerRequested) {
+                    if (!workerBytes) {
+                        throw new Error('Prospective mutation Worker has not completed');
+                    }
+                    updated = load<TDoc>(workerBytes, { actor });
+                    workerBytes = undefined;
+                    try {
+                        const changes = getChanges(doc, updated);
+                        if (getActorId(updated) !== actor || changes.length > 1) {
+                            throw new Error('Prospective mutation Worker changed native authorship');
+                        }
+                        const bytes = changes[0];
+                        if (bytes) {
+                            const decoded = decodeChange(bytes);
+                            if (
+                                decoded.actor !== actor ||
+                                decoded.message !== (message || null) ||
+                                decoded.deps.length !== previousHeads.length ||
+                                decoded.deps.some((head) => !previousHeads.includes(head))
+                            ) {
+                                throw new Error('Prospective mutation Worker changed native authority');
+                            }
+                        }
+                        authority.assertCurrent();
+                    } catch (error) {
+                        free(updated);
+                        throw error;
+                    }
+                } else {
+                    if (!candidate) {
+                        throw new Error('Prospective clone is unavailable');
+                    }
+                    try {
+                        updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
+                    } catch (error) {
+                        releaseClone();
+                        throw error;
+                    }
+                    candidate = undefined;
+                    try {
+                        authority.assertCurrent();
+                    } catch (error) {
+                        free(updated);
+                        throw error;
+                    }
+                }
                 let consumed = false;
+                let published = false;
+                let released = false;
+                const releaseUnpublished = (): void => {
+                    if (!published && !released) {
+                        released = true;
+                        free(updated);
+                    }
+                };
                 const prepared: PreparedProspectiveMutation<TDoc> = {
                     isCurrent: () => !consumed && authority.isCurrent(),
                     discard: () => {
                         consumed = true;
                         this.preparedCandidates.delete(prepared);
+                        releaseUnpublished();
                     },
                     publish: (input) => {
                         if (consumed || !this.preparedCandidates.has(prepared)) {
@@ -564,24 +661,29 @@ class AutomergeRepository {
                         }
                         consumed = true;
                         this.preparedCandidates.delete(prepared);
-                        const slotsMatch =
-                            input.localSlots?.length === localSlots?.length &&
-                            (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
-                        if (
-                            input.id !== id ||
-                            input.message !== message ||
-                            input.snapshotTransaction !== snapshotTransaction ||
-                            !slotsMatch
-                        ) {
-                            throw new Error('Prospective candidate publication input changed');
+                        try {
+                            const slotsMatch =
+                                input.localSlots?.length === localSlots?.length &&
+                                (localSlots?.every((key, index) => input.localSlots?.[index] === key) ?? true);
+                            if (
+                                input.id !== id ||
+                                input.message !== message ||
+                                input.snapshotTransaction !== snapshotTransaction ||
+                                !slotsMatch
+                            ) {
+                                throw new Error('Prospective candidate publication input changed');
+                            }
+                            authority.assertCurrent();
+                            input.validation.validateDocument(updated);
+                            authority.assertCurrent();
+                            input.validation.beforePublication();
+                            authority.assertCurrent();
+                            this.captureBeforeMutation(id, snapshotTransaction);
+                            published = true;
+                            this.publishMutation(id, updated, previousHeads, localSlots, input.validation);
+                        } finally {
+                            releaseUnpublished();
                         }
-                        authority.assertCurrent();
-                        input.validation.validateDocument(updated);
-                        authority.assertCurrent();
-                        input.validation.beforePublication();
-                        authority.assertCurrent();
-                        this.captureBeforeMutation(id, snapshotTransaction);
-                        this.publishMutation(id, updated, previousHeads, localSlots, input.validation);
                     },
                 };
                 this.preparedCandidates.add(prepared);

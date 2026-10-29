@@ -2,6 +2,11 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
+import {
+    applyCanonicalStorageSlotMutation,
+    type CanonicalStorageSlotMutation,
+} from './applyCanonicalStorageSlotMutation';
+
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
@@ -51,6 +56,7 @@ type AutomergeStoragePortMutationInput = {
     changeFn: (doc: AutomergeStorageMutableDoc) => void;
     message?: string;
     snapshotTransaction?: object;
+    canonicalMutation?: CanonicalStorageSlotMutation;
 };
 
 type PreparedStorageCandidate = {
@@ -59,6 +65,7 @@ type PreparedStorageCandidate = {
     discard(): void;
 };
 type PreparedStorageClone = {
+    requestMaterialization?(signal: AbortSignal): Promise<void>;
     isCurrent(): boolean;
     materialize(): PreparedStorageCandidate;
     discard(): void;
@@ -70,6 +77,7 @@ type PreparedStorageReuse = {
     matches(): boolean;
 };
 type PreparedStorageSet = {
+    readonly requestMaterialization?: (signal: AbortSignal) => Promise<void>;
     isCurrent(): boolean;
     clone(): void;
     materialize(): void;
@@ -807,6 +815,30 @@ export function createAutomergeStoragePreview(
             }
         },
     };
+}
+
+function isCanonicalJsonValue(value: unknown): boolean {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+        return true;
+    }
+    if (typeof value === 'number') {
+        return Number.isFinite(value);
+    }
+    if (Array.isArray(value)) {
+        return Array.from(value).every(isCanonicalJsonValue);
+    }
+    if (typeof value !== 'object' || value === null || Object.getPrototypeOf(value) !== Object.prototype) {
+        return false;
+    }
+    return Reflect.ownKeys(value).every((key) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        return (
+            typeof key === 'string' &&
+            descriptor?.enumerable === true &&
+            Object.hasOwn(descriptor, 'value') &&
+            isCanonicalJsonValue(descriptor.value)
+        );
+    });
 }
 
 /**
@@ -2749,9 +2781,36 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             if (!mutation) {
                 return undefined;
             }
-            const changeFn = createAutomergeStorageChangeFn([mutation], true, () => undefined);
+            const canonicalMutation: CanonicalStorageSlotMutation | undefined =
+                !crdtEntityIdentity &&
+                isCanonicalJsonValue(baseValue) &&
+                (captured.message === undefined || typeof captured.message === 'string')
+                    ? { kind: 'canonical-json-slot-v1', key, baseValue, value, documentPresence: presence }
+                    : undefined;
+            const changeFn = canonicalMutation
+                ? (draft: AutomergeStorageMutableDoc) => applyCanonicalStorageSlotMutation(draft, canonicalMutation)
+                : createAutomergeStorageChangeFn([mutation], true, () => undefined);
             return {
                 isCurrent,
+                get requestMaterialization() {
+                    const request = cloned?.requestMaterialization;
+                    if (!request) {
+                        return undefined;
+                    }
+                    return (signal: AbortSignal): Promise<void> => {
+                        const started = performance.now();
+                        try {
+                            assertCurrent();
+                            return runWithAutomergeStorageMutationOwner(transaction.commitOwner, () => request(signal));
+                        } finally {
+                            performance.measure('automerge-storage-materialization-handoff-task', {
+                                start: started,
+                                end: performance.now(),
+                            });
+                            performance.clearMeasures('automerge-storage-materialization-handoff-task');
+                        }
+                    };
+                },
                 clone: () => {
                     assertCurrent();
                     if (cloned || candidate) {
@@ -2764,6 +2823,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                             changeFn,
                             message: captured.message,
                             snapshotTransaction: transaction.snapshotTransaction,
+                            canonicalMutation,
                         })
                     );
                     assertCurrent();

@@ -140,7 +140,8 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
             for (const entry of list.getEntries())
                 if (
                     entry.name.startsWith('elastic-transient-') ||
-                    entry.name === 'automerge-storage-prepared-publication'
+                    entry.name === 'automerge-storage-prepared-publication' ||
+                    entry.name === 'automerge-storage-materialization-handoff-task'
                 )
                     metrics.measures.push({ name: entry.name, duration: entry.duration });
         });
@@ -216,9 +217,12 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
     const preparationTasks = measured.measures.filter((entry) =>
-        ['elastic-transient-plan-task', 'elastic-transient-clone-task', 'elastic-transient-change-task'].includes(
-            entry.name
-        )
+        [
+            'elastic-transient-plan-task',
+            'elastic-transient-clone-task',
+            'elastic-transient-change-task',
+            'automerge-storage-materialization-handoff-task',
+        ].includes(entry.name)
     );
     const preparedPublications = measured.measures.filter(
         (entry) => entry.name === 'automerge-storage-prepared-publication'
@@ -226,6 +230,9 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     const result = {
         ...measured,
         preparationTasks,
+        workerMaterializationWall: measured.measures.filter(
+            (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
+        ),
         preparedPublications,
         elapsedMs: measured.end - measured.start,
         gaps,
@@ -261,7 +268,11 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     expect(copy.length).toBeGreaterThan(1);
     expect(gaps.length).toBeGreaterThan(1);
     expect(preparedPublications).toHaveLength(1);
+    expect(result.workerMaterializationWall).toHaveLength(1);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+    expect(
+        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
+    ).toHaveLength(1);
     expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(result.elapsedMs).toBeLessThan(1000);
     expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
@@ -509,7 +520,8 @@ async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity
             for (const entry of list.getEntries())
                 if (
                     entry.name.startsWith('elastic-transient-') ||
-                    entry.name === 'automerge-storage-prepared-publication'
+                    entry.name === 'automerge-storage-prepared-publication' ||
+                    entry.name === 'automerge-storage-materialization-handoff-task'
                 )
                     metrics.measures.push({ name: entry.name, duration: entry.duration });
         });
@@ -596,9 +608,12 @@ async function assertPopulatedMeasurement(
         (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
     );
     const preparationTasks = measured.measures.filter((entry) =>
-        ['elastic-transient-plan-task', 'elastic-transient-clone-task', 'elastic-transient-change-task'].includes(
-            entry.name
-        )
+        [
+            'elastic-transient-plan-task',
+            'elastic-transient-clone-task',
+            'elastic-transient-change-task',
+            'automerge-storage-materialization-handoff-task',
+        ].includes(entry.name)
     );
     const preparedPublications = measured.measures.filter(
         (entry) => entry.name === 'automerge-storage-prepared-publication'
@@ -606,6 +621,9 @@ async function assertPopulatedMeasurement(
     const result = {
         ...measured,
         preparationTasks,
+        workerMaterializationWall: measured.measures.filter(
+            (entry) => entry.name === 'elastic-transient-materialization-worker-wall'
+        ),
         preparedPublications,
         phase,
         elapsedMs: measured.end - measured.start,
@@ -629,7 +647,11 @@ async function assertPopulatedMeasurement(
     for (const [index, marker] of onsets.entries())
         expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index]!)).toBeLessThan(0.04);
     expect(preparedPublications).toHaveLength(1);
+    expect(result.workerMaterializationWall).toHaveLength(1);
     expect(preparationTasks.some((entry) => entry.name === 'elastic-transient-change-task')).toBe(true);
+    expect(
+        preparationTasks.filter((entry) => entry.name === 'automerge-storage-materialization-handoff-task')
+    ).toHaveLength(1);
     expect(Math.max(...preparationTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
     expect(result.elapsedMs).toBeLessThan(1000);
     expect(copy.length).toBeGreaterThan(1);

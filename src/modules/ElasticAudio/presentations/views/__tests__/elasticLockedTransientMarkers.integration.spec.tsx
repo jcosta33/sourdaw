@@ -1,4 +1,5 @@
-import { change, clone, toJS } from '@automerge/automerge';
+import { change, clone, load, save, toJS } from '@automerge/automerge';
+import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -51,6 +52,18 @@ const worker = vi.hoisted(() =>
     vi.fn<(input: TransientOnsetWorkerRequest & { signal?: AbortSignal }) => Promise<TransientOnsetWorkerResult>>()
 );
 vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: worker }));
+type MaterializationRequest = {
+    seed: Uint8Array;
+    actor: string;
+    message?: string;
+    mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
+};
+const materialization = vi.hoisted(() =>
+    vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<Uint8Array<ArrayBuffer>>>()
+);
+vi.mock('#/modules/CrdtDocument/repositories/prospectiveMutationWorkerClient', () => ({
+    requestProspectiveMutation: materialization,
+}));
 
 type WarpState = Parameters<typeof setWarpState>[1];
 
@@ -154,6 +167,16 @@ function holdAnimationFrames() {
 
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
+        materialization.mockReset();
+        materialization.mockImplementation(async (request) => {
+            // Only transport is substituted; the same canonical helper and native codec remain real.
+            const candidate = change(
+                load<Record<string, unknown>>(request.seed, { actor: request.actor }),
+                { message: request.message },
+                (draft) => applyCanonicalStorageSlotMutation(draft, request.mutation)
+            );
+            return Uint8Array.from(save(candidate));
+        });
         resetPreferences();
         const bus = createEventBus<{
             'ui.notify': NotifyPayload;
@@ -480,6 +503,77 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(rawWarpState()).toEqual(after);
         expect(getWarpState(CLIP_ID)).toEqual(after);
     });
+
+    it('keeps the materialization await private and captures a fresh inverse after its stale result', async () => {
+        supplyBuffer(burstSamples());
+        const frames = holdAnimationFrames();
+        const complete = materialization.getMockImplementation();
+        if (!complete) throw new Error('Expected real native codec transport fixture');
+        const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
+        const result = Promise.withResolvers<Uint8Array<ArrayBuffer>>();
+        materialization.mockImplementationOnce((request, signal) => {
+            entered.resolve({ request, signal });
+            return result.promise;
+        });
+        const before = JSON.stringify(getCrdtDoc('root'));
+        const projection = getWarpState(CLIP_ID);
+        const pending = storageRuntime.countPendingAutomergeStorageWrites();
+        const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        (await frames.next())(performance.now());
+        (await frames.next())(performance.now());
+        const request = await entered.promise;
+        expect(materialization).toHaveBeenCalledTimes(1);
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+        expect(getWarpState(CLIP_ID)).toBe(projection);
+        expect(storageRuntime.countPendingAutomergeStorageWrites()).toBe(pending);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        addManualMarker(CLIP_ID, 1.5);
+        flushAutomergeStorageWrites();
+        const latest = structuredClone(rawWarpState());
+        const priorHistoryLength = undoHistoryStore.value?.past.length ?? 0;
+        result.resolve(await complete(request.request, request.signal));
+        await frames.complete(execution);
+        const after = structuredClone(rawWarpState());
+        for (const marker of latest.markers) expect(after.markers).toContainEqual(marker);
+        expect(undoHistoryStore.value?.past).toHaveLength(priorHistoryLength + 1);
+        await undo();
+        expect(rawWarpState()).toEqual(latest);
+        await redo();
+        expect(rawWarpState()).toEqual(after);
+    });
+
+    it.each(['abort', 'root'] as const)(
+        'rejects a late materialization result after %s without publication',
+        async (kind) => {
+            supplyBuffer(burstSamples());
+            const frames = holdAnimationFrames();
+            const complete = materialization.getMockImplementation();
+            if (!complete) throw new Error('Expected native codec fixture');
+            const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
+            const result = Promise.withResolvers<Uint8Array<ArrayBuffer>>();
+            materialization.mockImplementationOnce((request, signal) => {
+                entered.resolve({ request, signal });
+                return result.promise;
+            });
+            const controller = new AbortController();
+            const execution = executeAppAction(
+                { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+                { signal: controller.signal }
+            );
+            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            (await frames.next())(performance.now());
+            (await frames.next())(performance.now());
+            const request = await entered.promise;
+            expect(materialization).toHaveBeenCalledTimes(1);
+            if (kind === 'abort') controller.abort();
+            else createCrdtDoc('root');
+            const current = JSON.stringify(getCrdtDoc('root'));
+            result.resolve(await complete(request.request, request.signal));
+            await rejected;
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(current);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+        }
+    );
 
     it('replans a materialized private candidate from latest retained and unrelated edits before real Undo', async () => {
         supplyBuffer(burstSamples());

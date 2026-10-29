@@ -30,7 +30,7 @@ function fixture(interleavedRetained = false): { base: State; desired: State } {
     const autos = Array.from({ length: 120 }, (_, index) =>
         row(`old-${index}`, index + 1.25, 'transient-auto', index === 0)
     );
-    const retained = [autos[0], row('user', 0.9, 'user')];
+    const retained = [autos[0]!, row('user', 0.9, 'user')];
     if (interleavedRetained) {
         retained.push(row('middle-user', 60.75, 'user'));
     }
@@ -178,7 +178,7 @@ describe('reconcileCrdtSlot contiguous native deletions', () => {
         const before = objectIds(initial);
         const { document, splices } = reconcile(initial, base, desired);
         const expected = structuredClone(desired);
-        expected.markers[1].confidence = 0.99;
+        expected.markers[1]!.confidence = 0.99;
         expected.markers.push(row('peer', 60.75, 'user'));
 
         expectSplices(splices, [
@@ -197,7 +197,7 @@ describe('reconcileCrdtSlot contiguous native deletions', () => {
         const writerThenPeer = merge(clone(written), clone(peer));
         const peerThenWriter = merge(clone(peer), clone(written));
         const expected = structuredClone(desired);
-        expected.markers[1].confidence = 0.99;
+        expected.markers[1]!.confidence = 0.99;
         expected.markers.push(row('peer', 60.75, 'user'));
 
         expectSplices(splices, [{ index: 2, deleteCount: 119 }]);

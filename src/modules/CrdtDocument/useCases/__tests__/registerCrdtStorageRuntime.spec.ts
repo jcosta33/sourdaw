@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     getCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
+    cloneProspectiveCrdtMutation: vi.fn(),
     getHeads: vi.fn(),
     isMutationBlockedBySnapshotTransaction: vi.fn(),
     waitForSnapshotTransaction: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('../hasCrdtDoc', () => ({
 
 vi.mock('../mutateCrdtDoc', () => ({
     mutateCrdtDoc: mocks.mutateCrdtDoc,
+    cloneProspectiveCrdtMutation: mocks.cloneProspectiveCrdtMutation,
 }));
 
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';
@@ -145,6 +147,45 @@ describe('registerCrdtStorageRuntime', () => {
             snapshotTransaction: { id: 'snap-1' },
             localSlots: ['name', 'volume'],
         });
+    });
+
+    it('forwards the supported description and optional Worker request without exposing its candidate token', () => {
+        const requestMaterialization = vi.fn();
+        const candidate = { isCurrent: () => true, discard: vi.fn() };
+        mocks.cloneProspectiveCrdtMutation.mockReturnValue({
+            isCurrent: () => true,
+            discard: vi.fn(),
+            requestMaterialization,
+            materialize: () => candidate,
+        });
+        const port = getRegisteredPort();
+        const canonicalMutation = {
+            kind: 'canonical-json-slot-v1',
+            key: 'state',
+            baseValue: null,
+            value: { count: 1 },
+        };
+        const changeFn = vi.fn();
+        const prepared = port.cloneDocForMutation({
+            docId: 'root',
+            changedKeys: ['state'],
+            changeFn,
+            message: 'Detect',
+            canonicalMutation,
+        });
+        expect(mocks.cloneProspectiveCrdtMutation).toHaveBeenCalledWith({
+            id: 'root',
+            localSlots: ['state'],
+            changeFn,
+            message: 'Detect',
+            snapshotTransaction: undefined,
+            canonicalMutation,
+        });
+        expect(prepared.requestMaterialization).toBe(requestMaterialization);
+        const materialized = prepared.materialize();
+        expect(materialized.token).toEqual({});
+        materialized.discard();
+        expect(candidate.discard).toHaveBeenCalledOnce();
     });
 
     it('waitForSnapshotTransaction delegates to automergeRepository', async () => {

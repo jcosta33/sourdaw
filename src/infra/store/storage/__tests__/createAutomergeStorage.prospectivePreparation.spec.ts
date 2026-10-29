@@ -1,6 +1,8 @@
 import { change, clone, decodeChange, from, getActorId, getLastLocalChange, type Doc } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createStore } from '#/infra/store/createStore';
+
 import {
     appendAutomergeStoragePublicationMetadata,
     AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY,
@@ -18,12 +20,14 @@ let document: Doc<Document>;
 let message: string;
 let reused: boolean[];
 let ordinaryCalls: number;
+let descriptions: unknown[];
 
 beforeEach(() => {
     document = from<Document>({ state: { count: 0 }, checkpoint: { records: [] }, other: 0 });
     message = 'Detect transients';
     reused = [];
     ordinaryCalls = 0;
+    descriptions = [];
     const candidates = new WeakMap<object, Doc<Document>>();
     const port: Port = {
         getDoc: () => document,
@@ -34,6 +38,7 @@ beforeEach(() => {
             document = change(document, { message: input.message }, input.changeFn);
         },
         cloneDocForMutation: (input) => {
+            descriptions.push(input.canonicalMutation);
             const original = document;
             const copied = clone(document, { actor: getActorId(document) });
             let discarded = false;
@@ -136,7 +141,7 @@ describe('invisible conditional Automerge preparation', () => {
         expect(prepared.plan.stage()).toBe(false);
     });
 
-    it.each(['metadata', 'checkpoint', 'coalesced value'] as const)(
+    it.each(['metadata', 'checkpoint', 'coalesced value', 'message'] as const)(
         'retains the complete actual group after late %s',
         (kind) => {
             const prepared = prepare();
@@ -148,6 +153,9 @@ describe('invisible conditional Automerge preparation', () => {
                     const checkpoint = createAutomergeStorage<{ records: string[] }>('root', 'checkpoint');
                     checkpoint.hydrate?.();
                     checkpoint.set({ records: ['actual late checkpoint'] });
+                } else if (kind === 'message') {
+                    message = 'Actual late message';
+                    prepared.storage.set({ count: 1 });
                 } else {
                     prepared.storage.set({ count: 2 });
                 }
@@ -161,8 +169,61 @@ describe('invisible conditional Automerge preparation', () => {
             if (kind === 'checkpoint') {
                 expect(document.checkpoint.records).toEqual(['actual late checkpoint']);
             }
+            if (kind === 'message') {
+                const bytes = getLastLocalChange(document);
+                if (!bytes) throw new Error('Expected complete actual change');
+                // The existing first-write message contract survives complete fallback.
+                expect(decodeChange(bytes).message).toBe('Detect transients');
+            }
         }
     );
+
+    it('uses the complete actual callback when real Store.set notification adds a checkpoint and metadata', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state');
+        storage.hydrate?.();
+        const store = createStore({ storage, initialData: { count: 0 } });
+        const checkpoint = createAutomergeStorage<{ records: string[] }>('root', 'checkpoint');
+        checkpoint.hydrate?.();
+        const release = store.subscribe(() => {
+            checkpoint.set({ records: ['subscriber checkpoint'] });
+            appendAutomergeStoragePublicationMetadata('root', { kind: 'subscriber' });
+        });
+        const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
+        if (transaction.status !== 'returned') throw transaction.error;
+        const plan = storage.prepareSet?.(transaction.value, { count: 1 }, (value) => store.set(value));
+        if (!plan) throw new Error('Expected preparation');
+        const before = document;
+        plan.clone();
+        plan.materialize();
+        expect(document).toBe(before);
+        expect(transaction.scope(plan.stage)).toBe(true);
+        transaction.validateDocument('root', () => null);
+        transaction.commit();
+        release();
+        expect(reused).toEqual([false]);
+        expect(document.state).toEqual({ count: 1 });
+        expect(document.checkpoint.records).toEqual(['subscriber checkpoint']);
+        expect(document[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toEqual([{ kind: 'subscriber' }]);
+    });
+
+    it('keeps custom identity callbacks on the complete ordinary preparation route', () => {
+        const storage = createAutomergeStorage<{ count: number }>('root', 'state', {
+            crdtEntityIdentity: { rows: (row) => (typeof row.id === 'string' ? row.id : null) },
+        });
+        storage.hydrate?.();
+        const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
+        if (transaction.status !== 'returned') throw transaction.error;
+        const plan = storage.prepareSet?.(transaction.value, { count: 1 });
+        if (!plan) throw new Error('Expected complete local fallback');
+        plan.clone();
+        expect(descriptions).toEqual([undefined]);
+        expect(plan.requestMaterialization).toBeUndefined();
+        plan.materialize();
+        expect(transaction.scope(plan.stage)).toBe(true);
+        transaction.validateDocument('root', () => null);
+        transaction.commit();
+        expect(document.state).toEqual({ count: 1 });
+    });
 
     it('returns stale before staging when an independent pending write changes its future revision', () => {
         const prepared = prepare();

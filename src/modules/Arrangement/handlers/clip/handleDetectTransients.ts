@@ -156,6 +156,30 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
                             if (!plan.isCurrent()) {
                                 continue;
                             }
+                            const requestMaterialization = plan.requestMaterialization;
+                            if (requestMaterialization) {
+                                const workerStarted = performance.now();
+                                try {
+                                    await requestMaterialization(lifetime.signal);
+                                } catch (error) {
+                                    if (!lifetime.isCurrent()) {
+                                        return conflict();
+                                    }
+                                    throw error;
+                                } finally {
+                                    performance.measure('elastic-transient-materialization-worker-wall', {
+                                        start: workerStarted,
+                                        end: performance.now(),
+                                    });
+                                    performance.clearMeasures('elastic-transient-materialization-worker-wall');
+                                }
+                                if (!(await lifetime.waitForFrame())) {
+                                    return conflict();
+                                }
+                                if (!plan.isCurrent()) {
+                                    continue;
+                                }
+                            }
                             measurePreparationTask('elastic-transient-change-task', plan.materialize);
                         }
                         if (!(await lifetime.waitForFrame())) {
