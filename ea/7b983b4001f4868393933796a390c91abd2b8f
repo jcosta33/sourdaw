@@ -1,0 +1,52 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 26-31,525,806-812
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 114,118,268
+src/infra/store/storage/__tests__/createAutomergeStorage.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 71-72,76,78,84-88,158-170
+src/infra/store/storage/createAutomergeStorage.ts
+  h_beb54bf43b47b7 870
+src/modules/Arrangement/handlers/clip/__tests__/handleDetectTransients.spec.ts
+  h_beb54bf43b47b7 11-20,82,116
+src/modules/Arrangement/handlers/clip/handleDetectTransients.ts
+  h_beb54bf43b47b7 25,27-28,34,42,45,53-54,57-61,127,137-140,142-145
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 213-225
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.prospectiveValidation.spec.ts
+  h_beb54bf43b47b7 91,128,131,157,159,170,172,174,176,182,207,209,211,250,256,273,281,283
+src/modules/Crust/useCases/crustParamBridge/__tests__/loadCrustPatchWithAudio.spec.ts
+  h_beb54bf43b47b7 114-126
+src/modules/ElasticAudio/models/__tests__/TransientDetection.spec.ts
+  h_beb54bf43b47b7 50-56,61-62,67,72
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 120,194,199,217,220
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 1,21,45,121-122,147,158,210,452,467,469,478-482,484,530-552,562-608,613-617,644-645,691-692,717-718,777-778,819,828,832,837,865
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 1,6,24,34-37,44,54-55,57-60,64-88
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 8,26-27,32,34,42,54-57,66,71,86-87
+src/modules/ElasticAudio/useCases/elasticAudio/elasticRootIdentityProviderState.ts
+  h_beb54bf43b47b7 1-3
+src/modules/ElasticAudio/useCases/elasticAudio/readClipTransientOnsets.ts
+  h_beb54bf43b47b7 208,211,246-251,253-259,261
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticRootIdentityProvider.ts
+  h_beb54bf43b47b7 1-6
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 24,28,31
+src/modules/ElasticAudio/useCases/index.ts
+  h_beb54bf43b47b7 7
+src/modules/Transport/useCases/__tests__/ensureTrackStrips.spec.ts
+  h_beb54bf43b47b7 71-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ea7b983b4001f4868393933796a390c91abd2b8f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
