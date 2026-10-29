@@ -397,6 +397,20 @@ Probe that would have caught it: drive the real use case with fake hardware and 
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot that did not follow deferred sensitivity detection in the warp store. No associated introducing PR or private review prompt or tier is established. Probe the selected clip's real store projection after detection and an external update: drawing, detail counts, availability and hit-testing must agree on the same current markers without an incidental pointer refresh. Switch clips and preserve locked identity, a control clip and PCM; removing the subscription must fail the real varied-pulse regression. This establishes no Worker or performance acceptance.
 
+### Stored modulation reached an Inspector target the engine refused (PR #831; exposed by #5379)
+
+Merged PR #831 (`b47d1244c2791b80f581d659cf8618d576f0944b`) made `resolveModulationBinding`
+refuse stored mappings to nonautomatable parameters, but the existing Inspector still selected
+enabled mappings by target IDs and could announce a target and draw a cyan halo from nonzero
+runtime output. Blind spot: no probe compared the engine's refusal with the Inspector projection
+for the same persisted mapping; #831's public history does not establish the reviewer stance,
+prompt, or tier. Probe: seed an enabled LFO mapping directly in project state for a valid track,
+device, and nonautomatable parameter, with nonzero runtime output and mapping depth; require binding
+refusal and an unchanged base parameter alongside no Inspector target announcement or halo. Keep
+an otherwise identical eligible mapping as a positive control and ordinary knob and keyboard writes
+working; removing the Inspector eligibility filter must fail its owning subscription spec. The UI
+repair remains on open PR #5379 and has not landed.
+
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
 PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
