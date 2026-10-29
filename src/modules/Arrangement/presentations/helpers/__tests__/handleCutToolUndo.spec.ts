@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, pushUndoEntry, redo, revertActionGroup, undo } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -49,6 +53,9 @@ afterEach(() => {
 });
 
 async function cut(beat: number): Promise<void> {
+    // Seeded stores must reach the actual source owner before the UI command.
+    flushAutomergeStorageWrites();
+    expect(getCrdtDoc('root')?.tracks).toEqual({ tracks: trackStore.value?.tracks });
     const previousEntries = undoHistoryStore.value?.past.length ?? 0;
     handleCutTool(10, 10, beat);
     await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(previousEntries + 1));
