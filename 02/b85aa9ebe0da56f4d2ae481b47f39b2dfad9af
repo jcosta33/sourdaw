@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  s_29d8df116c5b92::t_30559da8d68a8d 1916-1921
+  s_29d8df116c5b92::t_6aafd05dcfa4fd 1888-1915,1922-1940,1944,1949,1951-1959
+  s_29d8df116c5b92::t_8be6d0b788c7c6 1887
+  s_29d8df116c5b92::t_fdb902217c57fd 1960-1962
+src/modules/Arrangement/handlers/clip/handleRestoreAudioClipStartTrim.ts
+  s_29d8df116c5b92::t_8be6d0b788c7c6 46-57
+src/modules/Arrangement/handlers/clip/handleTrimClipStart.ts
+  s_29d8df116c5b92::t_8be6d0b788c7c6 92,99
+src/utils/handlerContract.ts
+  s_29d8df116c5b92::t_8be6d0b788c7c6 1680-1681
+src/modules/Arrangement/handlers/clip/__tests__/compRegionSplitTakeReKey.integration.spec.ts
+  s_29d8df116c5b92::t_7fc9aa7d32f4c4 12-13,272-305,307-310,312-324
+  s_29d8df116c5b92::t_35dcee2060ebbc 271,311,325
+  s_29d8df116c5b92::t_41f1441d6f75d1 306
+  s_29d8df116c5b92::t_afbcf4b689ecb6 326-327
+src/modules/Arrangement/useCases/clipEditing/audioClipStartTrimState.ts
+  s_29d8df116c5b92::t_8be6d0b788c7c6 111,132-139,141-147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "02b85aa9ebe0da56f4d2ae481b47f39b2dfad9af",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
