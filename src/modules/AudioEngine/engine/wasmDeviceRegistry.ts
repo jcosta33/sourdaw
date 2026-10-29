@@ -37,8 +37,8 @@ import { isLevainDevice, createLevainNode, type LevainNodeResult } from './Levai
 import { isProofChamberDevice, createProofChamberNode, type ProofChamberNodeResult } from './ProofChamberNode';
 import { isProofDevice, createProofNode, type ProofNodeResult } from './ProofNode';
 import { isScoringDevice, createScoringNode, type ScoringNodeResult } from './ScoringNode';
-import { createTransientShaperNode, isTransientShaperDevice } from './TransientShaperNode';
 import { isToasterDevice, createToasterNode, type ToasterNodeResult } from './ToasterNode';
+import { createTransientShaperNode, isTransientShaperDevice } from './TransientShaperNode';
 
 import type { DeviceContentLoadOutcome } from './deviceReadinessDiagnostics';
 

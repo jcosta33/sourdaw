@@ -13,8 +13,8 @@ import { isLevainDevice, createLevainNode } from '../../engine/LevainNode';
 import { isProofChamberDevice, createProofChamberNode } from '../../engine/ProofChamberNode';
 import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
-import { createTransientShaperNode, isTransientShaperDevice } from '../../engine/TransientShaperNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
+import { createTransientShaperNode, isTransientShaperDevice } from '../../engine/TransientShaperNode';
 import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
 import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 

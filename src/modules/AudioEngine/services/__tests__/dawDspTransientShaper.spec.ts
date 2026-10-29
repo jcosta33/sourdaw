@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { initSync, TransientShaperInstance } from '../daw_dsp.js';
+import { initSync, TransientShaperInstance } from '../../wasm/daw_dsp.js';
 
 initSync({
     module: new WebAssembly.Module(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'))),
