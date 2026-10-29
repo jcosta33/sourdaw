@@ -1,3 +1,4 @@
+import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
@@ -192,6 +193,134 @@ describe('pickAndImportProjectFile', () => {
             [hash],
             expect.any(Function)
         );
+    });
+
+    it('refuses corrupt embedded originals through production restoration without changing the open same-ID owner', async () => {
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        vi.stubGlobal('IDBKeyRange', IDBKeyRange);
+        const nativeClone = structuredClone;
+        vi.stubGlobal('structuredClone', (value: unknown) => {
+            const cloned: unknown = nativeClone(value);
+            if (
+                typeof value === 'object' &&
+                value !== null &&
+                'blob' in value &&
+                value.blob instanceof Blob &&
+                typeof cloned === 'object' &&
+                cloned !== null
+            ) {
+                Reflect.set(cloned, 'blob', value.blob.slice());
+            }
+            return cloned;
+        });
+        const { restoreProjectOriginalMedia } = await vi.importActual<
+            typeof import('#/modules/Collaboration/useCases')
+        >('#/modules/Collaboration/useCases');
+        const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        const original = async (text: string) => {
+            const bytes = new TextEncoder().encode(text);
+            const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+            return {
+                hash: `sha256:${Array.from(digest, (byte) => byte.toString(16).padStart(2, '0')).join('')}`,
+                bytes,
+            };
+        };
+        const existing = await original('open-project-original');
+        const first = await original('incoming-first-original');
+        const second = await original('incoming-second-original');
+        let database: IDBDatabase | undefined;
+        try {
+            await restoreProjectOriginalMedia(projectId, new Map([[existing.hash, existing.bytes]]), () => true);
+            database = await new Promise<IDBDatabase>((resolve, reject) => {
+                const request = indexedDB.open('sourdaw-collaboration-original-assets');
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            const snapshot = async () => {
+                if (!database) {
+                    throw new Error('Expected durable original database');
+                }
+                const stores = Array.from(database.objectStoreNames);
+                const transaction = database.transaction(stores, 'readonly');
+                const values = stores.map(
+                    (store) =>
+                        new Promise<unknown[]>((resolve, reject) => {
+                            const request = transaction.objectStore(store).getAll();
+                            request.onsuccess = () => resolve(request.result);
+                            request.onerror = () => reject(request.error);
+                        })
+                );
+                const complete = new Promise<void>((resolve, reject) => {
+                    transaction.oncomplete = () => resolve();
+                    transaction.onabort = () => reject(transaction.error);
+                    transaction.onerror = () => reject(transaction.error);
+                });
+                const result = await Promise.all(values);
+                await complete;
+                return JSON.stringify(result);
+            };
+            const before = await snapshot();
+            const openProject = { projectId, name: 'Open same-ID project', createdAt: 42, dirty: false };
+            mocks.projectStoreValue.value = openProject;
+            const data = {
+                version: 2,
+                meta: {
+                    projectId,
+                    name: 'Incoming',
+                    createdAt: 1,
+                    updatedAt: 1,
+                    keyRoot: 0,
+                    scaleName: 'Major',
+                    tuning: { name: '12-TET', frequencies: [] },
+                },
+                arrangement: {
+                    tracks: [
+                        {
+                            id: 'track',
+                            name: 'Audio',
+                            kind: 'audio',
+                            clips: [first, second].map(({ hash }, index) => ({
+                                id: `clip-${index}`,
+                                trackId: 'track',
+                                name: 'Take',
+                                startBeat: index * 4,
+                                endBeat: (index + 1) * 4,
+                                type: 'audio',
+                                bufferId: `pcm-${index}`,
+                                assetHash: hash,
+                                fadeInBeats: 0,
+                                fadeOutBeats: 0,
+                                gain: 1,
+                                color: '#fff',
+                                locked: false,
+                                muted: false,
+                            })),
+                        },
+                    ],
+                },
+                originalMedia: {
+                    format: 'sourdaw-original-media-v1',
+                    assets: [
+                        { hash: first.hash, bytes: btoa(String.fromCharCode(...first.bytes)) },
+                        { hash: second.hash, bytes: btoa('corrupt-second-original') },
+                    ],
+                    unavailable: [],
+                },
+            };
+            mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(data))]);
+            originalMedia.restore.mockImplementationOnce(restoreProjectOriginalMedia);
+
+            await expect(pickAndImportProjectFile()).resolves.toBe(false);
+
+            expect(mocks.projectStoreValue.value).toBe(openProject);
+            expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
+            expect(originalMedia.activate).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Failed to read project file', 'error');
+            expect(await snapshot()).toBe(before);
+        } finally {
+            database?.close();
+            vi.unstubAllGlobals();
+        }
     });
 
     it.each(['missing', 'extra'] as const)(
