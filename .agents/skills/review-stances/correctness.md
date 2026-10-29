@@ -222,6 +222,18 @@ a tempo ramp. Add a layer whose beat-zero value differs from its requested-start
 and prove positive compensation changes only write times while its zero-time seed uses the
 actual render origin. Keep crop selection distinct from the scheduling clock.
 
+### A capped render must end at its returned audio
+
+The Render to Clip endpoint used the requested musical end before PR #4986, where the cap
+shortfall was discovered in review; its earliest introduction is unestablished. PR #5371 repaired
+the consumer endpoint. Historical private review prompts and tiers are unknown.
+
+When an offline producer returns fewer frames than requested, map the actual returned endpoint
+through the tempo map and place the clip there, including a nonzero start and a tail request. A
+complete no-tail render must retain its exact musical end; a complete tail render keeps the
+returned decay. One Undo removes the clip and Redo restores its resolved endpoint and identity.
+Removing the shortfall branch must fail the unchanged cap-boundary case with and without tail.
+
 ### 2026-10-11 — offline modulation retained a second tempo inverse (#5209, exposed by #5243)
 
 PR #5209 (`54ff77cd1`) sampled modulation and moving adjustment layers through a private,
