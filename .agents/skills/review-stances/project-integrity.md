@@ -148,6 +148,12 @@ unchanged. On success, one Undo removes every generated clip and note, and one R
 exact content. Direct writers inside a per-pad loop can leave partial music even when each writer
 is valid.
 
+## Split gain copies must remain admissible through history (#5157)
+
+PR #1857 (`83be56e84ee3f1720ac3a787b52d089923b3841d`) counted all nested IDs globally. PR #2842 (`b208f272e4d5d4bef0a594cfb9560e6c058745a8`) retained authored gain points on both split fragments for non-destructive extension, so the collector could mark a valid split repair-required and block Undo. PR #5812 corrected the namespace: gain-point IDs are clip-envelope local, while duplicates within one envelope and unrelated global duplicates remain invalid. Historical private review prompts and tiers are unknown.
+
+Drive the real audio split through production inspection and projection, Undo and Redo, and authenticated session plus binary hydration. Require raw and projected owners, history movement, the original gain curve and extended-edge material to survive. A same-envelope duplicate or unrelated global duplicate must still require repair; a peer gain edit must leave refused history and peer state intact.
+
 ## Lesson from the PR #1077 and PR #2822 escape
 
 PR #1077 (`17c4afde8828e5e61e783006e6e907f23ee92db0`) introduced Save's revision guard, but
