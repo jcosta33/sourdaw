@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 
 import { expect, test, type Page } from '@playwright/test';
@@ -7,7 +7,6 @@ import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
-const BUILD_ARTIFACTS = '/Volumes/Music/.agent-artifacts/sourdaw/4374-public-shaper-build-01a16fe7';
 function record(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -932,8 +931,9 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
     expect(eof).toBe(true);
     const captureId = Date.now();
     const compressed = Buffer.concat(chunks);
-    await mkdir(BUILD_ARTIFACTS, { recursive: true });
-    await writeFile(`${BUILD_ARTIFACTS}/transient-shaper-live-trace-${captureId}.json.gz`, compressed);
+    const tracePath = testInfo.outputPath(`transient-shaper-live-trace-${captureId}.json.gz`);
+    await writeFile(tracePath, compressed);
+    await testInfo.attach('live-effect-trace-raw', { path: tracePath, contentType: 'application/gzip' });
     const decoded = gunzipSync(compressed, { maxOutputLength: 32 * 1024 * 1024 });
     const trace: unknown = JSON.parse(decoded.toString('utf8'));
     if (!record(trace) || !Array.isArray(trace.traceEvents)) throw new Error('Trace events absent');
@@ -1035,12 +1035,10 @@ test('bounded live Chromium trace observes the active scalar bridge and dry work
         outer,
         destination,
     };
-    await writeFile(
-        `${BUILD_ARTIFACTS}/transient-shaper-live-trace-receipt-${captureId}.json`,
-        JSON.stringify(receipt, null, 2)
-    );
+    const receiptPath = testInfo.outputPath(`transient-shaper-live-trace-receipt-${captureId}.json`);
+    await writeFile(receiptPath, JSON.stringify(receipt, null, 2));
     await testInfo.attach('live-effect-trace-receipt', {
-        body: JSON.stringify(receipt),
+        path: receiptPath,
         contentType: 'application/json',
     });
 });

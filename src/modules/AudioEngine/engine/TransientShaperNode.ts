@@ -31,6 +31,49 @@ function bounded(value: number): number {
     return Math.min(2, Math.max(0, value));
 }
 
+function createGainControls(context: BaseAudioContext, param: (name: string) => AudioParam | undefined) {
+    const time = (frame?: number): number => {
+        if (frame === undefined) {
+            return context.currentTime;
+        }
+        return Math.max(context.currentTime, frameTime(frame, context.sampleRate));
+    };
+    return {
+        setParam(name: string, value: number, sampleFrame?: number): void {
+            if (
+                !Number.isFinite(value) ||
+                (sampleFrame !== undefined && (!Number.isSafeInteger(sampleFrame) || sampleFrame < 0))
+            ) {
+                return;
+            }
+            param(name)?.setValueAtTime(bounded(value), time(sampleFrame));
+        },
+        acceptsScheduledParam: isGain,
+        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]): void {
+            const target = param(name);
+            if (!target) {
+                return;
+            }
+            for (const segment of segments) {
+                if (
+                    !Number.isSafeInteger(segment.startFrame) ||
+                    !Number.isSafeInteger(segment.endFrame) ||
+                    segment.startFrame < 0 ||
+                    segment.endFrame < segment.startFrame ||
+                    !Number.isFinite(segment.startValue) ||
+                    !Number.isFinite(segment.endValue)
+                ) {
+                    continue;
+                }
+                target.setValueAtTime(bounded(segment.startValue), time(segment.startFrame));
+                if (segment.endFrame > segment.startFrame) {
+                    target.linearRampToValueAtTime(bounded(segment.endValue), time(segment.endFrame));
+                }
+            }
+        },
+    };
+}
+
 export async function createTransientShaperNode(
     context: BaseAudioContext,
     signal?: AbortSignal,
@@ -61,6 +104,15 @@ export async function createTransientShaperNode(
         lease.release();
         throw error;
     }
+    return createTransientShaperController(context, workletNode, signal, onRuntimeFailure);
+}
+
+function createTransientShaperController(
+    context: BaseAudioContext,
+    workletNode: AudioWorkletNode,
+    signal?: AbortSignal,
+    onRuntimeFailure?: (message: string) => void
+) {
     let destroyed = false;
     let failed = false;
     let bypassed = false;
@@ -121,12 +173,7 @@ export async function createTransientShaperNode(
         }
         return workletNode.parameters.get(name);
     };
-    const time = (frame?: number): number => {
-        if (frame === undefined) {
-            return context.currentTime;
-        }
-        return Math.max(context.currentTime, frameTime(frame, context.sampleRate));
-    };
+    const gainControls = createGainControls(context, param);
     workletNode.port.postMessage({ type: 'init' });
     return {
         workletNode,
@@ -134,38 +181,7 @@ export async function createTransientShaperNode(
             destroy();
             throw error;
         }),
-        setParam(name: string, value: number, sampleFrame?: number): void {
-            if (
-                !Number.isFinite(value) ||
-                (sampleFrame !== undefined && (!Number.isSafeInteger(sampleFrame) || sampleFrame < 0))
-            ) {
-                return;
-            }
-            param(name)?.setValueAtTime(bounded(value), time(sampleFrame));
-        },
-        acceptsScheduledParam: isGain,
-        scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]): void {
-            const target = param(name);
-            if (!target) {
-                return;
-            }
-            for (const segment of segments) {
-                if (
-                    !Number.isSafeInteger(segment.startFrame) ||
-                    !Number.isSafeInteger(segment.endFrame) ||
-                    segment.startFrame < 0 ||
-                    segment.endFrame < segment.startFrame ||
-                    !Number.isFinite(segment.startValue) ||
-                    !Number.isFinite(segment.endValue)
-                ) {
-                    continue;
-                }
-                target.setValueAtTime(bounded(segment.startValue), time(segment.startFrame));
-                if (segment.endFrame > segment.startFrame) {
-                    target.linearRampToValueAtTime(bounded(segment.endValue), time(segment.endFrame));
-                }
-            }
-        },
+        ...gainControls,
         setBypass(value: boolean): void {
             if (destroyed || failed || value === bypassed) {
                 return;

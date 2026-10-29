@@ -232,6 +232,8 @@ function expect(condition, message) {
 // scan still sees them in the commits that introduced them even though the head composes every
 // fixture from fragments and holds no literal of that shape. Each value is a hand-built header with
 // no key material behind it, and the reader refuses it exactly as it refuses a real one.
+// The final fingerprint is PR #5746's historical RFC 6455 section 1.2 WebSocket nonce, a public
+// protocol example rather than a credential. Its audited source comments are bound here too.
 expect(
     gitleaksIgnore ===
         'd0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.spec.ts:generic-api-key:3288\n' +
@@ -240,8 +242,12 @@ expect(
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:682\n' +
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:685\n' +
             '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:688\n' +
-            '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:691\n',
-    '.gitleaksignore must contain exactly the seven approved fingerprints'
+            '0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:691\n' +
+            '\n' +
+            '# RFC 6455 section 1.2 public WebSocket handshake nonce; historical test fixture, not a credential.\n' +
+            '# https://www.rfc-editor.org/rfc/rfc6455.html#section-1.2\n' +
+            'cc52a482abc4b62519a79e1984e683893c31cbc0:scripts/__tests__/viteUpgradeReset.spec.ts:generic-api-key:54\n',
+    '.gitleaksignore must contain exactly the audited fixture fingerprints and provenance'
 );
 
 function expectNightlyDoesNotMintGate(jobs) {

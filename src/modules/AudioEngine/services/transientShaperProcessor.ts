@@ -3,6 +3,14 @@ import { initSync, TransientShaperInstance } from '../wasm/daw_dsp.js';
 
 const RESET_FAULT_EPOCH = 16_777_215;
 
+function gainAtFrame(values: Float32Array | undefined, frame: number): number {
+    return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;
+}
+
+function sampleAtFrame(values: Float32Array | undefined, frame: number): number {
+    return values?.[frame] ?? 0;
+}
+
 class TransientShaperProcessor extends AudioWorkletProcessor {
     private instance: TransientShaperInstance | null = null;
     private disposed = false;
@@ -79,6 +87,16 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
             instance.reset();
             this.resetEpoch = epoch;
         }
+        this.render(instance, inputs, output, parameters);
+        return true;
+    }
+
+    private render(
+        instance: TransientShaperInstance,
+        inputs: Float32Array[][],
+        output: Float32Array[] | undefined,
+        parameters: Record<string, Float32Array>
+    ): void {
         const left = output?.[0];
         const right = output?.[1];
         const inLeft = inputs[0]?.[0];
@@ -89,16 +107,15 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
         // Let unexpected WASM traps reach processorerror. The normal render
         // path creates no errors, messages, arrays or block-sized views.
         for (let frame = 0; frame < frames; frame++) {
-            const attack = attackGain?.[attackGain.length === 1 ? 0 : frame] ?? Number.NaN;
-            const sustain = sustainGain?.[sustainGain.length === 1 ? 0 : frame] ?? Number.NaN;
+            const attack = gainAtFrame(attackGain, frame);
+            const sustain = gainAtFrame(sustainGain, frame);
             if (left && frame < left.length) {
-                left[frame] = instance.process_left(inLeft?.[frame] ?? 0, attack, sustain);
+                left[frame] = instance.process_left(sampleAtFrame(inLeft, frame), attack, sustain);
             }
             if (right && frame < right.length) {
-                right[frame] = instance.process_right(inRight?.[frame] ?? 0, attack, sustain);
+                right[frame] = instance.process_right(sampleAtFrame(inRight, frame), attack, sustain);
             }
         }
-        return true;
     }
 }
 

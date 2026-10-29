@@ -17,16 +17,16 @@ use daw_dsp::bacteria::engine::BacteriaEngine;
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
 
-const SAMPLE_RATE: f32 = 48_000.0;
+const SAMPLE_RATES: [f32; 2] = [48_000.0, 192_000.0];
 const BLOCK: usize = 128;
 
 /// Strongest frequency in `signal` between `low` and `high` Hz, in 10 Hz steps.
-fn dominant_frequency(signal: &[f32], low: u32, high: u32) -> u32 {
+fn dominant_frequency(signal: &[f32], sample_rate: f32, low: u32, high: u32) -> u32 {
     let magnitude = |hz: u32| {
         let (mut re, mut im) = (0.0_f64, 0.0_f64);
         for (n, &s) in signal.iter().enumerate() {
             let angle =
-                2.0 * std::f64::consts::PI * f64::from(hz) * n as f64 / f64::from(SAMPLE_RATE);
+                2.0 * std::f64::consts::PI * f64::from(hz) * n as f64 / f64::from(sample_rate);
             re += f64::from(s) * angle.cos();
             im += f64::from(s) * angle.sin();
         }
@@ -40,8 +40,8 @@ fn dominant_frequency(signal: &[f32], low: u32, high: u32) -> u32 {
 
 /// A band-0 Bacteria with its Body stage on at full mix and the other stages
 /// at their defaults, so what leaves the engine is the body.
-fn engine_with_body_stage() -> BacteriaEngine {
-    let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+fn engine_with_body_stage(sample_rate: f32) -> BacteriaEngine {
+    let mut engine = BacteriaEngine::new(sample_rate);
     engine.set_param("band0_convolutionEnabled", 1.0);
     engine.set_param("band0_convolutionMix", 1.0);
     engine
@@ -52,35 +52,68 @@ fn engine_with_body_stage() -> BacteriaEngine {
 /// sounds like, so the guard is around writes that landed.
 #[test]
 fn switching_bodies_on_a_rendering_engine_does_not_allocate() {
-    let mut engine = engine_with_body_stage();
-    let input: Vec<f32> = (0..BLOCK)
-        .map(|n| ((n as f32) * 0.21).sin() * 0.5)
-        .collect();
-    let mut left = input.clone();
-    let mut right = input.clone();
-    engine.process_block(&mut left, &mut right);
+    for sample_rate in SAMPLE_RATES {
+        let mut engine = engine_with_body_stage(sample_rate);
+        let input: [f32; BLOCK] = std::array::from_fn(|n| ((n as f32) * 0.21).sin() * 0.5);
+        let mut left = input;
+        let mut right = input;
+        engine.process_block(&mut left, &mut right);
 
-    let mut blocks = [[0.0_f32; BLOCK]; 6];
-    assert_no_alloc(|| {
-        for (block, body) in blocks.iter_mut().zip([0.0_f32, 1.0, 2.0, 3.0, -1.0, 1.0]) {
-            engine.set_param("band0_convolutionIr", body);
-            block.copy_from_slice(&input);
-            let mut right = [0.0_f32; BLOCK];
-            right.copy_from_slice(&input);
-            engine.process_block(block, &mut right);
+        let mut blocks = [[0.0_f32; BLOCK]; 7];
+        assert_no_alloc(|| {
+            for (block, body) in blocks
+                .iter_mut()
+                .zip([0.0_f32, 1.0, 2.0, 3.0, 3.0, -1.0, 1.0])
+            {
+                engine.set_param("band0_convolutionIr", body);
+                block.copy_from_slice(&input);
+                let mut right = input;
+                engine.process_block(block, &mut right);
+            }
+        });
+
+        assert!(
+            blocks.iter().flatten().all(|sample| sample.is_finite()),
+            "the engine rendered a non-finite sample at {sample_rate} Hz"
+        );
+        assert!(
+            blocks[0].iter().any(|sample| sample.abs() > 1e-4),
+            "the guarded body never sounded at {sample_rate} Hz"
+        );
+        for pair in [(0, 1), (1, 2), (4, 5), (5, 6)] {
+            assert_ne!(
+                blocks[pair.0], blocks[pair.1],
+                "blocks {} and {} rendered identically at {sample_rate} Hz, so the \
+                 body switch never reached the stage",
+                pair.0, pair.1
+            );
         }
-    });
-
-    assert!(
-        blocks.iter().flatten().all(|sample| sample.is_finite()),
-        "the engine rendered a non-finite sample after a body switch"
-    );
-    for pair in [(0, 1), (1, 2), (3, 4), (4, 5)] {
         assert_ne!(
-            blocks[pair.0], blocks[pair.1],
-            "blocks {} and {} rendered identically, so the body switch between them never \
-             reached the stage",
-            pair.0, pair.1
+            blocks[0], input,
+            "the guarded stage passed input through unchanged"
+        );
+
+        // The last body has live history. None freezes it; choosing a body
+        // again must clear that history, even when the engine keeps rendering.
+        let mut leaked = 0.0_f32;
+        assert_no_alloc(|| {
+            engine.set_param("band0_convolutionIr", -1.0);
+            let mut left = [0.0; BLOCK];
+            let mut right = [0.0; BLOCK];
+            engine.process_block(&mut left, &mut right);
+            engine.set_param("band0_convolutionIr", 1.0);
+            for _ in 0..LONGER_THAN_ANY_BODY / BLOCK {
+                left.fill(0.0);
+                right.fill(0.0);
+                engine.process_block(&mut left, &mut right);
+                for sample in left.into_iter().chain(right) {
+                    leaked += sample.abs();
+                }
+            }
+        });
+        assert_eq!(
+            leaked, 0.0,
+            "the engine replayed stale body history at {sample_rate} Hz"
         );
     }
 }
@@ -90,34 +123,35 @@ fn switching_bodies_on_a_rendering_engine_does_not_allocate() {
 /// each body is synthesized around. Spring shares metal's response.
 #[test]
 fn the_body_chosen_without_allocating_is_the_body_heard() {
-    for (index, name, resonance_hz) in [
-        (0.0_f32, "ceramic", 2_200),
-        (1.0, "wood", 800),
-        (2.0, "metal", 3_500),
-        (3.0, "spring", 3_500),
-    ] {
-        let mut body = ConvolutionProcessor::new(SAMPLE_RATE);
-        body.set_param("convolutionMix", 1.0);
-        let mut heard = vec![0.0_f32; 1_024];
+    for sample_rate in SAMPLE_RATES {
+        for (index, name, resonance_hz) in [
+            (0.0_f32, "ceramic", 2_200),
+            (1.0, "wood", 800),
+            (2.0, "metal", 3_500),
+            (3.0, "spring", 3_500),
+        ] {
+            let mut body = ConvolutionProcessor::new(sample_rate);
+            body.set_param("convolutionMix", 1.0);
+            let mut heard = vec![0.0_f32; (sample_rate * 1024.0 / 44_100.0).round() as usize];
 
-        assert_no_alloc(|| {
-            body.set_param("convolutionIr", index);
-            for (n, sample) in heard.iter_mut().enumerate() {
-                let impulse = if n == 0 { 1.0 } else { 0.0 };
-                *sample = body.process_stereo(impulse, impulse).0;
-            }
-        });
+            assert_no_alloc(|| {
+                body.set_param("convolutionIr", index);
+                for (n, sample) in heard.iter_mut().enumerate() {
+                    let impulse = if n == 0 { 1.0 } else { 0.0 };
+                    *sample = body.process_stereo(impulse, impulse).0;
+                }
+            });
 
-        let peak = dominant_frequency(&heard, 400, 5_000);
-        assert!(
-            peak.abs_diff(resonance_hz) <= 40,
-            "choosing {name} rings at {peak} Hz; that body resonates at {resonance_hz} Hz"
-        );
+            let peak = dominant_frequency(&heard, sample_rate, 400, 5_000);
+            assert!(
+                peak.abs_diff(resonance_hz) <= 40,
+                "choosing {name} rings at {peak} Hz; that body resonates at {resonance_hz} Hz"
+            );
+        }
     }
 }
 
-/// Longer than any body's response at any rate (the stage caps it at 4096
-/// samples), so a span this long outlasts every tail.
+/// Longer than the 23.2 ms body at 192 kHz, so this span outlasts every tail.
 const LONGER_THAN_ANY_BODY: usize = 8_192;
 
 /// Choosing a body again after a spell of none starts it from silence. A burst
@@ -127,40 +161,125 @@ const LONGER_THAN_ANY_BODY: usize = 8_192;
 /// ended would otherwise hear it ring out of nowhere.
 #[test]
 fn re_choosing_a_body_after_none_carries_nothing_from_before() {
-    let mut body = ConvolutionProcessor::new(SAMPLE_RATE);
-    body.set_param("convolutionMix", 1.0);
+    for sample_rate in SAMPLE_RATES {
+        let mut body = ConvolutionProcessor::new(sample_rate);
+        body.set_param("convolutionMix", 1.0);
 
-    body.set_param("convolutionIr", 1.0);
-    let burst_heard: f32 = (0..256)
-        .map(|n| {
-            let loud = if n % 2 == 0 { 1.0 } else { -1.0 };
-            body.process_stereo(loud, loud).0.abs()
-        })
-        .sum();
-    assert!(
-        burst_heard > 0.0,
-        "the burst never sounded through the body, so the test proves nothing"
-    );
+        let mut burst_heard = 0.0;
+        assert_no_alloc(|| {
+            body.set_param("convolutionIr", 1.0);
+            for n in 0..256 {
+                let loud = if n % 2 == 0 { 1.0 } else { -1.0 };
+                burst_heard += body.process_stereo(loud, loud).0.abs();
+            }
+        });
+        assert!(
+            burst_heard > 0.0,
+            "the burst never sounded through the body, so the test proves nothing"
+        );
 
-    body.set_param("convolutionIr", -1.0);
-    for _ in 0..LONGER_THAN_ANY_BODY {
+        let mut leaked = 0.0_f32;
+        assert_no_alloc(|| {
+            body.set_param("convolutionIr", -1.0);
+            for _ in 0..LONGER_THAN_ANY_BODY {
+                let (left, right) = body.process_stereo(0.0, 0.0);
+                leaked += left.abs() + right.abs();
+            }
+            body.set_param("convolutionIr", 1.0);
+            for _ in 0..LONGER_THAN_ANY_BODY {
+                let (left, right) = body.process_stereo(0.0, 0.0);
+                leaked += left.abs() + right.abs();
+            }
+        });
         assert_eq!(
-            body.process_stereo(0.0, 0.0),
-            (0.0, 0.0),
-            "no body chosen passes silence through as silence"
+            leaked, 0.0,
+            "the body replayed stale history at {sample_rate} Hz"
         );
     }
+}
 
-    body.set_param("convolutionIr", 1.0);
-    let leaked: Vec<(usize, f32)> = (0..LONGER_THAN_ANY_BODY)
-        .map(|n| (n, body.process_stereo(0.0, 0.0).0))
-        .filter(|&(_, sample)| sample != 0.0)
-        .collect();
+/// Body-to-body selection and repeated writes must retain the input ring.
+#[test]
+fn switching_or_repeating_a_body_preserves_the_rendering_history() {
+    for sample_rate in SAMPLE_RATES {
+        let mut switched = ConvolutionProcessor::new(sample_rate);
+        let mut reference = ConvolutionProcessor::new(sample_rate);
+        for body in [&mut switched, &mut reference] {
+            body.set_param("convolutionMix", 1.0);
+        }
+        switched.set_param("convolutionIr", 1.0);
+        reference.set_param("convolutionIr", 2.0);
+        let mut heard = 0.0_f32;
+        let mut difference = 0.0_f32;
+        assert_no_alloc(|| {
+            for n in 0..BLOCK {
+                let impulse = if n == 0 { 1.0 } else { 0.0 };
+                switched.process_stereo(impulse, impulse);
+                reference.process_stereo(impulse, impulse);
+            }
+            switched.set_param("convolutionIr", 2.0);
+            for _ in 0..BLOCK {
+                // A repeated parameter write must not reset that same ring.
+                switched.set_param("convolutionIr", 2.0);
+                let actual = switched.process_stereo(0.0, 0.0);
+                let expected = reference.process_stereo(0.0, 0.0);
+                heard += actual.0.abs() + actual.1.abs();
+                difference += (actual.0 - expected.0).abs() + (actual.1 - expected.1).abs();
+            }
+        });
+        assert!(
+            heard > 0.0,
+            "the switched body lost its live tail at {sample_rate} Hz"
+        );
+        assert_eq!(
+            difference, 0.0,
+            "the body switch reset input history at {sample_rate} Hz"
+        );
+    }
+}
+
+/// The one-band Serial route feeds the impulse straight to a fully wet wood
+/// body. Its engine output must retain the late 192 kHz taps, then become
+/// exactly silent once the prebuilt response ends.
+#[test]
+fn engine_output_retains_late_wood_tail_at_192khz() {
+    const FRAME_COUNT: usize = 4_459;
+    const LATE_TAIL_START: usize = 4_394;
+    const BODY_END: usize = 4_458;
+
+    let mut engine = BacteriaEngine::new(192_000.0);
+    engine.set_param("globalRouting", 0.0);
+    engine.set_param("band0_convolutionEnabled", 1.0);
+    engine.set_param("band0_convolutionIr", 1.0);
+    engine.set_param("band0_convolutionMix", 1.0);
+    assert_eq!(engine.latency_samples(), 0);
+
+    let mut left = vec![0.0_f32; FRAME_COUNT];
+    let mut right = vec![0.0_f32; FRAME_COUNT];
+    left[0] = 1.0;
+    right[0] = 1.0;
+
+    assert_no_alloc(|| {
+        for (left_block, right_block) in left.chunks_mut(BLOCK).zip(right.chunks_mut(BLOCK)) {
+            engine.process_block(left_block, right_block);
+        }
+    });
+
     assert!(
-        leaked.is_empty(),
-        "silence through the re-chosen body rang with the burst played before the spell of \
-         none: {} non-zero samples, first {:?}",
-        leaked.len(),
-        leaked.first()
+        left.iter().chain(&right).all(|sample| sample.is_finite()),
+        "the engine rendered a non-finite sample at 192 kHz"
+    );
+    assert_eq!(left, right, "identical stereo input rendered unevenly");
+    let late_tail_energy: f32 = left[LATE_TAIL_START..BODY_END]
+        .iter()
+        .map(|sample| sample.abs())
+        .sum();
+    assert!(
+        late_tail_energy > 0.0,
+        "the engine output lost wood's late 192 kHz tail"
+    );
+    assert_eq!(
+        left[BODY_END], 0.0,
+        "the engine output continued after the wood body ended"
     );
 }

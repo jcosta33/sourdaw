@@ -194,6 +194,10 @@ old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
 
+## Recording replay must authenticate the captured owner
+
+PR #4564 (`40c5218228c542c5a4cf3cdd73388f4da893ea4e`) introduced recording replay that checked only the destination track before restore and removed the clip ID globally on discard. A collaborator moving that same recorded ID to another track between history legs admitted a duplicate and then deleted the peer copy. Probe both moves before Undo and after Undo before Redo through real Command and CRDT storage; preserve raw and projected media, takes/comp, automation, MIDI and satellites, and retain the exact pending history on refusal. Count duplicate occurrences across tracks and within one track. Authenticate a discard's actual pending inverse against its original commit and explicit redo, and reject restore while any active occurrence exists. Historical private review prompts and tiers are unavailable; the missed stance is peer ownership changing between recording history legs.
+
 ## Escape: repairing attached composite conflicts cloned live proxies (PR #4292)
 
 PR #4292 (`ac8e123b5e`) introduced a repair path that passed attached Automerge map and list proxies to `structuredClone`. The map input throws `DataCloneError: '#<Object> could not be cloned.'`; the list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar conflict case did not exercise either composite shape. Keep this escape distinct from the actor-order flake in `test-validity.md`.
@@ -460,6 +464,17 @@ Require the authoritative document, Automation projection, links, samples, and u
 refusal. Keep a positive source-write undo/redo control whose sampled effect reaches the follower. Multi-action
 `addAutomationPoint` batches are a separate Command contract and must not be inferred from singleton proof.
 
+### Restore monitoring from the authoritative root after aborted repair (issue #5286)
+
+During a held same-project repair, compare the committed project root with its optimistic
+projection: a projected Off must not erase committed On intent. After the version restore aborts,
+require the rebuilt strip to receive a newly acquired source and the old stream to stop once; the
+aborted operation must add no history. A committed Off during reset stays Off, and a root
+replacement must not reset or rearm its successor. Preserve pending and refused permission cases
+and armed Auto's final-transport behavior. Read these root, projection, connection, stream, and
+history assertions in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; controlled ports do not prove hardware audio.
+
 ### A projected absence is not a committed deletion (issue #5283)
 
 Hold the production registered removal handler for an On track `a` in a real storage transaction.
@@ -470,6 +485,12 @@ must already be retired, while eligible shared `b` keeps the same capture, edge,
 last-owner case, the old input must stop. Neither case may recreate `a`'s strip or request
 permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
 and capture. Testing deletion and selector changes separately misses this authority crossing.
+
+## Lesson from direct commit 61adb8: redetection dropped locked automatic markers
+
+Commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised to preserve locked markers, but its predicate retained only markers whose origin was not `transient-auto`, dropping locked automatic rows too. The original preservation fixture covered a user row and an unlocked automatic row, so it could not expose that loss. Current main retains `locked === true` rows and suppresses detections within `1e-3` of a retained original beat (PR #5515).
+
+Exercise real Detect, sensitivity re-detection and the registered Command with a moved locked automatic row beside user, grid and unlocked automatic rows. Require the exact ID, original and warped beats, lock and confidence to survive in raw CRDT and projected state. Vary the input or sensitivity so redetection changes the detected population; visible counts, draws and hit state must reflect that new projection, while other clips and source PCM remain unchanged. Then unlock that same held automatic marker and detect again; the marker must be replaceable, so retaining it after unlock fails the control. Independently remove locked-row retention and equal/near-hit suppression; the row-preservation and collision probes must each fail. This is source-and-fixture guidance only: it claims no Worker or performance acceptance, new runtime test, or full #4630 acceptance.
 
 ## Lesson from the PR #645 selected-range undo escape
 
@@ -776,3 +797,47 @@ placement with a negative anchor: the selected takes and their comp regions
 must survive real hydration unchanged, including an active saved arrangement's
 top-level fallback. Reverting placement admission must fail the rejection cases;
 a sanitizer-only assertion cannot establish safe file admission.
+
+## 2026-10-29 — an AI group revert committed a newer inverse before an older conflict (#5565)
+
+The history caller introduced by `22a84b216658f593391e7e141d90f7c84d13648b` replayed
+members separately; `78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` moved that loop into
+Command without making it atomic. GitHub reports no associated PR for either commit;
+historical private reviewer prompts, models and tiers are unknown. The missing failure
+mode was a later inverse refusing after a newer member had already changed the project.
+
+Apply Keys gain and Bass mute in one real group, remove Keys, then invoke the public AI
+history revert. Require unchanged raw project, projections, both Undo stacks, tree and AI
+metadata, plus a visible refusal and no Bass engine write. Pair an intact multi-member
+group with a later unrelated musician edit and real Redo. Hold the actual snapshot wait,
+replace the root with identical content or discard same-lineage history, then require
+zero-write refusal. Capture existing mutation-owner authorization before the first await;
+permit the replay's own writes and settle already-visible queued writes synchronously.
+
+## 2026-10-29 — deferred replay effects could finalize history into a restored project (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) finalized atomic group history only
+after awaiting replay and its deferred effects. Review of #5849 caught a committed inverse
+whose held effect allowed project replacement and Undo clear before old entries entered the
+replacement's Redo. Historical private reviewer prompts, models and tiers are unknown.
+
+Hold a real post-commit effect after proving the inverse's raw writes committed. Replace or
+restore the captured project, clear history and release the effect; require the replacement's
+past, future and tree unchanged. Repeat through actual ambiguous publication reconciliation,
+including restoreUndoHistory with the original captured entry objects, not only cloned IDs.
+Object identity is not history ownership: capture and compensation preserve those objects.
+Finalize once at the normal or distinct ambiguous publication boundary before effects can
+re-enter; a committed inverse stays committed truth even if later effects warn. A later musician
+edit must retain its entry and invalidate Redo normally. Keep normal onCommitted silent for
+no-op, cancelled, rejected and ambiguous outcomes, and retain the original ambiguity if its
+separate observer throws.
+
+The same late-finalization route also admitted stale no-op history: replay can skip every
+inverse yet still yield before history settlement. In #5849, a real legacy clamped-gain
+inverse proved no project or track write occurred while replacement and clear installed a
+different history; old entries still entered its future and AI metadata claimed a revert.
+Keep the unchanged no-op control, but require caller project mutation authority and the
+untouched Undo snapshot again before consuming a no-publication result. Exercise both panel
+and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
+discard, original-reference restoration and request cancellation. This fence applies only
+before publication: a real committed inverse remains committed truth.
