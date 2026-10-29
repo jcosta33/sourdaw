@@ -137,7 +137,7 @@
   {
     "id": "ui-015a1b057d64a421",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 183,
+    "line": 207,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -533,7 +533,7 @@
   {
     "id": "ui-054693173f0028e1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 465,
+    "line": 605,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -2108,7 +2108,7 @@
   {
     "id": "ui-13b035d50dbba810",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 259,
+    "line": 521,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -2279,7 +2279,7 @@
   {
     "id": "ui-150f97091c816338",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 199,
+    "line": 223,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -2891,7 +2891,7 @@
   {
     "id": "ui-1c2804517312e831",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 547,
+    "line": 711,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -3773,7 +3773,7 @@
   {
     "id": "ui-246152bdb127d708",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 368,
+    "line": 657,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -4709,7 +4709,7 @@
   {
     "id": "ui-2c7f6edfd18b08dd",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 352,
+    "line": 639,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -5042,7 +5042,7 @@
   {
     "id": "ui-2fcfdf9bf47dff79",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 435,
+    "line": 744,
     "fingerprint": "div\tflex items-center justify-center w-full px-1 shrink-0",
     "kind": "layout",
     "mapping": "Row",
@@ -5465,7 +5465,7 @@
   {
     "id": "ui-35359b18240c037f",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 244,
+    "line": 268,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -5618,7 +5618,7 @@
   {
     "id": "ui-3706d12e9d10f7f1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 193,
+    "line": 217,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -6444,6 +6444,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-3f5fd8a60c9a5f07",
+    "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
+    "line": 606,
+    "fingerprint": "button\t",
+    "kind": "generic-control",
+    "mapping": "Button",
+    "disposition": "eligible"
+  },
+  {
     "id": "ui-3f74bcd3c5bf7ab5",
     "file": "src/modules/Crust/presentations/components/CrustControlZone.tsx",
     "line": 423,
@@ -6482,7 +6491,7 @@
   {
     "id": "ui-3fa7dee136ae925a",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 475,
+    "line": 632,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -6545,7 +6554,7 @@
   {
     "id": "ui-403ba40b64eac40a",
     "file": "src/components/daw/RotaryKnob.tsx",
-    "line": 464,
+    "line": 477,
     "fingerprint": "div\trelative rounded-full bg-bg-panelInset flex items-center justify-center p-[2px] channel-inset",
     "kind": "layout",
     "mapping": "Row",
@@ -6815,7 +6824,7 @@
   {
     "id": "ui-4292a50dcaf5931a",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 349,
+    "line": 379,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -7218,6 +7227,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-469a798408f0150a",
+    "file": "src/components/daw/RotaryKnob.tsx",
+    "line": 444,
+    "fingerprint": "div\tgroup/knob relative flex flex-col items-center select-none touch-none outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus cursor-not-allowed opacity-45 cursor-ns-resize",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "one-off"
+  },
+  {
     "id": "ui-46a830308fad677d",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx",
     "line": 51,
@@ -7337,7 +7355,7 @@
   {
     "id": "ui-478476e1b40fe9b6",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 182,
+    "line": 206,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -7535,7 +7553,7 @@
   {
     "id": "ui-49714abb7dfb6ce6",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 341,
+    "line": 371,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -8399,7 +8417,7 @@
   {
     "id": "ui-52eaf9f3da1a83aa",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 476,
+    "line": 633,
     "fingerprint": "DawCompactCheckbox\t",
     "kind": "generic-control",
     "mapping": "DawCompactCheckbox",
@@ -8840,7 +8858,7 @@
   {
     "id": "ui-57e0bfdc8a5b94bb",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 278,
+    "line": 302,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -8939,7 +8957,7 @@
   {
     "id": "ui-58bd9bd9ab4d9147",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 464,
+    "line": 604,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -9182,7 +9200,7 @@
   {
     "id": "ui-5b3503873aea7aa0",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 436,
+    "line": 537,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10289,7 +10307,7 @@
   {
     "id": "ui-65cb5b0780614b6e",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 392,
+    "line": 690,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -11522,7 +11540,7 @@
   {
     "id": "ui-73366aaafe61dfc2",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 410,
+    "line": 710,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11981,7 +11999,7 @@
   {
     "id": "ui-7838a81ea88e04e6",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 230,
+    "line": 492,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -12310,15 +12328,6 @@
     "kind": "layout",
     "mapping": "Stack",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-7ae5d35af8ad6e3e",
-    "file": "src/components/daw/RotaryKnob.tsx",
-    "line": 431,
-    "fingerprint": "div\tgroup/knob relative flex flex-col items-center select-none touch-none cursor-not-allowed opacity-45 cursor-ns-resize",
-    "kind": "layout",
-    "mapping": "Stack",
-    "disposition": "one-off"
   },
   {
     "id": "ui-7ae96c6dd14da1be",
@@ -13115,7 +13124,7 @@
   {
     "id": "ui-8183a09636f55512",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 356,
+    "line": 643,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -13835,7 +13844,7 @@
   {
     "id": "ui-899699cfa915a56f",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 191,
+    "line": 215,
     "fingerprint": "div\tgrid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1.5",
     "kind": "layout",
     "mapping": "Grid",
@@ -14078,7 +14087,7 @@
   {
     "id": "ui-8c04f267d18d6be0",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 484,
+    "line": 646,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15284,7 +15293,7 @@
   {
     "id": "ui-9a073b31a4bcbc75",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 275,
+    "line": 299,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15608,7 +15617,7 @@
   {
     "id": "ui-9d31fdcea360d43b",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 466,
+    "line": 618,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -15617,7 +15626,7 @@
   {
     "id": "ui-9d433798816768de",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 263,
+    "line": 287,
     "fingerprint": "DawCompactInput\t",
     "kind": "generic-control",
     "mapping": "DawCompactInput",
@@ -16130,7 +16139,7 @@
   {
     "id": "ui-a2647493ad7e5c06",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 488,
+    "line": 650,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16589,7 +16598,7 @@
   {
     "id": "ui-a7c0c641aedbf8ab",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 340,
+    "line": 370,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17300,7 +17309,7 @@
   {
     "id": "ui-af0b36b9cc1e6f32",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 187,
+    "line": 211,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -17552,7 +17561,7 @@
   {
     "id": "ui-b0ec8b3fa95b0d1c",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 419,
+    "line": 519,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17750,7 +17759,7 @@
   {
     "id": "ui-b22d6defae6926a3",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 274,
+    "line": 298,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -17957,7 +17966,7 @@
   {
     "id": "ui-b4854dfb37c81ebc",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 549,
+    "line": 713,
     "fingerprint": "DawEmptyState\t",
     "kind": "daw-chrome",
     "mapping": "DawEmptyState",
@@ -19802,7 +19811,7 @@
   {
     "id": "ui-c8750fb146e93384",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 531,
+    "line": 695,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19892,7 +19901,7 @@
   {
     "id": "ui-c9462c9d49c3a3c1",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 230,
+    "line": 254,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -20288,7 +20297,7 @@
   {
     "id": "ui-cbfb0f82aad241d8",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 375,
+    "line": 405,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -20936,7 +20945,7 @@
   {
     "id": "ui-d3460f1cba12724c",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 420,
+    "line": 520,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -22079,7 +22088,7 @@
   {
     "id": "ui-df5f9bb9757208fe",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 214,
+    "line": 238,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -23339,7 +23348,7 @@
   {
     "id": "ui-ec46fe2a02e492b2",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 526,
+    "line": 690,
     "fingerprint": "DawHeaderBand\t",
     "kind": "daw-chrome",
     "mapping": "DawHeaderBand",
@@ -23582,7 +23591,7 @@
   {
     "id": "ui-eee71c0539ce3693",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 362,
+    "line": 392,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -24311,7 +24320,7 @@
   {
     "id": "ui-f67fb98bc4273ab7",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 378,
+    "line": 408,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24842,7 +24851,7 @@
   {
     "id": "ui-fad462ce5248a0bb",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 402,
+    "line": 700,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24887,7 +24896,7 @@
   {
     "id": "ui-fb668701287da335",
     "file": "src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx",
-    "line": 350,
+    "line": 637,
     "fingerprint": "div\tflex w-full min-w-0 flex-col gap-2 flex-row items-center gap-3",
     "kind": "layout",
     "mapping": "Stack",
@@ -25031,7 +25040,7 @@
   {
     "id": "ui-fcee26de2a637970",
     "file": "src/modules/Automation/presentations/views/ModulationMatrix.tsx",
-    "line": 525,
+    "line": 689,
     "fingerprint": "DawPanelSurface\t",
     "kind": "daw-chrome",
     "mapping": "DawPanelSurface",
