@@ -1017,7 +1017,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         }
         clip.type = 'midi';
         clip.audioOffsetSeconds = 0;
-        const serialized: unknown = JSON.parse(JSON.stringify(project));
+        const file = new File([JSON.stringify(project)], 'song.sourdaw', { type: 'application/json' });
+        const serialized: unknown = JSON.parse(await file.text());
 
         await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
 
@@ -1048,7 +1049,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         }
         clip.type = 'midi';
         expect(clip).not.toHaveProperty('audioOffsetSeconds');
-        const serialized: unknown = JSON.parse(JSON.stringify(project));
+        const file = new File([JSON.stringify(project)], 'song.sourdaw', { type: 'application/json' });
+        const serialized: unknown = JSON.parse(await file.text());
 
         await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
 
