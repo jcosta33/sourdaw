@@ -378,6 +378,10 @@ Blind spot: the review treated a successful call attempt as the hardware outcome
 
 Probe that would have caught it: drive the real use case with fake hardware and observe the store and notification after rejection, absent or non-callable `setSinkId`, deferred success, and ordered overlapping requests; require every failed request to retain the last applied ID and every later request to wait for its predecessor.
 
+### Elastic marker views must follow their owner projection
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot that did not follow deferred sensitivity detection in the warp store. No associated introducing PR or private review prompt or tier is established. Probe the selected clip's real store projection after detection and an external update: drawing, detail counts, availability and hit-testing must agree on the same current markers without an incidental pointer refresh. Switch clips and preserve locked identity, a control clip and PCM; removing the subscription must fail the real varied-pulse regression. This establishes no Worker or performance acceptance.
+
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
 PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end

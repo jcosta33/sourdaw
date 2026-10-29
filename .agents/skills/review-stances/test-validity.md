@@ -478,6 +478,10 @@ check. Poison the reserved PCM span, compare each acknowledged window with the i
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
 
+### A silent sensitivity fixture could not expose a stale marker view
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
 ### Project-device assertions missed the Web Audio projection and cold strip
 
 PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
