@@ -5,7 +5,9 @@ import {
     mkdirSync,
     mkdtempSync,
     readFileSync,
+    readdirSync,
     rmSync,
+    statSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
@@ -84,37 +86,39 @@ function configFileProcess(
         script,
         `import fs from 'node:fs';
 import {syncBuiltinESMExports} from 'node:module';
-import {join} from 'node:path';
+import {basename,dirname,join,relative,isAbsolute,sep} from 'node:path';
 if(process.platform!=='win32')process.umask(${options.mask ?? 0o022});
 const workspace=${JSON.stringify(input.workspace)},dest=${JSON.stringify(options.dest ?? input.dest)},env=${JSON.stringify(input.options.env)};
 const injection=${JSON.stringify(options.injection ?? null)};
 const target=join(workspace,'preserve-config-target');
 fs.writeFileSync(target,'preserve input');
-if(injection){
- const write=fs.writeFileSync;
- const requested=join(dest,'config',injection.name);
- let injected=false;
- fs.writeFileSync=(file,data,options)=>{
-  if(file===requested&&!injected){
-   injected=true;
-   if(injection.kind==='symlink')fs.symlinkSync(target,file);
-   else write(file,'preserve input');
+let config,configMode=null,files={},injected=false;
+const write=fs.writeFileSync;
+fs.writeFileSync=(file,data,options)=>{
+ if(typeof file!=='string'||!['user.npmrc','global.npmrc'].includes(basename(file)))return write(file,data,options);
+ config=dirname(file);
+ if(injection&&basename(file)===injection.name&&!injected){
+  injected=true;
+  if(injection.kind==='symlink')fs.symlinkSync(target,file);
+  else write(file,'preserve input');
+ }
+ try{return write(file,data,options);}
+ finally{
+  configMode=fs.statSync(config).mode&0o777;
+  for(const name of ['user.npmrc','global.npmrc']){
+   const requested=join(config,name);
+   if(fs.existsSync(requested))files[name]={mode:fs.statSync(requested).mode&0o777,content:fs.readFileSync(requested,'utf8'),symlink:fs.lstatSync(requested).isSymbolicLink()};
   }
-  return write(file,data,options);
- };
- syncBuiltinESMExports();
-}
+ }
+};
+syncBuiltinESMExports();
 const {setupPnpm}=await import(${JSON.stringify(pathToFileURL(join(repository, 'scripts/setupPnpm.ts')).href)});
 let commands=0,error;
 try{setupPnpm({workspace,dest,manifest:'package.json',env,node:process.execPath,run:()=>{commands++;return {status:1,stdout:''};}});}
 catch(caught){error={code:caught.code??null,message:caught.message};}
-const files={};
-for(const name of ['user.npmrc','global.npmrc']){
- const file=join(dest,'config',name);
- if(fs.existsSync(file))files[name]={mode:fs.statSync(file).mode&0o777,content:fs.readFileSync(file,'utf8'),symlink:fs.lstatSync(file).isSymbolicLink()};
-}
 const mode=file=>fs.existsSync(file)?fs.statSync(file).mode&0o777:null;
-console.log(JSON.stringify({creationMask:process.umask(),destinationExists:fs.existsSync(dest),rootMode:mode(dest),configMode:mode(join(dest,'config')),runtimeMode:mode(join(dest,'runtime')),bootstrapMode:mode(join(dest,'bootstrap')),files,commands,error,target:fs.readFileSync(target,'utf8'),exports:['GITHUB_PATH','GITHUB_ENV','GITHUB_OUTPUT'].map(name=>fs.readFileSync(env[name],'utf8'))}));
+const within=(root,file)=>{const child=relative(root,file);return child!=='..'&&!child.startsWith('..'+sep)&&!isAbsolute(child);};
+console.log(JSON.stringify({creationMask:process.umask(),destinationExists:fs.existsSync(dest),rootMode:mode(dest),configMode,runtimeMode:mode(join(dest,'runtime')),bootstrapMode:mode(join(dest,'bootstrap')),privateSibling:config?dirname(config)===dirname(dest)&&!within(dest,config)&&!within(workspace,config):null,configRemoved:config?!fs.existsSync(config):null,files,commands,error,target:fs.readFileSync(target,'utf8'),exports:['GITHUB_PATH','GITHUB_ENV','GITHUB_OUTPUT'].map(name=>fs.readFileSync(env[name],'utf8'))}));
 `
     );
     const result = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 5_000 });
@@ -130,6 +134,8 @@ function expectConfigCollision(injection: { name: string; kind: 'file' | 'symlin
         files: { [injection.name]: { content: 'preserve input', symlink: injection.kind === 'symlink' } },
         commands: 0,
         error: { code: 'EEXIST' },
+        privateSibling: true,
+        configRemoved: true,
         target: 'preserve input',
         exports: ['', '', ''],
     });
@@ -145,6 +151,8 @@ describe('verified JavaScript pnpm setup', () => {
             const report = configFileProcess(fixture());
             expect(report).toMatchObject({
                 creationMask: 0o022,
+                privateSibling: true,
+                configRemoved: true,
                 rootMode: 0o755,
                 configMode: 0o700,
                 runtimeMode: 0o755,
@@ -177,11 +185,37 @@ describe('verified JavaScript pnpm setup', () => {
             bootstrapMode: null,
             files: {},
             commands: 0,
-            error: { message: 'pnpm setup requires a creation mask that blocks group and other writes' },
+            error: {
+                message: 'pnpm setup requires creation mask 022 for shared executable access and write protection',
+            },
             target: 'preserve input',
             exports: ['', '', ''],
         });
     });
+
+    it.skipIf(process.platform === 'win32').each([0o077, 0o026, 0o023])(
+        'refuses restrictive mask %i with an existing readable tool root before writing descendants',
+        (mask) => {
+            const input = fixture();
+            const report = configFileProcess(input, { mask });
+            expect(report).toMatchObject({
+                creationMask: mask,
+                destinationExists: true,
+                rootMode: 0o755,
+                configMode: null,
+                runtimeMode: null,
+                bootstrapMode: null,
+                files: {},
+                commands: 0,
+                error: {
+                    message: 'pnpm setup requires creation mask 022 for shared executable access and write protection',
+                },
+                target: 'preserve input',
+                exports: ['', '', ''],
+            });
+            expect(readdirSync(input.dest)).toEqual([]);
+        }
+    );
 
     it.each(['user.npmrc', 'global.npmrc'])(
         'refuses an existing %s file before running any package command',
@@ -223,7 +257,18 @@ describe('verified JavaScript pnpm setup', () => {
         } else {
             npmEntrypoint = resolve(dirname(process.execPath), '../lib/node_modules/npm/bin/npm-cli.js');
         }
+        let privateConfig: string | undefined;
+        input.run.mockImplementation((file, args, options) => {
+            privateConfig = options.env.XDG_CONFIG_HOME;
+            expect(privateConfig).toBeDefined();
+            expect(dirname(privateConfig!)).toBe(dirname(input.dest));
+            expect(privateConfig).not.toBe(input.dest);
+            expect(readFileSync(options.env.NPM_CONFIG_USERCONFIG!, 'utf8')).toBe('');
+            expect(readFileSync(options.env.NPM_CONFIG_GLOBALCONFIG!, 'utf8')).toBe('');
+            return input.implementation(file, args, options);
+        });
         const result = setupPnpm(input.options);
+        expect(existsSync(privateConfig!)).toBe(false);
         expect(input.run.mock.calls.map(([file, args]) => [file, args])).toEqual([
             [process.execPath, [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund']],
             [
@@ -239,13 +284,11 @@ describe('verified JavaScript pnpm setup', () => {
                 NPM_CONFIG_STRICT_SSL: 'true',
                 PNPM_HOME: join(result.dest, 'runtime'),
                 PNPM_CONFIG_STORE_DIR: join(result.dest, 'store'),
-                XDG_CONFIG_HOME: join(result.dest, 'config'),
             });
             for (const key of ['NODE_OPTIONS', 'npm_config_cache', 'COREPACK_ROOT']) {
                 expect(options.env[key]).toBeUndefined();
             }
-            expect(readFileSync(options.env.NPM_CONFIG_USERCONFIG!, 'utf8')).toBe('');
-            expect(readFileSync(options.env.NPM_CONFIG_GLOBALCONFIG!, 'utf8')).toBe('');
+            expect(options.env.XDG_CONFIG_HOME).toBe(privateConfig);
         }
         expect(input.exports()).toEqual([
             `${result.bin}\n`,
@@ -256,6 +299,34 @@ describe('verified JavaScript pnpm setup', () => {
         expect(readFileSync(join(input.workspace, 'pnpm-lock.yaml'), 'utf8')).toBe(lock);
     });
 
+    it.skipIf(process.platform === 'win32')(
+        'keeps every installed tool entry readable outside its private setup config',
+        () => {
+            const input = fixture();
+            const result = setupPnpm(input.options);
+            const unreadable: string[] = [];
+            const visit = (file: string): void => {
+                const stat = statSync(file);
+                let required = 0o004;
+                if (stat.isDirectory() || (stat.mode & 0o111) !== 0) {
+                    required = 0o005;
+                }
+                if ((stat.mode & required) !== required) {
+                    unreadable.push(file);
+                }
+                if (stat.isDirectory()) {
+                    for (const name of readdirSync(file)) {
+                        visit(join(file, name));
+                    }
+                }
+            };
+            visit(result.dest);
+            expect(unreadable).toEqual([]);
+            expect(existsSync(join(result.dest, 'config'))).toBe(false);
+            expect(input.exports()[0]).toBe(`${result.bin}\n`);
+        }
+    );
+
     it.each([0, 1, 2])('exports nothing when command %s fails and never executes a later command', (failure) => {
         const input = fixture();
         input.run.mockImplementation((file, args, options) => ({
@@ -264,6 +335,9 @@ describe('verified JavaScript pnpm setup', () => {
         }));
         expect(() => setupPnpm(input.options)).toThrow('failed');
         expect(input.run).toHaveBeenCalledTimes(failure + 1);
+        const privateConfig = input.run.mock.calls[0][2].env.XDG_CONFIG_HOME;
+        expect(privateConfig).toBeDefined();
+        expect(existsSync(privateConfig!)).toBe(false);
         expect(input.exports()).toEqual(['', '', '']);
     });
 

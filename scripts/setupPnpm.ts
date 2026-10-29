@@ -4,9 +4,11 @@ import {
     copyFileSync,
     lstatSync,
     mkdirSync,
+    mkdtempSync,
     readFileSync,
     readdirSync,
     realpathSync,
+    rmSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -51,8 +53,8 @@ function canonicalRegistry(value: string): boolean {
 }
 
 function assertSafeEnvironment(env: NodeJS.ProcessEnv): void {
-    if (process.platform !== 'win32' && (process.umask() & 0o022) !== 0o022) {
-        throw new Error('pnpm setup requires a creation mask that blocks group and other writes');
+    if (process.platform !== 'win32' && process.umask() !== 0o022) {
+        throw new Error('pnpm setup requires creation mask 022 for shared executable access and write protection');
     }
     for (const [name, value] of Object.entries(env)) {
         if (!value) {
@@ -144,12 +146,10 @@ function prepareDestination(dest: string | undefined, env: NodeJS.ProcessEnv, wo
     return root;
 }
 
-function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string): NodeJS.ProcessEnv {
+function isolatedEnvironment(env: NodeJS.ProcessEnv, root: string, config: string): NodeJS.ProcessEnv {
     const safe = Object.fromEntries(
         Object.entries(env).filter(([name]) => !/^(npm_|pnpm_|corepack_|node_options$|node_path$)/i.test(name))
     );
-    const config = join(root, 'config');
-    mkdirSync(config, { mode: 0o700 });
     mkdirSync(join(root, 'runtime'));
     const userConfig = join(config, 'user.npmrc');
     const globalConfig = join(config, 'global.npmrc');
@@ -211,38 +211,45 @@ export function setupPnpm(options: SetupPnpmOptions): { bin: string; dest: strin
     for (const file of ['package.json', 'package-lock.json']) {
         copyFileSync(join(bootstrapDirectory, file), join(bootstrap, file));
     }
-    const env = isolatedEnvironment(options.env, dest);
-    const run = options.run ?? nativeCommand;
-    const command = (file: string, args: string[], label: string): string => {
-        const result = run(file, args, { cwd: bootstrap, env });
-        if (result.status !== 0) {
-            throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
-        }
-        return result.stdout.trim();
-    };
-    const nodeDirectory = dirname(options.node);
-    let npmEntrypoint: string;
-    if ((options.platform ?? process.platform) === 'win32') {
-        npmEntrypoint = join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js');
-    } else {
-        npmEntrypoint = resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
-    }
-    command(
-        options.node,
-        [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
-        'bootstrap installation'
-    );
-    command(
-        options.node,
-        [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), 'self-update', version],
-        'verified target installation'
-    );
+    // The isolated unit UID audits the entire tool root. Keep setup-only private
+    // config in an exclusively created sibling, then remove it after every outcome.
     const home = join(dest, 'runtime');
     const bin = join(home, 'bin');
-    const target = installedEntrypoint(dest, bin, version);
-    const actual = command(options.node, [target, '--version'], 'target version check');
-    if (actual !== version) {
-        throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
+    const config = mkdtempSync(`${dest}-config-`);
+    try {
+        const env = isolatedEnvironment(options.env, dest, config);
+        const run = options.run ?? nativeCommand;
+        const command = (file: string, args: string[], label: string): string => {
+            const result = run(file, args, { cwd: bootstrap, env });
+            if (result.status !== 0) {
+                throw new Error(`pnpm setup ${label} failed (status ${result.status ?? 'unavailable'})`);
+            }
+            return result.stdout.trim();
+        };
+        const nodeDirectory = dirname(options.node);
+        let npmEntrypoint: string;
+        if ((options.platform ?? process.platform) === 'win32') {
+            npmEntrypoint = join(nodeDirectory, 'node_modules/npm/bin/npm-cli.js');
+        } else {
+            npmEntrypoint = resolve(nodeDirectory, '../lib/node_modules/npm/bin/npm-cli.js');
+        }
+        command(
+            options.node,
+            [npmEntrypoint, 'ci', '--ignore-scripts', '--no-audit', '--no-fund'],
+            'bootstrap installation'
+        );
+        command(
+            options.node,
+            [join(bootstrap, 'node_modules/pnpm/bin/pnpm.mjs'), 'self-update', version],
+            'verified target installation'
+        );
+        const target = installedEntrypoint(dest, bin, version);
+        const actual = command(options.node, [target, '--version'], 'target version check');
+        if (actual !== version) {
+            throw new Error(`pnpm setup target reports ${actual}, expected ${version}`);
+        }
+    } finally {
+        rmSync(config, { recursive: true });
     }
     const { GITHUB_PATH, GITHUB_ENV, GITHUB_OUTPUT } = options.env;
     if (!GITHUB_PATH || !GITHUB_ENV || !GITHUB_OUTPUT) {
