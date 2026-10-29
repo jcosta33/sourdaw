@@ -1,0 +1,16 @@
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 134-248,1018-1022,1121-1123,1137-1138,1140-1148,1189,1196,1219-1222,1276,1278-1294,1298-1326,1666-1667,1783-1785,1840-1847,3251-3255,3286-3290,3320-3436
+crates/daw-dsp/tests/bacteria_mid_side_alignment.rs
+  h_beb54bf43b47b7 1-668
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eeadaf16cc890818617962f1c31b4741d40348c4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
