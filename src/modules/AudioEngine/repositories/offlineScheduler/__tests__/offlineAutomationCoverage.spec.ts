@@ -7,6 +7,7 @@ import { FERMENTER_AUTOMATION_PARAM_IDS, isFermenterDevice } from '../../../engi
 import { GRAND_BOULE_AUTOMATION_PARAM_IDS, isGrandBouleDevice } from '../../../engine/GrandBouleNode';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS, isProofChamberDevice } from '../../../engine/ProofChamberNode';
 import { TOASTER_AUTOMATION_PARAM_IDS, isToasterDevice } from '../../../engine/ToasterNode';
+import { isTransientShaperDevice, isTransientShaperParameter } from '../../../engine/TransientShaperNode';
 import { resolveDeviceCurveWriteTargets, resolveDeviceParamTargets } from '../../../services/deviceResolution';
 import { createOfflineDeviceNode } from '../../deviceNodeFactory';
 import { FaustDeviceStrategy } from '../../deviceStrategy/FaustDeviceStrategy';
@@ -26,8 +27,8 @@ function makeAudioParamStub() {
 
 /**
  * The nodes that supply a `scheduleParam`/`acceptsScheduledParam` pair, each
- * paired with its own capability map read off the node module rather than restated
- * here. This is the *capability* side of the census; the *expectation* side is
+ * paired with its own capability predicate or ordinal map from the node module.
+ * This is the *capability* side of the census; the *expectation* side is
  * `offlineAutomationExemptions.ts`, and the whole point is that they are
  * different files with different authors.
  *
@@ -45,10 +46,10 @@ function makeAudioParamStub() {
  *
  * The *parameter-level* half — this spec's subject — is not tautological,
  * because the verdict and the expectation come from different files: the
- * capability maps below versus `offlineAutomationExemptions.ts`.
+ * capability predicates below versus `offlineAutomationExemptions.ts`.
  *
- * One more thing not to overstate: this re-implements `acceptsScheduledParam`
- * as `Object.hasOwn(map, name)` rather than calling the node's own, which is
+ * One more thing not to overstate: ordinal-backed entries re-implement
+ * `acceptsScheduledParam` as `Object.hasOwn(map, name)` rather than calling the node's own, which is
  * created inside `createFermenterNode` and unreachable here. What is shipped
  * and under test is the **capability map**; the predicate around it is restated.
  * Fermenter's map ordinals are pinned against the real binary by
@@ -56,12 +57,16 @@ function makeAudioParamStub() {
  */
 const SCHEDULING_CAPABLE_NODES: ReadonlyArray<{
     accepts: (deviceId: string) => boolean;
-    params: Readonly<Record<string, number>>;
+    acceptsParameter: (name: string) => boolean;
 }> = [
-    { accepts: isFermenterDevice, params: FERMENTER_AUTOMATION_PARAM_IDS },
-    { accepts: isToasterDevice, params: TOASTER_AUTOMATION_PARAM_IDS },
-    { accepts: isProofChamberDevice, params: PROOF_CHAMBER_AUTOMATION_PARAM_IDS },
-    { accepts: isGrandBouleDevice, params: GRAND_BOULE_AUTOMATION_PARAM_IDS },
+    { accepts: isFermenterDevice, acceptsParameter: (name) => Object.hasOwn(FERMENTER_AUTOMATION_PARAM_IDS, name) },
+    { accepts: isToasterDevice, acceptsParameter: (name) => Object.hasOwn(TOASTER_AUTOMATION_PARAM_IDS, name) },
+    {
+        accepts: isProofChamberDevice,
+        acceptsParameter: (name) => Object.hasOwn(PROOF_CHAMBER_AUTOMATION_PARAM_IDS, name),
+    },
+    { accepts: isGrandBouleDevice, acceptsParameter: (name) => Object.hasOwn(GRAND_BOULE_AUTOMATION_PARAM_IDS, name) },
+    { accepts: isTransientShaperDevice, acceptsParameter: isTransientShaperParameter },
 ];
 
 type NativeDspCensus = {
@@ -105,7 +110,7 @@ function walkNativeDspCensus(): NativeDspCensus {
 
         const scheduled = SCHEDULING_CAPABLE_NODES.find((entry) =>
             descriptors.some((descriptor) => entry.accepts(descriptor.id))
-        )?.params;
+        )?.acceptsParameter;
         const deviceLevel = scheduled === undefined;
         // The real strategy, but note which way the causality runs: for a
         // device absent from SCHEDULING_CAPABLE_NODES this file supplies no
@@ -117,7 +122,7 @@ function walkNativeDspCensus(): NativeDspCensus {
             ready: Promise.resolve({}),
             ...(scheduled
                 ? {
-                      acceptsScheduledParam: (name: string) => Object.hasOwn(scheduled, name),
+                      acceptsScheduledParam: scheduled,
                       scheduleParam: vi.fn(),
                   }
                 : {}),
@@ -290,7 +295,7 @@ describe('offline device-param automation capability coverage', () => {
         // restoration in `Voice::render` now read them.
         // Grand Boule's five automatable parameters now share its offline
         // worklet scheduling path, so 109 covered pairs becomes 114.
-        expect(census.verdicts).toBe(135);
+        expect(census.verdicts).toBe(137);
         // Moving Grand Boule out of the device-level class removes its five
         // parameter pairs from that count.
         // 182 → 180: #2076 removed the bacteria `morphX`/`morphY` descriptor
@@ -338,6 +343,16 @@ describe('offline device-param automation capability coverage', () => {
     it('covers all 23 Dutch Oven automatable parameters without an exemption', () => {
         const census = walkNativeDspCensus();
         expect(census.perDevice.get('dutch-oven')).toEqual({ covered: 23, exempt: 0, deviceLevel: false });
+    });
+
+    it('covers both Transient Shaper gains through the node’s actual scheduling predicate', () => {
+        const census = walkNativeDspCensus();
+        expect(census.perDevice.get('transient-shaper')).toEqual({ covered: 2, exempt: 0, deviceLevel: false });
+        expect(census.coveredPairs).toEqual(
+            expect.arrayContaining(['transient-shaper:attackGain', 'transient-shaper:sustainGain'])
+        );
+        expect(isTransientShaperParameter('_resetEpoch')).toBe(false);
+        expect(isTransientShaperParameter('unknown')).toBe(false);
     });
 
     it('resolves every Faust family’s automatable params through its AudioParam map', () => {
