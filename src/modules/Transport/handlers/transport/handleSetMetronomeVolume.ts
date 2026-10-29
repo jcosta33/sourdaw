@@ -31,6 +31,7 @@ export const handleSetMetronomeVolume = createHandler<'setMetronomeVolume'>({
             return { status: 'conflict', reason: requested.reason };
         }
         setMetronomeVolume(requested.linear);
+        return undefined;
     },
     isNoop: (action) => {
         const current = getTransportState()?.metronomeVolume;
