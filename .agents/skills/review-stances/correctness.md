@@ -848,3 +848,18 @@ unrelated programme edit and a valid same-target successor that commits the fina
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
+
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
