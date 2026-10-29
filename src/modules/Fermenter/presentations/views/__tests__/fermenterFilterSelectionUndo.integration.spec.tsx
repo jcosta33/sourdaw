@@ -52,8 +52,8 @@ import { FILTER_MODEL_NAMES, FILTER_MODE_NAMES } from '../../../models/Fermenter
 import { fermenterStore, getFermenterState, loadFermenterPatch } from '../../../stores/fermenterStore';
 import { applyFermenterRuntimeParam } from '../../../useCases/applyFermenterRuntimeParam';
 import { setFermenterDependencies } from '../../../useCases/fermenterDependencies';
-import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { setFermenterParamWithAudio } from '../../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
+import { selectFermenterFilterChoice } from '../../../useCases/selectFermenterFilterChoice';
 import { FermenterPanel } from '../FermenterPanel';
 
 const audio = vi.hoisted(() => ({ updateDeviceParam: vi.fn() }));
@@ -700,13 +700,12 @@ describe('Fermenter Filter selection through Command', () => {
                     if (change === 'removed-root') {
                         removeCrdtDoc('root');
                         createCrdtDoc('root');
+                    } else if (change === 'removed-device') {
+                        replaceTrack({ ...track, devices: [] });
                     } else {
                         replaceTrack({
                             ...track,
-                            devices:
-                                change === 'removed-device'
-                                    ? []
-                                    : [...track.devices, { ...track.devices[0]!, name: 'Duplicate occurrence' }],
+                            devices: [...track.devices, { ...track.devices[0]!, name: 'Duplicate occurrence' }],
                         });
                     }
                 });
