@@ -335,7 +335,11 @@ describe('verified JavaScript pnpm setup', () => {
         }));
         expect(() => setupPnpm(input.options)).toThrow('failed');
         expect(input.run).toHaveBeenCalledTimes(failure + 1);
-        const privateConfig = input.run.mock.calls[0][2].env.XDG_CONFIG_HOME;
+        const firstCall = input.run.mock.calls[0];
+        if (firstCall === undefined) {
+            throw new Error('Expected setup to invoke the failing package command');
+        }
+        const privateConfig = firstCall[2].env.XDG_CONFIG_HOME;
         expect(privateConfig).toBeDefined();
         expect(existsSync(privateConfig!)).toBe(false);
         expect(input.exports()).toEqual(['', '', '']);
