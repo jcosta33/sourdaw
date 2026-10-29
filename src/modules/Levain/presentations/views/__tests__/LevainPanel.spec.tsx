@@ -411,8 +411,8 @@ describe('LevainPanel', () => {
             expect(setMacroWithAudio).not.toHaveBeenCalled();
             const capture = vi.spyOn(spaceKnob, 'setPointerCapture');
             dragSpace(spaceKnob);
-            expect(capture).not.toHaveBeenCalled();
             expect(setMacroWithAudio).not.toHaveBeenCalled();
+            expect(capture).not.toHaveBeenCalled();
         });
 
         it('enables Space and sends its macro change when Room loads in any position', () => {
