@@ -1,0 +1,14 @@
+src/components/daw/__tests__/RotaryKnob.spec.tsx
+  h_beb54bf43b47b7 697-712
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "baea02b73e4ccf7bb88ae3f8b3f17242f0d9a76a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
