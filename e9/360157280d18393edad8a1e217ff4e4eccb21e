@@ -1,0 +1,26 @@
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 7160,9815,10382,11660,14531,15458,15854,16457,16790,18491,20813,21272,23423,24566
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 14-15,93,101,112
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 110-112,130
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 195-255,285-286,288-291,302-305
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 381-384
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 442-445
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 481-484
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9360157280d18393edad8a1e217ff4e4eccb21e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
