@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:e5a7c5a0137267352328395ef11886d91ce77451ea8a8332d4004d3c4bdc898e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:ff466c6d7175276a2464cca86b055073254e6554c088bd26129fae8b4cda609d:release/dependency-license-proofs.json"
+                "sha256:c9514ed78f5d7a0e7cfdf65fa06f811adad3ce218a8c4fc887342fb250467091:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:4356d2a8ddd7ad30ebe378b48b00087b6f5f2f672979af6062216da20b3d3d91:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -218,15 +218,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 44.4.5 694f45852a0f1726cd23bfd379854de489cccb65",
-                "Chromium 152.0.7977.130 2c592105bbcd9490a9894df48d0fe59b2c512651",
-                "Node v24.21.0 955266bfdd854cd280dffd47548673914484e4c0",
+                "electron 44.9.1 e02265be96c5e13ae43644ef482b718e1e800499",
+                "Chromium 152.0.7977.167 dd78960ccd8a03a2fe1f629543d27783885b78e9",
+                "Node v24.22.0 f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93",
                 "FFmpeg 2b68d2babae73714846961fb0ee47e3b3d2e39a9",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==",
+                "npm-integrity:sha512-x/tECFFDa2OFNjMObFH0EGKWrCnFZPOR1wP2iMIVt0STecGl8FmDXdaiaryY0kf8mtw9kSLP2yK8dfdaWkfDmw==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -277,7 +277,7 @@
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294",
+                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -1738,7 +1738,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "1fc6bf310a4ac510b3c7604bcf88cd82d27c40145bcff6e6f90afa70beeeb93f"
+            "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1750,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294"
+            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
         },
         {
             "path": "Cargo.toml",
