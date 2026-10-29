@@ -1,0 +1,21 @@
+src/modules/Arrangement/useCases/clipEditing/captureClipSplitSource.ts
+  s_29d8df116c5b92::t_d23d323f538cb0 26-27,31-36,51,179,188-199,201-205,214,223,227-230
+src/modules/Arrangement/useCases/clipEditing/readClipSplitSourceAuthority.ts
+  s_29d8df116c5b92::t_d23d323f538cb0 1-188
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6213ee4782294d951c92c5b825f714a45db125be",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
