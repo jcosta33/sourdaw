@@ -1,0 +1,24 @@
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 50,82-85,487-491
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  h_beb54bf43b47b7 11-12
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterParam.ts
+  h_beb54bf43b47b7 1-7
+src/modules/Fermenter/useCases/fermenterParamBridge/fermenterParamBatcher.ts
+  h_beb54bf43b47b7 1-5
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  h_beb54bf43b47b7 5,44-48
+src/modules/Fermenter/useCases/selectFermenterFilterChoice.ts
+  h_beb54bf43b47b7 10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2a2d481ca669da59755da9003712c0f13c74fab",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
