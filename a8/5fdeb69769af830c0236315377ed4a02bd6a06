@@ -1,0 +1,14 @@
+src/modules/Project/repositories/project/__tests__/projectDirectoryBinding.spec.ts
+  h_beb54bf43b47b7 131-132,138-159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a85fdeb69769af830c0236315377ed4a02bd6a06",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
