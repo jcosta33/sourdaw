@@ -52,17 +52,18 @@ const FullMicMixer = ({
                                 {mic.enabled ? 'ON' : 'OFF'}
                             </DawPluginToggle>
                             <Fader
-                                value={mic.enabled ? mic.volume * 76 - 70 : -70}
-                                onChange={(db) => {
-                                    const volume = Math.max(0, Math.min(1, (db + 70) / 76));
+                                value={mic.enabled ? mic.volume : 0}
+                                onChange={(volume) => {
                                     onUpdateMicPosition(i, { volume });
                                     onSendMicParam(i, 'volume', volume);
                                 }}
-                                min={-70}
-                                max={6}
-                                valueScale="decibels"
-                                unityValue={0}
-                                defaultValue={-6}
+                                min={0}
+                                max={1}
+                                step={0.5 / 76}
+                                fineStep={0.1 / 76}
+                                valueScale="gain"
+                                unityValue={1}
+                                defaultValue={64 / 76}
                                 height={100}
                                 unit="dB"
                                 // audit M-083: the visible mic name sits below the whole

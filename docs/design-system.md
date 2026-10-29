@@ -29,7 +29,7 @@ Keep shared controls presentation-only. Pass values and callbacks through props;
 
 For an amplitude fader with a unity point and headroom above it, opt into the shared audio mapping with `valueScale="gain"`, bounds that include `0` and `1`, and `unityValue={1}`. The continuous monotone curve places unity at 70% of the travel, keeps true silence at the bottom, and leaves the upper endpoint unchanged. Fader callbacks still report the original linear amplitude; gesture, keyboard, and project-write semantics do not change. The unconfigured generic `Fader` remains linear.
 
-For an existing decibel-valued control, use `valueScale="decibels"` and keep its admitted `min` and `max`. For example, `-70…+6 dB` remains the range; do not change that minimum to manufacture the 70% marker. The control maps those decibel values through amplitude for display travel and announces the truthful dB value to assistive technology. The Master and track mixer faders store and emit linear amplitude from hard zero to `FADER_MAX_GAIN`; their visual unity marker sits at 70%. The microphone level fader keeps its current `-70…+6 dB` limits.
+For an existing decibel-valued control, use `valueScale="decibels"` and keep its admitted `min` and `max`. For example, `-70…+6 dB` remains the range; do not change that minimum to manufacture the 70% marker. The control maps those decibel values through amplitude for display travel and announces the truthful dB value to assistive technology. The Master and track mixer faders store and emit linear amplitude from hard zero to `FADER_MAX_GAIN`; their visual unity marker sits at 70%. The microphone level fader stores linear gain from silence to unity, so its 0 dB mark sits at the top; it has no above-unity headroom.
 
 ## Gallery
 
