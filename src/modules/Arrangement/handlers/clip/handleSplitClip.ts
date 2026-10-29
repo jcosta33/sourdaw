@@ -1,6 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 import {
     type AppAction,
+    type HandlerValidationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
@@ -9,6 +10,8 @@ import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClip
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
+
+import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
 
 type SplitClipAction = Extract<AppAction, { type: 'splitClip' }>;
 
@@ -26,7 +29,7 @@ type PendingSplitDescription = {
 // after execution completes — ends up with the real capture.
 const pendingDescriptions = new WeakMap<object, PendingSplitDescription>();
 
-function prepareAction(action: SplitClipAction) {
+function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
     action.payload.rightClipId = rightClipId;
     const plan = prepareClipSplit({
@@ -35,6 +38,7 @@ function prepareAction(action: SplitClipAction) {
         rightClipId,
         resolvedSplitBeat: action.payload.resolvedBeat,
         targetNoteIds: action.payload.targetNoteIds,
+        priorActions: context?.actions.slice(0, context.actionIndex),
     });
     if (plan && action.payload.targetNoteIds === undefined) {
         action.payload.targetNoteIds = plan.targetNoteIds;
@@ -46,16 +50,42 @@ function prepareAction(action: SplitClipAction) {
 }
 
 export const handleSplitClip = createHandler<'splitClip'>({
-    validate: (action) =>
+    validateSessionEntry: (entry) => {
+        if (!isSplitClipSessionEntry(entry)) {
+            return false;
+        }
+        // The undo leg fills this owner capture after a later take lands on the
+        // right fragment. JSON separates the paired arrays, so restore their
+        // shared identity after validating both captures before replay.
+        if (
+            entry.inverseAction?.type === 'restoreClipSplitState' &&
+            entry.redoAction?.type === 'restoreClipSplitState'
+        ) {
+            const inverse = entry.inverseAction.payload;
+            // Legacy history has no placement witness until a real Undo sees
+            // the right fragment. Do not infer peers from its stale index.
+            const order = inverse.expected.rightClipOrder ?? [];
+            inverse.expected = { ...inverse.expected, rightClipOrder: order };
+            inverse.replacement = { ...inverse.replacement, rightClipOrder: order };
+            entry.redoAction.payload.expected = inverse.replacement;
+            entry.redoAction.payload.replacement = inverse.expected;
+            entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
+            entry.redoAction.payload.retiredTakeSourceProof = entry.inverseAction.payload.retiredTakeSourceProof;
+            entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
+        }
+        return true;
+    },
+    validate: (action, context) =>
         prepareClipSplit({
             clipId: action.payload.clipId,
             splitBeat: action.payload.beat,
             rightClipId: action.payload.rightClipId ?? '__split-preflight__',
             resolvedSplitBeat: action.payload.resolvedBeat,
             targetNoteIds: action.payload.targetNoteIds,
+            priorActions: context.actions.slice(0, context.actionIndex),
         }) !== null,
-    materializeCommandArguments: (action) => {
-        prepareAction(action);
+    materializeCommandArguments: (action, context) => {
+        prepareAction(action, context);
     },
     execute: (action) => {
         return toHandlerExecutionResult(
@@ -72,8 +102,8 @@ export const handleSplitClip = createHandler<'splitClip'>({
             ) !== null
         );
     },
-    describe: (action) => {
-        const plan = prepareAction(action);
+    describe: (action, context) => {
+        const plan = prepareAction(action, context);
         if (!plan) {
             return { label: 'Split clip', inverseAction: null };
         }
@@ -86,6 +116,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
         // a take naming the right half can land after the split, so only the
         // undo can capture what filtering the right clip out retires.
         const retiredTakeLanes: RetiredTakeLaneSnapshot[] = [];
+        const retiredTakeSourceProof = { changeHash: '', memberId: '' };
         // Filled in place by the forward `execute()` and read by both legs: the
         // split's inverse is a snapshot restore, so only this capture carries
         // the pre-split take/comp-region facets the undo must put back (#5048).
@@ -101,6 +132,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.next,
                     replacement: plan.previous,
                     retiredTakeLanes,
+                    retiredTakeSourceProof,
                     reKeyedTakeLanes,
                 },
             },
@@ -112,6 +144,7 @@ export const handleSplitClip = createHandler<'splitClip'>({
                     expected: plan.previous,
                     replacement: plan.next,
                     retiredTakeLanes,
+                    retiredTakeSourceProof,
                     reKeyedTakeLanes,
                 },
             },

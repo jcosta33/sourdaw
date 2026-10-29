@@ -91,6 +91,7 @@ export async function revertAction(entryId: string): RevertActionOutput {
 
     try {
         await executeAppAction(claim.inverseAction, {
+            undoEntryId: entryId,
             source: entry.source,
             groupLabel: `Reverted: ${entry.label}`,
         });

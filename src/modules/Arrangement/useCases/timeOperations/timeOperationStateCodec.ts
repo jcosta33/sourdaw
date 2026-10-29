@@ -820,6 +820,16 @@ function stateMatchesSnapshot(state: unknown, snapshot: unknown): boolean {
     return nodesEqual(encodedState, encodedSnapshot);
 }
 
+function trackStateMatchesSnapshot(state: unknown, snapshot: unknown): boolean {
+    const captured = decodeTrackState(snapshot);
+    if (!captured || !validateTrackState(state)) {
+        return false;
+    }
+    // Selection and ghost clips are local UI state, cleared by a fresh project
+    // projection. They cannot establish a conflict with unchanged project truth.
+    return valuesEqual(state.tracks, captured.tracks);
+}
+
 function cloneJsonPlan(value: unknown): Record<string, unknown> | null {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         return null;
@@ -874,6 +884,6 @@ export const timeOperationStateCodec = {
     encodeTrackState,
     markerStateMatchesSnapshot: stateMatchesSnapshot,
     nodesEqual,
-    trackStateMatchesSnapshot: stateMatchesSnapshot,
+    trackStateMatchesSnapshot,
     valuesEqual,
 };

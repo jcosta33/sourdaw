@@ -526,9 +526,16 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
 
         const groupId = `keyboard-delete-${crypto.randomUUID()}`;
         const groupLabel = `Delete ${deletedClips.length} clip${deletedClips.length === 1 ? '' : 's'}`;
-        for (const clip of deletedClips) {
-            void executeUserAppAction({ type: 'removeClip', payload: { clipId: clip.id } }, { groupId, groupLabel });
-        }
+        // Each action has its own storage owner; finish one before the next
+        // so this gesture's pending writes cannot appear foreign to its sibling.
+        void (async () => {
+            for (const clip of deletedClips) {
+                await executeUserAppAction(
+                    { type: 'removeClip', payload: { clipId: clip.id } },
+                    { groupId, groupLabel }
+                );
+            }
+        })();
         clearClipSelection();
         return true;
     }
