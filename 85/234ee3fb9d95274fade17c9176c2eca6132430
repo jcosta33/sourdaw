@@ -1,0 +1,14 @@
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 430,434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85234ee3fb9d95274fade17c9176c2eca6132430",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
