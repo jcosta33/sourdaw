@@ -1163,12 +1163,14 @@ describe('ExportDialog', () => {
                 expect(Array.from(requirePcm('cold-clip').getChannelData(0))).toEqual(Array.from(ordinary));
                 expect(Array.from(requirePcm('cold-frozen').getChannelData(0))).toEqual(Array.from(frozen));
                 expect(owner.getCachedAudioBuffer({ bufferId: 'cold-stale' })).toBeNull();
-                const bytes =
-                    mode === 'mixdown'
-                        ? mocks.writeNativeAudioMixdownFile.mock.lastCall![0].bytes
-                        : mocks.writeNativeAudioStemFile.mock.calls.find(
-                              ([entry]) => entry.fileName === 'Frozen.wav'
-                          )![0].bytes;
+                let bytes: Uint8Array;
+                if (mode === 'mixdown') {
+                    bytes = mocks.writeNativeAudioMixdownFile.mock.lastCall![0].bytes;
+                } else {
+                    bytes = mocks.writeNativeAudioStemFile.mock.calls.find(
+                        ([entry]) => entry.fileName === 'Frozen.wav'
+                    )![0].bytes;
+                }
                 const decoded = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
                 const expected = mode === 'mixdown' ? frozen[0]! + ordinary[0]! : frozen[0]!;
                 const firstSample =

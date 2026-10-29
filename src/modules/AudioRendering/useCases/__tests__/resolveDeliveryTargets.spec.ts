@@ -49,7 +49,7 @@ describe('resolveDeliveryTargets', () => {
     });
     it('refuses unshipped formats and invalid dither before storage acquisition', () => {
         const draft = row(2);
-        const settings = { ...draft.settings };
+        const settings = { ...draft.settings, formats: ['wav'] as const };
         Reflect.set(settings, 'formats', ['opus']);
         expect(() => resolveDeliveryTargets({ targets: [{ ...draft, settings }] })).toThrow(
             'Unsupported delivery format.'

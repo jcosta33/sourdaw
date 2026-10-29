@@ -26,6 +26,7 @@ describe('multi-target actual output', () => {
                 id: 'target',
                 name: 'Target',
                 sampleRate: 48000,
+                metadata: undefined,
             };
             const input = {
                 destination: {
