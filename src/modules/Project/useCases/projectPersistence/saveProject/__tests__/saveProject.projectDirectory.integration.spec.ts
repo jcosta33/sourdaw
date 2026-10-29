@@ -10,8 +10,8 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import type { ProjectDirectoryHandle } from '../../../../repositories/project/projectDirectory';
 
-function filePosition(value: number | undefined): number {
-    if (value === undefined || !Number.isSafeInteger(value) || value < 0) {
+function filePosition(value: number | null | undefined): number {
+    if (value === null || value === undefined || !Number.isSafeInteger(value) || value < 0) {
         throw new TypeError('Expected a nonnegative file position');
     }
     return value;
@@ -58,10 +58,16 @@ function createMemoryWritable(
             let data: Blob | BufferSource | string;
             if (typeof chunk === 'object' && !(chunk instanceof Blob) && 'type' in chunk) {
                 if (chunk.type === 'seek') {
+                    if (chunk.position === null || chunk.position === undefined) {
+                        throw new TypeError('Expected a nonnegative file position');
+                    }
                     position = filePosition(chunk.position);
                     return;
                 }
                 if (chunk.type === 'truncate') {
+                    if (chunk.size === null || chunk.size === undefined) {
+                        throw new TypeError('Expected a nonnegative file position');
+                    }
                     const size = filePosition(chunk.size);
                     resize(size);
                     position = Math.min(position, size);
@@ -70,7 +76,7 @@ function createMemoryWritable(
                 if (chunk.data === undefined || chunk.data === null) {
                     throw new TypeError('A file write requires data');
                 }
-                if (chunk.position !== undefined) {
+                if (chunk.position !== null && chunk.position !== undefined) {
                     position = filePosition(chunk.position);
                 }
                 data = chunk.data;
@@ -109,7 +115,7 @@ function createMemoryWritable(
 }
 
 class MemoryDirectory implements FileSystemDirectoryHandle, ProjectDirectoryHandle {
-    readonly kind: 'directory' = 'directory';
+    readonly kind = 'directory' as const;
     readonly files = new Map<string, Uint8Array>();
     readonly directories = new Map<string, MemoryDirectory>();
     private readonly fileHandles = new Map<string, FileSystemFileHandle>();
@@ -248,7 +254,7 @@ class MemoryDirectory implements FileSystemDirectoryHandle, ProjectDirectoryHand
         if (directory) {
             if (
                 !options?.recursive &&
-                (directory.directories.size || directory.files.size || directory.fileHandles.size)
+                (directory.directories.size > 0 || directory.files.size > 0 || directory.fileHandles.size > 0)
             ) {
                 throw new DOMException('Directory is not empty', 'InvalidModificationError');
             }
