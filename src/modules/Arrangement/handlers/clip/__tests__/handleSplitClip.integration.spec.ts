@@ -322,8 +322,8 @@ describe('handleSplitClip atomic integration', () => {
         };
         takeLaneStore.set({ lanes: [lane] });
         flushAutomergeStorageWrites();
-        // Ordinary store writes use JSON-safe values. Seed the historical raw
-        // Automerge value directly, then use the normal hydration boundary.
+        // Ordinary store writes use JSON-safe values. Seed a raw Automerge value
+        // directly, then use the normal hydration boundary.
         mutateCrdtDoc<{ takeLanes: TakeLaneStoreState }>({
             id: 'root',
             changeFn: (doc) => {
