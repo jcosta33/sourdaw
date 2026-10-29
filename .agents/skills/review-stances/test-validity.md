@@ -1879,3 +1879,9 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — scanner fixture provenance escaped the reference census (PR #5846)
+
+PR #5846 (`7af886ce81628f7e25630772b267465bebdf1f6b`) added an RFC URL to a scanner fixture comment without its external-reference inventory entry. Its historical private review prompts and tiers are unknown; the missed coverage was the release census of a newly introduced source reference.
+
+When a fixture or comment introduces an external URL, verify that the release inventory records its exact file, value and owning surface. A scanner fixture assertion passing does not prove the separate reference census admits that source.
