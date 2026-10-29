@@ -1,6 +1,8 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach, type MockInstance } from 'vitest';
 
+import { FADER_MAX_GAIN, faderValueToPosition } from '#/utils/audioLevelLaw';
+
 import { Fader } from '../Fader';
 
 describe('Fader', () => {
@@ -50,6 +52,72 @@ describe('Fader', () => {
             bubbles: true,
         });
         expect(onChange).toHaveBeenCalled();
+    });
+
+    it('maps track clicks through the gain taper with unity at 70 percent', () => {
+        const onChange = vi.fn();
+        const { container } = render(
+            <Fader value={0.8} onChange={onChange} min={0} max={FADER_MAX_GAIN} valueScale="gain" height={100} />
+        );
+        fireEvent.pointerDown(container.firstChild as HTMLElement, { button: 0, pointerId: 19, clientY: 30 });
+        expect(onChange).toHaveBeenNthCalledWith(1, expect.closeTo(1, 10), true);
+    });
+
+    it('applies the same mapped travel to the cap, unity marker, and decibel scale ticks', () => {
+        const { container } = render(
+            <Fader
+                value={1}
+                onChange={vi.fn()}
+                min={0}
+                max={FADER_MAX_GAIN}
+                valueScale="gain"
+                unityValue={1}
+                showScale
+                height={100}
+            />
+        );
+        const cap = container.querySelector('[data-role="fader-cap"]') as HTMLElement;
+        const unity = container.querySelector('[data-role="fader-unity"]') as HTMLElement;
+        expect(cap.style.bottom).toBe('calc(70% - 20px)');
+        expect(unity.style.bottom).toBe('70%');
+        const zeroDbTick = container.querySelector('[data-role="fader-scale-tick-0"]') as HTMLElement;
+        expect(zeroDbTick.style.bottom).toBe('70%');
+    });
+
+    it('drags through mapped travel in normal and Shift fine mode, then settles exactly once', () => {
+        const onChange = vi.fn();
+        const { container } = render(
+            <Fader
+                value={1}
+                onChange={onChange}
+                min={0}
+                max={FADER_MAX_GAIN}
+                valueScale="gain"
+                step={0.01}
+                fineStep={0.001}
+                height={100}
+            />
+        );
+        const slider = container.firstChild as HTMLElement;
+        const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+        fireEvent.pointerDown(cap, { button: 0, pointerId: 20, clientY: 30 });
+        fireEvent.pointerMove(slider, { pointerId: 20, clientY: 20 });
+        fireEvent.pointerUp(slider, { pointerId: 20 });
+        expect(onChange).toHaveBeenCalledTimes(2);
+        const [normalValue, normalTransient] = onChange.mock.calls[0] as [number, boolean];
+        expect(normalTransient).toBe(true);
+        expect(faderValueToPosition(normalValue, 0, FADER_MAX_GAIN, 'gain')).toBeCloseTo(0.8, 2);
+        expect(onChange.mock.calls[1]).toEqual([normalValue, false]);
+
+        onChange.mockClear();
+        fireEvent.pointerDown(cap, { button: 0, pointerId: 21, clientY: 30 });
+        fireEvent.pointerMove(slider, { pointerId: 21, clientY: 20, shiftKey: true });
+        fireEvent.pointerUp(slider, { pointerId: 21 });
+        expect(onChange).toHaveBeenCalledTimes(2);
+        const [fineValue, fineTransient] = onChange.mock.calls[0] as [number, boolean];
+        expect(fineTransient).toBe(true);
+        expect(faderValueToPosition(fineValue, 0, FADER_MAX_GAIN, 'gain')).toBeCloseTo(0.71, 2);
+        expect(onChange.mock.calls[1]).toEqual([fineValue, false]);
     });
 
     it('should ignore non-left pointer down', () => {
@@ -121,6 +189,34 @@ describe('Fader', () => {
         it('should announce a unit-qualified value when a unit is supplied', () => {
             render(<Fader value={-10} onChange={vi.fn()} min={-70} max={6} unit="dB" />);
             expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '-10 dB');
+        });
+
+        it('announces truthful decibels for mapped amplitude while retaining the raw slider value', () => {
+            render(
+                <Fader
+                    value={1}
+                    onChange={vi.fn()}
+                    min={0}
+                    max={FADER_MAX_GAIN}
+                    valueScale="gain"
+                    aria-label="Track gain"
+                />
+            );
+            const slider = screen.getByRole('slider', { name: 'Track gain' });
+            expect(slider).toHaveAttribute('aria-valuenow', '1');
+            expect(slider).toHaveAttribute('aria-valuetext', '0.0 dB');
+        });
+
+        it('announces silence as negative infinity for mapped amplitude', () => {
+            render(<Fader value={0} onChange={vi.fn()} min={0} max={FADER_MAX_GAIN} valueScale="gain" />);
+            expect(screen.getByRole('slider')).toHaveAttribute('aria-valuetext', '-∞ dB');
+        });
+
+        it('announces a mapped decibel value without changing its raw aria-valuenow', () => {
+            render(<Fader value={-70} onChange={vi.fn()} min={-70} max={6} valueScale="decibels" />);
+            const slider = screen.getByRole('slider');
+            expect(slider).toHaveAttribute('aria-valuenow', '-70');
+            expect(slider).toHaveAttribute('aria-valuetext', '-70.0 dB');
         });
 
         it('should omit aria-valuetext when no unit is supplied', () => {

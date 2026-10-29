@@ -1,5 +1,6 @@
 import {
     type ChangeEvent,
+    type DragEvent as ReactDragEvent,
     type PointerEvent as ReactPointerEvent,
     type ReactElement,
     useEffect,
@@ -7,7 +8,7 @@ import {
     useState,
 } from 'react';
 
-import { Plus, Trash2, X } from 'lucide-react';
+import { GripVertical, Plus, Trash2, X } from 'lucide-react';
 
 import { DawCompactCheckbox } from '#/components/daw/DawCompactCheckbox';
 import { DawCompactInput } from '#/components/daw/DawCompactInput';
@@ -21,8 +22,10 @@ import { useStore } from '#/infra/store/useStore';
 import { defaultTrackState, trackStore } from '#/modules/Arrangement/stores';
 import { getPluginById } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 
 import { type Modulator, type ModulatorKind, type ModulatorMapping } from '../../models/Modulator';
+import { modulationDragPreviewStore } from '../../stores/modulationDragPreviewStore';
 import { modulationStore, type ModulationStoreState } from '../../stores/modulationStore';
 import { beginMappingAmountDrag } from '../../useCases/modulation/beginMappingAmountDrag';
 import { endMappingAmountDrag } from '../../useCases/modulation/endMappingAmountDrag';
@@ -564,9 +567,56 @@ type ModulatorCardProps = {
 const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement => {
     const [pickerOpen, setPickerOpen] = useState(false);
 
+    useEffect(() => {
+        const clearOwnedDrag = (): void => {
+            if (modulationDragPreviewStore.value?.modulatorId === modulator.id) {
+                modulationDragPreviewStore.set({ modulatorId: null, projectAuthority: null });
+            }
+        };
+        const cancelOnEscape = (event: KeyboardEvent): void => {
+            if (event.key === 'Escape') {
+                clearOwnedDrag();
+            }
+        };
+        window.addEventListener('keydown', cancelOnEscape);
+        window.addEventListener('blur', clearOwnedDrag);
+        return () => {
+            window.removeEventListener('keydown', cancelOnEscape);
+            window.removeEventListener('blur', clearOwnedDrag);
+            clearOwnedDrag();
+        };
+    }, [modulator.id]);
+
+    const handleDragStart = (event: ReactDragEvent<HTMLButtonElement>): void => {
+        const projectAuthority = captureProjectTransitionAuthority();
+        event.dataTransfer.setData('application/x-sourdaw-modulator', modulator.id);
+        event.dataTransfer.effectAllowed = 'copy';
+        modulationDragPreviewStore.set({ modulatorId: modulator.id, projectAuthority });
+    };
+
+    const handleDragEnd = (): void => {
+        if (modulationDragPreviewStore.value?.modulatorId === modulator.id) {
+            modulationDragPreviewStore.set({ modulatorId: null, projectAuthority: null });
+        }
+    };
+
     return (
         <Stack gap={1.5} className="rounded-sm border border-border-hairline bg-surface-base/50 p-2">
             <Row gap={2}>
+                <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    draggable={modulator.enabled}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    aria-label={`Drag modulator ${modulator.name} to a parameter`}
+                    title="Drag to a device parameter"
+                    className="cursor-grab disabled:cursor-not-allowed"
+                    disabled={!modulator.enabled}
+                >
+                    <GripVertical className="size-3.5" />
+                </Button>
                 <DawCompactInput
                     value={modulator.name}
                     onChange={(event) =>

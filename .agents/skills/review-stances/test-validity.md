@@ -6,6 +6,21 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
+
+Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
+detector; the hold added in `2b080af5adc16f6fb9013ebd1d582e3cbe5b2238` still began only after
+threshold acquisition. GitHub reports no associated PR for either commit; their review stance,
+prompt and tier are unestablished. Steady-state fade checks did not observe the enable transition.
+
+Compare short-window output and gain with an already-open reference while enabling during a
+sustained note, including a zero crossing, slow attack/fast release and a settled detector barely
+above the opening hysteresis threshold. Whole-note RMS can hide the dip. Remove only
+bypass detector tracking: the near-threshold constant and bipolar-square cases must fail.
+Independently remove enable-time hold seeding: the silence/replay case must fail. Replay enabled
+on silence and after reset to prove replay cannot rearm the hold, and pin disabled input bits.
+Report component and served-WASM engine output separately from audible application acceptance.
+
 ### 2026-10-28 — output scrubbing hid poisoned recursive gate state
 
 Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
@@ -478,6 +493,10 @@ check. Poison the reserved PCM span, compare each acknowledged window with the i
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
 
+### A silent sensitivity fixture could not expose a stale marker view
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
 ### Project-device assertions missed the Web Audio projection and cold strip
 
 PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
@@ -823,6 +842,10 @@ can make that later census `unknown` while the new run itself succeeds. Require 
 only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
 and inspect both the original run and claim payloads. Keep complete-proof deletion
 unconditional; observing a prior sample or the new run's exit code cannot prove it.
+
+### FLAC metadata alone did not prove decodable residuals
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced inverted Rice unary polarity; the associated introducing PR and historical private prompt and tier are unknown. Exercise the real streaming FLAC bytes with the shipped decoder and compare seeded 16- and 24-bit samples to WAV PCM, zero decoder warnings, frame shape and STREAMINFO MD5. Demonstrate that the fixture reaches Rice coding by reverting only the polarity fix on a committed probe and requiring the unchanged named parity case to fail. A metadata or shared-encoder comparison alone cannot prove lossless decoding.
 
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
@@ -1272,6 +1295,33 @@ case with equal start timestamps and one with equal end timestamps; for each pai
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
 
+### Projection-only rearm must fail the aborted-repair probe (issue #5286)
+
+Use the connected same-project repair path with a real connected On track and hold plugin reset.
+Project Off before repair and during reset in aborting version restores; require committed root On
+and projected Off while held, then a fresh source connected only to the rebuilt gain, one stop of
+the old source, and empty aborted history. The discriminator is to restore projection-only rearm:
+the unchanged committed-On cases must then lose the second acquisition and rebuilt edge. Also keep
+the committed-Off-during-reset, root-replacement, pending/refused-permission, and armed-Auto
+controls so no-reopen and successor-root fences remain covered. These existing assertions are in
+`repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; they exercise controlled ports, not
+physical hardware or browser audio.
+
+### A held removal and committed retarget need one discriminating oracle (issue #5283)
+
+Use the registered removal handler and real storage transaction with On track `a` at input `null`
+and eligible shared owner `b`. While removal hides `a` optimistically, commit
+`replacement-input` independently via `mutateCrdtDoc`. Assert in the same held interval that the
+raw committed root still contains `a`, the projection hides it, and runtime owners contain only
+`b`, whose capture, edge, and stream are unchanged. Require no absent-strip recreation or new
+permission request; in a last-owner case, require the old input to stop. Commit removes `a`; abort
+re-admits the current input; a same-input abort retains the original owner and capture.
+
+As the discriminator, remove only the committed-selector retirement branch: the unchanged combined
+shared-commit case must fail before removal commits, reporting owners `a, b` instead of `b`. Two
+separate single-condition cases cannot establish this combined observation.
+
 ### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
 
 PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
@@ -1318,6 +1368,12 @@ The repair-route integration spec cloned the remote side with actor `'b'.repeat(
 Blind spot: the fixture's chosen actor looked deterministic, and the stance never asked what the other side's actor was or which side the assertion assumed would win.
 
 Probe that would have caught it: for any fixture that merges two concurrent writes to one key and asserts the surviving value, name both actors; if either is random, require the fixture to fix the ordering (an actor that sorts above or below every possible peer) and run the spec with the chosen actor flipped to the opposite extreme, expecting it to redden.
+
+### Escape: attached composite conflicts were not exercised by the repair spec (PR #4292)
+
+PR #4292 (`ac8e123b5e`) introduced `structuredClone` of an attached Automerge proxy in project repair. A real map input throws `DataCloneError: '#<Object> could not be cloned.'`; a real list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar-only repair case did not reveal either failure. This is separate from the concurrent-actor ordering flake above.
+
+Probe both real concurrent shapes (`tracks` map and `tracks.tracks` list) using two fixed actors and the registered `repairProjectData` action. Require the repair gate to reject an edit before repair, then require conflicts and the gate to clear without changing the full resolved tracks or MIDI, including exact `0.9999999999999999` leaves. After real Automerge save/load and reprojection, a registered `setTrackPan` edit must update raw and projected state and create one undo entry. Replace only the behavioral repair with direct assignment of the attached proxy: both unchanged composite cases must fail with `RangeError: Cannot create a reference to an existing document object`. A scalar-only case or a detached plain-object clone is not this oracle.
 
 ### 2026-09-17 — an arm click waited for a track a fresh project never has (escaped via commit 32179299b)
 
@@ -1734,6 +1790,17 @@ PR #2083 made device edits require an exact live before-chain. MIDI import publi
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.
+
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
 PR #4987 (`62a116ee0073`) tested paired take placement in the take-store sanitizer
@@ -1760,13 +1827,17 @@ The native live automation real-store test held an apply, changed a store, settl
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
 
-## Escape: recovery tests swallowed a stale owner result (PR #4496)
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
-PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
-but the import roundtrip spec retained a void mock. Its recovery cases stayed
-green while logging `Cannot read properties of undefined (reading 'status')` and
-skipping the successful restoration continuation. The missed test-validity input
-was a real caller consuming an owner's changed result; private reviewer prompts
-and tiers are unavailable. Type the mock from the exported callable and return
-its complete ready result, so result-contract drift cannot masquerade as tested
-recovery. Read unexpected logged errors even when every assertion passes.
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.

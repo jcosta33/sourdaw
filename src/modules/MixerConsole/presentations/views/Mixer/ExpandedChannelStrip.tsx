@@ -705,6 +705,8 @@ export const ExpandedChannelStrip = ({ track, isSelected, widthClass }: Expanded
                             // for a value `setTrackGain` would refuse and
                             // strand the undo entry's `expectedGain`.
                             max={FADER_MAX_GAIN}
+                            valueScale="gain"
+                            unityValue={1}
                             step={0.01}
                             fineStep={0.001}
                             defaultValue={0.8}
