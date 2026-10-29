@@ -555,6 +555,8 @@ describe('exact row captures through real Command history and persistence (#5695
         });
         await executeAppAction({ type: 'startMacroRecording' });
         await executeAppAction(kind === 'slip' ? freshSlip(forwardOffset) : trim());
+        // Reversion reads authoritative source owners alongside settled history metadata.
+        await settleMirror();
         const id = actionHistoryStore.value?.entries.at(-1)?.id;
         if (!id) {
             throw new Error('Expected an action-history entry to revert');
