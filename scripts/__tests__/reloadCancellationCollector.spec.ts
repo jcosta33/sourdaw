@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
 import { createServer, get } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,7 @@ import {
     summarizeWebSocket,
     WEBSOCKET_EVENTS,
 } from '../diagnostics/reloadCancellation/websocket';
-import { installViteTransportProbe } from '../diagnostics/reloadCancellation/viteTransportProbe';
+import { installViteTransportProbe, monitorTransportError } from '../diagnostics/reloadCancellation/viteTransportProbe';
 import { transportEvent } from '../diagnostics/reloadCancellation/pageCollector';
 
 const requestId = 'fixture-socket';
@@ -55,10 +56,31 @@ function completeTelemetry(): Record<string, unknown> {
 }
 
 describe('passive reload-cancellation evidence', () => {
+    it('monitors errors without handling or suppressing them', () => {
+        const unhandled = new EventEmitter();
+        const failure = new Error('unhandled fixture');
+        const observed: Error[] = [];
+        monitorTransportError(unhandled, (error) => observed.push(error));
+        expect(unhandled.listenerCount('error')).toBe(0);
+        expect(() => unhandled.emit('error', failure)).toThrow(failure);
+        expect(observed).toEqual([failure]);
+
+        const handled = new EventEmitter();
+        let handledCount = 0;
+        handled.on('error', () => {
+            handledCount++;
+        });
+        monitorTransportError(handled, (error) => observed.push(error));
+        expect(() => handled.emit('error', failure)).not.toThrow();
+        expect(handledCount).toBe(1);
+        expect(observed).toEqual([failure, failure]);
+    });
+
     it('observes real HTTP finish, error, socket close and redacts query data', async () => {
         const directory = mkdtempSync(join(tmpdir(), 'reload-transport-'));
         const file = join(directory, 'vite.jsonl');
         const stop = installViteTransportProbe(file);
+        let handledResponseError = false;
         let resolveAborted!: () => void;
         const abortedClosed = new Promise<void>((resolve) => {
             resolveAborted = resolve;
@@ -70,7 +92,9 @@ describe('passive reload-cancellation evidence', () => {
         const server = createServer((request, response) => {
             if (request.url?.startsWith('/aborted')) {
                 request.socket.once('close', resolveSocketClosed);
-                response.on('error', () => {});
+                response.on('error', () => {
+                    handledResponseError = true;
+                });
                 response.once('close', resolveAborted);
                 response.write('partial');
                 response.emit('error', new Error('synthetic-response-error'));
@@ -116,6 +140,7 @@ describe('passive reload-cancellation evidence', () => {
                 events.some((event) => event.kind === 'http-response-close' && event.data.writableFinished === false)
             ).toBe(true);
             expect(events.some((event) => event.kind === 'http-response-error')).toBe(true);
+            expect(handledResponseError).toBe(true);
             expect(events.some((event) => event.kind === 'socket-close')).toBe(true);
             expect(readFileSync(file, 'utf8')).not.toContain('secret-fixture');
         } finally {

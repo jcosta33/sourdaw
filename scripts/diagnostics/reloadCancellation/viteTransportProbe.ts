@@ -1,4 +1,5 @@
 import { subscribe, unsubscribe } from 'node:diagnostics_channel';
+import { errorMonitor, type EventEmitter } from 'node:events';
 import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Socket } from 'node:net';
@@ -6,6 +7,10 @@ import type { Socket } from 'node:net';
 import { createJournal } from './journal.ts';
 
 type HttpMessage = { request: IncomingMessage; response: ServerResponse; socket: Socket };
+
+export function monitorTransportError(emitter: EventEmitter, observe: (error: NodeJS.ErrnoException) => void): void {
+    emitter.once(errorMonitor, observe);
+}
 
 export function installViteTransportProbe(output: string): () => void {
     const journal = createJournal(output);
@@ -35,7 +40,7 @@ export function installViteTransportProbe(output: string): () => void {
         const id = socketId(accepted);
         record('socket-accepted', { pid: process.pid, socketId: id });
         accepted.once('close', (hadError) => record('socket-close', { pid: process.pid, socketId: id, hadError }));
-        accepted.once('error', (error: NodeJS.ErrnoException) =>
+        monitorTransportError(accepted, (error) =>
             record('socket-error', { pid: process.pid, socketId: id, code: error.code, name: error.name })
         );
     };
@@ -52,7 +57,7 @@ export function installViteTransportProbe(output: string): () => void {
             path,
         });
         request.once('aborted', () => record('http-request-aborted', { pid: process.pid, requestId: id }));
-        request.once('error', (error: NodeJS.ErrnoException) =>
+        monitorTransportError(request, (error) =>
             record('http-request-error', { pid: process.pid, requestId: id, code: error.code, name: error.name })
         );
         response.once('close', () =>
@@ -62,7 +67,7 @@ export function installViteTransportProbe(output: string): () => void {
                 writableFinished: response.writableFinished,
             })
         );
-        response.once('error', (error: NodeJS.ErrnoException) =>
+        monitorTransportError(response, (error) =>
             record('http-response-error', { pid: process.pid, requestId: id, code: error.code, name: error.name })
         );
     };
