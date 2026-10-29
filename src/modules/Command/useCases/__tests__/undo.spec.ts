@@ -90,7 +90,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [],
@@ -152,7 +152,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).not.toHaveBeenCalled();
         expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
             [{ type: 'stopPlayback' }, { type: 'toggleRecording' }],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+            { skipUndo: true, skipMacroRecording: true, source: 'manual', undoEntryIds: [second.id, first.id] }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({
             past: [previous],
@@ -226,6 +226,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(companion.inverseAction, {
+            undoEntryId: companion.id,
             skipUndo: true,
             skipMacroRecording: true,
         });
@@ -255,7 +256,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id }
         );
         // The inert entry is dropped without reaching future: nothing was undone for
         // it, so redo must never re-apply its action.
@@ -274,7 +275,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'toggleRecording' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: undoable.id }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [], future: [undoable] });
     });
@@ -295,7 +296,7 @@ describe('undo', () => {
         expect(mocks.executeAppAction).toHaveBeenCalledTimes(1);
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'stopPlayback' },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: real.id }
         );
         expect(mocks.undoStoreSet).toHaveBeenCalledWith({ past: [previous], future: [real] });
         expect(mocks.undoTreeMoveTo).toHaveBeenCalledWith('previous');
@@ -347,7 +348,12 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
-            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                undoEntryId: entry.id,
+                authorizeFirstHandler: expect.any(Function),
+            }
         );
     });
 
@@ -379,7 +385,7 @@ describe('undo', () => {
                     replacement: { present: true, enabled: true, loopOriginBeat: null },
                 },
             },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, undoEntryId: entry.id }
         );
     });
 
@@ -400,7 +406,12 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 } },
-            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                undoEntryId: valued.id,
+                authorizeFirstHandler: expect.any(Function),
+            }
         );
     });
 
@@ -429,7 +440,13 @@ describe('undo', () => {
                 { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null } },
                 { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
             ],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual', preExecutionValidation: expect.any(Function) }
+            {
+                skipUndo: true,
+                skipMacroRecording: true,
+                source: 'manual',
+                undoEntryIds: [second.id, first.id],
+                preExecutionValidation: expect.any(Function),
+            }
         );
     });
 });

@@ -20,7 +20,10 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    getCurrentAutomergeStorageMutationOwner,
+    runOutsideAutomergeStoragePublisherScope,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
@@ -28,6 +31,11 @@ import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } fr
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
 type AnyDoc = Record<string, unknown>;
+
+type OwnedDocumentPublication = {
+    readonly docId: DocId;
+    readonly heads: readonly string[];
+};
 
 type DecodedBundle = {
     documents: Map<DocId, Doc<AnyDoc>>;
@@ -287,6 +295,7 @@ class AutomergeRepository {
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
+    private documentPublicationsByOwner = new WeakMap<object, readonly OwnedDocumentPublication[]>();
     private changeListeners = new Set<ChangeListener>();
     /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
@@ -372,6 +381,11 @@ class AutomergeRepository {
     /** Count project mutations attributed to one exact storage transaction owner. */
     getMutationEpochForOwner(owner: object): number {
         return this.mutationEpochByOwner.get(owner) ?? 0;
+    }
+
+    /** Exact immutable publications, captured before listeners can replace installed truth. */
+    readOwnedDocumentPublications(owner: object): readonly OwnedDocumentPublication[] {
+        return this.documentPublicationsByOwner.get(owner) ?? [];
     }
 
     /** Subscribe to document changes (for the projection bridge). */
@@ -461,9 +475,19 @@ class AutomergeRepository {
         }
 
         this.captureBeforeMutation(id, snapshotTransaction);
+        const previousHeads = getHeads(doc);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated);
         this.markMutation();
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        const heads = getHeads(updated);
+        if (owner && (heads.length !== previousHeads.length || heads.some((head) => !previousHeads.includes(head)))) {
+            const publications = this.documentPublicationsByOwner.get(owner) ?? [];
+            this.documentPublicationsByOwner.set(
+                owner,
+                Object.freeze([...publications, Object.freeze({ docId: id, heads: Object.freeze(heads) })])
+            );
+        }
         this.notifyListeners(id, localSlots ? { localSlots } : undefined);
     }
 
@@ -1215,7 +1239,7 @@ class AutomergeRepository {
     private notifyListeners(docId?: DocId, hint?: CrdtChangeHint): void {
         for (const listener of this.changeListeners) {
             try {
-                listener(docId, hint);
+                runOutsideAutomergeStoragePublisherScope(() => listener(docId, hint));
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
             }

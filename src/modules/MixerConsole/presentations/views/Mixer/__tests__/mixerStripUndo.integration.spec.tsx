@@ -146,6 +146,8 @@ vi.mock('#/modules/MIDI/useCases', async () => {
     return {
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
+        isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         projectChannelBend: vi.fn(),
         adaptGrooveTemplateForConsumer: vi.fn(),
         addChordEvent: vi.fn(),

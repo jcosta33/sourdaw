@@ -6,6 +6,7 @@ import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresenc
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
 type AutomergeStorageDocId = string;
+export const AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY = '_storagePublicationEvidence';
 
 type AutomergeStorageReadableDoc = {
     readonly [key: string]: unknown;
@@ -212,8 +213,16 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
     }) => TData | null;
     /** Opt in to immutable owner-local metadata captured at each actual set or clear. */
     writeMetadata?: AutomergeStorageWriteMetadataHooks<TData, TWriteMetadata>;
-    /** Restore explicitly named runtime fields after committed durable authority is projected. */
-    projectCommittedLocalState?: (input: { authorityValue: TData; localValue: TData }) => TData;
+    /** Restore local fields, or only their explicit changes when previousLocalValue is supplied. */
+    projectCommittedLocalState?: (input: {
+        authorityValue: TData;
+        localValue: TData;
+        previousLocalValue?: TData;
+    }) => TData;
+    /** Classify a same-authority update whose changes belong only to the adapter's local read projection. */
+    isLocalRuntimeStateUpdate?: (input: { currentValue: TData; nextValue: TData }) => boolean;
+    /** Keep declared local fields when a pending owner settles and the visible authority is recomputed. */
+    preserveLocalRuntimeStateOnRecompute?: true;
 };
 
 /**
@@ -287,6 +296,7 @@ type ActiveAutomergeStorageTransaction = {
     readonly commitOwner: object;
     readonly snapshotTransaction: object | undefined;
     lifecycle: AutomergeStorageTransactionLifecycle;
+    readonly publicationMetadata: Map<string, unknown[]>;
 };
 
 const assertAutomergeStorageTransactionOpen = (transaction: ActiveAutomergeStorageTransaction): void => {
@@ -406,6 +416,32 @@ export function getCurrentAutomergeStorageMutationOwner(): object | undefined {
         return activeAutomergeStorageMutationProvenance.owner;
     }
     return activeAutomergeStorageTransaction?.commitOwner;
+}
+
+/** Metadata accompanies this owner's real document effect; it never creates a publication by itself. */
+export function appendAutomergeStoragePublicationMetadata(docId: string, value: unknown): void {
+    const transaction = activeAutomergeStorageTransaction;
+    if (!transaction) {
+        throw new Error('Publication metadata requires an entered storage transaction');
+    }
+    assertAutomergeStorageTransactionOpen(transaction);
+    const members = transaction.publicationMetadata.get(docId) ?? [];
+    members.push(structuredClone(value));
+    transaction.publicationMetadata.set(docId, members);
+}
+
+/** Run one synchronous repository listener without inheriting its publisher's owner. */
+export function runOutsideAutomergeStoragePublisherScope<Result>(callback: () => Result): Result {
+    const previousTransaction = activeAutomergeStorageTransaction;
+    const previousProvenance = activeAutomergeStorageMutationProvenance;
+    activeAutomergeStorageTransaction = undefined;
+    activeAutomergeStorageMutationProvenance = undefined;
+    try {
+        return callback();
+    } finally {
+        activeAutomergeStorageTransaction = previousTransaction;
+        activeAutomergeStorageMutationProvenance = previousProvenance;
+    }
 }
 
 export function isAutomergeStorageMutationOwned(): boolean {
@@ -736,7 +772,8 @@ type AutomergeStorageCommitOutcome =
 function commitAutomergeStorageMutations(
     mutations: readonly AutomergeStorageMutationInput[],
     owner: object | undefined,
-    validateDocument?: AutomergeStorageDocumentValidator
+    validateDocument?: AutomergeStorageDocumentValidator,
+    publicationMetadata?: readonly unknown[]
 ): AutomergeStorageCommitOutcome {
     const firstMutation = mutations[0];
     if (!firstMutation) {
@@ -761,6 +798,14 @@ function commitAutomergeStorageMutations(
                 docId: firstMutation.docId,
                 changedKeys,
                 changeFn: (doc) => {
+                    const observesMetadata =
+                        publicationMetadata !== undefined ||
+                        Object.hasOwn(doc, AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY);
+                    const before = observesMetadata
+                        ? mutations.map(({ key }) =>
+                              JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
+                          )
+                        : [];
                     for (const mutation of mutations) {
                         if (mutation.isCurrent && !mutation.isCurrent()) {
                             throw new Error('Automerge storage execution was invalidated before publication');
@@ -770,6 +815,22 @@ function commitAutomergeStorageMutations(
                     const validationFailure = validateDocument?.(doc) ?? null;
                     if (validationFailure) {
                         throw new AutomergeStorageTransactionValidationError(validationFailure);
+                    }
+                    if (
+                        observesMetadata &&
+                        mutations.some(
+                            ({ key }, index) =>
+                                before[index] !== JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
+                        )
+                    ) {
+                        if (changedKeys.includes(AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY)) {
+                            throw new Error('Publication metadata overlaps an action-owned document slot');
+                        }
+                        if (publicationMetadata) {
+                            doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY] = structuredClone(publicationMetadata);
+                        } else {
+                            delete doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
+                        }
                     }
                     for (const mutation of mutations) {
                         if (mutation.isCurrent && !mutation.isCurrent()) {
@@ -865,6 +926,7 @@ export function runWithAutomergeStorageTransaction<Result>(
         commitOwner: Object.freeze({}),
         lifecycle: 'open',
         snapshotTransaction,
+        publicationMetadata: new Map(),
     };
     activeAutomergeStorageTransaction = transaction;
     openAutomergeStorageCommitOwners.add(transaction.commitOwner);
@@ -927,7 +989,9 @@ export function runWithAutomergeStorageTransaction<Result>(
                     (pending) =>
                         pending.commitOwner === transaction.commitOwner &&
                         pending.snapshotTransaction === transaction.snapshotTransaction,
-                    documentValidators
+                    documentValidators,
+                    undefined,
+                    transaction.publicationMetadata
                 );
             } catch (error) {
                 if (error instanceof AutomergeStorageFlushError && error.committedDocumentCount > 0) {
@@ -976,7 +1040,8 @@ function flushMatchingAutomergeStorageWrites(
      * unscoped write — its own rAF, the external `flushPendingUnscopedWrite` —
      * lands unowned, exactly like any foreign buffered write.
      */
-    attributeMutationsTo?: object
+    attributeMutationsTo?: object,
+    publicationMetadata: ReadonlyMap<string, readonly unknown[]> = new Map()
 ): void {
     let firstError: unknown;
     let committedDocumentCount = 0;
@@ -1090,7 +1155,8 @@ function flushMatchingAutomergeStorageWrites(
                 const outcome = commitAutomergeStorageMutations(
                     mutations,
                     firstWrite.scoped ? firstWrite.commitOwner : attributeMutationsTo,
-                    documentValidators.get(docId)
+                    documentValidators.get(docId),
+                    publicationMetadata.get(docId)
                 );
                 if (documentValidators.has(docId)) {
                     validatedDocumentIds.add(docId);
@@ -1186,6 +1252,14 @@ export function flushAutomergeStorageWrites(snapshotTransaction?: object): void 
 /** Exists so a test helper can prove a write it made added a pending write, not just that one already exists. */
 export function countPendingAutomergeStorageWrites(): number {
     return pendingAutomergeStorageWrites.size;
+}
+
+/** Pending writes from another owner can make projected stores newer than the committed document. */
+export function hasForeignPendingAutomergeStorageWrites(docId: AutomergeStorageDocId): boolean {
+    const currentOwner = getCurrentAutomergeStorageMutationOwner();
+    return [...pendingAutomergeStorageWrites].some(
+        (pending) => pending.docId === docId && pending.commitOwner !== currentOwner
+    );
 }
 
 export function configureAutomergeStoragePort(port: AutomergeStoragePort | null): void {
@@ -1286,6 +1360,8 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     const writeMetadata = options?.writeMetadata;
     const mutateCrdtWithMetadata = options?.mutateCrdtWithMetadata;
     const projectCommittedLocalState = options?.projectCommittedLocalState;
+    const isLocalRuntimeStateUpdate = options?.isLocalRuntimeStateUpdate;
+    const preserveLocalRuntimeStateOnRecompute = options?.preserveLocalRuntimeStateOnRecompute;
     type AdapterPendingWrite = {
         /**
          * The base-capture snapshot of the document slot — `getDoc`, never
@@ -1895,7 +1971,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         retainDeferredBaseline(pending);
     };
 
-    const recomputeCachedValue = (): void => {
+    const recomputeCachedValue = (localValue: TData | null = null): void => {
         let visibleValue = committedCacheValue;
         let visibleRevision = committedCacheRevision;
         for (const remaining of pendingWritesByOwner.values()) {
@@ -1904,8 +1980,49 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 visibleRevision = remaining.revision;
             }
         }
-        cachedValue = visibleValue;
+        cachedValue =
+            preserveLocalRuntimeStateOnRecompute &&
+            projectCommittedLocalState &&
+            visibleValue !== null &&
+            localValue !== null
+                ? projectCommittedLocalState({ authorityValue: visibleValue, localValue })
+                : visibleValue;
         cachedRevision = visibleRevision;
+    };
+
+    const projectLocalRuntimeUpdate = (value: TData, previousValue: TData): void => {
+        if (!preserveLocalRuntimeStateOnRecompute || !projectCommittedLocalState) {
+            return;
+        }
+        const project = (authorityValue: TData): TData =>
+            projectCommittedLocalState({ authorityValue, localValue: value, previousLocalValue: previousValue });
+        // Only an explicit local edit survives an owner's abort. Its other
+        // provisional runtime fields still belong to that owner's value.
+        if (committedCacheValue !== null) {
+            committedCacheValue = project(committedCacheValue);
+        }
+        for (const pending of pendingWritesByOwner.values()) {
+            if (pending.value !== null) {
+                pending.value = project(pending.value);
+            }
+        }
+    };
+
+    const projectCachedValue = (value: TData | null, notify: boolean): void => {
+        const visibleBefore = cachedValue;
+        const visiblePending = [...pendingWritesByOwner.values()].find(
+            (pending) => pending.revision === cachedRevision
+        );
+        if (visiblePending) {
+            visiblePending.value = value;
+        } else {
+            committedCacheValue = value;
+            absencePresentation = value === null ? 'null' : 'default';
+        }
+        recomputeCachedValue(value);
+        if (notify && !Object.is(visibleBefore, cachedValue)) {
+            notifyDeferredChange();
+        }
     };
 
     const settleStaleCommittedWrite = (pending: AdapterPendingWrite, claimRevision: number): void => {
@@ -2017,6 +2134,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!isCurrentProjection()) {
             return;
         }
+        if (preserveLocalRuntimeStateOnRecompute && projected !== null && committedCacheValue !== null) {
+            projected = keepLocalRuntimeState(projected, committedCacheValue, { keepLocalRuntimeState: true });
+        }
         hasObservedDocumentAuthority = true;
         committedCacheValue = projected;
         committedCacheIsDeferred = false;
@@ -2065,7 +2185,9 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             settleStaleCommittedWrite(pending, claimRevision);
             return;
         }
-        const localValue = cachedValue;
+        // A later owner may already be visible. Only this owner's view (with
+        // explicit local edits projected into it) belongs in its committed baseline.
+        const localValue = preserveLocalRuntimeStateOnRecompute ? pending.value : cachedValue;
         const projectionPurpose = pending.revision === cachedRevision ? 'visible' : 'baseline';
         let projected: TData | null;
         if (decoded === undefined) {
@@ -2079,7 +2201,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 settleStaleCommittedWrite(pending, claimRevision);
                 return;
             }
-            const currentLocalValue = cachedValue;
+            const currentLocalValue = preserveLocalRuntimeStateOnRecompute ? pending.value : cachedValue;
             if (projected !== null && currentLocalValue !== null && projectCommittedLocalState) {
                 projected = projectCommittedLocalState({ authorityValue: projected, localValue: currentLocalValue });
             }
@@ -2452,6 +2574,16 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             const context = getWriteContext();
             const admittedProjectionGeneration = projectionGeneration;
             const intentBase = cachedValue;
+            if (
+                intentBase !== null &&
+                value !== null &&
+                isLocalRuntimeStateUpdate?.({ currentValue: intentBase, nextValue: value })
+            ) {
+                assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
+                projectLocalRuntimeUpdate(value, intentBase);
+                projectCachedValue(value, false);
+                return;
+            }
             const capturedMetadata = captureWriteMetadata(intentBase, value, 'set');
             const scopedValue = prepareScopedValueAfterPredecessor(context, value, intentBase, capturedMetadata);
             assertWriteAdmissionCurrent(context, admittedProjectionGeneration);
@@ -2537,20 +2669,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
          * here — give a new sanitizer the accept path and keep it that way.
          */
         setProjected(value: TData | null): void {
-            const visibleBefore = cachedValue;
-            const visiblePending = [...pendingWritesByOwner.values()].find(
-                (pending) => pending.revision === cachedRevision
-            );
-            if (visiblePending) {
-                visiblePending.value = value;
-            } else {
-                committedCacheValue = value;
-                absencePresentation = value === null ? 'null' : 'default';
-            }
-            recomputeCachedValue();
-            if (!Object.is(visibleBefore, cachedValue)) {
-                notifyDeferredChange();
-            }
+            projectCachedValue(value, true);
         },
 
         isSupported(): boolean {

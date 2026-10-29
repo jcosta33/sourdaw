@@ -28,6 +28,7 @@ async function revertEntry(entry: UndoEntry, authorizeFirstHandler?: () => strin
     }
     if (entry.inverseAction) {
         const options: ExecuteAppActionOptions = {
+            undoEntryId: entry.id,
             skipUndo: true,
             skipMacroRecording: true,
         };

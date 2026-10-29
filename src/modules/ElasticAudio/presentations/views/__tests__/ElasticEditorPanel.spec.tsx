@@ -107,6 +107,9 @@ vi.mock('#/infra/store/useStore', async (importOriginal) => {
             if (marker === 'workspace') {
                 return mocks.workspaceStoreValue;
             }
+            if (marker === 'warp-states') {
+                return { states: Object.fromEntries(mocks.warpStates) };
+            }
             if (marker === 'warp') {
                 return { clipSettings: new Map(), defaultAlgorithm: 'repitch', globalPitchShift: 0 };
             }
@@ -124,6 +127,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
             subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
         },
         defaultTrackState: { tracks: [], selectedTrackId: null },
+        warpStateStore: { __kind: 'warp-states' },
         warpStates: mocks.warpStates,
         getWarpState: (clipId: string) =>
             mocks.warpStates.get(clipId) ?? {

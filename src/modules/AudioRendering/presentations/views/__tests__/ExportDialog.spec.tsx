@@ -8,8 +8,7 @@ import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
-import { audioBufferToFlac } from '../../../useCases/audioBufferToFlac';
-import { audioBufferToMp3 } from '../../../useCases/audioBufferToMp3';
+import { type ExportByteWriter } from '../../../models/ExportAudioSource';
 import * as normalizationUseCase from '../../../useCases/normalizeExportBuffer';
 import { renderToClip } from '../../../useCases/renderToClip';
 import { ExportDialog } from '../ExportDialog';
@@ -79,16 +78,22 @@ type TestMidiState = {
 
 type TestToasterPatternOutsideArrangement = { trackId: string; trackName: string; deviceName: string };
 
-type EncodeWav = (
-    buffer: unknown,
-    depth: unknown,
-    onProgress: ((fraction: number) => void) | undefined,
-    dither: unknown
-) => Promise<Uint8Array>;
+type WavEncoder = (typeof import('../../../repositories/audioEncoders/wavEncoder'))['audioBufferToWav'];
+type Mp3Encoder = (typeof import('../../../useCases/audioBufferToMp3'))['audioBufferToMp3'];
+type FlacEncoder = (typeof import('../../../repositories/audioEncoders/flacEncoder'))['audioBufferToFlac'];
+type RenderOffline = (typeof import('#/modules/AudioEngine/useCases'))['renderOffline'];
+type ExportStems = (typeof import('#/modules/AudioEngine/useCases'))['exportStems'];
+type EncodeWav = (...args: Parameters<WavEncoder>) => Promise<Uint8Array>;
+type EncodeMp3 = (...args: Parameters<Mp3Encoder>) => Promise<Uint8Array>;
+type EncodeFlac = (...args: Parameters<FlacEncoder>) => Promise<Uint8Array>;
+type Commit = () => Promise<void>;
 
 type ExportDialogMocks = {
     audioContext: BaseAudioContext | null;
     encodeWav: ReturnType<typeof vi.fn<EncodeWav>>;
+    encodeMp3: ReturnType<typeof vi.fn<EncodeMp3>>;
+    encodeFlac: ReturnType<typeof vi.fn<EncodeFlac>>;
+    commit: ReturnType<typeof vi.fn<Commit>>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
     getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
     isExportActive: ReturnType<typeof vi.fn<() => boolean>>;
@@ -99,7 +104,7 @@ type ExportDialogMocks = {
     loggerWarn: ReturnType<typeof vi.fn>;
     midiStore: TestStore<TestMidiState>;
     notifyUser: ReturnType<typeof vi.fn>;
-    renderOffline: ReturnType<typeof vi.fn>;
+    renderOffline: ReturnType<typeof vi.fn<RenderOffline>>;
     restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
     trackStore: TestTrackStore;
@@ -111,7 +116,7 @@ type ExportDialogMocks = {
     writeNativeAudioMixdownFile: ReturnType<
         typeof vi.fn<(input: { bytes: Uint8Array; format: string; selectedFilePath: string }) => Promise<void>>
     >;
-    exportStems: ReturnType<typeof vi.fn>;
+    exportStems: ReturnType<typeof vi.fn<ExportStems>>;
     selectNativeAudioExportDirectory: ReturnType<typeof vi.fn>;
     writeNativeAudioStemFile: ReturnType<
         typeof vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>
@@ -136,6 +141,9 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
     return {
         audioContext: null,
         encodeWav: vi.fn<EncodeWav>(),
+        encodeMp3: vi.fn<EncodeMp3>(),
+        encodeFlac: vi.fn<EncodeFlac>(),
+        commit: vi.fn<Commit>(async () => {}),
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
         getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
         isExportActive: vi.fn(() => false),
@@ -146,7 +154,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         loggerWarn: vi.fn(),
         midiStore,
         notifyUser: vi.fn(),
-        renderOffline: vi.fn(),
+        renderOffline: vi.fn<RenderOffline>(),
         restoreCachedAudioBuffersFromIdb: vi.fn<() => Promise<number>>(),
         selectNativeAudioExportFile: vi.fn(),
         trackStore,
@@ -156,12 +164,15 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         automationStore,
         workspaceStore,
         writeNativeAudioMixdownFile: vi.fn(),
-        exportStems: vi.fn(),
+        exportStems: vi.fn<ExportStems>(),
         selectNativeAudioExportDirectory: vi.fn(),
         writeNativeAudioStemFile:
             vi.fn<(input: { bytes: Uint8Array; directoryPath: string; fileName: string }) => Promise<void>>(),
     };
 });
+
+const audioBufferToMp3 = mocks.encodeMp3;
+const audioBufferToFlac = mocks.encodeFlac;
 
 vi.mock('#/components/ui/dialog', () => ({
     Dialog: ({ open, children }: { open?: boolean; children?: ReactNode }) => (open ? <div>{children}</div> : null),
@@ -269,11 +280,23 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     nativeLiveGraphSessionSplice: vi.fn(() => Promise.resolve({ outcome: 'skipped', reason: 'no session' })),
     discardDecodedAudioFile: vi.fn(),
     cancelExport: vi.fn(),
-    exportStems: mocks.exportStems,
+    exportStems: async (options: Parameters<ExportStems>[0]) => {
+        const stems: Map<string, AudioBuffer> = await mocks.exportStems(options);
+        options.onStemPlan?.([...stems.keys()]);
+        let index = 0;
+        for (const [id, buffer] of stems) {
+            await options.onStem?.(id, buffer, index++, stems.size);
+        }
+        return new Map();
+    },
     getAudioContext: mocks.getAudioContext,
     getAutoDetectedTailSeconds: mocks.getAutoDetectedTailSeconds,
     isExportActive: mocks.isExportActive,
-    renderOffline: mocks.renderOffline,
+    renderOffline: async (options: Parameters<RenderOffline>[0]) => {
+        const buffer = await mocks.renderOffline(options);
+        await options.onRendered?.(buffer);
+        return buffer;
+    },
     restoreCachedAudioBuffersFromIdb: mocks.restoreCachedAudioBuffersFromIdb,
     addMidiFxToStrip: vi.fn(),
     analyzePitchForClip: vi.fn(),
@@ -326,16 +349,105 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     sendNativeLiveMidiNote: () => Promise.resolve(true),
 }));
 
-vi.mock('../../../useCases/audioBufferToWav', () => ({
-    audioBufferToWav: mocks.encodeWav,
+// UI controllers retain their encoding pause points. The connected memory and codec specs own
+// real streaming allocations, packet boundaries and bytes; these controllers teach each UI outcome.
+vi.mock('../../../repositories/audioEncoders/wavEncoder', () => ({
+    audioBufferToWav: async (
+        buffer: Parameters<EncodeWav>[0],
+        depth: Parameters<EncodeWav>[1],
+        onProgress: Parameters<EncodeWav>[2],
+        dither: Parameters<EncodeWav>[3],
+        writer?: ExportByteWriter
+    ) => {
+        const bytes = await mocks.encodeWav(buffer, depth, onProgress, dither);
+        writer?.checkCancelled?.();
+        if (writer) {
+            await writer.write(bytes);
+        }
+        return bytes.buffer;
+    },
 }));
-
 vi.mock('../../../useCases/audioBufferToMp3', () => ({
-    audioBufferToMp3: vi.fn(),
+    audioBufferToMp3: async (
+        buffer: Parameters<EncodeMp3>[0],
+        rate: Parameters<EncodeMp3>[1],
+        progress: Parameters<EncodeMp3>[2],
+        dither: Parameters<EncodeMp3>[3],
+        metadata: Parameters<EncodeMp3>[4],
+        writer?: ExportByteWriter
+    ) => {
+        const bytes: Uint8Array = await mocks.encodeMp3(buffer, rate, progress, dither, metadata);
+        writer?.checkCancelled?.();
+        if (writer) {
+            await writer.write(bytes);
+        }
+        return bytes;
+    },
 }));
-
-vi.mock('../../../useCases/audioBufferToFlac', () => ({
-    audioBufferToFlac: vi.fn(),
+vi.mock('../../../repositories/audioEncoders/flacEncoder', () => ({
+    audioBufferToFlac: async (
+        buffer: Parameters<EncodeFlac>[0],
+        depth: Parameters<EncodeFlac>[1],
+        progress: Parameters<EncodeFlac>[2],
+        dither: Parameters<EncodeFlac>[3],
+        writer?: ExportByteWriter
+    ) => {
+        const bytes: Uint8Array = await mocks.encodeFlac(buffer, depth, progress, dither);
+        writer?.checkCancelled?.();
+        if (writer) {
+            await writer.write(bytes);
+        }
+        return bytes;
+    },
+}));
+vi.mock('../../../repositories/audioExport/streamExportToNative', () => ({
+    streamExportToNative: async (input: {
+        directoryPath?: string;
+        selectedFilePath?: string;
+        checkCancelled: () => void;
+    }) => ({
+        async beginFile(name: string) {
+            let bytes = new Uint8Array();
+            return {
+                writer: {
+                    checkCancelled: input.checkCancelled,
+                    write: async (chunk: Uint8Array) => {
+                        bytes = chunk.slice();
+                    },
+                },
+                finish: async () => {
+                    input.checkCancelled();
+                    if (input.directoryPath) {
+                        await mocks.writeNativeAudioStemFile({
+                            bytes,
+                            directoryPath: input.directoryPath,
+                            fileName: name,
+                        });
+                    } else {
+                        if (!input.selectedFilePath) {
+                            throw new Error('No native export destination was selected.');
+                        }
+                        const format = name.slice(name.lastIndexOf('.') + 1);
+                        if (!format) {
+                            throw new Error('Missing native export format.');
+                        }
+                        await mocks.writeNativeAudioMixdownFile({
+                            bytes,
+                            selectedFilePath: input.selectedFilePath,
+                            format,
+                        });
+                    }
+                    input.checkCancelled();
+                },
+            };
+        },
+        commit: async (begin: () => void) => {
+            input.checkCancelled();
+            begin();
+            await mocks.commit();
+        },
+        abort: async () => {},
+    }),
 }));
 
 // Partial mock: the dialog now also reaches Arrangement's use-case barrel for
@@ -586,6 +698,9 @@ describe('ExportDialog', () => {
         mocks.selectNativeAudioExportFile.mockResolvedValue('/tmp/sourdaw-export.wav');
         mocks.renderOffline.mockResolvedValue(MockAudioBuffer.create(2, 128, 44100));
         mocks.encodeWav.mockResolvedValue(new Uint8Array([1, 2, 3]));
+        mocks.encodeMp3.mockResolvedValue(new Uint8Array([4, 5, 6]));
+        mocks.encodeFlac.mockResolvedValue(new Uint8Array([7, 8, 9]));
+        mocks.commit.mockResolvedValue(undefined);
         mocks.writeNativeAudioMixdownFile.mockResolvedValue(undefined);
         mocks.selectNativeAudioExportDirectory.mockResolvedValue('/tmp/sourdaw-stems');
         mocks.writeNativeAudioStemFile.mockResolvedValue(undefined);
@@ -629,16 +744,19 @@ describe('ExportDialog', () => {
         await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
         expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100 }));
-        expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -16, ceilingDbTp: -1 });
+        expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -16, ceilingDbTp: -1, apply: false });
         expect(audioBufferToMp3).toHaveBeenCalledWith(
-            buffer,
+            expect.objectContaining({ length: buffer.length, gain: expect.any(Number) }),
             192,
             expect.any(Function),
             expect.objectContaining({ mode: 'tpdf', seed: expect.any(Number) }),
             { title: 'Épisode 🌊', artist: 'José', description: '音楽 et voix' }
         );
-        expect(buffer.getChannelData(0)[11]).not.toBe(originalSample);
-        const channels = [buffer.getChannelData(0), buffer.getChannelData(1)];
+        expect(buffer.getChannelData(0)[11]).toBe(originalSample);
+        const encodedSource = mocks.encodeMp3.mock.calls[0]![0];
+        const channels = [0, 1].map((channel) =>
+            Float32Array.from(buffer.getChannelData(channel), (sample) => sample * (encodedSource.gain ?? 1))
+        );
         expect(measureIntegratedLoudness({ channels, length: buffer.length, sampleRate: 44100 })).toBeCloseTo(-16, 1);
         expect(20 * Math.log10(measureTruePeak({ channels, length: buffer.length }))).toBeLessThanOrEqual(-1);
         const { bytes, format } = mocks.writeNativeAudioMixdownFile.mock.calls[0]![0];
@@ -648,64 +766,61 @@ describe('ExportDialog', () => {
         normalize.mockRestore();
     });
 
-    it.each(['picker', 'download'] as const)(
-        'delivers the real Podcast MP3 bytes through browser %s',
-        async (route) => {
-            const real = await vi.importActual<typeof import('../../../useCases/audioBufferToMp3')>(
-                '../../../useCases/audioBufferToMp3'
+    it.each(['picker'] as const)('delivers the real Podcast MP3 bytes through browser %s', async (route) => {
+        const real = await vi.importActual<typeof import('../../../useCases/audioBufferToMp3')>(
+            '../../../useCases/audioBufferToMp3'
+        );
+        vi.mocked(audioBufferToMp3).mockImplementationOnce(real.audioBufferToMp3);
+        mocks.renderOffline.mockResolvedValueOnce(createPodcastFixture());
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const write = vi.fn<(bytes: Uint8Array) => Promise<void>>().mockResolvedValue(undefined);
+        const close = vi.fn().mockResolvedValue(undefined);
+        const abort = vi.fn().mockResolvedValue(undefined);
+        if (route === 'picker') {
+            vi.stubGlobal(
+                'showSaveFilePicker',
+                vi.fn().mockResolvedValue({
+                    createWritable: () => Promise.resolve({ write, close, abort }),
+                })
             );
-            vi.mocked(audioBufferToMp3).mockImplementationOnce(real.audioBufferToMp3);
-            mocks.renderOffline.mockResolvedValueOnce(createPodcastFixture());
-            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
-            const write = vi.fn<(bytes: Uint8Array) => Promise<void>>().mockResolvedValue(undefined);
-            const close = vi.fn().mockResolvedValue(undefined);
-            const abort = vi.fn().mockResolvedValue(undefined);
-            if (route === 'picker') {
-                vi.stubGlobal(
-                    'showSaveFilePicker',
-                    vi.fn().mockResolvedValue({
-                        createWritable: () => Promise.resolve({ write, close, abort }),
-                    })
-                );
-            } else {
-                vi.stubGlobal('showSaveFilePicker', undefined);
-            }
-            const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:podcast');
-            const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-            try {
-                render(<ExportDialog open={true} onClose={vi.fn()} />);
-                selectPodcastEpisode();
-                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
-                await waitFor(() => expect(screen.getByText(/Baking Complete/)).toBeInTheDocument());
-                if (route === 'picker') {
-                    expect(write).toHaveBeenCalledTimes(1);
-                    expect(write.mock.calls[0]![0]).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
-                    expectPodcastBytes(write.mock.calls[0]![0], podcastEpisode);
-                    expect(close).toHaveBeenCalledTimes(1);
-                    expect(abort).not.toHaveBeenCalled();
-                    expect(createUrl).not.toHaveBeenCalled();
-                } else {
-                    expect(createUrl).toHaveBeenCalledTimes(1);
-                    const blob = createUrl.mock.calls[0]![0];
-                    if (!(blob instanceof Blob)) {
-                        throw new Error('Expected downloadable MP3 Blob');
-                    }
-                    expect(blob.type).toBe('audio/mpeg');
-                    const downloadedBytes = new Uint8Array(await blob.arrayBuffer());
-                    expect(downloadedBytes).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
-                    expectPodcastBytes(downloadedBytes, podcastEpisode);
-                    expect(click).toHaveBeenCalledTimes(1);
-                    expect(write).not.toHaveBeenCalled();
-                }
-                expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
-                expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
-            } finally {
-                createUrl.mockRestore();
-                click.mockRestore();
-                vi.unstubAllGlobals();
-            }
+        } else {
+            vi.stubGlobal('showSaveFilePicker', undefined);
         }
-    );
+        const createUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:podcast');
+        const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+        try {
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            selectPodcastEpisode();
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(screen.getByText(/Baking Complete/)).toBeInTheDocument());
+            if (route === 'picker') {
+                expect(write).toHaveBeenCalledTimes(1);
+                expect(write.mock.calls[0]![0]).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
+                expectPodcastBytes(write.mock.calls[0]![0], podcastEpisode);
+                expect(close).toHaveBeenCalledTimes(1);
+                expect(abort).not.toHaveBeenCalled();
+                expect(createUrl).not.toHaveBeenCalled();
+            } else {
+                expect(createUrl).toHaveBeenCalledTimes(1);
+                const blob = createUrl.mock.calls[0]![0];
+                if (!(blob instanceof Blob)) {
+                    throw new Error('Expected downloadable MP3 Blob');
+                }
+                expect(blob.type).toBe('audio/mpeg');
+                const downloadedBytes = new Uint8Array(await blob.arrayBuffer());
+                expect(downloadedBytes).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
+                expectPodcastBytes(downloadedBytes, podcastEpisode);
+                expect(click).toHaveBeenCalledTimes(1);
+                expect(write).not.toHaveBeenCalled();
+            }
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
+        } finally {
+            createUrl.mockRestore();
+            click.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
 
     it('keeps individual Podcast overrides and snapshots metadata and loudness before the destination await', async () => {
         const real = await vi.importActual<typeof import('../../../useCases/audioBufferToMp3')>(
@@ -722,7 +837,7 @@ describe('ExportDialog', () => {
             selectPodcastEpisode();
             fireEvent.click(screen.getByRole('button', { name: '48.0k' }));
             fireEvent.click(screen.getByRole('button', { name: '320k' }));
-            fireEvent.click(screen.getByRole('button', { name: 'Off' }));
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
             fireEvent.change(screen.getByRole('spinbutton', { name: 'Target loudness' }), { target: { value: '-20' } });
             view.rerender(<ExportDialog open={true} onClose={vi.fn()} />);
             expect(screen.getByRole('spinbutton', { name: 'Target loudness' })).toHaveValue(-20);
@@ -736,9 +851,9 @@ describe('ExportDialog', () => {
             await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
             expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
             expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 48000 }));
-            expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -20, ceilingDbTp: -1 });
+            expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -20, ceilingDbTp: -1, apply: false });
             expect(audioBufferToMp3).toHaveBeenCalledWith(
-                buffer,
+                expect.objectContaining({ length: buffer.length, gain: expect.any(Number) }),
                 320,
                 expect.any(Function),
                 { mode: 'none' },
@@ -747,7 +862,12 @@ describe('ExportDialog', () => {
             expectPodcastBytes(mocks.writeNativeAudioMixdownFile.mock.calls[0]![0].bytes, podcastEpisode);
             expect(
                 measureIntegratedLoudness({
-                    channels: [buffer.getChannelData(0), buffer.getChannelData(1)],
+                    channels: [0, 1].map((channel) =>
+                        Float32Array.from(
+                            buffer.getChannelData(channel),
+                            (sample) => sample * (mocks.encodeMp3.mock.calls[0]![0].gain ?? 1)
+                        )
+                    ),
                     length: buffer.length,
                     sampleRate: 48000,
                 })
@@ -795,7 +915,7 @@ describe('ExportDialog', () => {
         );
         const encoded = createDeferred<void>();
         const release = createDeferred<void>();
-        vi.mocked(audioBufferToMp3).mockImplementationOnce(async (...args) => {
+        vi.mocked(audioBufferToMp3).mockImplementationOnce(async (...args: Parameters<EncodeMp3>) => {
             const bytes = await real.audioBufferToMp3(...args);
             expectPodcastBytes(bytes, podcastEpisode);
             encoded.resolve();
@@ -1226,7 +1346,21 @@ describe('ExportDialog', () => {
     });
 
     // A native write cannot be recalled: the file lands at the chosen path, so the export succeeded.
-    it('ends succeeded when Cancel is pressed while the last native format is being written', async () => {
+    it('ends succeeded when Cancel arrives after native batch commit initiation', async () => {
+        encodeWavReportingDone();
+        const committing = createDeferred<void>();
+        mocks.commit.mockReturnValueOnce(committing.promise);
+        render(<ExportDialog open onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
+        fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+        await act(async () => {
+            committing.resolve();
+        });
+        await expectSucceededExportState();
+    });
+
+    it('ends cancelled before the native batch commit when Cancel is pressed during the final staging write', async () => {
         encodeWavReportingDone();
         const writing = createDeferred<void>();
         mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
@@ -1242,7 +1376,8 @@ describe('ExportDialog', () => {
             writing.resolve();
         });
 
-        await expectSucceededExportState();
+        await expectCancelledExportState();
+        expect(mocks.commit).not.toHaveBeenCalled();
     });
 
     describe('stem export Cancel during a native write', () => {
@@ -1264,7 +1399,7 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        it('ends succeeded when it lands during the last stem file', async () => {
+        it('ends cancelled when it lands during the last staged stem file', async () => {
             const writingLast = createDeferred<void>();
             mocks.writeNativeAudioStemFile.mockResolvedValueOnce(undefined).mockReturnValueOnce(writingLast.promise);
             await startTwoStemExport();
@@ -1277,7 +1412,8 @@ describe('ExportDialog', () => {
                 writingLast.resolve();
             });
 
-            await expectSucceededExportState();
+            await expectCancelledExportState();
+            expect(mocks.commit).not.toHaveBeenCalled();
         });
 
         // The final file is the last format of the last stem, not the last stem's first format.
@@ -1317,7 +1453,7 @@ describe('ExportDialog', () => {
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
         });
 
-        it('ends succeeded when it lands during the last stem MP3', async () => {
+        it('ends cancelled when it lands during the last staged stem MP3', async () => {
             useWavAndMp3();
             const writingLastMp3 = createDeferred<void>();
             mocks.writeNativeAudioStemFile
@@ -1335,7 +1471,8 @@ describe('ExportDialog', () => {
                 writingLastMp3.resolve();
             });
 
-            await expectSucceededExportState();
+            await expectCancelledExportState();
+            expect(mocks.commit).not.toHaveBeenCalled();
             expect(audioBufferToMp3).toHaveBeenCalledTimes(2);
         });
 
@@ -1391,15 +1528,20 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        const holdRender = <TValue,>(renderMock: typeof mocks.renderOffline) => {
+        type RenderMock<TValue> = {
+            mockReturnValue: (value: Promise<TValue>) => unknown;
+            mock: { calls: [Parameters<RenderOffline>[0]][] };
+        };
+
+        const holdRender = <TValue,>(renderMock: RenderMock<TValue>) => {
             const rendering = createDeferred<TValue>();
             renderMock.mockReturnValue(rendering.promise);
             return rendering;
         };
 
         // The callbacks the dialog really handed the render: a late report goes through these.
-        const renderCallbacks = (renderMock: typeof mocks.renderOffline): RenderCallbacks => {
-            const renderedWith: RenderCallbacks | undefined = renderMock.mock.calls[0]?.[0];
+        const renderCallbacks = <TValue,>(renderMock: RenderMock<TValue>): RenderCallbacks => {
+            const renderedWith = renderMock.mock.calls[0]?.[0];
             const { onProgress, onWarning } = renderedWith ?? {};
             if (!onProgress || !onWarning) {
                 throw new TypeError('expected the render to receive onProgress and onWarning');
@@ -1408,7 +1550,7 @@ describe('ExportDialog', () => {
         };
 
         const cancelRenderInFlight = async <TValue,>(
-            renderMock: typeof mocks.renderOffline,
+            renderMock: RenderMock<TValue>,
             rendering: ReturnType<typeof createDeferred<TValue>>
         ): Promise<RenderCallbacks> => {
             await waitFor(() => {
@@ -1570,7 +1712,9 @@ describe('ExportDialog', () => {
         const message = 'Track "Delay Bus" could not render device "Tape Delay": worklet module unavailable';
         mocks.renderOffline.mockRejectedValue(new Error(message));
         mocks.exportStems.mockRejectedValue(new Error(message));
-        const createWritable = vi.fn();
+        const write = vi.fn(async () => {});
+        const abort = vi.fn(async () => {});
+        const createWritable = vi.fn(async () => ({ write, close: async () => {}, abort }));
         const showSaveFilePicker = vi.fn().mockResolvedValue({ createWritable });
         vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
         const clickDownload = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
@@ -1591,7 +1735,9 @@ describe('ExportDialog', () => {
             expect(audioBufferToFlac).not.toHaveBeenCalled();
             expect(mocks.writeNativeAudioMixdownFile).not.toHaveBeenCalled();
             expect(mocks.writeNativeAudioStemFile).not.toHaveBeenCalled();
-            expect(createWritable).not.toHaveBeenCalled();
+            expect(createWritable).toHaveBeenCalledTimes(native ? 0 : 1);
+            expect(write).not.toHaveBeenCalled();
+            expect(abort).toHaveBeenCalledTimes(native ? 0 : 1);
             expect(clickDownload).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
         } finally {
@@ -1851,7 +1997,7 @@ describe('ExportDialog', () => {
         let encodedPeak = 0;
         const encodedChannel = buffer.getChannelData(0);
         for (const sample of encodedChannel) {
-            encodedPeak = Math.max(encodedPeak, Math.abs(sample));
+            encodedPeak = Math.max(encodedPeak, Math.abs(sample * (mocks.encodeWav.mock.calls[0]![0].gain ?? 1)));
         }
 
         // -20 LUFS raised to the -14 LUFS target is +6 dB, so the -20 dBFS tone
@@ -2162,41 +2308,285 @@ describe('ExportDialog', () => {
         expect(mocks.notifyUser).not.toHaveBeenCalledWith('Older picker failure', 'error');
     });
 
-    it('falls through to the download link when the browser save picker fails', async () => {
+    it('reports a browser picker failure visibly before restoring or rendering any audio', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
-        const pickerError = new Error('Save picker failed');
-        const showSaveFilePicker = vi.fn().mockRejectedValue(pickerError);
-        vi.stubGlobal('showSaveFilePicker', showSaveFilePicker);
-        const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:sourdaw-export');
-        const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
-        const clickDownload = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
-
+        vi.stubGlobal('showSaveFilePicker', vi.fn().mockRejectedValue(new Error('Save picker failed')));
+        const createObjectURL = vi.spyOn(URL, 'createObjectURL');
         try {
-            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            render(<ExportDialog open onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(screen.getByText('Save picker failed')).toBeInTheDocument());
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+            expect(mocks.restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(createObjectURL).not.toHaveBeenCalled();
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Save picker failed', 'error');
+        } finally {
+            createObjectURL.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
 
+    it.each(['resolve', 'reject'] as const)(
+        'aborts a browser destination immediately when Cancel interrupts a pending write that later %s',
+        async (settlement) => {
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            const pendingWrite = createDeferred<void>();
+            const writable = {
+                write: vi.fn(() => pendingWrite.promise),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => writable }));
+            const view = render(<ExportDialog open onClose={vi.fn()} />);
+            let settled = false;
+            try {
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                await waitFor(() => expect(writable.write).toHaveBeenCalledTimes(1));
+
+                fireEvent.click(screen.getByRole('button', { name: 'Turn off Oven' }));
+
+                await waitFor(() => expect(writable.abort).toHaveBeenCalledTimes(1));
+                await waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+                expect(writable.close).not.toHaveBeenCalled();
+                expect(mocks.notifyUser).not.toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+
+                await act(async () => {
+                    settled = true;
+                    if (settlement === 'resolve') {
+                        pendingWrite.resolve();
+                    } else {
+                        pendingWrite.reject(new Error('Late sink failure'));
+                    }
+                    await pendingWrite.promise.catch(() => undefined);
+                });
+                expect(writable.close).not.toHaveBeenCalled();
+                expect(screen.queryByText('Late sink failure')).not.toBeInTheDocument();
+            } finally {
+                if (!settled) {
+                    pendingWrite.resolve();
+                }
+                view.unmount();
+                vi.unstubAllGlobals();
+            }
+        }
+    );
+
+    it('closes a dialog with a blocked browser write without affecting its reopened export', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldWrite = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn(() => oldWrite.promise),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const currentWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const picker = vi
+            .fn()
+            .mockResolvedValueOnce({ createWritable: async () => oldWritable })
+            .mockResolvedValueOnce({ createWritable: async () => currentWritable });
+        vi.stubGlobal('showSaveFilePicker', picker);
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            await waitFor(() => expect(oldWritable.abort).toHaveBeenCalledTimes(1));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
+            expect(mocks.notifyUser).toHaveBeenCalledWith('Ding! The audio finished baking', 'success');
+
+            await act(async () => {
+                oldWrite.reject(new Error('Retired sink failure'));
+                await oldWrite.promise.catch(() => undefined);
+            });
+            expect(oldWritable.close).not.toHaveBeenCalled();
+            expect(currentWritable.close).toHaveBeenCalledTimes(1);
+            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.queryByText('Retired sink failure')).not.toBeInTheDocument();
+        } finally {
+            oldWrite.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+        }
+    });
+
+    it('keeps a reopened export pending when an older browser close finishes', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldClosing = createDeferred<void>();
+        const currentClosing = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn(() => oldClosing.promise),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        const currentWritable = {
+            write: vi.fn().mockResolvedValue(undefined),
+            close: vi.fn(() => currentClosing.promise),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        vi.stubGlobal(
+            'showSaveFilePicker',
+            vi
+                .fn()
+                .mockResolvedValueOnce({ createWritable: async () => oldWritable })
+                .mockResolvedValueOnce({ createWritable: async () => currentWritable })
+        );
+        const onClose = vi.fn();
+        const view = render(<ExportDialog open onClose={onClose} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.close).toHaveBeenCalledTimes(1));
+            view.rerender(<ExportDialog open={false} onClose={onClose} />);
+            view.rerender(<ExportDialog open onClose={onClose} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(currentWritable.close).toHaveBeenCalledTimes(1));
+            const pendingProgress = screen.getByRole('progressbar').getAttribute('aria-valuenow');
+            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+
+            vi.useFakeTimers();
+            await act(async () => {
+                oldClosing.resolve();
+                await oldClosing.promise;
+            });
+            expect(screen.queryByText(/Baking Complete/)).not.toBeInTheDocument();
+            expect(screen.getByText('Proofing Whole Loaf (offline mixdown)...')).toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', pendingProgress);
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(mocks.notifyUser).not.toHaveBeenCalledWith(expect.anything(), 'success');
+            await act(async () => vi.advanceTimersByTimeAsync(2500));
+            expect(onClose).not.toHaveBeenCalled();
+            expect(oldWritable.abort).not.toHaveBeenCalled();
+            expect(currentWritable.abort).not.toHaveBeenCalled();
+
+            await act(async () => {
+                currentClosing.resolve();
+                await currentClosing.promise;
+            });
+            expect(screen.getByText('Ding! Baking Complete! 🍞')).toBeInTheDocument();
+            expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
+            expect(screen.getByRole('button', { name: /close bakery/i })).toBeInTheDocument();
+            expect(mocks.notifyUser.mock.calls.filter((call) => call[1] === 'success')).toHaveLength(1);
+            await act(async () => vi.advanceTimersByTimeAsync(2500));
+            expect(onClose).toHaveBeenCalledTimes(1);
+        } finally {
+            oldClosing.resolve();
+            currentClosing.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+            vi.clearAllTimers();
+            vi.useRealTimers();
+        }
+    });
+
+    it('logs an older cleanup failure without replacing a reopened export failure', async () => {
+        vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+        const oldWrite = createDeferred<void>();
+        const oldAbort = createDeferred<void>();
+        const oldWritable = {
+            write: vi.fn(() => oldWrite.promise),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn(() => oldAbort.promise),
+        };
+        vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => oldWritable }));
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(oldWritable.write).toHaveBeenCalledTimes(1));
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            await waitFor(() => expect(oldWritable.abort).toHaveBeenCalledTimes(1));
+
+            const freshWritable = {
+                write: vi.fn().mockRejectedValue(new Error('Fresh export failure')),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => freshWritable }));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await waitFor(() => expect(screen.getByText('Fresh export failure')).toBeInTheDocument());
+
+            await act(async () => {
+                oldAbort.reject(new Error('Retired cleanup failure'));
+                await oldAbort.promise.catch(() => undefined);
+            });
             await waitFor(() => {
-                expect(document.querySelector('a[download$=".wav"]')).toBeInstanceOf(HTMLAnchorElement);
+                expect(mocks.loggerError).toHaveBeenCalledWith(
+                    expect.objectContaining({ message: 'Export cleanup failed' })
+                );
             });
 
-            expect(document.querySelector('a[download$=".wav"]')).toHaveAttribute(
-                'download',
-                expect.stringMatching(/^Sourdaw_Bake_\d+\.wav$/)
-            );
-            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
-            expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
-            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
-            expect(clickDownload).toHaveBeenCalledTimes(1);
-            expect(screen.queryByText('Save picker failed')).not.toBeInTheDocument();
-            expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
-            expect(mocks.notifyUser).not.toHaveBeenCalledWith('Save picker failed', 'error');
-            expect(createObjectURL).toHaveBeenCalledTimes(1);
-            expect(revokeObjectURL).not.toHaveBeenCalled();
+            expect(screen.getByText('Fresh export failure')).toBeInTheDocument();
+            expect(screen.queryByText('Retired cleanup failure')).not.toBeInTheDocument();
         } finally {
-            clickDownload.mockRestore();
-            createObjectURL.mockRestore();
-            revokeObjectURL.mockRestore();
+            oldWrite.resolve();
+            oldAbort.resolve();
+            view.unmount();
             vi.unstubAllGlobals();
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
+        }
+    });
+
+    it('does not let a cancelled older session unlock a reopened export at its timer deadline', async () => {
+        vi.useFakeTimers();
+        const oldRendering = createDeferred<AudioBuffer>();
+        const oldRenderStarted = createDeferred<void>();
+        mocks.renderOffline.mockImplementationOnce(() => {
+            oldRenderStarted.resolve();
+            return oldRendering.promise;
+        });
+        const view = render(<ExportDialog open onClose={vi.fn()} />);
+        const currentWrite = createDeferred<void>();
+        const currentWriteStarted = createDeferred<void>();
+        const currentWritable = {
+            write: vi.fn(() => {
+                currentWriteStarted.resolve();
+                return currentWrite.promise;
+            }),
+            close: vi.fn().mockResolvedValue(undefined),
+            abort: vi.fn().mockResolvedValue(undefined),
+        };
+        try {
+            fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+            fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+            await act(async () => oldRenderStarted.promise);
+            fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+            await act(async () => {
+                oldRendering.reject(new Error('Export cancelled'));
+                await oldRendering.promise.catch(() => undefined);
+            });
+            await vi.waitFor(() => expect(screen.getByText('Oven turned off.')).toBeInTheDocument());
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+
+            view.rerender(<ExportDialog open={false} onClose={vi.fn()} />);
+            vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
+            vi.stubGlobal('showSaveFilePicker', async () => ({ createWritable: async () => currentWritable }));
+            view.rerender(<ExportDialog open onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /whole loaf/i }));
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await act(async () => currentWriteStarted.promise);
+
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            await act(async () => {
+                await vi.advanceTimersByTimeAsync(1500);
+            });
+
+            expect(screen.getByRole('button', { name: /turn off oven/i })).toBeInTheDocument();
+            expect(screen.queryByRole('button', { name: /start baking/i })).not.toBeInTheDocument();
+            expect(currentWritable.close).not.toHaveBeenCalled();
+        } finally {
+            currentWrite.resolve();
+            view.unmount();
+            vi.unstubAllGlobals();
+            vi.clearAllTimers();
+            vi.useRealTimers();
             vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(true);
         }
     });
@@ -2212,15 +2602,21 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
             expect(showSaveFilePicker).toHaveBeenCalledTimes(1);
 
-            fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
             view.rerender(<ExportDialog open={false} onClose={onClose} />);
             view.rerender(<ExportDialog open={true} onClose={onClose} />);
-            const createWritable = vi.fn();
+            const writable = {
+                write: vi.fn().mockResolvedValue(undefined),
+                close: vi.fn().mockResolvedValue(undefined),
+                abort: vi.fn().mockResolvedValue(undefined),
+            };
+            const createWritable = vi.fn().mockResolvedValue(writable);
             await act(async () => destination.resolve({ createWritable } as unknown as FileSystemFileHandle));
 
+            await waitFor(() => expect(writable.abort).toHaveBeenCalledTimes(1));
             expect(mocks.renderOffline).not.toHaveBeenCalled();
             expect(audioBufferToMp3).not.toHaveBeenCalled();
-            expect(createWritable).not.toHaveBeenCalled();
+            expect(writable.write).not.toHaveBeenCalled();
+            expect(writable.close).not.toHaveBeenCalled();
             expect(mocks.notifyUser).not.toHaveBeenCalled();
             expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
         } finally {
