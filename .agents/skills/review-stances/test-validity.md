@@ -828,6 +828,10 @@ only for the exact later PID-coverage diagnostic, reject other unexpected diagno
 and inspect both the original run and claim payloads. Keep complete-proof deletion
 unconditional; observing a prior sample or the new run's exit code cannot prove it.
 
+### FLAC metadata alone did not prove decodable residuals
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced inverted Rice unary polarity; the associated introducing PR and historical private prompt and tier are unknown. Exercise the real streaming FLAC bytes with the shipped decoder and compare seeded 16- and 24-bit samples to WAV PCM, zero decoder warnings, frame shape and STREAMINFO MD5. Demonstrate that the fixture reaches Rice coding by reverting only the polarity fix on a committed probe and requiring the unchanged named parity case to fail. A metadata or shared-encoder comparison alone cannot prove lossless decoding.
+
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
 PR #4057 added the streamed-artifact positive case and ZIP-based strict-parser fixtures without
