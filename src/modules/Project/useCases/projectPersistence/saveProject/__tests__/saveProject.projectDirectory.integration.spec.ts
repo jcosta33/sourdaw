@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -279,6 +280,7 @@ function captureDirectoryLoadBoundary(
     runtime: Awaited<ReturnType<typeof createSavedDirectoryProject>>,
     outgoingBufferId: string
 ) {
+    flushAutomergeStorageWrites();
     const root = runtime.crdt.getCrdtDoc(runtime.crdt.DOC_PREFIX_ROOT);
     if (!root) {
         throw new Error('Expected a real project document at the held boundary');
@@ -744,7 +746,10 @@ describe('project directory save and cold Recent open', () => {
                 const held = captureDirectoryLoadBoundary(runtime, outgoingBufferId);
                 live = false;
                 release.resolve();
-                await expect(loading).resolves.toBe(false);
+                const outcome = await loading.then(
+                    (loaded) => ({ loaded }),
+                    (error: unknown) => ({ error })
+                );
                 const withdrawn = captureDirectoryLoadBoundary(runtime, outgoingBufferId);
                 expect(withdrawn).toEqual(held);
                 expect(withdrawn.savedAudio).toBe(held.savedAudio);
@@ -753,6 +758,7 @@ describe('project directory save and cold Recent open', () => {
                 if (boundary === 'binding' || boundary === 'read') {
                     expect(runtime.leave).not.toHaveBeenCalled();
                 }
+                expect(outcome).toEqual({ loaded: false });
             } finally {
                 release.resolve();
                 folder.beforeBindingRead = null;
@@ -830,10 +836,12 @@ describe('project directory save and cold Recent open', () => {
         runtime.command.stampSessionUndoWitness();
         const mirror = sessionStorage.getItem('sourdaw-undo-session');
         expect(mirror).toBeTruthy();
+        clearHandlerRegistry();
         runtime.command.registerProductionCommandHandlers(runtime.handlerMaps);
         await runtime.audio.clearRuntimeCachedAudioBuffers();
         runtime.crdt.resetCrdtProjectAuthority('Boot');
         runtime.helpers.resetModuleStoresToDefault();
+        clearHandlerRegistry();
         runtime.command.registerProductionCommandHandlers(runtime.handlerMaps, {
             deferSessionRestore: true,
         });
