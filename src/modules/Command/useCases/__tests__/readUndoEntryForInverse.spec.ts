@@ -48,21 +48,20 @@ describe('readUndoEntryForInverse', () => {
     });
     it('returns null for absent, detached, and callback associations', () => {
         expect(readUndoEntryForInverse(inverse)).toBeNull();
-        undoStore.set({
-            past: [
-                recordingEntry(),
-                {
-                    id: 'callback',
-                    kind: 'callback',
-                    label: 'Callback',
-                    source: 'manual',
-                    timestamp: 0,
-                    undo: () => undefined,
-                    redo: () => undefined,
-                },
-            ],
-            future: [],
-        });
+        const callback = {
+            id: 'callback',
+            kind: 'callback' as const,
+            label: 'Callback',
+            source: 'manual' as const,
+            timestamp: 0,
+            undo: () => undefined,
+            redo: () => undefined,
+            inverseAction: inverse,
+        };
+        undoStore.set({ past: [callback], future: [] });
+        expect(readUndoEntryForInverse(inverse)).toBeNull();
+        undoStore.set({ past: [recordingEntry(), callback], future: [] });
+        expect(readUndoEntryForInverse(inverse)?.action.type).toBe('commitRecording');
         expect(readUndoEntryForInverse(structuredClone(inverse))).toBeNull();
     });
     it('refuses multiple occurrences across either live stack, including the same entry twice', () => {
