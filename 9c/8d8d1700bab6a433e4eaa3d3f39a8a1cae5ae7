@@ -1,0 +1,25 @@
+src/modules/Arrangement/models/DeviceParameter.ts
+  s_3168504f6ce387::t_7ca3d892a88dc3 21
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  s_3168504f6ce387::t_66e14c46ff4c5f 17
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  s_3168504f6ce387::t_66e14c46ff4c5f 41
+src/modules/AudioEngine/services/__tests__/dawDspTransientShaper.spec.ts
+  s_3168504f6ce387::t_7d43dd0a377ed5 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c8d8d1700bab6a433e4eaa3d3f39a8a1cae5ae7",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
