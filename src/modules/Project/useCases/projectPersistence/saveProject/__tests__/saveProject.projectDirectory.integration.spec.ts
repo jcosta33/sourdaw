@@ -1042,10 +1042,9 @@ describe('project directory save and cold Recent open', () => {
         const ordinarySamples = Array.from(
             runtime.audio.getCachedAudioBuffer({ bufferId: runtime.clip.audioBufferId! })!.getChannelData(0)
         );
-        const render = await import('#/modules/Arrangement/useCases/freezeBounce/renderOffline');
         const frozenSamples = new Float32Array([0.125, -0.25, 0.75, -0.625]);
         const freezeId = 'freeze-directory-distinct';
-        vi.spyOn(render, 'renderTrackOffline').mockResolvedValueOnce(makePcm(frozenSamples));
+        vi.spyOn(runtime.audio, 'renderTrackSubgraphOffline').mockResolvedValueOnce(makePcm(frozenSamples));
         expect(await runtime.arrangement.freezeTrack(runtime.clip.trackId, freezeId)).toBe(true);
         expect(freezeId).not.toBe(runtime.clip.audioBufferId);
         const readFrozenTrack = () =>
@@ -1060,7 +1059,9 @@ describe('project directory save and cold Recent open', () => {
             const raw = runtime.crdt.getCrdtDoc<{
                 tracks: { tracks: Array<{ id: string; freezeState: { frozenBufferId?: string } }> };
             }>(runtime.crdt.DOC_PREFIX_ROOT);
-            if (!raw) throw new Error('Expected the actual raw project root');
+            if (!raw) {
+                throw new Error('Expected the actual raw project root');
+            }
             return runtime.automerge.toJS(raw).tracks.tracks.find((track) => track.id === runtime.clip.trackId)
                 ?.freezeState.frozenBufferId;
         };

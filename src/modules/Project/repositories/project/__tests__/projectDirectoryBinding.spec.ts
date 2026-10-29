@@ -9,8 +9,12 @@ class SelectedDirectory implements FileSystemDirectoryHandle {
 
     async getDirectoryHandle(name: string, options?: FileSystemGetDirectoryOptions): Promise<SelectedDirectory> {
         const existing = this.children.get(name);
-        if (existing) return existing;
-        if (!options?.create) throw new DOMException('Missing directory', 'NotFoundError');
+        if (existing) {
+            return existing;
+        }
+        if (!options?.create) {
+            throw new DOMException('Missing directory', 'NotFoundError');
+        }
         const child = new SelectedDirectory(name);
         this.children.set(name, child);
         return child;
@@ -52,18 +56,24 @@ class SelectedDirectory implements FileSystemDirectoryHandle {
     }
 
     async resolve(other: FileSystemHandle): Promise<string[] | null> {
-        if (other === this) return [];
+        if (other === this) {
+            return [];
+        }
         for (const [name, child] of this.children) {
             const path = await child.resolve(other);
-            if (path) return [name, ...path];
+            if (path) {
+                return [name, ...path];
+            }
         }
         return null;
     }
 
     async removeEntry(name: string, options?: FileSystemRemoveOptions): Promise<void> {
         const child = this.children.get(name);
-        if (!child) throw new DOMException('Missing directory', 'NotFoundError');
-        if (!options?.recursive && child.children.size) {
+        if (!child) {
+            throw new DOMException('Missing directory', 'NotFoundError');
+        }
+        if (!options?.recursive && child.children.size > 0) {
             throw new DOMException('Directory is not empty', 'InvalidModificationError');
         }
         this.children.delete(name);
@@ -78,7 +88,9 @@ describe('private project directory binding cache', () => {
         // Node cannot serialize native FSA handles. Preserve this platform value
         // across fake IDB's clone boundary without changing its event scheduling.
         vi.stubGlobal('structuredClone', (value: unknown): unknown => {
-            if (value instanceof SelectedDirectory) return value;
+            if (value instanceof SelectedDirectory) {
+                return value;
+            }
             if (
                 typeof value === 'object' &&
                 value !== null &&

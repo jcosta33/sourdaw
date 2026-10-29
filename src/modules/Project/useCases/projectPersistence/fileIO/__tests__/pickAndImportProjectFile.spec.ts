@@ -243,13 +243,14 @@ describe('pickAndImportProjectFile', () => {
                     unavailable: [],
                 },
             };
-            data.originalMedia.assets =
-                mismatch === 'missing'
-                    ? []
-                    : [
-                          ...data.originalMedia.assets,
-                          { hash: `sha256:${'2'.repeat(64)}`, bytes: btoa('extra original') },
-                      ];
+            if (mismatch === 'missing') {
+                data.originalMedia.assets = [];
+            } else {
+                data.originalMedia.assets = [
+                    ...data.originalMedia.assets,
+                    { hash: `sha256:${'2'.repeat(64)}`, bytes: btoa('extra original') },
+                ];
+            }
             const openProject = { name: 'Open project', createdAt: 42, dirty: false };
             mocks.projectStoreValue.value = openProject;
             mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(data))]);
