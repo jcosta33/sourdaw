@@ -1,0 +1,16 @@
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 28,113-132,426-551
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 24-50,109-112
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b472f80184004158e3b4a1dcfdafe0df6f75de24",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
