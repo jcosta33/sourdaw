@@ -1,0 +1,14 @@
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  h_beb54bf43b47b7 55-62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "804fefe40da10e0ea74e43ff0d1826e4b672c56d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
