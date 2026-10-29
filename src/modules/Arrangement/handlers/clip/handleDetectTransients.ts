@@ -20,6 +20,35 @@ function record(value: unknown): Record<string, unknown> | undefined {
         : undefined;
 }
 
+/** Full canonical equality without serializing every scalar on the common dense JSON path. */
+export function transientStateMatches(actual: unknown, expected: unknown): boolean {
+    if (actual === expected) return true;
+    if (Array.isArray(actual) || Array.isArray(expected)) {
+        if (!Array.isArray(actual) || !Array.isArray(expected)) return false;
+        if (actual.length !== expected.length) return canonicalJson(actual) === canonicalJson(expected);
+        for (let index = 0; index < actual.length; index++) {
+            // Canonical serialization distinguishes holes from explicit undefined.
+            if (actual[index] === undefined || expected[index] === undefined) {
+                return canonicalJson(actual) === canonicalJson(expected);
+            }
+            if (!transientStateMatches(actual[index], expected[index])) return false;
+        }
+        return true;
+    }
+    const actualRecord = record(actual);
+    const expectedRecord = record(expected);
+    if (actualRecord && expectedRecord) {
+        const keys = Object.keys(actualRecord);
+        if (keys.length !== Object.keys(expectedRecord).length) return false;
+        for (const key of keys) {
+            if (!Object.hasOwn(expectedRecord, key) || !transientStateMatches(actualRecord[key], expectedRecord[key]))
+                return false;
+        }
+        return true;
+    }
+    return canonicalJson(actual) === canonicalJson(expected);
+}
+
 export const handleDetectTransients = createHandler<'detectTransients'>({
     execute: async (action, context) => {
         const scope = captureAutomergeStorageTransactionScope();
@@ -67,7 +96,6 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
         });
         performance.measure('elastic-transient-preparation-task', { start: commitStarted, end: performance.now() });
         performance.clearMeasures('elastic-transient-preparation-task');
-        const expectedWarpState = canonicalJson(replacement);
         let storageCommitStarted: number | undefined;
         const refusal = (): string | null =>
             result.isCurrent() && !context?.signal?.aborted ? null : 'Transient detection source changed before commit';
@@ -111,7 +139,7 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
                         typeof bufferId === 'string' &&
                         digest(bufferId) === result.identity.bufferId &&
                         record(document.transport)?.tempo === result.tempo &&
-                        canonicalJson(states?.[clipId]) === expectedWarpState
+                        transientStateMatches(states?.[clipId], replacement)
                             ? null
                             : 'Transient detection authority changed inside commit');
                     performance.measure('elastic-transient-validation-task', {
