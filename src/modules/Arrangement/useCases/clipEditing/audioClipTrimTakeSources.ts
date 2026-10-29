@@ -107,8 +107,8 @@ export function isAudioClipTrimTakeSources(
         const lane: TakeLane = {
             id: transition.laneId,
             trackId: transition.trackId,
-            takes: transition.takesBefore,
-            activeCompRegions: transition.regionsBefore,
+            takes: [...transition.takesBefore],
+            activeCompRegions: [...transition.regionsBefore],
         };
         if (!valuesEqual(transition.regionsAfter, capturedRegions(clip, lane, timeline))) return false;
     }
