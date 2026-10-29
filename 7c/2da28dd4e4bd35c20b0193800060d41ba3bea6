@@ -1,0 +1,26 @@
+src/modules/Crumbs/useCases/loadSample.ts
+  s_59e31a5c6f3e31::t_6a90cc1d5922bf 16,76,78-86,120
+  s_59e31a5c6f3e31::t_b96379678a41a3 77
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  s_59e31a5c6f3e31::t_d9bbf023308865 75
+src/modules/Crumbs/useCases/__tests__/sampleWaveformPublication.integration.spec.ts
+  s_59e31a5c6f3e31::t_d9bbf023308865 199
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  s_59e31a5c6f3e31::t_6a90cc1d5922bf 38,351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c2da28dd4e4bd35c20b0193800060d41ba3bea6",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
