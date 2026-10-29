@@ -223,6 +223,36 @@ describe('validateGrinderNamModel', () => {
         expect(model.weights).toHaveLength(70);
     });
 
+    it('rejects a stacked wide LSTM before it can reach the runtime', () => {
+        expect(() =>
+            validateGrinderNamModel(
+                {
+                    version: '0.5.4',
+                    architecture: 'LSTM',
+                    config: { num_layers: 2, input_size: 1, hidden_size: 2, out_channels: 1 },
+                    weights: Array.from({ length: 83 }, () => 0),
+                    sample_rate: 48_000,
+                },
+                'stacked-wide.nam'
+            )
+        ).toThrow(/stacked wide LSTM unsupported by current runtime/);
+    });
+
+    it('accepts a stacked single-hidden-unit LSTM', () => {
+        const model = validateGrinderNamModel(
+            {
+                version: '0.5.4',
+                architecture: 'LSTM',
+                config: { num_layers: 2, input_size: 1, hidden_size: 1, out_channels: 1 },
+                weights: Array.from({ length: 30 }, () => 0),
+                sample_rate: 48_000,
+            },
+            'stacked-mono.nam'
+        );
+        expect(model.architecture).toBe('LSTM');
+        expect(model.weights).toHaveLength(30);
+    });
+
     it('rejects an LSTM whose weight array does not fit its cell layout', () => {
         expect(() =>
             validateGrinderNamModel(
