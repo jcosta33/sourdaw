@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import type { RuntimeDeviceControl, RuntimeDeviceControlInitialization } from '../../models/RuntimeDeviceControl';
-
 import { createBacteriaNode, extractBacteriaModAssignments, isBacteriaDevice } from '../BacteriaNode';
+
+import type { RuntimeDeviceControl, RuntimeDeviceControlInitialization } from '../../models/RuntimeDeviceControl';
 
 // Mock the worklet-init helpers so createBacteriaNode resolves without a real
 // AudioContext / worklet module / WASM fetch. The ready handshake resolves
