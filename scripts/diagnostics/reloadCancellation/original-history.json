@@ -1,0 +1,548 @@
+[
+    {
+        "project": "chromium",
+        "file": "agentExecutionMode.spec.ts",
+        "title": "switching modes updates the select and the composer contract",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "audioMidiMisc.spec.ts",
+        "title": "Routing tab replaces the mixer with the routing matrix",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "bacteriaCulturesSearchTestId.spec.ts",
+        "title": "filling a narrow query drops the shown count; clearing restores it",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "branchManager.spec.ts",
+        "title": "Running \"Open Branch Manager\" from the command palette opens the branch dialog",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "crustChannelLinkTestId.spec.ts",
+        "title": "Link Trans slider flips aria-valuenow off max then back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "exportFidelityTestId.spec.ts",
+        "title": "export dialog shows all 3 render modes",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "exportFidelityTestId.spec.ts",
+        "title": "switching to stems mode changes active button",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "exportFidelityTestId.spec.ts",
+        "title": "render range radio group has Whole project checked",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "exportFidelityTestId.spec.ts",
+        "title": "cancel button closes export dialog",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "exportFidelityTestId.spec.ts",
+        "title": "start baking button text reflects current mode",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "fermenterEnvelopeKnobsTestId.spec.ts",
+        "title": "ArrowUp steps amp Attack 0.01 to 0.016 and Sustain 0.7 to 0.71",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "fermenterFxDelayKnobsTestId.spec.ts",
+        "title": "ArrowUp steps Delay Time 375 to 376 and Feedback 0.35 to 0.36",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Adding a Gain automation lane creates a removable lane row",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Creating an alternative adds a row and reveals delete buttons",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Signal Flow button toggles aria-expanded and reveals the routing graph",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Create Bus button adds a bus track to the track list",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "MIDI clip context menu exposes the exact operation names",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Rename Clip opens an inline editor that commits the new name",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Fold-to-scale toggle flips aria-pressed",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Expression view toggle reveals the Active expression lane combobox",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Input monitoring cycles Auto → On → Off → Auto via aria-label",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Clicking a routing cell flips its aria-label Connect → Disconnect",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorAndRouting.spec.ts",
+        "title": "Clear all chords removes every chord block and hides itself",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorPanKeyboardTestId.spec.ts",
+        "title": "track pan slider responds to ArrowRight",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Inspector shows track properties with interactive controls for selected track",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can toggle track arm from track header",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can toggle track mute from track header",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can toggle track solo from track header",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Track gain slider shows a numeric value",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can add a device to the track chain",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can write notes for the track",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can create a VCA group",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Add automation lane opens a nonempty menu",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can toggle Follow Chord Track",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "inspectorTrack.spec.ts",
+        "title": "Can close and reopen the inspector",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can browse the template grid and filter by category",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can load a template from the grid and enter the workspace",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can browse demos and load Nebula Drift",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can navigate back from grid view to home",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can open the project menu and see all items",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can close the project menu with Escape",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can open template chooser from the project menu",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Saving the project clears the unsaved changes indicator",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "launchFlows.spec.ts",
+        "title": "Can rename the project from the transport bar",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "midiScaleRootTestId.spec.ts",
+        "title": "selecting a different root updates the readout and the active option",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "midiScaleRootTestId.spec.ts",
+        "title": "changing the root with fold-to-scale shifts the in-scale keyboard rows",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "midiVelocityKeyboardTestId.spec.ts",
+        "title": "default velocity slider responds to ArrowUp",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSendsRoutingTestId.spec.ts",
+        "title": "raising a send level moves the send slider value",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSendsRoutingTestId.spec.ts",
+        "title": "toggling a send flips pre/post latch label and aria-label",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSendsRoutingTestId.spec.ts",
+        "title": "routing a channel to a bus updates the output readout",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSnapshotTestId.spec.ts",
+        "title": "mixer save snapshot button is present via test ID",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSnapshotTestId.spec.ts",
+        "title": "mixer AI health button is present via test ID",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSnapshotTestId.spec.ts",
+        "title": "mixer recall snapshot button is present via test ID",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSnapshotTestId.spec.ts",
+        "title": "clicking save snapshot creates a snapshot entry",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "mixerSnapshotTestId.spec.ts",
+        "title": "all 3 mixer header buttons are visible simultaneously",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "proofModuleTogglesTestId.spec.ts",
+        "title": "EQ module bypass round-trips ON to OFF and back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "proofModuleTogglesTestId.spec.ts",
+        "title": "Dynamics module bypass round-trips ON to OFF and back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "proofModuleTogglesTestId.spec.ts",
+        "title": "Imager module bypass round-trips ON to OFF and back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "proofModuleTogglesTestId.spec.ts",
+        "title": "Exciter module bypass round-trips OFF to ON and back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "recording.spec.ts",
+        "title": "Can toggle global transport recording",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "setlistLoopStationTestId.spec.ts",
+        "title": "clicking add creates a setlist item",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "setlistLoopStationTestId.spec.ts",
+        "title": "loop station region is present",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "setlistLoopStationTestId.spec.ts",
+        "title": "loop station arm button is present when tab is active",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "setlistMoveReorder.spec.ts",
+        "title": "Move down swaps the first two items and Move up swaps them back",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "setlistMoveReorder.spec.ts",
+        "title": "boundary buttons are disabled and follow the item, not the position",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineClipTestId.spec.ts",
+        "title": "right-click timeline opens context menu with Add Clip Here",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineClipTestId.spec.ts",
+        "title": "double-clicking a clip opens the piano roll editor",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineClipTestId.spec.ts",
+        "title": "clip context menu shows MIDI-specific items for a MIDI clip",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Timeline chrome components are all visible and interactive",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Zoom in changes timeline scroll position",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Timeline clicks seek the clicked beat at the default zoom",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Timeline clicks seek the clicked beat under zoom and scroll",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Timeline minimap responds to keyboard and changes value",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Can right-click timeline for context menu with actionable items",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigation.spec.ts",
+        "title": "Beat ruler clicks seek the clicked beat under zoom and scroll",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigationTestId.spec.ts",
+        "title": "timeline minimap is in the DOM via test ID",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigationTestId.spec.ts",
+        "title": "minimap has slider role and aria-valuenow",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigationTestId.spec.ts",
+        "title": "timeline canvas surface is present",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "timelineNavigationTestId.spec.ts",
+        "title": "playhead display shows initial position 1.1.000",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "toasterPadDriveTestId.spec.ts",
+        "title": "ArrowUp then ArrowDown steps Kick Crunch by 0.1",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "virtualKeyboardTestId.spec.ts",
+        "title": "virtual keyboard toggle opens and closes via test ID",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "virtualKeyboardTestId.spec.ts",
+        "title": "virtual keyboard renders with keyboard focus area",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "virtualKeyboardTestId.spec.ts",
+        "title": "virtual keyboard close button works",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "virtualKeyboardTestId.spec.ts",
+        "title": "inspector toggle opens and closes via aria-label",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium",
+        "file": "virtualKeyboardTestId.spec.ts",
+        "title": "bottom dock toggle round-trips via aria-label",
+        "workerIndex": 0
+    },
+    {
+        "project": "chromium-dev",
+        "file": "aiProviderToolAuthority.spec.ts",
+        "title": "approved: provider discovery, proposal and exact user approval",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "aiProviderToolAuthority.spec.ts",
+        "title": "malformed: provider discovery, proposal and exact user approval",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "aiProviderToolAuthority.spec.ts",
+        "title": "undisclosed: provider discovery, proposal and exact user approval",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "browserAiWebGpuAdmission.spec.ts",
+        "title": "proves the live Chromium Browser AI admission boundary without skipping",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "browserAiWebGpuAdmission.spec.ts",
+        "title": "renders an exact-duration DDSP preview from verified OPFS artifacts with hardware WebGPU",
+        "workerIndex": 1
+    },
+    {
+        "project": "chromium-dev",
+        "file": "persistedClipEditAcceptance.spec.ts",
+        "title": "persisted clip edits replay exact owners and source material through real same-tab hydration",
+        "workerIndex": 1
+    }
+]
