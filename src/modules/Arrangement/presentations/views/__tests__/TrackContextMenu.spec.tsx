@@ -1,14 +1,43 @@
-import { render, screen, fireEvent, within, createEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import 'fake-indexeddb/auto';
+import { act, cleanup, render, screen, fireEvent, within, createEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+} from '#/infra/store/storage/createAutomergeStorage';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import {
+    clearUndoHistory,
+    createAppActionCommittedError,
+    executeUserAppAction,
+    setActionHistoryMetadataPort,
+} from '#/modules/Command/useCases';
+import { CommandPalette } from '#/modules/CommandInterface/presentations/views';
+import {
+    clearActionHistory,
+    createCrdtDoc,
+    getCrdtDoc,
+    markActionHistoryEntryReverted,
+    recordActionHistoryEntry,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
+import { ArrangementSelector } from '#/modules/Project/presentations/views';
+import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
+import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { confirmUser } from '#/utils/Notification/confirmUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { takeLaneStore, trackStore, type Track } from '../../../stores';
+import { getArrangementHandlers } from '../../../useCases';
 import { addClip } from '../../../useCases/clip/addClip';
 import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
+import { getTrackStoreState } from '../../../useCases/getTrackStoreState';
 import { importAudioClipToTrack } from '../../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../../useCases/importMidiFile';
 import { removeTrack } from '../../../useCases/removeTrack';
@@ -18,6 +47,8 @@ import { toggleVariationLanes } from '../../../useCases/toggleTrackState/toggleV
 import { useTracks } from '../../hooks/useTracks';
 import { TrackContextMenu } from '../TrackContextMenu';
 
+import type { actionHistoryStore } from '#/modules/CrdtDocument/stores';
+
 // Mock external dependencies
 vi.mock('../../../useCases/removeTrack', () => ({
     removeTrack: vi.fn(),
@@ -25,6 +56,14 @@ vi.mock('../../../useCases/removeTrack', () => ({
 
 vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: vi.fn(),
+}));
+
+vi.mock('#/utils/Notification/notifyUser', () => ({
+    notifyUser: vi.fn(),
+}));
+
+vi.mock('../../../useCases/getTrackStoreState', () => ({
+    getTrackStoreState: vi.fn(),
 }));
 
 vi.mock('../../../useCases/toggleTrackState/toggleVariationLanes', () => ({
@@ -39,7 +78,8 @@ vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
     bounceTrack: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: vi.fn(),
 }));
 
@@ -89,13 +129,6 @@ const projectEpoch = vi.hoisted(() => {
         },
     };
 });
-vi.mock('#/modules/Project/useCases', () => ({
-    captureProjectTransitionAuthority: projectEpoch.capture,
-}));
-
-vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
-    useContextMenuDismiss: vi.fn(),
-}));
 
 const mockTrack = TrackDummy.create({
     id: 'track1',
@@ -114,6 +147,22 @@ const mockTrack = TrackDummy.create({
     height: 64,
 });
 
+const frozenTrack = TrackDummy.create({
+    id: 'fz2',
+    frozen: true,
+    freezeState: { status: 'frozen', freezeId: 'take-1', frozenBufferId: 'buffer-1', renderedAt: 123 },
+});
+
+const openFrozenMenu = (track = frozenTrack) => {
+    renderWithTooltip(
+        <TrackContextMenu track={track}>
+            <div data-testid="track">Frozen</div>
+        </TrackContextMenu>
+    );
+    fireEvent.contextMenu(screen.getByTestId('track'));
+    fireEvent.click(screen.getByText('Flatten Track'));
+};
+
 const renderWithTooltip = (ui: React.ReactElement) => {
     return render(<TooltipProvider>{ui}</TooltipProvider>);
 };
@@ -122,6 +171,7 @@ describe('TrackContextMenu', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         projectEpoch.reset();
+        arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'arr-A' });
         vi.mocked(useTracks).mockReturnValue({ tracks: [mockTrack], selectedTrackId: mockTrack.id });
     });
 
@@ -359,24 +409,199 @@ describe('TrackContextMenu', () => {
         expect(screen.getByText('Update Freeze')).toBeInTheDocument();
     });
 
-    it('flattens a frozen track via the Flatten Track item', () => {
-        const frozenTrack = TrackDummy.create({
-            id: 'fz2',
-            frozen: true,
-            freezeState: { status: 'frozen' },
-        });
-        renderWithTooltip(
-            <TrackContextMenu track={frozenTrack}>
-                <div data-testid="track">Frozen</div>
-            </TrackContextMenu>
-        );
-        fireEvent.contextMenu(screen.getByTestId('track'));
-        fireEvent.click(screen.getByText('Flatten Track'));
-        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledWith({
-            type: 'flattenTrack',
-            payload: { trackId: 'fz2' },
-        });
+    it('waits for confirmation before flattening a frozen track', () => {
+        vi.mocked(confirmUser).mockReturnValue(new Promise<boolean>(() => {}));
+        openFrozenMenu();
+        const confirmation: unknown = vi.mocked(confirmUser).mock.calls[0]?.[0];
+        expect(confirmation).toMatchObject({ confirmLabel: 'Flatten' });
+        if (!confirmation || typeof confirmation !== 'object') {
+            throw new Error('Flatten confirmation options were not supplied');
+        }
+        expect('message' in confirmation ? confirmation.message : undefined).toMatch(/clips.*devices/i);
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalled();
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('leaves the frozen take untouched when Flatten is cancelled or dismissed', async () => {
+        let resolveConfirm!: (value: boolean) => void;
+        const confirmationPending = new Promise<boolean>((resolve) => (resolveConfirm = resolve));
+        vi.mocked(confirmUser).mockReturnValue(confirmationPending);
+        openFrozenMenu();
+        await act(async () => {
+            resolveConfirm(false);
+            await confirmationPending;
+        });
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).not.toHaveBeenCalled();
+    });
+
+    it('admits the same frozen take and a legacy take without optional ids', async () => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
+        openFrozenMenu();
+        await vi.waitFor(() => expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1));
+        const [action, options] = vi.mocked(executeUserAppAction).mock.calls[0]!;
+        expect(action).toEqual({ type: 'flattenTrack', payload: { trackId: 'fz2' } });
+        expect(options?.shouldExecute?.()).toBe(true);
+
+        cleanup();
+        vi.mocked(executeUserAppAction).mockClear();
+        const legacy = TrackDummy.create({
+            ...frozenTrack,
+            id: 'legacy',
+            freezeState: { status: 'frozen', frozenBufferId: 'legacy-buffer' },
+        });
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [legacy], selectedTrackId: legacy.id });
+        openFrozenMenu(legacy);
+        await vi.waitFor(() => expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(executeUserAppAction).mock.calls[0]?.[1]?.shouldExecute?.()).toBe(true);
+    });
+
+    it.each([
+        ['track removed', () => null],
+        ['unfrozen', () => ({ frozen: false })],
+        ['stale freeze', () => ({ freezeState: { ...frozenTrack.freezeState, status: 'stale' as const } })],
+        ['error freeze', () => ({ freezeState: { ...frozenTrack.freezeState, status: 'error' as const } })],
+        ['different buffer', () => ({ freezeState: { ...frozenTrack.freezeState, frozenBufferId: 'buffer-2' } })],
+        ['different freeze id', () => ({ freezeState: { ...frozenTrack.freezeState, freezeId: 'take-2' } })],
+        ['different render time', () => ({ freezeState: { ...frozenTrack.freezeState, renderedAt: 124 } })],
+    ])('declines a queued Flatten after %s', async (_name, change) => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        let resolveAction!: () => void;
+        const actionPending = new Promise<void>((resolve) => {
+            resolveAction = resolve;
+        });
+        vi.mocked(executeUserAppAction).mockReturnValue(actionPending);
+        let current = frozenTrack;
+        vi.mocked(getTrackStoreState).mockImplementation(() => ({ tracks: [current], selectedTrackId: current.id }));
+        openFrozenMenu();
+        await vi.waitFor(() => expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1));
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]?.[1]?.shouldExecute;
+        expect(shouldExecute?.()).toBe(true);
+        const changed = change();
+        current =
+            changed === null ? TrackDummy.create({ id: 'other' }) : TrackDummy.create({ ...frozenTrack, ...changed });
+        expect(shouldExecute?.()).toBe(false);
+        await act(async () => {
+            resolveAction();
+            await actionPending;
+        });
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(notifyUser).mock.calls[0]?.[0]).toMatch(/changed.*cancelled/i);
+        expect(vi.mocked(notifyUser).mock.calls[0]?.[1]).toBe('warning');
+    });
+
+    it('declines after a project transition while confirmation is pending', async () => {
+        let resolveConfirm!: (value: boolean) => void;
+        const confirmationPending = new Promise<boolean>((resolve) => (resolveConfirm = resolve));
+        vi.mocked(confirmUser).mockReturnValue(confirmationPending);
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
+        vi.mocked(executeUserAppAction).mockImplementation((_action, options) => {
+            options?.shouldExecute?.();
+            return Promise.resolve();
+        });
+        openFrozenMenu();
+        projectEpoch.advance();
+        await act(async () => {
+            resolveConfirm(true);
+            await confirmationPending;
+        });
+        const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]?.[1]?.shouldExecute;
+        expect(shouldExecute?.()).toBe(false);
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+    });
+
+    it('declines a project transition while the confirmed command is queued', async () => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
+        let resolveAction!: () => void;
+        const actionPending = new Promise<void>((resolve) => {
+            resolveAction = resolve;
+        });
+        vi.mocked(executeUserAppAction).mockReturnValue(actionPending);
+        openFrozenMenu();
+        await vi.waitFor(() => expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1));
+        projectEpoch.advance();
+        expect(vi.mocked(executeUserAppAction).mock.calls[0]?.[1]?.shouldExecute?.()).toBe(false);
+        await act(async () => {
+            resolveAction();
+            await actionPending;
+        });
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['dialog', 'queue'] as const)(
+        'declines a changed arrangement after %s without dispatching the old Flatten',
+        async (stage) => {
+            const confirmation = Promise.withResolvers<boolean>();
+            vi.mocked(confirmUser).mockReturnValue(confirmation.promise);
+            const command = Promise.withResolvers<void>();
+            vi.mocked(executeUserAppAction).mockImplementation((_action, options) => {
+                if (stage === 'dialog') {
+                    options?.shouldExecute?.();
+                    return Promise.resolve();
+                }
+                return command.promise;
+            });
+            vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
+            const original = structuredClone(frozenTrack);
+            openFrozenMenu();
+            if (stage === 'dialog') {
+                arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'arr-B' });
+            }
+            await act(async () => {
+                confirmation.resolve(true);
+                await confirmation.promise;
+            });
+            const shouldExecute = vi.mocked(executeUserAppAction).mock.calls[0]?.[1]?.shouldExecute;
+            expect(shouldExecute).toBeDefined();
+            if (stage === 'queue') {
+                arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'arr-B' });
+                expect(shouldExecute?.()).toBe(false);
+                await act(async () => {
+                    command.resolve();
+                    await command.promise;
+                });
+            }
+            expect(frozenTrack).toEqual(original);
+            expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                'The frozen track changed. Flatten was cancelled; check the track and try again.',
+                'warning'
+            );
+        }
+    );
+
+    it.each([
+        ['storage refusal', new Error('storage refused')],
+        [
+            'committed failure',
+            createAppActionCommittedError({ actionType: 'flattenTrack', cause: new Error('receipt') }),
+        ],
+    ])('shows one failure notice for a %s without retrying Flatten', async (kind, error) => {
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(getTrackStoreState).mockReturnValue({ tracks: [frozenTrack], selectedTrackId: frozenTrack.id });
+        vi.mocked(executeUserAppAction).mockRejectedValue(error);
+        const original = structuredClone(frozenTrack);
+        openFrozenMenu();
+        await vi.waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                kind === 'committed failure'
+                    ? 'Flatten changed the project, but follow-up processing failed. Check the project before continuing.'
+                    : 'Flatten could not finish. Check the track before trying again.',
+                'error'
+            )
+        );
+        expect(frozenTrack).toEqual(original);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not offer a destructive confirmation for a frozen track without a buffer', () => {
+        openFrozenMenu(TrackDummy.create({ ...frozenTrack, freezeState: { status: 'frozen' } }));
+        expect(vi.mocked(confirmUser)).not.toHaveBeenCalled();
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalled();
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(expect.stringMatching(/unavailable/i), 'warning');
     });
 
     it('deletes the track after confirming', async () => {
@@ -887,3 +1112,257 @@ describe('TrackContextMenu', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 });
+
+describe('TrackContextMenu Flatten failure with canonical project truth', () => {
+    type Root = {
+        tracks: NonNullable<typeof trackStore.value>;
+        takeLanes: NonNullable<typeof takeLaneStore.value>;
+        actionHistory: NonNullable<typeof actionHistoryStore.value>;
+    };
+
+    const sourceClip: Track['clips'][number] = {
+        id: 'clip-fz2',
+        trackId: 'fz2',
+        name: 'Editable MIDI',
+        startBeat: 2,
+        endBeat: 6,
+        type: 'midi',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 0.7,
+        color: '#ff0000',
+        locked: false,
+        muted: false,
+    };
+    const sourceTrack = TrackDummy.create({
+        ...frozenTrack,
+        kind: 'midi',
+        clips: [sourceClip],
+        alternatives: [{ id: 'alt-1', name: 'Original', clips: [sourceClip] }],
+        devices: [{ id: 'device-original', name: 'Reverb', type: 'reverb', bypassed: false, parameterValues: {} }],
+    });
+
+    function readTruth(): Root {
+        flushAutomergeStorageWrites();
+        const root = getCrdtDoc<Root>('root');
+        if (!root) {
+            throw new Error('Expected the canonical CRDT root');
+        }
+        return structuredClone({ tracks: root.tracks, takeLanes: root.takeLanes, actionHistory: root.actionHistory });
+    }
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        projectEpoch.reset();
+        arrangementStore.set({ ...arrangementStore.value!, activeArrangementId: 'arr-A' });
+        configureAutomergeStoragePort(null);
+        removeCrdtDoc('root');
+        createCrdtDoc('root');
+        registerCrdtStorageRuntime();
+        clearHandlerRegistry();
+        const handlers = getArrangementHandlers();
+        registerHandlerMap({
+            flattenTrack: handlers.flattenTrack,
+            restoreTrackClipStates: handlers.restoreTrackClipStates,
+        });
+        setActionHistoryMetadataPort({
+            record: recordActionHistoryEntry,
+            markReverted: markActionHistoryEntryReverted,
+            clear: clearActionHistory,
+        });
+        clearUndoHistory();
+        clearActionHistory();
+        trackStore.set({ tracks: [sourceTrack], selectedTrackId: sourceTrack.id });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-fz2',
+                    trackId: sourceTrack.id,
+                    takes: [
+                        {
+                            id: 'take-original',
+                            clipId: sourceClip.id,
+                            name: 'Original take',
+                            startBeat: 2,
+                            endBeat: 6,
+                            selected: true,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 6, takeId: 'take-original' }],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const samples = new Float32Array(128).fill(0.25);
+        audioBufferCache.set('buffer-1', {
+            duration: samples.length / 48_000,
+            length: samples.length,
+            numberOfChannels: 1,
+            sampleRate: 48_000,
+            getChannelData: () => samples,
+            copyFromChannel: (destination, _channel, start = 0) => {
+                destination.set(samples.subarray(start, start + destination.length));
+            },
+            copyToChannel: (source, _channel, start = 0) => {
+                samples.set(source, start);
+            },
+        });
+        vi.mocked(getTrackStoreState).mockImplementation(() => trackStore.value);
+        vi.mocked(useTracks).mockReturnValue({ tracks: [sourceTrack], selectedTrackId: sourceTrack.id });
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        vi.mocked(executeUserAppAction).mockImplementation(actual.executeUserAppAction);
+    });
+
+    afterEach(() => {
+        cleanup();
+        workspaceStore.set({ ...workspaceStore.value!, commandPaletteOpen: false });
+        configureAutomergeStoragePort(null);
+        clearUndoHistory();
+        clearHandlerRegistry();
+        trackStore.set({ tracks: [], selectedTrackId: null });
+        takeLaneStore.set({ lanes: [] });
+        flushAutomergeStorageWrites();
+        removeCrdtDoc('root');
+        vi.restoreAllMocks();
+    });
+
+    it('keeps raw clips, devices, takes, and history after a refused storage commit and shows one error', async () => {
+        const original = readTruth();
+        const originalStore = structuredClone(trackStore.value);
+        const originalLanes = structuredClone(takeLaneStore.value);
+        const refusal = new Error('Context Flatten storage refused');
+        configureAutomergeStoragePort({
+            getDoc: (id) => getCrdtDoc(id),
+            getSemanticMessage: () => undefined,
+            hasDoc: (id) => getCrdtDoc(id) !== undefined,
+            mutateDoc: () => {
+                throw refusal;
+            },
+        });
+        openFrozenMenu(sourceTrack);
+        await vi.waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                'Flatten could not finish. Check the track before trying again.',
+                'error'
+            )
+        );
+        expect(readTruth()).toEqual(original);
+        expect(trackStore.value).toEqual(originalStore);
+        expect(takeLaneStore.value).toEqual(originalLanes);
+        expect(undoHistoryStore.value).toEqual({ past: [], future: [] });
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+    });
+
+    it('reports a committed-classified failure once while retaining the committed result', async () => {
+        const original = readTruth();
+        const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
+        vi.mocked(executeUserAppAction).mockImplementation(async (...args) => {
+            await actual.executeUserAppAction(...args);
+            throw createAppActionCommittedError({ actionType: 'flattenTrack', cause: new Error('receipt') });
+        });
+        openFrozenMenu(sourceTrack);
+        await vi.waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                'error'
+            )
+        );
+        const committed = readTruth();
+        expect(committed).not.toEqual(original);
+        expect(committed.tracks.tracks[0]).toMatchObject({ kind: 'audio', devices: [], frozen: false });
+        expect(committed.takeLanes.lanes).toEqual([]);
+        expect(committed.actionHistory.entries).toHaveLength(1);
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+        expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a palette Flatten opened during a duplicate-arrangement switch held at audio preparation', async () => {
+        const source = {
+            id: 'arr-A',
+            name: 'Arrangement A',
+            tracks: structuredClone(trackStore.value!),
+            automation: { lanes: [] },
+            midi: { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} },
+            takeLanes: structuredClone(takeLaneStore.value!),
+        };
+        arrangementStore.set({
+            activeArrangementId: source.id,
+            arrangements: [source, { ...source, id: 'placeholder', name: 'Placeholder' }],
+        });
+        flushAutomergeStorageWrites();
+        const prepared = vi.spyOn(audioBufferCache, 'prepareFromIdb').mockResolvedValue({
+            cancel: () => undefined,
+            publish: () => 0,
+        });
+        renderWithTooltip(
+            <>
+                <ArrangementSelector />
+                <CommandPalette />
+            </>
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Arrangement selector' }));
+        fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate Current' }));
+        const successorId = arrangementStore.value!.activeArrangementId;
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: trackStore.value!.tracks.map((track) =>
+                track.id === sourceTrack.id ? { ...track, name: 'B editable original' } : track
+            ),
+        });
+        flushAutomergeStorageWrites();
+        fireEvent.click(screen.getByRole('button', { name: 'Arrangement selector' }));
+        fireEvent.click(screen.getByTitle('Arrangement A'));
+        await vi.waitFor(() => expect(arrangementStore.value?.activeArrangementId).toBe(source.id));
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        prepared.mockImplementationOnce(async () => {
+            entered.resolve();
+            await release.promise;
+            return { cancel: () => undefined, publish: () => 0 };
+        });
+        fireEvent.click(screen.getByTitle('Arrangement A (Copy)'));
+        await entered.promise;
+        const decision = Promise.withResolvers<boolean>();
+        vi.mocked(confirmUser).mockReturnValue(decision.promise);
+        await act(async () => {
+            workspaceStore.set({ ...workspaceStore.value!, commandPaletteOpen: true });
+        });
+        fireEvent.change(screen.getByTestId('command-palette-input'), { target: { value: 'Flatten Track' } });
+        fireEvent.click(screen.getByRole('option', { name: /Flatten Track/ }));
+        expect(vi.mocked(confirmUser)).toHaveBeenCalledTimes(1);
+        release.resolve();
+        await vi.waitFor(() => expect(arrangementStore.value?.activeArrangementId).toBe(successorId));
+        expect(projectEpoch.latest()?.isCurrent()).toBe(true);
+        const successor = readTruth();
+        expect(successor.tracks.tracks[0]).toMatchObject({
+            id: sourceTrack.id,
+            name: 'B editable original',
+            frozen: true,
+            devices: [{ id: 'device-original', name: 'Reverb' }],
+            freezeState: { freezeId: 'take-1', frozenBufferId: 'buffer-1', renderedAt: 123 },
+        });
+        expect(successor.takeLanes.lanes[0]?.takes[0]).toMatchObject({ clipId: sourceClip.id });
+        decision.resolve(true);
+        await vi.waitFor(() =>
+            expect(vi.mocked(notifyUser)).toHaveBeenCalledWith(
+                'The frozen track changed. Flatten was cancelled; check the track and try again.',
+                'warning'
+            )
+        );
+        expect(readTruth()).toEqual(successor);
+        expect(trackStore.value?.tracks).toEqual(successor.tracks.tracks);
+        expect(takeLaneStore.value).toEqual(successor.takeLanes);
+        expect(undoHistoryStore.value).toEqual({ past: [], future: [] });
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
+    });
+});
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    captureProjectTransitionAuthority: projectEpoch.capture,
+}));
+
+vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
+    useContextMenuDismiss: vi.fn(),
+}));
