@@ -162,20 +162,25 @@ export function untrustworthyMembers(rows, members) {
  * @returns {string}
  */
 export function renderConsoleReference(rows, ref, budget) {
+    /** @param {number} value */
     const sig2 = (value) => (Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(2)).toString() : '0');
+    /** @param {number} ms */
     const pct = (ms) => `${sig2((ms / budget) * 100)}%`;
     const audioBad = untrustworthyMembers(rows, ref.audioThread);
     const workerBad = untrustworthyMembers(rows, ref.worker);
-    const audioLabel = audioBad.length ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
-    const worstLabel = audioBad.length ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
-    const workerLabel = workerBad.length ? 'median (unreliable, not an upper bound)' : 'upper bound';
-    const verdict = audioBad.length
-        ? `NOT DECIDED: unreliable reference audio medians (${audioBad.map(([id]) => id).join(', ')}).`
-        : ref.audioWorstQuantumUpperMs < budget
-          ? 'DECIDED: the upper bound already fits.'
-          : ref.audioFloorMs > budget
-            ? 'DECIDED THE OTHER WAY: the lower bound already exceeds budget.'
-            : 'UNDECIDED on this machine: the bounds straddle the budget.';
+    const audioLabel = audioBad.length > 0 ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const worstLabel = audioBad.length > 0 ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const workerLabel = workerBad.length > 0 ? 'median (unreliable, not an upper bound)' : 'upper bound';
+    let verdict;
+    if (audioBad.length > 0) {
+        verdict = `NOT DECIDED: unreliable reference audio medians (${audioBad.map(([id]) => id).join(', ')}).`;
+    } else if (ref.audioWorstQuantumUpperMs < budget) {
+        verdict = 'DECIDED: the upper bound already fits.';
+    } else if (ref.audioFloorMs > budget) {
+        verdict = 'DECIDED THE OTHER WAY: the lower bound already exceeds budget.';
+    } else {
+        verdict = 'UNDECIDED on this machine: the bounds straddle the budget.';
+    }
     return [
         `  AUDIO THREAD >= ${sig2(ref.audioFloorMs)} ms (${pct(ref.audioFloorMs)}) lower bound`,
         `  AUDIO THREAD ${sig2(ref.audioUpperBoundMs)} ms (${pct(ref.audioUpperBoundMs)}) ${audioLabel}`,
