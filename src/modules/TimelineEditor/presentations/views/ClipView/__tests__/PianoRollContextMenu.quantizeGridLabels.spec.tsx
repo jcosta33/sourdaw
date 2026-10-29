@@ -109,6 +109,7 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
+    readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
     getExecutableAppActionEffect: vi.fn(() => null),
     executeAppAction: vi.fn().mockResolvedValue(undefined),
