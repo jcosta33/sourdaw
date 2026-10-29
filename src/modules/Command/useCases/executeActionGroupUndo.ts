@@ -4,6 +4,7 @@ import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
 import { executeAppActionBatch } from './executeAppActionBatch';
+import { getLegacyTrimInverseReplayFailure } from './getLegacyTrimInverseReplayFailure';
 import { normalizeLegacyLoopAnchorInverse } from './normalizeLegacyLoopAnchorInverse';
 
 /**
@@ -62,12 +63,17 @@ export async function executeActionGroupUndo(
     // state never carried — or, for a slip, re-wrap a captured offset the
     // forward law must never touch on a replay.
     const actions = [...entries].reverse().map((entry) => normalizeLegacyLoopAnchorInverse(entry.inverseAction!));
-    const result = await executeAppActionBatch(actions, {
+    const batchOptions: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
+        undoEntryIds: [...entries].reverse().map((entry) => entry.id),
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,
         ...options,
-    });
+    };
+    if (actions.some((action) => action.type === 'trimClipStart' && action.payload.midiOffsetBeats === undefined)) {
+        batchOptions.preExecutionValidation = () => getLegacyTrimInverseReplayFailure(actions);
+    }
+    const result = await executeAppActionBatch(actions, batchOptions);
     if (result.status === 'conflicted' || result.status === 'cancelled') {
         return { status: 'conflict', reason: result.reason };
     }

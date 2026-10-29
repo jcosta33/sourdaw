@@ -3,8 +3,12 @@ import { flushPendingPoints } from './flushPendingPoints';
 import { makeKey } from './makeKey';
 import { activeRecording, touchActive } from './recordingSessionState';
 
-export function releaseTouchAutomation(trackId: string, parameterId: string): void {
+export function releaseTouchAutomation(trackId: string, parameterId: string, recordingOwner?: symbol): void {
     const key = makeKey(trackId, parameterId);
+    const session = activeRecording.get(key);
+    if (recordingOwner !== undefined && session?.recordingOwner !== recordingOwner) {
+        return;
+    }
     touchActive.delete(key);
     flushPendingPoints(key);
 
@@ -12,7 +16,6 @@ export function releaseTouchAutomation(trackId: string, parameterId: string): vo
     // `session.lastValue !== null`, so without this the lane keeps being
     // skipped by applyAutomation after release and the engine drifts off the
     // recorded curve until stop. Clearing lastValue ends the recording window.
-    const session = activeRecording.get(key);
     if (session) {
         // Arm the AutoMatch glide before clearing lastValue — it is the
         // value the control held at release, and the point the parameter must

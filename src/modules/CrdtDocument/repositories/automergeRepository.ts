@@ -11,14 +11,19 @@ import {
     merge,
     change,
     getChanges,
+    getChangesMetaSince,
     getMissingDeps,
+    hasHeads,
     view,
     getHeads,
     clone,
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    getCurrentAutomergeStorageMutationOwner,
+    runOutsideAutomergeStoragePublisherScope,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
@@ -26,6 +31,11 @@ import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } fr
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
 type AnyDoc = Record<string, unknown>;
+
+type OwnedDocumentPublication = {
+    readonly docId: DocId;
+    readonly heads: readonly string[];
+};
 
 type DecodedBundle = {
     documents: Map<DocId, Doc<AnyDoc>>;
@@ -52,6 +62,42 @@ function createRepositoryChangedDuringLoadError(): Error {
 
 function createSnapshotTransactionOverlapError(id: DocId): Error {
     return new Error(`[AutomergeRepository] Unowned write to ${id} overlaps the active snapshot transaction`);
+}
+
+function retainsActiveHistory(previous: Doc<unknown>, replacement: Doc<unknown>): boolean {
+    const previousHeads = getHeads(previous);
+    const replacementHeads = getHeads(replacement);
+    const unreachedHeads = new Set(previousHeads);
+    for (const head of replacementHeads) {
+        unreachedHeads.delete(head);
+    }
+    if (unreachedHeads.size === 0) {
+        return true;
+    }
+    if (!hasHeads(replacement, previousHeads)) {
+        return false;
+    }
+
+    const dependencies = new Map(
+        getChangesMetaSince(replacement, previousHeads).map((change) => [change.hash, change.deps])
+    );
+    const visited = new Set<string>();
+    const pending = [...replacementHeads];
+    while (pending.length > 0 && unreachedHeads.size > 0) {
+        const head = pending.pop();
+        if (!head || visited.has(head)) {
+            continue;
+        }
+        visited.add(head);
+        if (unreachedHeads.delete(head)) {
+            continue;
+        }
+        const dependentHeads = dependencies.get(head);
+        if (dependentHeads) {
+            pending.push(...dependentHeads);
+        }
+    }
+    return unreachedHeads.size === 0;
 }
 
 // ── CRDT Worker ───────────────────────────────────────────────────────────────
@@ -244,10 +290,12 @@ class AutomergeRepository {
     private docs = new Map<DocId, Doc<AnyDoc>>();
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
+    private lastHistoryDiscardEpoch = 0;
     private documentIdentityEpoch = 0;
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
+    private documentPublicationsByOwner = new WeakMap<object, readonly OwnedDocumentPublication[]>();
     private changeListeners = new Set<ChangeListener>();
     /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
@@ -312,6 +360,11 @@ class AutomergeRepository {
         return this.mutationEpoch;
     }
 
+    /** Last local mutation that installed active heads without their prior causal history. */
+    getLastHistoryDiscardEpoch(): number {
+        return this.lastHistoryDiscardEpoch;
+    }
+
     /**
      * Monotonic epoch for the project mutations no in-flight action authored:
      * collaborator patches, direct document writes, and project replacement.
@@ -328,6 +381,11 @@ class AutomergeRepository {
     /** Count project mutations attributed to one exact storage transaction owner. */
     getMutationEpochForOwner(owner: object): number {
         return this.mutationEpochByOwner.get(owner) ?? 0;
+    }
+
+    /** Exact immutable publications, captured before listeners can replace installed truth. */
+    readOwnedDocumentPublications(owner: object): readonly OwnedDocumentPublication[] {
+        return this.documentPublicationsByOwner.get(owner) ?? [];
     }
 
     /** Subscribe to document changes (for the projection bridge). */
@@ -417,9 +475,19 @@ class AutomergeRepository {
         }
 
         this.captureBeforeMutation(id, snapshotTransaction);
+        const previousHeads = getHeads(doc);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated);
         this.markMutation();
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        const heads = getHeads(updated);
+        if (owner && (heads.length !== previousHeads.length || heads.some((head) => !previousHeads.includes(head)))) {
+            const publications = this.documentPublicationsByOwner.get(owner) ?? [];
+            this.documentPublicationsByOwner.set(
+                owner,
+                Object.freeze([...publications, Object.freeze({ docId: id, heads: Object.freeze(heads) })])
+            );
+        }
         this.notifyListeners(id, localSlots ? { localSlots } : undefined);
     }
 
@@ -461,9 +529,14 @@ class AutomergeRepository {
      * `mergeRemoteDoc` does.
      */
     replaceDocInLineage(id: DocId, doc: Doc<unknown>, snapshotTransaction?: object): void {
+        const previous = this.docs.get(id);
+        const discardsHistory = previous !== undefined && !retainsActiveHistory(previous, doc);
         this.captureBeforeMutation(id, snapshotTransaction);
         this.docs.set(id, doc);
         this.markMutation();
+        if (discardsHistory) {
+            this.lastHistoryDiscardEpoch = this.mutationEpoch;
+        }
         this.notifyListeners(id);
     }
 
@@ -757,6 +830,14 @@ class AutomergeRepository {
                 decoded.set(id, load<AnyDoc>(entry.bytes));
             }
         }
+        let discardsHistory = false;
+        for (const [id, replacement] of decoded) {
+            const previous = this.docs.get(id);
+            if (previous !== undefined && !retainsActiveHistory(previous, replacement)) {
+                discardsHistory = true;
+                break;
+            }
+        }
 
         let changesMembership = false;
         let changesContent = false;
@@ -771,7 +852,8 @@ class AutomergeRepository {
             }
 
             changesMembership ||= !this.docs.has(id);
-            this.docs.set(id, decoded.get(id)!);
+            const replacement = decoded.get(id)!;
+            this.docs.set(id, replacement);
             changesContent = true;
             changesRootIdentity ||= id === this.rootId;
         }
@@ -783,6 +865,9 @@ class AutomergeRepository {
                 this.markDocumentIdentityMutation();
             } else {
                 this.markMutation();
+            }
+            if (discardsHistory) {
+                this.lastHistoryDiscardEpoch = this.mutationEpoch;
             }
             this.notifyListeners();
         }
@@ -1154,7 +1239,7 @@ class AutomergeRepository {
     private notifyListeners(docId?: DocId, hint?: CrdtChangeHint): void {
         for (const listener of this.changeListeners) {
             try {
-                listener(docId, hint);
+                runOutsideAutomergeStoragePublisherScope(() => listener(docId, hint));
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
             }

@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { trackStore } from '#/modules/Arrangement/stores';
 import {
@@ -44,6 +45,7 @@ const placedClipSources = vi.hoisted(() => ({
         buffer: AudioBuffer | null;
         playbackRate: { value: number };
         connect: ReturnType<typeof vi.fn>;
+        disconnect: ReturnType<typeof vi.fn>;
         start: ReturnType<typeof vi.fn>;
         stop: ReturnType<typeof vi.fn>;
         onended: (() => void) | null;
@@ -52,6 +54,8 @@ const placedClipSources = vi.hoisted(() => ({
 
 vi.mock('../../useCases/engineAccess/getAudioContext', async () => {
     const { createAudioBuffer } = await import('./preparedAudioBufferTestSupport');
+    const { createAudioPreviewIntents } = await import('../../services/audioPreview/createAudioPreviewIntents');
+    const intents = createAudioPreviewIntents();
     const context = {
         currentTime: 0,
         sampleRate: 48_000,
@@ -62,7 +66,10 @@ vi.mock('../../useCases/engineAccess/getAudioContext', async () => {
     };
     return {
         getAudioContext: () => context as unknown as AudioContext,
-        audioEngine: { context: context as unknown as AudioContext },
+        audioEngine: {
+            context: context as unknown as AudioContext,
+            beginAudioPreviewIntent: () => intents.beginOrdinary(),
+        },
     };
 });
 
@@ -73,6 +80,7 @@ vi.mock('../../useCases/scheduling/createBufferSource', async () => {
                 buffer: null as AudioBuffer | null,
                 playbackRate: { value: 1 },
                 connect: vi.fn(),
+                disconnect: vi.fn(),
                 start: vi.fn(),
                 stop: vi.fn(),
                 onended: null as (() => void) | null,
@@ -105,6 +113,7 @@ function noChangeTimeOperationPreparation() {
 
 function installTimeOperationDependencies(): void {
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: () => ({
             status: 'ready' as const,
             hasChanges: false,
@@ -206,11 +215,18 @@ function expectPlaybackResolvesPcm(bufferId: string, pcm: Float32Array): void {
     placedClipSources.sources.length = 0;
     const playback = playCachedAudioBufferPreview({ bufferId, onEnded: () => {} });
     expect(playback).not.toBeNull();
-    const source = placedClipSources.sources[0];
-    if (!source) {
-        throw new Error('expected the resolved buffer to start a source');
+    if (!playback) {
+        throw new Error('expected cached preview playback to start');
     }
-    expect(source.buffer?.getChannelData(0)).toEqual(pcm);
+    const source = placedClipSources.sources[0];
+    try {
+        if (!source) {
+            throw new Error('expected the resolved buffer to start a source');
+        }
+        expect(source.buffer?.getChannelData(0)).toEqual(pcm);
+    } finally {
+        playback.stop();
+    }
 }
 
 describe('AI preview undo ownership', () => {
@@ -254,6 +270,7 @@ describe('AI preview undo ownership', () => {
         const clip = placeDroppedClip(payload);
         const bufferId = droppedBufferId(payload);
         expect(clip.audioBufferId).toBe(bufferId);
+        flushAutomergeStorageWrites();
 
         // Delete through the real handler path: the undo history now holds an
         // entry whose restoreClip inverse carries the removed clip snapshot.

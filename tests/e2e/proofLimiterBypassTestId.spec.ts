@@ -41,9 +41,14 @@ test.describe('Proof limiter bypass — toggle flips ON/OFF in Build desk', () =
     test('clicking the limiter module toggle flips aria-pressed ON to OFF', async ({ page }) => {
         // The panel mounts at desk depth 1 (Play). Drop to depth 3 (Build) where
         // the per-module sections — including ProofLimiterSection — render.
-        await page.getByRole('button', { name: 'Build Modules' }).click();
+        await page
+            .getByRole('group', { name: 'Effect control detail' })
+            .getByRole('button', { name: 'build', exact: true })
+            .click();
 
-        const limiter = page.getByRole('button', { name: 'Limiter module' });
+        const limiter = page
+            .getByRole('region', { name: 'Build controls', exact: true })
+            .getByRole('button', { name: 'Limiter module' });
         await expect(limiter).toBeVisible({ timeout: 15_000 });
 
         // Default patch has limBypassed=false, so the toggle is pressed (ON).

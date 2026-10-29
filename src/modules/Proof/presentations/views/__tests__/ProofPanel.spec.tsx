@@ -1,4 +1,4 @@
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, within } from '@testing-library/react';
 import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
 
 import { persistDeviceParam } from '#/modules/Arrangement/stores';
@@ -129,6 +129,18 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
         deviceId,
     })),
 }));
+
+// This audio/gesture suite uses synthetic devices without project owners. Its
+// depth request stays synchronous; real project admission and persistence are
+// tested without this fixture in ProofDisclosure.integration.spec.tsx.
+vi.mock('../../../useCases/setProofPanelUiLevel', async () => {
+    const { setProofUiLevel } = await import('../../../stores/proofStore');
+    return {
+        setProofPanelUiLevel: vi.fn(async (deviceId: string, level: ProofState['uiLevel']) => {
+            setProofUiLevel({ deviceId, level });
+        }),
+    };
+});
 
 const DEVICE_ID = 'proof-test-device';
 const OTHER_DEVICE_ID = 'proof-test-device-b';
@@ -300,6 +312,19 @@ function deviceWrites(deviceId: string): Array<[string, number]> {
         .map(([, , name, value]): [string, number] => [name, value]);
 }
 
+// Keep the existing rotary-index probes bound to their original depth and
+// shared rail controls. Lower stages now coexist; the cumulative view test
+// separately observes their presence and preservation.
+function knobsForSelectedTier(container: HTMLElement): HTMLElement[] {
+    const name = ['Play controls', 'Shape controls', 'Build controls', 'Route controls', 'Lab controls'][
+        getProofState(DEVICE_ID).uiLevel - 1
+    ];
+    return Array.from(container.querySelectorAll<HTMLElement>('.cursor-ns-resize')).filter((knob) => {
+        const stage = knob.closest('section[aria-label$=" controls"]');
+        return stage === null || stage.getAttribute('aria-label') === name;
+    });
+}
+
 function seedState(overrides: Partial<ProofState> = {}): void {
     proofStore.set({
         [DEVICE_ID]: { ...getProofState(DEVICE_ID), ...overrides },
@@ -369,7 +394,9 @@ describe('ProofPanel', () => {
         seedState({ uiLevel });
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
-        const canvas = screen.getByLabelText(surface);
+        const canvas = within(
+            screen.getByRole('region', { name: uiLevel === 3 ? 'Build controls' : 'Lab controls' })
+        ).getByLabelText(surface);
         const deskWindow = canvas.closest('.proof-window');
         expect(deskWindow).toHaveClass('overflow-auto');
 
@@ -728,7 +755,9 @@ describe('ProofPanel', () => {
         expect(previewBand?.gain).not.toBe(initialBand.gain);
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
-        fireEvent.click(screen.getByRole('button', { name: 'EQ module' }));
+        fireEvent.click(
+            within(screen.getByRole('region', { name: 'Build controls' })).getByRole('button', { name: 'EQ module' })
+        );
 
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(2);
         expect(persistDevicePatchMock).toHaveBeenNthCalledWith(
@@ -829,7 +858,7 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 2 });
 
         const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const knobs = knobsForSelectedTier(container);
         expect(knobs).toHaveLength(5);
         const exciterKnob = knobs[2]!;
 
@@ -855,7 +884,7 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 2 });
 
         const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const knobs = knobsForSelectedTier(container);
         expect(knobs).toHaveLength(5);
         const exciterKnob = knobs[2]!;
 
@@ -892,7 +921,9 @@ describe('ProofPanel', () => {
 
         expect(persistDevicePatchMock).not.toHaveBeenCalled();
 
-        fireEvent.click(screen.getByRole('button', { name: /Shape/ }));
+        fireEvent.click(
+            within(screen.getByRole('group', { name: 'Effect control detail' })).getByRole('button', { name: 'shape' })
+        );
 
         expect(persistDevicePatchMock).toHaveBeenCalledTimes(1);
         expect(persistDevicePatchMock).toHaveBeenCalledWith(
@@ -946,8 +977,8 @@ describe('ProofPanel', () => {
         if (!canvas) {
             throw new Error('Expected the Level 3 EQ curve canvas');
         }
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-        const dynamicsCrossover = knobs.item(24);
+        const knobs = knobsForSelectedTier(container);
+        const dynamicsCrossover = knobs[24];
         if (!dynamicsCrossover) {
             throw new Error('Expected the first Dynamics crossover knob');
         }
@@ -1005,8 +1036,8 @@ describe('ProofPanel', () => {
         if (!canvas) {
             throw new Error('Expected the Level 3 EQ curve canvas');
         }
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-        const otherEqGain = knobs.item(10);
+        const knobs = knobsForSelectedTier(container);
+        const otherEqGain = knobs[10];
         if (!otherEqGain) {
             throw new Error('Expected the next EQ band gain knob');
         }
@@ -1064,10 +1095,13 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 3, patch: factoryPreset.patch });
 
         const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
+        const knobs = knobsForSelectedTier(container);
         expect(knobs.length).toBeGreaterThan(10);
-        const firstKnob = knobs.item(6);
-        const secondKnob = knobs.item(10);
+        const firstKnob = knobs[6];
+        const secondKnob = knobs[10];
+        if (!firstKnob || !secondKnob) {
+            throw new Error('Expected both EQ gesture controls');
+        }
 
         fireEvent.pointerDown(firstKnob, { button: 0, pointerId: 41, clientY: 100 });
         fireEvent.pointerMove(firstKnob, { pointerId: 41, clientY: 80 });
@@ -1123,8 +1157,8 @@ describe('ProofPanel', () => {
             if (!canvas) {
                 throw new Error('Expected the Level 3 EQ curve canvas');
             }
-            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-            const knob = knobs.item(field === 'frequency' ? 6 : 7);
+            const knobs = knobsForSelectedTier(container);
+            const knob = knobs[field === 'frequency' ? 6 : 7];
             if (!knob) {
                 throw new Error(`Expected the EQ band 2 ${field} knob`);
             }
@@ -1243,8 +1277,8 @@ describe('ProofPanel', () => {
             seedState({ uiLevel: 3 });
 
             const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
-            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-            const knob = knobs.item(6 + fieldIndex);
+            const knobs = knobsForSelectedTier(container);
+            const knob = knobs[6 + fieldIndex];
             if (!knob) {
                 throw new Error(`Expected the EQ ${_field} knob`);
             }
@@ -1277,8 +1311,8 @@ describe('ProofPanel', () => {
             seedState({ uiLevel });
 
             const { container, unmount } = render(<ProofPanel deviceId={DEVICE_ID} />);
-            const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-            const knob = knobs.item(knobIndex);
+            const knobs = knobsForSelectedTier(container);
+            const knob = knobs[knobIndex];
             if (!knob) {
                 throw new Error(`Expected the ${_shape} Proof rotary`);
             }
@@ -1311,8 +1345,8 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 3 });
 
         const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const knobs = container.querySelectorAll<HTMLElement>('.cursor-ns-resize');
-        const knob = knobs.item(6 + fieldIndex);
+        const knobs = knobsForSelectedTier(container);
+        const knob = knobs[6 + fieldIndex];
         if (!knob) {
             throw new Error(`Expected the EQ ${_field} knob`);
         }
@@ -1500,7 +1534,7 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 2, patch: edm.patch });
 
         const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const imagerKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[1]!;
+        const imagerKnob = knobsForSelectedTier(container)[1]!;
 
         fireEvent.pointerDown(imagerKnob, { button: 0, pointerId: 71, clientY: 100 });
         fireEvent.pointerMove(imagerKnob, { pointerId: 71, clientY: 80 });
@@ -1524,7 +1558,7 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 2, patch: warm.patch });
 
         const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const exciterKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[2]!;
+        const exciterKnob = knobsForSelectedTier(container)[2]!;
 
         fireEvent.pointerDown(exciterKnob, { button: 0, pointerId: 72, clientY: 100 });
         fireEvent.pointerMove(exciterKnob, { pointerId: 72, clientY: 80 });
@@ -1551,7 +1585,7 @@ describe('ProofPanel', () => {
         seedState({ uiLevel: 2, patch: edm.patch });
 
         const { container } = render(<ProofPanel deviceId={DEVICE_ID} />);
-        const dynamicsKnob = container.querySelectorAll<HTMLElement>('.cursor-ns-resize')[0]!;
+        const dynamicsKnob = knobsForSelectedTier(container)[0]!;
 
         fireEvent.pointerDown(dynamicsKnob, { button: 0, pointerId: 73, clientY: 100 });
         fireEvent.pointerMove(dynamicsKnob, { pointerId: 73, clientY: 80 });
@@ -1606,7 +1640,9 @@ describe('ProofPanel', () => {
 
         render(<ProofPanel deviceId={DEVICE_ID} />);
 
-        const limiterToggle = screen.getByRole('button', { name: 'Limiter module' });
+        const limiterToggle = within(screen.getByRole('region', { name: 'Build controls' })).getByRole('button', {
+            name: 'Limiter module',
+        });
         expect(limiterToggle).toHaveAttribute('aria-pressed', 'true');
         fireEvent.click(limiterToggle);
 

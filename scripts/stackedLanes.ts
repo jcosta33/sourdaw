@@ -3,7 +3,28 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 
 import { AUTHOR_BOT_NODE_ID, REQUIRED_REPOSITORY } from './githubAppIdentity.ts';
+import {
+    readLaneStackForkMarkers,
+    assertOriginalHistoricalParent,
+    assertHistoricalActorsAndLifecycle,
+    historicalCreationAnchor,
+    historicalRecord as object,
+    historicalTextField as textField,
+    type GitConfigReader,
+    type HistoricalClosedParent,
+    type HistoricalPullRequest,
+    type HistoricalStackObservation,
+    type HistoricalAdmissionInput,
+} from './laneStackForkMarkers.ts';
 import { fail, isLaneBranch, PR_STATE, type PullRequestState } from './prContract.ts';
+
+export { readLaneStackForkMarkers } from './laneStackForkMarkers.ts';
+export type {
+    HistoricalClosedParent,
+    HistoricalPullRequest,
+    HistoricalStackObservation,
+    HistoricalAdmissionInput,
+} from './laneStackForkMarkers.ts';
 
 export type LaneStack = {
     version: 1;
@@ -13,6 +34,102 @@ export type LaneStack = {
     parentHead: string;
     parentPullRequest?: number;
 };
+
+type HistoricalAdmissionIdentity = {
+    childPullRequest: number;
+    expectedChildHead: string;
+    descriptor: LaneStack;
+};
+
+export type HistoricalAdmissionReceipt = HistoricalAdmissionIdentity &
+    ({ version: 1 } | { version: 2; closedParent: HistoricalClosedParent & { proof: string } });
+
+function parseHistoricalClosedReceipt(
+    value: unknown,
+    childPullRequest: number,
+    parentPullRequest: number
+): HistoricalClosedParent & { proof: string } {
+    const closed = value;
+    if (closed === null || typeof closed !== 'object' || Array.isArray(closed)) {
+        fail('invalid historical closed parent receipt');
+    }
+    const proof = closed as Record<string, unknown>;
+    if (
+        Object.keys(proof).sort().join(',') !== 'parentOriginMain,proof,replacementPullRequest' ||
+        typeof proof.replacementPullRequest !== 'number' ||
+        !Number.isSafeInteger(proof.replacementPullRequest) ||
+        proof.replacementPullRequest <= 0 ||
+        [parentPullRequest, childPullRequest].includes(proof.replacementPullRequest) ||
+        typeof proof.parentOriginMain !== 'boolean' ||
+        typeof proof.proof !== 'string' ||
+        proof.proof === '' ||
+        Buffer.byteLength(proof.proof, 'utf8') > 32768
+    ) {
+        fail('invalid historical closed parent receipt');
+    }
+    return {
+        replacementPullRequest: proof.replacementPullRequest,
+        parentOriginMain: proof.parentOriginMain,
+        proof: proof.proof,
+    };
+}
+
+export function parseHistoricalAdmissionReceipt(value: unknown): HistoricalAdmissionReceipt {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail('invalid historical admission receipt');
+    }
+    const row = value as Record<string, unknown>;
+    if (
+        Object.keys(row).sort().join(',') !==
+            (row.version === 2
+                ? 'childPullRequest,closedParent,descriptor,expectedChildHead,version'
+                : 'childPullRequest,descriptor,expectedChildHead,version') ||
+        (row.version !== 1 && row.version !== 2) ||
+        typeof row.childPullRequest !== 'number' ||
+        !Number.isSafeInteger(row.childPullRequest) ||
+        row.childPullRequest <= 0 ||
+        typeof row.expectedChildHead !== 'string' ||
+        !/^[0-9a-f]{40}$/.test(row.expectedChildHead)
+    ) {
+        fail('invalid historical admission receipt');
+    }
+    const descriptor = parseLaneStack(row.descriptor);
+    if (descriptor.parentPullRequest === undefined || descriptor.parentPullRequest === row.childPullRequest) {
+        fail('historical admission receipt requires a distinct pinned parent');
+    }
+    const identity = {
+        childPullRequest: row.childPullRequest,
+        expectedChildHead: row.expectedChildHead,
+        descriptor,
+    };
+    if (row.version === 2) {
+        return {
+            version: 2,
+            ...identity,
+            closedParent: parseHistoricalClosedReceipt(
+                row.closedParent,
+                row.childPullRequest,
+                descriptor.parentPullRequest
+            ),
+        };
+    }
+    return { version: 1, ...identity };
+}
+
+export function readHistoricalAdmissionReceipt(
+    primaryRoot: string,
+    branch: string
+): HistoricalAdmissionReceipt | undefined {
+    const path = `${laneStackPath(primaryRoot, branch)}.admission.json`;
+    if (!existsSync(path)) {
+        return undefined;
+    }
+    const raw = readFileSync(path, 'utf8');
+    if (raw.length > 65536) {
+        fail('invalid historical admission receipt');
+    }
+    return parseHistoricalAdmissionReceipt(JSON.parse(raw));
+}
 
 export type StackParent = {
     number: number;
@@ -64,12 +181,12 @@ export function parseLaneStack(value: unknown): LaneStack {
     return descriptor;
 }
 
-function descriptorPath(primaryRoot: string, branch: string): string {
+export function laneStackPath(primaryRoot: string, branch: string): string {
     return join(primaryRoot, '.agents', 'lane-stacks', `${createHash('sha256').update(branch).digest('hex')}.json`);
 }
 
 export function readLaneStack(primaryRoot: string, branch: string): LaneStack | undefined {
-    const path = descriptorPath(primaryRoot, branch);
+    const path = laneStackPath(primaryRoot, branch);
     if (!existsSync(path)) {
         return undefined;
     }
@@ -91,7 +208,7 @@ export function writeLaneStack(primaryRoot: string, descriptor: LaneStack): void
     ) {
         fail('refusing to replace recorded stack lineage or parent pull request');
     }
-    const path = descriptorPath(primaryRoot, validated.childBranch);
+    const path = laneStackPath(primaryRoot, validated.childBranch);
     mkdirSync(join(path, '..'), { recursive: true });
     const temporary = `${path}.${randomUUID()}.tmp`;
     writeFileSync(temporary, `${JSON.stringify(validated, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
@@ -101,9 +218,26 @@ export function writeLaneStack(primaryRoot: string, descriptor: LaneStack): void
 export function readRegisteredLaneStack(
     primaryRoot: string,
     branch: string,
-    forkMarker: string
+    git: GitConfigReader
 ): LaneStack | undefined {
+    const forkMarkers = readLaneStackForkMarkers(branch, git);
+    if (forkMarkers.length > 1) {
+        fail('branch lineage marker must have exactly one value');
+    }
+    const forkMarker = forkMarkers[0] ?? '';
     const descriptor = readLaneStack(primaryRoot, branch);
+    const receipt = readHistoricalAdmissionReceipt(primaryRoot, branch);
+    if (
+        receipt !== undefined &&
+        (descriptor === undefined ||
+            receipt.descriptor.childBranch !== branch ||
+            receipt.descriptor.forkHead !== forkMarker ||
+            JSON.stringify({ ...receipt.descriptor, parentHead: descriptor.parentHead }) !== JSON.stringify(descriptor))
+    ) {
+        fail(
+            'historical admission is incomplete or conflicts with registered lineage; resume the exact native admission'
+        );
+    }
     if (forkMarker !== '' && descriptor === undefined) {
         fail('stack descriptor missing; restore the recorded descriptor before publication');
     }
@@ -266,4 +400,219 @@ export function stackPublicationBase(
     }
     assertLandedStackParent({ ...descriptor, parentPullRequest: parent.number }, childHead, mainHead, port);
     return { branch: 'main', head: mainHead, parent };
+}
+
+export type HistoricalAdmissionPort = {
+    head: () => string;
+    clean: () => boolean;
+    observe: () => HistoricalStackObservation;
+    childLog: () => string;
+    parentLog: () => string;
+    parentLocalHead: () => string;
+    isAncestor: (ancestor: string, descendant: string) => boolean;
+    readDescriptor: () => LaneStack | undefined;
+    readReceipt: () => HistoricalAdmissionReceipt | undefined;
+    markers: () => string[];
+    saveReceipt: (receipt: HistoricalAdmissionReceipt) => void;
+    addMarker: (fork: string) => void;
+    installDescriptor: (descriptor: LaneStack) => void;
+    readStack: (branch: string) => LaneStack | undefined;
+};
+
+const fullSha = /^[0-9a-f]{40}$/;
+
+export function assertHistoricalPullRequestCandidates(pr: HistoricalPullRequest, candidates: StackParent[]): void {
+    if (
+        candidates.length !== 1 ||
+        candidates[0]?.number !== pr.number ||
+        candidates[0]?.branch !== pr.branch ||
+        candidates[0]?.headSha !== pr.headSha ||
+        candidates[0]?.repository !== pr.repository ||
+        candidates[0]?.authorId !== pr.authorId ||
+        candidates[0]?.state !== pr.state
+    ) {
+        fail('historical head ref must have exactly one unchanged original pull request');
+    }
+}
+
+export function historicalDescriptor(
+    input: HistoricalAdmissionInput,
+    observation: HistoricalStackObservation,
+    childLog: string,
+    parentLog: string,
+    parentLocalHead: string,
+    port: HistoricalAdmissionPort
+): LaneStack {
+    assertOriginalHistoricalParent(input, observation);
+    assertHistoricalActorsAndLifecycle(input, observation);
+    const birth = historicalCreationAnchor(input, observation, childLog, parentLog, parentLocalHead, port);
+    const { child, parent } = observation;
+    return parseLaneStack({
+        version: 1,
+        childBranch: child.branch,
+        parentBranch: parent.branch,
+        forkHead: birth.head,
+        parentHead: parent.headSha,
+        parentPullRequest: parent.number,
+    });
+}
+
+export function descriptorForHistoricalReplay(
+    input: HistoricalAdmissionInput,
+    descriptor: LaneStack,
+    prior: HistoricalAdmissionReceipt | undefined,
+    stored: LaneStack | undefined,
+    initialMarkers: string[],
+    port: HistoricalAdmissionPort
+): LaneStack {
+    const unjournaledMarker = initialMarkers.length > 0 && input.legacyFork === undefined;
+    if (prior === undefined && (stored !== undefined || unjournaledMarker)) {
+        fail('historical admission refuses unjournaled partial or existing lineage');
+    }
+    if (prior !== undefined) {
+        const receipt = parseHistoricalAdmissionReceipt(prior);
+        if (
+            receipt.childPullRequest !== input.childPullRequest ||
+            receipt.expectedChildHead !== input.expectedHead ||
+            JSON.stringify({ ...receipt.descriptor, parentHead: descriptor.parentHead }) !==
+                JSON.stringify(descriptor) ||
+            !port.isAncestor(receipt.descriptor.parentHead, descriptor.parentHead)
+        ) {
+            fail('historical admission receipt conflicts with original identity');
+        }
+        return receipt.descriptor;
+    }
+    return descriptor;
+}
+
+export function historicalRegisteredDescriptor(
+    admitted: LaneStack,
+    stored: LaneStack | undefined,
+    markers: string[],
+    currentParentHead: string,
+    childHead: string,
+    port: HistoricalAdmissionPort
+): LaneStack {
+    if (
+        markers.length > 1 ||
+        (markers.length === 1 && markers[0] !== admitted.forkHead) ||
+        (stored !== undefined &&
+            (markers.length !== 1 ||
+                JSON.stringify({ ...stored, parentHead: admitted.parentHead }) !== JSON.stringify(admitted)))
+    ) {
+        fail('historical admission has conflicting descriptor or marker');
+    }
+    if (stored === undefined) {
+        return admitted;
+    }
+    if (
+        !port.isAncestor(admitted.parentHead, stored.parentHead) ||
+        !port.isAncestor(stored.parentHead, currentParentHead) ||
+        (stored.parentHead !== admitted.parentHead && !port.isAncestor(stored.parentHead, childHead))
+    ) {
+        fail('historical admission descriptor progress conflicts with verified histories');
+    }
+    return stored;
+}
+
+export function parseHistoricalPullRequest(value: unknown, closedMode = false): HistoricalPullRequest {
+    const row = object(value);
+    const repo = object(row.repository);
+    const headRepo = object(row.headRepository);
+    const ref = object(row.headRef);
+    const base = object(row.baseRef);
+    const timeline = object(row.timelineItems);
+    if (object(timeline.pageInfo).hasNextPage !== false || !Array.isArray(timeline.nodes)) {
+        fail('incomplete historical timeline');
+    }
+    const headSha = textField(row, 'headRefOid');
+    const branch = textField(row, 'headRefName');
+    const baseBranch = textField(row, 'baseRefName');
+    if (
+        !fullSha.test(headSha) ||
+        ref.name !== branch ||
+        object(ref.target).oid !== headSha ||
+        base.name !== baseBranch ||
+        typeof row.number !== 'number' ||
+        !Number.isSafeInteger(row.number) ||
+        row.number <= 0
+    ) {
+        fail('historical ref identity changed');
+    }
+    const pr: HistoricalPullRequest = {
+        number: row.number,
+        id: textField(row, 'id'),
+        branch,
+        headSha,
+        baseBranch,
+        createdAt: textField(row, 'createdAt'),
+        repository: textField(repo, 'nameWithOwner'),
+        repositoryId: textField(repo, 'id'),
+        headRepository: textField(headRepo, 'nameWithOwner'),
+        headRepositoryId: textField(headRepo, 'id'),
+        authorId: textField(object(row.author), 'id'),
+        state: textField(row, 'state'),
+        events: timeline.nodes.map((event) => textField(object(event), '__typename')),
+    };
+    if (closedMode) {
+        if (typeof row.merged !== 'boolean' || (row.closedAt !== null && typeof row.closedAt !== 'string')) {
+            fail('incomplete historical closure identity');
+        }
+        pr.merged = row.merged;
+        pr.closedAt = row.closedAt;
+        pr.baseRefOid = textField(row, 'baseRefOid');
+        pr.closures = timeline.nodes
+            .filter((event) => object(event).__typename === 'ClosedEvent')
+            .map((event) => {
+                const closed = object(event);
+                return {
+                    id: textField(closed, 'id'),
+                    createdAt: textField(closed, 'createdAt'),
+                    authorId: textField(object(closed.actor), 'id'),
+                };
+            });
+    }
+    return pr;
+}
+
+export function parseHistoricalStackObservation(
+    raw: string,
+    children: StackParent[],
+    parents: StackParent[],
+    closedMode = false
+): HistoricalStackObservation {
+    const response = object(JSON.parse(raw));
+    if (response.errors !== undefined) {
+        fail('historical stack query returned errors');
+    }
+    const repository = object(object(response.data).repository);
+    const child = parseHistoricalPullRequest(repository.child, closedMode);
+    const parent = parseHistoricalPullRequest(repository.parent, closedMode);
+    assertHistoricalPullRequestCandidates(child, children);
+    assertHistoricalPullRequestCandidates(parent, parents);
+    if (
+        object(object(repository.child).baseRef).target === null ||
+        object(object(object(repository.child).baseRef).target).oid !== parent.headSha
+    ) {
+        fail('historical parent ref changed');
+    }
+    return {
+        child,
+        parent,
+        childPullRequests: children.map((pr) => pr.number),
+        parentPullRequests: parents.map((pr) => pr.number),
+    };
+}
+
+export function historicalStackQuery(child: number, parent: number, closedMode = false): string[] {
+    const closure = closedMode
+        ? '... on ClosedEvent { id createdAt actor { ... on Bot { id } ... on User { id } } }'
+        : '';
+    const fields = `id number createdAt state ${closedMode ? 'merged closedAt baseRefOid' : ''} author { ... on Bot { id } ... on User { id } } repository { id nameWithOwner } headRepository { id nameWithOwner } headRefName headRefOid headRef { name target { oid } } baseRefName baseRef { name target { oid } } timelineItems(first:100,itemTypes:[BASE_REF_CHANGED_EVENT,HEAD_REF_FORCE_PUSHED_EVENT,HEAD_REF_DELETED_EVENT,HEAD_REF_RESTORED_EVENT,CLOSED_EVENT,REOPENED_EVENT]) { pageInfo { hasNextPage } nodes { __typename ${closure} } }`;
+    return [
+        'api',
+        'graphql',
+        '-f',
+        `query=query { repository(owner:"${REQUIRED_REPOSITORY.split('/')[0]}",name:"${REQUIRED_REPOSITORY.split('/')[1]}") { child:pullRequest(number:${child}) { ${fields} } parent:pullRequest(number:${parent}) { ${fields} } } }`,
+    ];
 }

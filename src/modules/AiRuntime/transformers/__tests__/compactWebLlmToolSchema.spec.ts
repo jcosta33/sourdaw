@@ -416,3 +416,25 @@ describe('compactWebLlmToolSchema', () => {
         expect(compactedText).toContain('Valid complete document JSON text');
     });
 });
+
+describe('recipe preview source in the local prompt', () => {
+    it.each(['expand-1', '', 'x'.repeat(257), null, ['expand-1']])(
+        'preserves the original admission for recipeCallId=%j',
+        (recipeCallId) => {
+            const full = planningTool('analysis.measure').function.parameters;
+            const compact = inlineDefinitions(
+                compactedParameters('analysis.measure'),
+                compactedParameters('analysis.measure')
+            );
+            const args = {
+                scope: { kind: 'master' },
+                range: { startBeat: 0, endBeat: 8 },
+                subject: 'preview',
+                recipeCallId,
+            };
+            const expected = recipeCallId === 'expand-1';
+            expect(matchesJsonSchema(args, full)).toBe(expected);
+            expect(matchesJsonSchema(args, compact)).toBe(expected);
+        }
+    );
+});

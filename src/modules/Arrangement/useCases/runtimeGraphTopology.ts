@@ -1,4 +1,5 @@
 import { createRuntimeGraphTopologyFingerprint } from '#/modules/AudioEngine/useCases';
+import { isBuiltinSynthDevice, isDrumDevice } from '#/utils/deviceTypeMatching';
 
 import { getAllTracks } from '../repositories/track/getAllTracks';
 
@@ -31,6 +32,15 @@ function createRuntimeGraphTopologyNode(track: Track): RuntimeGraphTopologyNode 
     };
 }
 
+/** Scheduler instruments remain project/native truth but have no Web Audio chain node. */
+function createWebAudioGraphTopologyNode(track: Track): RuntimeGraphTopologyNode {
+    const node = createRuntimeGraphTopologyNode(track);
+    return {
+        ...node,
+        devices: node.devices.filter((device) => !isBuiltinSynthDevice(device.type) && !isDrumDevice(device.type)),
+    };
+}
+
 /**
  * Compares compiled topology to exactly one current project owner per node.
  * Parameter values stay out of this topology identity; their IDs describe the
@@ -46,7 +56,7 @@ function doesRuntimeGraphDeltaMatchCurrentProjectTopology(nodes: readonly Runtim
         const track = matches[0];
         return (
             track !== undefined &&
-            createRuntimeGraphTopologyFingerprint(createRuntimeGraphTopologyNode(track)) ===
+            createRuntimeGraphTopologyFingerprint(createWebAudioGraphTopologyNode(track)) ===
                 createRuntimeGraphTopologyFingerprint(node)
         );
     });
@@ -59,9 +69,10 @@ function doesTrackMatchRuntimeGraphTopologyNode(track: Track, node: RuntimeGraph
     );
 }
 
-/** One Arrangement-owned topology contract shared by graph compilation and bootstrap validation. */
+/** Project/action identity stays full; only the Web Audio projection omits scheduler instruments. */
 export const runtimeGraphTopology = Object.freeze({
     createNode: createRuntimeGraphTopologyNode,
+    createWebAudioNode: createWebAudioGraphTopologyNode,
     matchesNode: doesTrackMatchRuntimeGraphTopologyNode,
     matchesCurrentProject: doesRuntimeGraphDeltaMatchCurrentProjectTopology,
 });

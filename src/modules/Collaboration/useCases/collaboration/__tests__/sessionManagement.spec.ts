@@ -88,6 +88,7 @@ const automergeSyncMock = vi.hoisted(() => ({
 }));
 
 const assetTransferMock = vi.hoisted(() => ({
+    initialBlob: null as Blob | null,
     instances: [] as {
         handleMessage: ReturnType<typeof vi.fn>;
         getAsset: ReturnType<typeof vi.fn>;
@@ -109,7 +110,7 @@ const assetTransferMock = vi.hoisted(() => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
-            onTransferFailed: (hash: string, reason: string) => void;
+            onTransferFailed: (hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void;
         };
         durabilityOptions: {
             durableStagingReady?: boolean;
@@ -159,9 +160,27 @@ const branchStoreMock = vi.hoisted(() => {
     };
 });
 
-const trackStoreMock = vi.hoisted(() => ({
-    value: null as { tracks: { clips: { assetHash?: string; audioBufferId?: string; id: string }[] }[] } | null,
-}));
+const trackStoreMock = vi.hoisted(() => {
+    type TrackState = {
+        tracks: { id?: string; clips: { assetHash?: string; audioBufferId?: string; id: string }[] }[];
+    } | null;
+    const subscribers = new Set<(value: TrackState) => void>();
+    const store = {
+        value: null as TrackState,
+        subscribe: vi.fn((callback: (value: TrackState) => void) => {
+            subscribers.add(callback);
+            return () => subscribers.delete(callback);
+        }),
+        publish(value: TrackState) {
+            store.value = value;
+            for (const callback of subscribers) {
+                callback(value);
+            }
+        },
+        subscriberCount: () => subscribers.size,
+    };
+    return store;
+});
 
 const transportStoreMock = vi.hoisted(() => ({
     value: null as { playheadPosition: number } | null,
@@ -245,7 +264,7 @@ vi.mock('../../assetTransfer', () => ({
         options: {
             onAssetAvailable: (hash: string) => void;
             onProgress: (hash: string, received: number, total: number) => void;
-            onTransferFailed: (hash: string, reason: string) => void;
+            onTransferFailed: (hash: string, reason: string, disposition: 'cooldown' | 'abandoned') => void;
         },
         _ownerId: string,
         _repository: unknown,
@@ -263,7 +282,7 @@ vi.mock('../../assetTransfer', () => ({
             .mockResolvedValue({ status: 'rebound' });
         const instance = {
             handleMessage: vi.fn(),
-            getAsset: vi.fn(),
+            getAsset: vi.fn().mockImplementation(() => assetTransferMock.initialBlob ?? undefined),
             dispose: vi.fn(),
             releaseStagedAsset: vi.fn(),
             prepareDurableOwnerRebind: vi.fn().mockImplementation(async (ownerId: string) => ({
@@ -489,6 +508,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         peerConnectionMock.instances.length = 0;
         automergeSyncMock.instances.length = 0;
         assetTransferMock.instances.length = 0;
+        assetTransferMock.initialBlob = null;
         sessionRuntimePrimitives.presenceListeners.clear();
         collaborationStore.set(null);
         branchStoreMock.value = null;
@@ -1046,7 +1066,8 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
                 docId: 'root',
                 error: new Error('stale quarantine'),
             });
-            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer');
+            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer', 'cooldown');
+            sessionATransfer.options.onTransferFailed('stale-hash', 'stale transfer', 'abandoned');
 
             expect(sessionRuntimePrimitives.state.peerManager).toBe(sessionBManager);
             expect(collaborationStore.value).toEqual(sessionBState);
@@ -2435,6 +2456,20 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
     });
 
     describe('AssetTransfer onTransferFailed hook', () => {
+        it('does not promise another request after the producer abandons the hash', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            latestAssetTransfer().options.onTransferFailed(
+                'sha256:abc',
+                'the sending peer stopped responding',
+                'abandoned'
+            );
+            expect(collaborationStore.value?.error).toContain(
+                'This session will not automatically request this asset again.'
+            );
+            expect(collaborationStore.value?.error).not.toContain('Playing over');
+        });
+
         // An abandoned asset transfer used to be a logger.warn and nothing
         // else: clips referencing the asset stayed silent with no user-visible
         // signal anywhere in the panel.
@@ -2442,10 +2477,14 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'the sending peer stopped responding');
+            latestAssetTransfer().options.onTransferFailed(
+                'sha256:abc',
+                'the sending peer stopped responding',
+                'cooldown'
+            );
 
             expect(collaborationStore.value?.error).toBe(
-                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again.'
+                'Could not receive shared audio from a peer — the sending peer stopped responding. Playing over the affected clips asks again after the retry cooldown.'
             );
         });
 
@@ -2456,7 +2495,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed', 'cooldown');
 
             expect(collaborationStore.value?.error).not.toContain('It will be retried');
             expect(collaborationStore.value?.error).toContain('Playing over the affected clips');
@@ -2466,7 +2505,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
             collaborationStore.set(makeState({ connectionStatus: 'connected', isEnabled: true }));
             await sessionRuntimePrimitives.initialize('project-owner-1');
 
-            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed');
+            latestAssetTransfer().options.onTransferFailed('sha256:abc', 'integrity check failed', 'cooldown');
 
             expect(collaborationStore.value?.connectionStatus).toBe('connected');
             expect(collaborationStore.value?.isEnabled).toBe(true);
@@ -2477,6 +2516,375 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         function makeAudioBuffer(): AudioBuffer {
             return { duration: 1 } as AudioBuffer;
         }
+
+        it('resolves a resident asset for the active clip already present when the session installs', async () => {
+            const pcm = makeAudioBuffer();
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => cache.set(bufferId, buffer)
+            );
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn().mockResolvedValue(pcm) });
+            assetTransferMock.initialBlob = new Blob([new Uint8Array([1, 2, 3])]);
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }],
+            };
+
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            await vi.waitFor(() => expect(cache.get('buf-1')).toBe(pcm));
+
+            expect(trackStoreMock.subscriberCount()).toBe(1);
+            expect(latestAssetTransfer().getAsset).toHaveBeenCalledWith('hash-1');
+        });
+
+        it('removes the alias subscriber when initial session setup fails', async () => {
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] }],
+            };
+            audioEngineMock.getCachedAudioBuffer.mockImplementationOnce(() => {
+                throw new Error('initial cache read refused');
+            });
+
+            await expect(sessionRuntimePrimitives.initialize('project-owner-1')).rejects.toThrow(
+                'initial cache read refused'
+            );
+            expect(trackStoreMock.subscriberCount()).toBe(0);
+            expect(latestAssetTransfer().dispose).toHaveBeenCalledTimes(1);
+        });
+
+        it('resolves a new same-hash alias while an older read is held without repeating unchanged work', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            transfer.options.onTransferFailed('other-hash', 'held read marker', 'cooldown');
+            const readingA = Promise.withResolvers<ArrayBuffer>();
+            const blob = {
+                arrayBuffer: vi.fn().mockReturnValueOnce(readingA.promise).mockResolvedValue(new ArrayBuffer(8)),
+            };
+            transfer.getAsset.mockReturnValue(blob);
+            const decodingB = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decodingB.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => cache.set(bufferId, buffer)
+            );
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-a', assetHash: 'hash-1', audioBufferId: 'buf-a' }] }],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(blob.arrayBuffer).toHaveBeenCalledTimes(1));
+            const activeB = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        clips: [
+                            { id: 'clip-a', assetHash: 'hash-1', audioBufferId: 'buf-a' },
+                            { id: 'clip-b', assetHash: 'hash-1', audioBufferId: 'buf-b' },
+                        ],
+                    },
+                ],
+            };
+            trackStoreMock.publish(activeB);
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+            trackStoreMock.publish(activeB);
+            expect(blob.arrayBuffer).toHaveBeenCalledTimes(2);
+            expect(decodeAudioData).toHaveBeenCalledTimes(1);
+
+            const pcmB = makeAudioBuffer();
+            decodingB.resolve(pcmB);
+            await vi.waitFor(() => expect(cache.get('buf-b')).toBe(pcmB));
+            expect(collaborationStore.value?.error).toContain('held read marker');
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-b', assetHash: 'hash-1', audioBufferId: 'buf-b' }] }],
+            });
+            readingA.resolve(new ArrayBuffer(8));
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+            expect(cache.has('buf-a')).toBe(false);
+            expect(cache.get('buf-b')).toBe(pcmB);
+        });
+
+        it('keeps an unrelated transfer failure when a resident asset serves a later active alias', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const pcm = makeAudioBuffer();
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn().mockResolvedValue(pcm) });
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => cache.set(bufferId, buffer)
+            );
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-a', assetHash: 'hash-1', audioBufferId: 'buf-a' }] }],
+            };
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(cache.get('buf-a')).toBe(pcm));
+            transfer.options.onTransferFailed('other-hash', 'unrelated failure marker', 'cooldown');
+
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-b', assetHash: 'hash-1', audioBufferId: 'buf-b' }] }],
+            });
+            await vi.waitFor(() => expect(cache.get('buf-b')).toBe(pcm));
+            expect(collaborationStore.value?.error).toContain('unrelated failure marker');
+        });
+
+        it('unsubscribes the retired owner and lets its successor resolve a new alias', async () => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const retiredTransfer = latestAssetTransfer();
+            const pcm = makeAudioBuffer();
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => cache.set(bufferId, buffer)
+            );
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData: vi.fn().mockResolvedValue(pcm) });
+            retiredTransfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            expect(trackStoreMock.subscriberCount()).toBe(1);
+
+            sessionRuntimePrimitives.cleanup();
+            expect(trackStoreMock.subscriberCount()).toBe(0);
+            const retiredReads = retiredTransfer.getAsset.mock.calls.length;
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-old', assetHash: 'hash-1', audioBufferId: 'buf-old' }] }],
+            });
+            expect(retiredTransfer.getAsset).toHaveBeenCalledTimes(retiredReads);
+            expect(cache.has('buf-old')).toBe(false);
+
+            await sessionRuntimePrimitives.initialize('project-owner-2');
+            const successorTransfer = latestAssetTransfer();
+            successorTransfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-new', assetHash: 'hash-1', audioBufferId: 'buf-new' }] }],
+            });
+            await vi.waitFor(() => expect(cache.get('buf-new')).toBe(pcm));
+            expect(trackStoreMock.subscriberCount()).toBe(1);
+            expect(cache.has('buf-old')).toBe(false);
+        });
+
+        it.each(['read', 'decode'])('fences a retired passive %s and resolves the successor alias', async (phase) => {
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const retiredTransfer = latestAssetTransfer();
+            const reading = Promise.withResolvers<ArrayBuffer>();
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const blob = {
+                arrayBuffer: vi
+                    .fn()
+                    .mockReturnValue(phase === 'read' ? reading.promise : Promise.resolve(new ArrayBuffer(8))),
+            };
+            retiredTransfer.getAsset.mockReturnValue(blob);
+            const successorPCM = makeAudioBuffer();
+            const decodeAudioData = vi.fn().mockResolvedValue(successorPCM);
+            if (phase === 'decode') {
+                decodeAudioData.mockReturnValueOnce(decoding.promise);
+            }
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => cache.set(bufferId, buffer)
+            );
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-old', assetHash: 'hash-1', audioBufferId: 'buf-old' }] }],
+            });
+            if (phase === 'read') {
+                await vi.waitFor(() => expect(blob.arrayBuffer).toHaveBeenCalledOnce());
+            } else {
+                await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledOnce());
+            }
+
+            sessionRuntimePrimitives.cleanup();
+            expect(trackStoreMock.subscriberCount()).toBe(0);
+            await sessionRuntimePrimitives.initialize('project-owner-2');
+            expect(trackStoreMock.subscriberCount()).toBe(1);
+            if (phase === 'read') {
+                reading.resolve(new ArrayBuffer(8));
+                await reading.promise;
+                expect(decodeAudioData).not.toHaveBeenCalled();
+            } else {
+                decoding.resolve(makeAudioBuffer());
+                await decoding.promise;
+            }
+            expect(cache.has('buf-old')).toBe(false);
+
+            latestAssetTransfer().getAsset.mockReturnValue({
+                arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+            });
+            trackStoreMock.publish({
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-new', assetHash: 'hash-1', audioBufferId: 'buf-new' }] }],
+            });
+            await vi.waitFor(() => expect(cache.get('buf-new')).toBe(successorPCM));
+            expect(cache.has('buf-old')).toBe(false);
+        });
+
+        it('keeps current PCM when an old decode finishes after the active asset association changes', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'old decode terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => {
+                    cache.set(bufferId, buffer);
+                }
+            );
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decoding.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'shared' }] }],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-2', audioBufferId: 'shared' }] }],
+            };
+            const currentPCM = makeAudioBuffer();
+            audioEngineMock.cacheAudioBuffer({ bufferId: 'shared', buffer: currentPCM });
+            const oldPCM = { duration: 2 } as AudioBuffer;
+            decoding.resolve(oldPCM);
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(cache.get('shared')).toBe(currentPCM);
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalledWith({ bufferId: 'shared', buffer: oldPCM });
+        });
+
+        it('leaves an empty slot empty when its active clip changes hash during decoding', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'changed hash terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const decodeAudioData = vi.fn().mockReturnValue(decoding.promise);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(undefined);
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'shared' }] }],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+            trackStoreMock.value = {
+                tracks: [{ id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-2', audioBufferId: 'shared' }] }],
+            };
+            decoding.resolve(makeAudioBuffer());
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
+
+        it('skips a moved clip after its blob read and still decodes another active clip', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'moved clip terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            const reading = Promise.withResolvers<ArrayBuffer>();
+            const blob = {
+                arrayBuffer: vi.fn().mockReturnValueOnce(reading.promise).mockResolvedValue(new ArrayBuffer(8)),
+            };
+            transfer.getAsset.mockReturnValue(blob);
+            const validPCM = makeAudioBuffer();
+            const decodeAudioData = vi.fn().mockResolvedValue(validPCM);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            audioEngineMock.getCachedAudioBuffer.mockReturnValue(undefined);
+            trackStoreMock.value = {
+                tracks: [
+                    { id: 'track-1', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] },
+                    { id: 'track-2', clips: [{ id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' }] },
+                ],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(blob.arrayBuffer).toHaveBeenCalledTimes(1));
+            trackStoreMock.value = {
+                tracks: [
+                    { id: 'track-1', clips: [] },
+                    { id: 'track-2', clips: [{ id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' }] },
+                    { id: 'track-3', clips: [{ id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' }] },
+                ],
+            };
+            reading.resolve(new ArrayBuffer(8));
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(decodeAudioData).toHaveBeenCalledTimes(1);
+            expect(audioEngineMock.cacheAudioBuffer).toHaveBeenCalledExactlyOnceWith({
+                bufferId: 'buf-2',
+                buffer: validPCM,
+            });
+        });
+
+        it('preserves a concurrently filled slot and caches another unchanged active alias', async () => {
+            collaborationStore.set(makeState());
+            await sessionRuntimePrimitives.initialize('project-owner-1');
+            const transfer = latestAssetTransfer();
+            const marker = 'filled slot terminal marker';
+            transfer.options.onTransferFailed('hash-1', marker, 'cooldown');
+            expect(collaborationStore.value?.error).toContain(marker);
+            transfer.getAsset.mockReturnValue({ arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) });
+            const cache = new Map<string, AudioBuffer>();
+            audioEngineMock.getCachedAudioBuffer.mockImplementation(({ bufferId }: { bufferId: string }) =>
+                cache.get(bufferId)
+            );
+            audioEngineMock.cacheAudioBuffer.mockImplementation(
+                ({ bufferId, buffer }: { bufferId: string; buffer: AudioBuffer }) => {
+                    cache.set(bufferId, buffer);
+                }
+            );
+            const decoding = Promise.withResolvers<AudioBuffer>();
+            const unchangedPCM = makeAudioBuffer();
+            const decodeAudioData = vi.fn().mockReturnValueOnce(decoding.promise).mockResolvedValue(unchangedPCM);
+            audioEngineMock.getAudioContext.mockReturnValue({ decodeAudioData });
+            trackStoreMock.value = {
+                tracks: [
+                    {
+                        id: 'track-1',
+                        clips: [
+                            { id: 'clip-1', assetHash: 'hash-1', audioBufferId: 'buf-1' },
+                            { id: 'clip-2', assetHash: 'hash-1', audioBufferId: 'buf-2' },
+                        ],
+                    },
+                ],
+            };
+
+            transfer.options.onAssetAvailable('hash-1');
+            await vi.waitFor(() => expect(decodeAudioData).toHaveBeenCalledTimes(1));
+            const concurrentPCM = makeAudioBuffer();
+            audioEngineMock.cacheAudioBuffer({ bufferId: 'buf-1', buffer: concurrentPCM });
+            const stalePCM = { duration: 2 } as AudioBuffer;
+            decoding.resolve(stalePCM);
+            await vi.waitFor(() => expect(collaborationStore.value?.error).toBeNull());
+
+            expect(cache.get('buf-1')).toBe(concurrentPCM);
+            expect(cache.get('buf-2')).toBe(unchangedPCM);
+            expect(audioEngineMock.cacheAudioBuffer).not.toHaveBeenCalledWith({ bufferId: 'buf-1', buffer: stalePCM });
+        });
 
         it('does nothing when the transferred asset is not yet available', async () => {
             await sessionRuntimePrimitives.initialize('project-owner-1');
@@ -2574,7 +2982,7 @@ describe('sessionRuntimePrimitives runtime wiring', () => {
         it('clears a previous transfer failure once the asset resolves', async () => {
             collaborationStore.set(makeState());
             await sessionRuntimePrimitives.initialize('project-owner-1');
-            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding');
+            latestAssetTransfer().options.onTransferFailed('hash-1', 'the sending peer stopped responding', 'cooldown');
             expect(collaborationStore.value?.error).not.toBeNull();
 
             const blob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) };

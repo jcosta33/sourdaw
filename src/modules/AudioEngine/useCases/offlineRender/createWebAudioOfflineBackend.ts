@@ -96,6 +96,7 @@ const UNSUPPORTED_COMMAND_REASONS: Partial<Record<AudioGraphCommand['kind'], str
     'set-transport': "an offline render's transport is fixed by the region it was created for",
     'set-monitor-shadow': 'an offline render has no monitor to shadow: its output is the file, not a speaker',
     'set-master-gain': 'an offline render applies the master level itself, from the project',
+    'set-strip-vca-multiplier': 'live VCA changes require a cancelable native queue; offline folds its captured state',
 };
 
 /**
@@ -110,6 +111,9 @@ function describeUnsupported(command: AudioGraphCommand): string | null {
     const byKind = UNSUPPORTED_COMMAND_REASONS[command.kind];
     if (byKind) {
         return byKind;
+    }
+    if (command.kind === 'write-device-parameter' && command.write.shape === 'hold') {
+        return 'device Hold requires a cancelable native queue; the offline device setter has no stamped tail';
     }
     if (command.kind === 'schedule-clip' && !command.playback.source.buffer) {
         return `this backend resolves clip material from a decoded buffer, and source "${command.playback.source.sourceId}" carried none`;
@@ -353,6 +357,9 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
                 return null;
             }
             case 'write-device-parameter':
+                if (command.write.shape === 'hold') {
+                    throw new Error('Device Hold must refuse before offline application');
+                }
                 writeDeviceParameter(command.target, command.write);
                 return null;
             case 'set-device-parameters':
@@ -391,6 +398,7 @@ export function createWebAudioOfflineBackend(deps: WebAudioOfflineBackendDeps): 
             case 'set-transport':
             case 'set-monitor-shadow':
             case 'set-master-gain':
+            case 'set-strip-vca-multiplier':
                 // Refused ahead of application; unreachable here.
                 return null;
         }

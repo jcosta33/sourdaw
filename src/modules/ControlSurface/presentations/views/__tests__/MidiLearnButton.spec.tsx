@@ -1,6 +1,14 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const capability = vi.hoisted(() => ({
+    hasMidiInput: true,
+    degradations: [] as { feature: 'midi-input'; reason: 'api-absent'; message: string }[],
+}));
+vi.mock('#/utils/platformCapabilities', () => ({
+    getPlatformCapabilities: () => capability,
+}));
+
 vi.mock('#/infra/store/useStore', () => ({
     useStore: vi.fn(),
 }));
@@ -51,6 +59,8 @@ function renderButton(
 
 beforeEach(() => {
     vi.clearAllMocks();
+    capability.hasMidiInput = true;
+    capability.degradations = [];
 });
 
 describe('MidiLearnButton — default state', () => {
@@ -173,6 +183,33 @@ describe('MidiLearnButton — existing mapping', () => {
 });
 
 describe('MidiLearnButton — click behavior', () => {
+    it('shows the structured unavailable reason and refuses a new learn', () => {
+        capability.hasMidiInput = false;
+        capability.degradations = [
+            { feature: 'midi-input', reason: 'api-absent', message: 'MIDI input is unavailable' },
+        ];
+        renderButton();
+        const button = screen.getByRole('button', { name: 'MIDI Learn. MIDI input is unavailable' });
+
+        fireEvent.click(button);
+
+        expect(mockedStartLearn).not.toHaveBeenCalled();
+        expect(mockedStopLearn).not.toHaveBeenCalled();
+    });
+
+    it('still cancels an armed learn when the route is unavailable', () => {
+        capability.hasMidiInput = false;
+        renderButton(
+            { targetType: 'trackGain', trackId: 't1' },
+            { isLearning: true, learningTarget: { targetType: 'trackGain', trackId: 't1' } }
+        );
+
+        fireEvent.click(screen.getByRole('button'));
+
+        expect(mockedStopLearn).toHaveBeenCalledOnce();
+        expect(mockedStartLearn).not.toHaveBeenCalled();
+    });
+
     it('calls startMidiLearn when clicked and not currently learning', () => {
         renderButton();
         fireEvent.click(screen.getByRole('button'));

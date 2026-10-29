@@ -43,7 +43,11 @@
 
 import { type Track } from '#/modules/Arrangement/stores';
 
-import { type AudioGraphParameterTarget, type AudioGraphParameterWrite } from '../../models/AudioGraphBackend';
+import {
+    type AudioGraphBackend,
+    type AudioGraphParameterTarget,
+    type AudioGraphParameterWrite,
+} from '../../models/AudioGraphBackend';
 
 /** How far ahead of the engine's own clock one pump admits writes. */
 export const AUTOMATION_WINDOW_SECONDS = 0.1;
@@ -144,7 +148,45 @@ export type LiveAutomationWriterTarget = {
  * arm, because the seam arrives on an animation frame and re-reading the stores
  * there would put a projection on the tick that has to send writes.
  */
+type AutomationSpan = Readonly<{ startSeconds: number; endSeconds: number; clipsAtEnd: boolean }>;
+type StripValues = Readonly<{ multiplier: number; gain: number; muted: boolean; soloGated: boolean }>;
+type InputProjection = Readonly<{
+    revision: number;
+    reference: LiveAutomationWriterTarget[];
+    loop: LiveAutomationWriterTarget[] | null;
+    strips: ReadonlyMap<string, StripValues>;
+}>;
+
 export type LiveAutomationWriterPass = {
+    /** Latest pump observed while this pass's batch was unanswered. */
+    pendingBusy?: Readonly<{
+        backend: AudioGraphBackend;
+        input: Readonly<{
+            positionSeconds: number;
+            loopWraps: number | null;
+            batchesApplied: number | null;
+            writerEpoch: number;
+        }>;
+    }> | null;
+    /** Disposable source observations and accepted canonical projections belong to this pass alone. */
+    inputs: {
+        revision: number;
+        acceptedRevision: number;
+        referenceSpan: AutomationSpan;
+        loopSpan: AutomationSpan | null;
+        reference: LiveAutomationWriterTarget[];
+        strips: ReadonlyMap<string, StripValues>;
+        readTargets: (span: AutomationSpan) => LiveAutomationWriterTarget[];
+        readStrips: () => ReadonlyMap<string, StripValues>;
+        pending: InputProjection | null;
+        inheritedHolds: readonly AudioGraphParameterTarget[];
+        /** Submitted controls may land after re-arm, even when their values have reverted. */
+        inheritedStripControls?: readonly Readonly<{
+            trackId: string;
+            control: 'multiplier' | 'muted' | 'soloGated';
+        }>[];
+        observers: (() => void)[];
+    };
     /**
      * The strips the session's topology actually built.
      *

@@ -56,6 +56,8 @@ type CacheAudioBufferMock = (input: { buffer: AudioBuffer; bufferId?: string }) 
 
 // Shared mutable test state, hoisted so the vi.mock factories below can close
 // over it (vi.mock factories are hoisted above imports).
+const activeRecordingRefState = vi.hoisted((): { current: string[] } => ({ current: [] }));
+
 const harness = vi.hoisted(() => ({
     clock: 0,
     logger: {
@@ -100,14 +102,37 @@ vi.mock('../../models/TempoMap', () => ({
     // itself is covered where the tempo map is real.
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
+        () => 'root-identity'
+    ),
+}));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
+    adjustmentLayerStore: { value: null },
+    gainEnvelopeStore: { value: null },
+    getTrackEligibility: vi.fn(),
+    markerStore: { value: null },
+    updateClipInStore: vi.fn(() => false),
+    vcaGroupStore: { value: null },
+    warpStateStore: { value: null },
+
     trackStore: harness.track_store,
     takeLaneStore: { value: { lanes: [] } },
-    // The loop-wrap take path reads which clips are actively recording; no test
-    // here records, so the ref stays empty.
-    activeRecordingRef: { current: [] },
+    // The loop-wrap take path and the #5517 ownership guard read which clips
+    // are actively recording; cases that model a punch take seed it.
+    activeRecordingRef: activeRecordingRefState,
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    resolveClipsWithComping: (_trackId: string, clips: { startBeat: number; endBeat: number }[]) =>
+        clips.map((clip) => ({
+            ...clip,
+            regionStartBeat: clip.startBeat,
+            regionEndBeat: clip.endBeat,
+            sourceStartBeat: clip.startBeat,
+        })),
     discardRecording: vi.fn(),
     addTakeLane: vi.fn(),
     addTake: vi.fn(),
@@ -116,6 +141,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     startRecording: harness.start_recording,
     stopRecording: harness.stop_recording,
     updateClip: harness.update_clip,
+    takeOwnsRecordingRoot: vi.fn(() => true),
 }));
 vi.mock('../evaluateFollowActions', () => ({
     evaluateFollowActions: vi.fn(() => ({ jumpToPosition: null, shouldStop: false })),
@@ -124,11 +150,38 @@ vi.mock('../transportControls/panicYeastRuntime', () => ({
     panicYeastRuntime: harness.panic_yeast_runtime,
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
+    projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
+    shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
+        if (probabilityPercent <= 0) {
+            return false;
+        }
+        if (probabilityPercent >= 100) {
+            return true;
+        }
+        throw new Error('This scheduler fixture requires deterministic note probability');
+    },
+    adaptGrooveTemplateForConsumer: vi.fn(),
+    getGrooveTemplate: vi.fn(),
+    getScopedGrooveAssignment: vi.fn(),
+    getScopedGrooveConsumerId: vi.fn(),
+    getStraightGrooveTemplateId: vi.fn(),
+    projectDrumPreviewCandidateNotes: vi.fn(),
+    restoreGrooveAssignment: vi.fn(),
+
     isOverdubLanding: () => false,
     countSettledOverdubPasses: () => 0,
     waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    analyzePitchForClip: vi.fn(),
+    ensureBusStrip: vi.fn(),
+    getEngineState: vi.fn(),
+    removeSend: vi.fn(),
+    setBusGain: vi.fn(),
+    setSend: vi.fn(),
+    unwireSidechainRoute: vi.fn(),
+    wireSidechainRoute: vi.fn(),
+
     advanceNoteExpression: vi.fn(),
     cacheAudioBuffer: harness.cache_audio_buffer,
     getTrackStrip: vi.fn(),
@@ -340,6 +393,9 @@ describe('stopPlayheadScheduler', () => {
         harness.stop_recording.mockImplementationOnce(() => held_commit);
         schedulerSession.punchRecordingActive = true;
         playheadPositionRef.current = 1.5;
+        // The teardown registers the punch take on the lifecycle only while a
+        // take is actually open and owns the root (#5517).
+        activeRecordingRefState.current = ['punch-take'];
 
         stopPlayheadScheduler();
 
@@ -360,6 +416,7 @@ describe('stopPlayheadScheduler', () => {
         release_commit!();
         await waiting;
         expect(settled).toBe(true);
+        activeRecordingRefState.current = [];
     });
 });
 
@@ -692,10 +749,14 @@ describe('playhead scheduler tick', () => {
                 bufferId: 'rec-00000000-0000-4000-8000-000000000001',
             });
             expect(harness.update_clip).not.toHaveBeenCalled();
-            expect(harness.commit_recording).toHaveBeenCalledWith({
-                ...recording_clip,
-                audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
-            });
+            expect(harness.commit_recording).toHaveBeenCalledWith(
+                {
+                    ...recording_clip,
+                    audioBufferId: 'rec-00000000-0000-4000-8000-000000000001',
+                },
+                undefined,
+                expect.objectContaining({ shouldExecute: expect.any(Function) })
+            );
         } finally {
             random_uuid.mockRestore();
         }

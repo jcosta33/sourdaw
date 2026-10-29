@@ -11,7 +11,8 @@ import {
     defaultClipSelectionState,
     defaultTrackState,
     trackStore,
-    getWarpState,
+    defaultWarpStateStoreState,
+    warpStateStore,
 } from '#/modules/Arrangement/stores';
 import {
     commitWarpMarkerBeatDrag,
@@ -21,6 +22,8 @@ import {
     updateWarpMarkerBeat,
 } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -87,12 +90,15 @@ const TOOL_BUTTONS: Array<{ id: ElasticEditorTool; label: string }> = [
 ];
 
 const VIRTUALIZE_THRESHOLD = 200;
+const EMPTY_WARP_STATE: WarpStateView = { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 
 export const ElasticEditorPanel = (): ReactElement => {
     const elasticState = useStore(elasticAudioStore, defaultElasticAudioState);
+    const preferences = useStore(preferencesStore, defaultPreferences);
     const workspaceState = useStore(workspaceStore, defaultWorkspaceState);
     const clipSelection = useStore(clipSelectionStore, defaultClipSelectionState);
     const trackState = useStore(trackStore, defaultTrackState);
+    const warpStates = useStore(warpStateStore, defaultWarpStateStoreState);
     const warpSnapshot = useStore(audioWarpStore, {
         clipSettings: new Map(),
         defaultAlgorithm: 'repitch' as WarpAlgorithm,
@@ -103,27 +109,13 @@ export const ElasticEditorPanel = (): ReactElement => {
     const clip = clipId === null ? null : findClip(trackState.tracks, clipId);
     const isAudioClip = clip !== null && clip.type === 'audio';
 
-    const [warpState, setWarpState] = useState<WarpStateView>(() =>
-        clipId === null ? emptyWarpState() : getWarpState(clipId)
-    );
+    const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
     const [zoom, setZoom] = useState(1);
     const [viewScrollLeft, setViewScrollLeft] = useState(0);
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const dragRef = useRef<DragState | null>(null);
     const didDragRef = useRef(false);
-
-    const refreshWarp = (): void => {
-        if (clipId !== null) {
-            setWarpState(getWarpState(clipId));
-        }
-    };
-
-    useEffect(() => {
-        if (clipId !== null) {
-            setWarpState(getWarpState(clipId));
-        }
-    }, [clipId]);
 
     useEffect(() => {
         if (clipId === null) {
@@ -142,14 +134,12 @@ export const ElasticEditorPanel = (): ReactElement => {
                 event.preventDefault();
             } else if (event.key === 'g' || event.key === 'G') {
                 quantizeTransients(clipId);
-                refreshWarp();
                 event.preventDefault();
             } else if (event.key === 'Delete' || event.key === 'Backspace') {
                 const selected = elasticState.selectedMarkerIds;
                 for (const markerId of selected) {
                     removeMarker(clipId, markerId);
                 }
-                refreshWarp();
                 event.preventDefault();
             }
         };
@@ -184,14 +174,12 @@ export const ElasticEditorPanel = (): ReactElement => {
     }
 
     const handleDetect = (): void => {
-        detectTransientsForClip(clipId, elasticState.sensitivity);
+        detectTransientsForClip(clipId, preferences.elasticTransientSensitivity);
         markElasticDetectionComplete();
-        refreshWarp();
     };
 
     const handleQuantize = (): void => {
         quantizeTransients(clipId);
-        refreshWarp();
     };
 
     const handleToolClick = (tool: ElasticEditorTool): void => {
@@ -200,13 +188,12 @@ export const ElasticEditorPanel = (): ReactElement => {
 
     const handleSensitivity = (value: number): void => {
         // Fire-and-forget settings dispatch from a slider handler; the new
-        // sensitivity is observed reactively via the store, no rejection to await.
+        // Sensitivity is observed reactively through preferences, with no rejection to await.
         void setElasticSensitivity(value);
     };
 
     const handleStretchMode = (mode: StretchMode): void => {
         setStretchMode(clipId, mode);
-        refreshWarp();
     };
 
     const handleAlgorithm = (algorithm: WarpAlgorithm): void => {
@@ -240,21 +227,18 @@ export const ElasticEditorPanel = (): ReactElement => {
         if (tool === 'add-marker') {
             if (!hit) {
                 addManualMarker(clipId, x / beatWidth);
-                refreshWarp();
             }
             return;
         }
         if (tool === 'remove-marker') {
             if (hit) {
                 removeMarker(clipId, hit.id);
-                refreshWarp();
             }
             return;
         }
         if (tool === 'lock-marker') {
             if (hit) {
                 toggleMarkerLock(clipId, hit.id);
-                refreshWarp();
             }
             return;
         }
@@ -289,7 +273,6 @@ export const ElasticEditorPanel = (): ReactElement => {
             field: drag.altKey || event.altKey ? 'originalBeat' : 'warpedBeat',
             beat,
         });
-        refreshWarp();
     };
 
     const finishMarkerDrag = (): void => {
@@ -348,7 +331,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                 <Row gap={2}>
                     <span className="text-[10px] text-muted-foreground">Sensitivity</span>
                     <Slider
-                        value={[elasticState.sensitivity * 100]}
+                        value={[preferences.elasticTransientSensitivity * 100]}
                         onValueChange={([v]) => {
                             if (v !== undefined) {
                                 handleSensitivity(v / 100);
@@ -361,7 +344,7 @@ export const ElasticEditorPanel = (): ReactElement => {
                         aria-label="Transient detection sensitivity"
                     />
                     <span className="w-8 text-right text-[10px] tabular-nums text-muted-foreground">
-                        {(elasticState.sensitivity * 100).toFixed(0)}
+                        {(preferences.elasticTransientSensitivity * 100).toFixed(0)}
                     </span>
                 </Row>
 
@@ -484,15 +467,6 @@ function findClip(
         }
     }
     return null;
-}
-
-// Placeholder state for "no clip selected". Mirrors Arrangement's
-// `defaultWarpState`, which cannot be imported here — models are not
-// re-exported across modules, which is why `WarpStateView` is a local
-// duplicate too. Keep `stretchMode` in step with that default: it must always
-// name a mode with a live executor (see `getStretchModeInfo`).
-function emptyWarpState(): WarpStateView {
-    return { enabled: false, markers: [], stretchMode: 'repitch', originalTempo: null };
 }
 
 function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {

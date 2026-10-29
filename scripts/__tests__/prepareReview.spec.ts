@@ -23,8 +23,6 @@ import { formatReviewDiffSummary, summarizeReviewDiff } from '../reviewDiffSumma
 import { parseReviewRiskPlan } from '../reviewRiskPolicy.ts';
 import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
-const SEMANTIC_CI_TEXT = '{"state":"no-assessment","reason":"absent"}';
-
 /**
  * Fixture teardown. `rmSync` retries because the real-git case's tree can still be settling when the
  * case ends: macOS intermittently reports ENOTEMPTY for a directory it just unlinked, and an
@@ -91,7 +89,6 @@ function fakePort(root: string) {
             Object.assign(files, bundle);
             installBundleAtomically(destination, bundle);
         },
-        semanticCiJson: () => SEMANTIC_CI_TEXT,
         log: (message) => logs.push(message),
     };
     return { port, calls, logs, files };
@@ -124,10 +121,10 @@ describe('review prepare', () => {
                     'pr.md',
                     'review-size.json',
                     'risk-plan.json',
-                    'semantic-ci.json',
                 ],
             });
-            expect(files['semantic-ci.json']).toBe(`${SEMANTIC_CI_TEXT}\n`);
+            expect(files).not.toHaveProperty('semantic-ci.json');
+            expect(existsSync(join(destination, 'semantic-ci.json'))).toBe(false);
             expect(JSON.parse(files['review-size.json'] ?? '{}')).toMatchObject({
                 files: 2,
                 added: 6,
@@ -155,13 +152,19 @@ describe('review prepare', () => {
         }
     });
 
-    it('writes semantic-ci.json as the injected text plus exactly one trailing newline', () => {
+    it('does not invoke a legacy semantic assessment port or include its artifact', () => {
         const root = mkdtempSync(join(tmpdir(), 'sourdaw-review-'));
         const { port } = fakePort(root);
-        port.semanticCiJson = () => '{"custom":"text"}';
+        const legacyPort = Object.assign(port, {
+            semanticCiJson: () => {
+                throw new Error('legacy assessment invoked');
+            },
+        });
         try {
-            const destination = prepareReview(42, port);
-            expect(readFileSync(join(destination, 'semantic-ci.json'), 'utf8')).toBe('{"custom":"text"}\n');
+            const destination = prepareReview(42, legacyPort);
+            const manifest = JSON.parse(readFileSync(join(destination, 'manifest.json'), 'utf8'));
+            expect(manifest.generated).not.toContain('semantic-ci.json');
+            expect(existsSync(join(destination, 'semantic-ci.json'))).toBe(false);
         } finally {
             removeTempRoot(root);
         }
@@ -220,18 +223,7 @@ describe('review prepare', () => {
             'scripts/reviewRiskPolicy.ts',
             'scripts/reviewRoundEscalation.ts',
             'scripts/savedProjectStatePaths.ts',
-            'scripts/semanticReview/contracts.ts',
-            'scripts/semanticReview/interpret.ts',
-            'scripts/semanticReview/pathOrder.ts',
-            'scripts/semanticReview/planPublication.ts',
-            'scripts/semanticReview/report.ts',
-            'scripts/semanticReview/reportAssessments.ts',
-            'scripts/semanticReview/rules.ts',
-            'scripts/semanticReview/scopeAccounting.ts',
-            'scripts/semanticReviewContext.ts',
-            'scripts/semanticReviewWorkflowContract.ts',
             'scripts/trustedGithubWriteBootstrap.ts',
-            'scripts/vitestCollectionPatterns.ts',
             'scripts/wasm-artifacts.ts',
             'scripts/wasmToolchainPins.ts',
             'scripts/workspaceManifestFingerprint.ts',
@@ -257,7 +249,7 @@ describe('review prepare', () => {
     });
 
     it('refuses a drifted asserted module', () => {
-        const blobs = [{ path: 'scripts/semanticReviewContext.ts', originBlob: 'origin resolver', source: 'drifted' }];
+        const blobs = [{ path: 'scripts/prepareReview.ts', originBlob: 'origin source', source: 'drifted' }];
         expect(() => assertTrustedExecutingBlobs(blobs)).toThrow(/does not match origin\/main/);
     });
 

@@ -63,8 +63,16 @@ describe('Levain bridge instance isolation', () => {
         const b = channel();
         const receivedA: unknown[] = [];
         const receivedB: unknown[] = [];
+        let bFenceId: string | undefined;
+        let resolveBFence: (() => void) | undefined;
         a.port2.onmessage = (event) => receivedA.push(event.data);
-        b.port2.onmessage = (event) => receivedB.push(event.data);
+        b.port2.onmessage = (event) => {
+            if (bFenceId !== undefined && event.data?.fenceId === bFenceId) {
+                resolveBFence?.();
+                return;
+            }
+            receivedB.push(event.data);
+        };
         const deviceA = { setParam: vi.fn(), handleCc: vi.fn() };
         const deviceB = { setParam: vi.fn(), handleCc: vi.fn() };
 
@@ -83,6 +91,21 @@ describe('Levain bridge instance isolation', () => {
         await expect(registeredA).resolves.toBe('ready');
         await expect(registeredB).resolves.toBe('ready');
         expect(bridge.readRegistrySizes().committedBanks).toBe(2);
+
+        const receivedBBeforeALoad = [...receivedB];
+        const aOnlyLoad = bridge.loadSamplesForInstrument('a', 'cello');
+        expect(loads.at(-1)).toMatchObject({ deviceId: 'a', port: a.port1 });
+        await vi.waitFor(() => expect(receivedA).toHaveLength(2));
+        loads.at(-1)!.settle.resolve(['close']);
+        await expect(aOnlyLoad).resolves.toBe('ready');
+
+        bFenceId = `b-fence-${Date.now()}-${Math.random()}`;
+        const bFenceReceived = new Promise<void>((resolve) => {
+            resolveBFence = resolve;
+        });
+        b.port1.postMessage({ fenceId: bFenceId });
+        await bFenceReceived;
+        expect(receivedB).toEqual(receivedBBeforeALoad);
 
         const beforeB = JSON.stringify(levainStore.value?.b);
         deviceA.setParam.mockClear();

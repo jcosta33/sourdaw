@@ -129,7 +129,11 @@ export function ensureServerDependencies(
 }
 
 function runStep(label: string, args: string[], env: NodeJS.ProcessEnv = process.env): void {
+    console.log(`lint: ${label} started`);
+    const started = performance.now();
     const result = spawnSync('pnpm', args, { stdio: 'inherit', env });
+    const outcome = result.error === undefined && result.status === 0 ? 'passed' : 'failed';
+    console.log(`lint: ${label} ${outcome} (${Math.round(performance.now() - started)} ms)`);
     if (result.error !== undefined) {
         throw new Error(`${label} failed to start: ${result.error.message}`);
     }

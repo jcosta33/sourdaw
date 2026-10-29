@@ -94,7 +94,7 @@ export type StackPublicationContext = {
 };
 
 export const PUBLISH_LANE_USAGE =
-    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
+    'usage: pnpm lane:publish <issue-number | --lane <absolute-path>> [--relates] [--title <conventional-subject>] [--summary <text>] [--test <instructions>] [--model <model>] [--milestone <title>] [--project <title>] [--label <name>]';
 
 /**
  * The source trees whose changes a user runs in the app: a lane touching any of them is product
@@ -603,7 +603,7 @@ export type PublishLanePort = {
     issueExists: (issue: number) => boolean;
     aheadBehind: (lane: string, baseSha: string, headSha: string) => { ahead: number; behind: number };
     dirty: (lane: string) => boolean;
-    laneSubject: (lane: string, baseSha: string, headSha: string) => string | undefined;
+    laneSubject: (lane: string, baseSha: string, headSha: string, excludedBaseShas: string[]) => string | undefined;
     /**
      * Author email of every commit reachable from `headSha` but from neither `deltaBaseSha` nor any
      * `excludedBaseSha`, merges included, read in the lane itself without replacement objects, so
@@ -636,7 +636,7 @@ export type PublishLanePort = {
     /** The lane's changed paths between `baseSha` and `headSha`, classified for scope gates. */
     changedPaths: (lane: string, baseSha: string, headSha: string) => readonly ReviewChangedPath[];
     createPullRequest: (input: { branch: string; title: string; body: string; base?: string }) => number;
-    updatePullRequest: (number: number, input: { body: string }) => void;
+    updatePullRequest: (number: number, input: { body: string; title?: string }) => void;
     saveAuthorModel: (branch: string, model: string) => void;
     readAuthorModel: (branch: string) => string | undefined;
     ensureModelLabel: (model: string) => void;
@@ -662,6 +662,7 @@ export function parsePublishLaneArgs(args: string[]): {
     relationship?: IssueRelationship;
     testInstructions?: string;
     summary?: string;
+    title?: string;
     model?: string;
     milestone?: string;
     projects?: string[];
@@ -679,6 +680,7 @@ export function parsePublishLaneArgs(args: string[]): {
     let relationship: IssueRelationship | undefined;
     let testInstructions: string | undefined;
     let summary: string | undefined;
+    let title: string | undefined;
     let model: string | undefined;
     let milestone: string | undefined;
     const projects: string[] = [];
@@ -707,6 +709,16 @@ export function parsePublishLaneArgs(args: string[]): {
                 fail(PUBLISH_LANE_USAGE);
             }
             summary = value;
+            index += 1;
+            continue;
+        }
+        if (arg === '--title') {
+            const value = args[index + 1];
+            if (title !== undefined || value === undefined || value.startsWith('--')) {
+                fail(PUBLISH_LANE_USAGE);
+            }
+            assertConventionalSubject(value, 'pull-request title');
+            title = value;
             index += 1;
             continue;
         }
@@ -769,6 +781,7 @@ export function parsePublishLaneArgs(args: string[]): {
         ...(relationship === undefined ? {} : { relationship }),
         ...(testInstructions === undefined ? {} : { testInstructions }),
         ...(summary === undefined ? {} : { summary }),
+        ...(title === undefined ? {} : { title }),
         ...(model === undefined ? {} : { model }),
         ...(milestone === undefined ? {} : { milestone }),
         ...(projects.length === 0 ? {} : { projects: [...new Set(projects)] }),
@@ -1000,6 +1013,10 @@ export const DIRTY_LANE_FAILURE =
 export const NO_LANE_SUBJECT_FAILURE =
     'carries no non-merge commit above origin/main: commit the lane work with a conventional subject (type(scope): subject) before publishing';
 
+function resolvedBaseShas(comparisonHead: string, baseSha: string, stackParentHead: string | undefined): string[] {
+    return [...new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])];
+}
+
 /**
  * Gate exactly the commits this publication adds to the remote: `remoteTip..head` when the branch
  * already exists remotely at an ancestor of head, else the same resolved base the lane subject
@@ -1017,8 +1034,7 @@ function assertBotAuthoredDelta(
     lane: ResolvedLane,
     remoteRead: RemoteBranchRead,
     comparisonHead: string,
-    baseSha: string,
-    stackParentHead: string | undefined,
+    excludedBaseShas: string[],
     headSha: string,
     port: PublishLanePort
 ): void {
@@ -1027,9 +1043,6 @@ function assertBotAuthoredDelta(
     // the undefined-vs-remote-tip split always worked, and an absent branch is a first publication
     // whose delta base is the comparison head.
     const deltaBase = remoteRead.kind === 'present' ? remoteRead.sha : comparisonHead;
-    const excludedBaseShas = Array.from(
-        new Set([comparisonHead, baseSha, ...(stackParentHead === undefined ? [] : [stackParentHead])])
-    );
     const offending = port
         .commitAuthorEmails(lane.path, deltaBase, excludedBaseShas, headSha)
         .filter((commit) => commit.email !== AUTHOR_BOT_COMMIT_EMAIL);
@@ -1203,7 +1216,8 @@ export function publishLane(
     testInstructions?: string,
     summary?: string,
     authorization?: AuthorizedResolvedLane,
-    metadataFlags?: PublishMetadataFlags
+    metadataFlags?: PublishMetadataFlags,
+    title?: string
 ): number {
     const lane = resolveAuthorLane(
         issue,
@@ -1212,6 +1226,12 @@ export function publishLane(
         realpathSync,
         (branch) => port.existingOpenPullRequest(branch) !== undefined
     );
+    if (title !== undefined) {
+        if (lane.legacy) {
+            fail('--title requires a conforming lane; pre-convention pull requests remain push-only');
+        }
+        assertConventionalSubject(title, 'pull-request title');
+    }
     if (
         authorization !== undefined &&
         (canonicalPath(lane.path, realpathSync) !== canonicalPath(authorization.lanePath, realpathSync) ||
@@ -1254,6 +1274,7 @@ export function publishLane(
     }
     const stack = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
     const comparisonHead = stack?.head ?? baseSha;
+    const excludedBaseShas = resolvedBaseShas(comparisonHead, baseSha, stack?.parentHead);
     const { ahead } = port.aheadBehind(lane.path, comparisonHead, headSha);
     if (ahead < 1) {
         fail('lane must be ahead of origin/main');
@@ -1263,10 +1284,12 @@ export function publishLane(
         lane,
         comparisonHead,
         headSha,
+        excludedBaseShas,
         port,
         relationship,
         testInstructions,
-        summary
+        summary,
+        title
     );
     warnOnBranchTypeMismatch(lane.branch, write, port);
     // Resolved before the push: every refusal it can raise (no model on record, a model token
@@ -1345,7 +1368,7 @@ export function publishLane(
             assertObservableTestInstructions(testInstructions);
         }
     }
-    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, baseSha, stack?.parentHead, headSha, port);
+    assertBotAuthoredDelta(lane, remoteRead, comparisonHead, excludedBaseShas, headSha, port);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1402,9 +1425,9 @@ export function publishLane(
  * record is written only after every validation here has passed, so a refused run leaves the
  * shared git config untouched.
  *
- * `subject` is the pull request's effective title: the title frozen on an existing pull request
- * (this script never retitles, so a follow-up commit's subject must not re-derive the label), or
- * the newest non-merge conventional subject on a fresh create. A manually retitled,
+ * `subject` is the pull request's effective title: an explicit replacement, otherwise the frozen
+ * existing title or newest non-merge lane subject on a fresh create. A follow-up commit alone must
+ * not re-derive the label. A manually retitled,
  * non-conventional title derives nothing. It is `undefined` for a legacy lane, whose title is not
  * this script's to derive, so a legacy lane derives neither a label nor a project.
  */
@@ -1631,7 +1654,10 @@ function pullRequestNumber(
             ...(base === undefined ? {} : { base }),
         });
     }
-    port.updatePullRequest(existing.number, { body: content.body });
+    port.updatePullRequest(existing.number, {
+        body: content.body,
+        ...(content.updateTitle === undefined ? {} : { title: content.updateTitle }),
+    });
     return existing.number;
 }
 
@@ -1640,23 +1666,25 @@ function pullRequestNumber(
  * them because it is read once, before the push: the relationship a flagless update must preserve
  * and the create-vs-update decision both come out of that single read.
  *
- * `title` is the newest lane subject — the title a create writes. `effectiveTitle` is the title
- * GitHub will show after this publish: the existing title when one is frozen on the pull request
- * (this script never retitles), the lane subject only on a fresh create. Label derivation reads
+ * `title` is the title a create writes. `updateTitle` exists only for an explicit correction.
+ * `effectiveTitle` is the title GitHub will show after this publish: an explicit title, otherwise
+ * the frozen existing title or the lane subject on a fresh create. Label derivation reads
  * `effectiveTitle`, because the label must describe the change the title names, not a follow-up
  * commit the PR was never retitled for.
  */
 type PullRequestWrite = {
     title: string;
     effectiveTitle: string;
+    updateTitle?: string;
     body: string;
     existing: ExistingPullRequest | undefined;
 };
 
 /**
  * A typed branch names the change type at `lane:open`; the pull-request title is a separate fact,
- * taken from the newest non-merge commit on a first publish and frozen afterwards. When the two
- * types disagree the reviewer reads a title the branch contradicts, so the publish says so.
+ * supplied explicitly or taken from the newest lane commit on a first publish and frozen
+ * afterwards. When the two types disagree the reviewer reads a title the branch contradicts, so
+ * the publish says so.
  *
  * It warns and never refuses. A refusal has no remedy short of rewriting published history or
  * renaming a branch that stack descriptors, receipts and the pull request all key on, while the
@@ -1680,7 +1708,7 @@ function warnOnBranchTypeMismatch(
     port.log(
         `warning: ${branch} names the change type ${branchType}, but the pull-request title is ` +
             `${JSON.stringify(write.effectiveTitle)} (type ${titleType}); publishing anyway, since the title ` +
-            `comes from the newest commit and is never retitled`
+            `is independent of the branch type`
     );
 }
 
@@ -1710,15 +1738,17 @@ function pullRequestWrite(
     lane: ResolvedLane,
     baseSha: string,
     headSha: string,
+    excludedBaseShas: string[],
     port: PublishLanePort,
     relationship: IssueRelationship | undefined,
     testInstructions: string | undefined,
-    summary: string | undefined
+    summary: string | undefined,
+    title: string | undefined
 ): PullRequestWrite | undefined {
     if (lane.legacy) {
         return undefined;
     }
-    const laneSubject = port.laneSubject(lane.path, baseSha, headSha);
+    const laneSubject = port.laneSubject(lane.path, baseSha, headSha, excludedBaseShas);
     if (laneSubject === undefined) {
         fail(`${lane.branch} ${NO_LANE_SUBJECT_FAILURE}`);
     }
@@ -1765,10 +1795,11 @@ function pullRequestWrite(
         }
         resolvedSummary = whatFromBody(existing.body);
     }
-    const pullRequestTitle = typeof existingTitle === 'string' ? existingTitle : laneSubject;
+    const pullRequestTitle = title ?? (typeof existingTitle === 'string' ? existingTitle : laneSubject);
     return {
-        title: laneSubject,
+        title: title ?? laneSubject,
         effectiveTitle: pullRequestTitle,
+        ...(title === undefined ? {} : { updateTitle: title }),
         body: composePublishBody(
             laneIssue,
             pullRequestTitle,
@@ -1798,15 +1829,23 @@ function legacyPullRequestNumber(lane: ResolvedLane, existing: ExistingPullReque
 
 /**
  * The pull-request title is squash-merged onto `main`, so the opening write has to name the lane's
- * work. Later publishes leave that title: a follow-up commit must not retitle the pull request, and
- * merging `origin/main` in leaves HEAD a merge commit that must not either. This walk still picks
- * the opening title and still refuses a lane whose only commits above `origin/main` are merges.
- * `--no-merges` skips the merge commits, and the pinned-base range keeps the walk inside the lane's
- * own commits. Without the range, a lane commit older than `origin/main`'s tip loses the date sort
- * and the opening title comes from a commit `main` already has.
+ * work. Later publishes leave that title unless explicitly corrected: a follow-up commit must not
+ * retitle the pull request, and merging `origin/main` in leaves HEAD a merge commit that must not
+ * either. This walk still picks
+ * the opening title and still refuses a lane whose own commits are only merges.
+ * The range and resolved-base exclusions match the authorship gate: a landed parent's retained
+ * pre-squash commits are inherited history even though main cannot reach them.
  */
-function laneSubjectArgs(baseSha: string, headSha: string): string[] {
-    return ['log', '-1', '--format=%s', '--no-merges', `${baseSha}..${headSha}`];
+function laneSubjectArgs(baseSha: string, headSha: string, excludedBaseShas: string[]): string[] {
+    return [
+        '--no-replace-objects',
+        'log',
+        '-1',
+        '--format=%s',
+        '--no-merges',
+        `${baseSha}..${headSha}`,
+        ...excludedBaseShas.map((sha) => `^${sha}`),
+    ];
 }
 
 /**
@@ -2003,9 +2042,11 @@ export function shellPort(
                 cwd: lane,
                 env: session.env,
             }) !== '',
-        laneSubject: (lane, baseSha, headSha) =>
-            spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha), { cwd: lane, env: session.env }) ||
-            undefined,
+        laneSubject: (lane, baseSha, headSha, excludedBaseShas) =>
+            spawnCapture(executables.git, laneSubjectArgs(baseSha, headSha, excludedBaseShas), {
+                cwd: lane,
+                env: session.env,
+            }) || undefined,
         commitAuthorEmails: (lane, deltaBaseSha, excludedBaseShas, headSha) =>
             readCommitAuthorEmails(lane, deltaBaseSha, excludedBaseShas, headSha, (args, cwd) =>
                 // Untrimmed: the parse strips exactly one trailing blank itself, so a genuinely
@@ -2030,27 +2071,50 @@ export function shellPort(
         push: (lane, branch, headSha) => {
             const disabledHooksPath = join(session.configDir, 'disabled-hooks');
             mkdirSync(disabledHooksPath, { recursive: true, mode: 0o700 });
-            const hasAiNotes =
-                spawnSync(executables.git, ['rev-parse', '--verify', 'refs/notes/ai'], {
-                    cwd: lane,
-                    env: session.env,
-                }).status === 0;
+            const notes = spawnSync(executables.git, ['rev-parse', '--verify', '--quiet', 'refs/notes/ai'], {
+                cwd: lane,
+                env: session.env,
+                encoding: 'utf8',
+            });
+            if (notes.error !== undefined) {
+                throw notes.error;
+            }
+            if (notes.status !== 0 && notes.status !== 1) {
+                fail('cannot capture local git-ai authorship notes before publication');
+            }
+            const notesSha = notes.status === 0 ? notes.stdout.trim() : undefined;
+            const pendingRef = notesSha === undefined ? undefined : `refs/agents/pending-ai-notes/${notesSha}`;
+            if (pendingRef !== undefined && notesSha !== undefined) {
+                // Delivery refreshes refs/notes/ai from the remote. Pin this exact local history
+                // before either push so a refused optional upload remains recoverable afterwards.
+                spawnRun(
+                    executables.git,
+                    ['-c', `core.hooksPath=${disabledHooksPath}`, 'update-ref', pendingRef, notesSha],
+                    { cwd: lane, env: session.env }
+                );
+            }
+            const pushArgs = ['-c', `core.hooksPath=${disabledHooksPath}`, 'push', '--no-verify', GITHUB_HTTPS_REMOTE];
             spawnRun(
                 executables.git,
-                gitAuthenticatedArgs(token, session.configDir, [
-                    '-c',
-                    `core.hooksPath=${disabledHooksPath}`,
-                    'push',
-                    '--no-verify',
-                    GITHUB_HTTPS_REMOTE,
-                    `${headSha}:refs/heads/${branch}`,
-                    ...(hasAiNotes ? ['+refs/notes/ai:refs/notes/ai'] : []),
-                ]),
-                {
-                    cwd: lane,
-                    env: session.env,
-                }
+                gitAuthenticatedArgs(token, session.configDir, [...pushArgs, `${headSha}:refs/heads/${branch}`]),
+                { cwd: lane, env: session.env }
             );
+            if (notesSha === undefined || pendingRef === undefined) {
+                return;
+            }
+            try {
+                spawnRun(
+                    executables.git,
+                    gitAuthenticatedArgs(token, session.configDir, [...pushArgs, `${notesSha}:refs/notes/ai`]),
+                    { cwd: lane, env: session.env }
+                );
+            } catch (error) {
+                console.warn(
+                    `warning: git-ai authorship notes were not published; source branch was published. ` +
+                        `Local notes are retained at ${pendingRef}. Reconcile this ref with remote refs/notes/ai ` +
+                        `before a non-forced notes push: ${error instanceof Error ? error.message : String(error)}`
+                );
+            }
         },
         existingOpenPullRequest: (branch) => {
             const rows = parseJson<OpenPullRequestRow[]>(
@@ -2060,12 +2124,9 @@ export function shellPort(
             return matchingOpenPullRequest(rows, branch);
         },
         stackBase: (lane, branch, head, main) => {
-            const marker = spawnCapture(
-                executables.git,
-                ['config', '--get', '--default', '', `branch.${branch}.sourdaw-stack-fork`],
-                { cwd: primaryRoot, env: session.env }
+            const descriptor = readRegisteredLaneStack(primaryRoot, branch, (args) =>
+                spawnCapture(executables.git, args, { cwd: primaryRoot, env: session.env })
             );
-            const descriptor = readRegisteredLaneStack(primaryRoot, branch, marker);
             if (descriptor === undefined) {
                 return undefined;
             }
@@ -2164,8 +2225,8 @@ export function shellPort(
             }
             return number;
         },
-        updatePullRequest: (number, { body }) => {
-            ghRun(updatePullRequestArgs(number, body));
+        updatePullRequest: (number, { body, title }) => {
+            ghRun(updatePullRequestArgs(number, body, title));
         },
         saveAuthorModel: (branch, model) => {
             spawnRun(executables.git, ['config', `branch.${branch}.sourdaw-author-model`, model], {
@@ -2299,8 +2360,17 @@ export function existingOpenPullRequestArgs(branch: string): string[] {
     ];
 }
 
-export function updatePullRequestArgs(number: number, body: string): string[] {
-    return ['pr', 'edit', String(number), '--repo', REQUIRED_REPOSITORY, '--body', body];
+export function updatePullRequestArgs(number: number, body: string, title?: string): string[] {
+    return [
+        'pr',
+        'edit',
+        String(number),
+        '--repo',
+        REQUIRED_REPOSITORY,
+        '--body',
+        body,
+        ...(title === undefined ? [] : ['--title', title]),
+    ];
 }
 
 export function issueTrackerMetadataArgs(issue: number): string[] {
@@ -2487,7 +2557,8 @@ export async function runPublishLaneCli(args: string[]): Promise<number> {
                 ...(parsed.milestone === undefined ? {} : { milestone: parsed.milestone }),
                 ...(parsed.projects === undefined ? {} : { projects: parsed.projects }),
                 ...(parsed.labels === undefined ? {} : { labels: parsed.labels }),
-            }
+            },
+            parsed.title
         );
         return 0;
     } finally {

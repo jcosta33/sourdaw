@@ -339,8 +339,6 @@ export async function reproposePendingChatActions(
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }
-    const { affectedIds, matchSelectorPredicates: carriedMatchSelectorPredicates } = carriedSelection;
-
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
         id: assistantMessageId,
@@ -358,7 +356,7 @@ export async function reproposePendingChatActions(
         commandEnvelopes: refreshed.commandEnvelopes,
         commandBatch: refreshed.commandBatch,
         agentApproval: approval,
-        affectedIds: [...affectedIds],
+        affectedIds: [...carriedSelection.affectedIds],
         protectedUnchanged: confirmation.protectedUnchanged,
         // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
         // in the working batch's commands rather than re-resolving any `match` selector, so this
@@ -368,16 +366,17 @@ export async function reproposePendingChatActions(
         // survives that check is carried forward so a later `resolveConfirmationAdmission`
         // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
         // guards a first-proposed one.
-        matchSelectorPredicates: carriedMatchSelectorPredicates,
+        matchSelectorPredicates: carriedSelection.matchSelectorPredicates,
         // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
         // carried only for the whole proposal, never guessed for a part of it.
         adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        // Persisting binds the figures to the rebuilt batch, so a subset or changed batch drops them.
-        measuredPreview: confirmation.approvalSnapshot.measuredPreview,
+        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
+        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
         // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
         batchPosition: confirmation.approvalSnapshot.batchPosition,
         // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
         groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
+        protectionFacts: confirmation.approvalSnapshot.protectionFacts,
         executionMode: confirmation.executionMode,
         group: {
             groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,

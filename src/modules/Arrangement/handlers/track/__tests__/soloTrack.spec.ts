@@ -79,7 +79,7 @@ describe('handleSoloTrack', () => {
         });
     });
 
-    it('is not a no-op when the track already holds the target but the expectation differs', () => {
+    it('treats a guarded action as a no-op when the track already holds its target', () => {
         mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
 
         expect(
@@ -87,7 +87,7 @@ describe('handleSoloTrack', () => {
                 type: 'soloTrack',
                 payload: { trackId: 't1', soloed: true, expectedSoloed: false },
             })
-        ).toBe(false);
+        ).toBe(true);
         expect(
             handleSoloTrack.isNoop?.({
                 type: 'soloTrack',
@@ -96,12 +96,24 @@ describe('handleSoloTrack', () => {
         ).toBe(true);
     });
 
-    it('refuses to write over a solo state that diverged from the expected one', () => {
+    it('does not write when a guarded action already holds its target', () => {
         mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
 
         const result = handleSoloTrack.execute({
             type: 'soloTrack',
             payload: { trackId: 't1', soloed: true, expectedSoloed: false },
+        });
+
+        expect(result).toEqual({ status: 'no-write' });
+        expect(mocks.soloTrack).not.toHaveBeenCalled();
+    });
+
+    it('refuses to write over a solo state that diverged from the expected one', () => {
+        mocks.trackStoreState.value.tracks[0] = { id: 't1', soloed: true };
+
+        const result = handleSoloTrack.execute({
+            type: 'soloTrack',
+            payload: { trackId: 't1', soloed: false, expectedSoloed: false },
         });
 
         expect(result).toEqual({ status: 'conflict' });

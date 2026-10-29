@@ -13,6 +13,8 @@ import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
@@ -89,6 +91,7 @@ function rawWarpState(clipId = CLIP_ID): WarpState {
 
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
+        resetPreferences();
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
@@ -132,6 +135,7 @@ describe('locked transient markers through the real Elastic editor', () => {
     });
 
     afterEach(() => {
+        resetPreferences();
         cleanup();
         vi.restoreAllMocks();
         clearHandlerRegistry();
@@ -177,7 +181,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             key: 'ArrowRight',
         });
 
-        expect(elasticAudioStore.value?.sensitivity).toBe(0.51);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.51);
         expect(elasticAudioStore.value?.detected).toBe(false);
         await waitFor(() => expect(elasticAudioStore.value?.detected).toBe(true));
         flushAutomergeStorageWrites();
@@ -186,6 +190,67 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(rawWarpState('other-clip')).toEqual(otherWarpState);
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
         expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+    });
+
+    it('reflects the completed sensitivity detection without another gesture', async () => {
+        const samples = new Float32Array(SAMPLE_RATE * 3);
+        for (const [attack, amplitude] of [14000, 2000, 14000, 3000, 14000].entries()) {
+            const start = Math.floor(SAMPLE_RATE * (0.25 + attack * 0.4));
+            for (let frame = 0; frame < 2205; frame++) {
+                samples[start + frame] =
+                    (amplitude / 32768) *
+                    Math.sin((2 * Math.PI * 1000 * frame) / SAMPLE_RATE) *
+                    Math.exp((-6 * frame) / 2205);
+            }
+        }
+        const originalSamples = samples.slice();
+        supplyBuffer(samples);
+        const context = document.createElement('canvas').getContext('2d');
+        if (!context) {
+            throw new Error('Canvas context unavailable');
+        }
+        const moveTo = vi.spyOn(context, 'moveTo');
+        render(<ElasticEditorPanel />);
+        const slider = screen.getByRole('slider', { name: 'Transient detection sensitivity' });
+        fireEvent.keyDown(slider, { key: 'Home' });
+        await waitFor(() => expect(elasticAudioStore.value?.detected).toBe(true));
+        const lowCount = getWarpState(CLIP_ID).markers.length;
+        expect(lowCount).toBeGreaterThan(1);
+        expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent(
+            `${lowCount} transients, 0 user, 1 locked`
+        );
+
+        const lowIds = new Set(getWarpState(CLIP_ID).markers.map((marker) => marker.id));
+        moveTo.mockClear();
+        fireEvent.keyDown(slider, { key: 'End' });
+        await waitFor(() => expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(lowCount));
+        const highCount = getWarpState(CLIP_ID).markers.length;
+        expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent(
+            `${highCount} transients, 0 user, 1 locked`
+        );
+        const markers = getWarpState(CLIP_ID).markers;
+        const added = markers.find(
+            (marker) =>
+                !lowIds.has(marker.id) &&
+                markers.every(
+                    (other) => other.id === marker.id || Math.abs(other.warpedBeat - marker.warpedBeat) * 40 >= 8
+                )
+        );
+        expect(added).toBeDefined();
+        if (!added) {
+            throw new Error('No separately hittable new marker');
+        }
+        const x = added.warpedBeat * 40;
+        await waitFor(() => expect(moveTo).toHaveBeenCalledWith(x, 0));
+        const canvas = screen.getByTestId('elastic-waveform-canvas');
+        canvas.setPointerCapture = vi.fn();
+        fireEvent.pointerDown(canvas, { clientX: x, pointerId: 4 });
+        expect(elasticAudioStore.value?.selectedMarkerIds).toEqual([added.id]);
+        flushAutomergeStorageWrites();
+        expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+        expect(rawWarpState().markers).toContainEqual(lockedMarker);
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+        expect(samples).toEqual(originalSamples);
     });
 
     it('the registered typed command reports the real kept set and preserves all retained fields', async () => {
@@ -217,9 +282,13 @@ describe('locked transient markers through the real Elastic editor', () => {
         });
         registerHandlerMap({ detectTransients: getFinalFeatureHandlers().detectTransients });
 
+        render(<ElasticEditorPanel />);
+        expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('2 transients, 2 user, 1 locked');
         try {
-            await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
-            await eventBus.waitForIdle();
+            await act(async () => {
+                await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
+                await eventBus.waitForIdle();
+            });
         } finally {
             unsubscribe();
         }
@@ -230,7 +299,10 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(getWarpState(CLIP_ID).markers).toEqual(expectedMarkers);
         expect(notices).toEqual([{ message: 'Detected 0 transients (4 preserved)', level: 'success' }]);
         expect(rawWarpState('other-clip')).toEqual(otherWarpState);
-        render(<ElasticEditorPanel />);
+        expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 2 user, 1 locked');
+        act(() => openElasticEditor('other-clip'));
+        expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
+        act(() => openElasticEditor(CLIP_ID));
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 2 user, 1 locked');
         expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
     });

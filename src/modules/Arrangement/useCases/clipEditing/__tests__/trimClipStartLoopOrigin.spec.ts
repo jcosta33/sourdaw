@@ -23,6 +23,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 import { type TrackClipStateSnapshot } from '#/utils/handlerContract';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { handleRestoreTrackClipStates } from '../../../handlers/clip/handleRestoreTrackClipStates';
 import { handleTrimClipStart } from '../../../handlers/clip/handleTrimClipStart';
@@ -422,13 +423,47 @@ describe('legacy undo entries replay anchorless through the undo seam (#5198)', 
         removeCrdtDoc('root');
     });
 
-    it('replays a keyless legacy trim inverse anchorless and lets a deeper legacy restore execute', async () => {
+    it('refuses a keyless looped MIDI trim whose old offset is ambiguous without consuming history', async () => {
+        const entry = legacyExtensionEntry('c-legacy');
+        undoHistoryStore.set({ past: [entry], future: [] });
+        const before = structuredClone(trackStore.value);
+
+        // With loop length 4, both old offsets 0 and 4 trim to phase 2.
+        // The keyless inverse cannot identify which stored coordinates it owes.
+        await expect(undo()).resolves.toEqual({ headConsumed: false });
+
+        expect(trackStore.value).toEqual(before);
+        expect(undoHistoryStore.value).toMatchObject({ past: [entry], future: [] });
+        expect(notifyUser).toHaveBeenCalledWith('Cannot undo "Trim clip start": project state has changed', 'warning');
+    });
+
+    it('replays a keyless legacy audio trim anchorless and lets a deeper legacy restore execute', async () => {
+        // Audio has no wrapped MIDI coordinate to recover. Keep the rightward
+        // inverse that would mint an anchor without legacy normalization.
+        trackStore.set({
+            ...defaultTrackState,
+            tracks: [
+                {
+                    ...midiTrack([
+                        loopedClip({
+                            id: 'c-legacy',
+                            type: 'audio',
+                            startBeat: 2,
+                            endBeat: 16,
+                            audioOffsetBeats: -2,
+                            midiOffsetBeats: 0,
+                        }),
+                    ]),
+                    kind: 'audio',
+                },
+            ],
+        });
         // An older whole-track restore captured the clip at its pre-extension
         // state — anchorless, because the field did not exist yet.
         const olderEntry = legacyWholeTrackEntry();
 
         undoHistoryStore.set({ past: [legacyExtensionEntry('c-legacy')], future: [] });
-        await undo();
+        await expect(undo()).resolves.toEqual({ headConsumed: true });
 
         const restored = readClip('c-legacy');
         expect(restored.startBeat).toBe(4);

@@ -59,9 +59,25 @@ function placeCapturedClip(clip: Clip, mediaOriginSeconds: number): Clip {
  * would leave the staged clip, take, and notes behind with no entry and call it
  * a success (#4439). The wrapper keeps that behaviour for every other action.
  */
-export async function commitRecording(clip: Clip, capture?: RecordedCapture): Promise<void> {
+export async function commitRecording(
+    clip: Clip,
+    capture?: RecordedCapture,
+    options?: { shouldExecute?: () => boolean }
+): Promise<void> {
+    // Placement writes provisional takes before dispatch, so it needs the same
+    // authority as the dispatch's post-wait check. A false guard must reject:
+    // executeAppAction otherwise resolves silently, hiding the refused take
+    // from the terminal's cleanup and notice (#5517).
+    const shouldExecute = (): boolean => {
+        if (options?.shouldExecute && !options.shouldExecute()) {
+            throw new Error('Recording commit was refused by its execution guard');
+        }
+        return true;
+    };
+    shouldExecute();
+    const guardedOptions = options?.shouldExecute ? { shouldExecute } : options;
     if (capture === undefined) {
-        await executeAppAction({ type: 'commitRecording', payload: { clip } });
+        await executeAppAction({ type: 'commitRecording', payload: { clip } }, guardedOptions);
         return;
     }
     const placed = placeCapturedClip(clip, capture.mediaOriginSeconds);
@@ -73,5 +89,5 @@ export async function commitRecording(clip: Clip, capture?: RecordedCapture): Pr
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } });
+    await executeAppAction({ type: 'commitRecording', payload: { clip: placed } }, guardedOptions);
 }

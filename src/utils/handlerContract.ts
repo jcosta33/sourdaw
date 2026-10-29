@@ -11,6 +11,17 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 
+/** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
+type MidiRowCoordinateCapture = {
+    beatDelta: number;
+    coordinates: {
+        kind: 'note' | 'cc' | 'pitchBend';
+        id: string;
+        beforeBeat: number;
+        afterBeat: number;
+    }[];
+};
+
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
  * other snapshot here, so this neutral contract does not depend on a model owned by
@@ -181,6 +192,9 @@ export type ClipMoveActionSnapshot = {
     readonly startBeat: number;
     readonly endBeat: number;
     readonly automationLanes: readonly ClipAutomationLaneActionSnapshot[];
+    readonly clipIndex?: number;
+    readonly beforeClipId?: string;
+    readonly afterClipId?: string;
 };
 /** One clip's target placement in a multi-clip move — the `moveClips` payload unit
  *  and the moved-clip half of its `restoreClipMoves` inverse. */
@@ -520,6 +534,8 @@ export type ClipSplitActionSnapshot = {
     readonly leftClip: ClipStateSnapshot;
     readonly rightClip: ClipStateSnapshot | null;
     readonly rightClipIndex: number;
+    /** Relative insertion witnesses, refreshed only by a committed Undo. Absent in legacy captures. */
+    readonly rightClipOrder?: string[];
     readonly sourceMidi: MidiClipDataActionSnapshot;
     readonly rightMidi: MidiClipDataActionSnapshot;
     /**
@@ -556,6 +572,10 @@ export type RippleShiftSnapshot = {
     readonly origStartBeat: number;
     readonly origEndBeat: number;
     readonly automationDelta: number;
+    /** Complete shifted-clip lane membership, owner tracks and points after
+     *  the forward ripple. Historical captures without this field can only
+     *  authenticate an empty live automation scope. */
+    readonly expectedAutomationLanes?: readonly ClipAutomationLaneActionSnapshot[];
 };
 /** A take captured inside a comp take lane — structural mirror of Arrangement's
  *  `Take`, declared here because model isolation forbids importing it. Arrays
@@ -586,6 +606,9 @@ export type CompTakeLaneSnapshot = {
     takes: TakeSnapshot[];
     activeCompRegions: CompRegionSnapshot[];
 };
+/** Exact root publication and source member, attached only after the producer commits. */
+export type CommandSourceProof = { changeHash: string; memberId: string };
+
 /** One lane a clip removal emptied or thinned, carried by `restoreClip` as it
  *  was before the removal together with the index it held, so undoing the
  *  removal can put the same lane back in the same place. */
@@ -1167,6 +1190,10 @@ export type AppAction =
               clipId: string;
               trackId: string;
               clipSnapshot: ClipSnapshot;
+              /** Original clip slot. Older entries without it append. */
+              clipIndex?: number;
+              /** Original owner order; absent in legacy captures that carried only an index. */
+              clipOrder?: readonly string[];
               ripplePlan: RipplePlanSnapshot | null;
               midiNotesSnapshot: MidiNotesSnapshot | null;
               midiCcSnapshot: MidiCcSnapshot | null;
@@ -1177,6 +1204,7 @@ export type AppAction =
                * payload still decode; absent means the removal retired none.
                */
               retiredTakeLanes?: readonly RetiredTakeLaneSnapshot[];
+              retiredTakeSourceProof?: CommandSourceProof;
           };
       }
     | {
@@ -1394,7 +1422,7 @@ export type AppAction =
     | { type: 'duplicateClip'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateClipToNextBar'; payload: { clipId: string; targetClipId?: string } }
     | { type: 'duplicateTrack'; payload: { trackId: string; targetTrackId?: string; select?: boolean } }
-    | { type: 'removeClip'; payload: { clipId: string } }
+    | { type: 'removeClip'; payload: { clipId: string; /** Internal captured replay preference. */ ripple?: boolean } }
     | { type: 'renameClip'; payload: { clipId: string; name: string } }
     | {
           type: 'splitClip';
@@ -1425,6 +1453,7 @@ export type AppAction =
                * restores nothing.
                */
               retiredTakeLanes?: RetiredTakeLaneSnapshot[];
+              retiredTakeSourceProof?: CommandSourceProof;
               /**
                * Shared holder for the take/comp-region re-key the forward split
                * captured (#5048), filled in place by its `execute()`. The undo
@@ -1450,6 +1479,24 @@ export type AppAction =
                * set it.
                */
               loopOriginBeat?: number | null;
+              /**
+               * The pre-action stored `midiOffsetBeats` a recorded inverse
+               * restores verbatim (#5512). The trim's forward wrap derives its
+               * loop length from the post-trim duration while the replay's wrap
+               * derives from the post-restore duration, and on a
+               * duration-derived loop (`loopLength` unset) those durations
+               * differ, so the re-wrapping replay lands the stored rows a
+               * trim-wrap distance from the figures the slip's own recorded
+               * inverse then restores against. The capture keys the verbatim
+               * restoration on this key's presence — zero included — the same
+               * recorded-inverse law the slip's `rowLiftBeats` follows. Only
+               * recorded inverses set it: a fresh dispatch never carries it,
+               * and entries recorded before the field existed decode without it
+               * and replay the re-wrapping law they always did.
+               */
+              midiOffsetBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
@@ -1471,6 +1518,8 @@ export type AppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | {
@@ -3155,6 +3204,19 @@ export type HandlerPostCommitEffect =
     | { readonly kind: 'runtime-graph'; readonly remediation: 'retry' | 'repair' }
     | { readonly kind: 'external-effect'; readonly remediation: 'reconcile' | 'manual-repair' };
 
+/** Runtime-only owner evidence; never serialized into actions or history. */
+export type HandlerCommitValidation = {
+    /** Authenticate only the authoritative owners this write was admitted against. */
+    readonly beforeCommit: () => string | null;
+    readonly documentId: string;
+    /** Runs against the prospective document inside its atomic storage change. */
+    readonly validateDocument: (document: Readonly<Record<string, unknown>>) => string | null;
+    /** Idempotent, nonthrowing cleanup once this handler's transaction has finished executing. */
+    readonly release: () => void;
+    /** Attach evidence from the exact owned publication before history becomes visible. */
+    readonly afterPublication?: () => void;
+};
+
 type HandlerDeferredEffects =
     | {
           afterCommit?: undefined;
@@ -3186,11 +3248,15 @@ export type HandlerExecutionResult = {
      *  Carried into the conflict the dispatcher raises so the caller learns the
      *  bound rather than only that the write did not happen. */
     reason?: string;
+    /** Only a written project result may supply a commit guard. */
+    commitValidation?: HandlerCommitValidation;
 } & HandlerDeferredEffects;
 
 export type HandlerValidationContext = {
     readonly actions: readonly AppAction[];
     readonly actionIndex: number;
+    /** Original history identity when a producer refreshes a saved capture. */
+    readonly undoEntryId?: string;
     /** Exact execution cancellation signal for long-running handler-owned follow-up work. */
     readonly signal?: AbortSignal;
     /** Caller-scoped telemetry for actual deferred work starts and for render receipts; never persisted as project truth. */
@@ -3199,6 +3265,14 @@ export type HandlerValidationContext = {
     readonly workOwner?: AgentWorkOwnerIdentity | null;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
+    /** Ephemeral Inspector preview owner; never part of persisted actions or replay. */
+    readonly deviceParameterRuntimeAuthority?: {
+        readonly trackId: string;
+        readonly deviceId: string;
+        readonly paramId: string;
+        readonly owner: symbol;
+        readonly isCurrent: () => boolean;
+    };
 };
 
 export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
@@ -3206,6 +3280,7 @@ export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'acti
 /** Neutral persisted-history shape supplied to an owning handler after Command
  *  has validated each action against its current operation contract. */
 export type HandlerSessionActionEntry = {
+    readonly id?: string;
     readonly action: AppAction;
     readonly inverseAction: AppAction | null;
     readonly redoAction?: AppAction;
@@ -3256,7 +3331,7 @@ type ActionHandlerCommon<Action extends AppAction> = {
     /** Owner-provided strict validation for an internal persisted replay payload. */
     validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
-    prepareAbort?: (action: Action) => HandlerAfterCommit;
+    prepareAbort?: (action: Action, context?: HandlerValidationContext) => HandlerAfterCommit;
     /**
      * Called with this inverse action once a redo has replayed the entry it inverts.
      *

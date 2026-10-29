@@ -36,9 +36,12 @@ Unified command execution dispatch kernel, undo/redo history and branching undo 
 - `getAgentActionRiskPolicy`'s `unsupportedPreviewDomains` signal names the domains whose owner could not preview the batch. It is neither a rejection nor a risk class: the operation stays as risky as it was and its required trust mode is unchanged, but the decision becomes `confirm`, so a change nobody could inspect is accepted by a person rather than direct-committed. `getAppActionPreviewExecution` reports the registered handler's preview capability and answers `unknown` for an unregistered type, which is not previewable either.
 - `clearUndoHistory` drops the live stacks' project/document tag along with the stacks themselves, so an in-session project switch (new project, template, arrangement switch, branch switch) always forfeits session-undo history across the next reload — including back to the project it left — because only `reconcileSessionUndoForProject` re-tags, and nothing re-tags after a plain clear.
 - `AGENT_COMMAND_LEDGER` (`models/AgentCommandLedger.ts`, read by `getAgentCommandLedger`) holds exactly one entry per `actionType` published by `executableAppActionDescriptors` (`useCases/executableAppActionRegistry.ts`); its `owner` is the handler-map module that actually registers the `actionType`, never the module that merely describes or targets it. An `interim-unsupported` entry carries a tracker packet instead of a handler factory name, naming work not yet backed by a registered handler. The minimum write set an agent may commit without explicit confirmation is exactly the visible `bounded-reversible` commands.
+- The ledger's additive `readOnlyEntries` collection names application reads separately from that executable census. A read has no AppAction descriptor version, never belongs to the minimum write set, and has no mutation preview to execute. Its packet names its implementation, and its owner and availability agree with the owner's capability catalog; a read row grants no mutation authority.
 
 ## Verification
 
+PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
+
 ```bash
-pnpm vitest run src/modules/Command
+pnpm test:run <changed-spec>
 ```

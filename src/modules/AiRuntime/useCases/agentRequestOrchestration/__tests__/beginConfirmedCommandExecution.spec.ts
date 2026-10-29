@@ -20,6 +20,7 @@ type InvalidateForProjectChange =
 type ValidateAgentRiskApproval = typeof import('../../validateAgentRiskApproval').validateAgentRiskApproval;
 type GetPlannedActionAffectedIds = typeof import('../../getPlannedActionAffectedIds').getPlannedActionAffectedIds;
 type PendingProtectedTarget = PendingAppActionConfirmation['protectedUnchanged'][number];
+type GetProjectContext = typeof import('../../getProjectContext').getProjectContext;
 
 const mocks = vi.hoisted(() => ({
     admitReceipt: vi.fn<AdmitAgentRenderReceipt>(),
@@ -29,6 +30,7 @@ const mocks = vi.hoisted(() => ({
     getAffectedIds: vi.fn<GetPlannedActionAffectedIds>(() => []),
     getArtifacts: vi.fn<() => Pick<AgentSectionRenderArtifact, 'jobId'>[]>(),
     getRun: vi.fn(),
+    getContext: vi.fn<GetProjectContext>(),
     invalidate: vi.fn<InvalidateForProjectChange>(),
     parseBatch: vi.fn(),
     revisionMatches: vi.fn<(revision: string) => boolean>(),
@@ -58,6 +60,7 @@ vi.mock('../../agentRunLifecycle', () => ({ agentRunLifecycle: { get: mocks.getR
 vi.mock('../../agentRunWorkLease', () => ({ agentRunWorkLease: { claim: mocks.claimLease } }));
 vi.mock('../../agentWorkBudget', () => ({ agentWorkBudget: { reserveCommandWork: mocks.reserveBudget } }));
 vi.mock('../../getPlannedActionAffectedIds', () => ({ getPlannedActionAffectedIds: mocks.getAffectedIds }));
+vi.mock('../../getProjectContext', () => ({ getProjectContext: mocks.getContext }));
 vi.mock('../../validateAgentRiskApproval', () => ({ validateAgentRiskApproval: mocks.validateApproval }));
 vi.mock('../agentRunExecutionSettlement', () => ({
     agentRunExecutionSettlement: { transitionToExecuting: mocks.transitionToExecuting },
@@ -640,6 +643,13 @@ describe('beginConfirmedCommandExecution', () => {
 
     it('should bypass approval, budget, and lease work for an already verified batch while admitting recovered execution', async () => {
         const priorVerifiedBatchReceipt = await createVerifiedRecoveryReceipt();
+        const recoveredConfirmation = {
+            ...confirmation,
+            approvalSnapshot: {
+                ...confirmation.approvalSnapshot,
+                protectionFacts: { protectedUnchanged: [protectedTarget], protectedControls: [] },
+            },
+        } satisfies PendingAppActionConfirmation;
         expect(priorVerifiedBatchReceipt).toMatchObject({
             schemaVersion: 2,
             runId: 'run-verified',
@@ -657,7 +667,7 @@ describe('beginConfirmedCommandExecution', () => {
         });
 
         const result = beginConfirmedCommandExecution({
-            confirmation,
+            confirmation: recoveredConfirmation,
             priorVerifiedBatchReceipt,
             recoveringPendingEffects: true,
         });
@@ -672,11 +682,12 @@ describe('beginConfirmedCommandExecution', () => {
             recoveringPendingEffects: true,
         });
         expect(mocks.validateApproval).not.toHaveBeenCalled();
+        expect(mocks.getContext).not.toHaveBeenCalled();
         expect(mocks.parseBatch).toHaveBeenCalledWith(commandBatch.serialized, commandBatch.authority);
         expect(mocks.reserveBudget).not.toHaveBeenCalled();
         expect(mocks.claimLease).not.toHaveBeenCalled();
         expect(mocks.updateConfirmation).toHaveBeenCalledWith({ confirmationId: 'confirmation-1', status: 'accepted' });
-        expect(mocks.transitionToExecuting).toHaveBeenCalledWith(confirmation);
+        expect(mocks.transitionToExecuting).toHaveBeenCalledWith(recoveredConfirmation);
         expect(mocks.updateMessage).toHaveBeenCalledWith('assistant-1', {
             pendingActionConfirmationStatus: 'accepted',
             content: 'Confirming:\n\n- Add an effect',

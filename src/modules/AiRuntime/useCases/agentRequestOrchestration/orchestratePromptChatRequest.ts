@@ -7,6 +7,7 @@ import {
 
 import { AiProposalInvalidatedError } from '../../errors/AiProposalInvalidatedError';
 import { isAiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfigurationChangedError';
+import { createAiRuntimeError } from '../../errors/AiRuntimeError';
 import { type AgentExecutionMode, type AgentTrustCeiling } from '../../models/AgentExecutionMode';
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../../models/AgentResourceLimits';
 import {
@@ -19,11 +20,13 @@ import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { type AiBackendPreference, type RunnableAiBackend } from '../../models/LlmOrchestrationTypes';
 import { type ModelProviderName } from '../../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../../models/PlanningOutcome';
+import { guardReadonlyPlanningResult } from '../../models/PlanningProfile';
 import { getCloudProviderInfo } from '../../repositories/cloudLlm/getCloudProviderInfo';
 import { getActiveModelId } from '../../repositories/webLlm/getActiveModelId';
 import { appendChatMessage, setActiveAborter, setChatGenerating, updateChatMessage } from '../../stores/chatStore';
 import { describePlanningOutcome } from '../../transformers/describePlanningOutcome';
 import { normalizeAgentFailure } from '../agentErrorAndSaga';
+import { unionProposalProtectionFacts } from '../agentReference/proposalGroundingBasis';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
@@ -60,7 +63,7 @@ type PromptChatRequestInput = {
     userText: string;
     requestedRoute: AiBackendPreference;
     backend: RunnableAiBackend | 'none';
-    interactionMode: Exclude<AgentExecutionMode, 'explain'>;
+    interactionMode: AgentExecutionMode;
     options: PromptChatRequestOptions | undefined;
 };
 
@@ -312,7 +315,7 @@ async function refusePlannedRequest(
     request: PromptChatRequestInput,
     admission: PromptRequestAdmission,
     reason: string,
-    category: 'authorization' | 'conflict',
+    category: 'authorization' | 'conflict' | 'resolution',
     actions: PromptPlanResult['actions']
 ): Promise<void> {
     await discardUntransferredPreparedStems(admission.runId, actions);
@@ -499,7 +502,8 @@ async function dispatchPromptPlan(input: {
     result: Awaited<ReturnType<typeof planPromptActions>>['result'];
     projectRevision: string;
 }): Promise<AgentApplyReceipt | undefined> {
-    const { request, admission, aborter, state, context, result, projectRevision } = input;
+    const { request, admission, aborter, state, context, projectRevision } = input;
+    const result = request.interactionMode === 'explain' ? guardReadonlyPlanningResult(input.result) : input.result;
     // The outcome kind is read before the actions: an answer says the run changes nothing, so no
     // batch that arrived beside it may run.
     if (result.planningOutcome?.kind === 'answer') {
@@ -510,6 +514,40 @@ async function dispatchPromptPlan(input: {
             receipts: result.applicationToolReceipts ?? [],
             projectRevision,
             outcome: result.planningOutcome,
+        });
+        return undefined;
+    }
+    if (request.interactionMode === 'explain') {
+        recordApplicationToolOnlyPlan({
+            runId: admission.runId,
+            revision: projectRevision,
+            receipts: result.applicationToolReceipts ?? [],
+        });
+        if (aborter.signal.aborted) {
+            await agentRunCancellation.cancel({
+                runId: admission.runId,
+                reason: 'User cancelled the run before planning completed.',
+            });
+            return undefined;
+        }
+        if (result.rejectionReason) {
+            await refusePlannedRequest(request, admission, result.rejectionReason, 'resolution', []);
+            return undefined;
+        }
+        agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'user',
+            content: request.userText,
+            timestamp: Date.now(),
+        });
+        const reason = describePlanningOutcome(result.planningOutcome) ?? 'Explain did not return an answer.';
+        appendChatMessage({
+            id: `msg-${crypto.randomUUID()}`,
+            role: 'assistant',
+            content: reason,
+            timestamp: Date.now(),
+            error: reason,
         });
         return undefined;
     }
@@ -584,6 +622,7 @@ async function dispatchPromptPlan(input: {
                 refinedCardProtections,
                 result.refinementProtectedUnchanged ?? [],
                 result.groundingBasis?.protectedUnchanged ?? [],
+                result.protectionFacts?.protectedUnchanged ?? [],
             ].flat(),
             keptDirectionActionIndexes: result.keptDirectionActionIndexes ?? [],
         });
@@ -591,6 +630,16 @@ async function dispatchPromptPlan(input: {
             result.groundingBasis === undefined
                 ? undefined
                 : { ...result.groundingBasis, protectedUnchanged: confirmationDescription.protectedUnchanged };
+        const protectionFacts = unionProposalProtectionFacts(
+            result.protectionFacts ?? { protectedUnchanged: [], protectedControls: [] },
+            refinement?.status === 'admitted'
+                ? (refinement.confirmation.approvalSnapshot.protectionFacts ?? {
+                      protectedUnchanged: [],
+                      protectedControls: [],
+                  })
+                : { protectedUnchanged: [], protectedControls: [] },
+            { protectedUnchanged: confirmationDescription.protectedUnchanged, protectedControls: [] }
+        );
         const materializedPlan = materializePromptCommandPlan({
             userText: request.userText,
             runId: admission.runId,
@@ -648,6 +697,7 @@ async function dispatchPromptPlan(input: {
                 measuredPreview: result.measuredPreview,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
+                protectionFacts,
                 executionMode: result.executionMode,
                 group: commandGroup,
                 projectRevision,
@@ -836,6 +886,9 @@ export async function orchestratePromptChatRequest(
     const admissionResult = admitPromptRequest(input);
     if (admissionResult.status === 'hard-limit-reached') {
         const refusal = describeAgentRunCreationRefusal(admissionResult.reason);
+        if (input.interactionMode === 'explain') {
+            throw createAiRuntimeError(refusal);
+        }
         appendChatMessage({
             id: `msg-${crypto.randomUUID()}`,
             role: 'user',
@@ -872,9 +925,11 @@ export async function orchestratePromptChatRequest(
         releasePlanningCancellation();
         setActiveAborter(null);
     };
+    const profileOptions = input.interactionMode === 'explain' ? { profile: 'readonly-answer' as const } : {};
     try {
         const { context, result, projectRevision } = await planPromptActions({
             prompt: input.userText,
+            ...profileOptions,
             signal: aborter.signal,
             onProviderResult: admission.providerPlanning
                 ? (providerResult) => {

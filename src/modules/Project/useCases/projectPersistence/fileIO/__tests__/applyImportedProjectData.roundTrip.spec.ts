@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { trackStore } from '#/modules/Arrangement/stores';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -12,6 +12,7 @@ import {
 } from '../../../../models/ProjectData';
 import { arrangementStore, defaultArrangementStoreState } from '../../../../stores/arrangementStore';
 import { defaultProjectStoreState, projectStore } from '../../../../stores/projectStore';
+import { hydrateArrangementStoreFromProjectData } from '../../helpers/hydrateArrangementStoreFromProjectData';
 import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDefault';
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
@@ -60,12 +61,13 @@ const {
         return { persist: () => Promise.resolve(true), publish: () => 0 };
     }
     const engineGraph = { value: 'old-project' };
-    const crdtAuthority = { value: 'Old Project' };
+    const crdtAuthority = { value: 'Old Project', epoch: 0 };
     const resetAudioGraph = vi.fn(() => {
         engineGraph.value = 'empty';
     });
     const resetCrdtProject = vi.fn((name: string, onAuthorityReplaced?: () => void) => {
         crdtAuthority.value = name;
+        crdtAuthority.epoch += 1;
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     });
@@ -121,6 +123,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
     return { ...actual, stopRecording };
 });
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     executeUserAppAction: vi.fn(),
     executeAppAction: vi.fn(),
@@ -133,7 +137,18 @@ vi.mock('#/modules/Command/useCases', () => ({
     syncActionReplayMetadata: vi.fn(),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
+    captureDurableDocumentWitness: vi.fn(() => ''),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
     captureProjectRootIdentity: vi.fn<() => string>(() => 'root-identity'),
+    captureProjectIdentity: vi.fn<() => string>(() => `document-identity-${crdtAuthority.epoch}`),
+    readOwnedProjectPublications: vi.fn(() => []),
     captureProjectRevision: vi.fn(),
     compactProject,
     createCrdtDoc: vi.fn(),
@@ -327,6 +342,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         projectStore.set({ ...structuredClone(defaultProjectStoreState), loading: false, initialized: true });
         engineGraph.value = 'old-project';
         crdtAuthority.value = 'Old Project';
+        crdtAuthority.epoch = 0;
         importCachedAudioBuffers.mockClear();
         notifyUser.mockClear();
         prepareCachedAudioBuffersFromIdb.mockClear();
@@ -353,6 +369,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
+        takeLaneStore.set({ lanes: [] });
     });
 
     it('resolves clip bufferIds and stages them before project publication', async () => {
@@ -812,6 +829,80 @@ describe('applyImportedProjectData round-trip hydration', () => {
         const active = state.arrangements.find((a) => a.id === state.activeArrangementId);
         expect(active?.tracks.tracks[0]?.clips.map((c) => c.id)).toEqual(['clip-a', 'clip-b']);
     });
+
+    it.each(['top-level', 'saved arrangement'])(
+        'rejects incomplete take placement in %s before replacing the open project',
+        async (route) => {
+            const previousData = makeProject();
+            previousData.takeLanes = {
+                lanes: [
+                    {
+                        id: 'existing-lane',
+                        trackId: 'track-audio',
+                        takes: [
+                            {
+                                id: 'existing-selected',
+                                clipId: 'clip-a',
+                                name: 'Keep selected material',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'existing-selected' }],
+                    },
+                ],
+            };
+            hydrateArrangementStoreFromProjectData({ data: previousData });
+            expect(takeLaneStore.value).toEqual(previousData.takeLanes);
+            const previousProject = structuredClone(projectStore.value);
+            const previousTracks = structuredClone(trackStore.value);
+            const previousArrangement = structuredClone(arrangementStore.value);
+            const previousTakes = structuredClone(takeLaneStore.value);
+            const project = makeProject();
+            const takeLanes = {
+                lanes: [
+                    {
+                        id: 'take-lane',
+                        trackId: 'track-audio',
+                        takes: [
+                            {
+                                id: 'selected-take',
+                                clipId: 'clip-a',
+                                name: 'Selected',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                                sourceOffsetBeats: 0,
+                                passAnchorSeconds: 1,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected-take' }],
+                    },
+                ],
+            };
+            if (route === 'top-level') {
+                project.takeLanes = takeLanes;
+            } else {
+                project.arrangements = [{ id: 'saved', name: 'Saved', takeLanes }];
+                project.activeArrangementId = 'saved';
+            }
+            const content = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(content);
+
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+            expect(resetAudioGraph).not.toHaveBeenCalled();
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+            expect(crdtAuthority.value).toBe('Old Project');
+            expect(projectStore.value).toEqual(previousProject);
+            expect(trackStore.value).toEqual(previousTracks);
+            expect(arrangementStore.value).toEqual(previousArrangement);
+            expect(takeLaneStore.value).toEqual(previousTakes);
+        }
+    );
 
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();

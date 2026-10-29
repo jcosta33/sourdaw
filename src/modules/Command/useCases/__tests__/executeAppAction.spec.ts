@@ -635,6 +635,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -642,6 +643,37 @@ describe('executeAppAction', () => {
         expect(mocks.commitUndoEntry).toHaveBeenCalled();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalled();
     });
+
+    it.each(['project', 'runtime'] as const)(
+        'keeps device runtime authority ephemeral in the %s single-action context',
+        async (kind) => {
+            const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
+            const authority = {
+                trackId: 'track-1',
+                deviceId: 'device-1',
+                paramId: 'gain',
+                owner: Symbol('preview'),
+                isCurrent: () => false,
+            };
+            const handlerOptions: CreateMockHandlerInput<SetEditingToolAction> = {};
+            if (kind === 'runtime') {
+                handlerOptions.executionKind = 'runtime';
+                handlerOptions.undoable = false;
+            }
+            const handler = create_mock_handler<SetEditingToolAction>(handlerOptions);
+            const prepareAbort = vi.fn((_action: AppAction, _context?: HandlerValidationContext) => () => undefined);
+            handler.prepareAbort = prepareAbort;
+            registerHandlerMap({ [action.type]: handler });
+            await executeAppAction(action, { deviceParameterRuntimeAuthority: authority });
+            const [executed, context] = handler.execute.mock.calls[0] ?? [];
+            expect(executed).toEqual(action);
+            expect(context?.deviceParameterRuntimeAuthority).toBe(authority);
+            expect(JSON.stringify(executed)).not.toContain('deviceParameterRuntimeAuthority');
+            if (kind === 'project') {
+                expect(prepareAbort.mock.calls[0]?.[1]?.deviceParameterRuntimeAuthority).toBe(authority);
+            }
+        }
+    );
 
     it('passes the final materialized action, cancellation signal, and deferred-work observer to project handlers', async () => {
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
@@ -668,6 +700,7 @@ describe('executeAppAction', () => {
         expect(context).toEqual({
             actions: [executedAction],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: controller.signal,
             onDeferredEffectAttempt,
         });
@@ -766,6 +799,31 @@ describe('executeAppAction', () => {
 
         expect(afterCommit).toHaveBeenCalledOnce();
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
+    });
+
+    it('classifies source evidence settlement failure after publication as committed', async () => {
+        const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'marquee' } };
+        const afterCommit = vi.fn();
+        const handler = create_mock_handler<SetEditingToolAction>({
+            execute: () => ({
+                status: 'written',
+                commitValidation: {
+                    documentId: 'root',
+                    beforeCommit: () => null,
+                    validateDocument: () => null,
+                    release: () => undefined,
+                    afterPublication: () => {
+                        throw new Error('evidence settlement failed');
+                    },
+                },
+                afterCommit,
+                afterAmbiguousCommit: afterCommit,
+            }),
+        });
+        registerHandlerMap({ [action.type]: handler });
+        await expect(executeAppAction(action)).rejects.toBeInstanceOf(AppActionCommittedError);
+        expect(afterCommit).toHaveBeenCalledOnce();
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
     it('recovers a deferred-effect failure by reconciling durable truth', async () => {
@@ -1062,6 +1120,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1141,6 +1200,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1180,6 +1240,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });
@@ -1196,6 +1257,7 @@ describe('executeAppAction', () => {
         expect(handler.execute).toHaveBeenCalledWith(action, {
             actions: [action],
             actionIndex: 0,
+            undoEntryId: expect.any(String),
             signal: undefined,
             onDeferredEffectAttempt: undefined,
         });

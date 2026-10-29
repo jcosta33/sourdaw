@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
+import { undoHistoryStore } from '#/modules/Command/stores';
+import { mutateCrdtDoc, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { type ProjectContext } from '../../models/ProjectContext';
 import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { chatStore, clearChatMessages } from '../../stores/chatStore';
 import {
@@ -11,6 +15,7 @@ import {
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { preparedStemImportCleanup } from '../agentReference/discardPreparedStemImportResources';
+import { readExplicitProtections } from '../agentReference/readExplicitProtections';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import {
     AGENT_RUN_CANCELLATION_PERSISTENCE_WARNING,
@@ -22,6 +27,9 @@ import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { cancelPendingChatActions } from '../cancelPendingChatActions';
+import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { groundCompiledCommandBatch } from '../groundCompiledCommandBatch';
+import { readChatThreadContext } from '../readChatThreadContext';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 const mocks = vi.hoisted(() => ({
@@ -29,7 +37,7 @@ const mocks = vi.hoisted(() => ({
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
     executePromptActionGroup: vi.fn(),
-    getProjectContext: vi.fn(() => ({ tracks: [] })),
+    getProjectContext: vi.fn<() => Partial<ProjectContext>>(() => ({ tracks: [] })),
     notifyAiAnswer: vi.fn(),
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
@@ -37,6 +45,20 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
+    captureActiveBranchReference: vi.fn(),
+    captureDurableDocumentWitness: vi.fn(),
+    captureProjectMutationAuthorization: vi.fn(() => () => true),
+    captureProjectIdentity: vi.fn(() => 'revision-1'),
+    captureProjectRevision: vi.fn(() => 'revision-1'),
+    captureProjectRootIdentity: vi.fn(() => 'root-identity'),
+    compactProject: vi.fn(),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     createCrdtDoc: vi.fn(),
     DOC_BRANCHES: '__branches__',
@@ -44,19 +66,26 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     getCrdtDoc: vi.fn(),
     getCrdtDocIds: vi.fn(),
     hasCrdtDoc: vi.fn(),
+    loadCrdtProject: vi.fn(),
     mutateCrdtDoc: vi.fn(),
     persistCrdtProject: vi.fn(),
+    projectActionHistoryToStore: vi.fn(),
     beginBranchSession: vi.fn(),
+    projectCrdtToStores: vi.fn(),
+    projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
+    readOwnedProjectPublications: vi.fn(() => []),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
+    resetCrdtProject: vi.fn(),
     endBranchSession: vi.fn(),
     runCrdtPersistenceBarrier: vi.fn(),
     sanitizeIncomingCrdtDocument: vi.fn(),
     setupProjectionBridge: vi.fn(),
     subscribeToCrdtChanges: vi.fn(),
     waitForCrdtDocumentTransition: vi.fn(),
+    startCrdtAutoSave: vi.fn(),
 }));
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
@@ -154,6 +183,7 @@ describe('submitAdmittedPromptRequest', () => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
+        mocks.getProjectContext.mockReturnValue({ tracks: [] });
         mocks.compileAgentActionExecution.mockReturnValue(compiled);
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
             status: 'valid',
@@ -1143,6 +1173,161 @@ describe('submitAdmittedPromptRequest', () => {
         expect(getPendingActionConfirmation(result.confirmationId)).toMatchObject({
             approvalSnapshot: { matchSelectorPredicates },
         });
+    });
+
+    it('retains captured protection facts on the same compiled Prompt Bar card read by the chat thread', async () => {
+        const prompt = 'turn Drums down 3 dB; leave Bass alone; keep the selected track pan as is';
+        const context: ProjectContext = {
+            tempo: 120,
+            timeSignature: [4, 4],
+            isPlaying: false,
+            isRecording: false,
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 16,
+            punchInEnabled: false,
+            punchInBeat: 0,
+            punchOutBeat: 16,
+            metronomeEnabled: false,
+            metronomeVolume: 0.5,
+            masterGain: 0.8,
+            tracks: ['Drums', 'Bass', 'Keys'].map((name) => ({
+                id: `track-${name.toLowerCase()}`,
+                name,
+                kind: 'audio',
+                muted: false,
+                soloed: false,
+                soloSafe: false,
+                armed: false,
+                gain: 0.8,
+                pan: 0,
+                automationMode: 'read',
+                clipCount: 0,
+                deviceCount: 0,
+                clips: [],
+                devices: [],
+            })),
+            selectedTrackId: 'track-keys',
+            selectedClipId: null,
+            selectedClipIds: [],
+            activeView: 'mix',
+            playheadPosition: 0,
+        };
+        const trackWrites = vi.spyOn(trackStore, 'set');
+        const undoWrites = vi.spyOn(undoHistoryStore, 'set');
+        const tracksBefore = structuredClone(trackStore.value);
+        const undoBefore = structuredClone(undoHistoryStore.value);
+        const reading = readExplicitProtections(prompt, context);
+        expect(reading).toMatchObject({
+            unresolved: [],
+            namedTrackIds: ['track-bass'],
+            protectedControls: [{ trackId: 'track-keys', actionTypes: ['setTrackPan'] }],
+        });
+        const list = compileArbitraryCommandList({
+            context,
+            revision: 'revision-1',
+            calls: [
+                {
+                    name: 'command.batch.propose',
+                    arguments: {
+                        plan: {
+                            semantic: { classification: 'simple', uncertainty: [] },
+                            objective: prompt,
+                            constraints: [],
+                            scope: {
+                                ...authority.scope,
+                                targetIds: ['track-drums'],
+                                protectedTargetIds: ['track-bass'],
+                            },
+                            capabilityIds: [],
+                            assetIds: [],
+                            alternatives: [],
+                            validationStrategy: [],
+                            stoppingConditions: [],
+                        },
+                        list: {
+                            schemaVersion: 1,
+                            items: [
+                                {
+                                    id: 'drum-cut',
+                                    name: 'setTrackGain',
+                                    arguments: { deltaDb: -3 },
+                                    selector: {
+                                        targetArgument: 'trackId',
+                                        entity: 'track',
+                                        where: { name: 'Drums' },
+                                        quantity: { unit: 'targets', exactly: 1 },
+                                    },
+                                },
+                            ],
+                        },
+                    },
+                },
+            ],
+        });
+        if (list.status !== 'accepted' || list.compilerEvidence === undefined) {
+            throw new Error('Expected the protected gain list to compile.');
+        }
+        const grounded = groundCompiledCommandBatch({
+            toolCalls: list.compilerEvidence.commands,
+            compilerEvidence: list.compilerEvidence,
+            context,
+            prompt,
+            projectRevision: 'revision-1',
+            workflowCapabilityId: undefined,
+            selectedCompilations: [],
+            transformCommands: [],
+            transformTargetIds: [],
+            creativeAuthority: undefined,
+            providerProposal: null,
+        });
+        if (grounded.status !== 'grounded') {
+            throw new Error(`Expected a grounded protected gain list: ${JSON.stringify(grounded)}`);
+        }
+        expect(grounded.groundingBasis).toBeUndefined();
+        expect(grounded.protectionFacts).toEqual({
+            protectedUnchanged: [{ id: 'track-bass', name: 'Bass' }],
+            protectedControls: [{ trackId: 'track-keys', operations: ['setTrackPan'] }],
+        });
+        mocks.planPromptActions.mockResolvedValue({
+            context,
+            result: { ...grounded, rawText: prompt, requiresConfirmation: true },
+            projectRevision: 'revision-1',
+        });
+        mocks.getProjectContext.mockReturnValue({
+            ...context,
+            selectedTrackId: 'track-drums',
+            tracks: context.tracks.map((track) => ({ ...track, name: `Renamed ${track.name}` })),
+        });
+
+        const result = await submitAdmittedPromptRequest({ prompt, source: 'prompt-bar' });
+
+        if (result.status !== 'awaiting-approval') {
+            throw new Error(`Expected a pending protection card, received ${result.status}`);
+        }
+        const thread = readChatThreadContext();
+        expect(thread?.pendingProposal?.confirmationId).toBe(result.confirmationId);
+        expect(thread?.pendingProposal?.commands).toEqual([
+            expect.objectContaining({
+                name: 'setTrackGain',
+                arguments: expect.objectContaining({ trackId: 'track-drums' }),
+            }),
+        ]);
+        if (thread?.pendingProposal === null || thread?.pendingProposal === undefined) {
+            throw new Error('Expected the Prompt Bar card in the chat thread.');
+        }
+        const card = getPendingActionConfirmation(thread.pendingProposal.confirmationId);
+        expect(card?.approvalSnapshot.protectionFacts).toEqual(grounded.protectionFacts);
+        expect(card?.approvalSnapshot.groundingBasis).toBeUndefined();
+        expect(pendingActionConfirmationStore.value?.confirmations).toHaveLength(1);
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('waiting-for-approval');
+        expect(mocks.executePromptActionGroup).not.toHaveBeenCalled();
+        expect(mutateCrdtDoc).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(trackWrites).not.toHaveBeenCalled();
+        expect(undoWrites).not.toHaveBeenCalled();
+        expect(trackStore.value).toEqual(tracksBefore);
+        expect(undoHistoryStore.value).toEqual(undoBefore);
     });
 
     // Red when the prompt-bar route stops carrying the adopted recipes from the planned result to the approval.

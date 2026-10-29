@@ -82,6 +82,8 @@ vi.mock('#/modules/Knead/useCases', async (importOriginal) => {
 vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/MIDI/useCases')>();
     return {
+        isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
+        decodeMidiClipDataSnapshots: actual.decodeMidiClipDataSnapshots,
         adaptGrooveTemplateForConsumer: vi.fn(),
         appendMidiNotes: vi.fn(),
         arpeggiate: vi.fn(),
@@ -122,6 +124,9 @@ vi.mock('#/modules/MIDI/useCases', async (importOriginal) => {
         serializeMidiStateForClips: vi.fn(),
         setMidiInputTrack: vi.fn(),
         setNotesForClip: vi.fn(),
+        isMidiRowCoordinateCapture: vi.fn<typeof import('#/modules/MIDI/useCases').isMidiRowCoordinateCapture>(),
+        prepareClipMidiRowCoordinateShift:
+            vi.fn<typeof import('#/modules/MIDI/useCases').prepareClipMidiRowCoordinateShift>(),
         shiftClipMidiNotes: vi.fn(),
         splitMidiNotesAtBeat: vi.fn(),
     };
