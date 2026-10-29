@@ -46,8 +46,8 @@ import {
     pushAiActionGroup,
     type AiActionGroup,
 } from '../../stores/aiActionHistoryStore';
-import { revertAiActionGroup } from '../aiHistoryActions';
 import { revertThreadCommit } from '../agentRequestOrchestration/revertThreadCommit';
+import { revertAiActionGroup } from '../aiHistoryActions';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
