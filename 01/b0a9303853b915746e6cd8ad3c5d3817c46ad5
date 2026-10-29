@@ -1,0 +1,21 @@
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  s_59e31a5c6f3e31::t_792787cd1c56e0 5-6,13-14,16-17,71-72
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  s_59e31a5c6f3e31::t_9916dc8575c76a 265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01b0a9303853b915746e6cd8ad3c5d3817c46ad5",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
