@@ -65,6 +65,18 @@ describe('project strip initialization before bus facade and send publication', 
         return [source, first, later];
     }
 
+    function addSidechainCompressor(track: Track, bypassed = false): string {
+        const id = `${track.id}-sidechain`;
+        track.devices.push({
+            id,
+            name: 'Sidechain compressor',
+            type: 'builtin-sidechain-compressor',
+            bypassed,
+            parameterValues: {},
+        });
+        return id;
+    }
+
     function installTracks(tracks: Track[]): void {
         restoreTrackSnapshot({ tracks, selectedTrackId: null });
         flushAutomergeStorageWrites();
@@ -259,13 +271,14 @@ describe('project strip initialization before bus facade and send publication', 
             if (relation === 'output-output') {
                 later.outputId = first.id;
             } else if (relation === 'output-sidechain') {
+                const targetDeviceId = addSidechainCompressor(first);
                 sidechainStore.set({
                     routes: [
                         {
                             id: 'restored-return',
                             sourceTrackId: later.id,
                             targetTrackId: first.id,
-                            targetDeviceId: `${first.id}-eq`,
+                            targetDeviceId,
                             targetParameterId: 'threshold',
                             gain: 1,
                         },
@@ -295,6 +308,70 @@ describe('project strip initialization before bus facade and send publication', 
             expect(JSON.stringify(sidechainStore.value)).toBe(savedSidechains);
         }
     );
+
+    it.each(['missing-device', 'eq-target'] as const)(
+        'retains a hydrated %s sidechain without inventing a cycle',
+        (target) => {
+            const tracks = tracksWithSends();
+            installTracks(tracks);
+            const route = {
+                id: 'orphan-route',
+                sourceTrackId: 'later-bus',
+                targetTrackId: 'first-bus',
+                targetDeviceId: target === 'missing-device' ? 'missing-device' : 'first-bus-eq',
+                targetParameterId: 'threshold',
+                gain: 1,
+            };
+            sidechainStore.set({ routes: [route] });
+            flushAutomergeStorageWrites();
+            expect(getCrdtDoc('root')?.sidechainRoutes).toEqual({ routes: [route] });
+            sidechainStore.hydrate();
+            expect(sidechainStore.value).toEqual({ routes: [route] });
+            const savedTracks = JSON.stringify(trackStore.value);
+            expect(ensureTrackStrips().status).toBe('ready');
+            expect(privateConstruction).toHaveLength(6);
+            expectSend('first-bus', 'later-bus', false);
+            expect(JSON.stringify(trackStore.value)).toBe(savedTracks);
+            expect(sidechainStore.value).toEqual({ routes: [route] });
+            expect(getCrdtDoc('root')?.sidechainRoutes).toEqual({ routes: [route] });
+        }
+    );
+
+    it.each([false, true])('replays a supported sidechain onto its real compressor when bypassed=%s', (bypassed) => {
+        const tracks = tracksWithSends();
+        const targetDeviceId = addSidechainCompressor(tracks[1]!, bypassed);
+        installTracks(tracks);
+        const route = {
+            id: 'supported-route',
+            sourceTrackId: 'source',
+            targetTrackId: 'first-bus',
+            targetDeviceId,
+            targetParameterId: 'threshold',
+            gain: 1,
+        };
+        sidechainStore.set({ routes: [route] });
+        flushAutomergeStorageWrites();
+        sidechainStore.hydrate();
+        expect(ensureTrackStrips().status).toBe('ready');
+        expect(privateConstruction).toHaveLength(6);
+        const source = audioEngine.getTrackStrip(route.sourceTrackId)!;
+        const target = audioEngine
+            .getTrackStrip(route.targetTrackId)!
+            .deviceNodes.find((device) => device.deviceId === targetDeviceId)!;
+        expect(target.type).toBe('builtin-sidechain-compressor');
+        // Observe the production analyser -> alignment delay -> gain -> detector
+        // connection, not a routing call or stored flag.
+        const connectedKeys = Array.from(edges.get(source.analyserNode) ?? []).filter(
+            (delay) =>
+                typeof delay === 'object' &&
+                delay !== null &&
+                Array.from(edges.get(delay) ?? []).some(
+                    (gain) => typeof gain === 'object' && gain !== null && edges.get(gain)?.has(target.inputNode)
+                )
+        );
+        expect(connectedKeys).toHaveLength(1);
+        expect(sidechainStore.value).toEqual({ routes: [route] });
+    });
 
     it('ignores cycles confined to dormant folder rows while restoring valid live output and send routes', () => {
         const tracks = tracksWithSends();
