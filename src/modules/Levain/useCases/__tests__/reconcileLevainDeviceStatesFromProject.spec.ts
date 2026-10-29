@@ -55,8 +55,8 @@ vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
 
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setCurrentArticulation } from '../../stores/levainStore';
-import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
+import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { reconcileLevainDeviceStatesFromProject } from '../reconcileLevainDeviceStatesFromProject';
 
 import type { executeUserAppAction } from '#/modules/Command/useCases';

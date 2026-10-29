@@ -14,9 +14,9 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 
 import { defaultLevainState, levainStore, updateMicPosition } from '../../stores/levainStore';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
-import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { createLevainBridge } from '../levainParamBridge/helpers';
 import { levainBridge } from '../levainParamBridge/levainBridge';
 import { registerLevainDevice } from '../levainParamBridge/registerLevainDevice';

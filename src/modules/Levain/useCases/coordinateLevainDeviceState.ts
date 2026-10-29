@@ -24,6 +24,64 @@ type PendingDevice = {
 
 const pendingDevices = new Map<string, PendingDevice>();
 
+function createPendingDevice(
+    deviceId: string,
+    ownerId: string,
+    projectIdentity: string,
+    projectAccess: LevainDeviceStateProjectAccess,
+    expectedState: string
+): PendingDevice {
+    const unsubscribers: (() => void)[] = [];
+    const dispose = (): void => {
+        for (const unsubscribe of unsubscribers.splice(0)) {
+            unsubscribe();
+        }
+    };
+    const pending: PendingDevice = {
+        projectIdentity,
+        ownerId,
+        expectedState,
+        latest: {},
+        projectAccess,
+        retired: false,
+        retire: () => {
+            target.retired = true;
+            dispose();
+        },
+        dispose,
+    };
+    const target = pending;
+    let seenCommitted = projectAccess.hasDevice(ownerId, deviceId);
+    const observeMembership = (): void => {
+        if (target.retired) {
+            return;
+        }
+        if (getLevainDeviceStateProjectAccess() !== projectAccess || captureProjectIdentity() !== projectIdentity) {
+            target.retire();
+            return;
+        }
+        if (projectAccess.hasDevice(ownerId, deviceId)) {
+            seenCommitted = true;
+            return;
+        }
+        const visible = trackStore.value?.tracks
+            .find((track) => track.id === ownerId)
+            ?.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'levain');
+        // A visible add may still be pending; a committed loss can never revive this queue.
+        if (seenCommitted || !visible) {
+            target.retire();
+        }
+    };
+    pendingDevices.set(deviceId, pending);
+    unsubscribers.push(projectAccess.subscribe(observeMembership));
+    unsubscribers.push(trackStore.subscribe(observeMembership));
+    observeMembership();
+    if (target.retired) {
+        dispose();
+    }
+    return pending;
+}
+
 /** Serialize local facets before creating actions; only our own commit advances the witness. */
 export function coordinateLevainDeviceState(
     deviceId: string,
@@ -53,54 +111,13 @@ export function coordinateLevainDeviceState(
         pending.retire();
     }
     if (!pending || pending.retired) {
-        const unsubscribers: (() => void)[] = [];
-        const dispose = (): void => {
-            for (const unsubscribe of unsubscribers.splice(0)) {
-                unsubscribe();
-            }
-        };
-        pending = {
+        pending = createPendingDevice(
+            deviceId,
+            owner.id,
             projectIdentity,
-            ownerId: owner.id,
-            expectedState: canonicalJson(device.deviceState ?? null),
-            latest: {},
             projectAccess,
-            retired: false,
-            retire: () => {
-                target.retired = true;
-                dispose();
-            },
-            dispose,
-        };
-        const target = pending;
-        let seenCommitted = projectAccess.hasDevice(owner.id, deviceId);
-        const observeMembership = (): void => {
-            if (target.retired) {
-                return;
-            }
-            if (getLevainDeviceStateProjectAccess() !== projectAccess || captureProjectIdentity() !== projectIdentity) {
-                target.retire();
-                return;
-            }
-            if (projectAccess.hasDevice(owner.id, deviceId)) {
-                seenCommitted = true;
-                return;
-            }
-            const visible = trackStore.value?.tracks
-                .find((track) => track.id === owner.id)
-                ?.devices.some((candidate) => candidate.id === deviceId && candidate.type === 'levain');
-            // A visible add may still be pending; a committed loss can never revive this queue.
-            if (seenCommitted || !visible) {
-                target.retire();
-            }
-        };
-        pendingDevices.set(deviceId, pending);
-        unsubscribers.push(projectAccess.subscribe(observeMembership));
-        unsubscribers.push(trackStore.subscribe(observeMembership));
-        observeMembership();
-        if (target.retired) {
-            dispose();
-        }
+            canonicalJson(device.deviceState ?? null)
+        );
     }
     const entry = pending;
     const request = Symbol();
