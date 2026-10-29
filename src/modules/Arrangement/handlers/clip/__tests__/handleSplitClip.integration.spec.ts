@@ -1,9 +1,12 @@
+import { getHeads } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
 import { createEventBus } from '#/infra/events/createEventBus';
 import {
     configureAutomergeStoragePort,
+    AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY,
+    runOutsideAutomergeStoragePublisherScope,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
@@ -18,12 +21,15 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
+    mutateCrdtDoc,
+    setupProjectionBridge,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { getTransportHandlers } from '#/modules/Transport/useCases';
 import {
     type ConfirmPayload,
@@ -32,6 +38,9 @@ import {
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
 
+import { type Track } from '../../../models/Track';
+import { handleSplitClip } from '../handleSplitClip';
+import * as splitClipUseCase from '../../../useCases/clipEditing/splitClip';
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { gainSeamPointId } from '../../../models/GainSeamPointId';
@@ -117,6 +126,7 @@ describe('handleSplitClip atomic integration', () => {
             pitchBendByClipId: {},
         });
         transportStore.set({ ...defaultTransportState, tempo: 120 });
+        tempoMapStore.set({ changes: [] });
         warpStates.clear();
         setAllEnvelopes({});
         flushAutomergeStorageWrites();
@@ -134,6 +144,7 @@ describe('handleSplitClip atomic integration', () => {
         setAllEnvelopes({});
         vi.restoreAllMocks();
         transportStore.set({ ...defaultTransportState });
+        tempoMapStore.set({ changes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
@@ -282,6 +293,228 @@ describe('handleSplitClip atomic integration', () => {
         }
     );
 
+    it('refuses an admitted source projection that differs from the authoritative raw prefix', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        // Deliberately leave the projected store stale. A promotion from that
+        // beat-only view must not overwrite the independently retained source.
+        mutateCrdtDoc<{ tracks: { tracks: Track[] } }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.tracks.tracks[0]!.clips[0]!.audioOffsetSeconds = 1;
+            },
+        });
+        const before = structuredClone(getCrdtDoc('root'));
+        expect(trackStore.value?.tracks[0]?.clips[0]?.audioOffsetSeconds).toBeUndefined();
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: {
+                        clipId: clip.id,
+                        beat: 4,
+                        resolvedBeat: 4,
+                        rightClipId: 'stale-source-right',
+                    },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(result.status).not.toBe('committed');
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it('does not publish a source member when a forward split reports success without its domain effect', async () => {
+        const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        flushAutomergeStorageWrites();
+        const before = structuredClone(getCrdtDoc('root'));
+        const split = vi.spyOn(splitClipUseCase, 'splitClip').mockReturnValue('missing-right');
+        const result = await executeAppActionBatch(
+            [
+                {
+                    type: 'splitClip',
+                    payload: {
+                        clipId: clip.id,
+                        beat: 4,
+                        resolvedBeat: 4,
+                        rightClipId: 'missing-right',
+                    },
+                },
+            ],
+            { source: 'manual', requireCompensation: true }
+        );
+        expect(split).toHaveBeenCalledOnce();
+        expect(result.status).not.toBe('committed');
+        expect(getCrdtDoc('root')).toEqual(before);
+        expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+        expect(undoStore.value?.past).toHaveLength(0);
+    });
+
+    it.each(['beforeCommit', 'prospective'] as const)(
+        'does not certify a source or clock intervention at %s',
+        async (boundary) => {
+            const clip = ClipDummy.create({ id: 'clip-1', trackId: 'track-1', startBeat: 0, endBeat: 8 });
+            trackStore.set({
+                tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+            flushAutomergeStorageWrites();
+            const stop = setupProjectionBridge();
+            let peer: unknown;
+            let intervened = false;
+            const intervene = () => {
+                if (intervened) {
+                    return;
+                }
+                intervened = true;
+                runOutsideAutomergeStoragePublisherScope(() =>
+                    mutateCrdtDoc<{
+                        tracks: { tracks: Track[] };
+                        transport: { tempo: number };
+                    }>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            document.tracks.tracks[0]!.clips[0]!.audioBufferId = 'peer-source';
+                            document.transport.tempo = 90;
+                        },
+                    })
+                );
+                peer = structuredClone(getCrdtDoc('root'));
+            };
+            if (boundary === 'prospective') {
+                configureAutomergeStoragePort({
+                    getDoc: getCrdtDoc,
+                    getDocHeads: (id) => {
+                        const document = getCrdtDoc(id);
+                        return document && getHeads(document);
+                    },
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                    mutateDoc: ({ docId, changedKeys, changeFn, message, snapshotTransaction }) => {
+                        if (docId === 'root') {
+                            intervene();
+                        }
+                        mutateCrdtDoc({ id: docId, changeFn, message, snapshotTransaction, localSlots: changedKeys });
+                    },
+                });
+            }
+            const execute = handleSplitClip.execute;
+            const spy = vi.spyOn(handleSplitClip, 'execute').mockImplementation(async (action, context) => {
+                const result = await execute(action, context);
+                if (
+                    !result ||
+                    typeof result !== 'object' ||
+                    !('commitValidation' in result) ||
+                    !result.commitValidation
+                ) {
+                    throw new Error('Expected actual forward source guard');
+                }
+                const validation = result.commitValidation;
+                return {
+                    ...result,
+                    commitValidation: {
+                        ...validation,
+                        beforeCommit: () => {
+                            if (boundary === 'beforeCommit') {
+                                intervene();
+                            }
+                            return validation.beforeCommit();
+                        },
+                        validateDocument: validation.validateDocument,
+                    },
+                };
+            });
+            try {
+                const result = await executeAppActionBatch(
+                    [
+                        {
+                            type: 'splitClip',
+                            payload: {
+                                clipId: clip.id,
+                                beat: 4,
+                                resolvedBeat: 4,
+                                rightClipId: 'guarded-right',
+                            },
+                        },
+                    ],
+                    { source: 'manual', requireCompensation: true }
+                );
+                expect(intervened).toBe(true);
+                expect(result.status).not.toBe('committed');
+                expect(getCrdtDoc('root')).toEqual(peer);
+                expect(getCrdtDoc('root')?.[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY]).toBeUndefined();
+                expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
+                expect(undoStore.value?.past).toHaveLength(0);
+            } finally {
+                spy.mockRestore();
+                registerCrdtStorageRuntime();
+                stop();
+            }
+        }
+    );
+
+    it('retains selected source frame 108002 through the real rate2 split, undo and redo', async () => {
+        const clip = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 0,
+            endBeat: 4,
+            audioBufferId: 'audio-buffer-1',
+            audioOffsetSeconds: 0.25,
+            audioOffsetBeats: 0.5,
+            stretchMode: 'repitch',
+            stretchRatio: 2,
+        });
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'audio', clips: [clip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        tempoMapStore.set({
+            changes: [
+                { id: 'tempo-0', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tempo-1', beat: 1, tempo: 240, curve: 'instant' },
+                { id: 'tempo-2', beat: 2, tempo: 120, curve: 'instant' },
+            ],
+        });
+        const channelData = new Float32Array(192000).fill(-1);
+        channelData.fill(1, 108003);
+        vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 48000));
+        flushAutomergeStorageWrites();
+        const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+
+        const result = await executeAppActionBatch([{ type: 'splitClip', payload: { clipId: 'clip-1', beat: 2.5 } }], {
+            source: 'prompt',
+            requireCompensation: true,
+        });
+
+        expect(result).toMatchObject({ status: 'committed' });
+        const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+        const right = after.find((candidate) => candidate.id !== 'clip-1');
+        expect(right?.startBeat).toBeCloseTo(2.5 + 2 / 48000, 12);
+        expect(right?.audioOffsetSeconds).toBe(108002 / 48000);
+        expect(Math.floor(right!.audioOffsetSeconds! * 48000)).toBe(108002);
+
+        await undo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+        await redo();
+        expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+        expect(Math.floor(trackStore.value!.tracks[0]!.clips[1]!.audioOffsetSeconds! * 48000)).toBe(108002);
+    });
+
     describe('an audio split', () => {
         beforeEach(() => {
             const clip = ClipDummy.create({
@@ -298,6 +531,7 @@ describe('handleSplitClip atomic integration', () => {
             const channelData = new Float32Array(700).fill(1);
             channelData.fill(-1, 251);
             vi.spyOn(audioBufferCache, 'get').mockReturnValue(makeAudioBuffer(channelData, 100));
+            flushAutomergeStorageWrites();
         });
 
         // Red when an audio split accepts note ids it will never create: a committed split would then

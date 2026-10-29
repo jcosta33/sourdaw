@@ -23,4 +23,5 @@ export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/smoke.spec.ts',
     'tests/e2e/spatialPannerArrangementTestId.spec.ts',
     'tests/e2e/transientOnsetRead.spec.ts',
+    'tests/e2e/tempoSourceTimeAcceptance.spec.ts',
 ];

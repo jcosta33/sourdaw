@@ -471,6 +471,66 @@ describe('sanitize_take_lane_store_state', () => {
         });
     });
 
+    it('preserves every canonical take clock field without adding them to legacy takes', () => {
+        const legacy = { id: 'legacy', clipId: 'clip-1', name: 'Legacy', startBeat: 0, endBeat: 4, selected: true };
+        const canonical = {
+            ...legacy,
+            id: 'canonical',
+            sourceOffsetBeats: 4,
+            sourceOffsetSeconds: 0,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 4,
+            passOriginBeat: 0,
+            passOriginSourceSeconds: -1,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [legacy, canonical],
+            activeCompRegions: [
+                { startBeat: 0, endBeat: 2, takeId: legacy.id },
+                { startBeat: 2, endBeat: 4, takeId: canonical.id },
+            ],
+        };
+        const state = { lanes: [lane] };
+        expect(sanitize_take_lane_store_state(state)).toBe(state);
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+        // Exercise normalization too: an unrelated extra key must not drop the clock.
+        expect(sanitize_take_lane_store_state({ ...state, extra: true })).toEqual(state);
+    });
+
+    it.each([
+        { sourceOffsetSeconds: -1 },
+        { sourceOffsetSeconds: Number.NaN },
+        { sourceOffsetSeconds: Number.POSITIVE_INFINITY },
+        { sourceOffsetSeconds: '1' },
+        { sourceOffsetSeconds: undefined },
+        { passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passOriginBeat: 0 },
+    ])('rejects a malformed modern take and its comp reference %j', (placement) => {
+        const take = {
+            id: 'selected',
+            clipId: 'clip-1',
+            name: 'Selected',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            ...placement,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+        };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(sanitize_take_lane_store_state({ lanes: [lane] })).toEqual({
+            lanes: [{ ...lane, takes: [], activeCompRegions: [] }],
+        });
+    });
+
     it('should read a lane holding a placed pass as exact, taking it as it is', () => {
         // Exactness is what a time operation's inverse plan is decoded with, so
         // a lane holding a placed pass that read as inexact could not be undone.

@@ -284,6 +284,7 @@ describe('transactSnapshot - explicit mutation ownership', () => {
         });
         const storage = createAutomergeStorage<{ count: number }, number>('root', 'state', {
             writeMetadata: {
+                captureMode: 'values',
                 capture: ({ beforeValue, nextValue }) =>
                     beforeValue && nextValue ? nextValue.count - beforeValue.count : null,
                 reduce: ({ current, captured }) => (current ?? 0) + captured,

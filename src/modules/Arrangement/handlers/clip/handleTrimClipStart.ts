@@ -1,5 +1,16 @@
 import { createHandler } from '#/utils/createHandler';
+import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import {
+    captureAudioClipTrimTakeSources,
+    projectAudioClipTrimTakeSources,
+} from '../../useCases/clipEditing/audioClipTrimTakeSources';
+import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
+import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
+import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
+import { prepareLegacyAudioClipStartTrim } from '../../useCases/clipEditing/prepareLegacyAudioClipStartTrim';
 import { trimClipStart } from '../../useCases/clipEditing/trimClipStart';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
@@ -8,18 +19,103 @@ import { createMidiRowCoordinateReplay } from './midiRowCoordinateReplay';
 
 const rowReplay = createMidiRowCoordinateReplay('trimClipStart');
 
+type AudioTrimCapture = Extract<AppAction, { type: 'restoreAudioClipStartTrim' }>['payload'];
+const preparedAudioTrims = new WeakMap<object, AudioTrimCapture>();
+type LegacyTrim = {
+    before: Clip;
+    after: Clip;
+    clock: ReturnType<typeof audioClipStartTrimState.captureClock>;
+    isCurrent: () => boolean;
+};
+const preparedLegacyRedos = new WeakMap<object, LegacyTrim | null>();
+
+function isHistoricTrimRedo(
+    action: Extract<AppAction, { type: 'trimClipStart' }>,
+    inverse: AppAction | null | undefined
+): boolean {
+    return (
+        inverse?.type === 'trimClipStart' &&
+        inverse.payload.clipId === action.payload.clipId &&
+        !Object.hasOwn(inverse.payload, 'midiOffsetBeats')
+    );
+}
+
 export const handleTrimClipStart = createHandler<'trimClipStart'>({
-    execute: (action) => {
-        if (!rowReplay.canExecute(action)) {
+    canReportConflict: true,
+    validateSessionEntry: (entry) =>
+        audioClipStartTrimState.isSessionEntry(entry) && rowReplay.validateSessionEntry(entry),
+    execute: (alpha) => {
+        if (!rowReplay.canExecute(alpha)) {
             return { status: 'conflict' };
         }
+        if (preparedLegacyRedos.has(alpha)) {
+            const legacy = preparedLegacyRedos.get(alpha);
+            if (!legacy || !legacy.isCurrent() || !audioClipTrimOwner.matches(legacy.before, legacy.clock)) {
+                return { status: 'conflict' };
+            }
+            const proof = audioClipTrimOwner.captureCommitValidation(legacy.before, legacy.after, legacy.clock);
+            if (!proof) {
+                return { status: 'conflict' };
+            }
+            if (!trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat, legacy.after.loopOriginBeat ?? null)) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            return {
+                status: 'written',
+                commitValidation: {
+                    ...proof,
+                    beforeCommit: () => {
+                        if (!legacy.isCurrent()) {
+                            return 'Historic trim Redo entry changed';
+                        }
+                        return proof.beforeCommit();
+                    },
+                },
+            };
+        }
+        const audio = preparedAudioTrims.get(alpha);
+        if (audio) {
+            // The same live owner and clock that supplied the description must
+            // still authorize the write; unrelated clip facets remain live.
+            const capture = audioClipStartTrimState.decodePayload(audio);
+            if (!capture || !audioClipTrimOwner.matches(capture.before, audio.clock, capture.takeSourceTransitions)) {
+                return { status: 'conflict' };
+            }
+            const proof = audioClipTrimOwner.captureCommitValidation(
+                capture.before,
+                capture.after,
+                audio.clock,
+                capture.takeSourceTransitions
+            );
+            if (!proof) {
+                return { status: 'conflict' };
+            }
+            const lanes = projectAudioClipTrimTakeSources(
+                takeLaneStore.value?.lanes ?? [],
+                capture.clipId,
+                capture.takeSourceTransitions ?? [],
+                'apply'
+            );
+            if (!lanes) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            if (capture.takeSourceTransitions?.length) takeLaneStore.set({ lanes });
+            const written = trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);
+            if (!written) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            return { status: 'written', commitValidation: proof };
+        }
         let capturesMidi =
-            action.payload.midiOffsetBeats !== undefined || action.payload.midiRowCoordinates !== undefined;
+            alpha.payload.midiOffsetBeats !== undefined || alpha.payload.midiRowCoordinates !== undefined;
         if (!capturesMidi) {
             try {
                 const clip = getTrackStoreState()
                     ?.tracks.flatMap((track) => track.clips)
-                    .find((candidate) => candidate.id === action.payload.clipId);
+                    .find((candidate) => candidate.id === alpha.payload.clipId);
                 capturesMidi = clip?.type === 'midi';
             } catch {
                 return { status: 'no-write' };
@@ -28,36 +124,45 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
         if (!capturesMidi) {
             return toHandlerExecutionResult(
                 trimClipStart(
-                    action.payload.clipId,
-                    action.payload.newStartBeat,
-                    action.payload.loopOriginBeat,
-                    action.payload.midiOffsetBeats
+                    alpha.payload.clipId,
+                    alpha.payload.newStartBeat,
+                    alpha.payload.loopOriginBeat,
+                    alpha.payload.midiOffsetBeats
                 )
             );
         }
         const coordinates: NonNullable<Parameters<typeof trimClipStart>[4]> = {
-            restore: action.payload.midiRowCoordinates,
+            restore: alpha.payload.midiRowCoordinates,
         };
         const didWrite = trimClipStart(
-            action.payload.clipId,
-            action.payload.newStartBeat,
-            action.payload.loopOriginBeat,
-            action.payload.midiOffsetBeats,
+            alpha.payload.clipId,
+            alpha.payload.newStartBeat,
+            alpha.payload.loopOriginBeat,
+            alpha.payload.midiOffsetBeats,
             coordinates
         );
         if (!didWrite) {
-            if (coordinates.refused || action.payload.midiRowCoordinates !== undefined) {
+            if (coordinates.refused || alpha.payload.midiRowCoordinates !== undefined) {
                 return { status: 'conflict' };
             }
             return { status: 'no-write' };
         }
         if (coordinates.capture) {
-            rowReplay.recordApplied(action, coordinates.capture);
+            rowReplay.recordApplied(alpha, coordinates.capture);
         }
         return { status: 'written' };
     },
-    describe: (alpha) => {
+    describe: (alpha, context?: HandlerValidationContext) => {
         const label = 'Trim clip start';
+        preparedAudioTrims.delete(alpha);
+        preparedLegacyRedos.delete(alpha);
+        const replay = context?.recordedRedo;
+        const historicRedo = isHistoricTrimRedo(alpha, replay?.inverseAction);
+        if (historicRedo) {
+            // Mark refusal too: a retired entry or missing owner must never fall
+            // through to the indistinguishable fresh forward action.
+            preparedLegacyRedos.set(alpha, null);
+        }
         try {
             const state = getTrackStoreState();
             const clip = state?.tracks
@@ -65,6 +170,64 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 .find((context) => context.id === alpha.payload.clipId);
             if (!clip) {
                 return { label, inverseAction: null };
+            }
+
+            if (historicRedo && clip.type === 'audio' && replay) {
+                const before = structuredClone(clip);
+                const after = prepareLegacyAudioClipStartTrim(
+                    before,
+                    alpha.payload.newStartBeat,
+                    alpha.payload.loopOriginBeat
+                );
+                if (!replay.isCurrent() || !after) {
+                    return { label, inverseAction: null };
+                }
+                preparedLegacyRedos.set(alpha, {
+                    before,
+                    after,
+                    clock: audioClipStartTrimState.captureClock(),
+                    isCurrent: replay.isCurrent,
+                });
+            } else {
+                // MIDI history keeps its original offset/row restoration route.
+                preparedLegacyRedos.delete(alpha);
+            }
+
+            if (
+                clip.type === 'audio' &&
+                !historicRedo &&
+                !Object.hasOwn(alpha.payload, 'loopOriginBeat') &&
+                !Object.hasOwn(alpha.payload, 'midiOffsetBeats')
+            ) {
+                const before = structuredClone(clip);
+                const clock = audioClipStartTrimState.captureClock();
+                const after = prepareAudioClipStartTrim(
+                    before,
+                    alpha.payload.newStartBeat,
+                    audioClipStartTrimState.timeline(clock)
+                );
+                if (!after) {
+                    return { label, inverseAction: null };
+                }
+                const takeSourceTransitions = captureAudioClipTrimTakeSources(
+                    before,
+                    takeLaneStore.value?.lanes ?? [],
+                    audioClipStartTrimState.timeline(clock)
+                );
+                const capture: AudioTrimCapture = {
+                    clipId: clip.id,
+                    before,
+                    after,
+                    clock,
+                    takeSourceTransitions,
+                    direction: 'restore',
+                };
+                preparedAudioTrims.set(alpha, capture);
+                return {
+                    label,
+                    inverseAction: { type: 'restoreAudioClipStartTrim', payload: capture },
+                    redoAction: { type: 'restoreAudioClipStartTrim', payload: { ...capture, direction: 'apply' } },
+                };
             }
 
             const inversePayload: {
@@ -109,6 +272,5 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
         }
     },
     prepareAbort: rowReplay.prepareAbort,
-    validateSessionEntry: rowReplay.validateSessionEntry,
     undoable: true,
 });

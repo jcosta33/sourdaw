@@ -1,15 +1,21 @@
+import { hasValidAudioPassOrigin } from '#/utils/audioSourceTime';
+
 function isFiniteNonNegativeNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
 /**
- * Legacy takes may omit placement. A placed pass carries its anchor and depth
- * together beside its media offset. Its anchor may precede the media origin;
- * its material depth and offset cannot be negative. An exclusive source end
- * requires that complete placement and must leave material beyond its depth.
+ * File admission and store hydration share the complete take clock law. Legacy
+ * takes may omit placement; present fields must never be sanitized into a
+ * different source. A placed pass carries anchor and depth together beside its
+ * beat offset, with an exclusive endpoint beyond its depth when recorded.
  */
 export function isValidTakePlacement(value: object): boolean {
-    if ('sourceOffsetBeats' in value && !isFiniteNonNegativeNumber(value.sourceOffsetBeats)) {
+    if (
+        !hasValidAudioPassOrigin(value) ||
+        ('sourceOffsetBeats' in value && !isFiniteNonNegativeNumber(value.sourceOffsetBeats)) ||
+        ('sourceOffsetSeconds' in value && !isFiniteNonNegativeNumber(value.sourceOffsetSeconds))
+    ) {
         return false;
     }
     const hasAnchor = 'passAnchorSeconds' in value;

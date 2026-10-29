@@ -1,14 +1,24 @@
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { createHandler } from '#/utils/createHandler';
 import {
     type AppAction,
-    type HandlerValidationContext,
+    type CommandSourceProof,
+    type HandlerMaterializationContext,
     type RetiredTakeLaneSnapshot,
     type TakeReKeyLaneTransitionSnapshot,
 } from '#/utils/handlerContract';
+import { type TempoSourceClock } from '#/utils/tempoSourceClock';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type ZeroCrossingPosition } from '../../services/snapSplitBeatToZeroCrossing';
 import { getNextAppActionClipId } from '../../useCases/clip/getNextAppActionClipId';
+import { captureClipSplitSource } from '../../useCases/clipEditing/captureClipSplitSource';
 import { prepareClipSplit } from '../../useCases/clipEditing/prepareClipSplit';
+import { preparedClipSplits } from '../../useCases/clipEditing/preparedClipSplit';
+import { projectClipReplayPrefix } from '../../useCases/clipEditing/projectClipReplayPrefix';
 import { splitClip } from '../../useCases/clipEditing/splitClip';
+import { reKeyedTakeLaneOwnersMatchStore } from '../../useCases/comping/reKeyedTakeLaneOwnersMatchStore';
+import { resolveZeroCrossingPosition } from '../../useCases/timelineInteractions/snapToZeroCrossing';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 
 import { isSplitClipSessionEntry } from './validateClipEditSessionEntries';
@@ -21,6 +31,7 @@ type PendingSplitDescription = {
      * back into the inverse/redo payloads, which share the same array.
      */
     reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[];
+    splitSourceProof?: CommandSourceProof;
 };
 
 // Keyed by action so concurrent splits cannot cross, mirroring the Delete Time
@@ -28,23 +39,55 @@ type PendingSplitDescription = {
 // undo entry, which is how `executeAppAction` — reading the description only
 // after execution completes — ends up with the real capture.
 const pendingDescriptions = new WeakMap<object, PendingSplitDescription>();
+const preparedSourceClocks = new WeakMap<object, TempoSourceClock>();
+const preparedSourceRoots = new WeakMap<object, string>();
 
-function prepareAction(action: SplitClipAction, context?: HandlerValidationContext) {
+function prepareAction(action: SplitClipAction, context?: HandlerMaterializationContext) {
+    const captured = preparedClipSplits.get(action);
+    if (captured) {
+        return captured;
+    }
     const rightClipId = action.payload.rightClipId ?? getNextAppActionClipId();
     action.payload.rightClipId = rightClipId;
+    const prefix = projectClipReplayPrefix(context?.preparedPrefix ?? context?.actions.slice(0, context.actionIndex));
+    if (!prefix?.tracks) {
+        return null;
+    }
+    let admittedSplitPosition: ZeroCrossingPosition | undefined;
+    if (action.payload.resolvedBeat === undefined) {
+        const admission = projectClipReplayPrefix();
+        const clip = prefix.tracks.flatMap((track) => track.clips).find((clip) => clip.id === action.payload.clipId);
+        if (!admission || !clip) {
+            return null;
+        }
+        const position = resolveZeroCrossingPosition(clip, action.payload.beat, admission.timeline);
+        // A preceding tempo write changes source placement, not the admitted split geometry.
+        admittedSplitPosition = valuesEqual(admission.clock, prefix.clock) ? position : { beat: position.beat };
+    }
     const plan = prepareClipSplit({
         clipId: action.payload.clipId,
         splitBeat: action.payload.beat,
         rightClipId,
         resolvedSplitBeat: action.payload.resolvedBeat,
+        admittedSplitPosition,
         targetNoteIds: action.payload.targetNoteIds,
-        priorActions: context?.actions.slice(0, context.actionIndex),
+        owners: {
+            tracks: prefix.tracks,
+            takeLanes: prefix.takeLanes,
+            automationLanes: prefix.lanes,
+            timeline: prefix.timeline,
+        },
     });
     if (plan && action.payload.targetNoteIds === undefined) {
         action.payload.targetNoteIds = plan.targetNoteIds;
     }
     if (plan && action.payload.resolvedBeat === undefined) {
         action.payload.resolvedBeat = plan.next.leftClip.endBeat;
+    }
+    if (plan) {
+        preparedClipSplits.set(action, structuredClone(plan));
+        preparedSourceClocks.set(action, structuredClone(prefix.clock));
+        preparedSourceRoots.set(action, captureProjectRootIdentity());
     }
     return plan;
 }
@@ -72,41 +115,81 @@ export const handleSplitClip = createHandler<'splitClip'>({
             entry.redoAction.payload.retiredTakeLanes = entry.inverseAction.payload.retiredTakeLanes;
             entry.redoAction.payload.retiredTakeSourceProof = entry.inverseAction.payload.retiredTakeSourceProof;
             entry.redoAction.payload.reKeyedTakeLanes = entry.inverseAction.payload.reKeyedTakeLanes;
+            if (inverse.splitSourceProof !== undefined) {
+                entry.redoAction.payload.splitSourceProof = inverse.splitSourceProof;
+            }
         }
         return true;
     },
-    validate: (action, context) =>
-        prepareClipSplit({
-            clipId: action.payload.clipId,
-            splitBeat: action.payload.beat,
-            rightClipId: action.payload.rightClipId ?? '__split-preflight__',
-            resolvedSplitBeat: action.payload.resolvedBeat,
-            targetNoteIds: action.payload.targetNoteIds,
-            priorActions: context.actions.slice(0, context.actionIndex),
-        }) !== null,
+    validate: (action, context) => {
+        const plan = prepareAction(action, context);
+        const prefix = projectClipReplayPrefix(context.actions.slice(0, context.actionIndex));
+        if (!plan || !prefix?.tracks) {
+            return false;
+        }
+        const owner = prefix.clips.find((candidate) => candidate.clip.id === action.payload.clipId);
+        return (
+            owner?.owningTrackId === plan.previous.trackId &&
+            valuesEqual(owner.clip, plan.previous.leftClip) &&
+            !prefix.clips.some((candidate) => candidate.clip.id === plan.rightClipId) &&
+            reKeyedTakeLaneOwnersMatchStore(plan.takeReKeyTransitions ?? [], 'apply', [], prefix.takeLanes)
+        );
+    },
+    materializeCommandArgumentsAt: 'admission',
     materializeCommandArguments: (action, context) => {
         prepareAction(action, context);
     },
-    execute: (action) => {
-        return toHandlerExecutionResult(
-            splitClip(
-                action.payload.clipId,
-                action.payload.beat,
-                action.payload.rightClipId,
-                action.payload.targetNoteIds,
-                action.payload.resolvedBeat,
-                // The capture rides the shared array `describe()` put on both
-                // undo payloads; without it the split still re-keys lanes, the
-                // entry just cannot replay the re-key on undo/redo.
-                { reKeyedTakeLanes: pendingDescriptions.get(action)?.reKeyedTakeLanes }
-            ) !== null
-        );
+    execute: (action, context) => {
+        const plan = preparedClipSplits.get(action);
+        const pending = pendingDescriptions.get(action);
+        const clock = preparedSourceClocks.get(action);
+        const audio = plan?.previous.leftClip.type === 'audio';
+        const source =
+            audio &&
+            clock &&
+            preparedSourceRoots.get(action) === captureProjectRootIdentity() &&
+            pending?.splitSourceProof
+                ? captureClipSplitSource(
+                      plan,
+                      clock,
+                      context?.undoEntryId,
+                      pending.splitSourceProof,
+                      context?.actions.slice(0, context.actionIndex) ?? []
+                  )
+                : null;
+        if (audio && !source) {
+            return { status: 'conflict' };
+        }
+        try {
+            const written =
+                splitClip(
+                    action.payload.clipId,
+                    action.payload.beat,
+                    action.payload.rightClipId,
+                    action.payload.targetNoteIds,
+                    action.payload.resolvedBeat,
+                    { reKeyedTakeLanes: pending?.reKeyedTakeLanes, prepared: plan }
+                ) !== null;
+            if (!written || (source && !source.captureWrittenState())) {
+                source?.validation.release();
+                return source ? { status: 'conflict' } : toHandlerExecutionResult(written);
+            }
+            return source
+                ? { status: 'written', commitValidation: source.validation }
+                : toHandlerExecutionResult(written);
+        } catch (error) {
+            source?.validation.release();
+            throw error;
+        }
     },
     describe: (action, context) => {
         const plan = prepareAction(action, context);
         if (!plan) {
             return { label: 'Split clip', inverseAction: null };
         }
+        // History may refresh its own captures during replay. It never owns the
+        // private admitted plan the forward source guard and execution consume.
+        const snapshots = structuredClone({ previous: plan.previous, next: plan.next });
         const actualBeat = plan.next.leftClip.endBeat;
         const label =
             actualBeat === action.payload.beat
@@ -121,7 +204,8 @@ export const handleSplitClip = createHandler<'splitClip'>({
         // split's inverse is a snapshot restore, so only this capture carries
         // the pre-split take/comp-region facets the undo must put back (#5048).
         const reKeyedTakeLanes: TakeReKeyLaneTransitionSnapshot[] = [];
-        pendingDescriptions.set(action, { reKeyedTakeLanes });
+        const splitSourceProof = plan.previous.leftClip.type === 'audio' ? { changeHash: '', memberId: '' } : undefined;
+        pendingDescriptions.set(action, { reKeyedTakeLanes, splitSourceProof });
         return {
             label,
             inverseAction: {
@@ -129,10 +213,11 @@ export const handleSplitClip = createHandler<'splitClip'>({
                 payload: {
                     clipId: action.payload.clipId,
                     rightClipId: plan.rightClipId,
-                    expected: plan.next,
-                    replacement: plan.previous,
+                    expected: snapshots.next,
+                    replacement: snapshots.previous,
                     retiredTakeLanes,
                     retiredTakeSourceProof,
+                    ...(splitSourceProof ? { splitSourceProof } : {}),
                     reKeyedTakeLanes,
                 },
             },
@@ -141,10 +226,11 @@ export const handleSplitClip = createHandler<'splitClip'>({
                 payload: {
                     clipId: action.payload.clipId,
                     rightClipId: plan.rightClipId,
-                    expected: plan.previous,
-                    replacement: plan.next,
+                    expected: snapshots.previous,
+                    replacement: snapshots.next,
                     retiredTakeLanes,
                     retiredTakeSourceProof,
+                    ...(splitSourceProof ? { splitSourceProof } : {}),
                     reKeyedTakeLanes,
                 },
             },

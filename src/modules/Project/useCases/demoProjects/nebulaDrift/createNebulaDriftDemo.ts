@@ -22,9 +22,9 @@ import { LEGACY_MIDI_PROBABILITY_SEED, midiStore } from '#/modules/MIDI/stores';
 import { addChordEvent, replaceChordTrackState } from '#/modules/MIDI/useCases';
 import { addSidechainRoute } from '#/modules/Routing/useCases';
 import { getDefaultPadNames } from '#/modules/Toaster/useCases';
-import { tempoMapStore, timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
+import { timeSignatureMapStore, transportStore } from '#/modules/Transport/stores';
 import {
-    addTempoChange,
+    restoreTimelineMapSnapshot,
     addTimeSignatureChange,
     ensureTrackStrips,
     preferencesSeededTransportState,
@@ -2279,17 +2279,23 @@ export async function demo5_NebulaDrift(): Promise<void> {
         ],
     });
 
-    // ── Tempo drift (76 → 78 at Peak → back to 76 at Fog) ─────────────────
-    tempoMapStore.set({ changes: [] });
-    addTempoChange(0, bpm, 'instant');
-    addTempoChange(S.peak, 78, 'linear');
-    addTempoChange(S.breakdown, bpm, 'linear');
-
     // ── Time signature: brief 6/8 excursion at Peak, back to 4/4 ──────────
     timeSignatureMapStore.set({ changes: [] });
     addTimeSignatureChange(0, 4, 4);
     addTimeSignatureChange(S.peak, 6, 8);
     addTimeSignatureChange(S.peak + 12, 4, 4);
+
+    // Restore the demo's target clock without creating user edit history.
+    restoreTimelineMapSnapshot({
+        tempoMap: {
+            changes: [
+                { id: crypto.randomUUID(), beat: 0, tempo: bpm, curve: 'instant' },
+                { id: crypto.randomUUID(), beat: S.peak, tempo: 78, curve: 'linear' },
+                { id: crypto.randomUUID(), beat: S.breakdown, tempo: bpm, curve: 'linear' },
+            ],
+        },
+        timeSignatureMap: timeSignatureMapStore.value,
+    });
 
     // ── Chord track — 8-chord progression matching Warm Halo voicings ────
     //   Am9 | Cmaj9 | Em7 | Dm9 | Fmaj7 | G7 | Am9 | Bbmaj7

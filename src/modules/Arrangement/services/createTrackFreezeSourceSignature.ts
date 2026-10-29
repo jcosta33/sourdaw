@@ -24,6 +24,10 @@ type RenderAffectingClipFields = Pick<
     | 'audioBufferId'
     | 'assetHash'
     | 'audioOffsetBeats'
+    | 'audioOffsetSeconds'
+    | 'audioLoopStartSeconds'
+    | 'audioLoopPassEntrySeconds'
+    | 'audioLoopPassOriginBeat'
     | 'midiOffsetBeats'
     | 'fadeInBeats'
     | 'fadeOutBeats'
@@ -66,25 +70,37 @@ function clipSignatureEntry(clip: RenderAffectingClipFields): string {
         loopOriginBeat: clip.loopOriginBeat,
         loopEnabled: clip.loopEnabled ?? false,
     });
-    return [
-        clip.id,
-        clip.startBeat,
-        duration,
-        clip.assetHash ?? '',
-        clip.gain,
-        clip.type,
-        clip.audioBufferId ?? '',
-        clip.audioOffsetBeats ?? 0,
-        clip.midiOffsetBeats ?? 0,
-        clip.fadeInBeats,
-        clip.fadeOutBeats,
-        clip.muted,
-        clip.stretchMode ?? '',
-        clip.stretchRatio ?? '',
-        clip.loopEnabled ?? false,
-        clip.loopLength ?? 0,
-        loopAnchoredStartBeat,
-    ].join(':');
+    let sourceSignature = '';
+    if (clip.type === 'audio' && clip.audioOffsetSeconds !== undefined) {
+        const sourceFields: Record<string, number> = { entry: clip.audioOffsetSeconds };
+        if (clip.loopEnabled) {
+            sourceFields.reset = clip.audioLoopStartSeconds ?? clip.audioOffsetSeconds;
+            sourceFields.passEntry = clip.audioLoopPassEntrySeconds ?? clip.audioOffsetSeconds;
+            sourceFields.passOrigin = clip.audioLoopPassOriginBeat ?? clip.startBeat;
+        }
+        sourceSignature = `:${canonicalJson(sourceFields)}`;
+    }
+    return (
+        [
+            clip.id,
+            clip.startBeat,
+            duration,
+            clip.assetHash ?? '',
+            clip.gain,
+            clip.type,
+            clip.audioBufferId ?? '',
+            clip.audioOffsetBeats ?? 0,
+            clip.midiOffsetBeats ?? 0,
+            clip.fadeInBeats,
+            clip.fadeOutBeats,
+            clip.muted,
+            clip.stretchMode ?? '',
+            clip.stretchRatio ?? '',
+            clip.loopEnabled ?? false,
+            clip.loopLength ?? 0,
+            loopAnchoredStartBeat,
+        ].join(':') + sourceSignature
+    );
 }
 
 /*

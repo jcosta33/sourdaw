@@ -1,11 +1,24 @@
-import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
-import { takeLaneStore } from '../../stores/takeLaneStore';
+import { captureAudioSourceSnapshot, type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { valuesEqual } from '#/utils/structuralEquality';
 
+import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
+import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { liveTempoTimeline } from '../liveTempoTimeline';
+
+import { captureTakeSource } from './captureTakeSource';
+import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type CaptureTakeReKeyTransitionsInput = {
     /** Per-track clip fragment windows from `collectTakeReKeyWindows`; lanes on unlisted tracks are untouched. */
     windowsByTrackId: ReadonlyMap<string, readonly TakeReKeyClipWindow[]>;
+    /** Exact source clips captured before the clip producer publishes. */
+    sourceClips?: readonly Clip[];
+    lanes?: readonly TakeLane[];
+    timeline?: TempoTimeline;
     /** Clip ids the same operation removes outright — their takes retire separately (#4520), never re-key. */
     removedClipIds: ReadonlySet<string>;
     deleteStartBeat: number;
@@ -125,6 +138,7 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * hydrated state would mint colliding fragment ids here, an accepted
  * divergence on state no route produces.
  */
+
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
@@ -142,13 +156,17 @@ function buildTakeFragments(
             // re-mints the same id.
             fragmentTakeId = `${take.id}:time-delete-right:${deleteStartBeat}:${deleteEndBeat}`;
         }
-        fragmentTakes.push({
+        const fragmentTake: Take = {
             ...take,
             id: fragmentTakeId,
             clipId: piece.targetClipId,
             startBeat: piece.startBeat,
             endBeat: piece.endBeat,
-        });
+        };
+        if (take.passOriginBeat !== undefined) {
+            fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
+        }
+        fragmentTakes.push(fragmentTake);
         fragments.push({
             takeId: fragmentTakeId,
             sourceStartBeat: piece.preImageStartBeat,
@@ -182,15 +200,21 @@ function mapLaneTakes(
             mapping.takesAfter.push(take);
             continue;
         }
+        const capturedTake = captureTakeSource(
+            take,
+            input.sourceClips?.find((clip) => clip.id === take.clipId),
+            input.timeline ?? liveTempoTimeline
+        );
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
-            mapping.takesAfter.push(take);
+            mapping.takesAfter.push(capturedTake);
+            mapping.takesChanged = mapping.takesChanged || !valuesEqual(capturedTake, take);
             continue;
         }
 
         mapping.takesChanged = true;
         const { fragmentTakes, fragments } = buildTakeFragments(
-            take,
+            capturedTake,
             pieces,
             input.deleteStartBeat,
             input.deleteEndBeat
@@ -210,11 +234,22 @@ function mapRegionThroughFragments(region: CompRegion, fragments: readonly TakeF
         if (overlapStart >= overlapEnd) {
             continue;
         }
-        mapped.push({
+        const delta = fragment.targetStartBeat - fragment.sourceStartBeat;
+        const mappedRegion: CompRegion = {
+            ...region,
             startBeat: mapBeatThroughWindow(overlapStart, fragment),
             endBeat: mapBeatThroughWindow(overlapEnd, fragment),
             takeId: fragment.takeId,
-        });
+        };
+        if (region.audioSource) {
+            mappedRegion.audioSource = {
+                ...region.audioSource,
+                startBeat: region.audioSource.startBeat + delta,
+                loopOriginBeat: region.audioSource.loopOriginBeat + delta,
+                audioLoopPassOriginBeat: region.audioSource.audioLoopPassOriginBeat + delta,
+            };
+        }
+        mapped.push(mappedRegion);
     }
     return mapped;
 }
@@ -230,10 +265,13 @@ function mapLaneRegions(
     takesById: ReadonlyMap<string, Take>,
     fragmentsBySourceTakeId: ReadonlyMap<string, TakeFragmentMap[]>,
     input: CaptureTakeReKeyTransitionsInput,
-    rightSideUnmoved: boolean
+    rightSideUnmoved: boolean,
+    audioSources: ReadonlyMap<CompRegion, AudioSourceSnapshot>
 ): LaneRegionMapping {
     const mapping: LaneRegionMapping = { regionsBefore: [], regionsAfter: [], regionsChanged: false };
     for (const region of lane.activeCompRegions) {
+        const capturedSource = audioSources.get(region);
+        const nextRegion = capturedSource ? { ...region, audioSource: capturedSource } : region;
         const take = takesById.get(region.takeId);
         if (take && input.removedClipIds.has(take.clipId)) {
             // The retirement leg owns this region's removal (#4520), so it
@@ -256,7 +294,8 @@ function mapLaneRegions(
             // the transform must not edit a comp it never touched.
             if (input.operationKind === 'clip-transform') {
                 mapping.regionsBefore.push(region);
-                mapping.regionsAfter.push(region);
+                mapping.regionsAfter.push(nextRegion);
+                mapping.regionsChanged = mapping.regionsChanged || !valuesEqual(region, nextRegion);
                 continue;
             }
             // The take's clip was untouched (or the region names a take the
@@ -291,6 +330,7 @@ function mapLaneRegions(
             mapping.regionsChanged = true;
             if (region.startBeat < input.deleteStartBeat) {
                 mapping.regionsAfter.push({
+                    ...nextRegion,
                     startBeat: region.startBeat,
                     endBeat: input.deleteStartBeat,
                     takeId: region.takeId,
@@ -303,6 +343,7 @@ function mapLaneRegions(
                 // already continued every region starting at or past it, so
                 // region.startBeat < input.deleteEndBeat here.
                 mapping.regionsAfter.push({
+                    ...nextRegion,
                     startBeat: input.deleteEndBeat,
                     endBeat: region.endBeat,
                     takeId: region.takeId,
@@ -310,14 +351,9 @@ function mapLaneRegions(
             }
             continue;
         }
-        const mapped = mapRegionThroughFragments(region, fragments);
+        const mapped = mapRegionThroughFragments(nextRegion, fragments);
         mapping.regionsBefore.push(region);
-        if (
-            mapped.length === 1 &&
-            mapped[0]!.takeId === region.takeId &&
-            mapped[0]!.startBeat === region.startBeat &&
-            mapped[0]!.endBeat === region.endBeat
-        ) {
+        if (mapped.length === 1 && valuesEqual(mapped[0], region)) {
             mapping.regionsAfter.push(region);
             continue;
         }
@@ -369,16 +405,134 @@ function mapLaneRegions(
  * same amount), so the mapped sides come out sorted, non-overlapping, and
  * naming only takes the same side holds.
  */
+function captureRegionAudioSources(lane: TakeLane, input: CaptureTakeReKeyTransitionsInput) {
+    const sources = new Map<CompRegion, AudioSourceSnapshot>();
+    const clips = input.sourceClips?.filter((clip) => clip.trackId === lane.trackId) ?? [];
+    if (clips.length === 0) {
+        return sources;
+    }
+    const timeline = input.timeline ?? liveTempoTimeline;
+    const resolved = resolveCompingProgramme(lane.trackId, clips, { lanes: [lane] }, timeline);
+    const transformedIds = new Set(input.windowsByTrackId.get(lane.trackId)?.map((window) => window.sourceClipId));
+    for (const region of lane.activeCompRegions) {
+        if (region.audioSource) {
+            continue;
+        }
+        const take = lane.takes.find((candidate) => candidate.id === region.takeId);
+        if (!take || take.passAnchorSeconds !== undefined || !transformedIds.has(take.clipId)) {
+            continue;
+        }
+        const fragment = resolved.find(
+            (clip) =>
+                clip.id === take.clipId &&
+                clip.type === 'audio' &&
+                clip.startBeat >= region.startBeat &&
+                clip.endBeat <= region.endBeat
+        );
+        if (!fragment) {
+            continue;
+        }
+        const loop = projectClipLoopExpansion({
+            clipDurationBeats: fragment.endBeat - fragment.startBeat,
+            configuredLoopLengthBeats: fragment.loopLength,
+            loopEnabled: fragment.loopEnabled ?? false,
+        });
+        const snapshot = captureAudioSourceSnapshot(
+            fragment,
+            loop.loopLengthBeats,
+            timeline.tempoAtBeat(fragment.startBeat)
+        );
+        if (snapshot) {
+            sources.set(region, snapshot);
+        }
+    }
+    return sources;
+}
+
+function captureBaseGapSources(
+    lane: TakeLane,
+    input: CaptureTakeReKeyTransitionsInput,
+    windows: readonly TakeReKeyClipWindow[]
+): readonly AudioSourceTile[] | undefined {
+    const clips = input.sourceClips?.filter((clip) => clip.trackId === lane.trackId) ?? [];
+    if (clips.length === 0) {
+        return lane.baseGapAudioSources;
+    }
+    const transformed = new Set(windows.map((window) => window.sourceClipId));
+    const tiles = (lane.baseGapAudioSources ?? []).filter((tile) => !transformed.has(tile.clipId));
+    const timeline = input.timeline ?? liveTempoTimeline;
+    for (const fragment of resolveCompingProgramme(lane.trackId, clips, { lanes: [lane] }, timeline)) {
+        if (
+            fragment.type !== 'audio' ||
+            !transformed.has(fragment.id) ||
+            lane.activeCompRegions.some(
+                (region) => region.startBeat < fragment.endBeat && region.endBeat > fragment.startBeat
+            )
+        ) {
+            continue;
+        }
+        const loop = projectClipLoopExpansion({
+            clipDurationBeats: fragment.endBeat - fragment.startBeat,
+            configuredLoopLengthBeats: fragment.loopLength,
+            loopEnabled: fragment.loopEnabled ?? false,
+        });
+        const source = captureAudioSourceSnapshot(
+            fragment,
+            loop.loopLengthBeats,
+            timeline.tempoAtBeat(fragment.startBeat)
+        );
+        if (source) {
+            tiles.push({
+                clipId: fragment.id,
+                startBeat: fragment.startBeat,
+                endBeat: fragment.endBeat,
+                audioSource: source,
+            });
+        }
+    }
+    const mapped: AudioSourceTile[] = [];
+    for (const tile of tiles) {
+        if (!transformed.has(tile.clipId)) {
+            mapped.push(tile);
+            continue;
+        }
+        for (const window of windows) {
+            if (window.sourceClipId !== tile.clipId) {
+                continue;
+            }
+            const start = Math.max(tile.startBeat, window.sourceStartBeat);
+            const end = Math.min(tile.endBeat, window.sourceEndBeat);
+            if (start >= end) {
+                continue;
+            }
+            const delta = window.targetStartBeat - window.sourceStartBeat;
+            mapped.push({
+                clipId: window.targetClipId,
+                startBeat: start + delta,
+                endBeat: end + delta,
+                audioSource: {
+                    ...tile.audioSource,
+                    startBeat: tile.audioSource.startBeat + delta,
+                    loopOriginBeat: tile.audioSource.loopOriginBeat + delta,
+                    audioLoopPassOriginBeat: tile.audioSource.audioLoopPassOriginBeat + delta,
+                },
+            });
+        }
+    }
+    mapped.sort((a, b) => a.clipId.localeCompare(b.clipId) || a.startBeat - b.startBeat);
+    return mapped.length > 0 || lane.baseGapAudioSources !== undefined ? mapped : undefined;
+}
+
 export function captureTakeReKeyTransitions(
     input: CaptureTakeReKeyTransitionsInput
 ): readonly TakeReKeyLaneTransition[] {
-    const state = takeLaneStore.value;
-    if (!state || input.windowsByTrackId.size === 0) {
+    const lanes = input.lanes ?? takeLaneStore.value?.lanes;
+    if (!lanes || input.windowsByTrackId.size === 0) {
         return [];
     }
 
     const transitions: TakeReKeyLaneTransition[] = [];
-    for (const lane of state.lanes) {
+    for (const lane of lanes) {
         const windows = input.windowsByTrackId.get(lane.trackId);
         if (!windows) {
             continue;
@@ -403,19 +557,41 @@ export function captureTakeReKeyTransitions(
             takesById,
             takeMapping.fragmentsBySourceTakeId,
             input,
-            rightSideUnmoved
+            rightSideUnmoved,
+            captureRegionAudioSources(lane, input)
         );
-        if (!takeMapping.takesChanged && !regionMapping.regionsChanged) {
+        const baseGaps = captureBaseGapSources(lane, input, windows);
+        if (
+            !takeMapping.takesChanged &&
+            !regionMapping.regionsChanged &&
+            valuesEqual(baseGaps, lane.baseGapAudioSources)
+        ) {
             continue;
         }
-        transitions.push({
+        const transition: {
+            laneId: string;
+            trackId: string;
+            takesBefore: Take[];
+            takesAfter: Take[];
+            regionsBefore: CompRegion[];
+            regionsAfter: CompRegion[];
+            baseGapAudioSourcesBefore?: readonly AudioSourceTile[];
+            baseGapAudioSourcesAfter?: readonly AudioSourceTile[];
+        } = {
             laneId: lane.id,
             trackId: lane.trackId,
             takesBefore: lane.takes,
             takesAfter: takeMapping.takesAfter,
             regionsBefore: regionMapping.regionsBefore,
             regionsAfter: regionMapping.regionsAfter,
-        });
+        };
+        if (lane.baseGapAudioSources !== undefined) {
+            transition.baseGapAudioSourcesBefore = lane.baseGapAudioSources;
+        }
+        if (baseGaps !== undefined) {
+            transition.baseGapAudioSourcesAfter = baseGaps;
+        }
+        transitions.push(transition);
     }
     return transitions;
 }
