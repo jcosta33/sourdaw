@@ -266,14 +266,16 @@ export const LevainPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
                         </Row>
                     </Row>
 
-                    <DawEffectDisclosure
-                        tier={expert ? 'lab' : 'play'}
-                        options={['play', 'lab']}
-                        labels={{ play: 'Basic', lab: 'Expert' }}
-                        groupLabel="Levain control detail"
-                        tone="amber"
-                        onChange={(tier) => void setLevainPanelUiLevel(deviceId, tier === 'lab' ? 6 : 1)}
-                    />
+                    <fieldset disabled={!instances[deviceId]} className="min-w-0 border-0 p-0">
+                        <DawEffectDisclosure
+                            tier={expert ? 'lab' : 'play'}
+                            options={['play', 'lab']}
+                            labels={{ play: 'Basic', lab: 'Expert' }}
+                            groupLabel="Levain control detail"
+                            tone="amber"
+                            onChange={(tier) => void setLevainPanelUiLevel(deviceId, tier === 'lab' ? 6 : 1)}
+                        />
+                    </fieldset>
                     <section aria-label="Selection detail" className="levain-window p-3">
                         <DawReadoutRow label="Selected instrument" value={instLabel} />
                         <DawReadoutRow label="Selected patch articulation" value={currentArt} />
