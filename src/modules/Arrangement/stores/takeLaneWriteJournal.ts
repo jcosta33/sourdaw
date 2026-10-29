@@ -3,7 +3,7 @@ import {
     getCurrentAutomergeStorageMutationOwner,
 } from '#/infra/store/storage/createAutomergeStorage';
 
-import { type Take, type TakeLane } from '../models/TakeLane';
+import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
 import {
     captureBaseGapAudioSources,
