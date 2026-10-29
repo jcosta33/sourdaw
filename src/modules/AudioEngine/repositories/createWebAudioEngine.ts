@@ -563,16 +563,6 @@ class AudioEngineImpl implements AudioEngine {
         return outputId === 'master' || outputId === 'hw_out' || this.trackNodes.has(outputId);
     }
 
-    private matchesRuntimeGraphNode(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
-        return (
-            node.strip.deviceNodes.length === expected.devices.length &&
-            node.strip.deviceNodes.every(
-                (device, index) =>
-                    device.deviceId === expected.devices[index]?.id && device.type === expected.devices[index]?.type
-            )
-        );
-    }
-
     private matchesRuntimeDeviceChain(node: TrackNode, expected: RuntimeGraphDeltaNode): boolean {
         return matchesRuntimeDeviceChainTopology(node.strip, expected);
     }
@@ -1327,7 +1317,7 @@ class AudioEngineImpl implements AudioEngine {
             });
         }
         const source = this.trackNodes.get(edge.sourceId);
-        if (!source || !this.matchesRuntimeGraphNode(source, sourcePlan)) {
+        if (!source || !this.matchesRuntimeDeviceChain(source, sourcePlan)) {
             return Object.freeze({
                 acceptance: 'rejected' as const,
                 application: 'not-applied' as const,
@@ -1343,7 +1333,7 @@ class AudioEngineImpl implements AudioEngine {
         const targetPlan = delta.nodes[1];
         if (targetPlan) {
             const target = this.trackNodes.get(targetPlan.id);
-            if (!target || !this.matchesRuntimeGraphNode(target, targetPlan)) {
+            if (!target || !this.matchesRuntimeDeviceChain(target, targetPlan)) {
                 return Object.freeze({
                     acceptance: 'rejected' as const,
                     application: 'not-applied' as const,
