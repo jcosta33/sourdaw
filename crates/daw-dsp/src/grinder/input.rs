@@ -66,6 +66,11 @@ impl NoiseGate {
     pub fn set_param(&mut self, name: &str, value: f32) {
         match name {
             "gateEnabled" => {
+                if !self.enabled && value > 0.5 {
+                    // Let the detector acquire a sounding note before leaving bypass unity,
+                    // including when enabling at a zero crossing.
+                    self.hold_counter = self.hold_samples;
+                }
                 self.enabled = value > 0.5;
                 if !self.enabled {
                     self.gate_gain = 1.0;
@@ -333,6 +338,100 @@ mod tests {
     }
 
     const FADE_SAMPLE_RATE: f32 = 48_000.0;
+
+    #[test]
+    fn enabling_gate_during_sustained_note_does_not_dip() {
+        let mut worst_rms_dip = 0.0_f32;
+        let mut worst_gain_dip = 0.0_f32;
+        for (attack_ms, release_ms) in [(50.0, 5.0), (2.0, 120.0), (8.0, 60.0)] {
+            for phase in 0..8 {
+                let mut gate = NoiseGate::new(FADE_SAMPLE_RATE);
+                gate.set_param("gateThreshold", -40.0);
+                gate.set_param("gateAttack", attack_ms);
+                gate.set_param("gateRelease", release_ms);
+                let sine = |n: usize| {
+                    let angle = n as f64 * 2.0 * std::f64::consts::PI * 110.0 / 48_000.0
+                        + phase as f64 * std::f64::consts::PI / 4.0;
+                    angle.sin() as f32 * 10.0_f32.powf(-14.0 / 20.0)
+                };
+                for n in 0..48_000 {
+                    let input = sine(n);
+                    assert_eq!(gate.process_sample(input), input);
+                }
+                gate.set_param("gateEnabled", 1.0);
+
+                let mut lowest_gain = 1.0_f32;
+                let mut lowest_rms_ratio = 1.0_f32;
+                // Inspect every 1 ms window over 250 ms, including the initial zero crossing.
+                // Whole-note RMS would hide a brief dip; instantaneous sine ratios are unstable.
+                for window in 0..250 {
+                    let mut input_energy = 0.0_f32;
+                    let mut output_energy = 0.0_f32;
+                    for sample in 0..48 {
+                        let input = sine(48_000 + window * 48 + sample);
+                        let output = gate.process_sample(input);
+                        input_energy += input * input;
+                        output_energy += output * output;
+                        lowest_gain = lowest_gain.min(gate.gain());
+                    }
+                    lowest_rms_ratio = lowest_rms_ratio.min((output_energy / input_energy).sqrt());
+                }
+                let rms_dip_db = -20.0 * lowest_rms_ratio.log10();
+                let gain_dip_db = -20.0 * lowest_gain.log10();
+                eprintln!("attack {attack_ms}, release {release_ms}, phase {phase}: worst 1 ms RMS dip {rms_dip_db} dB, gain dip {gain_dip_db} dB");
+                worst_rms_dip = worst_rms_dip.max(rms_dip_db);
+                worst_gain_dip = worst_gain_dip.max(gain_dip_db);
+
+                for _ in 0..96_000 {
+                    gate.process_sample(0.0);
+                }
+                assert!(!gate.is_open, "silence must close the gate after enabling");
+                assert!(gate.gain() < 0.001, "silence must reach the noise floor");
+            }
+        }
+        assert!(
+            worst_rms_dip < 1.0 && worst_gain_dip < 1.0,
+            "enabling must not dip a sustained note by 1 dB: RMS {worst_rms_dip} dB, gain {worst_gain_dip} dB"
+        );
+    }
+
+    #[test]
+    fn enabling_silence_holds_then_closes_without_rearming_on_parameter_replay() {
+        let mut gate = NoiseGate::new(FADE_SAMPLE_RATE);
+        gate.set_param("gateRelease", 5.0);
+        gate.set_param("gateEnabled", 1.0);
+        for remaining in (0..gate.hold_samples).rev() {
+            gate.process_sample(0.0);
+            gate.set_param("gateEnabled", 1.0);
+            assert!(gate.is_open);
+            assert_eq!(gate.gain(), 1.0);
+            assert_eq!(gate.hold_counter, remaining);
+        }
+        gate.process_sample(0.0);
+        assert!(!gate.is_open);
+        assert!(gate.gain() < 1.0);
+        for _ in 0..4_800 {
+            gate.set_param("gateEnabled", 1.0);
+            gate.process_sample(0.0);
+        }
+        assert!(gate.gain() < 0.001);
+
+        gate.set_param("gateEnabled", 0.0);
+        for input in [0.0_f32, -0.0, 0.2, -0.3, f32::NAN, f32::INFINITY] {
+            assert_eq!(gate.process_sample(input).to_bits(), input.to_bits());
+        }
+        gate.set_param("gateEnabled", 1.0);
+        assert_eq!(gate.hold_counter, gate.hold_samples);
+        gate.reset();
+        assert!(!gate.is_open);
+        assert_eq!(gate.hold_counter, 0);
+        assert_eq!(gate.gain(), gate.floor_gain);
+        gate.set_param("gateEnabled", 1.0);
+        assert_eq!(
+            gate.hold_counter, 0,
+            "replaying enabled must preserve reset"
+        );
+    }
 
     fn assert_gate_recovers_after_non_finite_input(invalid: f32, initially_open: bool) {
         let configured_gate = || {
