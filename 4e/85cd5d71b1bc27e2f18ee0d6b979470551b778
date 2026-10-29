@@ -1,0 +1,28 @@
+scripts/__tests__/reloadCancellationCollector.spec.ts
+  s_26f70b851e8f7a::t_16f2633c0b2933 195-234
+  s_26f70b851e8f7a::t_fa631657c15106 235
+scripts/diagnostics/reloadCancellation/run.ts
+  s_26f70b851e8f7a::t_bbec16b5458028 51
+scripts/diagnostics/reloadCancellation/telemetry.ts
+  s_26f70b851e8f7a::t_57d80bd8ffbbb3 39
+  s_26f70b851e8f7a::t_3efabd944df739 26-29,43-54,56-58,62-65
+  s_26f70b851e8f7a::t_dcc3a73c4dd9f1 66-67
+scripts/diagnostics/reloadCancellation/qualification.ts
+  s_26f70b851e8f7a::t_4065b1e6939ad7 7,24,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e85cd5d71b1bc27e2f18ee0d6b979470551b778",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
