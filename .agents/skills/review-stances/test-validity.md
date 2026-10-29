@@ -1,5 +1,19 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
+`tREG` name `/tmp/no info.txt`. Its public final review lists borrower and incomplete-evidence
+coverage, but the pathname-versus-diagnostic admission probe was missing; historical private prompts
+and tiers are unestablished. A later clean catalog does not explain an earlier unrecorded failure.
+
+Run `keeps diagnostic words in absolute Darwin` and require exact path preservation plus owned-storage
+retention for a borrower. Use injected catalogs only: opening an adversarial filename can poison
+other lanes' global guards. Run `reports bounded Darwin inspection context`, the whole/scoped
+replacement and stable-reason sequences, and the receipt cases with detailed obstruction reasons.
+Revert the pathname distinction to make the new parser assertion fail; remove context propagation
+to make the census assertions fail. Never weaken malformed, missing-type or unknown-type admission.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
