@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -35,6 +36,7 @@ test.describe('Project menu', () => {
     });
 
     test('New Project clears an added MIDI track from the arrangement', async ({ page }) => {
+        await chooseProjectDirectory(page);
         await addMidiTrack(page);
         const trackList = page.getByRole('grid', { name: /Track list/i });
         await expect(trackList.first()).toBeVisible();

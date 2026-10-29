@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -21,6 +22,7 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('Dirty indicator', () => {
     test('appears after adding a MIDI track and clears on save', async ({ page }) => {
+        await chooseProjectDirectory(page);
         const dirty = page.getByTitle('Unsaved changes');
         await expect(dirty).toHaveCount(0);
 

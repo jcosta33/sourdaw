@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 async function runPaletteCommand(page: import('@playwright/test').Page, query: string): Promise<void> {
@@ -25,6 +26,7 @@ test.describe('Project save flow — dirty flag clears', () => {
     });
 
     test('making an edit then saving clears the unsaved-changes indicator', async ({ page }) => {
+        await chooseProjectDirectory(page);
         // A fresh project is clean — no dirty dot.
         await expect(dirtyDot(page)).toHaveCount(0);
 
@@ -40,6 +42,7 @@ test.describe('Project save flow — dirty flag clears', () => {
     });
 
     test('a further edit re-asserts dirty after a clean save', async ({ page }) => {
+        await chooseProjectDirectory(page);
         // Edit + save → clean.
         await page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' }).click();
         await expect(dirtyDot(page)).toBeVisible({ timeout: 10_000 });
