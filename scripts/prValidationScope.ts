@@ -116,6 +116,8 @@ function isRepositoryTooling(path: string): boolean {
     return (
         path.startsWith('scripts/') ||
         path.startsWith('.agents/') ||
+        path === '.gitleaksignore' ||
+        path === '.gitleaks.toml' ||
         /^release\/[^/]+\.json$/.test(path) ||
         (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
     );

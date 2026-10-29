@@ -6,6 +6,40 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
+
+The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
+was absent from replacement #5748's PR range but remained on a retained branch that Nightly scanned
+with `--all`. Historical private prompts and tiers are unestablished. Current runtime-composed
+fixtures and a green replacement diff could not observe the old finding.
+
+Run the pinned real scanner against the exact original commit and path. Require the original
+finding without the candidate ignore, no finding with its exact audited fingerprint, and detection
+with a wrong fingerprint. Keep independent synthetic credential controls, including an inline
+allow annotation. Preserve failed controls and diagnose their input against the pinned rule; a
+credential-shaped string outside that rule is not a positive control.
+
+PR #5846's initial repair passed real scanner probes but was caught by the hosted byte-exact
+ignore contract in `scripts/test-health-gate-scripts.sh`. Scanner execution does not observe every
+caller that binds its configuration bytes. Trace direct readers and evaluate the unchanged owning
+assertion against the candidate; removing the audited exception, changing its provenance or adding
+an unrelated fingerprint must fail without weakening exact equality.
+The subsequent literal source URL also entered the external-reference census. Use the production
+snapshot loader restricted to changed source paths, compare discovered keys with inventory
+assignments, and prove removal of the new assignment exposes that exact missing reference.
+
+### 2026-10-29 — static scanner metadata fell through to browser coverage (#5483)
+
+PR #5483 (`07b3882eb3`) introduced broad non-browser repository tooling selection but omitted
+the root `.gitleaksignore` and `.gitleaks.toml` inputs. Static scanner metadata therefore selected
+the full browser inventory. Historical private prompts and tiers are unestablished; the missed
+input class was security metadata alongside the existing scripts and prose cases.
+
+Exercise the real planner with each exact root path, requiring broad non-browser validation and
+unchanged CodeQL selection. Keep suffix lookalikes and unknown nested paths on the full fallback;
+mixed product edits must retain their full or narrowed browser coverage. Removing only the exact
+root classification must fail the owning cases.
+
 ### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
 
 Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
