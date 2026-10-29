@@ -1,0 +1,23 @@
+.agents/skills/review-stances/test-validity.md
+  s_441e828df58f9e::t_904ca48cade561 703
+AGENTS.md
+  s_441e828df58f9e::t_cddcdc95d6f2f2 112-115,119-120,122-124,127-128
+.agents/skills/review-stances/README.md
+  s_441e828df58f9e::t_476657e7db1ea1 39,41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fbc547243ed37c6c2329e17c9cad01276588647a",
+  "prompts": {},
+  "sessions": {
+    "s_441e828df58f9e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "2845244a-811e-4f69-a89a-e2b3d9dedcec",
+        "model": "grok-4.7"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
