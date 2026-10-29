@@ -1295,6 +1295,19 @@ case with equal start timestamps and one with equal end timestamps; for each pai
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
 
+### Projection-only rearm must fail the aborted-repair probe (issue #5286)
+
+Use the connected same-project repair path with a real connected On track and hold plugin reset.
+Project Off before repair and during reset in aborting version restores; require committed root On
+and projected Off while held, then a fresh source connected only to the rebuilt gain, one stop of
+the old source, and empty aborted history. The discriminator is to restore projection-only rearm:
+the unchanged committed-On cases must then lose the second acquisition and rebuilt edge. Also keep
+the committed-Off-during-reset, root-replacement, pending/refused-permission, and armed-Auto
+controls so no-reopen and successor-root fences remain covered. These existing assertions are in
+`repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; they exercise controlled ports, not
+physical hardware or browser audio.
+
 ### A held removal and committed retarget need one discriminating oracle (issue #5283)
 
 Use the registered removal handler and real storage transaction with On track `a` at input `null`
