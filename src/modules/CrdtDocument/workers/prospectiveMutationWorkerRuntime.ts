@@ -1,4 +1,4 @@
-import { change, free, getChanges, getHeads, load, type Doc } from '@automerge/automerge';
+import { change, free, getHeads, getMissingDeps, load, save, type Doc } from '@automerge/automerge';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
@@ -20,10 +20,12 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
             input.time === undefined
                 ? { message: input.message || undefined }
                 : { message: input.message || undefined, time: input.time };
-        const seed = document;
         document = change(document, options, (draft) => applyCanonicalStorageSlotMutation(draft, input.mutation));
+        if (getMissingDeps(document, []).length > 0) {
+            throw new Error('Prospective mutation candidate has missing dependencies');
+        }
         return {
-            changes: getChanges(seed, document).map((bytes) => Uint8Array.from(bytes)),
+            bytes: Uint8Array.from(save(document)),
             heads: getHeads(document),
         };
     } finally {

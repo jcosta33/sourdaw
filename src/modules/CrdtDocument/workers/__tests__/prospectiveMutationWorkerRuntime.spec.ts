@@ -8,6 +8,8 @@ import {
     getChanges,
     getHeads,
     getObjectId,
+    load,
+    merge,
     save,
 } from '@automerge/automerge';
 import * as native from '@automerge/automerge';
@@ -63,7 +65,7 @@ describe('private canonical materialization Worker runtime', () => {
                 mutation,
             };
             const response = materializeProspectiveMutation(request);
-            const [result] = applyChanges(clone(initial, { actor }), response.changes);
+            const result = load<Document>(response.bytes, { actor });
             expect(getHeads(result)).toEqual(response.heads);
             const baseline = change(clone(initial, { actor }), { message: message || undefined, time: 7 }, (doc) =>
                 applyCanonicalStorageSlotMutation(doc, mutation)
@@ -83,6 +85,7 @@ describe('private canonical materialization Worker runtime', () => {
             const [merged] = applyChanges(peer, changes);
             const [expected] = applyChanges(clone(peer), getChanges(initial, baseline));
             expect(merged).toEqual(expected);
+            expect(merge(clone(result), clone(peer))).toEqual(merge(clone(peer), clone(baseline)));
             expect(merged.slot.rows.find((row) => row.id === 'locked')?.value).toBe(9.5);
             expect(merged.slot.rows.some((row) => row.id === 'peer')).toBe(true);
             expect(native.free).toHaveBeenCalledTimes(1);
@@ -97,8 +100,7 @@ describe('private canonical materialization Worker runtime', () => {
             heads: getHeads(initial),
             mutation: { ...mutation, value: mutation.baseValue },
         });
-        expect(response.changes).toEqual([]);
-        const [result] = applyChanges(clone(initial, { actor }), response.changes);
+        const result = load<Document>(response.bytes, { actor });
         expect(getHeads(result)).toEqual(response.heads);
         expect(getChanges(initial, result)).toEqual([]);
         expect(result).toEqual(initial);

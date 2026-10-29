@@ -1,4 +1,4 @@
-import { change, clone, free, getChanges, getHeads, load, toJS } from '@automerge/automerge';
+import { change, clone, free, save, getHeads, load, toJS } from '@automerge/automerge';
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -58,7 +58,7 @@ type MaterializationRequest = {
     message?: string;
     mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
 };
-type MaterializationResult = { changes: Uint8Array<ArrayBuffer>[]; heads: string[] };
+type MaterializationResult = { bytes: Uint8Array<ArrayBuffer>; heads: string[] };
 const materialization = vi.hoisted(() =>
     vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<MaterializationResult>>()
 );
@@ -177,7 +177,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             );
             try {
                 return {
-                    changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+                    bytes: Uint8Array.from(save(candidate)),
                     heads: getHeads(candidate),
                 };
             } finally {

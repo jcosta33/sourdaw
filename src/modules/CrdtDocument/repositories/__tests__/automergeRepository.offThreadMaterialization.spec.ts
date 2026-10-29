@@ -1,12 +1,14 @@
 import {
     applyChanges,
     change,
+    changeAt,
     clone,
     decodeChange,
-    encodeChange,
     free,
     from,
     getActorId,
+    getAuthor,
+    merge,
     getChanges,
     getHeads,
     getObjectId,
@@ -35,6 +37,8 @@ import {
     type ProspectiveMutationWorkerResult,
 } from '../../models/ProspectiveMutationWorkerProtocol';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
+import { createStore } from '#/infra/store/createStore';
+
 import { commandSourcePublicationContains } from '../../useCases/commandSourcePublicationContains';
 import { registerCrdtStorageRuntime } from '../../useCases/registerCrdtStorageRuntime';
 import { automergeRepository as repository } from '../automergeRepository';
@@ -53,7 +57,15 @@ vi.mock('../prospectiveMutationWorkerClient', () => ({ requestProspectiveMutatio
 vi.mock('../crdtPersistence/helpers', () => ({ STORE_NAME: 'documents', openDatabase: mocks.database }));
 vi.mock('@automerge/automerge', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@automerge/automerge')>();
-    return { ...actual, clone: vi.fn(actual.clone), free: vi.fn(actual.free) };
+    return {
+        ...actual,
+        clone: vi.fn(actual.clone),
+        free: vi.fn(actual.free),
+        load: vi.fn(actual.load),
+        decodeChange: vi.fn(actual.decodeChange),
+        getChanges: vi.fn(actual.getChanges),
+        applyChanges: vi.fn(actual.applyChanges),
+    };
 });
 
 type Document = {
@@ -69,7 +81,7 @@ function response(request: ProspectiveMutationWorkerRequest): ProspectiveMutatio
     );
     try {
         return {
-            changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+            bytes: Uint8Array.from(save(candidate)),
             heads: getHeads(candidate),
         };
     } finally {
@@ -132,7 +144,7 @@ afterEach(() => {
 });
 
 describe('repository canonical Worker candidate adoption', () => {
-    it('persists an unsaved prior edit and accepted delta from the older IDB baseline with retained row identities', async () => {
+    it('persists an unsaved prior edit and accepted document from the older IDB baseline with retained row identities', async () => {
         const original = from<Document>(
             {
                 slot: {
@@ -177,6 +189,7 @@ describe('repository canonical Worker candidate adoption', () => {
         });
         const [merged] = applyChanges(peer, [delta]);
         expect(merged.slot.rows![0]!.value).toBe(9.5);
+        expect(merge(clone(actual), clone(peer))).toEqual(merge(clone(peer), clone(actual)));
         expect(merged.slot.rows![1]).toEqual(actual.slot.rows![1]);
         expect(commandSourcePublicationContains(oldHeads[0]!, 'member', 'source', 'digest')).toBe(true);
         expect(commandSourcePublicationContains(getHeads(actual)[0]!, 'member', 'source', 'digest')).toBe(false);
@@ -263,6 +276,162 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(decodeChange(last)).toMatchObject({ actor, seq: 3, deps: getHeads(actual) });
     });
 
+    it('materializes through one checked load and native metadata without full decode or incremental apply', async () => {
+        const original = seed();
+        expect(getAuthor(original)).toBeUndefined();
+        const prepared = plan(original);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        vi.mocked(native.load).mockClear();
+        vi.mocked(native.decodeChange).mockClear();
+        vi.mocked(native.getChanges).mockClear();
+        vi.mocked(native.applyChanges).mockClear();
+        const candidate = prepared.materialize();
+        expect(native.load).toHaveBeenCalledTimes(1);
+        expect(native.load).toHaveBeenCalledWith(expect.any(Uint8Array), { actor });
+        expect(native.decodeChange).not.toHaveBeenCalled();
+        expect(native.getChanges).not.toHaveBeenCalled();
+        expect(native.applyChanges).not.toHaveBeenCalled();
+        expect(repository.getDoc('root')).toBe(original);
+        publish(candidate);
+        expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
+    });
+
+    it.each(['aabbcc', ''])('keeps the complete ordinary callback for native author %s', (author) => {
+        const original = from<Document>({ slot: { count: 0 } }, { actor, author });
+        repository.insertDoc('root', original);
+        const callback = vi.fn((doc: Document) => {
+            doc.slot.count = 1;
+            doc.other = true;
+        });
+        const prepared = repository.cloneProspectiveMutation<Document>(
+            'root',
+            callback,
+            'Detect',
+            undefined,
+            ['slot'],
+            {
+                kind: 'canonical-json-slot-v1',
+                key: 'slot',
+                baseValue: original.slot,
+                value: { count: 1 },
+                documentPresence: { slot: original.slot },
+            }
+        );
+        expect(getAuthor(original)).toBe(author);
+        expect(prepared.requestMaterialization).toBeUndefined();
+        publish(prepared.materialize());
+        expect(callback).toHaveBeenCalledTimes(1);
+        expect(mocks.request).not.toHaveBeenCalled();
+        const actual = repository.getDoc<Document>('root');
+        expect(actual?.other).toBe(true);
+        const baseline = change(clone(original, { actor }), { message: 'Detect' }, (doc) => {
+            doc.slot.count = 1;
+            doc.other = true;
+        });
+        expect(actual).toEqual(baseline);
+        expect(getAuthor(actual!)).toBe(getAuthor(baseline));
+    });
+
+    it.each([
+        'magic',
+        'type',
+        'truncated',
+        'trailing',
+        'overlong',
+        'overflow',
+        'unterminated',
+        'huge',
+        'checksum',
+        'frontier',
+    ] as const)('rejects malformed %s without publication and keeps the actual live handle usable', async (kind) => {
+        const original = seed();
+        const observer = vi.fn();
+        repository.onChange(observer);
+        mocks.request.mockImplementationOnce(async (request) => {
+            const result = response(request);
+            let bytes = Uint8Array.from(result.bytes);
+            if (kind === 'magic') bytes[0] = 0;
+            if (kind === 'type') bytes[8] = 1;
+            if (kind === 'truncated') bytes = bytes.slice(0, 9);
+            if (kind === 'trailing') bytes = Uint8Array.from([...bytes, 0]);
+            if (kind === 'checksum') bytes[4] = bytes[4]! ^ 1;
+            let body = 9;
+            while (result.bytes[body]! & 128) body++;
+            body++;
+            if (kind === 'overlong') {
+                bytes[body - 1] = bytes[body - 1]! | 128;
+                bytes = Uint8Array.from([...bytes.slice(0, body), 0, ...bytes.slice(body)]);
+            }
+            if (kind === 'overflow' || kind === 'huge')
+                bytes = Uint8Array.from([
+                    ...bytes.slice(0, 9),
+                    ...Array<number>(9).fill(255),
+                    kind === 'overflow' ? 2 : 1,
+                    ...bytes.slice(body),
+                ]);
+            if (kind === 'unterminated')
+                bytes = Uint8Array.from([...bytes.slice(0, 9), ...Array<number>(10).fill(128)]);
+            if (kind === 'frontier') {
+                const unrelated = from<Document>({ slot: { count: 1 } }, { actor });
+                try {
+                    return { bytes: Uint8Array.from(save(unrelated)), heads: getHeads(unrelated) };
+                } finally {
+                    free(unrelated);
+                }
+            }
+            return { ...result, bytes };
+        });
+        const prepared = plan(original);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        vi.mocked(native.load).mockClear();
+        expect(prepared.materialize).toThrow(kind === 'frontier' ? 'lost the native frontier' : undefined);
+        if (kind !== 'checksum' && kind !== 'frontier') expect(native.load).not.toHaveBeenCalled();
+        prepared.discard();
+        expect(repository.getDoc('root')).toBe(original);
+        expect(observer).not.toHaveBeenCalled();
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.slot.count = 7;
+        });
+        expect(repository.getDoc<Document>('root')?.slot.count).toBe(7);
+    });
+
+    it.each([
+        {
+            bytes: 'hW9Kg7/g/vAAqAEBCKqqqqqqqqqqAcev77hfq7G+L0sekua4qgIZg7HfYDbJdk49cBqKsMG9CAECAwITAiMLNRlAA0MCVgIKFQchAiMCNAFCAlYEVwmAAQOBAQKDAQICAAIBAgF+8pOP1waO7PCoeQABfxVmaXh0dXJlIHNlY29uZCBjaGFuZ2V+AAF/PwIHAgVjb3VudAIAAgECAgF+hQEUAAAAAAAAAAABfgEAfwB/AgE=',
+            error: 'index out of bounds: the len is 2 but the index is 63',
+        },
+        {
+            bytes: 'hW9KgwieC+gAqAEBCKqqqqqqqqqqAcev77hfq7G+L0sekua4qgIZg7HfYDbJdk49cBqKsMG9CAECAwITAiMLNRlAA0MCVgIKFQchAiMCNAFCAlYEVwmAAQOBAQKDAQICAAICAgF+8pOP1waO7PCoeQABfxVmaXh0dXJlIHNlY29uZCBjaGFuZ2V+AAF/AAIHAgVjb3VudAIAAgECAgF+hQEUAAAAAAAAAAABfgEAfwB/AgE=',
+            error: 'invalid changes: changes out of order',
+        },
+    ])('rejects a checksum-correct malformed native document: $error', async ({ bytes, error }) => {
+        const original = seed();
+        const observer = vi.fn();
+        repository.onChange(observer);
+        const releases = vi.mocked(native.free).mockClear();
+        mocks.request.mockResolvedValueOnce({
+            bytes: Uint8Array.from(atob(bytes), (char) => char.charCodeAt(0)),
+            heads: getHeads(original),
+        });
+        const prepared = plan(original);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        const retained = vi.mocked(native.clone).mock.results.at(-2)!.value;
+        expect(prepared.materialize).toThrow(error);
+        prepared.discard();
+        prepared.discard();
+        expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
+        expect(repository.getDoc('root')).toBe(original);
+        expect(observer).not.toHaveBeenCalled();
+        repository.changeDoc<Document>('root', (doc) => {
+            doc.slot.count = 7;
+        });
+        const actual = repository.getDoc<Document>('root');
+        expect(actual?.slot.count).toBe(7);
+        const reloaded = load<Document>(save(clone(actual!, { actor })), { actor });
+        expect(reloaded).toEqual(actual);
+        free(reloaded);
+    });
+
     it('leaves the original live handle writable and its unsaved cursor intact after discarded preparation', async () => {
         const original = seed();
         const baseline = Uint8Array.from(save(clone(original)));
@@ -314,21 +483,36 @@ describe('repository canonical Worker candidate adoption', () => {
         repository.onChange(observer);
         const prepared = plan(original);
         if (kind === 'invalid bytes')
-            mocks.request.mockResolvedValueOnce({ changes: [Uint8Array.of(1)], heads: getHeads(original) });
+            mocks.request.mockResolvedValueOnce({ bytes: Uint8Array.of(1), heads: getHeads(original) });
         if (kind === 'transport') mocks.request.mockRejectedValueOnce(new Error('transport failed'));
         if (['sequence', 'dependencies', 'message', 'heads', 'missing change'].includes(kind))
             mocks.request.mockImplementationOnce(async (request) => {
                 const result = response(request);
                 if (kind === 'heads') return { ...result, heads: request.heads };
-                if (kind === 'missing change') return { ...result, changes: [] };
-                const decoded = decodeChange(result.changes[0]!);
-                const bytes = encodeChange({
-                    ...decoded,
-                    seq: kind === 'sequence' ? decoded.seq + 1 : decoded.seq,
-                    deps: kind === 'dependencies' ? ['0'.repeat(64)] : decoded.deps,
-                    message: kind === 'message' ? 'Other mutation' : decoded.message,
-                });
-                return { changes: [Uint8Array.from(bytes)], heads: result.heads };
+                if (kind === 'missing change') return { bytes: Uint8Array.from(request.seed), heads: result.heads };
+                const base = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+                let candidate = base;
+                try {
+                    if (kind === 'sequence') {
+                        // A valid history with another native commit must still fail the one-change contract.
+                        candidate = change(candidate, (doc) => {
+                            doc.other = true;
+                        });
+                    }
+                    candidate =
+                        kind === 'dependencies'
+                            ? changeAt(candidate, [], { message: request.message }, (doc) =>
+                                  applyCanonicalStorageSlotMutation(doc, request.mutation)
+                              ).newDoc
+                            : change(
+                                  candidate,
+                                  { message: kind === 'message' ? 'Other mutation' : request.message },
+                                  (doc) => applyCanonicalStorageSlotMutation(doc, request.mutation)
+                              );
+                    return { bytes: Uint8Array.from(save(candidate)), heads: getHeads(candidate) };
+                } finally {
+                    free(candidate);
+                }
             });
         if (kind === 'wrong actor' || kind === 'extra change')
             mocks.request.mockImplementationOnce(async (request) => {
@@ -344,7 +528,7 @@ describe('repository canonical Worker candidate adoption', () => {
                     });
                 try {
                     return {
-                        changes: getChanges(seed, candidate).map((bytes) => Uint8Array.from(bytes)),
+                        bytes: Uint8Array.from(save(candidate)),
                         heads: getHeads(candidate),
                     };
                 } finally {
@@ -375,7 +559,10 @@ describe('repository canonical Worker candidate adoption', () => {
                     })
                 ).toThrow('full validator refused');
                 candidate.discard();
-            } else expect(prepared.materialize).toThrow();
+            } else
+                expect(prepared.materialize).toThrow(
+                    ['wrong actor', 'dependencies', 'message'].includes(kind) ? 'changed native authority' : undefined
+                );
             prepared.discard();
         }
         expect(repository.getDoc<Document>('root')?.slot.count).toBe(0);
@@ -426,9 +613,11 @@ describe('repository canonical Worker candidate adoption', () => {
             const retained = clones.mock.results[0]!.value;
             const encoding = clones.mock.results[1]!.value;
             expect(releases.mock.calls.filter(([doc]) => doc === encoding)).toHaveLength(1);
-            if (kind !== 'validator') expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
+            expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
             expect(releases.mock.calls.some(([doc]) => doc === original)).toBe(false);
-            expect(releases).toHaveBeenCalledTimes(kind === 'transport' || kind === 'abort' ? 2 : 3);
+            expect(releases).toHaveBeenCalledTimes(
+                kind === 'transport' || kind === 'abort' ? 2 : kind === 'validator' ? 4 : 3
+            );
             repository.changeDoc<Document>('root', (doc) => {
                 doc.slot.count = 7;
             });
@@ -441,29 +630,36 @@ describe('repository canonical Worker candidate adoption', () => {
         registerCrdtStorageRuntime();
         const storage = createAutomergeStorage<{ count: number }>('root', 'slot');
         storage.hydrate?.();
+        const store = createStore({ storage, initialData: { count: 0 } });
+        const checkpoint = createAutomergeStorage<{ records: string[] }>('root', 'checkpoint');
+        checkpoint.hydrate?.();
+        const release = store.subscribe(() => {
+            checkpoint.set({ records: ['subscriber checkpoint'] });
+            appendAutomergeStoragePublicationMetadata('root', {
+                version: 1,
+                kind: 'new-source',
+                memberId: 'new-member',
+                digest: 'new-digest',
+            });
+        });
         const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
         if (transaction.status !== 'returned') throw transaction.error;
-        const preparation = storage.prepareSet?.(transaction.value, { count: 1 });
+        const preparation = storage.prepareSet?.(transaction.value, { count: 1 }, (value) => store.set(value));
         if (!preparation) throw new Error('Expected preparation');
         preparation.clone();
         const request = preparation.requestMaterialization;
         if (!request) throw new Error('Expected request');
         await request(new AbortController().signal);
         preparation.materialize();
+        expect(mocks.request).toHaveBeenCalledTimes(1);
         expect(transaction.scope(preparation.stage)).toBe(true);
-        transaction.scope(() =>
-            appendAutomergeStoragePublicationMetadata('root', {
-                version: 1,
-                kind: 'new-source',
-                memberId: 'new-member',
-                digest: 'new-digest',
-            })
-        );
         transaction.validateDocument('root', () => null);
         transaction.commit();
+        release();
         const current = repository.getDoc<Document>('root');
         if (!current) throw new Error('Expected complete fallback publication');
         expect(current.slot.count).toBe(1);
+        expect(Reflect.get(current, 'checkpoint')).toEqual({ records: ['subscriber checkpoint'] });
         expect(commandSourcePublicationContains(getHeads(current)[0]!, 'new-member', 'new-source', 'new-digest')).toBe(
             true
         );

@@ -9,7 +9,6 @@ import {
     saveSince,
     loadIncremental,
     merge,
-    applyChanges,
     change,
     getChanges,
     getChangesMetaSince,
@@ -19,7 +18,7 @@ import {
     getHeads,
     clone,
     getActorId,
-    decodeChange,
+    getAuthor,
     free,
 } from '@automerge/automerge';
 
@@ -74,6 +73,35 @@ type DecodedBundle = {
 type MergeBundleOptions = {
     shouldCommit?: () => boolean;
 };
+
+/** Only a complete document may enter checked load; trailing changes use native incremental insertion. */
+function assertCompleteCanonicalDocument(bytes: Uint8Array<ArrayBuffer>): void {
+    if (
+        bytes.length < 10 ||
+        bytes[0] !== 0x85 ||
+        bytes[1] !== 0x6f ||
+        bytes[2] !== 0x4a ||
+        bytes[3] !== 0x83 ||
+        bytes[8] !== 0
+    ) {
+        throw new Error('Prospective mutation Worker returned an invalid document envelope');
+    }
+    let length = 0n;
+    for (let index = 0; index < 10; index++) {
+        const byte = bytes[9 + index];
+        if (byte === undefined || (index === 9 && byte > 1)) {
+            break;
+        }
+        length |= BigInt(byte & 0x7f) << BigInt(index * 7);
+        if ((byte & 0x80) === 0) {
+            if ((index > 0 && byte === 0) || length !== BigInt(bytes.length - 10 - index)) {
+                break;
+            }
+            return;
+        }
+    }
+    throw new Error('Prospective mutation Worker returned an invalid document length');
+}
 
 function createMissingRootError(): Error {
     return new Error('[AutomergeRepository] Non-empty bundle is missing the exact root document');
@@ -555,43 +583,45 @@ class AutomergeRepository {
                 candidate = undefined;
             }
         };
-        const requestMaterialization = canonicalMutation
-            ? (signal: AbortSignal): Promise<void> => {
-                  if (cloneConsumed || workerRequested || !candidate) {
-                      throw new Error('Prospective clone has already settled');
-                  }
-                  authority.assertCurrent();
-                  workerRequested = true;
-                  try {
-                      // Encoding must not consume the retained adoption clone's persistence cursor.
-                      const encodingClone = clone(candidate, { actor });
-                      let seed: Uint8Array<ArrayBuffer>;
-                      try {
-                          seed = Uint8Array.from(save(encodingClone));
-                      } finally {
-                          free(encodingClone);
+        const nativeAuthor = canonicalMutation ? getAuthor(doc) : undefined;
+        const requestMaterialization =
+            canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)
+                ? (signal: AbortSignal): Promise<void> => {
+                      if (cloneConsumed || workerRequested || !candidate) {
+                          throw new Error('Prospective clone has already settled');
                       }
                       authority.assertCurrent();
-                      return requestProspectiveMutation(
-                          { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
-                          AbortSignal.any([signal, controller.signal])
-                      ).then(
-                          (result) => {
-                              if (!cloneConsumed) {
-                                  workerResult = result;
-                              }
-                          },
-                          (error: unknown) => {
-                              releaseClone();
-                              throw error;
+                      workerRequested = true;
+                      try {
+                          // Encoding must not consume the retained adoption clone's persistence cursor.
+                          const encodingClone = clone(candidate, { actor });
+                          let seed: Uint8Array<ArrayBuffer>;
+                          try {
+                              seed = Uint8Array.from(save(encodingClone));
+                          } finally {
+                              free(encodingClone);
                           }
-                      );
-                  } catch (error) {
-                      releaseClone();
-                      throw error;
+                          authority.assertCurrent();
+                          return requestProspectiveMutation(
+                              { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
+                              AbortSignal.any([signal, controller.signal])
+                          ).then(
+                              (result) => {
+                                  if (!cloneConsumed) {
+                                      workerResult = result;
+                                  }
+                              },
+                              (error: unknown) => {
+                                  releaseClone();
+                                  throw error;
+                              }
+                          );
+                      } catch (error) {
+                          releaseClone();
+                          throw error;
+                      }
                   }
-              }
-            : undefined;
+                : undefined;
         return {
             requestMaterialization,
             isCurrent: (): boolean => !cloneConsumed && authority.isCurrent(),
@@ -614,60 +644,60 @@ class AutomergeRepository {
                 }
                 let updated: Doc<TDoc>;
                 if (workerRequested) {
-                    let expectedHeads = previousHeads;
+                    let loaded: Doc<TDoc> | undefined;
                     try {
                         if (!workerResult || !candidate) {
                             throw new Error('Prospective mutation Worker has not completed');
                         }
-                        const { changes, heads } = workerResult;
+                        const { bytes, heads } = workerResult;
                         workerResult = undefined;
-                        if (changes.length > 1) {
+                        assertCompleteCanonicalDocument(bytes);
+                        loaded = load<TDoc>(bytes, { actor });
+                        if (!hasHeads(loaded, previousHeads)) {
+                            throw new Error('Prospective mutation Worker lost the native frontier');
+                        }
+                        const additions = getChangesMetaSince(loaded, previousHeads);
+                        if (additions.length > 1) {
                             throw new Error('Prospective mutation Worker changed native authorship');
                         }
-                        const bytes = changes[0];
-                        if (bytes) {
-                            const decoded = decodeChange(bytes);
+                        const addition = additions[0];
+                        if (addition) {
                             const nextSequence = getChangesMetaSince(doc, []).reduce(
                                 (next, entry) => (entry.actor === actor ? Math.max(next, entry.seq + 1) : next),
                                 1
                             );
                             if (
-                                decoded.actor !== actor ||
-                                decoded.seq !== nextSequence ||
-                                decoded.message !== (message || null) ||
-                                decoded.deps.length !== previousHeads.length ||
-                                decoded.deps.some((head) => !previousHeads.includes(head))
+                                addition.actor !== actor ||
+                                addition.seq !== nextSequence ||
+                                addition.message !== (message || null) ||
+                                addition.deps.length !== previousHeads.length ||
+                                addition.deps.some((head) => !previousHeads.includes(head))
                             ) {
                                 throw new Error('Prospective mutation Worker changed native authority');
                             }
-                            expectedHeads = [decoded.hash];
                         }
+                        const expectedHeads = addition ? [addition.hash] : previousHeads;
+                        const installedHeads = getHeads(loaded);
                         if (
                             heads.length !== expectedHeads.length ||
-                            heads.some((head) => !expectedHeads.includes(head))
+                            heads.some((head) => !expectedHeads.includes(head)) ||
+                            installedHeads.length !== expectedHeads.length ||
+                            installedHeads.some((head) => !expectedHeads.includes(head))
                         ) {
                             throw new Error('Prospective mutation Worker changed native heads');
                         }
-                        updated = bytes ? applyChanges(candidate, [bytes])[0] : candidate;
-                        candidate = undefined;
-                    } catch (error) {
-                        releaseClone();
-                        throw error;
-                    }
-                    try {
-                        const heads = getHeads(updated);
-                        // Applying one complete change must leave no queued or uninstalled dependencies.
-                        if (
-                            getActorId(updated) !== actor ||
-                            getMissingDeps(updated, []).length > 0 ||
-                            heads.length !== expectedHeads.length ||
-                            heads.some((head) => !expectedHeads.includes(head))
-                        ) {
+                        if (getActorId(loaded) !== actor || getMissingDeps(loaded, []).length > 0) {
                             throw new Error('Prospective mutation Worker left missing native dependencies');
                         }
                         authority.assertCurrent();
+                        releaseClone();
+                        updated = loaded;
+                        loaded = undefined;
                     } catch (error) {
-                        free(updated);
+                        if (loaded) {
+                            free(loaded);
+                        }
+                        releaseClone();
                         throw error;
                     }
                 } else {

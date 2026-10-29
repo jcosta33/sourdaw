@@ -49,13 +49,12 @@ export function requestProspectiveMutation(
             }
             if (
                 data.status === 'complete' &&
-                'changes' in data &&
-                Array.isArray(data.changes) &&
-                data.changes.length <= 1 &&
-                data.changes.every(
-                    (bytes: unknown): bytes is Uint8Array<ArrayBuffer> =>
-                        bytes instanceof Uint8Array && bytes.buffer instanceof ArrayBuffer && bytes.byteLength > 0
-                ) &&
+                'bytes' in data &&
+                data.bytes instanceof Uint8Array &&
+                data.bytes.buffer instanceof ArrayBuffer &&
+                data.bytes.byteLength > 0 &&
+                data.bytes.byteOffset === 0 &&
+                data.bytes.byteLength === data.bytes.buffer.byteLength &&
                 'heads' in data &&
                 Array.isArray(data.heads) &&
                 data.heads.every(
@@ -64,9 +63,7 @@ export function requestProspectiveMutation(
                 new Set(data.heads).size === data.heads.length
             ) {
                 finish({
-                    changes: data.changes.map(
-                        (bytes) => new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-                    ),
+                    bytes: data.bytes,
                     heads: data.heads,
                 });
                 return;
