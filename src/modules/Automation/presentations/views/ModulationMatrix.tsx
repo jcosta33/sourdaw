@@ -603,18 +603,20 @@ const ModulatorCard = ({ modulator, tracks }: ModulatorCardProps): ReactElement 
     return (
         <Stack gap={1.5} className="rounded-sm border border-border-hairline bg-surface-base/50 p-2">
             <Row gap={2}>
-                <button
+                <Button
                     type="button"
+                    variant="ghost"
+                    size="icon-xs"
                     draggable={modulator.enabled}
                     onDragStart={handleDragStart}
                     onDragEnd={handleDragEnd}
                     aria-label={`Drag modulator ${modulator.name} to a parameter`}
                     title="Drag to a device parameter"
-                    className="cursor-grab text-muted-foreground hover:text-foreground disabled:cursor-not-allowed"
+                    className="cursor-grab disabled:cursor-not-allowed"
                     disabled={!modulator.enabled}
                 >
                     <GripVertical className="size-3.5" />
-                </button>
+                </Button>
                 <DawCompactInput
                     value={modulator.name}
                     onChange={(event) =>
