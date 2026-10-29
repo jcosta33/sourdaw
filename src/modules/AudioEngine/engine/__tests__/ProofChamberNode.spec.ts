@@ -1,6 +1,32 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createProofChamberNode, isProofChamberDevice } from '../ProofChamberNode';
+import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS, createProofChamberNode, isProofChamberDevice } from '../ProofChamberNode';
+
+const EXPECTED_ORDINALS = {
+    mix: 0,
+    decay: 1,
+    damping: 2,
+    predelay: 3,
+    size: 4,
+    mod_rate: 5,
+    mod_depth: 6,
+    diffusion: 7,
+    high_cut: 8,
+    low_cut: 9,
+    width: 10,
+    freeze: 11,
+    shimmer: 12,
+    shimmer_amount: 13,
+    gravity: 14,
+    early_late: 15,
+    density: 16,
+    decay_eq_0: 17,
+    decay_eq_1: 18,
+    decay_eq_2: 19,
+    decay_eq_3: 20,
+    decay_eq_4: 21,
+    decay_eq_5: 22,
+};
 
 // Mock the worklet-init helpers so createProofChamberNode resolves without a
 // real AudioContext / worklet module / WASM fetch. The ready handshake
@@ -108,6 +134,42 @@ describe('createProofChamberNode', () => {
 
         expect(postMessage).not.toHaveBeenCalled();
     });
+
+    it('posts each Dutch Oven control with its pinned unique ordinal', async () => {
+        const node = await createProofChamberNode(makeCtx());
+        const segments = [{ startFrame: 128, endFrame: 128, startValue: 1, endValue: 1 }];
+        postMessage.mockClear();
+
+        expect(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).toEqual(EXPECTED_ORDINALS);
+        expect(new Set(Object.values(EXPECTED_ORDINALS)).size).toBe(23);
+        for (const [name, paramId] of Object.entries(EXPECTED_ORDINALS)) {
+            expect(node.acceptsScheduledParam(name)).toBe(true);
+            node.scheduleParam(name, segments);
+            expect(postMessage).toHaveBeenLastCalledWith({ type: 'paramAutomation', paramId, segments });
+        }
+        expect(postMessage).toHaveBeenCalledTimes(23);
+    });
+
+    it.each(['freeze', 'shimmer'] as const)(
+        'holds %s until its scheduled frame and preserves the final write',
+        async (name) => {
+            const node = await createProofChamberNode(makeCtx());
+            const segments = [{ startFrame: 128, endFrame: 384, startValue: 0, endValue: 1 }];
+            postMessage.mockClear();
+
+            node.scheduleParam(name, segments);
+
+            expect(postMessage).toHaveBeenCalledWith({
+                type: 'paramAutomation',
+                paramId: EXPECTED_ORDINALS[name],
+                segments: [
+                    { startFrame: 128, endFrame: 384, startValue: 0, endValue: 0 },
+                    { startFrame: 384, endFrame: 384, startValue: 1, endValue: 1 },
+                ],
+            });
+            expect(segments).toEqual([{ startFrame: 128, endFrame: 384, startValue: 0, endValue: 1 }]);
+        }
+    );
 
     it('should forward setBypass as a bypass message', async () => {
         const node = await createProofChamberNode(makeCtx());

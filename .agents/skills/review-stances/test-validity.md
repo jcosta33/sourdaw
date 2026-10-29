@@ -1941,6 +1941,12 @@ and separation from explicit Parallel. Revert only the constructor default: the 
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
 
+### 2026-10-29 — inventory merge dropped a curated reference (PR #5851)
+
+PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
+
+When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
+
 ### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
 
 PR #2055 (`d2efdde850`) tested built-in body duration only at 44.1, 48 and 96 kHz.
