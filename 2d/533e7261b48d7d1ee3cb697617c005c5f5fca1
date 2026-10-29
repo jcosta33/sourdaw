@@ -1,0 +1,14 @@
+scripts/__tests__/quantumCostTableRendering.spec.ts
+  h_beb54bf43b47b7 5-59,76-77,80,86,93-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2d533e7261b48d7d1ee3cb697617c005c5f5fca1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
