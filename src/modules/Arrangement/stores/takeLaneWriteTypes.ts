@@ -1,6 +1,7 @@
 import {
     type CompAudioSourcePromotionSnapshot,
     type CompAudioSourceFieldPresenceSnapshot,
+    type TempoAudioSourcePresenceSnapshot,
 } from '#/utils/handlerContract';
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
@@ -87,6 +88,15 @@ export type TakeLaneWriteOperation =
           readonly laneId: string;
           readonly expected: OptionalAudioSourceTiles;
           readonly replacement: OptionalAudioSourceTiles;
+      }
+    | {
+          readonly kind: 'comp-region-audio-source';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly startBeat: number;
+          readonly endBeat: number;
+          readonly expected: TempoAudioSourcePresenceSnapshot;
+          readonly replacement: TempoAudioSourcePresenceSnapshot;
       }
     | { readonly kind: 'insert-lane'; readonly lane: TakeLane; readonly afterLaneId: string | null }
     | { readonly kind: 'remove-lane'; readonly laneId: string }

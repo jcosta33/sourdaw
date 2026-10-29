@@ -1,9 +1,4 @@
-import {
-    captureAudioSourceSnapshot,
-    type AudioSourceSnapshot,
-    type AudioSourceTile,
-    resolveAudioUnwrappedOffsetSeconds,
-} from '#/utils/audioSourceTime';
+import { captureAudioSourceSnapshot, type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import { valuesEqual } from '#/utils/structuralEquality';
 
@@ -13,6 +8,7 @@ import { type Clip } from '../../models/Track';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { captureTakeSource } from './captureTakeSource';
 import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
@@ -142,26 +138,6 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * hydrated state would mint colliding fragment ids here, an accepted
  * divergence on state no route produces.
  */
-function captureTakeSource(take: Take, clip: Clip | undefined, timeline: TempoTimeline): Take {
-    if (clip?.type !== 'audio') {
-        return take;
-    }
-    const tempo = timeline.tempoAtBeat(clip.startBeat);
-    if (take.passAnchorSeconds !== undefined && take.passDepthSeconds !== undefined) {
-        if (take.passOriginBeat !== undefined && take.passOriginSourceSeconds !== undefined) {
-            return take;
-        }
-        return {
-            ...take,
-            passOriginBeat: clip.startBeat,
-            passOriginSourceSeconds: resolveAudioUnwrappedOffsetSeconds(clip, tempo),
-        };
-    }
-    if (take.sourceOffsetBeats === undefined || take.sourceOffsetSeconds !== undefined) {
-        return take;
-    }
-    return { ...take, sourceOffsetSeconds: (take.sourceOffsetBeats * 60) / tempo };
-}
 
 function buildTakeFragments(
     take: Take,

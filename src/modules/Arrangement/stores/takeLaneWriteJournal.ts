@@ -28,7 +28,7 @@ import {
     type TakeLaneStoreValue,
     type TakeLaneCompRegionPatch,
 } from './takeLaneWriteTypes';
-import { projectTempoAudioSourceLanes } from './tempoAudioSources';
+import { withRegionSource, matchesPresence, projectTempoAudioSourceLanes } from './tempoAudioSources';
 import { tempoAudioSourceWriteIntentMatches } from './tempoAudioSourceWriteIntent';
 
 export {
@@ -152,6 +152,39 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
     return operations;
 }
 
+export function captureCompRegionSourceOperations(
+    laneId: string,
+    before: readonly CompRegion[],
+    next: readonly CompRegion[]
+): TakeLaneWriteOperation[] | null {
+    const geometry = (regions: readonly CompRegion[]) => regions.map(({ audioSource: _source, ...row }) => row);
+    if (!valuesEqual(geometry(before), geometry(next))) return null;
+    const operations: TakeLaneWriteOperation[] = [];
+    for (const [index, region] of before.entries()) {
+        const replacement = next[index];
+        if (!replacement) return null;
+        const expected =
+            region.audioSource === undefined
+                ? { present: false as const }
+                : { present: true as const, value: cloneValue(region.audioSource) };
+        const source =
+            replacement.audioSource === undefined
+                ? { present: false as const }
+                : { present: true as const, value: cloneValue(replacement.audioSource) };
+        if (!valuesEqual(expected, source))
+            operations.push({
+                kind: 'comp-region-audio-source',
+                laneId,
+                takeId: region.takeId,
+                startBeat: region.startBeat,
+                endBeat: region.endBeat,
+                expected,
+                replacement: source,
+            });
+    }
+    return operations;
+}
+
 function captureLaneOperations(before: TakeLane, next: TakeLane): TakeLaneWriteOperation[] {
     const operations: TakeLaneWriteOperation[] = [];
     if (before.trackId !== next.trackId) {
@@ -195,12 +228,19 @@ function captureLaneOperations(before: TakeLane, next: TakeLane): TakeLaneWriteO
     }
 
     if (!valuesEqual(before.activeCompRegions, next.activeCompRegions)) {
-        operations.push({
-            kind: 'replace-comp-regions',
-            laneId: before.id,
-            expected: cloneValue(before.activeCompRegions),
-            replacement: cloneValue(next.activeCompRegions),
-        });
+        const sourceOperations = captureCompRegionSourceOperations(
+            before.id,
+            before.activeCompRegions,
+            next.activeCompRegions
+        );
+        if (sourceOperations) operations.push(...sourceOperations);
+        else
+            operations.push({
+                kind: 'replace-comp-regions',
+                laneId: before.id,
+                expected: cloneValue(before.activeCompRegions),
+                replacement: cloneValue(next.activeCompRegions),
+            });
     }
     const beforeGaps = captureBaseGapAudioSources(before);
     const nextGaps = captureBaseGapAudioSources(next);
@@ -483,6 +523,23 @@ function applyLaneOperation(
             operation.replacement
         );
         return sources ? replaceLane(state, replaceBaseGapAudioSources(lane, sources)) : undefined;
+    }
+    if (operation.kind === 'comp-region-audio-source') {
+        const owners = lane.activeCompRegions.filter(
+            (region) =>
+                region.takeId === operation.takeId &&
+                region.startBeat === operation.startBeat &&
+                region.endBeat === operation.endBeat
+        );
+        const region = owners[0];
+        if (owners.length !== 1 || !region || !matchesPresence(region.audioSource, operation.expected))
+            return undefined;
+        return replaceLane(state, {
+            ...lane,
+            activeCompRegions: lane.activeCompRegions.map((row) =>
+                row === region ? withRegionSource(row, operation.replacement) : row
+            ),
+        });
     }
     if (operation.kind === 'replace-comp-regions') {
         if (!valuesEqual(lane.activeCompRegions, operation.expected)) {

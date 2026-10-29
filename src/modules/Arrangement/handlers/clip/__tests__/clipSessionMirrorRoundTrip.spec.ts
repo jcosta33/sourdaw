@@ -1547,7 +1547,13 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             },
         ];
 
-        async function trimAudio(fields: Partial<Clip> = {}, trim = 1.75, map = false) {
+        async function trimAudio(
+            fields: Partial<Clip> = {},
+            trim = 1.75,
+            map = false,
+            withTakes = false,
+            unplacedRegion = false
+        ) {
             const changes = [{ id: 'audio-trim-base', beat: 0, tempo: 120, curve: 'instant' as const }];
             if (map) {
                 changes.push({ id: 'audio-trim-slow', beat: 2, tempo: 60, curve: 'instant' });
@@ -1569,6 +1575,30 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 selectedTrackId: TRACK_ID,
                 ghostClips: [],
             });
+            if (withTakes) {
+                takeLaneStore.set({
+                    lanes: [
+                        {
+                            ...createTakeLane(TRACK_ID),
+                            id: 'trim-source-lane',
+                            takes: [
+                                { ...createTake('clip-a', 'Unplaced', 6, 20, 8), id: 'trim-unplaced' },
+                                { ...createTake('clip-peer', 'Unrelated', 12, 16), id: 'trim-peer' },
+                                {
+                                    ...createTake('clip-a', 'Placed', 7, 18, 0),
+                                    id: 'trim-placed',
+                                    passAnchorSeconds: 0,
+                                    passDepthSeconds: 1,
+                                    passSourceEndSeconds: 5,
+                                },
+                            ],
+                            activeCompRegions: [
+                                { startBeat: 8, endBeat: 16, takeId: unplacedRegion ? 'trim-unplaced' : 'trim-placed' },
+                            ],
+                        },
+                    ],
+                });
+            }
             setEnvelope('clip-a', {
                 clipId: 'clip-a',
                 enabled: true,
@@ -1603,6 +1633,442 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             }
             return description.inverseAction;
         }
+
+        it('restores original take source absence through two binary reload Undo/Redo cycles while retaining peer facets', async () => {
+            const { before, satellites } = await trimAudio(
+                { startBeat: 8, endBeat: 16, stretchMode: 'timestretch', stretchRatio: 2 },
+                9,
+                false,
+                true
+            );
+            const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            const captured = structuredClone(takeLaneStore.value);
+            expect(captured?.lanes[0]?.takes.find((take) => take.id === 'trim-unplaced')?.sourceOffsetSeconds).toBe(4);
+            expect(captured?.lanes[0]?.takes.find((take) => take.id === 'trim-placed')).toMatchObject({
+                passOriginBeat: 8,
+                passOriginSourceSeconds: 0,
+            });
+            const peerFacets = (state: typeof captured) => ({
+                lanes: state!.lanes.map((lane) => ({
+                    ...lane,
+                    takes: lane.takes.toReversed().map((take) => ({ ...take, name: 'Peer renamed', selected: true })),
+                })),
+            });
+            // The take field journal deliberately does not encode list moves.
+            // Publish the peer's real order into authority before saving it.
+            mutateCrdtDoc<{ takeLanes: NonNullable<typeof captured> }>({
+                id: 'root',
+                changeFn: (doc) => {
+                    doc.takeLanes = peerFacets(captured);
+                },
+            });
+            expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([
+                'trim-placed',
+                'trim-peer',
+                'trim-unplaced',
+            ]);
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                reloadSavedProject();
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+                expect(takeLaneStore.value).toEqual(peerFacets(satellites.takes));
+                const original = takeLaneStore.value!.lanes[0]!.takes.find((take) => take.id === 'trim-placed')!;
+                expect(Object.hasOwn(original, 'passOriginBeat')).toBe(false);
+                expect(Object.hasOwn(original, 'passOriginSourceSeconds')).toBe(false);
+                expect(
+                    Object.hasOwn(
+                        takeLaneStore.value!.lanes[0]!.takes.find((take) => take.id === 'trim-unplaced')!,
+                        'sourceOffsetSeconds'
+                    )
+                ).toBe(false);
+                reloadSavedProject();
+                await redo();
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+                expect(takeLaneStore.value).toEqual(peerFacets(captured));
+            }
+        });
+
+        it('refuses a forged saved future source offset even when both copies derive a lawful different second value', async () => {
+            await trimAudio({ startBeat: 8, endBeat: 16 }, 9, false, true);
+            expect((await undo()).headConsumed).toBe(true);
+            await vi.waitFor(() =>
+                expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+            );
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            if (!Array.isArray(saved.future) || !isRecord(saved.future[0]))
+                throw new Error('Expected saved trim future');
+            for (const key of ['inverseAction', 'redoAction']) {
+                const action = saved.future[0][key];
+                if (
+                    !isRecord(action) ||
+                    !isRecord(action.payload) ||
+                    !Array.isArray(action.payload.takeSourceTransitions) ||
+                    !isRecord(action.payload.takeSourceTransitions[0])
+                )
+                    throw new Error('Expected saved trim take capture');
+                const transition = action.payload.takeSourceTransitions[0];
+                for (const side of ['takesBefore', 'takesAfter']) {
+                    const takes = transition[side];
+                    if (!Array.isArray(takes)) throw new Error('Expected captured takes');
+                    const take = takes.find((value) => isRecord(value) && value.id === 'trim-unplaced');
+                    if (!isRecord(take)) throw new Error('Expected captured unplaced take');
+                    take.sourceOffsetBeats = 12;
+                    if (side === 'takesAfter') take.sourceOffsetSeconds = 6;
+                }
+            }
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+            reloadSavedProject();
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
+            const raw = structuredClone(getCrdtDoc('root'));
+            const history = structuredClone(undoHistoryStore.value);
+            await redo();
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(takeLaneStore.value?.lanes[0]?.takes[0]?.sourceOffsetBeats).toBe(8);
+            expect(Object.hasOwn(takeLaneStore.value!.lanes[0]!.takes[0]!, 'sourceOffsetSeconds')).toBe(false);
+        });
+
+        it.each(['missing', 'replaced', 'diverged'] as const)(
+            'atomically refuses a late %s take owner before publishing the clip or captured source',
+            async (change) => {
+                await trimAudio({ startBeat: 8, endBeat: 16 }, 9, false, true);
+                expect((await undo()).headConsumed).toBe(true);
+                type TakeProject = { takeLanes: NonNullable<typeof takeLaneStore.value> };
+                let peer: Automerge.Doc<TakeProject> | undefined;
+                const execute = handleRestoreAudioClipStartTrim.execute;
+                const spy = vi
+                    .spyOn(handleRestoreAudioClipStartTrim, 'execute')
+                    .mockImplementation((action, context) => {
+                        const result = execute(action, context);
+                        if (
+                            !result ||
+                            typeof result !== 'object' ||
+                            !('commitValidation' in result) ||
+                            !result.commitValidation
+                        )
+                            return result;
+                        const validation = result.commitValidation;
+                        return {
+                            ...result,
+                            commitValidation: {
+                                ...validation,
+                                beforeCommit: () => {
+                                    const raw = getCrdtDoc<TakeProject>('root');
+                                    if (!raw) throw new Error('Expected raw owner');
+                                    peer = Automerge.change(Automerge.clone(raw), (doc) => {
+                                        const lane = doc.takeLanes.lanes[0]!;
+                                        const index = lane.takes.findIndex((take) => take.id === 'trim-unplaced');
+                                        if (change === 'missing') lane.takes.splice(index, 1);
+                                        if (change === 'replaced') lane.takes[index] = { ...lane.takes[index]! };
+                                        if (change === 'diverged') lane.takes[index]!.sourceOffsetBeats = 12;
+                                    });
+                                    replaceCrdtDocInLineage({ id: 'root', doc: peer });
+                                    return validation.beforeCommit();
+                                },
+                            },
+                        };
+                    });
+                try {
+                    await redo();
+                } finally {
+                    spy.mockRestore();
+                }
+                expect(peer).toBeDefined();
+                expect(getCrdtDoc('root')).toEqual(peer);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')?.startBeat).toBe(8);
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+            }
+        );
+
+        it.each(['missing', 'replaced', 'diverged'] as const)(
+            'atomically refuses a prospective %s take owner',
+            async (change) => {
+                await trimAudio({ startBeat: 8, endBeat: 16 }, 9, false, true);
+                expect((await undo()).headConsumed).toBe(true);
+                const raw = structuredClone(getCrdtDoc('root'));
+                const execute = handleRestoreAudioClipStartTrim.execute;
+                let observedRefusal: string | null = null;
+                const spy = vi
+                    .spyOn(handleRestoreAudioClipStartTrim, 'execute')
+                    .mockImplementation((action, context) => {
+                        const result = execute(action, context);
+                        if (
+                            !result ||
+                            typeof result !== 'object' ||
+                            !('commitValidation' in result) ||
+                            !result.commitValidation
+                        )
+                            return result;
+                        const validation = result.commitValidation;
+                        return {
+                            ...result,
+                            commitValidation: {
+                                ...validation,
+                                validateDocument: (document) => {
+                                    const changed = Automerge.change(Automerge.clone(document), (doc) => {
+                                        if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes))
+                                            throw new Error('Expected prospective lanes');
+                                        const lane = doc.takeLanes.lanes[0];
+                                        if (!isRecord(lane) || !Array.isArray(lane.takes))
+                                            throw new Error('Expected prospective takes');
+                                        const index = lane.takes.findIndex(
+                                            (take) => isRecord(take) && take.id === 'trim-unplaced'
+                                        );
+                                        const take = lane.takes[index];
+                                        if (!isRecord(take)) throw new Error('Expected prospective owner');
+                                        if (change === 'missing') lane.takes.splice(index, 1);
+                                        if (change === 'replaced') lane.takes[index] = { ...take };
+                                        if (change === 'diverged') take.sourceOffsetBeats = 12;
+                                    });
+                                    observedRefusal = validation.validateDocument(changed);
+                                    return observedRefusal;
+                                },
+                            },
+                        };
+                    });
+                try {
+                    await redo();
+                } finally {
+                    spy.mockRestore();
+                }
+                expect(observedRefusal).toBe('Audio trim did not reach its owned source fields');
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect(undoHistoryStore.value?.past).toHaveLength(0);
+                expect(undoHistoryStore.value?.future).toHaveLength(1);
+            }
+        );
+
+        it('retains the absent-field historical clip-only capture contract across saved replay', async () => {
+            const { before } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });
+            const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+            if (!Array.isArray(saved.past) || !isRecord(saved.past[0])) throw new Error('Expected saved trim');
+            for (const key of ['inverseAction', 'redoAction']) {
+                const action = saved.past[0][key];
+                if (!isRecord(action) || !isRecord(action.payload)) throw new Error('Expected saved capture');
+                delete action.payload.takeSourceTransitions;
+            }
+            sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+            reloadSavedProject();
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+            reloadSavedProject();
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+        });
+
+        it('restores original region source absence through two binary Undo/Redo cycles beside a later peer comp row', async () => {
+            const { before, satellites } = await trimAudio(
+                {
+                    startBeat: 8,
+                    endBeat: 16,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 2,
+                },
+                9,
+                false,
+                true,
+                true
+            );
+            const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            const captured = structuredClone(takeLaneStore.value);
+            expect(captured?.lanes[0]?.activeCompRegions[0]?.audioSource).toMatchObject({
+                startBeat: 8,
+                audioOffsetSeconds: 4,
+                loopLength: 4,
+            });
+            const peer = { startBeat: 18, endBeat: 19, takeId: 'trim-peer' };
+            mutateCrdtDoc<{ takeLanes: NonNullable<typeof captured> }>({
+                id: 'root',
+                changeFn: (doc) => {
+                    doc.takeLanes.lanes[0]!.activeCompRegions.push(peer);
+                },
+            });
+            for (let cycle = 0; cycle < 2; cycle += 1) {
+                reloadSavedProject();
+                expect((await undo()).headConsumed).toBe(true);
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+                expect(takeLaneStore.value).toEqual({
+                    lanes: satellites.takes!.lanes.map((lane) => ({
+                        ...lane,
+                        activeCompRegions: [...lane.activeCompRegions, peer],
+                    })),
+                });
+                expect(Object.hasOwn(takeLaneStore.value!.lanes[0]!.activeCompRegions[0]!, 'audioSource')).toBe(false);
+                reloadSavedProject();
+                await redo();
+                expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+                expect(takeLaneStore.value).toEqual({
+                    lanes: captured!.lanes.map((lane) => ({
+                        ...lane,
+                        activeCompRegions: [...lane.activeCompRegions, peer],
+                    })),
+                });
+            }
+        });
+
+        it.each(['derived', 'before-and-after', 'malformed'] as const)(
+            'refuses saved region source %s forgery in both copies',
+            async (change) => {
+                await trimAudio(
+                    {
+                        startBeat: 8,
+                        endBeat: 16,
+                        loopEnabled: true,
+                        loopLength: 4,
+                        stretchMode: 'timestretch',
+                        stretchRatio: 2,
+                    },
+                    9,
+                    false,
+                    true,
+                    true
+                );
+                expect((await undo()).headConsumed).toBe(true);
+                await vi.waitFor(() =>
+                    expect(parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY)).future).toHaveLength(1)
+                );
+                const saved = parsePersistedUndoState(sessionStorage.getItem(UNDO_SESSION_KEY));
+                if (!Array.isArray(saved.future) || !isRecord(saved.future[0]))
+                    throw new Error('Expected saved trim future');
+                for (const key of ['inverseAction', 'redoAction']) {
+                    const action = saved.future[0][key];
+                    if (
+                        !isRecord(action) ||
+                        !isRecord(action.payload) ||
+                        !Array.isArray(action.payload.takeSourceTransitions) ||
+                        !isRecord(action.payload.takeSourceTransitions[0])
+                    )
+                        throw new Error('Expected region capture');
+                    const transition = action.payload.takeSourceTransitions[0];
+                    if (
+                        !Array.isArray(transition.regionsBefore) ||
+                        !isRecord(transition.regionsBefore[0]) ||
+                        !Array.isArray(transition.regionsAfter) ||
+                        !isRecord(transition.regionsAfter[0]) ||
+                        !isRecord(transition.regionsAfter[0].audioSource)
+                    )
+                        throw new Error('Expected region source');
+                    transition.regionsAfter[0].audioSource.audioOffsetSeconds = 9;
+                    if (change === 'before-and-after')
+                        transition.regionsBefore[0].audioSource = structuredClone(
+                            transition.regionsAfter[0].audioSource
+                        );
+                    if (change === 'malformed') action.payload.takeSourceTransitions = null;
+                }
+                sessionStorage.setItem(UNDO_SESSION_KEY, JSON.stringify(saved));
+                reloadSavedProject();
+                const raw = structuredClone(getCrdtDoc('root'));
+                const history = structuredClone(undoHistoryStore.value);
+                expect(undoHistoryStore.value?.future).toHaveLength(change === 'before-and-after' ? 1 : 0);
+                await redo();
+                expect(getCrdtDoc('root')).toEqual(raw);
+                expect(undoHistoryStore.value).toEqual(history);
+                expect(Object.hasOwn(takeLaneStore.value!.lanes[0]!.activeCompRegions[0]!, 'audioSource')).toBe(false);
+            }
+        );
+
+        it.each([
+            'raw-missing',
+            'raw-replaced',
+            'raw-diverged',
+            'prospective-missing',
+            'prospective-replaced',
+            'prospective-diverged',
+        ] as const)('atomically refuses %s owned region', async (change) => {
+            await trimAudio(
+                {
+                    startBeat: 8,
+                    endBeat: 16,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 2,
+                },
+                9,
+                false,
+                true,
+                true
+            );
+            expect((await undo()).headConsumed).toBe(true);
+            const raw = structuredClone(getCrdtDoc('root'));
+            const execute = handleRestoreAudioClipStartTrim.execute;
+            let peer: Readonly<Record<string, unknown>> | undefined;
+            let observed = false;
+            const alter = (document: Readonly<Record<string, unknown>>) =>
+                Automerge.change(Automerge.clone(document), (doc) => {
+                    if (!isRecord(doc.takeLanes) || !Array.isArray(doc.takeLanes.lanes))
+                        throw new Error('Expected raw lanes');
+                    const lane = doc.takeLanes.lanes[0];
+                    if (!isRecord(lane) || !Array.isArray(lane.activeCompRegions))
+                        throw new Error('Expected raw regions');
+                    const region = lane.activeCompRegions[0];
+                    if (!isRecord(region)) throw new Error('Expected raw region');
+                    if (change.endsWith('missing')) lane.activeCompRegions.splice(0, 1);
+                    if (change.endsWith('replaced')) {
+                        const replacement = { ...region };
+                        if (isRecord(region.audioSource)) replacement.audioSource = { ...region.audioSource };
+                        lane.activeCompRegions[0] = replacement;
+                    }
+                    if (change.endsWith('diverged'))
+                        region.audioSource = {
+                            startBeat: 8,
+                            audioOffsetSeconds: 9,
+                            audioLoopStartSeconds: 4,
+                            audioLoopPassEntrySeconds: 4,
+                            audioLoopPassOriginBeat: 8,
+                            loopOriginBeat: 8,
+                            loopLength: 4,
+                        };
+                });
+            const spy = vi.spyOn(handleRestoreAudioClipStartTrim, 'execute').mockImplementation((action, context) => {
+                const result = execute(action, context);
+                if (
+                    !result ||
+                    typeof result !== 'object' ||
+                    !('commitValidation' in result) ||
+                    !result.commitValidation
+                )
+                    return result;
+                const validation = result.commitValidation;
+                return {
+                    ...result,
+                    commitValidation: {
+                        ...validation,
+                        beforeCommit: () => {
+                            if (change.startsWith('raw-')) {
+                                const current = getCrdtDoc('root');
+                                if (!current) throw new Error('Expected raw root');
+                                peer = alter(current);
+                                replaceCrdtDocInLineage({ id: 'root', doc: peer });
+                                observed = true;
+                            }
+                            return validation.beforeCommit();
+                        },
+                        validateDocument: (document) => {
+                            if (!change.startsWith('prospective-')) return validation.validateDocument(document);
+                            observed = true;
+                            const refusal = validation.validateDocument(alter(document));
+                            expect(refusal).toBe('Audio trim did not reach its owned source fields');
+                            return refusal;
+                        },
+                    },
+                };
+            });
+            try {
+                await redo();
+            } finally {
+                spy.mockRestore();
+            }
+            expect(observed).toBe(true);
+            expect(getCrdtDoc('root')).toEqual(peer ?? raw);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')?.startBeat).toBe(8);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(undoHistoryStore.value?.future).toHaveLength(1);
+        });
 
         it('keeps the captured restore out of public command execution and discovery', async () => {
             await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });

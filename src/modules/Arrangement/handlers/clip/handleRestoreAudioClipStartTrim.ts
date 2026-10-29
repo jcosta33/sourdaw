@@ -1,5 +1,7 @@
 import { createHandler } from '#/utils/createHandler';
 
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import { projectAudioClipTrimTakeSources } from '../../useCases/clipEditing/audioClipTrimTakeSources';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
 import { updateClip } from '../../useCases/updateClip';
@@ -16,7 +18,9 @@ export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipSt
         }
         return audioClipTrimOwner.matches(
             capture.direction === 'restore' ? capture.after : capture.before,
-            capture.clock
+            capture.clock,
+            capture.takeSourceTransitions,
+            capture.direction
         );
     },
     execute: (action) => {
@@ -26,12 +30,31 @@ export const handleRestoreAudioClipStartTrim = createHandler<'restoreAudioClipSt
         }
         const expected = capture.direction === 'restore' ? capture.after : capture.before;
         const replacement = capture.direction === 'restore' ? capture.before : capture.after;
-        if (!audioClipTrimOwner.matches(expected, capture.clock)) {
+        if (!audioClipTrimOwner.matches(expected, capture.clock, capture.takeSourceTransitions, capture.direction)) {
             return { status: 'conflict' };
         }
-        const proof = audioClipTrimOwner.captureCommitValidation(expected, replacement, capture.clock);
+        const proof = audioClipTrimOwner.captureCommitValidation(
+            expected,
+            replacement,
+            capture.clock,
+            capture.takeSourceTransitions,
+            capture.direction
+        );
         if (!proof) {
             return { status: 'conflict' };
+        }
+        if (capture.takeSourceTransitions !== undefined) {
+            const lanes = projectAudioClipTrimTakeSources(
+                takeLaneStore.value?.lanes ?? [],
+                capture.clipId,
+                capture.takeSourceTransitions,
+                capture.direction
+            );
+            if (!lanes) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            if (capture.takeSourceTransitions.length) takeLaneStore.set({ lanes });
         }
         const written = updateClip(capture.clipId, (clip) => {
             const updated = { ...clip, startBeat: replacement.startBeat };

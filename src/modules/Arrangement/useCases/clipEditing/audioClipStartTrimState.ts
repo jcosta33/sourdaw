@@ -16,6 +16,7 @@ import { type TempoTimeline } from '../../models/TempoTimeline';
 import { type Clip } from '../../models/Track';
 import { isExactClipSnapshot } from '../../stores/isExactClipSnapshot';
 
+import { isAudioClipTrimTakeSources } from './audioClipTrimTakeSources';
 import { prepareAudioClipStartTrim } from './prepareAudioClipStartTrim';
 
 type RestoreAction = Extract<AppAction, { type: 'restoreAudioClipStartTrim' }>;
@@ -109,7 +110,9 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
         typeof value.clipId !== 'string' ||
         !validClock(value.clock) ||
         (value.direction !== 'apply' && value.direction !== 'restore') ||
-        !Object.keys(value).every((key) => ['clipId', 'before', 'after', 'clock', 'direction'].includes(key))
+        !Object.keys(value).every((key) =>
+            ['clipId', 'before', 'after', 'clock', 'direction', 'takeSourceTransitions'].includes(key)
+        )
     ) {
         return null;
     }
@@ -125,7 +128,20 @@ function decodeAudioClipStartTrimPayload(value: unknown): DecodedTrim | null {
     if (!projected || !valuesEqual(projected, snapshots.after)) {
         return null;
     }
-    return { clipId: value.clipId, ...snapshots, clock: value.clock, direction: value.direction };
+    const capture: DecodedTrim = { clipId: value.clipId, ...snapshots, clock: value.clock, direction: value.direction };
+    if (Object.hasOwn(value, 'takeSourceTransitions')) {
+        if (
+            !isAudioClipTrimTakeSources(
+                value.takeSourceTransitions,
+                snapshots.before,
+                audioClipTrimTimeline(value.clock)
+            )
+        ) {
+            return null;
+        }
+        capture.takeSourceTransitions = value.takeSourceTransitions;
+    }
+    return capture;
 }
 
 function isAudioClipStartTrimPayload(value: unknown): boolean {
@@ -155,6 +171,8 @@ function isAudioClipStartTrimSessionEntry(entry: HandlerSessionActionEntry): boo
         valuesEqual(inverse.before, redo.before) &&
         valuesEqual(inverse.after, redo.after) &&
         valuesEqual(inverse.clock, redo.clock) &&
+        Object.hasOwn(inverse, 'takeSourceTransitions') === Object.hasOwn(redo, 'takeSourceTransitions') &&
+        valuesEqual(inverse.takeSourceTransitions, redo.takeSourceTransitions) &&
         entry.action.payload.clipId === inverse.clipId &&
         redo.clipId === inverse.clipId &&
         Math.max(0, entry.action.payload.newStartBeat) === inverse.after.startBeat &&

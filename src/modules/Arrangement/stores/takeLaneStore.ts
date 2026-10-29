@@ -457,6 +457,12 @@ function get_replay_authority(
 
 export const takeLaneStore = createStore<TakeLaneStoreState>({
     storage: createAutomergeStorage<TakeLaneStoreState, TakeLaneWriteJournal>(DOC_PREFIX_ROOT, 'takeLanes', {
+        // Source-only comp writes keep the existing row's causal identity.
+        // Invalid or duplicate tuples retain the reconciler's opaque-array fallback.
+        crdtEntityIdentity: {
+            activeCompRegions: (row) =>
+                is_exact_comp_region(row) ? JSON.stringify([row.takeId, row.startBeat, row.endBeat]) : null,
+        },
         // Audit CC-2 — projection default for a document without this slot, so
         // hydrate never writes the previous project's cache back into truth.
         hydrateMissing: () => defaultTakeLaneStoreState,

@@ -2,6 +2,11 @@ import { createHandler } from '#/utils/createHandler';
 import { type AppAction, type HandlerValidationContext } from '#/utils/handlerContract';
 
 import { type Clip } from '../../models/Track';
+import { takeLaneStore } from '../../stores/takeLaneStore';
+import {
+    captureAudioClipTrimTakeSources,
+    projectAudioClipTrimTakeSources,
+} from '../../useCases/clipEditing/audioClipTrimTakeSources';
 import { audioClipStartTrimState } from '../../useCases/clipEditing/audioClipStartTrimState';
 import { audioClipTrimOwner } from '../../useCases/clipEditing/audioClipTrimOwner';
 import { prepareAudioClipStartTrim } from '../../useCases/clipEditing/prepareAudioClipStartTrim';
@@ -74,13 +79,29 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
             // The same live owner and clock that supplied the description must
             // still authorize the write; unrelated clip facets remain live.
             const capture = audioClipStartTrimState.decodePayload(audio);
-            if (!capture || !audioClipTrimOwner.matches(capture.before, audio.clock)) {
+            if (!capture || !audioClipTrimOwner.matches(capture.before, audio.clock, capture.takeSourceTransitions)) {
                 return { status: 'conflict' };
             }
-            const proof = audioClipTrimOwner.captureCommitValidation(capture.before, capture.after, audio.clock);
+            const proof = audioClipTrimOwner.captureCommitValidation(
+                capture.before,
+                capture.after,
+                audio.clock,
+                capture.takeSourceTransitions
+            );
             if (!proof) {
                 return { status: 'conflict' };
             }
+            const lanes = projectAudioClipTrimTakeSources(
+                takeLaneStore.value?.lanes ?? [],
+                capture.clipId,
+                capture.takeSourceTransitions ?? [],
+                'apply'
+            );
+            if (!lanes) {
+                proof.release();
+                return { status: 'conflict' };
+            }
+            if (capture.takeSourceTransitions?.length) takeLaneStore.set({ lanes });
             const written = trimClipStart(alpha.payload.clipId, alpha.payload.newStartBeat);
             if (!written) {
                 proof.release();
@@ -188,7 +209,19 @@ export const handleTrimClipStart = createHandler<'trimClipStart'>({
                 if (!after) {
                     return { label, inverseAction: null };
                 }
-                const capture: AudioTrimCapture = { clipId: clip.id, before, after, clock, direction: 'restore' };
+                const takeSourceTransitions = captureAudioClipTrimTakeSources(
+                    before,
+                    takeLaneStore.value?.lanes ?? [],
+                    audioClipStartTrimState.timeline(clock)
+                );
+                const capture: AudioTrimCapture = {
+                    clipId: clip.id,
+                    before,
+                    after,
+                    clock,
+                    takeSourceTransitions,
+                    direction: 'restore',
+                };
                 preparedAudioTrims.set(alpha, capture);
                 return {
                     label,

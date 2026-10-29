@@ -1,3 +1,4 @@
+import { getObjectId } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -10,6 +11,7 @@ import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore as undoStore
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -313,6 +315,27 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         expectAuthority();
     });
 
+    it('refuses unsupported grouped audio trim then split before either source edit writes', async () => {
+        arrangeFinitePlacedPass(2, 5);
+        const original = structuredClone(getCrdtDoc('root'));
+        const originalClips = structuredClone(clips());
+        const originalLane = structuredClone(lane());
+        const result = await executeAppActionBatch(
+            [
+                { type: 'trimClipStart', payload: { clipId: 'source', newStartBeat: 9 } },
+                { type: 'splitClip', payload: { clipId: 'source', beat: 10 } },
+            ],
+            { source: 'prompt', requireCompensation: true, groupId: 'trim-then-split' }
+        );
+        expect(result.status).toBe('rejected');
+        expect(getCrdtDoc('root')).toEqual(original);
+        expect(clips()).toEqual(originalClips);
+        expect(lane()).toEqual(originalLane);
+        expect(undoStore.value?.past).toHaveLength(0);
+        expectSourceEntry(9, 2);
+        expectFiniteFrontier(12, 5);
+    });
+
     it.each([
         { clock: 'tempo change', rate: 1, entrySeconds: 2.5, endBeat: 15.5, finalSourceSeconds: 8 },
         { clock: 'tempo change', rate: 2, entrySeconds: 4, endBeat: 12, finalSourceSeconds: 8 },
@@ -472,6 +495,88 @@ describe('Splitting a comped clip re-keys takes and comp regions onto both fragm
         expect(lane()).toEqual(splitLane);
         expect(expectedEntries.map(([beat, seconds]) => expectSourceEntry(beat, seconds))).toEqual(originalFrames);
         expect(offlinePlaybacks(resolveTrackClipsWithComping('track-1', clips()), 8)).toEqual(after);
+        expectAuthority();
+    });
+
+    it('trim of a stretched selected loop retains its original reset and physical entries', async () => {
+        tempoMapStore.set({
+            changes: [
+                { id: 'fast', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 9, tempo: 60, curve: 'instant' },
+            ],
+        });
+        arrangeLoopComp();
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => ({
+                ...track,
+                clips: track.clips.map((clip) => ({
+                    ...clip,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    stretchMode: 'timestretch' as const,
+                    stretchRatio: 2,
+                })),
+            })),
+        });
+        const peerTake = createTake('unrelated-clip', 'Peer', 18, 20);
+        const peerRegion = { startBeat: 18, endBeat: 20, takeId: peerTake.id };
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...lane(),
+                    takes: [...lane().takes, peerTake],
+                    activeCompRegions: [...lane().activeCompRegions, peerRegion],
+                },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const rawRegions = () => getCrdtDoc<Project>('root')!.takeLanes.lanes[0]!.activeCompRegions;
+        const identities = rawRegions().map((region) => getObjectId(region));
+        expect(identities.every(Boolean)).toBe(true);
+        const originalClips = structuredClone(clips());
+        const originalLane = structuredClone(lane());
+        const entries: [number, number][] = [
+            [9, 5],
+            [10, 7],
+            [11.5, 10],
+            [12, 4],
+            [12.5, 5],
+            [15.5, 11],
+        ];
+        const frames = entries.map(([beat, seconds]) => expectSourceEntry(beat, seconds));
+        await executeAppAction({ type: 'trimClipStart', payload: { clipId: 'source', newStartBeat: 9 } });
+        expect(undoStore.value?.past).toHaveLength(1);
+        expect(entries.map(([beat, seconds]) => expectSourceEntry(beat, seconds))).toEqual(frames);
+        const trimmedClips = structuredClone(clips());
+        const trimmedLane = structuredClone(lane());
+        expect(lane().activeCompRegions.map(({ audioSource: _source, ...row }) => row)).toEqual(
+            originalLane.activeCompRegions
+        );
+        expect(lane().activeCompRegions[0]?.audioSource).toMatchObject({
+            startBeat: 8,
+            audioOffsetSeconds: 4,
+            audioLoopStartSeconds: 4,
+            audioLoopPassEntrySeconds: 4,
+            audioLoopPassOriginBeat: 8,
+            loopLength: 4,
+        });
+        expect(rawRegions().map((region) => getObjectId(region))).toEqual(identities);
+        expect(lane().activeCompRegions.at(-1)).toEqual(peerRegion);
+        expectAuthority();
+        await undo();
+        expect(clips()).toEqual(originalClips);
+        expect(lane()).toEqual(originalLane);
+        expect(rawRegions().map((region) => getObjectId(region))).toEqual(identities);
+        expect(lane().activeCompRegions.at(-1)).toEqual(peerRegion);
+        expectAuthority();
+        await redo();
+        expect(clips()).toEqual(trimmedClips);
+        expect(lane()).toEqual(trimmedLane);
+        expect(entries.map(([beat, seconds]) => expectSourceEntry(beat, seconds))).toEqual(frames);
+        expect(rawRegions().map((region) => getObjectId(region))).toEqual(identities);
+        expect(lane().activeCompRegions.at(-1)).toEqual(peerRegion);
         expectAuthority();
     });
 

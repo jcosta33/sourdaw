@@ -2143,6 +2143,7 @@ const schemaDefinitions = [
             before: 242,
             after: 242,
             clock: 270,
+            takeSourceTransitions: 259,
             direction: 211,
         },
         required: ['clipId', 'before', 'after', 'clock', 'direction'],

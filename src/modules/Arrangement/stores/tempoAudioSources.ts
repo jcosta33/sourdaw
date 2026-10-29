@@ -72,7 +72,7 @@ function withTakeSource(take: Take, fields: TempoAudioTakeFieldsSnapshot): Take 
     return next;
 }
 
-function withRegionSource(region: CompRegion, source: TempoAudioSourcePresenceSnapshot): CompRegion {
+export function withRegionSource(region: CompRegion, source: TempoAudioSourcePresenceSnapshot): CompRegion {
     if (source.present) {
         return { ...region, audioSource: structuredClone(source.value) };
     }
@@ -81,7 +81,7 @@ function withRegionSource(region: CompRegion, source: TempoAudioSourcePresenceSn
     return next;
 }
 
-function matchesPresence(value: CompRegion['audioSource'], source: TempoAudioSourcePresenceSnapshot): boolean {
+export function matchesPresence(value: CompRegion['audioSource'], source: TempoAudioSourcePresenceSnapshot): boolean {
     if (source.present) {
         return valuesEqual(value, source.value);
     }
