@@ -1,0 +1,22 @@
+release/open-source-inventory.json
+  s_26f70b851e8f7a::t_fb01455a1c6232 1345
+.agents/skills/review-stances/test-validity.md
+  s_26f70b851e8f7a::t_13ef7e3539178b 1888
+  s_26f70b851e8f7a::t_fb01455a1c6232 1889-1902
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ef9da0c0c0a8a1b72a6c5bf6d3b095f81921f42",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
