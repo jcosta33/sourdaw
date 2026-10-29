@@ -1,0 +1,45 @@
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_567a084d0540c4::t_979befa4540a0c 49
+.agents/skills/review-stances/session-lifecycle.md
+  s_567a084d0540c4::t_f2a5371438b60b 3-16
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  s_567a084d0540c4::t_979befa4540a0c 7-8,70-79
+tests/e2e/fixtures/hmrDisconnect/index.html
+  s_567a084d0540c4::t_5ac5c6a4fb19ae 1-12
+scripts/e2eDevServer.ts
+  s_567a084d0540c4::t_d905e03c8ff6e7 19-25
+tests/e2e/fixtures/hmrDisconnect/style.css
+  s_567a084d0540c4::t_5ac5c6a4fb19ae 1-3
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_f2a5371438b60b 3-18
+tests/e2e/fixtures/hmrDisconnect/entry.js
+  s_567a084d0540c4::t_5ac5c6a4fb19ae 3-5,11-14
+  s_567a084d0540c4::t_1a679653ea323b 1-2,6-10
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  s_567a084d0540c4::t_d905e03c8ff6e7 54
+  s_567a084d0540c4::t_fe026bd0e7fb4f 15-28,116,120-121,129-130,132,158-170
+  s_567a084d0540c4::t_5ac5c6a4fb19ae 1-14,29-40,42-53,55-97,99-115,117-119,122-124,127-128,131,133-147,152-157,171-173
+  s_567a084d0540c4::t_1a679653ea323b 41,98,125-126,148-151
+scripts/__tests__/e2eDevServer.spec.ts
+  s_567a084d0540c4::t_d905e03c8ff6e7 19-20,27,90-101
+.agents/skills/review-stances/startup-entry-availability.md
+  s_567a084d0540c4::t_f2a5371438b60b 3-18
+tests/e2e/fixtures/hmrDisconnect/App.js
+  s_567a084d0540c4::t_5ac5c6a4fb19ae 1-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8bfa85d120cb7934ea3e8da8b3740d105ef9ecd3",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
