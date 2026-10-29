@@ -1,0 +1,20 @@
+src/app/__tests__/nativeScalarFieldTransition.integration.spec.ts
+  s_59e31a5c6f3e31::t_89a31f49626d4e 68,138-143,160,174,182,191
+  s_59e31a5c6f3e31::t_e238ec19de3a0a 192-193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "707589ab38df30275f89aff15f5e66dbf42a37c1",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
