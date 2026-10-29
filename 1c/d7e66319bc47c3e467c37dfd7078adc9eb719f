@@ -1,0 +1,19 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.projectDirectory.integration.spec.ts
+  s_59e31a5c6f3e31::t_11950db31de8a1 13-14,61-63,68-70,79,118,257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1cd7e66319bc47c3e467c37dfd7078adc9eb719f",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
