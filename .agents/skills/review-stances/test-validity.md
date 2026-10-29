@@ -6,6 +6,19 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-28 — output scrubbing hid poisoned recursive gate state
+
+Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
+samples into detector recursion. GitHub reports no associated PR; the historical review stance,
+prompt and tier are unestablished. An output scrub or clamped meter cannot prove recursive state
+survived.
+
+Drive the enabled gate from open and closed states with one NaN or infinity, then compare finite
+output and raw detector, gain, hold and open state sample-for-sample with a healthy reference that
+omitted the invalid sample through attack, hold, release, closure and reopening. Removing the
+pre-recursion nonfinite fence must fail those cases. Trace upstream stateful stages separately:
+a pure gate probe establishes no whole-engine recovery claim.
+
 ### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
 
 PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration

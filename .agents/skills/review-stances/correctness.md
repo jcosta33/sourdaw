@@ -11,6 +11,19 @@ have caught it. Keep each lesson short enough to paste into a dispatch. A behavi
 matching no more specific file carries this file; a stance with a more specific match never
 carries it in addition.
 
+### 2026-10-28 — output scrubbing hid poisoned recursive gate state
+
+Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
+samples into detector recursion. GitHub reports no associated PR; the historical review stance,
+prompt and tier are unestablished. An output scrub or clamped meter cannot prove recursive state
+survived.
+
+Drive the enabled gate from open and closed states with one NaN or infinity, then compare finite
+output and raw detector, gain, hold and open state sample-for-sample with a healthy reference that
+omitted the invalid sample through attack, hold, release, closure and reopening. Removing the
+pre-recursion nonfinite fence must fail those cases. Trace upstream stateful stages separately:
+a pure gate probe establishes no whole-engine recovery claim.
+
 ### Explicit preservation must retain its whole owner and every forbidden operation
 
 Issue [#5339](https://github.com/jcosta33/sourdaw/issues/5339) reports an unresolved protection admitting
