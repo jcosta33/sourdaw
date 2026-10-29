@@ -849,6 +849,20 @@ PR #2083 made device edits require an exact live before-chain. MIDI import publi
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
+### 2026-10-29 — resolved group replay was mistaken for a completed revert (#5565)
+
+The AI history caller from `22a84b216658f593391e7e141d90f7c84d13648b` marked its row
+reverted after a void replay, including an absent group; the delegation retained by
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` preserved that false success. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. The missed input was a group that replay could not actually undo whole.
+
+Drive the actual history caller with absent, partially undone and nonreplayable groups.
+Require no project or Undo change, no Reverted flag, and visible refusal. A committed
+warning must keep the successful whole revert consumed and report the warning; an
+unexpected replay failure must reach visible error feedback without leaving the existing
+fire-and-forget UI callers an abandoned rejection. Runtime-only history remains inert.
+
 ### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
 PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
@@ -877,3 +891,17 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — a sample cap truncated a duration at the highest rate (PR #2055)
+
+PR #2055 (`d2efdde850`) derived the built-in body length from seconds while retaining
+the earlier 4096-sample cap. Its duration fixture stopped at 96 kHz; at 192 kHz the
+23.2 ms response requires 4458 samples. PR #5254 later exposed those prebuilt bodies
+to the musician without changing the cap. Public verification claimed rate-independent
+duration, but historical private stance prompts and tiers are unknown.
+
+Observe the actual engine's fully wet body output at the highest supported context rate.
+Require nonzero late PCM beyond the old cap, the final response window, exact silence
+after the physical duration, and preserved lower-rate decay, energy and spectral shape.
+Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
+served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.

@@ -1314,8 +1314,10 @@ describe('executeAppActionBatch', () => {
             });
             const editingToolStorage = createAutomergeStorage<{ tool: string }>('first', 'editingTool');
             const snapValueStorage = createAutomergeStorage<{ value: number }>('second', 'snapValue');
+            const onAmbiguousCommit = vi.fn();
             const reconciledRuntime: Array<{ editingTool: unknown; snapValue: unknown }> = [];
             const reconcileRuntime = vi.fn(() => {
+                expect(onAmbiguousCommit).toHaveBeenCalledOnce();
                 reconciledRuntime.push({
                     editingTool: documents.first?.editingTool,
                     snapValue: documents.second?.snapValue,
@@ -1335,6 +1337,7 @@ describe('executeAppActionBatch', () => {
                                 validateDocument: () => null,
                                 release: () => undefined,
                                 afterPublication: () => {
+                                    expect(onAmbiguousCommit).toHaveBeenCalledOnce();
                                     if (publicationFails) {
                                         throw new Error('evidence settlement failed');
                                     }
@@ -1362,7 +1365,7 @@ describe('executeAppActionBatch', () => {
             ];
             const onCommitted = vi.fn();
 
-            const result = await executeAppActionBatch(actions, { onCommitted });
+            const result = await executeAppActionBatch(actions, { onCommitted, onAmbiguousCommit });
 
             expect(result).toEqual({
                 status: 'ambiguous',
@@ -1379,57 +1382,73 @@ describe('executeAppActionBatch', () => {
             expect(mocks.recordAction).not.toHaveBeenCalled();
             expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
             expect(onCommitted).not.toHaveBeenCalled();
+            expect(onAmbiguousCommit).toHaveBeenCalledOnce();
         }
     );
 
-    it('treats a first-document failure after mutation as ambiguous and reconciles runtime from durable truth', async () => {
-        const document: Record<string, unknown> = { editingTool: { tool: 'select' } };
-        configureAutomergeStoragePort({
-            getDoc: () => document,
-            getSemanticMessage: () => undefined,
-            hasDoc: () => true,
-            mutateDoc: ({ changeFn }) => {
-                changeFn(document);
-                throw new Error('adapter failed after mutation');
-            },
-        });
-        const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
-        const runtimeEffect = { tool: 'select' };
-        const reconcileRuntime = vi.fn(() => {
-            runtimeEffect.tool = (document.editingTool as { tool: string }).tool;
-        });
-        expect(editingToolStorage.hydrate?.()).toBe(true);
-        registerHandlerMap({
-            setEditingTool: createHandler<SetEditingToolAction>({
-                execute: (action) => {
-                    runtimeEffect.tool = action.payload.tool;
-                    editingToolStorage.set({ tool: action.payload.tool });
-                    return {
-                        status: 'written',
-                        afterCommit: () => undefined,
-                        afterAmbiguousCommit: reconcileRuntime,
-                    };
+    it.each([false, true])(
+        'keeps an ambiguous publication honest when its observer throws=%s',
+        async (observerThrows) => {
+            const document: Record<string, unknown> = { editingTool: { tool: 'select' } };
+            configureAutomergeStoragePort({
+                getDoc: () => document,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(document);
+                    throw new Error('adapter failed after mutation');
                 },
-                describe: () => ({
-                    label: 'Set editing tool',
-                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+            });
+            const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+            const runtimeEffect = { tool: 'select' };
+            const onAmbiguousCommit = vi.fn(() => {
+                if (observerThrows) {
+                    throw new Error('History observer unavailable');
+                }
+            });
+            const onCommitted = vi.fn();
+            const reconcileRuntime = vi.fn(() => {
+                expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+                runtimeEffect.tool = (document.editingTool as { tool: string }).tool;
+            });
+            expect(editingToolStorage.hydrate?.()).toBe(true);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: (action) => {
+                        runtimeEffect.tool = action.payload.tool;
+                        editingToolStorage.set({ tool: action.payload.tool });
+                        return {
+                            status: 'written',
+                            afterCommit: () => undefined,
+                            afterAmbiguousCommit: reconcileRuntime,
+                        };
+                    },
+                    describe: () => ({
+                        label: 'Set editing tool',
+                        inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                    }),
                 }),
-            }),
-        });
+            });
 
-        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+            const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+                onCommitted,
+                onAmbiguousCommit,
+            });
 
-        expect(result).toEqual({
-            status: 'ambiguous',
-            reason: 'Automerge storage transaction committed before a later document failed',
-            actions: [],
-        });
-        expect(document).toEqual({ editingTool: { tool: 'marquee' } });
-        expect(runtimeEffect.tool).toBe('marquee');
-        expect(reconcileRuntime).toHaveBeenCalledOnce();
-        expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-    });
+            expect(result).toEqual({
+                status: 'ambiguous',
+                reason: `Automerge storage transaction committed before a later document failed${observerThrows ? '; Ambiguous commit observer failed: History observer unavailable' : ''}`,
+                actions: [],
+            });
+            expect(document).toEqual({ editingTool: { tool: 'marquee' } });
+            expect(runtimeEffect.tool).toBe('marquee');
+            expect(reconcileRuntime).toHaveBeenCalledOnce();
+            expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects a non-compensable action before dispatch', async () => {
         const execute = vi.fn();
@@ -1960,10 +1979,13 @@ describe('executeAppActionBatch', () => {
         });
         const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
 
+        const onAmbiguousCommit = vi.fn();
+
         await expect(
             executeAppActionBatch([materializedAction, plainAction], {
                 groupId: 'batch-committed-identity',
                 onCommitted,
+                onAmbiguousCommit,
             })
         ).resolves.toMatchObject({ status: 'committed' });
 
@@ -1975,6 +1997,8 @@ describe('executeAppActionBatch', () => {
         expect(reportedActions?.[0]).toBe(materializedAction);
         expect(reportedActions?.[1]).toBe(plainAction);
         expect(reportedActions).toHaveLength(2);
+        expect(onCommitted).toHaveBeenCalledOnce();
+        expect(onAmbiguousCommit).not.toHaveBeenCalled();
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {
@@ -1985,14 +2009,45 @@ describe('executeAppActionBatch', () => {
             }),
         });
         const onCommitted = vi.fn();
+        const onAmbiguousCommit = vi.fn();
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
             onCommitted,
+            onAmbiguousCommit,
         });
 
         expect(result).toEqual({ status: 'no-op', actions: [] });
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(onCommitted).not.toHaveBeenCalled();
+        expect(onAmbiguousCommit).not.toHaveBeenCalled();
     });
+
+    it.each(['empty', 'cancelled', 'rejected'] as const)(
+        'never reports publication for an %s batch',
+        async (outcome) => {
+            const execute = vi.fn();
+            registerHandlerMap({ setEditingTool: createHandler<SetEditingToolAction>({ execute }) });
+            const onCommitted = vi.fn();
+            const onAmbiguousCommit = vi.fn();
+
+            const result = await executeAppActionBatch(
+                outcome === 'empty' ? [] : [{ type: 'setEditingTool', payload: { tool: 'marquee' } }],
+                {
+                    onCommitted,
+                    onAmbiguousCommit,
+                    shouldExecute: () => outcome !== 'cancelled',
+                    prepareValidation:
+                        outcome === 'rejected'
+                            ? () => ({ status: 'rejected', reason: 'Preflight refused' })
+                            : undefined,
+                }
+            );
+
+            expect(result.status).toBe(outcome === 'empty' ? 'no-op' : outcome);
+            expect(execute).not.toHaveBeenCalled();
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(onAmbiguousCommit).not.toHaveBeenCalled();
+        }
+    );
 });

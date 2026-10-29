@@ -118,6 +118,8 @@ type ExecuteAppActionBatchOptions = ExecuteOptions & {
      * an observer that correlates a commit back to what it dispatched can do so by identity.
      */
     onCommitted?: (actions: readonly AppAction[]) => void;
+    /** Some document state published, but the transaction is ambiguous. Runs before reconciliation. */
+    onAmbiguousCommit?: () => void;
 };
 
 type ExecuteAppActionBatch = (
@@ -1036,7 +1038,14 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 });
                 storageTransaction.commit();
             } catch (error) {
+                let observerWarning: string | null = null;
                 if (error instanceof AutomergeStorageTransactionCommittedError) {
+                    try {
+                        options?.onAmbiguousCommit?.();
+                    } catch (observerError) {
+                        observerWarning = `Ambiguous commit observer failed: ${failureReason(observerError)}`;
+                        logger.error(new Error(observerWarning, { cause: observerError }));
+                    }
                     commitRedoInverseCapture({ phase: 'published', actions: captureActions });
                 }
                 const cleanupWarning = clearBatchSemanticContext();
@@ -1053,9 +1062,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     }
                     const reconciliationWarning = await reconcileAmbiguousRuntime(executedActions);
                     commitRedoInverseCapture({ phase: 'settle', actions: captureActions });
-                    const warnings = [cleanupWarning, publicationWarning, reconciliationWarning].filter(
-                        (warning): warning is string => warning !== null
-                    );
+                    const warnings = [
+                        observerWarning,
+                        cleanupWarning,
+                        publicationWarning,
+                        reconciliationWarning,
+                    ].filter((warning): warning is string => warning !== null);
                     const ambiguousReason = warnings.length > 0 ? `${reason}; ${warnings.join('; ')}` : reason;
                     return {
                         status: 'ambiguous',

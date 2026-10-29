@@ -1871,6 +1871,21 @@ The native live automation real-store test held an apply, changed a store, settl
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
 
+## 2026-10-29 — a delegation spy could not observe partial AI history replay (#5565)
+
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` tested that the history caller delegated to
+Command and marked its row, while the member loop introduced by
+`22a84b216658f593391e7e141d90f7c84d13648b` could partially revert a group. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. A mocked void result could not expose project or history corruption.
+
+Run the public caller against real Command replay, registered handlers and a CRDT root.
+Use gain plus mute, make the older inverse conflict, and compare complete project and
+history state before asserting that the UI promise resolves with refusal feedback. Also
+exercise absent, partially undone and nonreplayable groups, a committed warning, runtime
+inertness and a valid group with Redo. Replacing only atomic replay with the member loop
+must fail preservation; removing result admission must fail the metadata assertions.
+
 ### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
 
 PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
@@ -1886,6 +1901,32 @@ source lifecycle boundaries. Remove the actual mid or side compensation separate
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
 
+## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
+returned. #5849's pre-commit snapshot-wait cases missed the later asynchronous effects. A
+provisional live-entry reference filter also missed a real captured project/history restoration,
+because captureUndoHistory and restoreUndoHistory retain the original entry objects. Historical
+private review prompts and model tiers are unknown.
+
+Observe the real inverse commit, hold afterCommit or actual afterAmbiguousCommit, then restore
+both the captured project and original-reference history through public producers. Compare the
+restored past, future and tree after release; assert the original commit truth separately rather
+than requiring false unchanged AI metadata. Keep new-object restoration, ordinary success,
+post-commit warnings and a real musician edit as independent controls. Mutating finalization back
+to after the wait must fail these oracles. Check notification timing before publication callbacks,
+exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
+throw that retains the original committed error without rollback or retry.
+
+A mock returning no-op cannot observe the async gap after a real handler skips execution.
+Use a real inverse that the handler already considers applied, delegate its actual isNoop
+boolean unchanged, and signal that observation before replacing or editing the project.
+Require no handler/engine write and compare project, projections, both history stacks, tree
+and AI metadata together after completion. A same-lineage edit retaining the exact Undo
+snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
+Pair it with clear-only and original-reference restore, normal no-op consumption and caller
+cancellation. Await the observation and completion, never a chosen number of microtasks.
+
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
 Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
@@ -1899,3 +1940,18 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
+
+PR #2055 (`d2efdde850`) tested built-in body duration only at 44.1, 48 and 96 kHz.
+The rate-derived duration still met an inherited 4096-sample cap, which truncates its
+192 kHz response before the required 4458th frame. PR #5254's body selection retained
+that limit. Public reviews do not establish the historical private prompts or tiers.
+
+Use actual rendered PCM as well as the response length: select Wood through the real
+engine parameter, render 128-frame blocks at 192 kHz, require output in frames
+4096..4457 and the final 64-frame window, then silence at frame 4458. A cap-only revert
+must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-rate
+duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
+Native execution time, offline browser throughput and allocation guards cannot certify
+live AudioWorklet deadline or listening acceptance.
