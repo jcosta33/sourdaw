@@ -713,9 +713,15 @@ function numericArgumentAnswersTo(deviceType: NativeDspDeviceType, paramId: stri
     const processor = stripComments(readFileSync(resolve(REPO_ROOT, translation.processor), 'utf8'));
     const argumentName = TRANSLATORS.get(deviceType)!(paramId);
     const local = paramId === 'attackGain' ? 'attack' : 'sustain';
+    const gainReaderStart = processor.indexOf('function gainAtFrame(');
+    if (gainReaderStart < 0) {
+        return false;
+    }
+    const gainReader = readBalancedBlock(processor, processor.indexOf('{', gainReaderStart));
     if (
+        !gainReader.includes('return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;') ||
         !processor.includes(`const ${paramId} = parameters.${paramId};`) ||
-        !processor.includes(`const ${local} = ${paramId}?.[${paramId}.length === 1 ? 0 : frame]`)
+        !processor.includes(`const ${local} = gainAtFrame(${paramId}, frame);`)
     ) {
         return false;
     }

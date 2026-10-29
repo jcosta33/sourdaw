@@ -7,10 +7,6 @@ function gainAtFrame(values: Float32Array | undefined, frame: number): number {
     return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;
 }
 
-function sampleAtFrame(values: Float32Array | undefined, frame: number): number {
-    return values?.[frame] ?? 0;
-}
-
 class TransientShaperProcessor extends AudioWorkletProcessor {
     private instance: TransientShaperInstance | null = null;
     private disposed = false;
@@ -110,10 +106,10 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
             const attack = gainAtFrame(attackGain, frame);
             const sustain = gainAtFrame(sustainGain, frame);
             if (left && frame < left.length) {
-                left[frame] = instance.process_left(sampleAtFrame(inLeft, frame), attack, sustain);
+                left[frame] = instance.process_left(inLeft?.[frame] ?? 0, attack, sustain);
             }
             if (right && frame < right.length) {
-                right[frame] = instance.process_right(sampleAtFrame(inRight, frame), attack, sustain);
+                right[frame] = instance.process_right(inRight?.[frame] ?? 0, attack, sustain);
             }
         }
     }
