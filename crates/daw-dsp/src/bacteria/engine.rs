@@ -3309,11 +3309,7 @@ mod tests {
         mid_engine.set_param("globalRouting", 2.0);
         assert!(
             mid_engine.routing == RoutingMode::MidSide,
-<<<<<<< HEAD
             "fixture: mid_engine did not select Mid/Side routing"
-=======
-            "fixture: mid engine did not select Mid/Side routing"
->>>>>>> c2718ef2141b6e2ffa431995ed0d808010c76962
         );
         mid_engine.set_param("bandCount", 1.0);
         mid_engine.set_param("mix", 1.0);

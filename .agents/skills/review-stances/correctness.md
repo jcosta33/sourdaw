@@ -863,7 +863,6 @@ enable states. Include raw side, settled dry/mixed output, unread crossover cont
 source lifecycle boundaries. Remove the actual mid or side compensation separately: the
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
-<<<<<<< HEAD
 
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
@@ -878,5 +877,3 @@ routing. Require exact equality with explicit Serial on both channels, non-silen
 and separation from explicit Parallel. Revert only the constructor default: the named default
 case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
 Parallel so their assertions continue to observe the path they claim.
-=======
->>>>>>> c2718ef2141b6e2ffa431995ed0d808010c76962
