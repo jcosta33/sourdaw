@@ -63,7 +63,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     getCachedAudioBuffer: mocks.getCachedAudioBuffer,
 }));
 
-function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 100): AudioBuffer {
+function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRate = 50): AudioBuffer {
     return {
         copyFromChannel: (destination, _channelNumber, startInChannel = 0) => {
             destination.set(channelData.subarray(startInChannel, startInChannel + destination.length));
@@ -80,12 +80,12 @@ function createTestAudioBuffer(channelData: Float32Array<ArrayBuffer>, sampleRat
 }
 
 /**
- * At 600 BPM a beat is 0.1s, so the 100 Hz fixture buffer runs at exactly 10
+ * At 300 BPM a beat is 0.2s, so the 50 Hz fixture buffer runs at exactly 10
  * samples per beat. The buffer is 20 beats long; the clip under test spans
  * timeline [16, 26] with `audioOffsetBeats` 3, so it plays buffer beats
  * [3, 13) and nothing else.
  */
-const FIXTURE_TEMPO = 600;
+const FIXTURE_TEMPO = 300;
 const SAMPLES_PER_BEAT = 10;
 const CLIP_START_BEAT = 16;
 const CLIP_AUDIO_OFFSET_BEATS = 3;
