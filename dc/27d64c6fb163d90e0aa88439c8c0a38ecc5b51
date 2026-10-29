@@ -1,0 +1,28 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 866,881-882
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1824,1839-1840
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 3312,3314-3316
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,3-5
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,3-5
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,23-34
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1347-1349,1355,1357-1359,1777,1779-1781
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,3-5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc27d64c6fb163d90e0aa88439c8c0a38ecc5b51",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
