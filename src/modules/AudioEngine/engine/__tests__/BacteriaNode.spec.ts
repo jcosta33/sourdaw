@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import type { RuntimeDeviceControl, RuntimeDeviceControlInitialization } from '../../models/RuntimeDeviceControl';
+
 import { createBacteriaNode, extractBacteriaModAssignments, isBacteriaDevice } from '../BacteriaNode';
 
 // Mock the worklet-init helpers so createBacteriaNode resolves without a real
@@ -162,6 +164,66 @@ describe('createBacteriaNode', () => {
                 scheduling: { targetFrame: 48_000, deadlineFrame: 48_128 },
             })
         );
+    });
+
+    it('forwards every band Body choice through its immutable production target without widening admission', async () => {
+        const callerTarget = { ...target, parameterIds: ['synthetic-control', 'band6_convolutionIr'] };
+        const node = await createBacteriaNode(makeCtx(), undefined, undefined, callerTarget);
+        const initialization = postMessage.mock.calls.find(
+            ([message]) => message.command === 'initialize-fallback-control'
+        )?.[0] as RuntimeDeviceControlInitialization;
+        expect(initialization).toBeDefined();
+        expect(Object.isFrozen(initialization)).toBe(true);
+        expect(Object.isFrozen(initialization.target)).toBe(true);
+        expect(Object.isFrozen(initialization.target.parameterIds)).toBe(true);
+        expect(Object.isFrozen(initialization.correlation)).toBe(true);
+        expect(initialization.correlation.workletGeneration).toBeGreaterThan(0);
+        expect(initialization.target.parameterIds).not.toContain('synthetic-control');
+        expect(initialization.target.parameterIds).not.toContain('band6_convolutionIr');
+
+        callerTarget.trackId = 'changed-track';
+        callerTarget.deviceId = 'changed-device';
+        callerTarget.deviceType = 'changed-type';
+        postMessage.mockClear();
+
+        // The Body protocol is None=-1, Ceramic=0, Wood=1, Metal=2, Spring=3.
+        const choices = [-1, 0, 1, 2, 3];
+        let controlSequence = 0;
+        for (let band = 0; band < 6; band++) {
+            const parameterId = `band${band}_convolutionIr`;
+            expect(initialization.target.parameterIds).toContain(parameterId);
+            for (const value of choices) {
+                node.setParam(parameterId, value);
+                controlSequence++;
+                const control = postMessage.mock.lastCall?.[0] as RuntimeDeviceControl;
+                expect(control).toEqual({
+                    schemaVersion: 1,
+                    command: 'set-fallback-param',
+                    target: {
+                        trackId: target.trackId,
+                        deviceId: target.deviceId,
+                        deviceType: target.deviceType,
+                        parameterId,
+                    },
+                    value,
+                    correlation: {
+                        workletGeneration: initialization.correlation.workletGeneration,
+                        controlSequence,
+                    },
+                    scheduling: { targetFrame: null, deadlineFrame: null },
+                });
+                expect(Object.isFrozen(control)).toBe(true);
+                expect(Object.isFrozen(control.target)).toBe(true);
+                expect(Object.isFrozen(control.correlation)).toBe(true);
+                expect(Object.isFrozen(control.scheduling)).toBe(true);
+            }
+        }
+
+        node.setParam('synthetic-control', 3);
+        node.setParam('band6_convolutionIr', 3);
+        node.setParam('band5_convolutionIr', Number.NaN);
+        node.setParam('band5_convolutionIr', 3, 48_000);
+        expect(postMessage).toHaveBeenCalledTimes(controlSequence);
     });
 
     // The worklet's assignment-table contract: one replacement message carrying

@@ -1976,3 +1976,18 @@ branch must fail that case. Also retain short-buffer conversion across a tempo c
 a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
 end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
 a six-hour PCM render or listening result from it.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+A fixture that hand-supplies permissive `parameterIds` bypasses the omission it claims to
+test. Capture the real factory's initialization and outgoing controls, then use the same
+production schema at the processor. Require all six bands and indices -1/0/1/2/3, with
+unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
+`forwards every band Body choice` must fail. Document/action spies do not prove worklet
+admission; engine-call evidence does not prove rendered PCM or listening acceptance.
