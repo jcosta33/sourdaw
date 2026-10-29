@@ -42,7 +42,8 @@ test('Import NAM reports the unsupported topology and retains the selected captu
     await expect(page.getByRole('button', { name: 'Bypass Grinder' })).toBeVisible();
     await page.getByText('Grinder', { exact: true }).dblclick();
     await expect(page.getByRole('button', { name: 'Close Grinder' })).toBeVisible();
-    await page.getByRole('button', { name: 'Neural', exact: true }).click();
+    await page.getByRole('group', { name: 'Effect control detail' }).getByRole('button', { name: 'route' }).click();
+    await page.getByRole('group', { name: 'Grinder sections' }).getByRole('button', { name: 'Neural' }).click();
 
     await import_nam(page, 'single-layer.nam', single_layer);
     const retained = page.getByRole('button', { name: /Test LSTM 48000 Hz NAM import/ });
@@ -148,7 +149,7 @@ test('rebuilt WASM refuses stacked wide LSTM while the previous capture keeps re
                     supported_peak,
                     finite: pcm.every(Number.isFinite) && playback.every(Number.isFinite),
                     playback_peak: Math.max(...playback.map(Math.abs)),
-                    nan_flushes: instances.reduce((sum, engine) => sum + engine.get_nan_flush_count(), 0n).toString(),
+                    nan_flushes: instances.reduce((sum, engine) => sum + engine.get_nan_flush_count(), 0).toString(),
                     frames: pcm.length,
                 };
             } finally {

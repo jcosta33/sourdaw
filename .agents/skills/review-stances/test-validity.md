@@ -68,6 +68,20 @@ independent recovery must fail the transient case; removing its budget or entry-
 fail the persistent or late-error case. Exercise source and generated entry identity under the
 actual production CSP, plus controller absence without conditional test admission.
 
+### 2026-10-27 — one-layer NAM goldens missed the layer/width cross-product (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) added the LSTM runtime and a
+single-layer/hidden-size-3 NAMCore fixture. That fixture cannot expose the deeper cell's wider input
+being fed a scalar. The source establishes this coverage gap; historical private reviewer prompts,
+assigned stances and model tiers are unknown, and no introducing-head trap was measured.
+
+Cross layers greater than one with hidden size greater than one through actual load/prewarm,
+alongside each supported boundary. A rejection test must require the named error and no loaded
+model. A replacement test must activate the capture and compare continuing PCM with a matched
+reference and dry control; a loaded flag and finite output are insufficient. On an isolated
+committed probe, removing the topology refusal must fail the public-loader regression. Preserve
+the existing NAMCore goldens and distinguish compiled WASM PCM from full native/hardware proof.
+
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
 PR #5646 (`69d14317c961069c010ead77a7e02393c563dee2`) sealed refinement evidence whose
