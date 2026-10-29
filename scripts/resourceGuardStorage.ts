@@ -88,10 +88,24 @@ export function sameUserProcessIds(
     return pids;
 }
 
+function lsofInspectionMatch(name: string, type: string | undefined): string | undefined {
+    const operation = /\((stat|readlink):/i.exec(name)?.[1];
+    if (operation !== undefined) {
+        return operation.toLowerCase();
+    }
+    // Darwin libproc emits vnode paths separately from unrooted errno messages (err2nm).
+    // Words inside an absolute REG/DIR path do not make that path an inspection failure.
+    if ((type === 'REG' || type === 'DIR') && name.startsWith('/')) {
+        return undefined;
+    }
+    return /Permission denied|Operation not permitted|no info/i.exec(name)?.[0].toLowerCase().replaceAll(' ', '-');
+}
+
 function parseLsofFile(
     fields: string[],
     knownTypes: Set<string>,
-    report: (reason: string) => void
+    pid: number,
+    report: (reason: string, detail?: string) => void
 ): { path?: string; missingType: boolean } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
@@ -111,8 +125,15 @@ function parseLsofFile(
     ) {
         return unavailable('invalid-file-fields');
     }
-    if (name !== undefined && /Permission denied|Operation not permitted|no info|\((?:stat|readlink):/i.test(name)) {
-        return unavailable('file-inspection-diagnostic');
+    const inspectionMatch = name === undefined ? undefined : lsofInspectionMatch(name, type);
+    if (inspectionMatch !== undefined) {
+        // Keep only bounded field identities and the matched category, never names or catalog text.
+        const descriptor = (fields[0] ?? '').slice(1);
+        report(
+            'file-inspection-diagnostic',
+            `pid=${pid}:fd=${descriptor.length <= 20 ? descriptor : 'oversized'}:type=${type ?? 'missing'}:name=${name?.startsWith('/') ? 'absolute-path' : 'text'}:match=${inspectionMatch}`
+        );
+        return undefined;
     }
     if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
         return unavailable('invalid-file-fields');
@@ -128,7 +149,7 @@ function parseLsofFile(
 
 export function parseLsofCensus(
     output: string,
-    report: (reason: string) => void = () => {}
+    report: (reason: string, detail?: string) => void = () => {}
 ): { pids: Set<number>; paths: string[] } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
@@ -141,6 +162,7 @@ export function parseLsofCensus(
     const paths: string[] = [];
     let fileCount = 0;
     let missingType = false;
+    let currentPid = 0;
     const knownTypes = new Set([
         'REG',
         'DIR',
@@ -171,13 +193,14 @@ export function parseLsofCensus(
                 return unavailable('invalid-process-record');
             }
             pids.add(pid);
+            currentPid = pid;
             fileCount = 0;
             continue;
         }
         if (pids.size === 0) {
             return unavailable('invalid-descriptor');
         }
-        const file = parseLsofFile(fields, knownTypes, report);
+        const file = parseLsofFile(fields, knownTypes, currentPid, report);
         if (file === undefined) {
             return undefined;
         }
