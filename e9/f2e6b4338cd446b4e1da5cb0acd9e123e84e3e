@@ -1,0 +1,76 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_59e31a5c6f3e31::t_7c64de4a6d9a88 127
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.quantizeGridLabels.spec.tsx
+  s_59e31a5c6f3e31::t_b55668d3001365 112
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  s_59e31a5c6f3e31::t_894f7eb677ba99 70
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  s_59e31a5c6f3e31::t_736651fb81c7e9 139
+src/modules/Project/useCases/recentProjects/__tests__/loadRecentProject.spec.ts
+  s_59e31a5c6f3e31::t_e4406d6a12d95e 124
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.recentRoundTrip.spec.ts
+  s_59e31a5c6f3e31::t_9d565aaa6bd8ee 192
+src/app/__tests__/main.spec.tsx
+  s_59e31a5c6f3e31::t_3703e2acc244fa 7-9,15-16,23-24,29-81,156,270-272,277,290-292,295-299,342-345,347,383-406
+  s_59e31a5c6f3e31::t_e827712e035b2a 149-151
+  s_59e31a5c6f3e31::t_6d8ff05a9a8f22 275-276,284
+  s_59e31a5c6f3e31::t_6f49622370ec13 222
+  s_59e31a5c6f3e31::t_b9e1da4064de2e 82
+  s_59e31a5c6f3e31::t_750b1625263f10 152-155
+  s_59e31a5c6f3e31::t_e2c2b5c395ebe1 157-159,219-221
+  s_59e31a5c6f3e31::t_48727a06ba1078 223
+  s_59e31a5c6f3e31::t_9700c7894d3438 273-274
+  s_59e31a5c6f3e31::t_7da91f7a649f0f 281-283
+  s_59e31a5c6f3e31::t_11eceee8bcefa7 289
+  s_59e31a5c6f3e31::t_87c2833ef2fc8c 407-409
+src/modules/AiRuntime/useCases/__tests__/aiPanelActions.spec.ts
+  s_59e31a5c6f3e31::t_0a8060f516a189 11
+src/modules/AiRuntime/useCases/aiPanelActions/__tests__/runAppAction.spec.ts
+  s_59e31a5c6f3e31::t_70c21479888dc6 43
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSympatheticSend.spec.ts
+  s_59e31a5c6f3e31::t_712e7cbcfb02e3 13
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/interruptedProjectLoadDirtyTracking.integration.spec.ts
+  s_59e31a5c6f3e31::t_c2971db6530860 183
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleMasterGain.spec.ts
+  s_59e31a5c6f3e31::t_9dafb2f433628b 13
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipInspector.spec.tsx
+  s_59e31a5c6f3e31::t_2ad7a94a067d80 212
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackDevicesSection.spec.tsx
+  s_59e31a5c6f3e31::t_4acf1061c6ed61 84
+src/modules/Arrangement/handlers/recording/__tests__/recordingReplayOwnership.integration.spec.ts
+  s_59e31a5c6f3e31::t_952ae683dd4056 24
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/projectLoadDirtyTracking.integration.spec.ts
+  s_59e31a5c6f3e31::t_1dab1f2f4a90ca 139
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/ClipGainEnvelopeSection.spec.tsx
+  s_59e31a5c6f3e31::t_2f290f3bf1d84a 101
+src/modules/Project/useCases/projectPersistence/__tests__/discardProjectChanges.realPath.spec.ts
+  s_59e31a5c6f3e31::t_379ccc6d3c13d1 118
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/KneadEditor.spec.tsx
+  s_59e31a5c6f3e31::t_b1d6bbfafb4995 122
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/SendsEditor.spec.tsx
+  s_59e31a5c6f3e31::t_556964d92a0a53 16
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackLevelSection.spec.tsx
+  s_59e31a5c6f3e31::t_6e90bec5704c88 26
+src/modules/GrandBoule/useCases/__tests__/setGrandBouleSoundboardSend.spec.ts
+  s_59e31a5c6f3e31::t_ca009a53ee8c4d 13
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  s_59e31a5c6f3e31::t_1c2beacf159e30 119
+src/modules/Arrangement/handlers/recording/handleRestoreRecording.ts
+  s_59e31a5c6f3e31::t_6b845145807563 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9f2e6b4338cd446b4e1da5cb0acd9e123e84e3e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
