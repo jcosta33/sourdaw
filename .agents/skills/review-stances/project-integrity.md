@@ -194,6 +194,10 @@ old completion may certify the replacement.
 
 The collector protection test must also include finalized recovery storage during the pre-strengthening pending-write phase, with an unrelated peer deletion and exact PCM restoration. Ordinary row tests do not cover recovery cleanup.
 
+## Recording replay must authenticate the captured owner
+
+PR #4564 (`40c5218228c542c5a4cf3cdd73388f4da893ea4e`) introduced recording replay that checked only the destination track before restore and removed the clip ID globally on discard. A collaborator moving that same recorded ID to another track between history legs admitted a duplicate and then deleted the peer copy. Probe both moves before Undo and after Undo before Redo through real Command and CRDT storage; preserve raw and projected media, takes/comp, automation, MIDI and satellites, and retain the exact pending history on refusal. Count duplicate occurrences across tracks and within one track. Authenticate a discard's actual pending inverse against its original commit and explicit redo, and reject restore while any active occurrence exists. Historical private review prompts and tiers are unavailable; the missed stance is peer ownership changing between recording history legs.
+
 ## Escape: repairing attached composite conflicts cloned live proxies (PR #4292)
 
 PR #4292 (`ac8e123b5e`) introduced a repair path that passed attached Automerge map and list proxies to `structuredClone`. The map input throws `DataCloneError: '#<Object> could not be cloned.'`; the list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar conflict case did not exercise either composite shape. Keep this escape distinct from the actor-order flake in `test-validity.md`.

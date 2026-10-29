@@ -589,6 +589,10 @@ rescue, and never signal the raw descendant PID. Intercept every nonzero signal 
 absence observation, model reuse without forwarding it, and require zero retired-ID signals.
 Keep live-group rescue and fixture removal after independently observed group exit.
 
+### Recording ownership refusals need pre-write and independent negative probes
+
+PR #4564 (`40c5218228c542c5a4cf3cdd73388f4da893ea4e`) allowed a recorded clip ID moved by a peer to be restored twice and globally removed. A normal recording round trip cannot observe that input. Require real Command/CRDT cases with the same ID on another track before each history leg, nonempty peer facets, duplicate occurrences, unchanged raw/projected state and the identical pending entries. Place a writing sentinel before the recording action in a group and require its write count to remain zero, since rollback alone cannot prove preflight. On a committed head, omit only discard owner authentication and require the before-Undo cases to fail; separately omit global restore absence and require the before-Redo case to fail. Retain legacy singleton, multi-recording group, distinct-ID peer and isolated-preview controls. Historical reviewer prompts and tiers are unverified.
+
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
 The required Linux Rust job ran `rustup show` before any cache restore. PR #5064 run 38022076992
