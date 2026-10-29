@@ -1,0 +1,26 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 59-71
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-42
+.gitleaksignore
+  h_beb54bf43b47b7 8-11
+release/open-source-inventory.json
+  h_beb54bf43b47b7 2319-2323
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 2110-2111,2134-2139,2142-2173
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 119-120
+scripts/test-health-gate-scripts.sh
+  h_beb54bf43b47b7 235-236,245-250
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a82f0d4c7840fc7ea083559bcfbd373aba10d20",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
