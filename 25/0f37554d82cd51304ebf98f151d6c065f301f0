@@ -1,0 +1,25 @@
+.agents/skills/review-stances/audio-source-time.md
+  s_29d8df116c5b92::t_f8cd48f4867a9c 8-19
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_55ecb00b9ac4d8 9-10,12-23
+  s_29d8df116c5b92::t_36de788f95b8f6 11
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_29d8df116c5b92::t_c8813d06730e89 2172-2182
+  s_29d8df116c5b92::t_32a819e82eea76 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "250f37554d82cd51304ebf98f151d6c065f301f0",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
