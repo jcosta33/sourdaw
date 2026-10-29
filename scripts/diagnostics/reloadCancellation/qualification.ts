@@ -82,14 +82,15 @@ export function qualifyExecution(root: string, output: string, childCode: number
             };
         }),
         targetResults: observe(() => {
-            const matches = readFileSync(resolve(output, 'run/test-errors.jsonl'), 'utf8')
-                .split('\n')
-                .filter(Boolean)
-                .map((line) => {
-                    const event: unknown = JSON.parse(line);
-                    return recordOf(event, 'test result');
-                })
-                .filter((event) => recordOf(event.data, 'result data').file === 'persistedClipEditAcceptance.spec.ts');
+            const lines = readFileSync(resolve(output, 'run/test-errors.jsonl'), 'utf8').split('\n');
+            const nonEmpty = lines.filter(Boolean);
+            const results = nonEmpty.map((line) => {
+                const event: unknown = JSON.parse(line);
+                return recordOf(event, 'test result');
+            });
+            const matches = results.filter(
+                (event) => recordOf(event.data, 'result data').file === 'persistedClipEditAcceptance.spec.ts'
+            );
             if (matches.length !== 1) {
                 throw new Error('Exactly one completed target result was not observed');
             }

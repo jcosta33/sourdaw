@@ -29,7 +29,7 @@ export function diagnosticArguments(
     wrapped: boolean
 ): string[] {
     const paths = ORIGINAL_SELECTORS.map((path) => (wrapped && path === ORIGINAL_SPEC ? WRAPPER : path));
-    return [
+    const args = [
         'exec',
         'playwright',
         'test',
@@ -38,8 +38,11 @@ export function diagnosticArguments(
         config,
         '--workers=1',
         '--retries=0',
-        ...(reporter ? ['--reporter', reporter] : []),
     ];
+    if (reporter) {
+        args.push('--reporter', reporter);
+    }
+    return args;
 }
 
 function list(path: string): Record<string, unknown> {
@@ -49,7 +52,7 @@ function list(path: string): Record<string, unknown> {
 
 export function assertOnlyWrapperOwnsOriginalCase(original: unknown, candidate: unknown, root: string): void {
     if (!Array.isArray(original) || !Array.isArray(candidate)) {
-        throw new Error('Collected source-file identity is missing');
+        throw new TypeError('Collected source-file identity is missing');
     }
     const maintained = basename(ORIGINAL_SPEC);
     const wrapper = relative(resolve(root, 'tests/e2e'), resolve(root, WRAPPER));

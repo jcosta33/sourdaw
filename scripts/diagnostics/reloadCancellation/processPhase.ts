@@ -25,7 +25,7 @@ export async function runPhase(
             phase: env.RELOAD_DIAGNOSTIC_PHASE,
         },
     });
-    return new Promise((settle) => {
+    return new Promise((_resolve) => {
         const child = spawn('pnpm', args, { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         record('spawn', { pid: child.pid, argv: child.spawnargs });
         let stopping = false;
@@ -78,7 +78,7 @@ export async function runPhase(
                 completeClose: child.exitCode !== null,
                 time: new Date().toISOString(),
             });
-            settle(code);
+            _resolve(code);
         };
         process.on('SIGTERM', stop);
         process.on('SIGINT', stop);

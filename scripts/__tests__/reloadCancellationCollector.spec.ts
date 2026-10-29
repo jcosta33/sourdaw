@@ -61,7 +61,9 @@ describe('passive reload-cancellation evidence', () => {
             frame(JSON.stringify({ type: 'custom', privateValue })),
             frame(JSON.stringify({ type: 'full-reload', privateValue })),
         ];
-        WEBSOCKET_EVENTS.forEach((name, index) => observer.observe(name, fixtures[index]));
+        for (const [index, name] of WEBSOCKET_EVENTS.entries()) {
+            observer.observe(name, fixtures[index]);
+        }
         const summaries = events.filter((event) => event.kind === 'websocket-summary');
         expect(summaries).toHaveLength(7);
         expect(JSON.stringify(summaries)).not.toContain(privateValue);

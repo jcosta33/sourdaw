@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 
-import type { Browser, BrowserContext, CDPSession, Page } from '@playwright/test';
-
 import { observeBrowserDocument } from './browserSignals.ts';
 import { ORIGINAL_BROWSER } from './identity.ts';
 import { createJournal, recordOf, requiredText, writeReceipt, type RecordObservation } from './journal.ts';
 import { createWebSocketObserver, WEBSOCKET_EVENTS } from './websocket.ts';
+
+import type { Browser, BrowserContext, CDPSession, Page } from '@playwright/test';
 
 const PASSIVE_EVENTS = [
     'Network.requestWillBeSent',
@@ -126,9 +126,10 @@ export async function attachPassiveObservations(
         errors.push('Unexpected debugger pause');
         record('unexpected-debugger-pause', payload);
     });
-    for (const domain of ['Network', 'Page', 'Runtime', 'Debugger']) {
-        await session.send(`${domain}.enable`);
-    }
+    await session.send('Network.enable');
+    await session.send('Page.enable');
+    await session.send('Runtime.enable');
+    await session.send('Debugger.enable');
     await session.send('Page.setLifecycleEventsEnabled', { enabled: true });
     page.on('console', (message) => {
         const text = message.text();

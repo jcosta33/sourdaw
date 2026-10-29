@@ -150,12 +150,12 @@ export function assertProjectSemantics(
         }
         if (value !== null && typeof value === 'object') {
             return Object.fromEntries(
-                Object.entries(value).map(([key, item]) => [
-                    key,
-                    key === 'testIgnore' && Array.isArray(item)
-                        ? item.filter((path: unknown) => path !== wrapper).map(normalize)
-                        : normalize(item),
-                ])
+                Object.entries(value).map(([key, item]) => {
+                    if (key === 'testIgnore' && Array.isArray(item)) {
+                        return [key, item.filter((path: unknown) => path !== wrapper).map(normalize)];
+                    }
+                    return [key, normalize(item)];
+                })
             );
         }
         return value;

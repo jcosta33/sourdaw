@@ -61,7 +61,9 @@ export function observeOriginalServer(root: string, output: string, runnerPid: n
         buffered += data.toString();
         const lines = buffered.split('\n');
         buffered = lines.pop() ?? '';
-        lines.forEach(observeLine);
+        for (const line of lines) {
+            observeLine(line);
+        }
     });
     const sample = (): void => record('linux-resource-sample', sampleLinuxResources(runnerPid, serverPid, root));
     sample();

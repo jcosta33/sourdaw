@@ -16,7 +16,7 @@ export function assertTelemetryHealth(value: unknown): void {
     }
     const websocket = recordOf(health.websocket, 'websocket health');
     for (const errors of [health.errors, websocket.errors, websocket.missingCreation]) {
-        if (!Array.isArray(errors) || errors.length !== 0) {
+        if (!Array.isArray(errors) || errors.length > 0) {
             throw new Error('Collector errors or incomplete websocket coverage remain');
         }
     }
@@ -52,9 +52,14 @@ export function telemetryOutcomes(value: unknown): Record<string, 'observed' | '
     };
     const callback = observedCount('App-fulfilled');
     const controls = observedCount('public-transport-visible');
+    let callbackOutcome: 'observed' | 'not-observed' | 'unknown' = 'unknown';
+    if (callback > 0) {
+        callbackOutcome = 'observed';
+    } else if ((logpointCount ?? 0) > 0 && controls === 0) {
+        callbackOutcome = 'not-observed';
+    }
     return {
-        'App-fulfilled':
-            callback > 0 ? 'observed' : (logpointCount ?? 0) > 0 && controls === 0 ? 'not-observed' : 'unknown',
+        'App-fulfilled': callbackOutcome,
         'public-transport-visible': controls > 0 ? 'observed' : 'not-observed',
         'Network.webSocketCreated': websocket.created === 0 ? 'not-observed' : 'observed',
     };
