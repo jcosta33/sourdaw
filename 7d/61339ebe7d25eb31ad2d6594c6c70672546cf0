@@ -1,0 +1,20 @@
+Cargo.lock
+  h_beb54bf43b47b7 2257,2259
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9,191,14651,16338,20012
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,4374
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,403,1761
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d61339ebe7d25eb31ad2d6594c6c70672546cf0",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
