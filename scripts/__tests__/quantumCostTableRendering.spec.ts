@@ -3,11 +3,11 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
+import { renderConsoleReference, renderGeneratedRegion } from '../../crates/daw-dsp/benches/wasm/renderTable.mjs';
 
 const measurement = JSON.parse(
     readFileSync(resolve(import.meta.dirname, '../../crates/daw-dsp/benches/quantum-cost-table.json'), 'utf8')
-) as { rows: { id: string; medianTrustworthy: boolean }[] };
+) as { rows: { id: string; medianTrustworthy: boolean }[]; referenceProject: unknown; budgetMs: number };
 
 function withTrust(trust: boolean) {
     const data = structuredClone(measurement);
@@ -39,6 +39,21 @@ describe('quantum cost report calibration', () => {
         expect(rendered).toContain('median is unreliable, not an upper bound');
         expect(rendered).not.toContain('DECIDED: the upper bound already fits.');
         expect(rendered).toContain('| Audio thread, lower bound | 0.72 | 27% |');
+    });
+
+    it('qualifies the console reference using the same member flags', () => {
+        const render = (data: typeof measurement) =>
+            renderConsoleReference(data.rows, data.referenceProject, data.budgetMs);
+        const output = render(measurement);
+        expect(output).toContain('AUDIO THREAD >= 0.72 ms (27%) lower bound');
+        expect(output).toContain('1.1 ms (43%) median-based total (unreliable, not an upper bound)');
+        expect(output).toContain('2.2 ms (83%) median (unreliable, not an upper bound)');
+        expect(output).toContain('NOT DECIDED: unreliable reference audio medians (crumbs)');
+        const trusted = withTrust(true);
+        expect(render(trusted)).toContain('DECIDED: the upper bound already fits.');
+        rowById(trusted, 'grand_boule').medianTrustworthy = false;
+        expect(render(trusted)).toContain('DECIDED: the upper bound already fits.');
+        expect(render(trusted)).toContain('median (unreliable, not an upper bound)');
     });
 
     it('only withholds reference conclusions when their own members are unreliable', () => {

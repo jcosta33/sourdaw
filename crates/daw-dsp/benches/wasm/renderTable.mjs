@@ -147,6 +147,45 @@ export const GENERATED_BEGIN = BEGIN;
 export const GENERATED_END = END;
 
 /**
+ * @param {TableRow[]} rows
+ * @param {([string, number][] | undefined)} members
+ * @returns {[string, number][]}
+ */
+export function untrustworthyMembers(rows, members) {
+    return (members ?? []).filter(([id, count]) => count > 0 && !rows.find((row) => row.id === id)?.medianTrustworthy);
+}
+
+/**
+ * @param {TableRow[]} rows
+ * @param {TableReferenceProject} ref
+ * @param {number} budget
+ * @returns {string}
+ */
+export function renderConsoleReference(rows, ref, budget) {
+    const sig2 = (value) => (Number.isFinite(value) && value !== 0 ? Number(value.toPrecision(2)).toString() : '0');
+    const pct = (ms) => `${sig2((ms / budget) * 100)}%`;
+    const audioBad = untrustworthyMembers(rows, ref.audioThread);
+    const workerBad = untrustworthyMembers(rows, ref.worker);
+    const audioLabel = audioBad.length ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const worstLabel = audioBad.length ? 'median-based total (unreliable, not an upper bound)' : 'upper bound';
+    const workerLabel = workerBad.length ? 'median (unreliable, not an upper bound)' : 'upper bound';
+    const verdict = audioBad.length
+        ? `NOT DECIDED: unreliable reference audio medians (${audioBad.map(([id]) => id).join(', ')}).`
+        : ref.audioWorstQuantumUpperMs < budget
+          ? 'DECIDED: the upper bound already fits.'
+          : ref.audioFloorMs > budget
+            ? 'DECIDED THE OTHER WAY: the lower bound already exceeds budget.'
+            : 'UNDECIDED on this machine: the bounds straddle the budget.';
+    return [
+        `  AUDIO THREAD >= ${sig2(ref.audioFloorMs)} ms (${pct(ref.audioFloorMs)}) lower bound`,
+        `  AUDIO THREAD ${sig2(ref.audioUpperBoundMs)} ms (${pct(ref.audioUpperBoundMs)}) ${audioLabel}`,
+        `  worst quantum ${sig2(ref.audioWorstQuantumUpperMs)} ms (${pct(ref.audioWorstQuantumUpperMs)}) ${worstLabel}, + the largest duty spike`,
+        `  WORKER >= ${sig2(ref.workerFloorMs)} ms (${pct(ref.workerFloorMs)}) lower bound; ${sig2(ref.workerMedianMs)} ms (${pct(ref.workerMedianMs)}) ${workerLabel}`,
+        `  ${verdict}`,
+    ].join('\n');
+}
+
+/**
  * The closing prose of the reference-project section: which sentence runs depends
  * on the decisive figure, so the choice stays here rather than inline in the
  * template where the concatenation hid the sentence boundaries.
@@ -264,13 +303,8 @@ export function renderGeneratedRegion(data) {
         )}\n`;
     }
 
-    /** @param {([string, number][] | undefined)} members @returns {[string, number][]} */
-    const untrustworthyMembers = (members) =>
-        (members ?? []).filter(
-            ([id, count]) => count > 0 && !data.rows.find((row) => row.id === id)?.medianTrustworthy
-        );
-    const untrustworthyAudio = untrustworthyMembers(ref.audioThread);
-    const untrustworthyWorker = untrustworthyMembers(ref.worker);
+    const untrustworthyAudio = untrustworthyMembers(data.rows, ref.audioThread);
+    const untrustworthyWorker = untrustworthyMembers(data.rows, ref.worker);
     const audioReliable = untrustworthyAudio.length === 0;
     const workerReliable = untrustworthyWorker.length === 0;
     const workerReference = ref.worker === undefined ? '' : `\nWorker: ${refList(ref.worker)}.`;
