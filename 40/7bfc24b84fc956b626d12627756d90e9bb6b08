@@ -1,0 +1,22 @@
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  s_567a084d0540c4::t_c36fda69ec1a68 43,114-117,167,172-175,194-195
+  s_567a084d0540c4::t_5e58d97366363d 196-198
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_c36fda69ec1a68 19-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "407bfc24b84fc956b626d12627756d90e9bb6b08",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
