@@ -510,7 +510,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const pnpm = stepNamed(scope, 'Set up pnpm');
     if (
         typeof pnpm.uses !== 'string' ||
-        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        pnpm.uses !== './.github/actions/setup-pnpm' ||
         recordAt(pnpm, 'with').package_json_file !== 'package.json'
     ) {
         throw new Error('required scope must install the repository package manager');
@@ -2628,6 +2628,14 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
+        const sourceBootstrap = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceBootstrap, 'build-artifacts'), 'Set up pnpm').uses =
+            './source/.github/actions/setup-pnpm';
+        expect(() => assertHostedWasmWorkflow(sourceBootstrap)).toThrow('pnpm setup from workflow control');
+        const controlTarget = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(controlTarget, 'build-artifacts'), 'Set up pnpm'), 'with').package_json_file =
+            'control/package.json';
+        expect(() => assertHostedWasmWorkflow(controlTarget)).toThrow('pnpm target from the source manifest');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');

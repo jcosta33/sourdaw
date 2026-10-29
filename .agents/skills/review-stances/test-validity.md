@@ -1750,3 +1750,41 @@ alone cannot observe the file admission gap.
 The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
 
 Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
+
+### Bootstrap transport and activation probes need an observed phase
+
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
+
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.
+
+### Process-catalog fixtures must carry the production transport boundary (#5331)
+
+PR #5331 (`4781fe4e1e`) introduced a controlled process monitor whose nested
+`execFileSync` calls retained Node's smaller default output buffer while the real
+monitor allowed a bounded larger catalog. A valid catalog above that fixture
+limit failed before readiness and hid the actual error behind ignored supervisor
+output and a later wait timeout. Historical private reviewer prompts and tiers
+are unknown; the mechanical gap was an untested nested transport boundary.
+
+Exercise the actual generated monitor with a synthetic valid catalog above the
+old default and below the production ceiling through both forwarding routes.
+Require exact complete bytes, and make the old-default mutation fail. Reject
+over-ceiling output without forwarding partial bytes; reject opaque catalog
+rows before admission. Keep production monitoring unavailable on incomplete
+input. When readiness fails, capture the supervisor's actual error, exit and
+private readiness records before teardown; a later pass does not explain the
+original failure. Use synthetic process data in durable evidence rather than
+publishing real process environment values.
