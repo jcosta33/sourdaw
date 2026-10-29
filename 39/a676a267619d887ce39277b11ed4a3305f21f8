@@ -1,0 +1,28 @@
+src/modules/Arrangement/handlers/clip/handleDetectTransients.ts
+  h_beb54bf43b47b7 5,70,106-107,114,116-122
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 470-564
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  h_beb54bf43b47b7 2-3,22,45,51-52
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  h_beb54bf43b47b7 153-163
+src/modules/ElasticAudio/useCases/elasticAudio/detectTransientsForClip.ts
+  h_beb54bf43b47b7 2,38-41,54,61
+src/modules/ElasticAudio/useCases/elasticAudio/readClipTransientOnsets.ts
+  h_beb54bf43b47b7 251-254
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 35-38,45
+tests/e2e/elasticTransientWorkerPerformance.spec.ts
+  h_beb54bf43b47b7 118,122,130,159,162,189,202-204,219-220,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39a676a267619d887ce39277b11ed4a3305f21f8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
