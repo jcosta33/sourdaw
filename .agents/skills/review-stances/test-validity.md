@@ -493,6 +493,12 @@ check. Poison the reserved PCM span, compare each acknowledged window with the i
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
 
+### An unlocked-only fixture could not expose locked automatic-row loss (#4630)
+
+The original re-detection case seeded a user marker and an unlocked `transient-auto` marker; dropping every automatic row therefore still passed. It could not falsify loss of a locked automatic row. Current main retains locked rows regardless of origin and suppresses hits within `1e-3` of a retained original beat (PR #5515).
+
+Use a moved locked automatic row with exact ID, original and warped beats, lock and confidence beside user, grid and unlocked automatic rows. Exercise real Detect, sensitivity re-detection and registered Command; assert the exact raw CRDT and projected row, visible counts, other-clip state and unchanged PCM. Remove only locked-row retention and require the exact-row assertion to fail; independently remove equal/near-hit suppression and require both equal and near-collision cases to fail. Empty-hit mocks cannot prove suppression. These are falsifiable review probes, not evidence of a new runtime test, Worker behavior, performance, or full issue acceptance.
+
 ### A silent sensitivity fixture could not expose a stale marker view
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
