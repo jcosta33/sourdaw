@@ -891,3 +891,19 @@ Require nonzero late PCM beyond the old cap, the final response window, exact si
 after the physical duration, and preserved lower-rate decay, energy and spectral shape.
 Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
 served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
+
+### 2026-10-29 — capped render placement trusted the requested end (#5013)
+
+The offline producer capped frames in `bf14e0d6c1`, while the consumer introduced in
+`e7d4f0b69b` trusted the requested musical end. The production route in `33a3549990`
+joined them; `adfc95a453` is its first-parent integration boundary. GitHub associates
+none of those commits with a PR, and historical reviewer prompts, stance and tier are
+unavailable. #5371 delivered the endpoint repair, not the introduction.
+
+Compare returned frames with the requested endpoint before resolving a tail: a short
+buffer ends at its actual tempo-mapped position, including nonzero starts; redo retains
+that endpoint and buffer identity. Complete no-tail renders retain the exact musical end,
+while complete tail renders retain the decay. Probe both tail settings at the `2^30 + 1`
+requested versus `2^30` returned frame boundary; reverting the returned-frame branch must
+fail the owning `renderToClip.spec.ts` boundary case. Buffer metadata suffices for this
+arithmetic contract; it does not establish long-render PCM or listening behavior.
