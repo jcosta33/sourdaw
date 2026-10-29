@@ -414,17 +414,19 @@ describe('pnpm modules preflight against a real filesystem', () => {
                     env[key] = value;
                 }
             }
-            return spawnSync(
-                javascriptCli ? process.execPath : pnpm,
-                [
-                    ...(javascriptCli ? [pnpm] : []),
-                    `--config.userconfig=${join(root, '.npmrc')}`,
-                    `--config.globalconfig=${join(root, '.npmrc')}`,
-                    `--config.store-dir=${join(root, 'store')}`,
-                    ...args,
-                ],
-                { cwd: root, env, encoding: 'utf8', timeout: 10_000 }
-            );
+            const configuredArguments = [
+                `--config.userconfig=${join(root, '.npmrc')}`,
+                `--config.globalconfig=${join(root, '.npmrc')}`,
+                `--config.store-dir=${join(root, 'store')}`,
+                ...args,
+            ];
+            const cliArguments = javascriptCli ? [pnpm, ...configuredArguments] : configuredArguments;
+            return spawnSync(javascriptCli ? process.execPath : pnpm, cliArguments, {
+                cwd: root,
+                env,
+                encoding: 'utf8',
+                timeout: 10_000,
+            });
         };
         const version = runPnpm('true', ['--version']);
         expect(version.status, `${version.error ?? ''}${version.stdout}${version.stderr}`).toBe(0);
