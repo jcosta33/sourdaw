@@ -84,10 +84,37 @@ describe('quantum cost report calibration', () => {
             '| **Audio thread, median-based total** | **0.55** | **22%** | unreliable, not an upper bound |'
         );
         expect(rendered).toContain('**NOT DECIDED by compute alone.**');
+        expect(rendered).toContain(
+            'The audio total includes unreliable medians (1 × crumbs); it cannot establish an upper bound or a compute verdict.'
+        );
+        expect(rendered).not.toContain('Compute is not the obstacle.');
         expect(rendered).toContain('1 × crumbs');
         expect(rendered).toContain('median is unreliable, not an upper bound');
         expect(rendered).not.toContain('DECIDED: the upper bound already fits.');
         expect(rendered).toContain('| Audio thread, lower bound | 0.49 | 20% |');
+    });
+
+    it('qualifies unreliable duty-cycle costs while retaining their values', () => {
+        const data = {
+            ...measurement,
+            rows: [
+                ...measurement.rows,
+                {
+                    ...row('bacteria_smudge', 'Bacteria fixture', 'audio-thread', 0.01, 0.02),
+                    dutyCycle: {
+                        periodQuanta: 8,
+                        dutyPct: 12.5,
+                        tickCostMs: 0.04,
+                        idleCostMs: 0.01,
+                        amortisedMeanMs: 0.02,
+                    },
+                    dutyCycleSource: 'fixture period',
+                },
+            ],
+        };
+        expect(renderGeneratedRegion(data)).toContain(
+            '| bacteria_smudge (unreliable calibration) | every 8 quanta | 13% | 40 µs (1.6%) | 10 µs | **20 µs (0.8%)** | `fixture period` |'
+        );
     });
 
     it('qualifies the console reference using the same member flags', () => {
