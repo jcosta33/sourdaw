@@ -61,7 +61,7 @@ and +14.10% drift on a run at a load below the ceiling.
 
 Two consequences, both applied: the rate is calibrated **inside each row's own timed window** in ~1 s
 segments, with each sample converted using the rate of its own segment and the per-row spread
-published; and everything is reported to **two significant figures**. Read the median as the device.
+published; and everything is reported to **two significant figures**. Read a trustworthy median as the device; a row with calibration spread above 25% has an unreliable median.
 Treat p95 and p99 as indicative.
 
 ## Method
@@ -76,8 +76,8 @@ Treat p95 and p99 as indicative.
   identically-driven solo voice**: independent voices sum incoherently, so N voices must land in a
   two-sided band around √N × one voice.
 - **Gates run before anything is printed.** Occupancy, the wall-clock bound, the calibration spread
-  and the machine load are all evaluated first; a failure means no table, not a table with a warning
-  under it.
+  and the zero-tick fraction are evaluated first. The hard calibration limit refuses the run; the
+  softer 25% median-trust threshold marks a row unreliable without refusing it.
 - **The wall-clock bound is independent.** Each row's total compute must fit inside a
   `performance.now()` span measured on the _main thread_, which the worklet's clock cannot influence.
   The bound this replaces compared a 20 000-sample sum against a 24 000-quantum span, so it tolerated
@@ -85,8 +85,7 @@ Treat p95 and p99 as indicative.
 - **Machine load is recorded per row, not gated.** An earlier version refused to publish above half
   the logical cores, which on this machine meant refusing to publish at all. What is gated instead is
   the clock: the per-row rate spread, the zero-tick fraction, and an independent main-thread
-  wall-clock bound. Those catch a clock that cannot be trusted; load does not, and the bounds above
-  are valid under it.
+  wall-clock bound. Load does not decide whether the clock is trustworthy.
 
 **The wasm host is an `OfflineAudioContext`, one per device.** An offline render has no deadline, so
 this measures **cost** and cannot observe a dropout — that is AC-3's job, and _"its compute exceeds
@@ -109,9 +108,9 @@ time to a sample, it never removes it.** So from a single contended run:
 
 - the **floor** (1st percentile) is a genuine **lower bound** on what the device costs;
 - the **median taken under load** is a genuine **upper bound** on what it would cost on a quiet
-  machine.
+  machine, provided its calibration is trustworthy.
 
-Both are valid measurements taken on a busy machine, and they bracket the truth. That makes the
+When calibration is trustworthy, both are valid measurements taken on a busy machine, and they bracket the truth. That makes the
 _upper_ bound the decisive one here: if the contaminated total already fits the budget, the true
 total certainly fits, and no quieter machine is needed to establish it.
 
@@ -119,7 +118,7 @@ total certainly fits, and no quieter machine is needed to establish it.
 wasm clock is a counter another thread increments, so a render that lands entirely inside a stall of
 that thread reads zero. Measured here, the zero-tick fraction tracks render length — the shorter the
 render, the likelier it falls inside a stall. Rows over the threshold therefore report **no floor**;
-their upper bound still stands. The
+their median can still be an upper bound if its calibration is trustworthy. The
 published floor is the 1st percentile rather than the raw minimum for the same reason.
 
 The native leg is the control for this. `Instant` has no stall mode, and there the floor and the
@@ -130,7 +129,7 @@ the floor doctrine working: on a clock that cannot stall, contention leaves the 
 
 - **If the floor exceeds budget, that is decisive.** The device cannot fit and no quieter machine
   will change it.
-- **If the upper bound fits, that is also decisive** — for compute.
+- **If a trustworthy upper bound fits, that is also decisive** — for compute.
 - **Neither bounds the deadline.** They bound how long the DSP takes, not whether a quantum is
   delivered on time. The instrument for that is AC-3's dropout observation, which reads genuine
   underruns from `AudioContext.playbackStats` on a live context and is hardware-independent enough
@@ -202,12 +201,12 @@ Measured-source digests:
 
 ### On the audio thread — these share the one 2.667 ms deadline
 
-`≥ floor` is a lower bound and `≤ upper bound` is an upper bound; both are valid under the load shown.
-A dash means the clock stalled too often on that row for a floor to mean anything — the upper bound stands.
+`≥ floor` is a lower bound. A median marked unreliable is not an upper bound; the trust flag is false or missing.
+A dash means the clock stalled too often on that row for a floor to mean anything.
 
-| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| Device | ≥ floor | median | median as % of budget | load | clock stalls | steady? |
 | --- | ---: | ---: | ---: | ---: | ---: | :---: |
-| Crumbs (32 sounding voices, in-memory pool) | 490 µs | **550 µs** | **21%** | 13 | 0.0% | yes |
+| Crumbs (32 sounding voices, in-memory pool) | 490 µs | **550 µs** (unreliable median) | **21%** (unreliable median) | 13 | 0.0% | yes |
 | Grinder (Crunch JCM, ch 1, gain 5 — shipped patch) | 57 µs | **140 µs** | **5.1%** | 14 | 0.1% | yes |
 | Toaster (16 pads, re-struck 1/s) | 74 µs | **120 µs** | **4.5%** | 13 | 0.2% | yes |
 | Fermenter + 1050 automated params (16 sounding voices, 1 layer) | 49 µs | **100 µs** | **3.8%** | 13 | 0.1% | yes |
@@ -218,7 +217,7 @@ A dash means the clock stalled too often on that row for a floor to mean anythin
 | Proof (limiter engaged) | 27 µs | **68 µs** | **2.5%** | 14 | 0.0% | yes |
 | Levain (32 sounding voices, looped zone) | 26 µs | **46 µs** | **1.7%** | 13 | 0.5% | yes |
 | ProofChamber (FDN-16 — heaviest selectable) | 22 µs | **32 µs** | **1.2%** | 12 | 0.0% | yes |
-| Bacteria (3 bands, distortion on, Smudge/STFT) | 9.9 µs | **23 µs** | **0.85%** | 13 | 0.3% | yes |
+| Bacteria (3 bands, distortion on, Smudge/STFT) | 9.9 µs | **23 µs** (unreliable median) | **0.85%** (unreliable median) | 13 | 0.3% | yes |
 | Crust (true-peak limiting, 4x OS) | — | **20 µs** | **0.75%** | 12 | 1.0% | yes |
 | Bacteria (3 bands, mix 1.0, all stages off) | — | **14 µs** | **0.52%** | 12 | 4.9% | **no** |
 | ProofChamber (Plate — shipped default) | 1.1 µs | **8.4 µs** | **0.31%** | 12 | 0.3% | yes |
@@ -229,16 +228,16 @@ A dash means the clock stalled too often on that row for a floor to mean anythin
 
 ### Production cost is not on the audio thread — measured kernel cost, separate budget
 
-| Device | ≥ floor | ≤ upper bound | upper as % of budget | load | clock stalls | steady? |
+| Device | ≥ floor | median | median as % of budget | load | clock stalls | steady? |
 | --- | ---: | ---: | ---: | ---: | ---: | :---: |
-| Grand Boule (64 voices, re-struck 1/s) — production Worker cost site | 1600 µs | **2200 µs** | **83%** | 11 | 0.0% | yes |
+| Grand Boule (64 voices, re-struck 1/s) — production Worker cost site | 1600 µs | **2200 µs** (unreliable median) | **83%** (unreliable median) | 11 | 0.0% | yes |
 
 
 ### Duty cycles, not tails
 
 | Device | period | duty | cost in the tick | cost otherwise | amortised mean | period comes from |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| bacteria_smudge | every 4 quanta | 25% | 1200 µs (43%) | 22 µs | **300 µs (11%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
+| bacteria_smudge (unreliable calibration) | every 4 quanta | 25% | 1200 µs (43%) | 22 µs | **300 µs (11%)** | `stft.rs:11-12,164 — fft 2048, hop = fft/4 = 512 frames / 128 = 4 quanta` |
 | knead | every 16 quanta | 6.3% | 1100 µs (42%) | 0.57 µs | **70 µs (2.6%)** | `yin_cfg.frame_size = 2048 frames / 128 = 16 quanta` |
 | scoring | every 12.5 quanta | 8% | 210 µs (7.9%) | 0.9 µs | **18 µs (0.67%)** | `hop = sample_rate / 30 = 1600 frames / 128 = 12.5 quanta` |
 
@@ -249,17 +248,17 @@ Audio thread: 1 × grand_boule_ring_consumer, 1 × fermenter, 1 × levain, 1 × 
 Worker: 1 × grand_boule.
 
 Measured at a mean 1-minute load average of **13** on 12 logical
-cores. Both bounds are valid under that load; see the note on direction above.
+cores. Floors remain valid under that load; medians marked unreliable are not upper bounds.
 
 | | ms | % of 2.667 ms | |
 | --- | ---: | ---: | --- |
 | Audio thread, lower bound | 0.72 | 27% | partial — no floor from 3 rows, counted as zero |
-| **Audio thread, upper bound** | **1.1** | **43%** | **the decisive figure** |
-| Audio thread, worst quantum, upper bound | 2.2 | 84% | + the largest single duty spike |
-| Worker — Grand Boule DSP | 1.6 – 2.2 | 60% – 83% | separate thread and ring |
+| **Audio thread, median-based total** | **1.1** | **43%** | unreliable, not an upper bound |
+| Audio thread, worst quantum, median-based total | 2.2 | 84% | + the largest single duty spike; unreliable, not an upper bound |
+| Worker — Grand Boule DSP | 1.6 – 2.2 | 60% – 83% | separate thread and ring; median is unreliable, not an upper bound |
 
-**DECIDED: the upper bound already fits.**
-Even measured under a load average of 13, the reference project's audio thread does not approach the deadline on compute, and a quieter machine can only lower these numbers. Compute is not the obstacle. Whether quanta are actually missed is a different question, and AC-3 owns it.
+**NOT DECIDED by compute alone.**
+The audio total includes unreliable medians (1 × crumbs); it cannot establish an upper bound or a compute verdict.
 
 ### Occupancy, verified after each timed run
 

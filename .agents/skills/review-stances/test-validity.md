@@ -1821,3 +1821,9 @@ enable states. Include raw side, settled dry/mixed output, unread crossover cont
 source lifecycle boundaries. Remove the actual mid or side compensation separately: the
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+### 2026-10-29 — calibration warning was lost in the generated cost report (PR #974)
+
+PR #974 (`caabe804622df1c116c1545bcbb1fcea88e7e114`) introduced the cost report. The renderer later treated every median as an upper bound even when its retained row marked the median untrustworthy. Historical private review prompts and tiers are unknown; the missed probe joined the measurement's soft calibration flag to the published conclusion.
+
+Render retained data with an unreliable reference audio row and worker row. Require their raw values and valid floors to remain visible, while withholding dependent upper-bound and decisive claims. Independently toggle each flag and preserve a trustworthy reference control; removing the renderer's flag handling must fail the named regression. A hard-gate pass or JSON-to-Markdown consistency check alone does not prove that the report honors the soft flag.
