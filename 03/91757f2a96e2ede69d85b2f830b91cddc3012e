@@ -1,0 +1,22 @@
+scripts/__tests__/quantumMeasurementCalibration.spec.ts
+  s_26f70b851e8f7a::t_193b4ffa72df21 403
+  s_26f70b851e8f7a::t_6ec2b44017ad10 401-402,404
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_26f70b851e8f7a::t_6ec2b44017ad10 165,167,171-183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0391757f2a96e2ede69d85b2f830b91cddc3012e",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
