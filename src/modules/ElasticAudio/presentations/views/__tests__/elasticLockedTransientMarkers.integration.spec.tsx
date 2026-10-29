@@ -25,7 +25,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
-import { resetPreferences } from '#/modules/Preferences/useCases';
+import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
@@ -108,6 +108,26 @@ function rawWarpState(clipId = CLIP_ID): WarpState {
         throw new Error(`Missing real CRDT warp state for ${clipId}`);
     }
     return state;
+}
+
+function holdAnimationFrames() {
+    const callbacks: FrameRequestCallback[] = [];
+    const waiters: ((callback: FrameRequestCallback) => void)[] = [];
+    let handle = 0;
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((callback) => {
+        const waiter = waiters.shift();
+        if (waiter) waiter(callback);
+        else callbacks.push(callback);
+        return ++handle;
+    });
+    const cancelled = vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation(() => undefined);
+    return {
+        cancelled,
+        next: (): Promise<FrameRequestCallback> => {
+            const callback = callbacks.shift();
+            return callback ? Promise.resolve(callback) : new Promise((resolve) => waiters.push(resolve));
+        },
+    };
 }
 
 describe('locked transient markers through the real Elastic editor', () => {
@@ -403,6 +423,132 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(samples).toEqual(originalPcm);
         }
     );
+    it('waits for a frame before writing and captures the latest real user and locked rows for Undo and Redo', async () => {
+        supplyBuffer(burstSamples());
+        const frames = holdAnimationFrames();
+        const original = JSON.stringify(getCrdtDoc('root'));
+        const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        const frame = await frames.next();
+        expect(JSON.stringify(getCrdtDoc('root'))).toBe(original);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        addManualMarker(CLIP_ID, 1.5);
+        toggleMarkerLock(CLIP_ID, lockedMarker.id);
+        updateWarpMarkerBeat({ clipId: CLIP_ID, markerId: lockedMarker.id, field: 'warpedBeat', beat: 1.3 });
+        toggleMarkerLock(CLIP_ID, lockedMarker.id);
+        flushAutomergeStorageWrites();
+        const before = structuredClone(rawWarpState());
+        const latestLocked = before.markers.find((marker) => marker.id === lockedMarker.id);
+        expect(latestLocked).toMatchObject({ warpedBeat: 1.3, locked: true });
+        frame(performance.now());
+        await execution;
+        const after = structuredClone(rawWarpState());
+        expect(after.markers).toHaveLength(3);
+        for (const marker of before.markers) expect(after.markers).toContainEqual(marker);
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+        await undo();
+        expect(rawWarpState()).toEqual(before);
+        await redo();
+        expect(rawWarpState()).toEqual(after);
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+    });
+
+    it.each(['abort', 'editor disposal', 'editor switch', 'preference reset', 'pagehide', 'successor'] as const)(
+        'settles a held frame on %s without releasing it or writing',
+        async (reason) => {
+            supplyBuffer(burstSamples());
+            const frames = holdAnimationFrames();
+            const controller = new AbortController();
+            if (reason === 'editor disposal') render(<ElasticEditorPanel />);
+            if (reason === 'preference reset')
+                preferencesStore.trySet({ ...defaultPreferences, elasticTransientSensitivity: 0.82 });
+            const before = JSON.stringify(getCrdtDoc('root'));
+            const execution = executeAppAction(
+                { type: 'detectTransients', payload: { clipId: CLIP_ID } },
+                { signal: controller.signal }
+            );
+            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            const staleFrame = await frames.next();
+            let successor: Promise<void> | undefined;
+            if (reason === 'abort') controller.abort();
+            if (reason === 'editor disposal') cleanup();
+            if (reason === 'editor switch') openElasticEditor('other-clip');
+            if (reason === 'preference reset') resetPreferences();
+            if (reason === 'pagehide') window.dispatchEvent(new Event('pagehide'));
+            if (reason === 'successor')
+                successor = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            await rejected;
+            expect(frames.cancelled).toHaveBeenCalled();
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            staleFrame(performance.now());
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(before);
+            if (successor) {
+                (await frames.next())(performance.now());
+                await successor;
+                expect(rawWarpState().markers).toHaveLength(2);
+            }
+        }
+    );
+
+    it.each(['before wait', 'during wait'] as const)(
+        'completes a valid hidden-page detection %s without a frame',
+        async (timing) => {
+            supplyBuffer(burstSamples());
+            const frames = holdAnimationFrames();
+            const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(timing === 'before wait');
+            const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            let staleFrame: FrameRequestCallback | undefined;
+            if (timing === 'during wait') {
+                staleFrame = await frames.next();
+                hidden.mockReturnValue(true);
+                document.dispatchEvent(new Event('visibilitychange'));
+            }
+            await execution;
+            expect(rawWarpState().markers).toHaveLength(2);
+            expect(getWarpState(CLIP_ID)).toEqual(rawWarpState());
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            const committed = JSON.stringify(getCrdtDoc('root'));
+            staleFrame?.(performance.now());
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(committed);
+        }
+    );
+
+    it.each(['tempo', 'buffer', 'clip', 'root'] as const)(
+        'refuses a held frame after its %s source changes',
+        async (source) => {
+            supplyBuffer(burstSamples());
+            const frames = holdAnimationFrames();
+            const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            const rejected = expect(execution).rejects.toThrow(/cancelled|changed/);
+            const frame = await frames.next();
+            if (source === 'tempo') transportStore.set({ ...defaultTransportState, tempo: 128 });
+            if (source === 'buffer' || source === 'clip')
+                trackStore.update((state) =>
+                    state
+                        ? {
+                              ...state,
+                              tracks: state.tracks.map((track) => ({
+                                  ...track,
+                                  clips:
+                                      source === 'clip'
+                                          ? track.clips.filter((clip) => clip.id !== CLIP_ID)
+                                          : track.clips.map((clip) =>
+                                                clip.id === CLIP_ID ? { ...clip, audioBufferId: 'replacement' } : clip
+                                            ),
+                              })),
+                          }
+                        : state
+                );
+            if (source === 'root') createCrdtDoc('root');
+            flushAutomergeStorageWrites();
+            const changed = JSON.stringify(getCrdtDoc('root'));
+            frame(performance.now());
+            await rejected;
+            expect(JSON.stringify(getCrdtDoc('root'))).toBe(changed);
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+        }
+    );
+
     it('undoes the first detection from absent warp state and guards the absent-state redo', async () => {
         supplyBuffer(burstSamples());
         warpStateStore.set({ states: { 'other-clip': otherWarpState } });

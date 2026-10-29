@@ -21,6 +21,33 @@ export function cancelTransientDetection(clipId: string): void {
     revisions.set(clipId, transientDetectionRevision(clipId) + 1);
 }
 
+/** Align visible commits; a hidden page can finish without its suspended animation frame. */
+function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) return Promise.resolve(false);
+    if (document.hidden) return Promise.resolve(true);
+    return new Promise((resolve) => {
+        let frame: number | undefined;
+        let settled = false;
+        const finish = (admitted: boolean): void => {
+            if (settled) return;
+            settled = true;
+            if (frame !== undefined) cancelAnimationFrame(frame);
+            signal.removeEventListener('abort', abort);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            window.removeEventListener('pagehide', abort);
+            resolve(admitted);
+        };
+        const abort = (): void => finish(false);
+        const visibilityChanged = (): void => {
+            if (document.hidden) finish(true);
+        };
+        signal.addEventListener('abort', abort, { once: true });
+        document.addEventListener('visibilitychange', visibilityChanged);
+        window.addEventListener('pagehide', abort, { once: true });
+        frame = requestAnimationFrame(() => finish(true));
+    });
+}
+
 /** Read-only owned-copy Worker stage; Arrangement's registered action owns the write. */
 export async function detectTransientsForClip(clipId: string, sensitivity: number, signal?: AbortSignal) {
     cancelTransientDetection(clipId);
@@ -78,6 +105,10 @@ export async function detectTransientsForClip(clipId: string, sensitivity: numbe
         });
         if (result.status === 'failed') {
             return result;
+        }
+        if (!(await waitForCommitFrame(controller.signal))) {
+            abort();
+            return { status: 'failed' as const, code: 'cancelled' as const };
         }
         return {
             ...result,
