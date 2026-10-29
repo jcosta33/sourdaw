@@ -84,11 +84,18 @@ input contract to fail; neither a snapshot nor an imitation of the upstream acti
 
 PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
 the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
-within its own limit. The exact phase of the historical CI timeout was not established.
+within its own limit. The exact phase of the earlier historical CI timeout was not established.
+[Hosted run 40777377382, unit shard 3/4](https://github.com/jcosta33/sourdaw/actions/runs/40777377382/job/123131079682)
+subsequently showed continuing progress and CPU work: the final position transition began at 4834 ms
+of a 5000 ms case budget. Historical private review prompts and tiers are unknown.
 
 Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
 bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
-state to fail its original wait rather than pass under the larger aggregate budget.
+state to fail its original wait rather than pass under the larger aggregate budget. Check that the
+whole-case budget accommodates sequential committed transitions and their individual wait bounds;
+measure phase progress and CPU before adjusting a deadline. Do not raise global timeouts or treat a
+green retry as recovery. Mutate a real producer to persist the wrong value and require the existing
+functional case to fail even with the adjusted budget.
 
 ### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
 
