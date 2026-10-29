@@ -47,6 +47,9 @@
  * which paces the loader with the same budget as the sample chunks. Every role
  * stages its own tables: zones are per processor, only PCM is shared.
  *
+ * Only an in-flight follower's upload decision carries `ownerLoadToken`:
+ * its exact current PCM owner. A cached-ready decision has no dependency.
+ *
  * `commitSampleBank` commits the sealed bank (the owner publishes its PCM
  * first; a follower holds the commit until the owner's bank publishes) with a
  * call that allocates and frees nothing: the bank it replaces waits in the
@@ -414,7 +417,16 @@ class LevainProcessor extends AudioWorkletProcessor {
         if (inFlight) {
             this._bankRole = 'follower';
             inFlight.followers.add(this);
-            this._postSampleBankUploadDecision(loadToken, false);
+            const ownerLoadToken = inFlight.owner._bankLoadToken;
+            if (
+                !Number.isSafeInteger(ownerLoadToken) ||
+                ownerLoadToken === null ||
+                ownerLoadToken <= 0 ||
+                ownerLoadToken === loadToken
+            ) {
+                throw new Error('Levain shared bank lost its owner load token');
+            }
+            this._postSampleBankUploadDecision(loadToken, false, ownerLoadToken);
             return;
         }
         if (inst.attach_sample_bank(bankKey)) {
@@ -428,7 +440,11 @@ class LevainProcessor extends AudioWorkletProcessor {
         this._postSampleBankUploadDecision(loadToken, true);
     }
 
-    _postSampleBankUploadDecision(loadToken: number, uploadRequired: boolean): void {
+    _postSampleBankUploadDecision(loadToken: number, uploadRequired: boolean, ownerLoadToken?: number): void {
+        if (ownerLoadToken !== undefined) {
+            this.port.postMessage({ type: 'sampleBankUploadDecision', loadToken, uploadRequired, ownerLoadToken });
+            return;
+        }
         this.port.postMessage({ type: 'sampleBankUploadDecision', loadToken, uploadRequired });
     }
 
