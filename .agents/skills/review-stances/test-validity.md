@@ -1865,3 +1865,17 @@ enable states. Include raw side, settled dry/mixed output, unread crossover cont
 source lifecycle boundaries. Remove the actual mid or side compensation separately: the
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
+
+Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
+Serial; GitHub reports no associated PR for that commit. PR #2079 (`c6a1310929`)
+made Serial actually chain the bands, but its routing fixture selected both modes explicitly
+and never observed a fresh constructor. Historical private review prompts and tiers are unknown.
+The missed stance was the audio produced before any routing parameter write.
+
+Render a fresh instance through an active two-band clipper then low-pass chain without setting
+routing. Require exact equality with explicit Serial on both channels, non-silent references,
+and separation from explicit Parallel. Revert only the constructor default: the named default
+case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
+Parallel so their assertions continue to observe the path they claim.
