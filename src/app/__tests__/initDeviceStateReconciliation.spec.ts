@@ -8,8 +8,8 @@ const mocks = vi.hoisted(() => ({
     configureSampleAccess: vi.fn((_capture: (deviceId: string) => number | null) => vi.fn()),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
-    DOC_PREFIX_ROOT: 'root',
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     subscribeToCrdtChanges: mocks.subscribe,
 }));
 // The seam is document glue and nothing else: three owner sweeps it runs in
@@ -59,6 +59,11 @@ describe('initDeviceStateReconciliation', () => {
 
     it('registers the current sample owner reader and disposes that registration', () => {
         expect(mocks.configureSampleAccess).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+        const capture = mocks.configureSampleAccess.mock.calls.at(-1)?.[0];
+        if (!capture) {
+            throw new Error('Expected the actual sample owner reader');
+        }
+        expect(capture('missing-crumbs-device')).toBeNull();
         const dispose = mocks.configureSampleAccess.mock.results.at(-1)?.value;
         if (!dispose) {
             throw new Error('Expected the sample access disposer');

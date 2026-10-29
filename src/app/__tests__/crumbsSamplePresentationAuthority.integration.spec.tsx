@@ -31,13 +31,7 @@ import { createCrumbsSampleProjectAccess } from '../createCrumbsSampleProjectAcc
 import { initDeviceStateReconciliation } from '../initDeviceStateReconciliation';
 
 const native = vi.hoisted(() => ({
-    available: false,
-    invoke: vi.fn<(command: string, input?: unknown) => Promise<unknown>>(() => Promise.resolve(undefined)),
-}));
-vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
-    ...(await importOriginal<Record<string, unknown>>()),
-    isDesktopRuntime: () => native.available,
-    desktopInvoke: native.invoke,
+    invoke: vi.fn<SourdawDesktopBridge['invoke']>(() => Promise.resolve(undefined)),
 }));
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -66,10 +60,7 @@ let disposeReconciliation: () => void;
 let disposeProjection: () => void;
 let disposePersistence: () => void;
 let disposeNative: () => void;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === 'object';
-}
+let desktopBridgeDescriptor: PropertyDescriptor | undefined;
 
 function device(): Track['devices'][number] {
     return { id: deviceId, name: 'Crumbs', type: 'builtin-crumbs', bypassed: false, parameterValues: {} };
@@ -160,13 +151,17 @@ function expectSecondWaveform(): void {
 }
 
 beforeEach(async () => {
-    native.available = true;
+    desktopBridgeDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
+    Object.defineProperty(window, 'sourdaw', {
+        configurable: true,
+        value: { invoke: native.invoke } satisfies Pick<SourdawDesktopBridge, 'invoke'>,
+    });
     deviceId = `crumbs-app-${++fixtureSequence}`;
     held = undefined;
     modeWaiters.clear();
     native.invoke.mockReset();
     native.invoke.mockImplementation(async (command, input) => {
-        const args = isRecord(input) ? input : {};
+        const sampleArgument = input?.[1];
         if (command === 'set_crumbs_mode') {
             modeWaiters.get(modeCompletions())?.();
             return undefined;
@@ -176,7 +171,7 @@ beforeEach(async () => {
         }
         if (command === 'load_sample') {
             let sampleId = 2;
-            if (args.filePath === '/a.wav') {
+            if (sampleArgument === '/a.wav') {
                 sampleId = 1;
             }
             return {
@@ -198,7 +193,7 @@ beforeEach(async () => {
             held &&
             !held.consumed &&
             ((telemetry && held.boundary === 'telemetry') ||
-                (peaks && args.sampleId === 1 && held.boundary === 'peaks'))
+                (peaks && sampleArgument === 1 && held.boundary === 'peaks'))
         ) {
             held.consumed = true;
             held.entered.resolve();
@@ -208,7 +203,7 @@ beforeEach(async () => {
             return 0;
         }
         if (peaks) {
-            if (args.sampleId === 1) {
+            if (sampleArgument === 1) {
                 return FIRST_PEAKS;
             }
             return SECOND_PEAKS;
@@ -266,15 +261,14 @@ afterEach(async () => {
     flushAutomergeStorageWrites();
     const created = native.invoke.mock.calls.filter(([command]) => command === 'create_crumbs');
     for (const [, input] of created) {
-        if (!isRecord(input) || typeof input.instanceId !== 'string') {
+        if (typeof input?.[0] !== 'string') {
             throw new Error('Expected the created native instance identity');
         }
-        const createdId = input.instanceId;
+        const createdId = input[0];
         await waitFor(() =>
             expect(
                 native.invoke.mock.calls.some(
-                    ([command, value]) =>
-                        command === 'destroy_crumbs' && isRecord(value) && value.instanceId === createdId
+                    ([command, value]) => command === 'destroy_crumbs' && value?.[0] === createdId
                 )
             ).toBe(true)
         );
@@ -285,7 +279,11 @@ afterEach(async () => {
     configureAutomergeStoragePort(null);
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
-    native.available = false;
+    if (desktopBridgeDescriptor) {
+        Object.defineProperty(window, 'sourdaw', desktopBridgeDescriptor);
+    } else {
+        Reflect.deleteProperty(window, 'sourdaw');
+    }
 });
 
 describe('Crumbs waveform authority from the actual application producer', () => {
@@ -322,18 +320,8 @@ describe('Crumbs waveform authority from the actual application producer', () =>
         });
         expect(within(panel).getByText('a.wav', { exact: true })).toBeInTheDocument();
         expect(paint.mock.calls.slice(-2)[0]?.[1]).toBeCloseTo(6.4);
-        expect(native.invoke).toHaveBeenCalledWith('get_waveform_peaks', {
-            instanceId: deviceId,
-            sampleId: 1,
-            level: 0,
-            channel: 0,
-        });
-        expect(native.invoke).toHaveBeenCalledWith('get_waveform_peaks', {
-            instanceId: otherId,
-            sampleId: 2,
-            level: 0,
-            channel: 0,
-        });
+        expect(native.invoke).toHaveBeenCalledWith('get_waveform_peaks', [deviceId, 1, 0, 0]);
+        expect(native.invoke).toHaveBeenCalledWith('get_waveform_peaks', [otherId, 2, 0, 0]);
     });
 
     it('keeps its own metadata mirror, ordinary parameter action and unrelated document edits admitted', async () => {
@@ -507,7 +495,7 @@ describe('Crumbs waveform authority from the actual application producer', () =>
         if (boundary === 'telemetry') {
             expect(
                 native.invoke.mock.calls.filter(
-                    ([command, input]) => command === 'get_waveform_peaks' && isRecord(input) && input.sampleId === 1
+                    ([command, input]) => command === 'get_waveform_peaks' && input?.[1] === 1
                 )
             ).toEqual([]);
         }
