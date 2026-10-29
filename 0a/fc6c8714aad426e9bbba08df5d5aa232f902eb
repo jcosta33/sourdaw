@@ -1,0 +1,29 @@
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  s_3168504f6ce387::t_cf030d4fcbaea0 1-6,14-31
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  s_3168504f6ce387::t_61a99d33dc50bb 1,5,11,128,177,180,258,262,269,271-284,288-323,325,327,329
+  s_3168504f6ce387::t_75b12d4a962cf2 2,4,6-10,12-25,34-46,49-61,64-66,69-127,129-132,136-176,178-179,181,184-189,191-220,222-225,228-236,259-261,263-268,270,285-286
+  s_3168504f6ce387::t_cf030d4fcbaea0 239-257,324
+  s_3168504f6ce387::t_b29a2e473f0000 26-33
+  s_3168504f6ce387::t_cc03cc6360c68d 238
+  s_3168504f6ce387::t_d3cb90fb19c144 287
+  s_3168504f6ce387::t_66c77542755afb 326
+  s_3168504f6ce387::t_1d7aba1393ef36 328
+  s_3168504f6ce387::t_311559ce054e55 330-332
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0afc6c8714aad426e9bbba08df5d5aa232f902eb",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
