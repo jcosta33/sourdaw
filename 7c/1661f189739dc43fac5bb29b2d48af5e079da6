@@ -1,0 +1,16 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1869-1879
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_beb54bf43b47b7 7-10,29,42-43,99-101,333-336,436-440,443-444,473-475
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7c1661f189739dc43fac5bb29b2d48af5e079da6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
