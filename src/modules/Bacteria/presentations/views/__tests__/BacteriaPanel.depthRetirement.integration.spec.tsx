@@ -22,7 +22,7 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 
-import { bacteriaStore, getBacteriaState, setBacteriaUiLevel } from '../../../stores/bacteriaStore';
+import { bacteriaStore, getBacteriaState } from '../../../stores/bacteriaStore';
 import { BacteriaPanel } from '../BacteriaPanel';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
@@ -113,6 +113,15 @@ function expectLegacyValues(values: Record<string, number>): void {
     });
 }
 
+async function openShape(): Promise<void> {
+    expect(await screen.findByRole('button', { name: 'Play' })).toHaveAttribute('aria-pressed', 'true');
+    const shape = screen.getByRole('button', { name: 'Shape' });
+    expect(shape).toBeVisible();
+    fireEvent.click(shape);
+    expect(await screen.findByRole('slider', { name: 'Drive' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'breakdown' })).toHaveAttribute('aria-pressed', 'true');
+}
+
 describe('Bacteria Breakdown Depth retirement', () => {
     beforeEach(() => {
         configureAutomergeStoragePort(null);
@@ -143,7 +152,7 @@ describe('Bacteria Breakdown Depth retirement', () => {
 
     it('hides inert Depth for a hydrated breakdown band while retaining its saved identity and values through a typed Drive edit', async () => {
         render(<BacteriaPanel deviceId={DEVICE_ID} />);
-        act(() => setBacteriaUiLevel(DEVICE_ID, 2));
+        await openShape();
 
         expect(await screen.findByRole('slider', { name: 'Drive' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'breakdown' })).toHaveAttribute('aria-pressed', 'true');
@@ -172,7 +181,7 @@ describe('Bacteria Breakdown Depth retirement', () => {
 
     it('keeps distortion switching and other mode controls working', async () => {
         render(<BacteriaPanel deviceId={DEVICE_ID} />);
-        act(() => setBacteriaUiLevel(DEVICE_ID, 2));
+        await openShape();
 
         const breakdown = await screen.findByRole('button', { name: 'breakdown' });
         const enabled = screen.getByRole('button', { name: 'Enabled' });
@@ -195,7 +204,7 @@ describe('Bacteria Breakdown Depth retirement', () => {
 
     it('keeps the selected band Drive control writable', async () => {
         render(<BacteriaPanel deviceId={DEVICE_ID} />);
-        act(() => setBacteriaUiLevel(DEVICE_ID, 2));
+        await openShape();
 
         const drive = await screen.findByRole('slider', { name: 'Drive' });
         expect(drive).toHaveAttribute('aria-valuenow', '28');
