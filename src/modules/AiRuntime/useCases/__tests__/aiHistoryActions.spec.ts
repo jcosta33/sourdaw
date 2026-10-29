@@ -151,7 +151,7 @@ function holdRevertEffect(warning: boolean = false) {
             execute: (action, context) => {
                 const result = handlers.setTrackGain.execute(action, context);
                 if (result instanceof Promise) {
-                    throw new Error('Expected the track gain handler to execute synchronously');
+                    throw new TypeError('Expected the track gain handler to execute synchronously');
                 }
                 if (result?.status !== 'written') {
                     return result;
@@ -577,7 +577,7 @@ describe('revertAiActionGroup', () => {
                 execute: (action, context) => {
                     const result = handlers.setTrackGain.execute(action, context);
                     if (result instanceof Promise) {
-                        throw new Error('Expected the track gain handler to execute synchronously');
+                        throw new TypeError('Expected the track gain handler to execute synchronously');
                     }
                     if (result?.status !== 'written') {
                         return result;
