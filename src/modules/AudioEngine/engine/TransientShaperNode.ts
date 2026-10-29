@@ -29,7 +29,7 @@ export function isTransientShaperDevice(type: string): boolean {
     return type === 'transient-shaper';
 }
 
-function isGain(name: string): boolean {
+export function isTransientShaperParameter(name: string): boolean {
     return name === 'attackGain' || name === 'sustainGain';
 }
 
@@ -54,7 +54,7 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
             }
             param(name)?.setValueAtTime(bounded(value), time(sampleFrame));
         },
-        acceptsScheduledParam: isGain,
+        acceptsScheduledParam: isTransientShaperParameter,
         scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]): void {
             const target = param(name);
             if (!target) {
@@ -174,7 +174,7 @@ function createTransientShaperController(
         }
     };
     const param = (name: string): AudioParam | undefined => {
-        if (destroyed || failed || !isGain(name)) {
+        if (destroyed || failed || !isTransientShaperParameter(name)) {
             return undefined;
         }
         return workletNode.parameters.get(name);

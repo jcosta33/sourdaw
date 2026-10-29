@@ -221,6 +221,12 @@ synchronously invokes a listener: both supplied and captured scopes must refuse 
 A commits, and document B, its cache, and the pending-write count must remain unchanged after a later flush. Also enter
 a scope before calling commit or abort, then attempt both `set` and `clear`; neither may mutate cache or durable truth.
 
+## Fermenter discrete filter choices bypassed Command
+
+Filter Type entered through `c40d444ff96520cb2f718dd2a397173d72dc1b50`; Filter Model followed in `66b0569af54525fc983a0632ce0c12d92f83fe90`. Both panel callbacks used the direct parameter bridge, so changing the highlighted chip and engine state created no Command inverse. Neither origin has an evidenced public PR association; historical reviewer prompts and tiers are unknown. The missed stance is a discrete UI choice bypassing undoable project truth.
+
+Trace the rendered chip through the registered Command, raw document, fresh projection, session display, Undo and Redo. A first selection must restore an absent leaf rather than materialize its default; a present default must remain present. Hydration must restore the visible default on absence while preserving unrelated patch fields and live macros. Model and Type each own pending authority by device and parameter; a hidden non-SVF Type stays stored. Hold a snapshot and vary project identity, revision, owner, chain, frozen state and peer value independently, including same-ID replacement and exact-state ABA. An old queued direct parameter frame must not overwrite the newer admitted choice.
+
 ## Lesson from the PR #576 storage-terminal escape
 
 PR #576 (`ecd24df665`) settled a deferred write by copying its pending value into the cache after publication. A
