@@ -1,3 +1,5 @@
+import { change, clone } from '@automerge/automerge';
+import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,9 +14,15 @@ import { getWarpState, setWarpState, trackStore, warpStateStore } from '#/module
 import { createTrack, getArrangementHandlers, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction, undo, redo } from '#/modules/Command/useCases';
-import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+    replaceCrdtDocInLineage,
+} from '#/modules/CrdtDocument/useCases';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { resetPreferences } from '#/modules/Preferences/useCases';
@@ -33,6 +41,7 @@ import {
     type TransientOnsetWorkerResult,
 } from '../../../models/TransientOnsetWorker';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
+import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
 
@@ -561,5 +570,67 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(trackStore.value?.tracks[0]?.name).toBe('During sensitivity');
         await undo();
         expect(trackStore.value?.tracks[0]?.name).toBe('Audio');
+    });
+    it.each(['reject', 'reenter'] as const)(
+        'materialized candidate %s keeps independent history and live authority',
+        async (mode) => {
+            supplyBuffer(burstSamples());
+            await executeAppAction({
+                type: 'renameTrack',
+                payload: { trackId: 'audio-track', name: 'Independent rename' },
+            });
+            const history = JSON.stringify(undoHistoryStore.value);
+            const observePort = vi.spyOn(storageRuntime, 'configureAutomergeStoragePort');
+            registerCrdtStorageRuntime();
+            const port = observePort.mock.calls.at(-1)?.[0];
+            observePort.mockRestore();
+            if (!port?.mutateDocValidated) throw new Error('Production runtime must provide prospective validation');
+            const mutateValidated = port.mutateDocValidated;
+            configureAutomergeStoragePort({
+                ...port,
+                mutateDocValidated: (input) =>
+                    mutateValidated({
+                        ...input,
+                        validateDocument: (candidate) => {
+                            input.validateDocument(candidate);
+                            if (mode === 'reject') throw new Error('materialized candidate refused');
+                            const current = getCrdtDoc<{ tracks: { tracks: ReturnType<typeof createTrack>[] } }>(
+                                'root'
+                            );
+                            if (!current) throw new Error('Expected live project');
+                            replaceCrdtDocInLineage({
+                                id: 'root',
+                                doc: change(clone(current), (draft) => {
+                                    const track = draft.tracks.tracks[0];
+                                    if (!track) throw new Error('Expected audio track');
+                                    track.name = 'Reentrant rename';
+                                }),
+                            });
+                        },
+                    }),
+            });
+            await expect(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } })).rejects.toThrow(
+                /materialized candidate refused|authority changed/
+            );
+            expect(JSON.stringify(undoHistoryStore.value)).toBe(history);
+            expect(rawWarpState().markers).toEqual([lockedMarker]);
+            expect(getWarpState(CLIP_ID).markers).toEqual([lockedMarker]);
+            const raw = getCrdtDoc<{ tracks: { tracks: ReturnType<typeof createTrack>[] } }>('root');
+            expect(raw?.tracks.tracks[0]?.name).toBe(mode === 'reenter' ? 'Reentrant rename' : 'Independent rename');
+            configureAutomergeStoragePort(port);
+            await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+            expect(rawWarpState().markers.length).toBeGreaterThan(1);
+            expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+            expect(rawWarpState().markers).toContainEqual(lockedMarker);
+        }
+    );
+    it('retains the exact durable shape of markers produced by the real manual-marker owner', async () => {
+        supplyBuffer(burstSamples());
+        addManualMarker(CLIP_ID, 1.5);
+        flushAutomergeStorageWrites();
+        const retained = structuredClone(getWarpState(CLIP_ID).markers);
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        for (const marker of retained) expect(rawWarpState().markers).toContainEqual(marker);
+        expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
     });
 });

@@ -156,4 +156,30 @@ describe('registerCrdtStorageRuntime', () => {
 
         expect(mocks.waitForSnapshotTransaction).toHaveBeenCalledWith({ id: 'snap-2' });
     });
+    it('forwards exact candidate validator, pre-publication gate and actual-install acknowledgement', () => {
+        const port = getRegisteredPort();
+        const changeFn = vi.fn();
+        const validateDocument = vi.fn();
+        const beforePublication = vi.fn();
+        const onPublished = vi.fn();
+        const snapshotTransaction = {};
+        port.mutateDocValidated({
+            docId: 'root',
+            changeFn,
+            changedKeys: ['warpStates'],
+            message: 'Detect',
+            snapshotTransaction,
+            validateDocument,
+            beforePublication,
+            onPublished,
+        });
+        expect(mocks.mutateCrdtDoc).toHaveBeenCalledExactlyOnceWith({
+            id: 'root',
+            changeFn,
+            localSlots: ['warpStates'],
+            message: 'Detect',
+            snapshotTransaction,
+            prospectiveValidation: { validateDocument, beforePublication, onPublished },
+        });
+    });
 });

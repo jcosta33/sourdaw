@@ -1,6 +1,6 @@
 import { cpus, platform, release } from 'node:os';
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
@@ -259,6 +259,43 @@ test('120-second stereo Detect includes cold Worker, copy and atomic commit with
     await page.keyboard.press(`${modifier}+Shift+z`);
     await expect.poll(async () => (await sourceState(page)).projected.length).toBe(ATTACKS.length);
     expect((await sourceState(page)).pcm).toEqual(before.pcm);
+
+    const canvas = panel.getByTestId('elastic-waveform-canvas');
+    const firstMarker = after.projected[0];
+    if (!firstMarker) throw new Error('Expected first detected onset');
+    await panel.getByTestId('elastic-tool-lock-marker').click();
+    await canvas.click({ position: { x: firstMarker.warpedBeat * 40, y: 30 } });
+    await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 locked');
+    await panel.getByTestId('elastic-tool-add-marker').click();
+    await canvas.click({ position: { x: 0.9 * 40, y: 30 } });
+    await expect(panel.getByTestId('elastic-detail-strip')).toContainText('1 user');
+    await panel.getByTestId('elastic-tool-select').click();
+    const populated = await sourceState(page);
+    await expect.poll(async () => (await sourceState(page)).raw).toEqual(populated.projected);
+    expect(populated.projected).toHaveLength(ATTACKS.length + 1);
+    const retained = populated.projected.filter((marker) => marker.locked || marker.origin === 'user');
+    expect(retained).toHaveLength(2);
+
+    await armPopulatedMeasurement(page, 'click');
+    await panel.getByTestId('elastic-detect-button').click();
+    await assertPopulatedMeasurement(page, info, 're-detect-populated', populated, retained);
+    expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(2);
+    const redetected = await sourceState(page);
+    await page.keyboard.press(`${modifier}+z`);
+    await expect.poll(async () => (await sourceState(page)).projected).toEqual(populated.projected);
+    await page.keyboard.press(`${modifier}+Shift+z`);
+    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+
+    await armPopulatedMeasurement(page, 'sensitivity');
+    await panel.getByRole('slider', { name: 'Transient detection sensitivity' }).press('End');
+    await assertPopulatedMeasurement(page, info, 'sensitivity-populated', populated, retained);
+    expect(workers.filter((url) => url.includes('transientOnsetWorker'))).toHaveLength(3);
+    const sensitive = await sourceState(page);
+    await page.keyboard.press(`${modifier}+z`);
+    await expect.poll(async () => (await sourceState(page)).projected).toEqual(redetected.projected);
+    await page.keyboard.press(`${modifier}+Shift+z`);
+    await expect.poll(async () => (await sourceState(page)).projected).toEqual(sensitive.projected);
+    expect((await sourceState(page)).pcm).toEqual(before.pcm);
 });
 
 /** Same five-amplitude pulse fixture as the accepted Elastic sensitivity integration. */
@@ -418,3 +455,156 @@ test('saved 82 sensitivity seeds first Worker Detect on a new clip after complet
     });
     await reloaded.close();
 });
+
+// Repeat routes retain the cold case's fixture, thresholds, observation clocks and full completion boundary.
+async function armPopulatedMeasurement(page: Page, route: 'click' | 'sensitivity'): Promise<void> {
+    await page.evaluate(async (route) => {
+        type Metrics = {
+            start: number;
+            end: number;
+            frames: number[];
+            observedFrames: number[];
+            tasks: { start: number; duration: number }[];
+            measures: { name: string; duration: number }[];
+        };
+        const metrics: Metrics = { start: 0, end: 0, frames: [], observedFrames: [], tasks: [], measures: [] };
+        const target = window as Window & { populatedElasticMeasurement?: Promise<Metrics> };
+        const control = document.querySelector(
+            route === 'click'
+                ? '[data-testid="elastic-detect-button"]'
+                : '[data-testid="elastic-editor-panel"] [role="slider"][aria-label="Transient detection sensitivity"]'
+        );
+        const status = document.querySelector('[data-testid="elastic-editor-panel"] [role="status"]');
+        if (!control || !status) throw new Error('Required production control and completion state are missing');
+        let stop = false;
+        let sawPending = false;
+        const frame = (time: number): void => {
+            metrics.frames.push(time);
+            metrics.observedFrames.push(performance.now());
+            if (!stop) requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+        const tasks = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries())
+                metrics.tasks.push({ start: entry.startTime, duration: entry.duration });
+        });
+        tasks.observe({ type: 'longtask', buffered: false });
+        const measures = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries())
+                if (entry.name.startsWith('elastic-transient-'))
+                    metrics.measures.push({ name: entry.name, duration: entry.duration });
+        });
+        measures.observe({ type: 'measure', buffered: false });
+        target.populatedElasticMeasurement = new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                stop = true;
+                observer.disconnect();
+                tasks.disconnect();
+                measures.disconnect();
+                reject(new Error('Populated real Detect did not complete'));
+            }, 10_000);
+            const observer = new MutationObserver(() => {
+                if (status.textContent === 'Detecting…') sawPending = true;
+                if (
+                    !metrics.start ||
+                    !sawPending ||
+                    status.textContent !== (route === 'click' ? 'Detection complete' : '')
+                )
+                    return;
+                metrics.end = performance.now();
+                observer.disconnect();
+                requestAnimationFrame((time) => {
+                    metrics.frames.push(time);
+                    metrics.observedFrames.push(performance.now());
+                    requestAnimationFrame((tail) => {
+                        metrics.frames.push(tail);
+                        metrics.observedFrames.push(performance.now());
+                        stop = true;
+                        tasks.disconnect();
+                        measures.disconnect();
+                        clearTimeout(timeout);
+                        resolve(metrics);
+                    });
+                });
+            });
+            observer.observe(status, { childList: true, subtree: true, characterData: true });
+            control.addEventListener(
+                route === 'click' ? 'click' : 'keydown',
+                () => {
+                    metrics.start = performance.now();
+                },
+                { once: true, capture: true }
+            );
+        });
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    }, route);
+}
+
+async function assertPopulatedMeasurement(
+    page: Page,
+    info: TestInfo,
+    phase: string,
+    before: Awaited<ReturnType<typeof sourceState>>,
+    retained: Awaited<ReturnType<typeof sourceState>>['projected']
+): Promise<void> {
+    const measured = await page.evaluate(async () => {
+        const target = window as Window & {
+            populatedElasticMeasurement?: Promise<{
+                start: number;
+                end: number;
+                frames: number[];
+                observedFrames: number[];
+                tasks: { start: number; duration: number }[];
+                measures: { name: string; duration: number }[];
+            }>;
+        };
+        if (!target.populatedElasticMeasurement) throw new Error('Measurement is missing');
+        return target.populatedElasticMeasurement;
+    });
+    const gaps = measured.frames
+        .slice(1)
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.frames[index]!] : []));
+    const observedGaps = measured.observedFrames
+        .slice(1)
+        .flatMap((time, index) => (time >= measured.start ? [time - measured.observedFrames[index]!] : []));
+    const copy = measured.measures.filter((entry) => entry.name === 'elastic-transient-copy-task');
+    const commitTasks = measured.measures.filter(
+        (entry) =>
+            entry.name === 'elastic-transient-preparation-task' ||
+            entry.name === 'elastic-transient-storage-commit-task'
+    );
+    const longTasks = measured.tasks.filter(
+        (entry) => entry.start < measured.end && entry.start + entry.duration > measured.start
+    );
+    const result = {
+        ...measured,
+        phase,
+        elapsedMs: measured.end - measured.start,
+        maxGapMs: Math.max(...gaps),
+        maxObservedGapMs: Math.max(...observedGaps),
+        copy,
+        commitTasks,
+        longTasks,
+    };
+    await info.attach(`elastic-120-second-${phase}.json`, {
+        body: JSON.stringify(result, null, 2),
+        contentType: 'application/json',
+    });
+    const after = await sourceState(page);
+    expect(after.raw).toEqual(after.projected);
+    expect(after.pcm).toEqual(before.pcm);
+    expect(after.projected).toHaveLength(ATTACKS.length + 1);
+    expect(after.projected.filter((marker) => marker.locked || marker.origin === 'user')).toEqual(retained);
+    const onsets = after.projected.filter((marker) => marker.origin === 'transient-auto');
+    expect(onsets).toHaveLength(ATTACKS.length);
+    for (const [index, marker] of onsets.entries())
+        expect(Math.abs(marker.originalBeat / 2 - ATTACKS[index]!)).toBeLessThan(0.04);
+    expect(result.elapsedMs).toBeLessThan(1000);
+    expect(copy.length).toBeGreaterThan(1);
+    expect(commitTasks).toHaveLength(2);
+    expect(Math.max(...copy.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
+    expect(Math.max(...commitTasks.map((entry) => entry.duration))).toBeLessThanOrEqual(1000 / 60);
+    expect(result.maxGapMs).toBeLessThanOrEqual(25);
+    expect(result.maxObservedGapMs).toBeLessThanOrEqual(25);
+    expect(longTasks).toEqual([]);
+}

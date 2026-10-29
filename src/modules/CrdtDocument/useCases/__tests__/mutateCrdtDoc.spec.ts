@@ -62,4 +62,25 @@ describe('mutateCrdtDoc', () => {
             'markers',
         ]);
     });
+    it('forwards exact prospective validation and publication acknowledgement on the validated branch', () => {
+        const changeFn = vi.fn();
+        const prospectiveValidation = { validateDocument: vi.fn(), beforePublication: vi.fn(), onPublished: vi.fn() };
+        const snapshotTransaction = {};
+        mutateCrdtDoc({
+            id: 'root',
+            changeFn,
+            message: 'validated',
+            snapshotTransaction,
+            localSlots: ['warpStates'],
+            prospectiveValidation,
+        });
+        expect(automergeRepository.changeDoc).toHaveBeenCalledExactlyOnceWith(
+            'root',
+            changeFn,
+            'validated',
+            snapshotTransaction,
+            ['warpStates'],
+            prospectiveValidation
+        );
+    });
 });

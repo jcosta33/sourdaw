@@ -17,6 +17,7 @@ import {
     view,
     getHeads,
     clone,
+    getActorId,
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
@@ -31,6 +32,13 @@ import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } fr
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
 type AnyDoc = Record<string, unknown>;
+
+type ProspectiveValidation<TDoc> = {
+    validateDocument: (document: Doc<TDoc>) => void;
+    beforePublication: () => void;
+    /** Nonthrowing acknowledgement of actual installation, before publication observers run. */
+    onPublished: () => void;
+};
 
 type OwnedDocumentPublication = {
     readonly docId: DocId;
@@ -467,17 +475,56 @@ class AutomergeRepository {
         changeFn: ChangeFn<TDoc>,
         message?: string,
         snapshotTransaction?: object,
-        localSlots?: readonly string[]
+        localSlots?: readonly string[],
+        prospectiveValidation?: ProspectiveValidation<TDoc>
     ): void {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
-        this.captureBeforeMutation(id, snapshotTransaction);
-        const previousHeads = getHeads(doc);
-        const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
+        let previousHeads: Heads;
+        let updated: Doc<TDoc>;
+        if (prospectiveValidation) {
+            previousHeads = getHeads(doc);
+            const identityEpoch = this.documentIdentityEpoch;
+            const rootIdentityEpoch = this.rootIdentityEpoch;
+            const mutationEpoch = this.mutationEpoch;
+            const owner = getCurrentAutomergeStorageMutationOwner();
+            const transaction = this.activeTransaction;
+            const assertCurrentAuthority = (): void => {
+                if (
+                    this.docs.get(id) !== doc ||
+                    this.documentIdentityEpoch !== identityEpoch ||
+                    this.rootIdentityEpoch !== rootIdentityEpoch ||
+                    this.mutationEpoch !== mutationEpoch ||
+                    getCurrentAutomergeStorageMutationOwner() !== owner ||
+                    this.activeTransaction !== transaction
+                ) {
+                    throw new Error('[AutomergeRepository] Document authority changed during prospective validation');
+                }
+                if (this.isMutationBlockedBySnapshotTransaction(id, snapshotTransaction)) {
+                    throw createSnapshotTransactionOverlapError(id);
+                }
+            };
+            assertCurrentAuthority();
+            // The original stays writable on refusal. Continue its actual actor's
+            // sequence only when this independently backed candidate is installed.
+            const candidate = clone(doc, { actor: getActorId(doc) });
+            updated = message ? change(candidate, { message }, changeFn) : change(candidate, changeFn);
+            assertCurrentAuthority();
+            prospectiveValidation.validateDocument(updated);
+            assertCurrentAuthority();
+            prospectiveValidation.beforePublication();
+            assertCurrentAuthority();
+            this.captureBeforeMutation(id, snapshotTransaction);
+        } else {
+            this.captureBeforeMutation(id, snapshotTransaction);
+            previousHeads = getHeads(doc);
+            updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
+        }
         this.docs.set(id, updated);
+        prospectiveValidation?.onPublished();
         this.markMutation();
         const owner = getCurrentAutomergeStorageMutationOwner();
         const heads = getHeads(updated);

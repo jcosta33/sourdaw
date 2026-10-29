@@ -21,6 +21,7 @@ export type MutateCrdtDocInput<DocShape> = {
      * changed instead of every root store (audit CC-1).
      */
     localSlots?: readonly string[];
+    prospectiveValidation?: Parameters<typeof automergeRepository.changeDoc<DocShape>>[5];
 };
 
 /**
@@ -30,6 +31,17 @@ export type MutateCrdtDocInput<DocShape> = {
  * code applies incremental changes to local documents.
  */
 export function mutateCrdtDoc<DocShape = Record<string, unknown>>(input: MutateCrdtDocInput<DocShape>): void {
+    if (input.prospectiveValidation) {
+        automergeRepository.changeDoc<DocShape>(
+            input.id,
+            input.changeFn,
+            input.message,
+            input.snapshotTransaction,
+            input.localSlots,
+            input.prospectiveValidation
+        );
+        return;
+    }
     automergeRepository.changeDoc<DocShape>(
         input.id,
         input.changeFn,

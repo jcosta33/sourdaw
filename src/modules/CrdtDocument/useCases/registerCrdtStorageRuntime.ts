@@ -28,6 +28,25 @@ export function registerCrdtStorageRuntime(): void {
                 localSlots: changedKeys,
             });
         },
+        mutateDocValidated: ({
+            docId,
+            changedKeys,
+            changeFn,
+            message,
+            snapshotTransaction,
+            validateDocument,
+            beforePublication,
+            onPublished,
+        }) => {
+            mutateCrdtDoc<StorageRuntimeDoc>({
+                id: docId,
+                changeFn,
+                message,
+                snapshotTransaction,
+                localSlots: changedKeys,
+                prospectiveValidation: { validateDocument, beforePublication, onPublished },
+            });
+        },
         waitForSnapshotTransaction: (snapshotTransaction) =>
             automergeRepository.waitForSnapshotTransaction(snapshotTransaction),
     });

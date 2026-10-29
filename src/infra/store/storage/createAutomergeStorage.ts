@@ -82,6 +82,14 @@ type AutomergeStoragePort = {
      * case as committed.
      */
     mutateDoc(input: AutomergeStoragePortMutationInput): void;
+    /** Validate the exact materialized candidate before publication, acknowledging only its installation. */
+    mutateDocValidated?(
+        input: AutomergeStoragePortMutationInput & {
+            validateDocument: (document: AutomergeStorageReadableDoc) => void;
+            beforePublication: () => void;
+            onPublished: () => void;
+        }
+    ): void;
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
@@ -753,8 +761,10 @@ export function createAutomergeStoragePreview(
  * How a coalesced document write ended, and what its failure says about the
  * document.
  *
- * The boundary is the moment the coalesced `changeFn` returns — see the
- * durability contract on `AutomergeStoragePort.mutateDoc`:
+ * Legacy ports use the moment the coalesced `changeFn` returns, as the
+ * durability contract on `AutomergeStoragePort.mutateDoc` requires. Validated
+ * ports instead acknowledge the actual installation of the accepted candidate:
+ * its mutation callback may have returned before a validator rejects it.
  *
  * - `rolled-back` — the mutation never reached the document. Either the port
  *   threw before it ran `changeFn` at all, or `changeFn` threw and the change
@@ -792,9 +802,21 @@ function commitAutomergeStorageMutations(
     // control-flow analysis does not model the write through the callback and
     // narrows a local to `false` for the whole catch below.
     const application = { appliedChangeFn: false };
+    const mutateDocValidated = validateDocument ? port.mutateDocValidated : undefined;
+    const validatesMaterialized = mutateDocValidated !== undefined;
+    const finishApplication = (): void => {
+        for (const mutation of mutations) {
+            if (mutation.isCurrent && !mutation.isCurrent()) {
+                throw new Error('Automerge storage execution was invalidated during publication');
+            }
+        }
+        for (const mutation of mutations) {
+            mutation.didApply?.();
+        }
+    };
     return runWithAutomergeStorageMutationOwner(owner, () => {
         try {
-            port.mutateDoc({
+            const input: AutomergeStoragePortMutationInput = {
                 docId: firstMutation.docId,
                 changedKeys,
                 changeFn: (doc) => {
@@ -812,7 +834,7 @@ function commitAutomergeStorageMutations(
                         }
                         mutation.changeFn(doc);
                     }
-                    const validationFailure = validateDocument?.(doc) ?? null;
+                    const validationFailure = validatesMaterialized ? null : (validateDocument?.(doc) ?? null);
                     if (validationFailure) {
                         throw new AutomergeStorageTransactionValidationError(validationFailure);
                     }
@@ -832,19 +854,32 @@ function commitAutomergeStorageMutations(
                             delete doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
                         }
                     }
-                    for (const mutation of mutations) {
-                        if (mutation.isCurrent && !mutation.isCurrent()) {
-                            throw new Error('Automerge storage execution was invalidated during publication');
-                        }
+                    if (!validatesMaterialized) {
+                        finishApplication();
+                        application.appliedChangeFn = true;
                     }
-                    for (const mutation of mutations) {
-                        mutation.didApply?.();
-                    }
-                    application.appliedChangeFn = true;
                 },
                 message,
                 snapshotTransaction: firstMutation.snapshotTransaction,
-            });
+            };
+            if (validateDocument && mutateDocValidated) {
+                mutateDocValidated.call(port, {
+                    ...input,
+                    validateDocument: (document) => {
+                        const failure = validateDocument(document);
+                        if (failure) throw new AutomergeStorageTransactionValidationError(failure);
+                    },
+                    beforePublication: finishApplication,
+                    onPublished: () => {
+                        application.appliedChangeFn = true;
+                    },
+                });
+                if (!application.appliedChangeFn) {
+                    throw new Error('Validated Automerge mutation did not acknowledge publication');
+                }
+            } else {
+                port.mutateDoc(input);
+            }
         } catch (error) {
             if (application.appliedChangeFn) {
                 return { status: 'ambiguous', error };
