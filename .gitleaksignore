@@ -5,3 +5,7 @@ d0778b1ccdc63a5734b5815b682c9ff1a1ac10bc:scripts/__tests__/resolveReviewThread.s
 0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:685
 0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:688
 0eab1a8e291f59a1eaca3de32b5c6f762dece9fe:scripts/__tests__/reviewDossier.spec.ts:private-key:691
+
+# RFC 6455 section 1.2 public WebSocket handshake nonce; historical test fixture, not a credential.
+# https://www.rfc-editor.org/rfc/rfc6455.html#section-1.2
+cc52a482abc4b62519a79e1984e683893c31cbc0:scripts/__tests__/viteUpgradeReset.spec.ts:generic-api-key:54
