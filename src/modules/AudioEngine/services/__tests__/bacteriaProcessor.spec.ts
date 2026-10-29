@@ -237,7 +237,7 @@ describe('BacteriaProcessor message handling', () => {
             correlation: { workletGeneration: 2, controlSequence: sequence },
         });
         send(proc, {
-            ...control('band5_convolutionIr', 0, ++sequence),
+            ...control('band5_convolutionIr', 0, sequence + 1),
             target: {
                 trackId: 'forged',
                 deviceId: 'bacteria-1',
