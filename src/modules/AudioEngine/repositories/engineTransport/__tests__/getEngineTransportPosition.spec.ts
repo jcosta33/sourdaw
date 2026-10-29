@@ -209,3 +209,34 @@ describe('getEngineTransportPosition', () => {
         expect(position.tunerTelemetry).toEqual({});
     });
 });
+
+describe('native Grinder callback identity', () => {
+    it('reads exact engine/model identity and never launders malformed model readback', async () => {
+        const receipt = {
+            trackId: 't',
+            deviceId: 'd',
+            engineId: '9007199254740993',
+            targetGeneration: '42',
+            requestId: 'r',
+            contentHash: 'a'.repeat(64),
+        };
+        vi.mocked(isDesktopRuntime).mockReturnValue(true);
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            engineId: receipt.engineId,
+            grinderModels: [receipt],
+        });
+        expect(await getEngineTransportPosition()).toMatchObject({
+            engineId: receipt.engineId,
+            grinderModels: [receipt],
+        });
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            engineId: 9007199254740992,
+            grinderModels: [{ ...receipt, targetGeneration: '01' }],
+        });
+        const malformed = await getEngineTransportPosition();
+        expect(malformed.engineId).toBeUndefined();
+        expect(malformed.grinderModels).toBeUndefined();
+    });
+});
