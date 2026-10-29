@@ -1,0 +1,34 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 852-865,908-923
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 800-843
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1854-1868,1901-1926,1961-1975
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  h_beb54bf43b47b7 1-2,4-49,52-64,67-69,72-191,195-224,227-271,273-390,392-410,412-434,437-450,452-716,719-746
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  h_beb54bf43b47b7 2-5,49-53
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  h_beb54bf43b47b7 1-6,14-31
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  h_beb54bf43b47b7 1301,1304,1324,1352,1369,1373-1383,1385-1413,1415,1417-1420,1422-1435,1966-1967,1972,1984-1985,1996,2000,2007,2009-2036
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  h_beb54bf43b47b7 284-287,300-307,442-449,480-487,490-626
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  h_beb54bf43b47b7 51-54
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 120-121,1016,1018-1023,1040-1045
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  h_beb54bf43b47b7 43-57,72-90,102
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a480b654083bc5793409b825a1780fffc2797e1c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
