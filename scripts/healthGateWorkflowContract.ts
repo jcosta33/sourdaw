@@ -33,7 +33,6 @@ import { parseDocument } from 'yaml';
 
 export const HEALTH_GATE_WORKFLOW_FILES = [
     'health-gates.yml',
-    'pr5860-linux-capture.yml',
     'pr-checks.yml',
     'heavy-gates.yml',
     'validation.yml',
@@ -119,25 +118,6 @@ const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
 // deleted proof step leaves its job green while the proof never runs, and an
 // added one runs unpinned; both directions refuse the drift.
 export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, readonly string[] | null>>>> = {
-    'pr5860-linux-capture.yml': {
-        capture: [
-            'Checkout diagnostic control',
-            'Checkout frozen integration',
-            'Set up pnpm',
-            'Set up Node',
-            'Verify frozen source',
-            'Record and verify runtime provenance',
-            'Install dependencies',
-            'Verify browser runtime',
-            'Prepare private debug files',
-            'Verify original collection',
-            'Sample memory before shard',
-            'Run original shard',
-            'Sample memory after shard',
-            'Verify frozen source after capture',
-            'Retain capture',
-        ],
-    },
     'nightly-evidence-report.yml': {
         validate: [
             'Checkout trusted default-branch reporter',
@@ -370,9 +350,6 @@ function pin(workflow: string, job: string, step: string, condition: string): Co
 }
 
 export const CONDITIONAL_STEP_ALLOWLIST: readonly ConditionalStepPin[] = [
-    pin('pr5860-linux-capture.yml', 'capture', 'Sample memory after shard', ALWAYS_EXPRESSION),
-    pin('pr5860-linux-capture.yml', 'capture', 'Verify frozen source after capture', ALWAYS_EXPRESSION),
-    pin('pr5860-linux-capture.yml', 'capture', 'Retain capture', ALWAYS_EXPRESSION),
     pin('validation.yml', 'native-macos', 'Upload native transport mutation evidence', ALWAYS_EXPRESSION),
     pin('health-gates.yml', 'gate', 'Require selected checks to succeed', ALWAYS_EXPRESSION),
     pin('validation.yml', 'validation-gate', 'Require selected validation jobs to succeed', ALWAYS_EXPRESSION),
