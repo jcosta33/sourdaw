@@ -54,7 +54,18 @@ function useAuditionControls(input: AuditionProps) {
             }
         });
     };
-    return { view, selected, notice, available, stop, play, selectTarget: (targetId: string) => { stop(); setSelectedId(targetId); } };
+    return {
+        view,
+        selected,
+        notice,
+        available,
+        stop,
+        play,
+        selectTarget: (targetId: string) => {
+            stop();
+            setSelectedId(targetId);
+        },
+    };
 }
 
 /** The shared approval's only audible comparison; Confirm remains with its existing owner. */

@@ -667,7 +667,9 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
                                           ...target.audition,
                                           baseline: {
                                               ...target.audition.baseline,
-                                              artifact: { contentAddress: target.audition.preview.artifact.contentAddress },
+                                              artifact: {
+                                                  contentAddress: target.audition.preview.artifact.contentAddress,
+                                              },
                                           },
                                       },
                                   }
@@ -708,8 +710,11 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
             );
             const expired = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 60 * 1_000);
             try {
-                expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.freshness.status).toBe('current');
-                const retainedAddress = goals.proofs.at(-1)?.preview.targets[0]?.audition?.baseline.artifact.contentAddress;
+                expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.freshness.status).toBe(
+                    'current'
+                );
+                const retainedAddress =
+                    goals.proofs.at(-1)?.preview.targets[0]?.audition?.baseline.artifact.contentAddress;
                 if (retainedAddress === undefined) throw new Error('Missing genuine retained baseline address.');
                 expect(getAgentMeasurementArtifact(retainedAddress)).toBeNull();
                 await expect(startMeasuredPreviewAudition({ ...input, side: 'preview' })).resolves.toMatchObject({

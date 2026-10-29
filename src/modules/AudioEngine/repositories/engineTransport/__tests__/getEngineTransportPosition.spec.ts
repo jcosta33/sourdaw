@@ -56,7 +56,13 @@ describe('getEngineTransportPosition', () => {
         const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
         vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, engineIncarnation: identity });
         expect((await getEngineTransportPosition()).engineIncarnation).toBe(identity);
-        vi.mocked(desktopInvoke).mockResolvedValue({ ...NATIVE_PAYLOAD, running: false, playing: false, batchesApplied: 0, engineIncarnation: null });
+        vi.mocked(desktopInvoke).mockResolvedValue({
+            ...NATIVE_PAYLOAD,
+            running: false,
+            playing: false,
+            batchesApplied: 0,
+            engineIncarnation: null,
+        });
         expect((await getEngineTransportPosition()).engineIncarnation).toBeNull();
         vi.mocked(desktopInvoke).mockResolvedValue(NATIVE_PAYLOAD);
         expect(await getEngineTransportPosition()).not.toHaveProperty('engineIncarnation');
@@ -95,18 +101,21 @@ describe('getEngineTransportPosition', () => {
         { batchesApplied: Number.POSITIVE_INFINITY },
         { batchesApplied: Number.MAX_SAFE_INTEGER + 1 },
         { batchesApplied: -1 },
-    ])('withholds a live identity over malformed readiness facts without dropping ordinary telemetry: %o', async (raw) => {
-        vi.mocked(desktopInvoke).mockResolvedValue({
-            ...NATIVE_PAYLOAD,
-            engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:42',
-            ...raw,
-        });
-        const reading = await getEngineTransportPosition();
-        expect(reading).not.toHaveProperty('engineIncarnation');
-        expect(reading.positionSeconds).toBe(1.5);
-        expect(reading.stripPeaks).toEqual(NATIVE_PAYLOAD.stripPeaks);
-        expect(reading.tunerTelemetry).toEqual(NATIVE_PAYLOAD.tunerTelemetry);
-    });
+    ])(
+        'withholds a live identity over malformed readiness facts without dropping ordinary telemetry: %o',
+        async (raw) => {
+            vi.mocked(desktopInvoke).mockResolvedValue({
+                ...NATIVE_PAYLOAD,
+                engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:42',
+                ...raw,
+            });
+            const reading = await getEngineTransportPosition();
+            expect(reading).not.toHaveProperty('engineIncarnation');
+            expect(reading.positionSeconds).toBe(1.5);
+            expect(reading.stripPeaks).toEqual(NATIVE_PAYLOAD.stripPeaks);
+            expect(reading.tunerTelemetry).toEqual(NATIVE_PAYLOAD.tunerTelemetry);
+        }
+    );
 
     it('reports the stopped shape in a browser build without reaching the bridge', async () => {
         vi.mocked(isDesktopRuntime).mockReturnValue(false);

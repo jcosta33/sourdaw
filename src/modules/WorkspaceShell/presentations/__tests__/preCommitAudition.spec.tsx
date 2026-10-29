@@ -92,10 +92,7 @@ describe('one shared pre-Confirm audition surface', () => {
     it('keeps superseded approval history without mounting another audition owner', () => {
         render(
             <AgentApprovalSection
-                approvals={[
-                    approval(),
-                    { ...approval(), confirmationId: 'superseded', status: 'invalidated' },
-                ]}
+                approvals={[approval(), { ...approval(), confirmationId: 'superseded', status: 'invalidated' }]}
                 onConfirm={vi.fn()}
                 onCancel={vi.fn()}
                 onRePreview={vi.fn()}

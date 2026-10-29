@@ -7,6 +7,8 @@ import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedT
 
 const PROMPT = 'Match Drums loudness to Bass over Chorus';
 
+type FixtureSubjects = { drumsId: string; bassId: string; deviceId: string; trimId: string; sectionId: string };
+
 function record(value: unknown): Record<string, unknown> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError('Expected a published planning object.');
@@ -143,6 +145,35 @@ async function projectTruth(page: Page) {
             pcm,
         };
     });
+}
+
+async function fixtureState(page: Page, subjects: FixtureSubjects) {
+    return page.evaluate(async ({ drumsId, bassId, deviceId, trimId, sectionId }) => {
+        const stores: typeof import('../../src/modules/Arrangement/stores') =
+            await import('/src/modules/Arrangement/stores/index.ts');
+        const arrangement: typeof import('../../src/modules/Arrangement/useCases') =
+            await import('/src/modules/Arrangement/useCases/index.ts');
+        const project: typeof import('../../src/modules/Project/stores') =
+            await import('/src/modules/Project/stores/index.ts');
+        const section = stores.markerStore.value?.sections.find((entry) => entry.id === sectionId);
+        const projectId = project.projectStore.value?.projectId;
+        if (section === undefined || projectId === undefined) throw new Error('Missing genuine fixture identity.');
+        return {
+            projectId,
+            tracks: [drumsId, bassId].map((id) => {
+                const track = stores.trackStore.value?.tracks.find((entry) => entry.id === id);
+                if (track === undefined) throw new Error('Missing genuine fixture track.');
+                return {
+                    id: track.id,
+                    name: track.name,
+                    clips: track.clips.map((clip) => ({ id: clip.id, audioBufferId: clip.audioBufferId })),
+                    devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
+                };
+            }),
+            section: { id: section.id, name: section.name, startBeat: section.startBeat, endBeat: section.endBeat },
+            levels: [deviceId, trimId].map((id) => arrangement.getEligibleDeviceParameterValues(id)?.['gain-level']),
+        };
+    }, subjects);
 }
 
 type ProbeBlock = { frame: number; selected: number[]; upstream: number[] };
@@ -312,7 +343,9 @@ async function installOutputProbe(page: Page, confirmationId: string) {
                     return Reflect.apply(schedule, receiver, args);
                 },
             });
-            releaseGateObserver = () => { gate.gain.setValueAtTime = originalSchedule; };
+            releaseGateObserver = () => {
+                gate.gain.setValueAtTime = originalSchedule;
+            };
             const held = Promise.withResolvers<void>();
             releaseResume = () => {
                 context.resume = originalResume;
@@ -460,6 +493,67 @@ test('auditions one genuine retained measured request before Confirm without pro
         transport.setLoopRegion(0, 4);
         crdt.settlePendingProjectWritesAndCaptureRevision();
         return { drumsId, bassId, deviceId, trimId, sectionId };
+    });
+    const initialFixture = await fixtureState(page, subjects);
+    const initialPcm = (await projectTruth(page)).pcm;
+    expect(initialFixture.levels).toEqual([0, 0]);
+    // New-project clear deliberately leaves session Undo unowned. Open the
+    // actual saved project before measured work, through normal reconciliation.
+    expect(
+        await page.evaluate(async () => {
+            const project: typeof import('../../src/modules/Project/useCases') =
+                await import('/src/modules/Project/useCases/index.ts');
+            return project.saveProject();
+        })
+    ).toBe(true);
+    await page.reload();
+    await expect
+        .poll(
+            () =>
+                page.evaluate(async () => {
+                    const stores: typeof import('../../src/modules/Project/stores') =
+                        await import('/src/modules/Project/stores/index.ts');
+                    const project: typeof import('../../src/modules/Project/useCases') =
+                        await import('/src/modules/Project/useCases/index.ts');
+                    const state = stores.projectStore.value;
+                    return {
+                        projectId: state?.projectId,
+                        initialized: state?.initialized,
+                        loading: state?.loading,
+                        owner: project.getDurableProjectOwnerId(),
+                    };
+                }),
+            { timeout: 30_000 }
+        )
+        .toEqual({
+            projectId: initialFixture.projectId,
+            initialized: true,
+            loading: false,
+            owner: initialFixture.projectId,
+        });
+    expect(await fixtureState(page, subjects)).toEqual(initialFixture);
+    expect((await projectTruth(page)).pcm).toEqual(initialPcm);
+    const initialOpen = await page.evaluate(async () => {
+        const project: typeof import('../../src/modules/Project/stores') =
+            await import('/src/modules/Project/stores/index.ts');
+        const command: typeof import('../../src/modules/Command/stores') =
+            await import('/src/modules/Command/stores/index.ts');
+        const crdt: typeof import('../../src/modules/CrdtDocument/useCases') =
+            await import('/src/modules/CrdtDocument/useCases/index.ts');
+        const rendering: typeof import('../../src/modules/AudioRendering/useCases') =
+            await import('/src/modules/AudioRendering/useCases/index.ts');
+        return {
+            project: project.projectStore.value,
+            undo: command.undoHistoryStore.value,
+            mirror: window.sessionStorage.getItem('sourdaw-undo-session'),
+            witness: crdt.captureDurableDocumentWitness(),
+            retained: rendering.getAgentMeasurementArtifacts().length,
+        };
+    });
+    expect(initialOpen.retained).toBe(0);
+    await test.info().attach('initial-normally-opened-project', {
+        body: JSON.stringify(initialOpen),
+        contentType: 'application/json',
     });
     const egress: string[] = [];
     page.on('request', (request) => {
@@ -619,12 +713,14 @@ test('auditions one genuine retained measured request before Confirm without pro
         await comparison.getByRole('button', { name: 'Baseline', exact: true }).click();
         await expect(comparison.getByRole('status')).toHaveText('Preparing comparison…');
         await expect
-            .poll(() => page.evaluate(() => {
-                const probe = window.measuredAuditionProbe;
-                const frame = probe?.resumeFrame();
-                if (probe === undefined || frame == null) return 0;
-                return probe.blocks.filter((block) => block.frame >= frame).length;
-            }))
+            .poll(() =>
+                page.evaluate(() => {
+                    const probe = window.measuredAuditionProbe;
+                    const frame = probe?.resumeFrame();
+                    if (probe === undefined || frame == null) return 0;
+                    return probe.blocks.filter((block) => block.frame >= frame).length;
+                })
+            )
             .toBeGreaterThanOrEqual(8);
         const pending = await page.evaluate(() => ({
             gate: window.measuredAuditionProbe?.resumeGate(),
@@ -634,11 +730,12 @@ test('auditions one genuine retained measured request before Confirm without pro
             starts: window.measuredAuditionProbe?.starts.length,
             blocks: window.measuredAuditionProbe?.blocks
                 .filter((block) => block.frame >= (window.measuredAuditionProbe?.resumeFrame() ?? Infinity))
-                .slice(0, 8).map((block) => ({
-                frame: block.frame,
-                selected: Math.max(...block.selected.map(Math.abs)),
-                upstream: block.upstream.reduce((sum, x) => sum + x * x, 0),
-            })),
+                .slice(0, 8)
+                .map((block) => ({
+                    frame: block.frame,
+                    selected: Math.max(...block.selected.map(Math.abs)),
+                    upstream: block.upstream.reduce((sum, x) => sum + x * x, 0),
+                })),
         }));
         await test.info().attach('first-resumed-programme-gate', {
             body: JSON.stringify(pending),

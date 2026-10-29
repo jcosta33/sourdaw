@@ -7,15 +7,28 @@ import { audioEngine, getAudioContext } from './engineAccess/getAudioContext';
 import { createBufferSource } from './scheduling/createBufferSource';
 
 type BufferPreviewInput = {
-    buffer: AudioBuffer; onEnded: () => void; intent?: AudioPreviewIntent; gain?: number; destination?: AudioNode;
+    buffer: AudioBuffer;
+    onEnded: () => void;
+    intent?: AudioPreviewIntent;
+    gain?: number;
+    destination?: AudioNode;
 };
 
 function allocatePreviewNodes(context: AudioContext, input: BufferPreviewInput, intent: AudioPreviewIntent) {
     let source: AudioBufferSourceNode;
-    try { source = createBufferSource(); } catch (error) { intent.release(); throw error; }
+    try {
+        source = createBufferSource();
+    } catch (error) {
+        intent.release();
+        throw error;
+    }
     let gain: GainNode | null = null;
-    try { gain = input.gain === undefined ? null : context.createGain(); }
-    catch (error) { runAllEffects([() => source.disconnect(), () => intent.release()]); throw error; }
+    try {
+        gain = input.gain === undefined ? null : context.createGain();
+    } catch (error) {
+        runAllEffects([() => source.disconnect(), () => intent.release()]);
+        throw error;
+    }
     if (gain !== null && input.gain !== undefined) gain.gain.value = input.gain;
     return { source, gain };
 }

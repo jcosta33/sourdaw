@@ -411,7 +411,10 @@ const ApprovalCard = ({
             {renderRecipes(view.recipes)}
             {renderMeasuredPreview(view.measuredPreview)}
             {view.status === 'proposed' ? (
-                <MeasuredPreviewAudition confirmationId={view.confirmationId} selectedIntentGroupIds={includedGroupIds} />
+                <MeasuredPreviewAudition
+                    confirmationId={view.confirmationId}
+                    selectedIntentGroupIds={includedGroupIds}
+                />
             ) : null}
             <div aria-label="Metric goal verification">
                 <p>{`Objective verification: ${view.metricGoals.status}`}</p>
