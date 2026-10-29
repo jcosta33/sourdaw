@@ -2059,15 +2059,15 @@ describe('declared parameter range agrees with the knob that drives it', () => {
         // compared = descriptor parameters on a bespoke-panel device that the
         // scanner bound to exactly one knob with two numeric bounds. Two fewer
         // since #2076: the XY morph position is UI-resolved and no longer a
-        // descriptor parameter with a knob.
-        expect(CENSUS.compared.length).toBe(191);
-        expect(CENSUS.agree.length).toBe(190);
+        // descriptor parameter with a knob. Retiring inert breakdown depth removes one more.
+        expect(CENSUS.compared.length).toBe(190);
+        expect(CENSUS.agree.length).toBe(189);
         expect(CENSUS.disagree.length).toBe(1);
         expect(CENSUS.ambiguous).toStrictEqual([]);
 
         // threeWay = the subset of `compared` that ALSO has a derivable engine
-        // clamp. 117 of 191 is the honest size of the three-way census; the
-        // other 74 are two-way only, for the shapes named in
+        // clamp. 117 of 190 is the honest size of the three-way census; the
+        // other 73 are two-way only, for the shapes named in
         // `ENGINE_CLAMP_COVERAGE.notDerivable`. Distribution is pinned
         // separately, by identity, in `threeWayPerDevice`.
         //
@@ -2134,7 +2134,7 @@ describe('declared parameter range agrees with the knob that drives it', () => {
             gluten: 24,
             // Two fewer since #2076: the XY morph position is UI-resolved and
             // no longer a descriptor parameter with a knob.
-            bacteria: 40,
+            bacteria: 39,
             grinder: 25,
             crust: 6,
             // Reached only because `readBoundParamId` takes the id from any
