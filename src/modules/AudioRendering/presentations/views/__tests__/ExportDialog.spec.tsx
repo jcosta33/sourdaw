@@ -1,9 +1,12 @@
 import { type ReactNode } from 'react';
 
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { IDBFactory } from 'fake-indexeddb';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { asBaseAudioContext, createMockAudioContext, MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
+import { type Track } from '#/modules/Arrangement/stores';
 import { isNativeProjectRuntimeAvailable } from '#/modules/Project/useCases';
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
@@ -37,6 +40,7 @@ type TestTrack = {
     name: string;
     kind: 'audio';
     clips: TestClip[];
+    freezeState?: Track['freezeState'];
 };
 
 type TestTrackStoreState = {
@@ -83,10 +87,17 @@ type Mp3Encoder = (typeof import('../../../useCases/audioBufferToMp3'))['audioBu
 type FlacEncoder = (typeof import('../../../repositories/audioEncoders/flacEncoder'))['audioBufferToFlac'];
 type RenderOffline = (typeof import('#/modules/AudioEngine/useCases'))['renderOffline'];
 type ExportStems = (typeof import('#/modules/AudioEngine/useCases'))['exportStems'];
+type RestoreAudioBuffers = (typeof import('#/modules/AudioEngine/useCases'))['restoreCachedAudioBuffersFromIdb'];
 type EncodeWav = (...args: Parameters<WavEncoder>) => Promise<Uint8Array>;
 type EncodeMp3 = (...args: Parameters<Mp3Encoder>) => Promise<Uint8Array>;
 type EncodeFlac = (...args: Parameters<FlacEncoder>) => Promise<Uint8Array>;
 type Commit = () => Promise<void>;
+type OfflineRenderOptions = Parameters<RenderOffline>[0];
+type Deferred<TValue> = {
+    promise: Promise<TValue>;
+    resolve: (value: TValue) => void;
+    reject: (error: Error) => void;
+};
 
 type ExportDialogMocks = {
     audioContext: BaseAudioContext | null;
@@ -105,7 +116,7 @@ type ExportDialogMocks = {
     midiStore: TestStore<TestMidiState>;
     notifyUser: ReturnType<typeof vi.fn>;
     renderOffline: ReturnType<typeof vi.fn<RenderOffline>>;
-    restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<() => Promise<number>>>;
+    restoreCachedAudioBuffersFromIdb: ReturnType<typeof vi.fn<RestoreAudioBuffers>>;
     selectNativeAudioExportFile: ReturnType<typeof vi.fn>;
     trackStore: TestTrackStore;
     transportStore: TestStore<TestTransportState>;
@@ -155,7 +166,7 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         midiStore,
         notifyUser: vi.fn(),
         renderOffline: vi.fn<RenderOffline>(),
-        restoreCachedAudioBuffersFromIdb: vi.fn<() => Promise<number>>(),
+        restoreCachedAudioBuffersFromIdb: vi.fn<RestoreAudioBuffers>(),
         selectNativeAudioExportFile: vi.fn(),
         trackStore,
         transportStore,
@@ -173,6 +184,12 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
 
 const audioBufferToMp3 = mocks.encodeMp3;
 const audioBufferToFlac = mocks.encodeFlac;
+
+function initializeNativeWriterMocks(): void {
+    mocks.commit.mockReset().mockResolvedValue(undefined);
+    mocks.writeNativeAudioMixdownFile.mockReset().mockResolvedValue(undefined);
+    mocks.writeNativeAudioStemFile.mockReset().mockResolvedValue(undefined);
+}
 
 vi.mock('#/components/ui/dialog', () => ({
     Dialog: ({ open, children }: { open?: boolean; children?: ReactNode }) => (open ? <div>{children}</div> : null),
@@ -560,11 +577,7 @@ async function startRenderToClip(): Promise<number> {
     return renderedTail;
 }
 
-function createDeferred<TValue>(): {
-    promise: Promise<TValue>;
-    resolve: (value: TValue) => void;
-    reject: (error: Error) => void;
-} {
+function createDeferred<TValue>(): Deferred<TValue> {
     let settle: (value: TValue) => void = () => {
         throw new Error('Deferred was not initialised');
     };
@@ -578,10 +591,7 @@ function createDeferred<TValue>(): {
     return { promise, resolve: settle, reject: fail };
 }
 
-type RenderCallbacks = {
-    onProgress: (fraction: number) => void;
-    onWarning: (message: string) => void;
-};
+type RenderCallbacks = Required<Pick<OfflineRenderOptions, 'onProgress' | 'onWarning'>>;
 
 /** A committed export reads finished, once, and nothing re-reports it as cancelled. */
 async function expectSucceededExportState(): Promise<void> {
@@ -700,10 +710,8 @@ describe('ExportDialog', () => {
         mocks.encodeWav.mockResolvedValue(new Uint8Array([1, 2, 3]));
         mocks.encodeMp3.mockResolvedValue(new Uint8Array([4, 5, 6]));
         mocks.encodeFlac.mockResolvedValue(new Uint8Array([7, 8, 9]));
-        mocks.commit.mockResolvedValue(undefined);
-        mocks.writeNativeAudioMixdownFile.mockResolvedValue(undefined);
+        initializeNativeWriterMocks();
         mocks.selectNativeAudioExportDirectory.mockResolvedValue('/tmp/sourdaw-stems');
-        mocks.writeNativeAudioStemFile.mockResolvedValue(undefined);
         mocks.automationStore.value = { lanes: [] };
         mocks.workspaceStore.value = { soloMode: 'sip' };
         mocks.midiStore.value = { notesByClipId: {} };
@@ -744,7 +752,18 @@ describe('ExportDialog', () => {
         await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
         expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
         expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 44100 }));
-        expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -16, ceilingDbTp: -1, apply: false });
+        expect(normalize).toHaveBeenCalledWith(
+            expect.objectContaining({
+                buffer,
+                targetLufs: -16,
+                ceilingDbTp: -1,
+                apply: false,
+                measurements: expect.objectContaining({
+                    integratedLufs: expect.any(Number),
+                    truePeak: expect.any(Number),
+                }),
+            })
+        );
         expect(audioBufferToMp3).toHaveBeenCalledWith(
             expect.objectContaining({ length: buffer.length, gain: expect.any(Number) }),
             192,
@@ -764,6 +783,30 @@ describe('ExportDialog', () => {
         expect(bytes).toEqual(await vi.mocked(audioBufferToMp3).mock.results[0]!.value);
         expectPodcastBytes(bytes, { title: 'Épisode 🌊', artist: 'José', description: '音楽 et voix' });
         normalize.mockRestore();
+    });
+
+    it('reinitializes queued native writer and commit overrides before a fresh export', async () => {
+        const unusedWriter = createDeferred<void>();
+        const unusedCommit = createDeferred<void>();
+        mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(unusedWriter.promise);
+        mocks.commit.mockReturnValueOnce(unusedCommit.promise);
+
+        try {
+            initializeNativeWriterMocks();
+            render(<ExportDialog open={true} onClose={vi.fn()} />);
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+
+            await waitFor(() => {
+                expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+            });
+            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+            expect(mocks.commit).toHaveBeenCalledTimes(1);
+        } finally {
+            await act(async () => {
+                unusedWriter.resolve();
+                unusedCommit.resolve();
+            });
+        }
     });
 
     it.each(['picker'] as const)('delivers the real Podcast MP3 bytes through browser %s', async (route) => {
@@ -851,7 +894,18 @@ describe('ExportDialog', () => {
             await waitFor(() => expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1));
             expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
             expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 48000 }));
-            expect(normalize).toHaveBeenCalledWith({ buffer, targetLufs: -20, ceilingDbTp: -1, apply: false });
+            expect(normalize).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    buffer,
+                    targetLufs: -20,
+                    ceilingDbTp: -1,
+                    apply: false,
+                    measurements: expect.objectContaining({
+                        integratedLufs: expect.any(Number),
+                        truePeak: expect.any(Number),
+                    }),
+                })
+            );
             expect(audioBufferToMp3).toHaveBeenCalledWith(
                 expect.objectContaining({ length: buffer.length, gain: expect.any(Number) }),
                 320,
@@ -877,7 +931,7 @@ describe('ExportDialog', () => {
         }
     });
 
-    it('does not tag a non-MP3 override or offer the preset outside mixdown', async () => {
+    it('does not tag a non-MP3 override and offers targets for stems but not Render to Clip', async () => {
         render(<ExportDialog open={true} onClose={vi.fn()} />);
         selectPodcastEpisode();
         fireEvent.click(screen.getByTestId('export-format-wav'));
@@ -889,7 +943,7 @@ describe('ExportDialog', () => {
         );
         expect(audioBufferToMp3).not.toHaveBeenCalled();
         fireEvent.click(screen.getByTestId('export-mode-stems'));
-        expect(screen.queryByRole('combobox', { name: 'Delivery preset' })).not.toBeInTheDocument();
+        expect(screen.getByRole('combobox', { name: 'Delivery preset' })).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
         expect(screen.queryByRole('combobox', { name: 'Delivery preset' })).not.toBeInTheDocument();
         expect(screen.queryByRole('textbox', { name: 'Episode title' })).not.toBeInTheDocument();
@@ -941,6 +995,192 @@ describe('ExportDialog', () => {
             audioContext: mocks.audioContext,
             bufferIds: ['buffer-1', 'buffer-2'],
         });
+    });
+
+    it.each(['mixdown', 'stem'] as const)('restores frozen print IDs before %s export', async (mode) => {
+        const restoring = createDeferred<number>();
+        mocks.restoreCachedAudioBuffersFromIdb.mockReturnValue(restoring.promise);
+        setProjectTracks([
+            {
+                id: 'audio-track',
+                name: 'Audio',
+                kind: 'audio',
+                clips: [
+                    createClip({ id: 'clip-1', audioBufferId: 'clip-pcm' }),
+                    createClip({ id: 'clip-2', audioBufferId: 'clip-pcm' }),
+                ],
+            },
+            {
+                id: 'frozen-track',
+                name: 'Frozen',
+                kind: 'audio',
+                clips: [createClip({ id: 'original-clip', audioBufferId: 'original-clip-pcm' })],
+                freezeState: { status: 'frozen', frozenBufferId: 'freeze-print-pcm' },
+            },
+            {
+                id: 'stale-track',
+                name: 'Stale',
+                kind: 'audio',
+                clips: [],
+                freezeState: { status: 'stale', frozenBufferId: 'stale-print-pcm' },
+            },
+        ]);
+        const stemBuffer = MockAudioBuffer.create(2, 128, 44100);
+        mocks.exportStems.mockResolvedValue(new Map([['frozen-track', stemBuffer]]));
+
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        if (mode === 'stem') {
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+        }
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        await waitFor(() => expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledTimes(1));
+        const callsWhileRestoring = {
+            mixdown: mocks.renderOffline.mock.calls.length,
+            stems: mocks.exportStems.mock.calls.length,
+            wav: mocks.encodeWav.mock.calls.length,
+            mp3: mocks.encodeMp3.mock.calls.length,
+            flac: mocks.encodeFlac.mock.calls.length,
+            commit: mocks.commit.mock.calls.length,
+        };
+
+        await act(async () => restoring.resolve(0));
+        await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByRole('button', { name: /slices/i })).toBeEnabled());
+        expect(screen.getByText(/Baking Complete/)).toBeInTheDocument();
+        expect(callsWhileRestoring).toEqual({ mixdown: 0, stems: 0, wav: 0, mp3: 0, flac: 0, commit: 0 });
+        if (mode === 'stem') {
+            expect(mocks.exportStems).toHaveBeenCalledTimes(1);
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+        } else {
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(mocks.exportStems).not.toHaveBeenCalled();
+        }
+        expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext: mocks.audioContext,
+            bufferIds: ['clip-pcm', 'clip-pcm', 'original-clip-pcm', 'freeze-print-pcm'],
+        });
+    });
+
+    it('rehydrates ordinary and active frozen PCM from cold storage before encoding mixdown and stems', async () => {
+        const owner = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
+            '#/modules/AudioEngine/useCases'
+        );
+        const wav = await vi.importActual<typeof import('../../../repositories/audioEncoders/wavEncoder')>(
+            '../../../repositories/audioEncoders/wavEncoder'
+        );
+        vi.stubGlobal('navigator', { ...navigator, locks: createControlledLockManager().locks });
+        vi.stubGlobal('indexedDB', new IDBFactory());
+        const db = await new Promise<IDBDatabase>((resolve, reject) => {
+            const request = indexedDB.open('sourdaw-audio', 1);
+            request.onupgradeneeded = () => {
+                request.result.createObjectStore('buffers');
+                request.result.createObjectStore('bufferMeta');
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+        const ordinary = new Float32Array([0.125, -0.125, 0.25, -0.25]);
+        const frozen = new Float32Array([0.5, -0.5, 0.375, -0.375]);
+        const transaction = db.transaction(['buffers', 'bufferMeta'], 'readwrite');
+        for (const [id, pcm] of [
+            ['cold-clip', ordinary],
+            ['cold-frozen', frozen],
+            ['cold-stale', frozen],
+        ] as const) {
+            transaction.objectStore('buffers').put({ sampleRate: 44100, numberOfChannels: 1, channelData: [pcm] }, id);
+            transaction
+                .objectStore('bufferMeta')
+                .put({ lastAccessed: 100, sizeInBytes: pcm.byteLength, persistenceRevision: id }, id);
+        }
+        await new Promise<void>((resolve, reject) => {
+            transaction.oncomplete = () => resolve();
+            transaction.onabort = () => reject(transaction.error);
+            transaction.onerror = () => reject(transaction.error);
+        });
+        db.close();
+        const requirePcm = (id: string) => {
+            const buffer = owner.getCachedAudioBuffer({ bufferId: id });
+            if (!buffer) {
+                throw new Error(`Cold export source ${id} was not restored.`);
+            }
+            return buffer;
+        };
+        try {
+            for (const mode of ['mixdown', 'stems'] as const) {
+                await owner.clearRuntimeCachedAudioBuffers();
+                expect(owner.getCachedAudioBuffer({ bufferId: 'cold-frozen' })).toBeNull();
+                setProjectTracks([
+                    {
+                        id: 'ordinary',
+                        name: 'Ordinary',
+                        kind: 'audio',
+                        clips: [createClip({ id: 'cold-clip', audioBufferId: 'cold-clip' })],
+                    },
+                    {
+                        id: 'frozen',
+                        name: 'Frozen',
+                        kind: 'audio',
+                        clips: [],
+                        freezeState: { status: 'frozen', frozenBufferId: 'cold-frozen' },
+                    },
+                    {
+                        id: 'stale',
+                        name: 'Stale',
+                        kind: 'audio',
+                        clips: [],
+                        freezeState: { status: 'stale', frozenBufferId: 'cold-stale' },
+                    },
+                ]);
+                mocks.restoreCachedAudioBuffersFromIdb.mockImplementationOnce(owner.restoreCachedAudioBuffersFromIdb);
+                mocks.encodeWav.mockImplementation(
+                    async (...args) => new Uint8Array(await wav.audioBufferToWav(...args))
+                );
+                if (mode === 'mixdown') {
+                    mocks.renderOffline.mockImplementationOnce(async () => {
+                        const clip = requirePcm('cold-clip');
+                        const print = requirePcm('cold-frozen');
+                        const mix = MockAudioBuffer.create(1, frozen.length, 44100);
+                        mix.getChannelData(0).set(
+                            frozen.map((sample, frame) => sample + clip.getChannelData(0)[frame]!)
+                        );
+                        return mix;
+                    });
+                } else {
+                    mocks.exportStems.mockImplementationOnce(
+                        async () =>
+                            new Map([
+                                ['ordinary', requirePcm('cold-clip')],
+                                ['frozen', requirePcm('cold-frozen')],
+                            ])
+                    );
+                }
+                const view = render(<ExportDialog open onClose={vi.fn()} />);
+                if (mode === 'stems') {
+                    fireEvent.click(screen.getByTestId('export-mode-stems'));
+                }
+                fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+                await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(mode === 'mixdown' ? 1 : 2));
+                expect(Array.from(requirePcm('cold-clip').getChannelData(0))).toEqual(Array.from(ordinary));
+                expect(Array.from(requirePcm('cold-frozen').getChannelData(0))).toEqual(Array.from(frozen));
+                expect(owner.getCachedAudioBuffer({ bufferId: 'cold-stale' })).toBeNull();
+                const bytes =
+                    mode === 'mixdown'
+                        ? mocks.writeNativeAudioMixdownFile.mock.lastCall![0].bytes
+                        : mocks.writeNativeAudioStemFile.mock.calls.find(
+                              ([entry]) => entry.fileName === 'Frozen.wav'
+                          )![0].bytes;
+                const decoded = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                const expected = mode === 'mixdown' ? frozen[0]! + ordinary[0]! : frozen[0]!;
+                const firstSample =
+                    (decoded.getUint8(44) | (decoded.getUint8(45) << 8) | (decoded.getInt8(46) << 16)) / 8388608;
+                expect(firstSample).toBeCloseTo(expected, 5);
+                view.unmount();
+            }
+        } finally {
+            await owner.clearRuntimeCachedAudioBuffers();
+            vi.unstubAllGlobals();
+            mocks.encodeWav.mockReset().mockResolvedValue(new Uint8Array([1, 2, 3]));
+        }
     });
 
     it('uses the detected project tail for a default mixdown export', async () => {
@@ -1046,6 +1286,25 @@ describe('ExportDialog', () => {
 
     it('should pass undefined buffer ids when no clips reference audio buffers', async () => {
         setProjectClips([createClip({ id: 'clip-without-buffer' })]);
+
+        await startMixdownExport();
+
+        expect(mocks.restoreCachedAudioBuffersFromIdb).toHaveBeenCalledWith({
+            audioContext: mocks.audioContext,
+            bufferIds: undefined,
+        });
+    });
+
+    it('keeps the undefined restoration fallback for a frozen-only project without clip buffer IDs', async () => {
+        setProjectTracks([
+            {
+                id: 'frozen-track',
+                name: 'Frozen',
+                kind: 'audio',
+                clips: [createClip({ id: 'clip-without-buffer' })],
+                freezeState: { status: 'frozen', frozenBufferId: 'freeze-print-pcm' },
+            },
+        ]);
 
         await startMixdownExport();
 
@@ -1165,12 +1424,12 @@ describe('ExportDialog', () => {
             normalization: 'off',
         });
         const writing = createDeferred<void>();
-        mocks.writeNativeAudioMixdownFile.mockReturnValueOnce(writing.promise);
+        mocks.writeNativeAudioStemFile.mockReturnValueOnce(writing.promise);
 
         render(<ExportDialog open={true} onClose={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         await waitFor(() => {
-            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+            expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
         });
 
         fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
@@ -1185,7 +1444,12 @@ describe('ExportDialog', () => {
             { timeout: 4000 }
         );
         expect(audioBufferToMp3).not.toHaveBeenCalled();
-        expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(1);
+        expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(1);
+        expect(mocks.writeNativeAudioStemFile.mock.calls[0]?.[0]).toEqual({
+            bytes: new Uint8Array([1, 2, 3]),
+            directoryPath: '/tmp/sourdaw-stems',
+            fileName: expect.stringMatching(/\.wav$/u),
+        });
     });
 
     it('aborts the browser save instead of committing it when Cancel is pressed while the file is being opened', async () => {
@@ -1528,20 +1792,14 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        type RenderMock<TValue> = {
-            mockReturnValue: (value: Promise<TValue>) => unknown;
-            mock: { calls: [Parameters<RenderOffline>[0]][] };
-        };
-
-        const holdRender = <TValue,>(renderMock: RenderMock<TValue>) => {
+        const holdRender = <TValue,>(setReturnValue: (promise: Promise<TValue>) => void) => {
             const rendering = createDeferred<TValue>();
-            renderMock.mockReturnValue(rendering.promise);
+            setReturnValue(rendering.promise);
             return rendering;
         };
 
         // The callbacks the dialog really handed the render: a late report goes through these.
-        const renderCallbacks = <TValue,>(renderMock: RenderMock<TValue>): RenderCallbacks => {
-            const renderedWith = renderMock.mock.calls[0]?.[0];
+        const renderCallbacks = (renderedWith: OfflineRenderOptions | undefined): RenderCallbacks => {
             const { onProgress, onWarning } = renderedWith ?? {};
             if (!onProgress || !onWarning) {
                 throw new TypeError('expected the render to receive onProgress and onWarning');
@@ -1550,13 +1808,12 @@ describe('ExportDialog', () => {
         };
 
         const cancelRenderInFlight = async <TValue,>(
-            renderMock: RenderMock<TValue>,
-            rendering: ReturnType<typeof createDeferred<TValue>>
+            assertRenderStarted: () => void,
+            getRenderOptions: () => OfflineRenderOptions | undefined,
+            rendering: Deferred<TValue>
         ): Promise<RenderCallbacks> => {
-            await waitFor(() => {
-                expect(renderMock).toHaveBeenCalledTimes(1);
-            });
-            const callbacks = renderCallbacks(renderMock);
+            await waitFor(assertRenderStarted);
+            const callbacks = renderCallbacks(getRenderOptions());
             fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
             await act(async () => {
                 rendering.reject(new Error('Export cancelled'));
@@ -1569,24 +1826,51 @@ describe('ExportDialog', () => {
 
         const cancelStemExportWhileRendering = async (): Promise<RenderCallbacks> => {
             setProjectTracks(stemTracks);
-            const rendering = holdRender<Map<string, AudioBuffer>>(mocks.exportStems);
+            const rendering = holdRender<Map<string, AudioBuffer>>((promise) => {
+                mocks.exportStems.mockReturnValue(promise);
+            });
             startStemExport();
-            return cancelRenderInFlight(mocks.exportStems, rendering);
+            return cancelRenderInFlight(
+                () => expect(mocks.exportStems).toHaveBeenCalledTimes(1),
+                () => {
+                    const renderedWith = mocks.exportStems.mock.calls[0]?.[0];
+                    return typeof renderedWith === 'number' ? undefined : renderedWith;
+                },
+                rendering
+            );
         };
 
         const cancelMixdownWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>(mocks.renderOffline);
+            const rendering = holdRender<AudioBuffer>((promise) => {
+                mocks.renderOffline.mockReturnValue(promise);
+            });
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
-            return cancelRenderInFlight(mocks.renderOffline, rendering);
+            return cancelRenderInFlight(
+                () => expect(mocks.renderOffline).toHaveBeenCalledTimes(1),
+                () => {
+                    const renderedWith = mocks.renderOffline.mock.calls[0]?.[0];
+                    return typeof renderedWith === 'number' ? undefined : renderedWith;
+                },
+                rendering
+            );
         };
 
         const cancelClipRenderWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>(mocks.renderOffline);
+            const rendering = holdRender<AudioBuffer>((promise) => {
+                mocks.renderOffline.mockReturnValue(promise);
+            });
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
             fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
-            return cancelRenderInFlight(mocks.renderOffline, rendering);
+            return cancelRenderInFlight(
+                () => expect(mocks.renderOffline).toHaveBeenCalledTimes(1),
+                () => {
+                    const renderedWith = mocks.renderOffline.mock.calls[0]?.[0];
+                    return typeof renderedWith === 'number' ? undefined : renderedWith;
+                },
+                rendering
+            );
         };
 
         const expectCancelledStateHeld = async (startButtonName?: string | RegExp): Promise<void> => {
@@ -1877,9 +2161,19 @@ describe('ExportDialog', () => {
         fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
 
         await waitFor(() => {
-            expect(mocks.writeNativeAudioMixdownFile).toHaveBeenCalledTimes(2);
+            expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2);
         });
-        expect(mocks.writeNativeAudioMixdownFile.mock.calls.map((call) => call[0].format)).toEqual(['wav', 'mp3']);
+        expect(mocks.writeNativeAudioStemFile.mock.calls.map((call) => call[0].fileName.slice(-4))).toEqual([
+            '.wav',
+            '.mp3',
+        ]);
+        expect(mocks.writeNativeAudioStemFile.mock.calls.map((call) => call[0].bytes)).toEqual([
+            new Uint8Array([1, 2, 3]),
+            new Uint8Array([4, 5, 6]),
+        ]);
+        expect(
+            mocks.writeNativeAudioStemFile.mock.calls.every((call) => call[0].directoryPath === '/tmp/sourdaw-stems')
+        ).toBe(true);
     });
 
     it('should stop offering 32-bit once FLAC is selected instead of downgrading it (OE-8)', () => {
@@ -2676,5 +2970,87 @@ describe('ExportDialog', () => {
         expect(mocks.notifyUser).not.toHaveBeenCalled();
         expect(screen.queryByText('The bread burned...')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+    });
+
+    describe('independent delivery target controls', () => {
+        it('exposes all five families and preserves edits when switching, adding, removing and rerendering', () => {
+            const view = render(<ExportDialog open onClose={() => {}} />);
+            const names = [
+                'Spotify stereo master',
+                'Apple Music stereo master',
+                'YouTube audio master for video',
+                'Podcast RSS MP3',
+                'Game Audio PCM',
+            ];
+            for (const name of names) {
+                expect(screen.getByRole('checkbox', { name: `Export ${name}` })).toBeInTheDocument();
+            }
+            fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
+                target: { value: 'podcast-rss-mp3' },
+            });
+            fireEvent.click(screen.getByRole('button', { name: '48.0k' }));
+            fireEvent.change(screen.getByRole('spinbutton', { name: 'Target loudness' }), { target: { value: '-20' } });
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
+                target: { value: 'podcast-rss-mp3' },
+            });
+            expect(screen.getByRole('button', { name: '48.0k' })).toHaveAttribute('aria-pressed', 'true');
+            expect(screen.getByRole('spinbutton', { name: 'Target loudness' })).toHaveValue(-20);
+            view.rerender(<ExportDialog open onClose={() => {}} />);
+            fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
+                target: { value: 'game-audio-pcm' },
+            });
+            expect(screen.getByRole('combobox', { name: 'Output channels' })).toHaveValue('1');
+            fireEvent.click(screen.getByRole('button', { name: 'Reset this target' }));
+            expect(screen.getByRole('combobox', { name: 'Output channels' })).toHaveValue('2');
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            expect(screen.getByRole('checkbox', { name: 'Export Podcast RSS MP3' })).toBeChecked();
+        });
+        it('captures all target overrides before the directory await and renders only once at their maximum rate', async () => {
+            const destination = createDeferred<string>();
+            mocks.selectNativeAudioExportDirectory.mockReturnValueOnce(destination.promise);
+            mocks.renderOffline.mockResolvedValueOnce(createPodcastFixture(48000));
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export YouTube audio master for video' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.click(screen.getByRole('button', { name: '44.1k' }));
+            fireEvent.click(screen.getByTestId('export-start'));
+            expect(mocks.selectNativeAudioExportDirectory).toHaveBeenCalledTimes(1);
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            // Controls still edit the next draft while the destination chooser owns its await.
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '2' } });
+            fireEvent.click(screen.getByRole('button', { name: '96.0k' }));
+            act(() => destination.resolve('/tmp/multi-target'));
+            await waitFor(() => expect(mocks.writeNativeAudioStemFile).toHaveBeenCalledTimes(2));
+            expect(mocks.renderOffline).toHaveBeenCalledTimes(1);
+            expect(mocks.renderOffline).toHaveBeenCalledWith(expect.objectContaining({ sampleRate: 48000 }));
+            const game = mocks.encodeWav.mock.calls[1]![0];
+            expect(game).toMatchObject({ sampleRate: 44100, numberOfChannels: 1, length: 44100 });
+            const names = mocks.writeNativeAudioStemFile.mock.calls.map((call) => call[0].fileName);
+            expect(names[0]).toMatch(/__youtube-audio-master\.wav$/);
+            expect(names[1]).toMatch(/__game-audio-pcm\.wav$/);
+        });
+        it('refuses an unresolved source rate and the known LAME96 stereo rate change before storage or render', async () => {
+            mocks.getAudioContext.mockReturnValue(null);
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
+                target: { value: 'spotify-stereo-master' },
+            });
+            fireEvent.click(screen.getByTestId('export-start'));
+            expect(await screen.findByText(/source sample rate/i)).toBeInTheDocument();
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            fireEvent.change(screen.getByRole('combobox', { name: 'Delivery preset' }), {
+                target: { value: 'custom' },
+            });
+            selectPodcastEpisode();
+            fireEvent.click(screen.getByRole('button', { name: '96k' }));
+            fireEvent.click(screen.getByTestId('export-start'));
+            expect(await screen.findByText(/96.*stereo/i)).toBeInTheDocument();
+            expect(mocks.selectNativeAudioExportFile).not.toHaveBeenCalled();
+            expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
+            expect(mocks.renderOffline).not.toHaveBeenCalled();
+        });
     });
 });

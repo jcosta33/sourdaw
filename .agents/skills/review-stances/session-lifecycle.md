@@ -114,6 +114,19 @@ the next sweep to destroy it before another wait. Independently hold the owner a
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
 
+### Cold frozen export restoration must finish before rendering
+
+The clip-only restoration set introduced by `57b7349f7864eca0bd177333d720a50186bd33e9`
+survived the owner-use-case routing in `ab5a579209b5e02a035e123380b5ceaf9c922250`
+(associated with PR #187); no PR is associated with the narrowing commit, and historical
+review dispatch is unknown. The missed lifecycle input is a fresh runtime whose active frozen
+print is durable but absent from memory alongside an ordinary clip.
+
+Hold restoration and require no render or encode; release it through the real cache owner and
+require active frozen PCM in both mixdown and stems. Remove only its requested ID and require
+failure before encoding. Preserve stale-print exclusion, the empty-clip fallback, cancellation,
+and the current dialog session fence; a late older callback must not paint a reopened dialog.
+
 ### VCA membership must reach committed runtime gain
 
 The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
