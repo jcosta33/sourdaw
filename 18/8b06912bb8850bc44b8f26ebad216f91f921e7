@@ -1,0 +1,14 @@
+src/modules/Arrangement/useCases/__tests__/stripSilence.integration.spec.ts
+  h_beb54bf43b47b7 66,83,88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "188b06912bb8850bc44b8f26ebad216f91f921e7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
