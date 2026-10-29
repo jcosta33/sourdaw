@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/clipEditing/audioClipTrimTakeSources.ts
+  s_29d8df116c5b92::t_3fb31220114d01 1-107
+  s_29d8df116c5b92::t_6c1e05755e5909 108-110
+src/modules/Arrangement/useCases/clipEditing/__tests__/audioClipTrimTakeSources.spec.ts
+  s_29d8df116c5b92::t_9ec64f127f2dc2 1-67
+  s_29d8df116c5b92::t_759d6733057b0c 68-70
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e9369c17f9bf40f6e73649e12af44f558b55196",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
