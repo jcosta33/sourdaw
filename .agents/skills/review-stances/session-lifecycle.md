@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a
@@ -223,6 +237,22 @@ read each caller and name what stands in for the deleted correction there. A cal
 is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
 the callers.
 
+### Crumbs waveform work must retain its actual root and device incarnation
+
+The sampler continuation introduced by `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+could publish after its device or root was replaced; PR #5041's per-ID decode sequence did
+not establish lifetime authority (#5780). No introducing public PR or historical private
+review prompt/tier is established.
+
+Hold telemetry and peaks through the actual app-injected owner reader. Replace an identical-ID
+root and remove/restore the same device object while its preceding view is still present.
+Observe every committed owner transition before coalescing reconciliation, so absence/type/
+owner/duplicate ABA cannot revive an old token. Do not start a newer load or replace its sample
+leaf before the refusal assertion: those guards would hide a missing lifetime fence. Keep real
+ordinary parameter writes and fresh successor loads as controls. Remove synchronous owner
+refresh and require the unchanged ABA case to fail. This proves display authority, not native
+sample selection or audible last-drop ordering.
+
 ### 2026-09-19 — the acquisition cache keyed by nothing (escaped via PR #4394, fixed in #4423)
 
 PR #4394 let two tracks record from different audio devices, but the input-monitoring session stayed
@@ -323,6 +353,48 @@ owner-supported project kind, including permission still pending. Off and remova
 that owner; non-audio Auto and unadmitted store-only On must acquire nothing. The eligibility table's
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
+
+### Monitor disconnect faults must not strand the shared graph (introduced by PR #4485; fixed in #5376)
+
+PR #4485 moved monitor release to the start of shared graph reset so source edges stopped while
+strips still existed. A source-wide disconnect could throw before track, bus and send retirement;
+disposal then depended on this failing reset before master teardown and `context.close()`. Public
+approval covers ordering and late-grant release, not fault continuation; private prompts and tiers are
+unknown. Exercise the real reset and dispose callers with two controlled captures and a throwing first
+source: require both tracks stopped, graph owners and sends retired, and the original error retained.
+Disposal must attempt every master disconnect, await one close, and return the same terminal result on
+repeat. Keep late-grant rejection as a separate reset case. Controlled nodes and media prove cleanup,
+not physical microphone or audible playback.
+
+### An aborted graph repair must rearm committed monitoring intent (issue #5286)
+
+Start a connected On track, hold same-project graph repair at plugin reset, then project Off before
+repair and during reset in separate real version restores that abort. While held, observe committed
+root On beside projected Off. After abort, require rebuilt-strip monitoring to acquire a fresh
+source, connect it only to the rebuilt gain, stop the old source once, and leave history empty.
+Also commit Off during reset and replace the root: neither may reopen monitoring or rearm the
+successor strip. Keep pending and refused permission controls, and require armed Auto to follow the
+final transport state. The controlled media and graph ports prove lifecycle ownership, not physical
+hardware audio; the connected oracle is in `repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts`
+and `repairRuntimeGraphFromProject.autoMonitoring.spec.ts`.
+
+### Obsolete input owners during a held removal (issue #5283)
+
+With track `a` already monitoring On at input `null`, hold its real registered removal in a
+storage transaction and independently commit `replacement-input` through `mutateCrdtDoc` while
+`a` is absent from the optimistic projection. Before commit or abort, retire `a`'s obsolete key and
+edge immediately. A shared eligible `b` must retain the same capture, edge, and stream. In the
+last-owner case, the old input must stop. Do not recreate the absent strip or request permission
+again. On abort, re-admit the current input; on commit, remove `a`. A same-input abort must retain its original
+owner and capture.
+
+PR #4449 first introduced the keyed-owner form after #576's held transactions and #4255's shared
+edges. Its source retargeted a key only on explicit start, and its public tests and review covered
+start, grant, shared ownership, and stop, not an independent committed selector change under
+optimistic absence. Older code already retained stale singleton audio, so the earliest origin of all
+stale physical edges is unproven. PR #5011 later added an Auto-only sweep that left direct On
+outside it; #5091 fixed retirement. The #5380 proof uses controlled media and graph ports, not
+physical hardware.
 
 ### 2026-10-09 — monitor release must be paired with committed Undo restoration (caught in PR #5091)
 
@@ -452,9 +524,15 @@ The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0
 
 Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
 
+PR #4564 (`40c5218228c5`) also introduced the manual audio terminal's missing-clip append escape (#5289). PR #5373 (`eecc1c5a8457`) fenced that opening, but immediate-flush and direct-root-replacement fixtures did not prove the real branch transition. Drive actual Stop with an explicitly held recorder terminal: a real switch must remain on the outgoing root until its take and Command entry settle, then save that branch and clear incoming Undo. A real fork can install its copied root while the old flush is held; settle both old success and old failure and preserve that successor's same-ID provisional clip, takes, media and history exactly. Pair actual same-owner completion and failure, known PCM through the real cache, and real Undo/Redo. Make the captured-root predicate always true and require both stale-terminal cases to fail. Historical reviewer prompts and tiers remain unverified; the missing stance was recording-owner lifetime across the actual branch transition.
+
 ### Deferred sensitivity must redraw the current clip's markers
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
+
+### Debounced Elastic gestures retain their displayed owner
+
+The initial Elastic target mismatch in `33a3549990c5ce2234e22bf48f3d5758711e2b56` was hidden by explicitly opening every sensitivity fixture. No associated introducing PR or private review prompt, stance or tier is established. Hold the real debounce across selection A→B→A, explicit editor close/reopen, source replacement and same-ID root replacement. The old gesture must leave native rows and PCM exact, settle callers and release listeners; only a fresh gesture may act on the new owner. An unrelated selection must not override an explicitly opened target. Removing pending-owner invalidation must fail real raw-state controls, not merely a cancellation flag.
 
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 
@@ -523,3 +601,18 @@ Probe the real import, Command/CRDT/history and engine boundary with a completed
 PR #5461 observed a newer lane, VCA or solo projection when a native batch was in flight, then returned. The predecessor's completion released its in-flight marker but arranged no follow-up; the edit reached the backend only if a later playhead poll happened. The existing real-store pending case settled the batch before asking for another pump. Public review covered queue and gain repairs, but its final approval reported unrun mutation probes; private stance prompts and tiers are unavailable, so no precise historical stance is inferred.
 
 Hold an earlier backend apply after it has captured a real-store batch. Edit a lane, VCA or solo state and invoke one same-pass pump while that apply remains unanswered. Require no overlap, then settle the predecessor **without another pump** and require one serialized successor with the new Hold or control and untouched unrelated queue. Coalesce later matching snapshots; reject an old pass or backend after seek, disarm or replacement, and preserve refusal and batch-fence accounting. Removing only the completion follow-up must fail this case. This proves scheduled submission after settlement, not a wall-clock audio deadline while the backend is blocked.
+
+### 2026-10-30 — first paint concealed that bootstrap effects had already started
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) introduced first paint before the initial
+App import settled while bootstrap remained in the parallel startup path. The failed reload
+contained capability and BrowserAi initialization before App rejection, so an empty shell or absent
+controls did not mean the runtime was pristine. The App rejection defect reached main; the
+historical private reviewer prompt and tier are unknown. The separate legacy desktop-test ordering
+failure during #5876 repair was caught before merge.
+
+Hold the actual initial App import after first paint. Before release, observe the real bootstrap
+evaluation/effect boundary. If App fulfillment owns bootstrap, require effects initiated by bootstrap
+to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
+quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
+case; preserve the distinct cold-stylesheet lesson in test-validity.

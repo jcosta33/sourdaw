@@ -58,6 +58,8 @@ const addonMethods = (): string[] =>
  * entirely, and publishes nothing here to plumb.
  */
 const ADDON_PLUMBING: ReadonlySet<string> = new Set([
+    'with_runtime_scope_v1',
+    'runtime_scope_info_v1',
     'apply_plugin_gui_scale',
     'new',
     'notify_plugin_window_closed',
@@ -382,6 +384,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['engine_transport_set_maps', ['maps']],
     ['get_crumbs_dropped_sample_writes', ['instance_id']],
     ['get_crumbs_position', ['instance_id']],
+    ['get_crumbs_recording_state', ['instance_id']],
     ['get_default_plugin_paths', []],
     ['get_plugin_parameters', ['instance_id']],
     ['get_plugin_state_bytes', ['instance_id']],
@@ -415,7 +418,7 @@ const COMMAND_ARGUMENTS: ReadonlyMap<string, readonly string[]> = new Map([
     ['set_plugin_bypass', ['instance_id', 'bypassed']],
     ['set_plugin_parameter', ['instance_id', 'param_id', 'value']],
     ['set_plugin_state_bytes', ['instance_id', 'plugin_state']],
-    ['stop_recording', ['instance_id']],
+    ['stop_recording', ['instance_id', 'take_id']],
     ['store_verified_whisper_model', ['bytes']],
     ['unload_plugin', ['instance_id']],
     ['write_file_bytes', ['path', 'data']],

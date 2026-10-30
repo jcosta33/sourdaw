@@ -673,6 +673,71 @@ describe('RotaryKnob', () => {
         expect(container.querySelector('span')).toBeNull();
     });
 
+    it('keeps simultaneous modulation ranges visible on separate source-colored rings', () => {
+        const modulations = [
+            { id: 'mod-a', amount: 0.5, color: 'oklch(0.7 0.1 20)', activity: 0 },
+            { id: 'mod-b', amount: -0.4, color: 'oklch(0.7 0.1 200)', activity: 0.8 },
+        ];
+        const { container, rerender } = render(<RotaryKnob value={50} onChange={vi.fn()} modulations={modulations} />);
+
+        const halos = [...container.querySelectorAll('[data-modulation-halo]')] as HTMLElement[];
+        expect(halos).toHaveLength(2);
+        expect(halos.map((halo) => halo.dataset.modulationHalo)).toEqual(['mod-a', 'mod-b']);
+        expect(halos[0]!.style.inset).not.toBe(halos[1]!.style.inset);
+        expect(halos[0]!.style.background).toContain(modulations[0]!.color);
+        expect(halos[1]!.style.background).toContain(modulations[1]!.color);
+        expect(halos[0]!.style.background).toContain('135deg');
+
+        rerender(<RotaryKnob value={50} onChange={vi.fn()} modulations={modulations} />);
+        expect(
+            Array.from(container.querySelectorAll('[data-modulation-halo]'), (halo) => halo.getAttribute('style'))
+        ).toEqual(halos.map((halo) => halo.getAttribute('style')));
+    });
+
+    it('does not invent a modulation range when the mapping depth is zero', () => {
+        const color = 'oklch(0.7 0.1 20)';
+        const { container } = render(
+            <RotaryKnob
+                value={50}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'zero-depth', amount: 0, color, activity: 0.8 }]}
+            />
+        );
+
+        const halo = container.querySelector<HTMLElement>('[data-modulation-halo="zero-depth"]')!;
+        expect(halo.style.background).toContain(`transparent 135deg, ${color} 135deg, ${color} 135deg`);
+    });
+
+    it('clips positive and negative modulation ranges at the knob limits', () => {
+        const color = 'oklch(0.7 0.1 20)';
+        const { container, rerender } = render(
+            <RotaryKnob
+                value={100}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'positive', amount: 0.5, color }]}
+            />
+        );
+
+        const positiveHalo = container.querySelector<HTMLElement>('[data-modulation-halo="positive"]')!;
+        expect(positiveHalo.style.background).toContain(`transparent 270deg, ${color} 270deg, ${color} 270deg`);
+
+        rerender(
+            <RotaryKnob
+                value={0}
+                min={0}
+                max={100}
+                onChange={vi.fn()}
+                modulations={[{ id: 'negative', amount: -0.5, color }]}
+            />
+        );
+        const negativeHalo = container.querySelector<HTMLElement>('[data-modulation-halo="negative"]')!;
+        expect(negativeHalo.style.background).toContain(`transparent 0deg, ${color} 0deg, ${color} 0deg`);
+    });
+
     it('should render arc with every tone variant', () => {
         const tones = [
             'neutral',

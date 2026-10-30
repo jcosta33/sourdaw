@@ -1,5 +1,21 @@
 # Lesson library: security and platform boundaries
 
+### 2026-10-29 — diagnostic words inside a Darwin pathname rejected usable storage evidence (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) matched inspection-error words anywhere in an `lsof` name. A pure
+`tREG` fixture named `/tmp/no info.txt` therefore rejected a complete catalog. The public final
+review covered startup routing, borrower retention, interrupted reclamation, account admission and
+failure reporting; a pathname-versus-diagnostic admission probe was missing. Historical private
+prompts and tiers are unestablished. This counterexample does not identify the cause of a later
+uninstrumented census failure.
+
+Probe absolute REG/DIR paths containing diagnostic words without opening those filenames on the
+shared host. Require the parsed path to veto storage reclamation. Keep unrooted errors and ambiguous
+stat/readlink suffixes fail-closed, preserve whole/scoped replacement proof and the five-second bound,
+and retain only bounded PID, descriptor, type and matched-category context, never unrelated catalog
+names or environment text. Reverting the pathname distinction must fail the parser assertion;
+dropping the retained context must fail the whole/scoped diagnostic assertions.
+
 Lesson library for defects in native authority, renderer trust, platform capabilities, IPC
 exposure, filesystem access, secrets, or operating-system integration. Per the Review section of
 `AGENTS.md`, this directory is a lesson library, not a stance menu: an escape — a defect that
@@ -55,6 +71,19 @@ dispatch.
   not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
+
+PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455
+section 1.2 WebSocket nonce. Replacement #5748 composed it at runtime and excluded the original
+commit from its PR range, but Nightly's `--all` scan still reached the retained original branch.
+The missed proof route was retained history after replacement; private reviewer prompts and tiers
+are unestablished. The value is a published protocol example, not an issued credential.
+
+Read the exact historical finding and its public source. Prove detection with the pinned scanner,
+then admit only that commit/path/rule/line fingerprint. A wrong fingerprint and independent synthetic
+credentials, including `gitleaks:allow`, must remain detected under the same trusted configuration
+and flags. A clean replacement diff does not establish a clean full-history scan.
 
 ### 2026-10-28 — PR security scan lacked its main comparison configurations (PRs #3170 and #4854)
 
@@ -436,3 +465,18 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Pair positive admission of all six declared Body keys and indices -1/0/1/2/3 through
+the real factory and production processor target with refusal of synthetic keys, band 6,
+nonfinite values, forged identity, wrong generation and replay. Caller project parameter
+maps must not widen the finite runtime schema. Remove only the declared Body key to
+make the positive factory probe fail; a hand-built permissive target cannot establish
+that valid controls cross the production trust boundary.

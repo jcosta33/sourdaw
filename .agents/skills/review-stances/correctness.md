@@ -410,6 +410,25 @@ Probe that would have caught it: drive the real use case with fake hardware and 
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot that did not follow deferred sensitivity detection in the warp store. No associated introducing PR or private review prompt or tier is established. Probe the selected clip's real store projection after detection and an external update: drawing, detail counts, availability and hit-testing must agree on the same current markers without an incidental pointer refresh. Switch clips and preserve locked identity, a control clip and PCM; removing the subscription must fail the real varied-pulse regression. This establishes no Worker or performance acceptance.
 
+### Selected-only Elastic controls must target the displayed clip
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` displayed a selected audio clip when no editor clip was explicitly open, but sensitivity targeted only the explicit open ID. GitHub associates no introducing PR; historical review prompt, stance and tier are unestablished. Drive the real slider in both entry states and require authoritative automatic markers to change while locked/user rows, another clip and PCM remain exact. Preserve explicit-open precedence and preference-only no-target/MIDI behavior; do not open or pin the editor to satisfy the test. Removing only selected-target resolution must fail the selected-only source oracle. This establishes no Worker or performance acceptance.
+
+### Stored modulation reached an Inspector target the engine refused (PR #831; exposed by #5379)
+
+Merged PR #831 (`b47d1244c2791b80f581d659cf8618d576f0944b`) made `resolveModulationBinding`
+refuse stored mappings to nonautomatable parameters, but the existing Inspector still selected
+enabled mappings by target IDs and could draw a cyan halo from nonzero runtime output for that
+rejected mapping. #831's public history does not establish the reviewer stance, prompt, or tier.
+Blind spot: no probe compared the engine's refusal with the Inspector projection for the same
+persisted mapping. Probe: seed an enabled LFO mapping directly in project state for a valid track,
+device, and nonautomatable parameter, with nonzero runtime output and mapping depth; require binding
+refusal, an unchanged base parameter, and no cyan Inspector halo. Keep an otherwise identical
+eligible mapping as a positive control and ordinary knob and keyboard writes working. The pending
+UI change in open PR #5379 introduces a target announcement, so require that affordance not to
+announce the rejected mapping as well; removing its eligibility filter must fail the owning
+subscription spec. The #5379 repair has not landed.
+
 ### 2026-09-02 — a mirror that implements half of the engine's release law (escaped via PR #3363; clip repair in flight in #3437)
 
 PR #3363 shipped fader, pan and send automation on the native live engine with the loop-end
@@ -846,3 +865,109 @@ unrelated programme edit and a valid same-target successor that commits the fina
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+### 2026-10-29 — resolved group replay was mistaken for a completed revert (#5565)
+
+The AI history caller from `22a84b216658f593391e7e141d90f7c84d13648b` marked its row
+reverted after a void replay, including an absent group; the delegation retained by
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` preserved that false success. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. The missed input was a group that replay could not actually undo whole.
+
+Drive the actual history caller with absent, partially undone and nonreplayable groups.
+Require no project or Undo change, no Reverted flag, and visible refusal. A committed
+warning must keep the successful whole revert consumed and report the warning; an
+unexpected replay failure must reach visible error feedback without leaving the existing
+fire-and-forget UI callers an abandoned rejection. Runtime-only history remains inert.
+
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
+
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
+
+Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
+Serial; GitHub reports no associated PR for that commit. PR #2079 (`c6a1310929`)
+made Serial actually chain the bands, but its routing fixture selected both modes explicitly
+and never observed a fresh constructor. Historical private review prompts and tiers are unknown.
+The missed stance was the audio produced before any routing parameter write.
+
+Render a fresh instance through an active two-band clipper then low-pass chain without setting
+routing. Require exact equality with explicit Serial on both channels, non-silent references,
+and separation from explicit Parallel. Revert only the constructor default: the named default
+case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
+Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — a sample cap truncated a duration at the highest rate (PR #2055)
+
+PR #2055 (`d2efdde850`) derived the built-in body length from seconds while retaining
+the earlier 4096-sample cap. Its duration fixture stopped at 96 kHz; at 192 kHz the
+23.2 ms response requires 4458 samples. PR #5254 later exposed those prebuilt bodies
+to the musician without changing the cap. Public verification claimed rate-independent
+duration, but historical private stance prompts and tiers are unknown.
+
+Observe the actual engine's fully wet body output at the highest supported context rate.
+Require nonzero late PCM beyond the old cap, the final response window, exact silence
+after the physical duration, and preserved lower-rate decay, energy and spectral shape.
+Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
+served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
+
+### 2026-10-29 — capped render placement trusted the requested end (#5013)
+
+The offline producer capped frames in `bf14e0d6c1`, while the consumer introduced in
+`e7d4f0b69b` trusted the requested musical end. The production route in `33a3549990`
+joined them; `adfc95a453` is its first-parent integration boundary. GitHub associates
+none of those commits with a PR, and historical reviewer prompts, stance and tier are
+unavailable. #5371 delivered the endpoint repair, not the introduction.
+
+Compare returned frames with the requested endpoint before resolving a tail: a short
+buffer ends at its actual tempo-mapped position, including nonzero starts; redo retains
+that endpoint and buffer identity. Complete no-tail renders retain the exact musical end,
+while complete tail renders retain the decay. Probe both tail settings at the `2^30 + 1`
+requested versus `2^30` returned frame boundary; reverting the returned-frame branch must
+fail the owning `renderToClip.spec.ts` boundary case. Buffer metadata suffices for this
+arithmetic contract; it does not establish long-render PCM or listening behavior.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Drive every declared band Body key and None/Ceramic/Wood/Metal/Spring index through
+`createBacteriaNode`, its emitted initialization target and the processor using the production
+schema. Require the exact engine parameter and value. Removing only `convolutionIr` from
+that schema must fail the real-factory case. Preserve finite keys, band bounds, immutable
+identity/correlation, scheduling, nonfinite rejection and replay/generation guards; action or
+document spies alone cannot prove carrier admission or audible output.
+
+### 2026-10-30 — a guarded solo no-op blocked older history (#5643)
+
+PR #5631 introduced the expected-state guard on agent `soloTrack` compensation. Its public review
+record called out the target-already-held no-op gap, tracked as #5643; PR #5719 fixed the inverse
+and redo path. A guarded replay can reach a state that is neither its original expectation nor a
+new conflicting write: a later plain-click exclusive solo may already have put the track at the
+inverse target. Treating that state as a conflict makes Undo refuse and strands every older entry.
+The private historical prompt and tier for the final missed case are unavailable; no additional
+stance attribution is established.
+
+Commit a real guarded agent solo, then use a plain-click exclusive solo to make the agent inverse's
+target already hold. Undo must consume that entry without changing the CRDT root, project revision
+or track projection; the next Undo must reach the older solo entry. Redo must likewise consume an
+already-satisfied guarded target without a write. Keep controls where the live solo differs from
+both the target and expectation, the target track is missing, and an unguarded manual inverse
+would overwrite a later user solo. Reverting the target-equal admission and no-write handling in
+`soloTrack.ts` must fail the real Command Undo/Redo regression.

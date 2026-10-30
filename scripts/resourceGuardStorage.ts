@@ -18,6 +18,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 
 import { resolvePrimaryRoot } from './githubAppIdentity.ts';
+import { describeLsofInspection, lsofInspectionMatch } from './resourceGuardLsofDiagnostics.ts';
 
 export const DEFAULT_DISK_RESERVE_BYTES = 5 * 1024 ** 3;
 export const DISK_RESERVE_ENV = 'SOURDAW_GUARD_DISK_RESERVE_MIB';
@@ -91,7 +92,8 @@ export function sameUserProcessIds(
 function parseLsofFile(
     fields: string[],
     knownTypes: Set<string>,
-    report: (reason: string) => void
+    pid: number,
+    report: (reason: string, detail?: string) => void
 ): { path?: string; missingType: boolean } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
@@ -111,8 +113,10 @@ function parseLsofFile(
     ) {
         return unavailable('invalid-file-fields');
     }
-    if (name !== undefined && /Permission denied|Operation not permitted|no info|\((?:stat|readlink):/i.test(name)) {
-        return unavailable('file-inspection-diagnostic');
+    const inspectionMatch = name === undefined ? undefined : lsofInspectionMatch(name, type);
+    if (inspectionMatch !== undefined) {
+        report('file-inspection-diagnostic', describeLsofInspection(pid, fields[0], type, name, inspectionMatch));
+        return undefined;
     }
     if (type === undefined && (fields.length !== 2 || name === undefined || name === '')) {
         return unavailable('invalid-file-fields');
@@ -128,7 +132,7 @@ function parseLsofFile(
 
 export function parseLsofCensus(
     output: string,
-    report: (reason: string) => void = () => {}
+    report: (reason: string, detail?: string) => void = () => {}
 ): { pids: Set<number>; paths: string[] } | undefined {
     const unavailable = (reason: string) => {
         report(reason);
@@ -141,6 +145,7 @@ export function parseLsofCensus(
     const paths: string[] = [];
     let fileCount = 0;
     let missingType = false;
+    let currentPid = 0;
     const knownTypes = new Set([
         'REG',
         'DIR',
@@ -171,13 +176,14 @@ export function parseLsofCensus(
                 return unavailable('invalid-process-record');
             }
             pids.add(pid);
+            currentPid = pid;
             fileCount = 0;
             continue;
         }
         if (pids.size === 0) {
             return unavailable('invalid-descriptor');
         }
-        const file = parseLsofFile(fields, knownTypes, report);
+        const file = parseLsofFile(fields, knownTypes, currentPid, report);
         if (file === undefined) {
             return undefined;
         }

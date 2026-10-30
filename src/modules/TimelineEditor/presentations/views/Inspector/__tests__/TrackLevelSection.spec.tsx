@@ -23,6 +23,7 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => {
 
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
+    readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
     executeUserAppAction: vi.fn(),
     executeAppAction: (...args: unknown[]) => mockExecuteAppAction(...args),
