@@ -177,7 +177,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             void run();
         }, DEBOUNCE_MS),
     };
-    async function run(): Promise<void> {
+    const run = async (): Promise<void> => {
         try {
             if (
                 !owner.validSource ||
@@ -223,7 +223,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             owner.dispose();
             completion.resolve();
         }
-    }
+    };
     pending = scheduled;
     return completion.promise;
 }
