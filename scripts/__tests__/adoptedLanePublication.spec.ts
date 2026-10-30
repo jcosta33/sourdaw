@@ -61,7 +61,7 @@ function fixture() {
     saveLaneAdoptionRecord(root, pr.branch, adoption);
     let remote = OLD;
     let source = HEAD;
-    let publicPr = { ...pr };
+    let publicPr = pr;
     let exists = true;
     const effects: string[] = [];
     const body = composePublishBody(
@@ -79,7 +79,7 @@ function fixture() {
         dirty: () => false,
         laneSubject: () => 'feat: retain parent history',
         commitAuthorEmails: () => [{ sha: HEAD, email: AUTHOR_BOT_COMMIT_EMAIL }],
-        objectStoreRewrites: () => ({ replaceRefs: 0 }),
+        objectStoreRewrites: () => ({ graftsFile: undefined, replaceRefs: 0 }),
         headSha: () => source,
         remoteBranchSha: () => ({ kind: 'present', sha: remote }),
         isAncestor: () => true,
@@ -88,23 +88,25 @@ function fixture() {
             remote = head;
             publicPr = { ...publicPr, head };
         },
-        existingOpenPullRequest: () =>
-            exists
-                ? {
-                      number: publicPr.number,
-                      title: 'feat: preserve original work',
-                      body,
-                      baseRefName: publicPr.base,
-                      headRefOid: publicPr.head,
-                  }
-                : undefined,
+        existingOpenPullRequest: () => {
+            if (!exists) {
+                return undefined;
+            }
+            return {
+                number: publicPr.number,
+                title: 'feat: preserve original work',
+                body,
+                baseRefName: publicPr.base,
+                headRefOid: publicPr.head,
+            };
+        },
         adoptionRecord: (branch) => readLaneAdoptionRecord(root, branch),
         adoptionIntent: (branch) => readLaneAdoptionRecord(root, branch, true),
         saveAdoptionIntent: (branch, intent) => {
             effects.push('intent');
             saveLaneAdoptionRecord(root, branch, intent);
         },
-        observeAdoption: () => ({ ...publicPr }),
+        observeAdoption: () => publicPr,
         readPullRequestMergeability: () => 'mergeable',
         conflictingPaths: () => [],
         changedPaths: () => [],
@@ -234,7 +236,7 @@ describe('one successor of the exact adopted PR', () => {
         expect(() => publishLane(12, f.port)).toThrow('retain the original');
         expect(f.effects).toEqual([]);
         const g = fixture();
-        g.port.objectStoreRewrites = () => ({ replaceRefs: 1 });
+        g.port.objectStoreRewrites = () => ({ graftsFile: undefined, replaceRefs: 1 });
         g.port.isAncestor = () => {
             throw new Error('traversal must not run');
         };

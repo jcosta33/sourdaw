@@ -79,7 +79,7 @@ function fakeAdoption() {
         lockReason: AUTHOR_LOCK_REASON,
         primaryRoot: '/fixture',
         sourceCommit: BASE,
-        observe: () => ({ ...PR }),
+        observe: () => PR,
         receipt: () => receipt,
         save: (record) => {
             effects.push('receipt');
@@ -328,11 +328,13 @@ describe('public PR and immutable local evidence', () => {
             const read = (args: string[]) => {
                 const raw = f.read(args);
                 if (args.includes('--paginate')) {
-                    return mode === 'duplicate'
-                        ? JSON.stringify([...JSON.parse(raw), ...JSON.parse(raw)])
-                        : mode === 'truncated'
-                          ? '{}'
-                          : raw;
+                    if (mode === 'duplicate') {
+                        return JSON.stringify([...JSON.parse(raw), ...JSON.parse(raw)]);
+                    }
+                    if (mode === 'truncated') {
+                        return '{}';
+                    }
+                    return raw;
                 }
                 if (mode === 'ref' && args.at(-1)?.endsWith(PR.branch)) {
                     return raw.replace(HEAD, NEXT);
