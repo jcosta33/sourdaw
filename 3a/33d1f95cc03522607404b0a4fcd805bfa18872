@@ -1,0 +1,14 @@
+src/modules/AudioEngine/services/__tests__/dawDspBacteriaBodyDuration.spec.ts
+  h_beb54bf43b47b7 6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a33d1f95cc03522607404b0a4fcd805bfa18872",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
