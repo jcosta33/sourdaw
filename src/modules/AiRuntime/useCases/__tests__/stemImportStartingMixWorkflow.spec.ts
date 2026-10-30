@@ -831,7 +831,6 @@ describe('stem import and starting mix workflow', () => {
             mocks.generateWebLlmCompletion.mockImplementation(
                 createWebLlmResponder((plan) => plan, startingMixMetricIntake)
             );
-            const planning = vi.spyOn(promptParser, 'parsePromptToActions');
             flushAutomergeStorageWrites();
             const before = {
                 tracks: structuredClone(trackStore.value),
@@ -839,11 +838,16 @@ describe('stem import and starting mix workflow', () => {
                 revision: captureProjectRevision(),
             };
 
-            await sendChatMessage(prompt);
-            expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(6);
-            expect(planning).toHaveBeenCalledTimes(2);
-            const plans = await Promise.all(planning.mock.results.map((result) => result.value));
-            planning.mockRestore();
+            const planning = vi.spyOn(promptParser, 'parsePromptToActions');
+            let plans: Awaited<ReturnType<typeof promptParser.parsePromptToActions>>[];
+            try {
+                await sendChatMessage(prompt);
+                expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(6);
+                expect(planning).toHaveBeenCalledTimes(2);
+                plans = await Promise.all(planning.mock.results.map((result) => result.value));
+            } finally {
+                planning.mockRestore();
+            }
             expect(plans[0]?.preparationRequest).toBe('stem-import');
             for (const plan of plans) {
                 const receipts = plan.applicationToolReceipts ?? [];

@@ -642,10 +642,11 @@ function createTurnTrackedWebLlmResponder(
     intake: ScriptedTurn = literalMetricIntakeTurn
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
+    const maxTurns = intake === sharedBalanceMetricIntake ? 4 : 3;
     return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > (intake === sharedBalanceMetricIntake ? 4 : 3)) {
-            throw new Error('Expected exactly three WebLLM provider turns');
+        if (turn > maxTurns) {
+            throw new Error(`Expected at most ${maxTurns} WebLLM provider turns`);
         }
         if (turn === 1) {
             return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
