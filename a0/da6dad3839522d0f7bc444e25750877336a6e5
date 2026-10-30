@@ -1,0 +1,120 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-21,826-827
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 3-16,514-515
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 3-18,54-67,69-100
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-84,99-100
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 30,61
+.github/workflows/nightly.yml
+  h_beb54bf43b47b7 575,611
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 607,640
+docs/architecture/agent-release-gates.md
+  h_beb54bf43b47b7 3,9-10,17,51,68,85,119-122,130-131
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 6,816
+package.json
+  h_beb54bf43b47b7 144,180
+patches/vite@8.3.5.patch
+  h_beb54bf43b47b7 1-61
+pnpm-lock.yaml
+  h_beb54bf43b47b7 7-9,112-113,116,122,128,158,220-221,242,245,1280-1281,4848-4849,4853-4854,6669,6671,7485,7492,7674,7679,7735,7744,7748,7888,8247,8250,8252,8265,8273,8280,10480,10482,10484,11220,11229,11309,11324,11327,11338
+pnpm-workspace.yaml
+  h_beb54bf43b47b7 34-39
+public/entryLoadRecovery.js
+  h_beb54bf43b47b7 52-53
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,267-268,274-275,282,294,1390,1743,1755
+scripts/__tests__/agentCampaignHarness.spec.ts
+  h_beb54bf43b47b7 87-95
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  h_beb54bf43b47b7 7-8,70-81
+scripts/__tests__/e2eDevServer.spec.ts
+  h_beb54bf43b47b7 19-20,27,90-101
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 206,228,252,351-483
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 353,393,1002,1038,2006,2061
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 65,3250-3251
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 8-9,14,27,35-36,42,49,75,83-84,98,106-107,121,129-130,145,153-154,169,177-178,210-215,227-237,263-272,315-348,636
+scripts/__tests__/verifyPlaywrightRuntime.spec.ts
+  h_beb54bf43b47b7 8,13,19-20,28,35,43
+scripts/e2eDevServer.ts
+  h_beb54bf43b47b7 19-25
+scripts/offlineAudioWorkletTrace.ts
+  h_beb54bf43b47b7 65-74
+src/app/ApplicationFirstPaint.tsx
+  h_beb54bf43b47b7 3-4,10-18
+src/app/DesktopStartupError.tsx
+  h_beb54bf43b47b7 5,8-11,22
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  h_beb54bf43b47b7 1-2,7-16
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 245,284-286,288-293,436-474
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  h_beb54bf43b47b7 1-4,7,40,48,54,154-170,176,285-287,304-307,313,328,341-392
+src/app/main.tsx
+  h_beb54bf43b47b7 5,25-28,71,76-83,87-99
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 31-32,51,180-181,213,424-432,476,861-866,868-869,887,891,918-927,1499,1503,1505-1506,1519-1520,1533-1534,1641-1648,2942-3252,3273-3328
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  h_beb54bf43b47b7 2,14-15,18,56,90-92,108-110,129-130,151-152,165-166
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  h_beb54bf43b47b7 8-9,14,24-25,43,58,81,102-127,186-192,238-252
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  h_beb54bf43b47b7 66-86,135-140,162-164
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 1,14-15,194-275
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 4-10,174,181,201,281,288,302-445
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 1194-1196,1251-1253
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  h_beb54bf43b47b7 1-535
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 1-503
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 49-51
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 11
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  h_beb54bf43b47b7 1-205
+tests/e2e/firstPaintDiagnostics.ts
+  h_beb54bf43b47b7 113-149,173,175
+tests/e2e/firstPaintWarmup.ts
+  h_beb54bf43b47b7 9-14,88,104-132,135-147
+tests/e2e/fixtures/hmrDisconnect/App.js
+  h_beb54bf43b47b7 1-3
+tests/e2e/fixtures/hmrDisconnect/entry.js
+  h_beb54bf43b47b7 1-14
+tests/e2e/fixtures/hmrDisconnect/index.html
+  h_beb54bf43b47b7 1-12
+tests/e2e/fixtures/hmrDisconnect/style.css
+  h_beb54bf43b47b7 1-3
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 349,428
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0da6dad3839522d0f7bc444e25750877336a6e5",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
