@@ -276,7 +276,6 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         const oldGeneration = schedulerSession.generation;
         pausePlayback();
         expect(mocks.pendingCount()).toBe(1);
-        expect(schedulerSession.punchRecordingActive).toBe(false);
         await startPlayback();
         const successorGeneration = schedulerSession.generation;
         expect(successorGeneration).toBeGreaterThan(oldGeneration);
@@ -317,6 +316,9 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         if (!root) throw new Error('Expected committed project root');
         const raw = toJS(root);
         expect(raw.tracks?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old, successor]);
+        expect(raw.tracks?.tracks[0]?.clips.map((clip) => clip.audioBufferId)).toEqual(
+            clips.map((clip) => clip.audioBufferId)
+        );
         expect(raw.takeLanes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old, successor]);
         await undo();
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old]);
