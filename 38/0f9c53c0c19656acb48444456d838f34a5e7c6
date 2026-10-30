@@ -1,0 +1,36 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_b6d960d6f9ffc4::t_c9c1149394a20d 512-521
+  s_b6d960d6f9ffc4::t_a4f1ae1e4e7ea8 4-11,16-19,25,29,39,50-488,492-511,547-633,635,637-653
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_3bb122e91d89a5::t_2b3008f2db8324 3-4,26,73,75-82
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_3bb122e91d89a5::t_01f36b5bac9f9c 24-25,37,46,83-86
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_3bb122e91d89a5::t_b39068deda2103 3-4
+AGENTS.md
+  s_3bb122e91d89a5::t_d51f105573982a 69-73,211,498-499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "380f9c53c0c19656acb48444456d838f34a5e7c6",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
