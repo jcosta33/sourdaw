@@ -11,6 +11,8 @@ import { setInputMonitoring } from '../../../useCases/setTrackGainPan/setInputMo
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { TrackHeader } from '../TrackHeader';
 
+vi.unmock('#/components/ui/tooltip');
+
 // Mock external dependencies
 vi.mock('../../../useCases/toggleTrackState/muteTrack', () => ({
     muteTrack: vi.fn<(...args: unknown[]) => void>(),
@@ -187,6 +189,61 @@ describe('TrackHeader', () => {
         const frozenTrack = { ...mockTrack, frozen: true };
         renderWithTooltip(<TrackHeader track={frozenTrack} isSelected={false} />);
         expect(screen.getByText('FROZEN')).toBeInTheDocument();
+    });
+
+    it.each(['audio', 'midi', 'bus', 'master', 'folder'] as const)(
+        'shows a stored freeze error on a %s track and clears it on transition',
+        (kind) => {
+            const track = {
+                ...mockTrack,
+                kind,
+                frozen: true,
+                freezeState: { status: 'error' as const, errorMessage: 'Renderer ran out of memory' },
+            };
+            const { rerender } = renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
+            expect(screen.getByRole('button', { name: 'Freeze error: Renderer ran out of memory' })).toHaveTextContent(
+                'ERROR'
+            );
+            expect(screen.queryByTestId('track-frozen-badge')).not.toBeInTheDocument();
+
+            rerender(
+                <TooltipProvider>
+                    <TrackHeader track={{ ...track, freezeState: { status: 'unfrozen' } }} isSelected={false} />
+                </TooltipProvider>
+            );
+            expect(screen.queryByTestId('track-freeze-error-badge')).not.toBeInTheDocument();
+        }
+    );
+
+    it('uses a fallback for a freeze error without a reason', () => {
+        renderWithTooltip(
+            <TrackHeader track={{ ...mockTrack, freezeState: { status: 'error' } }} isSelected={false} />
+        );
+        expect(screen.getByRole('button', { name: 'Freeze error: Freeze failed. Try again.' })).toBeInTheDocument();
+    });
+
+    it.each(['unfrozen', 'freezing', 'frozen', 'stale'] as const)(
+        'does not show a freeze error in the %s state',
+        (status) => {
+            renderWithTooltip(<TrackHeader track={{ ...mockTrack, freezeState: { status } }} isSelected={false} />);
+            expect(screen.queryByTestId('track-freeze-error-badge')).not.toBeInTheDocument();
+        }
+    );
+
+    it.each(['focus', 'pointer'] as const)('reveals the full freeze error on %s', async (interaction) => {
+        const track = { ...mockFolderTrack, freezeState: { status: 'error' as const, errorMessage: 'Render failed' } };
+        render(
+            <TooltipProvider delayDuration={0}>
+                <TrackHeader track={track} isSelected={false} />
+            </TooltipProvider>
+        );
+        const badge = screen.getByRole('button', { name: 'Freeze error: Render failed' });
+        if (interaction === 'focus') {
+            fireEvent.focus(badge);
+        } else {
+            fireEvent.pointerMove(badge, { pointerType: 'mouse' });
+        }
+        expect(await screen.findByRole('tooltip')).toHaveTextContent('Render failed');
     });
 
     it('should render InputSelector for selected audio track', () => {
