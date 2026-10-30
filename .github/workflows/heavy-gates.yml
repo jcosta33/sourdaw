@@ -138,7 +138,7 @@ jobs:
     # proof and therefore fails, rather than skips, when macOS cannot provide a
     # core non-fallback adapter.
     if: inputs.browser-ai
-    runs-on: macos-14
+    runs-on: macos-15
     # Every step carries its own cap, and the caps leave the job two minutes of
     # runner overhead. Checkout took 44s at most in 88 successful admissions
     # from 2026-10-11 to 2026-10-21, but a slow merge-ref fetch hit a 1-minute
