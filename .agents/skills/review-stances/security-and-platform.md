@@ -72,6 +72,30 @@ dispatch.
 
 ## Lessons from escapes
 
+### Merged lane cleanup must prove release and survive removal refusal (introduced by PR #1802)
+
+PR #1802 introduced lane removal (`4404e50fdc`) and cwd-only activity inspection (`2a13a418e1`).
+A process outside the lane could hold a lane file open without blocking deletion, and a refused
+native removal after unlock lost the original author lock. Historic private stance, prompt and
+model are unestablished. A manual-only exit also left merged worktrees behind when delivery or its
+caller stopped before removal.
+
+Probe native removal with a spawned process whose cwd is elsewhere but whose descriptor holds a
+lane file; incomplete/denied lsof catalogs and omitted live same-user PIDs must retain the lane.
+Inject a native removal refusal after unlock and require the original author lock restored.
+Kill the worker after durable queue publication and require a later process to reclaim only after
+fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
+with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.
+
+Merge state alone does not prove that work reached `main`: an exact PR head merged into an open
+stack parent is still unlanded. Require a live `main` base and valid merge timestamp for author and
+review heads, and for the merged replacement of a closed superseded lane. Missing metadata stays
+unproven; a missing `merged_at` must never map to merged. Probe non-main and unknown bases, missing
+or malformed timestamps, open-state/timestamp contradictions and a base transition between the two
+ownership reads. Preserve valid main merges and closed stack lanes whose truthful replacement landed
+on main. The pre-publication integration probe exposed this eligibility gap before automatic cleanup
+was shipped; historical review dispatch details remain unestablished.
+
 ### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
 
 PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455
@@ -466,26 +490,17 @@ and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRC
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
 
-### Merged lane cleanup must prove release and survive removal refusal (introduced by PR #1802)
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
 
-PR #1802 introduced lane removal (`4404e50fdc`) and cwd-only activity inspection (`2a13a418e1`).
-A process outside the lane could hold a lane file open without blocking deletion, and a refused
-native removal after unlock lost the original author lock. Historic private stance, prompt and
-model are unestablished. A manual-only exit also left merged worktrees behind when delivery or its
-caller stopped before removal.
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
 
-Probe native removal with a spawned process whose cwd is elsewhere but whose descriptor holds a
-lane file; incomplete/denied lsof catalogs and omitted live same-user PIDs must retain the lane.
-Inject a native removal refusal after unlock and require the original author lock restored.
-Kill the worker after durable queue publication and require a later process to reclaim only after
-fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
-with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.
-
-Merge state alone does not prove that work reached `main`: an exact PR head merged into an open
-stack parent is still unlanded. Require a live `main` base and valid merge timestamp for author and
-review heads, and for the merged replacement of a closed superseded lane. Missing metadata stays
-unproven; a missing `merged_at` must never map to merged. Probe non-main and unknown bases, missing
-or malformed timestamps, open-state/timestamp contradictions and a base transition between the two
-ownership reads. Preserve valid main merges and closed stack lanes whose truthful replacement landed
-on main. The pre-publication integration probe exposed this eligibility gap before automatic cleanup
-was shipped; historical review dispatch details remain unestablished.
+Pair positive admission of all six declared Body keys and indices -1/0/1/2/3 through
+the real factory and production processor target with refusal of synthetic keys, band 6,
+nonfinite values, forged identity, wrong generation and replay. Caller project parameter
+maps must not widen the finite runtime schema. Remove only the declared Body key to
+make the positive factory probe fail; a hand-built permissive target cannot establish
+that valid controls cross the production trust boundary.
