@@ -5,7 +5,7 @@ import {
     captureFrameDrift,
     installPunchRecordingClockWitness,
     RECORDING_RENDER_QUANTUM_FRAMES,
-} from '../../../../../../tests/e2e/punchRecordingClockWitness';
+} from '../../../../../../tests/e2e/punchRecordingClockObserver';
 
 const SAMPLE_ZERO = 240_000;
 const SAMPLE_RATE = 48_000;
