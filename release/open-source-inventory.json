@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a7bafe90fb97fe027d9cc102c69b75f85a45c3d1dde5260e804942a0f39d1e1a:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:30f1f5a4623b7ced7d40e767a1e68f78dd506ec72ff1b081db58879d6a06b6e7:release/dependency-license-proofs.json"
+                "sha256:4082b470c2b743a67205ab9a24cce0f3175759844a0e432963e8c00190f592fa:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:01081de13255933af105c006f5b205407500688699222be606cf90e05051c2cd:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -400,7 +400,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563",
+                "sha256:7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1758,7 +1758,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563"
+            "sha256": "7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
