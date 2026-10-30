@@ -14,6 +14,7 @@ import { isProofChamberDevice, createProofChamberNode } from '../../engine/Proof
 import { isProofDevice, createProofNode } from '../../engine/ProofNode';
 import { isScoringDevice, createScoringNode } from '../../engine/ScoringNode';
 import { isToasterDevice, createToasterNode } from '../../engine/ToasterNode';
+import { createTransientShaperNode, isTransientShaperDevice } from '../../engine/TransientShaperNode';
 import { type DeviceRuntimeOfflineFacts } from '../../models/BuiltinDeviceRuntime';
 import { type RuntimeDeviceControlTarget } from '../../models/RuntimeDeviceControl';
 
@@ -331,6 +332,16 @@ export const NATIVE_DSP_DEVICE_FACTORIES: readonly NativeDspDeviceFactory[] = [
         type: 'native-scoring',
         matches: isScoringDevice,
         create: (ctx) => createScoringNode(ctx),
+        runtime: NATIVE_DSP_OFFLINE_RUNTIME,
+    },
+    {
+        type: 'transient-shaper',
+        matches: isTransientShaperDevice,
+        create: async (context) => {
+            const failure = createRuntimeFailureChannel();
+            const node = await createTransientShaperNode(context, undefined, failure.report);
+            return { ...node, runtimeFailure: failure.promise };
+        },
         runtime: NATIVE_DSP_OFFLINE_RUNTIME,
     },
     {

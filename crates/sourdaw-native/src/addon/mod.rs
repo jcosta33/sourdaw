@@ -29,6 +29,7 @@ use zeroize::Zeroizing;
 use crate::commands;
 use crate::events::{EventSink, EventStream};
 use crate::host::plugin_window::{NoWindowHost, PluginWindowHost};
+use crate::host::runtime_scope::RuntimeScope;
 use crate::NativeSingletons;
 
 use windows::{
@@ -125,7 +126,34 @@ impl SourdawNative {
     /// and the CLAP latency watcher outlive any single command and must still
     /// have somewhere to push.
     #[napi(constructor)]
-    pub fn new(on_event: EventEmitter) -> Self {
+    pub fn new(on_event: EventEmitter) -> Result<Self> {
+        reason(RuntimeScope::select(None))?;
+        Ok(Self::build(on_event))
+    }
+
+    /// Main-process-only selection. A legacy constructor cannot accept this contract.
+    #[napi(factory)]
+    pub fn with_runtime_scope_v1(on_event: EventEmitter, root: String) -> Result<Self> {
+        reason(RuntimeScope::select(Some(std::path::Path::new(&root))))?;
+        Ok(Self::build(on_event))
+    }
+
+    #[napi]
+    pub fn runtime_scope_info_v1(&self) -> Value {
+        serde_json::json!({
+            "version": 1,
+            "root": RuntimeScope::root(),
+            "data": RuntimeScope::path("native/data"),
+            "private": RuntimeScope::path("native/data/private"),
+            "cache": RuntimeScope::path("native/cache"),
+            "ipc": RuntimeScope::path("native/ipc"),
+            "projects": RuntimeScope::path("native/projects"),
+            "scanResponses": RuntimeScope::path("native/data/private/scan-responses"),
+            "exportStateAvailable": self.export_files.is_ok(),
+        })
+    }
+
+    fn build(on_event: EventEmitter) -> Self {
         // Before any command can be dispatched. `ensure_allowed_root` answers
         // an application-data path from the built-in roots without touching
         // the grant registry, so a private directory created lazily by the

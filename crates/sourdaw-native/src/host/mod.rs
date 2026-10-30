@@ -7,6 +7,7 @@ pub mod plugin_scan_policy;
 pub mod plugin_scan_worker;
 pub mod plugin_window;
 pub mod process_refusal_reporter;
+pub mod runtime_scope;
 pub mod tail_watcher;
 pub mod ui_thread;
 

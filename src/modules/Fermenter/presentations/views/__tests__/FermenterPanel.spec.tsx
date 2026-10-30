@@ -47,6 +47,7 @@ const midiLearnRotaryKnobMock = vi.hoisted(() =>
     ))
 );
 const setFermenterParamWithAudioMock = vi.hoisted(() => vi.fn());
+const selectFermenterFilterChoiceMock = vi.hoisted(() => vi.fn());
 const selectFermenterOscillatorEngineMock = vi.hoisted(() => vi.fn());
 const loadUserPatchesMock = vi.hoisted(() => vi.fn());
 const loadFermenterPatchWithAudioMock = vi.hoisted(() => vi.fn());
@@ -76,6 +77,10 @@ vi.mock('../../../useCases/fermenterParamBridge/loadFermenterPatchWithAudio', ()
 
 vi.mock('../../../useCases/fermenterParamBridge/setFermenterParamWithAudio', () => ({
     setFermenterParamWithAudio: setFermenterParamWithAudioMock,
+}));
+
+vi.mock('../../../useCases/selectFermenterFilterChoice', () => ({
+    selectFermenterFilterChoice: selectFermenterFilterChoiceMock,
 }));
 
 vi.mock('../../../useCases/selectFermenterOscillatorEngine', () => ({
@@ -479,9 +484,11 @@ describe('FermenterPanel', () => {
             fireEvent.click(screen.getByText('Band Pass'));
             // FILTER_MODEL_NAMES[1] = 'Moog (Warm)'.
             fireEvent.click(screen.getByText('Moog (Warm)'));
-            const calls = setFermenterParamWithAudioMock.mock.calls;
-            expect(calls.find(([, k]) => k === 'filterMode')![2]).toBe(2);
-            expect(calls.find(([, k]) => k === 'filterModel')![2]).toBe(1);
+            expect(selectFermenterFilterChoiceMock.mock.calls).toEqual([
+                ['fermenter-1', 'filterMode', 2],
+                ['fermenter-1', 'filterModel', 1],
+            ]);
+            expect(setFermenterParamWithAudioMock).not.toHaveBeenCalled();
         });
 
         it('routes the filter env-amount + keytrack knobs to their param keys', () => {

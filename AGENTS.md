@@ -111,10 +111,11 @@ Every reviewer carries the baseline posture regardless of stance: establish what
 each existing check to fail and whether it observes what its name claims. A pass alone is not
 evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
 mutation, then run the named spec; remaining green fails the round. The probe is a reviewer duty
-the orchestrator checks in the report, not a publication gate. Reviewers have no writable tree:
-they create a probe worktree and report a probe they cannot run as the probe-isolation rules in
-`.agents/skills/review-stances/README.md` prescribe, and the orchestrator validates or the author
-repairs in the change's existing lane.
+the orchestrator checks in the report, not a publication gate. Reviewers read the fixed commit and
+bundle by default and never create a worktree or clone. They may probe in the clean, committed author
+lane only through the exclusive handoff in [reviewer isolation](.agents/skills/review-stances/README.md#reviewer-isolation).
+If a probe cannot run, report its exact mutation, named check, and limitation for orchestrator or
+author execution; never report an unrun probe as passed.
 
 Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
 whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without

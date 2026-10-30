@@ -44,6 +44,7 @@ import {
     WINDOW_MAXIMIZED_CHANGED_CHANNEL,
 } from './channels.js';
 import { APPLY_GRAPH_COMMANDS, EXPOSED_COMMANDS, RETIRE_NATIVE_ENGINE, SCAN_PLUGINS } from './commands.js';
+import { createScopedNativeAddon } from './createScopedNativeAddon.js';
 import { createCommandStream, createEventForwarder } from './events.js';
 import {
     bindMainWindowOwnerTeardown,
@@ -78,6 +79,7 @@ import { createRendererSessionLifecycle, isRendererReplacingNavigation } from '.
 import { completeMacCloseAfterSessionQuiesce, createRendererSessionQuiescer } from './rendererSessionQuiescer.js';
 import { activateRendererWindow } from './rendererWindowActivation.js';
 import { registerCommandRouter } from './router.js';
+import { resolveRuntimeScope } from './runtimeScope.js';
 import { createScanSupervisor, type ScanSupervisor } from './scan.js';
 import { publishScanWorkerLaunch } from './scanWorker.js';
 import { applyPermissionPolicy, decideWindowOpen, isNavigationAllowed, trustedFrameGuard } from './security.js';
@@ -101,6 +103,10 @@ process.stderr.on('error', () => undefined);
 // once, at `ready`; the ESM main entry resumes after `ready` at the first await,
 // and a scheme registered then is silently an ordinary opaque scheme.
 registerAppScheme();
+
+// Profile selection must precede Chromium's profile lock and every ready callback.
+const runtimeScope = resolveRuntimeScope(process.env);
+runtimeScope?.configureChromium(app);
 
 // Browser Web Locks coordinate renderer contexts only after Chromium has
 // admitted them. The persistent Electron profile needs this earlier native
@@ -671,6 +677,7 @@ const createUtilityScanSupervisor = (addonPath: string): ScanSupervisor =>
                 env: {
                     ...process.env,
                     [NATIVE_ADDON_PATH_ENV]: addonPath,
+                    ...runtimeScope?.environment,
                 },
                 stdio: 'ignore',
             });
@@ -730,10 +737,16 @@ const startNativeSurface = (): void => {
     const addonPath = nativeAddonPath();
     try {
         const addon = loadNativeAddon({ path: addonPath, load: createRequire(import.meta.url) });
-        nativeHost = new addon.SourdawNative((event, payload) => {
-            forwardNativeEvent(event, payload, events, rendererTarget);
+        nativeHost = createScopedNativeAddon({
+            addon,
+            scope: runtimeScope,
+            onEvent: (event, payload) => forwardNativeEvent(event, payload, events, rendererTarget),
+            requireExportState: true,
         });
     } catch (error) {
+        if (runtimeScope !== undefined) {
+            throw error;
+        }
         console.error(
             `[shell] the native addon at ${addonPath} did not load: ${String(error)}. ` +
                 `Set ${NATIVE_ADDON_PATH_ENV} to a built addon; native commands are unavailable until then.`
@@ -801,7 +814,7 @@ const startNativeSurface = (): void => {
 };
 
 if (isPrimaryApplicationInstance) {
-    void app.whenReady().then(() => {
+    const startup = app.whenReady().then(() => {
         handleAppProtocol(resolveContentRoots());
         applyPermissionPolicy(session.defaultSession, { allowedOrigins: allowedOrigins() });
 
@@ -870,6 +883,13 @@ if (isPrimaryApplicationInstance) {
 
         createAndActivateWindow();
         rendererStartupComplete = true;
+    });
+    void startup.catch((error: unknown) => {
+        if (runtimeScope === undefined) {
+            throw error;
+        }
+        console.error(`[shell] private runtime startup refused: ${String(error)}`);
+        app.exit(1);
     });
 }
 

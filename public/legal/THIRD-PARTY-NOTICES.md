@@ -2,10 +2,10 @@
 
 ## Desktop runtime
 
-Desktop builds bundle [Electron 44.4.5](https://github.com/electron/electron/tree/694f45852a0f1726cd23bfd379854de489cccb65)
+Desktop builds bundle [Electron 44.9.1](https://github.com/electron/electron/tree/e02265be96c5e13ae43644ef482b718e1e800499)
 under the MIT license. That release embeds
-[Chromium 152.0.7977.130](https://chromium.googlesource.com/chromium/src/+/2c592105bbcd9490a9894df48d0fe59b2c512651)
-and [Node v24.21.0](https://github.com/nodejs/node/tree/955266bfdd854cd280dffd47548673914484e4c0).
+[Chromium 152.0.7977.167](https://chromium.googlesource.com/chromium/src/+/dd78960ccd8a03a2fe1f629543d27783885b78e9)
+and [Node v24.22.0](https://github.com/nodejs/node/tree/f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93).
 Its media runtime includes
 [FFmpeg](https://chromium.googlesource.com/chromium/third_party/ffmpeg/+/2b68d2babae73714846961fb0ee47e3b3d2e39a9)
 under LGPL-2.1-or-later.

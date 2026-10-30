@@ -2,20 +2,28 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     subscribe: vi.fn((_listener: (docId?: string) => void) => vi.fn()),
+    getDocument: vi.fn((_id: string) => undefined),
+    captureRootIdentity: vi.fn(() => JSON.stringify({ rootIdentityEpoch: 0 })),
     toasterSweep: vi.fn(),
     levainSweep: vi.fn(),
     crumbsSweep: vi.fn(),
+    configureSampleAccess: vi.fn((_capture: (deviceId: string) => number | null) => vi.fn()),
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     subscribeToCrdtChanges: mocks.subscribe,
+    getCrdtDoc: mocks.getDocument,
+    captureProjectRootIdentity: mocks.captureRootIdentity,
 }));
 // The seam is document glue and nothing else: three owner sweeps it runs in
 // registration order and a document filter it owns.
 vi.mock('#/modules/Toaster/useCases', () => ({ reconcileToasterKitsFromProject: mocks.toasterSweep }));
 vi.mock('#/modules/Levain/useCases', () => ({ reconcileLevainDeviceStatesFromProject: mocks.levainSweep }));
-vi.mock('#/modules/Crumbs/useCases', () => ({ reconcileCrumbsDeviceStatesFromProject: mocks.crumbsSweep }));
+vi.mock('#/modules/Crumbs/useCases', () => ({
+    reconcileCrumbsDeviceStatesFromProject: mocks.crumbsSweep,
+    configureCrumbsSampleProjectAccess: mocks.configureSampleAccess,
+}));
 
 import { initDeviceStateReconciliation } from '../initDeviceStateReconciliation';
 
@@ -51,6 +59,24 @@ describe('initDeviceStateReconciliation', () => {
         expect(mocks.toasterSweep).toHaveBeenCalledTimes(1);
         expect(mocks.levainSweep).toHaveBeenCalledTimes(1);
         expect(mocks.crumbsSweep).toHaveBeenCalledTimes(1);
+    });
+
+    it('registers the current sample owner reader and disposes that registration', () => {
+        expect(mocks.configureSampleAccess).toHaveBeenCalledExactlyOnceWith(expect.any(Function));
+        const capture = mocks.configureSampleAccess.mock.calls.at(-1)?.[0];
+        if (!capture) {
+            throw new Error('Expected the actual sample owner reader');
+        }
+        expect(capture('missing-crumbs-device')).toBeNull();
+        expect(mocks.getDocument).toHaveBeenCalledExactlyOnceWith('root');
+        expect(mocks.captureRootIdentity).not.toHaveBeenCalled();
+        const dispose = mocks.configureSampleAccess.mock.results.at(-1)?.value;
+        if (!dispose) {
+            throw new Error('Expected the sample access disposer');
+        }
+        stop?.();
+        stop = undefined;
+        expect(dispose).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('runs the sweeps on a bulk change that names no document', async () => {

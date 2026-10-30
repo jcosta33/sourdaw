@@ -5,6 +5,7 @@
  */
 
 import { createStore } from '#/infra/store/createStore';
+import { valuesEqual } from '#/utils/structuralEquality';
 
 import {
     CRUMBS_PARAM_TARGETS,
@@ -123,11 +124,16 @@ export function setActiveSample(instanceId: string, sample: SampleMeta): void {
         if (!s || !s[instanceId]) {
             return s;
         }
+        let waveformPeaks: number[] = [];
+        if (valuesEqual(s[instanceId].activeSample, sample)) {
+            waveformPeaks = s[instanceId].waveformPeaks;
+        }
         return {
             ...s,
             [instanceId]: {
                 ...s[instanceId],
                 activeSample: sample,
+                waveformPeaks,
                 rootNote: sample.detectedRoot ?? 60,
                 isLoading: false,
             },

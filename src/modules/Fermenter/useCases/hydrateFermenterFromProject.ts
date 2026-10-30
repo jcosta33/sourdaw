@@ -64,10 +64,16 @@ export function hydrateFermenterFromProject(deviceId: string): FermenterPatch | 
 
     const patch: FermenterPatch = {
         ...currentPatch,
-        // Undo of the first Engine selection removes its leaf, restoring the default.
+        // Undo of a first discrete selection removes its leaf, restoring the default.
         oscEngine: Object.hasOwn(device.parameterValues ?? {}, 'oscEngine')
             ? currentPatch.oscEngine
             : DEFAULT_PATCH.oscEngine,
+        filterModel: Object.hasOwn(device.parameterValues ?? {}, 'filterModel')
+            ? currentPatch.filterModel
+            : DEFAULT_PATCH.filterModel,
+        filterMode: Object.hasOwn(device.parameterValues ?? {}, 'filterMode')
+            ? currentPatch.filterMode
+            : DEFAULT_PATCH.filterMode,
         macros: [...currentPatch.macros],
         macroMappings: currentPatch.macroMappings ? [...currentPatch.macroMappings] : undefined,
     };

@@ -47,6 +47,7 @@ const NATIVE_BUILTIN_PARAMETER_NAMES: Record<NativeDspDeviceType, EngineParamete
     'dutch-oven': null,
     'native-scoring': null,
     knead: null,
+    'transient-shaper': null,
 };
 
 /**

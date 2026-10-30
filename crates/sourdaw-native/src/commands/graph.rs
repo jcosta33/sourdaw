@@ -2309,7 +2309,15 @@ fn resolved_param_writes<T>(
         .map(|key| {
             let param = resolve(key)?;
             let value = device.parameter_values[key];
-            Ok((param, finite(value, "device parameter value")? as f32))
+            let value = finite(value, "device parameter value")?;
+            let value = if builtin_device_type(&device.device_type)
+                == Some(BuiltinEffectType::TransientShaper)
+            {
+                value.clamp(0.0, 2.0)
+            } else {
+                value
+            };
+            Ok((param, value as f32))
         })
         .collect()
 }
@@ -2414,6 +2422,14 @@ fn builtin_parameter(
             }
             builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
         }
+        BuiltinEffectType::TransientShaper => {
+            if !matches!(key, "attackGain" | "sustainGain") {
+                return Err(format!(
+                    "device '{device_id}' has no Transient Shaper parameter '{key}'"
+                ));
+            }
+            builtin_named_parameter(key, device_id).map(DeviceParam::BuiltinNamed)
+        }
         BuiltinEffectType::Knead => DeviceParam::from_name(key).ok_or_else(|| {
             format!("device '{device_id}' carries parameter '{key}', which knead does not map")
         }),
@@ -2475,6 +2491,11 @@ fn immediate_device_parameters(
             let param = builtin_parameter(builtin, key, device_id)
                 .map_err(|reason| format!("set-device-parameters: {reason}"))?;
             let value = finite(values[key], &format!("set-device-parameters value '{key}'"))?;
+            let value = if builtin == BuiltinEffectType::TransientShaper {
+                value.clamp(0.0, 2.0)
+            } else {
+                value
+            };
             Ok((param, value as f32))
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -2863,6 +2884,16 @@ fn map_device(
                 },
             )
         }
+        BuiltinEffectType::TransientShaper => resolved_param_writes(device, |key| {
+            builtin_parameter(builtin, key, &device.id)?;
+            builtin_named_parameter(key, &device.id)
+        })
+        .map(|patch| {
+            (
+                PluginCore::transient_shaper_with_patch(sample_rate, &patch),
+                Vec::new(),
+            )
+        }),
         BuiltinEffectType::Scoring => {
             resolved_param_writes(device, |key| builtin_named_parameter(key, &device.id)).map(
                 |patch| {
@@ -3862,6 +3893,11 @@ fn map_command(
                     let at_frame =
                         seconds_to_frames(*time, sample_rate, "write-device-parameter time")?;
                     let value = finite(*value, "write-device-parameter value")?;
+                    let value = if device.builtin() == Some(BuiltinEffectType::TransientShaper) {
+                        value.clamp(0.0, 2.0)
+                    } else {
+                        value
+                    };
                     budgets
                         .charge_device_param(effect_id, param, at_frame)
                         .map_err(|reason| format!("write-device-parameter: {reason}"))?;
@@ -17320,5 +17356,138 @@ mod tests {
         let samples = state.timeline_samples.lock().unwrap();
         assert!(map_unbound_batch(&again, &mut registry, &samples, 48000.0).is_ok());
         assert_eq!(registry.track_count, MAX_TIMELINE_TRACKS);
+    }
+
+    #[test]
+    fn transient_shaper_serde_mapper_registers_an_effect_and_renders_the_shared_scalar() {
+        let mapped = map_unbound_batch(
+            &batch(strip_with_device(
+                "d-shaper",
+                "transient-shaper",
+                json!({"attackGain":1.5,"sustainGain":0.25}),
+            )),
+            &mut GraphRegistry::default(),
+            &sample_pool(),
+            48_000.0,
+        )
+        .unwrap();
+        assert!(mapped.ops.iter().any(|op| matches!(
+            op,
+            GraphCommand::AddDetachedEffect(_, PluginCore::TransientShaper(_), None)
+        )));
+        assert_eq!(inserted_chain_kinds(&mapped.ops), vec![DeviceKind::Effect]);
+        assert!(builtin_param_writes(&mapped.ops).is_empty());
+        let material = vec![0.5; 48_000];
+        let unity =
+            render_builtin_clip("transient-shaper", "d-shaper", json!({}), material.clone());
+        let shaped = render_builtin_clip(
+            "transient-shaper",
+            "d-shaper",
+            json!({"attackGain":1.5,"sustainGain":0.25}),
+            material,
+        );
+        let mut oracle = daw_dsp::toaster::transient::TransientShaper::new(48_000.0);
+        oracle.set_attack(1.5);
+        oracle.set_sustain(0.25);
+        for (dry, frame) in unity.chunks_exact(2).zip(shaped.chunks_exact(2)) {
+            assert_eq!(dry, &[0.5, 0.5]);
+            let expected = oracle.process(0.5);
+            assert_eq!(frame, &[expected, expected]);
+        }
+        assert_ne!(unity, shaped);
+    }
+
+    #[test]
+    fn transient_shaper_f64_clamps_before_narrowing_on_all_wire_routes() {
+        for value in [f64::MAX, -f64::MAX] {
+            let expected = if value > 0.0 { 2.0 } else { 0.0 };
+            for device_type in ["transient-shaper", "TRANSIENT-SHAPER"] {
+                let rendered = render_builtin_clip(
+                    device_type,
+                    "d-shaper",
+                    json!({"attackGain":value,"sustainGain":value}),
+                    vec![0.5; 48_000],
+                );
+                assert!(rendered.iter().all(|sample| *sample == expected * 0.5));
+            }
+            let values = HashMap::from([("attackGain".to_string(), value)]);
+            assert_eq!(
+                immediate_device_parameters(
+                    BuiltinEffectType::TransientShaper,
+                    &values,
+                    "d-shaper"
+                )
+                .unwrap()[0]
+                    .1,
+                expected
+            );
+            let mut registry = GraphRegistry::default();
+            map_unbound_batch(
+                &batch(strip_with_device("d-shaper", "transient-shaper", json!({}))),
+                &mut registry,
+                &sample_pool(),
+                48_000.0,
+            )
+            .unwrap();
+            let mapped = map_unbound_batch(&batch(json!([{
+                "kind":"write-device-parameter",
+                "target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-shaper","parameterId":"attackGain"},
+                "write":{"shape":"step","value":value,"time":0}
+            }])), &mut registry, &sample_pool(), 48_000.0).unwrap();
+            assert!(mapped.ops.iter().any(|op| matches!(op, GraphCommand::AutomateDeviceParam {value,..} if *value == f64::from(expected))));
+        }
+        for name in ["_resetEpoch", "unknown", "attack_gain"] {
+            assert!(
+                builtin_parameter(BuiltinEffectType::TransientShaper, name, "d-shaper").is_err()
+            );
+            assert!(map_unbound_batch(
+                &batch(strip_with_device(
+                    "d-shaper",
+                    "transient-shaper",
+                    json!({(name):1})
+                )),
+                &mut GraphRegistry::default(),
+                &sample_pool(),
+                48_000.0
+            )
+            .is_err());
+        }
+    }
+
+    #[test]
+    fn transient_shaper_serde_immediate_steps_hold_and_bypass_render_actual_audio() {
+        let source = sample_pool();
+        let mut commands = strip_with_device("d-shaper", "transient-shaper", json!({}))
+            .as_array()
+            .unwrap()
+            .clone();
+        commands.extend([
+            json!({"kind":"set-device-bypass","trackId":"t1","deviceId":"d-shaper","bypassed":true}),
+            json!({"kind":"set-device-parameters","trackId":"t1","deviceId":"d-shaper","values":{"attackGain":1.5,"sustainGain":0.25}}),
+            json!({"kind":"set-device-bypass","trackId":"t1","deviceId":"d-shaper","bypassed":false}),
+            json!({"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-shaper","parameterId":"attackGain"},"write":{"shape":"step","value":2,"time":700.0/48000.0}}),
+            json!({"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-shaper","parameterId":"attackGain"},"write":{"shape":"step","value":0.5,"time":1300.0/48000.0}}),
+            json!({"kind":"write-device-parameter","target":{"kind":"device-parameter","trackId":"t1","deviceId":"d-shaper","parameterId":"attackGain"},"write":{"shape":"hold","time":1200.0/48000.0}}),
+            json!({"kind":"schedule-clip","playback":{"trackId":"t1","source":{"sourceId":"source-a"},"startTime":0,"sourceOffsetSeconds":0,"durationSeconds":0.1,"playbackRate":1,"gain":1,"fade":{"microFadeSeconds":0}}}),
+        ]);
+        let rendered = render_offline_batch(
+            &batch(json!(commands)),
+            &source,
+            &mut LevainBankStore::default(),
+            4800,
+            48000.0,
+        )
+        .unwrap();
+        let mut scalar = daw_dsp::toaster::transient::TransientShaper::new(48000.0);
+        scalar.set_sustain(0.25);
+        for (frame, pair) in rendered.chunks_exact(2).enumerate() {
+            scalar.set_attack(if frame < 512 { 1.5 } else { 2.0 });
+            let expected = scalar.process(0.5);
+            assert_eq!(
+                pair,
+                &[expected, expected],
+                "native offline block-step frame {frame}"
+            );
+        }
     }
 }

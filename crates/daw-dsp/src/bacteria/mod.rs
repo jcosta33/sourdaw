@@ -19,6 +19,7 @@ pub mod lofi;
 pub mod modulation;
 pub mod params;
 pub mod spectral;
+mod spring_body;
 pub mod stft;
 pub mod waveshaper;
 

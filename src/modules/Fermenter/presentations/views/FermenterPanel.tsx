@@ -26,6 +26,7 @@ import { loadFermenterPatchWithAudio } from '../../useCases/fermenterParamBridge
 import { setFermenterParamWithAudio } from '../../useCases/fermenterParamBridge/setFermenterParamWithAudio';
 import { FERMENTER_PRESETS } from '../../useCases/fermenterQueries/helpers';
 import { hydrateFermenterFromProject } from '../../useCases/hydrateFermenterFromProject';
+import { selectFermenterFilterChoice } from '../../useCases/selectFermenterFilterChoice';
 import { selectFermenterOscillatorEngine } from '../../useCases/selectFermenterOscillatorEngine';
 import { loadUserPatches } from '../../useCases/user-patches/load-user-patches';
 import { saveUserPatch } from '../../useCases/user-patches/save-user-patch';
@@ -501,6 +502,10 @@ export const FermenterPanel = ({ deviceId }: { deviceId: string }): ReactElement
     function onParam(key: string, value: number): void {
         if (key === 'oscEngine') {
             void selectFermenterOscillatorEngine(deviceId, value);
+            return;
+        }
+        if (key === 'filterModel' || key === 'filterMode') {
+            void selectFermenterFilterChoice(deviceId, key, value);
             return;
         }
         setFermenterParamWithAudio(deviceId, key as keyof FermenterPatch, value);

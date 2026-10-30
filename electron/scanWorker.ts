@@ -30,7 +30,9 @@
 import { createRequire } from 'node:module';
 import { dirname, resolve } from 'node:path';
 
+import { createScopedNativeAddon } from './createScopedNativeAddon.js';
 import { loadNativeAddon, resolveNativeAddonPath, type NativeCommand, type NativeHost } from './native.js';
+import { resolveRuntimeScope } from './runtimeScope.js';
 
 /**
  * The env var carrying the leaf spawn command to the Rust policy.
@@ -166,6 +168,7 @@ export const handleScanRequest = async (message: unknown, scanPlugins: NativeCom
 };
 
 const main = (): void => {
+    const runtimeScope = resolveRuntimeScope(process.env);
     const addon = loadNativeAddon({
         path: resolveNativeAddonPath({
             env: process.env,
@@ -180,11 +183,16 @@ const main = (): void => {
         load: createRequire(import.meta.url),
     });
 
-    const host = new addon.SourdawNative(() => {
-        // The scan path pushes no events, and this process has no renderer to
-        // push them to. A sink that does nothing is deliberate: the addon
-        // requires one, and forwarding from here would invent a second event
-        // path that nothing listens on.
+    const host = createScopedNativeAddon({
+        addon,
+        scope: runtimeScope,
+        requireExportState: false,
+        onEvent: () => {
+            // The scan path pushes no events, and this process has no renderer to
+            // push them to. A sink that does nothing is deliberate: the addon
+            // requires one, and forwarding from here would invent a second event
+            // path that nothing listens on.
+        },
     });
     const scanPlugins = nativeCommand(host, 'scanPlugins');
 

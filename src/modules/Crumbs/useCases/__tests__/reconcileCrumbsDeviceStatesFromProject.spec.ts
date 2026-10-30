@@ -34,6 +34,7 @@ vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAp
 
 import { setCrumbsEventBus } from '../../stores/crumbsEventBus';
 import { crumbsStore, defaultCrumbsState, setMode, setTune } from '../../stores/crumbsStore';
+import { configureCrumbsSampleProjectAccess } from '../configureCrumbsSampleProjectAccess';
 import { initCrumbsDeviceStatePersistence } from '../initCrumbsDeviceStatePersistence';
 import { loadSampleFromPath } from '../loadSample';
 import { reconcileCrumbsDeviceStatesFromProject } from '../reconcileCrumbsDeviceStatesFromProject';
@@ -132,9 +133,11 @@ function setDeviceStateCommits(): SetDeviceStateAction[] {
 
 describe('reconcileCrumbsDeviceStatesFromProject', () => {
     let stopPersistence: () => void;
+    let disposeAccess: () => void;
 
     beforeEach(() => {
         vi.clearAllMocks();
+        disposeAccess = configureCrumbsSampleProjectAccess(() => 1);
         mocks.nativeLoadSample.mockResolvedValue(LOCAL_DECODE_OF_B);
         mocks.trackStore.value = undefined;
         setCrumbsEventBus({ emit: mocks.emitModeChanged });
@@ -147,6 +150,7 @@ describe('reconcileCrumbsDeviceStatesFromProject', () => {
 
     afterEach(() => {
         stopPersistence();
+        disposeAccess();
         crumbsStore.set({});
     });
 

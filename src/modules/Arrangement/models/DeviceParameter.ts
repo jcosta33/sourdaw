@@ -18,6 +18,7 @@ import { LEVAIN_DESCRIPTOR } from './PluginDescriptors/LevainDescriptor';
 import { NATIVE_DSP_DESCRIPTORS } from './PluginDescriptors/NativeDspDescriptors';
 import { PROOF_DESCRIPTOR } from './PluginDescriptors/ProofDescriptor';
 import { TOASTER_DESCRIPTOR } from './PluginDescriptors/ToasterDescriptor';
+import { TRANSIENT_SHAPER_DESCRIPTOR } from './PluginDescriptors/TransientShaperDescriptor';
 import { YEAST_DESCRIPTOR } from './PluginDescriptors/YeastDescriptor';
 
 /**
@@ -182,6 +183,7 @@ export const BUILTIN_PLUGINS: PluginDescriptor[] = [
     CRUMBS_DESCRIPTOR,
     GRAND_BOULE_DESCRIPTOR,
     KNEAD_DESCRIPTOR,
+    TRANSIENT_SHAPER_DESCRIPTOR,
 ];
 
 // ── Utility functions ──────────────────────────────────────────────────────

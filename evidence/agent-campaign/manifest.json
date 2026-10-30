@@ -7,7 +7,7 @@
     },
     "capabilityInventory": {
         "source": "src/app/getAgentProtocolManifest.ts",
-        "digest": "1b90c5ba6680faa0903aa982f6de122a9868a43af1dcf7fdf7d927fc16fe5f3f"
+        "digest": "1a117d1d766b6cdd7c86015c3db10dd5a1a833e85347d435cfddd56891043038"
     },
     "census": {
         "digest": "fab967ce35ead06daa75511f79664e42a0bc84674d23f8c20fe256def7e32e06"
@@ -620,7 +620,7 @@
             "fixtures": [
                 {
                     "path": "crates/daw-engine/src",
-                    "digest": "3f59586a87b7240b86158248347479690c6b5e0b729969dd83cada2c1dc44c71"
+                    "digest": "677eafe99735c16af2df1b6e9ce5732933e3deac1e073c02ff3094720b609c64"
                 },
                 {
                     "path": "src/modules/AudioEngine/useCases/__tests__/agentGraphBoundary.spec.ts",

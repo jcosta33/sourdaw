@@ -1,7 +1,9 @@
 import { DOC_PREFIX_ROOT, subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
-import { reconcileCrumbsDeviceStatesFromProject } from '#/modules/Crumbs/useCases';
+import { configureCrumbsSampleProjectAccess, reconcileCrumbsDeviceStatesFromProject } from '#/modules/Crumbs/useCases';
 import { reconcileLevainDeviceStatesFromProject } from '#/modules/Levain/useCases';
 import { reconcileToasterKitsFromProject } from '#/modules/Toaster/useCases';
+
+import { createCrumbsSampleProjectAccess } from './createCrumbsSampleProjectAccess';
 
 /**
  * Re-run the Toaster, Levain and Crumbs device sweeps on every change to the
@@ -35,10 +37,14 @@ import { reconcileToasterKitsFromProject } from '#/modules/Toaster/useCases';
 export function initDeviceStateReconciliation(): () => void {
     let subscribed = true;
     let sweepScheduled = false;
+    const sampleAccess = createCrumbsSampleProjectAccess();
+    const disposeSampleAccess = configureCrumbsSampleProjectAccess(sampleAccess.capture);
     const unsubscribe = subscribeToCrdtChanges((docId) => {
         if (docId !== undefined && docId !== DOC_PREFIX_ROOT) {
             return;
         }
+        // Observe removal/replacement before burst coalescing can hide an owner ABA.
+        sampleAccess.refresh();
         if (sweepScheduled) {
             return;
         }
@@ -56,5 +62,6 @@ export function initDeviceStateReconciliation(): () => void {
     return () => {
         subscribed = false;
         unsubscribe();
+        disposeSampleAccess();
     };
 }

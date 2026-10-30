@@ -40,7 +40,21 @@ async function revertActionGroupAtomicallyImpl(
             detail: 'Part of the group has no inverse command to replay',
         };
     }
-    const outcome = await executeActionGroupUndo(entries, options);
+    let historyFinalized = false;
+    const finalizeHistory = () => {
+        if (historyFinalized) {
+            return;
+        }
+        // History follows publication before an asynchronous effect can clear it or a later
+        // musician edit can invalidate its Redo, including an ambiguous publication's effects.
+        historyFinalized = true;
+        commitRevertedEntries(entries);
+    };
+    const outcome = await executeActionGroupUndo(entries, {
+        ...options,
+        onCommitted: finalizeHistory,
+        onAmbiguousCommit: finalizeHistory,
+    });
     if (outcome.status === 'conflict') {
         return {
             status: 'refused',
@@ -55,7 +69,25 @@ async function revertActionGroupAtomicallyImpl(
             detail: 'Part of the group has no inverse command to replay',
         };
     }
-    commitRevertedEntries(entries);
+    if (!historyFinalized) {
+        // No-op replay still yields. It may consume history only while the caller's project
+        // authority and the untouched history snapshot both remain current.
+        if (options?.shouldExecute && !options.shouldExecute()) {
+            return {
+                status: 'refused',
+                reason: 'conflict',
+                detail: 'The project state has changed since the group was applied',
+            };
+        }
+        if (undoStore.value !== state) {
+            return {
+                status: 'refused',
+                reason: 'not-applied',
+                detail: 'The undo history changed before the group could be reverted',
+            };
+        }
+        finalizeHistory();
+    }
     return { status: 'reverted', warning: outcome.status === 'committed' ? readCommittedWarning(outcome.error) : null };
 }
 
@@ -67,6 +99,7 @@ async function revertActionGroupAtomicallyImpl(
  * command, and one whose inverses conflict with the project as it is now are refused and stay
  * exactly where they were. A caller's `shouldExecute` is the batch's own last authority check
  * before it writes: once it answers false, nothing is written and the group is refused as a conflict.
+ * A replay that writes nothing rechecks that authority before consuming its unchanged history.
  */
 export function revertActionGroupAtomically(
     groupId: string,
