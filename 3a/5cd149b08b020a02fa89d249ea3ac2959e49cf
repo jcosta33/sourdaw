@@ -1,0 +1,23 @@
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_567a084d0540c4::t_0aa9cc08fc2bb3 49-51
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  s_567a084d0540c4::t_0aa9cc08fc2bb3 70,77
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_0aa9cc08fc2bb3 27-34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a5cd149b08b020a02fa89d249ea3ac2959e49cf",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
