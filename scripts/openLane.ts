@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync, lstatSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, readFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
