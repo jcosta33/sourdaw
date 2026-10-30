@@ -4,21 +4,81 @@ import { render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    App: function MockApp() {
+        return null;
+    },
     bootstrap: vi.fn(),
     clearInheritedRetrospectiveCaptureArm: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
     reloadApplication: vi.fn(),
-    render: vi.fn(),
+    loadApp: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    render: vi.fn<(element: unknown) => void>(),
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
     setCommandEventBus: vi.fn(),
     setNotificationEventBus: vi.fn(),
     setVoiceToggleEventBus: vi.fn(),
+    isExactMidiClipDataActionSnapshot:
+        vi.fn<typeof import('#/modules/MIDI/useCases').isExactMidiClipDataActionSnapshot>(),
     setWebMidiRuntimeEventBus: vi.fn(),
     setWorkspaceEventBus: vi.fn(),
 }));
+
+function deferredGate(): { promise: Promise<void>; release: () => void } {
+    let resolveGate: (() => void) | undefined;
+    const promise = new Promise<void>((resolve) => {
+        resolveGate = resolve;
+    });
+    return {
+        promise,
+        release: () => resolveGate?.(),
+    };
+}
+
+let pendingStartupCompletion: Promise<void> | undefined;
+let releaseDesktopReset: (() => void) | undefined;
+let releaseAppImport: (() => void) | undefined;
+let restoreAppRender: (() => void) | undefined;
+let appRenderObserved = false;
+let startupSettled = false;
+let appImportGateReleasedByCleanup = false;
+let requireStartupCleanupBeforeNextCase = false;
+
+function observeFinalAppRender(): void {
+    const previousImplementation = mocks.render.getMockImplementation();
+    let resolveStartupCompletion: (() => void) | undefined;
+    pendingStartupCompletion = new Promise<void>((resolve) => {
+        resolveStartupCompletion = resolve;
+    });
+    appRenderObserved = false;
+    startupSettled = false;
+    mocks.render.mockImplementation((element) => {
+        previousImplementation?.(element);
+        if (isValidElement(element) && element.type === mocks.App) {
+            appRenderObserved = true;
+            resolveStartupCompletion?.();
+        }
+    });
+    restoreAppRender = () => {
+        mocks.render.mockImplementation(previousImplementation ?? (() => undefined));
+        restoreAppRender = undefined;
+    };
+}
+
+async function settlePendingStartup(): Promise<void> {
+    releaseDesktopReset?.();
+    releaseAppImport?.();
+    if (pendingStartupCompletion) {
+        await pendingStartupCompletion;
+        pendingStartupCompletion = undefined;
+        startupSettled = true;
+        restoreAppRender?.();
+    }
+    releaseDesktopReset = undefined;
+    releaseAppImport = undefined;
+}
 
 function observeNextRender(): Promise<void> {
     return new Promise((resolve) => {
@@ -53,11 +113,6 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
     }
 }
 
-vi.mock('../bootstrap', () => {
-    mocks.bootstrap();
-    return {};
-});
-
 vi.mock('#/styles/main.css', () => ({}));
 
 vi.mock('../browserDisplayScaleHost', () => ({
@@ -87,6 +142,8 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    isExactMidiClipDataActionSnapshot: mocks.isExactMidiClipDataActionSnapshot,
+    decodeMidiClipDataSnapshots: vi.fn(() => null),
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
     projectClipControllerEvents: vi.fn(),
     projectChannelBend: vi.fn(),
@@ -161,6 +218,9 @@ vi.mock('#/modules/MIDI/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    commitRedoInverseCapture: vi.fn(),
+    readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
+
     getExecutableAppActionEffect: vi.fn(() => null),
     isAppActionConflictError: vi.fn(() => false),
     setCommandEventBus: mocks.setCommandEventBus,
@@ -181,15 +241,8 @@ vi.mock('#/utils/Notification/notificationEventBus', () => ({
     setNotificationEventBus: mocks.setNotificationEventBus,
 }));
 
-vi.mock('../App', () => ({
-    __esModule: true,
-    then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
-        return Promise.resolve({ App: () => null }).then(onFulfilled, onRejected);
-    },
-}));
-
 vi.mock('react-dom/client', () => ({
-    createRoot: () => ({ render: mocks.render }),
+    createRoot: vi.fn(() => ({ render: mocks.render })),
 }));
 
 function expectFirstPaintRendered(): void {
@@ -209,16 +262,42 @@ function expectFirstPaintRendered(): void {
 }
 
 describe('app main composition', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
+        await settlePendingStartup();
+        if (requireStartupCleanupBeforeNextCase) {
+            expect(appImportGateReleasedByCleanup).toBe(true);
+            expect(appRenderObserved).toBe(true);
+            expect(startupSettled).toBe(true);
+            requireStartupCleanupBeforeNextCase = false;
+        }
         vi.clearAllMocks();
         vi.resetModules();
+        mocks.loadApp.mockReset();
+        mocks.loadApp.mockImplementation(() => Promise.resolve());
+        appImportGateReleasedByCleanup = false;
+        appRenderObserved = false;
+        startupSettled = false;
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
         document.body.innerHTML = '<div id="root"></div>';
         mocks.resolveAppComposition.mockReturnValue('browser-host');
+        vi.doMock('../bootstrap', () => {
+            mocks.bootstrap();
+            return {};
+        });
+        vi.doMock('../App', () => ({
+            App: mocks.App,
+            then(onFulfilled: (value: { App: typeof mocks.App }) => unknown, onRejected: (error: unknown) => unknown) {
+                return mocks.loadApp().then(() => onFulfilled({ App: mocks.App }), onRejected);
+            },
+        }));
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        releaseDesktopReset?.();
+        releaseAppImport?.();
+        await settlePendingStartup();
+        expect(mocks.isExactMidiClipDataActionSnapshot).not.toHaveBeenCalled();
         vi.unstubAllEnvs();
     });
 
@@ -260,13 +339,12 @@ describe('app main composition', () => {
     it('initializes the application directly in a desktop renderer', async () => {
         Reflect.set(window, 'sourdaw', {});
         mocks.resolveAppComposition.mockReturnValue('application');
-        let finishReset: (() => void) | undefined;
-        mocks.resetDisplayScaleForStartup.mockReturnValueOnce(
-            new Promise<void>((resolve) => {
-                finishReset = resolve;
-            })
-        );
+        const resetGate = deferredGate();
+        const finishReset = resetGate.release;
+        releaseDesktopReset = resetGate.release;
+        mocks.resetDisplayScaleForStartup.mockReturnValueOnce(resetGate.promise);
         const rendered = observeNextRender();
+        observeFinalAppRender();
 
         const mainImport = import('../main');
 
@@ -302,6 +380,38 @@ describe('app main composition', () => {
         expectFirstPaintBusesRegisteredBeforeRender();
     });
 
+    it('settles delayed desktop startup before resetting the next test case', async () => {
+        Reflect.set(window, 'sourdaw', {});
+        mocks.resolveAppComposition.mockReturnValue('application');
+        const resetGate = deferredGate();
+        const appImportGate = deferredGate();
+        releaseDesktopReset = resetGate.release;
+        releaseAppImport = () => {
+            appImportGateReleasedByCleanup = true;
+            appImportGate.release();
+        };
+        mocks.resetDisplayScaleForStartup.mockReturnValueOnce(resetGate.promise);
+        mocks.loadApp.mockReturnValueOnce(appImportGate.promise);
+        const rendered = observeNextRender();
+        observeFinalAppRender();
+
+        const mainImport = import('../main');
+
+        await vi.waitFor(() => expect(mocks.resetDisplayScaleForStartup).toHaveBeenCalledOnce());
+        resetGate.release();
+        await mainImport;
+        await rendered;
+        await vi.waitFor(() => expect(mocks.loadApp).toHaveBeenCalledOnce());
+
+        expect(appRenderObserved).toBe(false);
+        expect(mocks.render.mock.calls.some(([element]) => isValidElement(element) && element.type === mocks.App)).toBe(
+            false
+        );
+        expectFirstPaintRendered();
+        expectFirstPaintBusesRegisteredBeforeRender();
+        requireStartupCleanupBeforeNextCase = true;
+    });
+
     it('resets the browser host before importing and rendering a child application', async () => {
         mocks.resolveAppComposition.mockReturnValue('application');
         mocks.resetBrowserDisplayScaleForChildStartup.mockImplementationOnce(() => {
@@ -309,6 +419,7 @@ describe('app main composition', () => {
             expect(mocks.render).not.toHaveBeenCalled();
         });
         const rendered = observeNextRender();
+        observeFinalAppRender();
 
         await import('../main');
         await rendered;
@@ -320,6 +431,45 @@ describe('app main composition', () => {
         expect(mocks.clearInheritedRetrospectiveCaptureArm).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expectFirstPaintBusesRegisteredBeforeRender();
+    });
+
+    it('reattempts only App import while retaining the root and startup registrations', async () => {
+        mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.loadApp.mockRejectedValueOnce(new TypeError('controlled module fetch failure'));
+        observeFinalAppRender();
+
+        await import('../main');
+        await settlePendingStartup();
+
+        expect(mocks.loadApp).toHaveBeenCalledTimes(2);
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        const { createRoot } = await import('react-dom/client');
+        expect(createRoot).toHaveBeenCalledOnce();
+        expectFirstPaintBusesRegisteredBeforeRender();
+        expect(mocks.reloadApplication).not.toHaveBeenCalled();
+        expect(appRenderObserved).toBe(true);
+    });
+
+    it('renders terminal failure through the same root after the bounded App attempts', async () => {
+        mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.loadApp.mockRejectedValue(new Error('controlled persistent import failure'));
+
+        await import('../main');
+        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+
+        expect(mocks.loadApp).toHaveBeenCalledTimes(2);
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        const { createRoot } = await import('react-dom/client');
+        expect(createRoot).toHaveBeenCalledOnce();
+        expectFirstPaintBusesRegisteredBeforeRender();
+        expect(mocks.reloadApplication).not.toHaveBeenCalled();
+        const terminal = mocks.render.mock.calls[1]?.[0];
+        if (!isValidElement<{ onReload: () => void }>(terminal)) {
+            throw new Error('Terminal startup view was not rendered');
+        }
+        expect(typeof terminal.props.onReload).toBe('function');
+        terminal.props.onReload();
+        expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
     });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {

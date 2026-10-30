@@ -63,6 +63,7 @@ function installMidiPreparation(prepareMidi: TestMidiPreparer): void {
         };
     }
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation: noChangePreparation,
         prepareAutomationTimeStateRestore: noChangePreparation,
         prepareMidiGlobalTimeTransaction: prepareMidiWithInversePlan,

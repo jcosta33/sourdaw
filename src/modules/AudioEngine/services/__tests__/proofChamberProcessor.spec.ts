@@ -1,6 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import {
+    clampDeviceParameterValue,
+    isDeviceParameterAutomatable,
+    quantiseDeviceParameterValue,
+} from '#/modules/Arrangement/useCases';
+import { automationSlewTickSecondsForGrain } from '#/utils/automationSlew';
+
+import { createProofChamberNode } from '../../engine/ProofChamberNode';
 import { PROOF_CHAMBER_AUTOMATION_PARAM_IDS } from '../../models/ProofChamberAutomationParams';
+import { NativeDspDeviceStrategy } from '../../repositories/deviceStrategy/NativeDspDeviceStrategy';
+import { constantTempoProjector } from '../../repositories/offlineScheduler/__tests__/constantTempoProjector';
+import { scheduleTrackAutomation } from '../../repositories/offlineScheduler/automationScheduling';
+
+vi.mock('#/infra/audioWorklet/workletInitShared', () => ({
+    ensureWorkletRegistered: vi.fn().mockResolvedValue(undefined),
+    fetchWasmModule: vi.fn(async () => ({ module: MINIMAL_WASM_MODULE, commit: vi.fn(), release: vi.fn() })),
+    createReadyHandshake: vi.fn(() => ({
+        promise: Promise.resolve({}),
+        onMessage: () => 'other' as const,
+        isSettled: () => true,
+    })),
+}));
+
+vi.mock('../../services/proofChamberProcessor.ts?worker&url', () => ({ default: 'proof-chamber-processor-url' }));
 
 /** Ordinals the shared table declares, ascending — never a list written here. */
 const declaredProofChamberOrdinals = Object.values(PROOF_CHAMBER_AUTOMATION_PARAM_IDS).sort((a, b) => a - b);
@@ -211,6 +234,134 @@ describe('ProofChamberProcessor param automation', () => {
         resetRecording();
     });
 
+    async function scheduleThroughNode(name: string, from: number, to: number) {
+        const proc = await loadProcessor();
+        const previousContext = globalThis.AudioContext;
+        const previousWorklet = globalThis.AudioWorkletNode;
+        class Context {
+            state = 'running';
+        }
+        class Worklet {
+            port = { postMessage: (data: unknown) => send(proc, data), onmessage: null };
+        }
+        vi.stubGlobal('AudioContext', Context);
+        vi.stubGlobal('AudioWorkletNode', Worklet);
+        try {
+            const node = await createProofChamberNode(new Context() as unknown as BaseAudioContext);
+            const strategy = new NativeDspDeviceStrategy(node);
+            scheduleTrackAutomation({
+                lanes: [
+                    {
+                        id: 'boolean-lane',
+                        trackId: 'track-1',
+                        parameterId: `oven:${name}`,
+                        parameterName: name,
+                        enabled: true,
+                        minValue: 0,
+                        maxValue: 1,
+                        points: [
+                            { beat: 0, value: from, curve: 'linear', tension: 0 },
+                            { beat: 1.5, value: to, curve: 'linear', tension: 0 },
+                        ],
+                    },
+                ],
+                trackId: 'track-1',
+                trackGainNode: { gain: {} } as GainNode,
+                trackPanNode: { pan: {} } as StereoPannerNode,
+                deviceEntries: [{ deviceId: 'oven', deviceType: 'dutch-oven', contributesAudio: true, strategy }],
+                durationSeconds: 1,
+                changes: [],
+                sampleRate: 48_000,
+                projectBeatToSeconds: constantTempoProjector(120),
+                slewTickSeconds: automationSlewTickSecondsForGrain(10),
+                compensationDelaySec: 0.008,
+                deviceParameterLaw: {
+                    acceptsAutomation: ({ deviceType, parameterId }) =>
+                        isDeviceParameterAutomatable({ deviceType, paramId: parameterId }),
+                    clampValue: clampDeviceParameterValue,
+                    quantiseValue: quantiseDeviceParameterValue,
+                },
+                resolveLaneCeiling: (lane) => lane.maxValue,
+            });
+            resetRecording();
+            const writes: Array<{ frame: number; value: number }> = [];
+            const output = makeChannels(2, FRAMES, () => 0);
+            const input = stereo(FRAMES, 0);
+            for (let frame = 0; frame <= 48_000; frame += FRAMES) {
+                vi.stubGlobal('currentFrame', frame);
+                const before = paramByIdCalls.length;
+                proc.process([input], [output]);
+                for (const call of paramByIdCalls.slice(before)) {
+                    expect(call.id).toBe(PROOF_CHAMBER_AUTOMATION_PARAM_IDS[name]);
+                    writes.push({ frame, value: call.value });
+                }
+            }
+            return writes;
+        } finally {
+            vi.stubGlobal('AudioContext', previousContext);
+            vi.stubGlobal('AudioWorkletNode', previousWorklet);
+            vi.stubGlobal('currentFrame', 0);
+        }
+    }
+
+    it.each([
+        ['freeze', 0, 1],
+        ['freeze', 1, 0],
+        ['shimmer', 0, 1],
+        ['shimmer', 1, 0],
+    ] as const)(
+        'delivers scheduled %s %s-to-%s at the first applicable block without fractional writes',
+        async (name, from, to) => {
+            const writes = await scheduleThroughNode(name, from, to);
+
+            expect(writes).toEqual([
+                { frame: 0, value: from },
+                { frame: 19_200, value: to },
+            ]);
+        }
+    );
+
+    it('retains continuous ramps through the same scheduler, node and processor path', async () => {
+        const writes = await scheduleThroughNode('damping', 0, 1);
+
+        expect(writes[0]).toEqual({ frame: 0, value: 0 });
+        expect(writes.some(({ value }) => value > 0 && value < 1)).toBe(true);
+        expect(writes.at(-1)?.value).toBeCloseTo(1);
+    });
+
+    it('preserves the stored value until the first segment starts', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'param', name: 'damping', value: 0.6 });
+        resetRecording();
+        send(proc, {
+            type: 'paramAutomation',
+            paramId: 2,
+            segments: [{ startFrame: 256, endFrame: 512, startValue: 0.2, endValue: 0.8 }],
+        });
+
+        vi.stubGlobal('currentFrame', 0);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 128);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toEqual([]);
+
+        vi.stubGlobal('currentFrame', 256);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 384);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 512);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        vi.stubGlobal('currentFrame', 640);
+        proc.process([stereo(FRAMES, 0)], [makeChannels(2, FRAMES, () => 0)]);
+        expect(paramByIdCalls).toEqual([
+            { id: 2, value: 0.2 },
+            { id: 2, value: 0.5 },
+            { id: 2, value: 0.8 },
+        ]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+
     it('rejects automation for an out-of-range, non-integer, or empty-segment paramId', async () => {
         const proc = await loadProcessor();
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
@@ -220,7 +371,7 @@ describe('ProofChamberProcessor param automation', () => {
         // table membership can express: a non-integer and a negative id.
         send(proc, {
             type: 'paramAutomation',
-            paramId: 2,
+            paramId: 23,
             segments: [{ startFrame: 0, endFrame: 10, startValue: 0, endValue: 1 }],
         });
         send(proc, {

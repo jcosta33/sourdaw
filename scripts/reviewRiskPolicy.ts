@@ -118,7 +118,6 @@ const NATIVE_SECURITY_PATHS = [
     'scripts/ensurePinnedRustToolchain.sh',
     'scripts/ciApprovalAdmission.ts',
     'scripts/prepareReviewEntry.ts',
-    'scripts/semanticReviewContext.ts',
     'electron-builder.yml',
     'scripts/flipElectronFuses.ts',
     'scripts/buildElectronPreload.ts',

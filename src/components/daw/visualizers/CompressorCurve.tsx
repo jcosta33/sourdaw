@@ -7,7 +7,7 @@
  * - Threshold and knee indicators
  * Uses design tokens for consistent DAW aesthetic.
  */
-import { type ReactElement, useRef, useEffect } from 'react';
+import { type ReactElement, useRef, useEffect, useLayoutEffect } from 'react';
 
 import { resolveToken } from '#/utils/UI/resolveToken';
 
@@ -19,6 +19,18 @@ type CompressorCurveProps = {
     width?: number;
     height?: number;
     onParamChange?: (paramId: string, value: number) => void;
+    onGestureStart?: () => boolean;
+    onGestureCommit?: (paramId: string, value: number) => void;
+    onGestureCancel?: () => void;
+};
+
+type CurveGesture = {
+    pointerId: number;
+    canvas: HTMLCanvasElement;
+    lastValue?: number;
+    change: NonNullable<CompressorCurveProps['onParamChange']>;
+    commit: CompressorCurveProps['onGestureCommit'];
+    cancel: CompressorCurveProps['onGestureCancel'];
 };
 
 const DB_MIN = -60;
@@ -40,6 +52,25 @@ const computeOutput = (inputDb: number, threshold: number, ratio: number, kneeWi
     }
 };
 
+function finishGesture(gestureRef: { current: CurveGesture | null }, commit: boolean): void {
+    const gesture = gestureRef.current;
+    if (!gesture) {
+        return;
+    }
+    // Release can synchronously report lost capture. Retire the session first.
+    gestureRef.current = null;
+    const { canvas, pointerId } = gesture;
+    if (!canvas.hasPointerCapture || canvas.hasPointerCapture(pointerId)) {
+        canvas.releasePointerCapture(pointerId);
+    }
+    canvas.style.cursor = 'grab';
+    if (commit && gesture.lastValue !== undefined && gesture.commit) {
+        gesture.commit('comp-threshold', gesture.lastValue);
+    } else {
+        gesture.cancel?.();
+    }
+}
+
 export const CompressorCurve = ({
     threshold,
     ratio,
@@ -48,9 +79,12 @@ export const CompressorCurve = ({
     width = 120,
     height = 120,
     onParamChange,
+    onGestureStart,
+    onGestureCommit,
+    onGestureCancel,
 }: CompressorCurveProps): ReactElement => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const isDragging = useRef(false);
+    const gestureRef = useRef<CurveGesture | null>(null);
     const isInteractive = !!onParamChange;
 
     useEffect(() => {
@@ -214,7 +248,7 @@ export const CompressorCurve = ({
         ctx.fillText(`${ratio.toFixed(1)}:1`, width - pad, pad + 10);
 
         // "drag to adjust" hint
-        if (isInteractive && !isDragging.current) {
+        if (isInteractive && !gestureRef.current) {
             ctx.fillStyle = 'rgba(255,255,255,0.25)';
             ctx.font = '7px monospace';
             ctx.textAlign = 'center';
@@ -222,21 +256,47 @@ export const CompressorCurve = ({
         }
     }, [threshold, ratio, knee, makeup, width, height, isInteractive]);
 
+    useLayoutEffect(() => {
+        const cancel = (): void => finishGesture(gestureRef, false);
+        const visibilityChanged = (): void => {
+            if (document.visibilityState === 'hidden') {
+                cancel();
+            }
+        };
+        window.addEventListener('blur', cancel);
+        document.addEventListener('visibilitychange', visibilityChanged);
+        return () => {
+            window.removeEventListener('blur', cancel);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            cancel();
+        };
+    }, []);
+
     const handlePointerDown = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
+        if (!onParamChange || gestureRef.current || event.button !== 0) {
             return;
         }
         const canvas = canvasRef.current;
         if (!canvas) {
             return;
         }
-        isDragging.current = true;
+        if (onGestureStart && !onGestureStart()) {
+            return;
+        }
+        gestureRef.current = {
+            pointerId: event.pointerId,
+            canvas,
+            change: onParamChange,
+            commit: onGestureCommit,
+            cancel: onGestureCancel,
+        };
         canvas.setPointerCapture(event.pointerId);
         canvas.style.cursor = 'grabbing';
     };
 
     const handlePointerMove = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange || !isDragging.current) {
+        const gesture = gestureRef.current;
+        if (!gesture || gesture.pointerId !== event.pointerId) {
             return;
         }
         const canvas = canvasRef.current;
@@ -246,24 +306,29 @@ export const CompressorCurve = ({
         const rect = canvas.getBoundingClientRect();
         const pad = 4;
         const plotH = height - pad * 2;
+        if (!Number.isFinite(event.clientY) || plotH <= 0) {
+            finishGesture(gestureRef, false);
+            return;
+        }
         // Y position to dB: top = 0 dB, bottom = -60 dB
         const yRatio = (event.clientY - rect.top - pad) / plotH;
         const db = DB_MAX - yRatio * (DB_MAX - DB_MIN);
         const clamped = Math.max(-60, Math.min(0, db));
-        onParamChange('comp-threshold', clamped);
+        gesture.lastValue = clamped;
+        gesture.change('comp-threshold', clamped);
     };
 
     const handlePointerUp = (event: React.PointerEvent<HTMLCanvasElement>) => {
-        if (!onParamChange) {
+        if (gestureRef.current?.pointerId !== event.pointerId) {
             return;
         }
-        const canvas = canvasRef.current;
-        if (!canvas) {
-            return;
+        finishGesture(gestureRef, true);
+    };
+
+    const handlePointerCancel = (event: React.PointerEvent<HTMLCanvasElement>): void => {
+        if (gestureRef.current?.pointerId === event.pointerId) {
+            finishGesture(gestureRef, false);
         }
-        isDragging.current = false;
-        canvas.releasePointerCapture(event.pointerId);
-        canvas.style.cursor = 'grab';
     };
 
     return (
@@ -276,6 +341,8 @@ export const CompressorCurve = ({
             onPointerDown={isInteractive ? handlePointerDown : undefined}
             onPointerMove={isInteractive ? handlePointerMove : undefined}
             onPointerUp={isInteractive ? handlePointerUp : undefined}
+            onPointerCancel={isInteractive ? handlePointerCancel : undefined}
+            onLostPointerCapture={isInteractive ? handlePointerCancel : undefined}
         />
     );
 };

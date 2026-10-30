@@ -94,6 +94,27 @@ function toasterDevice(overrides: Partial<Device> & { kit: ReturnType<typeof cre
 }
 
 describe('listToasterPatternsOutsideArrangement', () => {
+    it('warns for B-only effective hits and follows disabled or A-only playback', () => {
+        const kit = createDefaultKit();
+        const b = structuredClone(kit.patterns[0]!);
+        b.id = 'B1';
+        b.tracks[0]!.steps[0]!.active = true;
+        kit.patterns.push(b);
+        kit.morph = { enabled: true, targetPatternId: 'B1', position: 1 };
+        const input = () => ({
+            tracks: [makeTrack({ id: 'track-1', name: 'Drums', devices: [toasterDevice({ kit })] })],
+            notesByClipId: {},
+        });
+
+        expect(listToasterPatternsOutsideArrangement(input())).toHaveLength(1);
+        kit.morph.enabled = false;
+        expect(listToasterPatternsOutsideArrangement(input())).toEqual([]);
+
+        kit.patterns[0]!.tracks[0]!.steps[1]!.active = true;
+        kit.morph.enabled = true;
+        kit.morph.position = 0;
+        expect(listToasterPatternsOutsideArrangement(input())).toHaveLength(1);
+    });
     it('reports a Toaster with an active-step pattern and no clips', () => {
         const kit = kitWithOneActiveStep();
         const track = makeTrack({ id: 'track-1', name: 'Drums', devices: [toasterDevice({ kit })] });

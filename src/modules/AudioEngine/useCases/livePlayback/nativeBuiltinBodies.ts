@@ -627,6 +627,26 @@ const NATIVE_BUILTIN_BODIES = new Map<string, NativeBuiltinBody>([
             latencyCompensatedByEngine: false,
         },
     ],
+    [
+        'transient-shaper',
+        {
+            soundsNotes: false,
+            parameterName: (paramId) => paramId,
+            addressesParameter: (paramId) => paramId === 'attackGain' || paramId === 'sustainGain',
+            projectPatch: (values) => {
+                const patch: Record<string, number> = {};
+                for (const name of ['attackGain', 'sustainGain']) {
+                    const value = values[name];
+                    if (typeof value === 'number' && Number.isFinite(value)) {
+                        patch[name] = Math.min(2, Math.max(0, value));
+                    }
+                }
+                return patch;
+            },
+            takesClipNoteReleases: true,
+            latencyCompensatedByEngine: false,
+        },
+    ],
 ]);
 
 export function nativeBuiltinBody(deviceType: string): NativeBuiltinBody | null {

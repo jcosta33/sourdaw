@@ -1,5 +1,3 @@
-import { type ExecuteOptions } from '#/utils/handlerContract';
-
 import { AppActionCommittedError } from '../errors/AppActionExecutionError';
 import { isActionEntry, type UndoEntry } from '../models/UndoEntry';
 
@@ -50,7 +48,10 @@ export type UndoOutcome =
  */
 export async function executeActionGroupUndo(
     entries: readonly UndoEntry[],
-    options?: Pick<ExecuteOptions, 'shouldExecute'>
+    options?: Pick<
+        NonNullable<Parameters<typeof executeAppActionBatch>[1]>,
+        'shouldExecute' | 'onCommitted' | 'onAmbiguousCommit'
+    >
 ): Promise<UndoOutcome> {
     if (!entries.every(isActionEntry) || entries.some((entry) => entry.inverseAction === null)) {
         return { status: 'inert' };
@@ -64,6 +65,7 @@ export async function executeActionGroupUndo(
     // forward law must never touch on a replay.
     const actions = [...entries].reverse().map((entry) => normalizeLegacyLoopAnchorInverse(entry.inverseAction!));
     const batchOptions: NonNullable<Parameters<typeof executeAppActionBatch>[1]> = {
+        undoEntryIds: [...entries].reverse().map((entry) => entry.id),
         skipUndo: true,
         skipMacroRecording: true,
         source: entries[0]?.source,

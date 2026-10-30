@@ -289,7 +289,10 @@ function collectFiles(dir: string, suffix: string, found: string[]): void {
 }
 
 /** Recursive: a declaration moved into `models/patches/` must not leave the census. */
-function listModelFiles(moduleDir: string): string[] {
+function listModelFiles(moduleDir: string | null): string[] {
+    if (moduleDir === null) {
+        return [];
+    }
     const found: string[] = [];
     collectFiles(`${moduleDir}/models`, '.ts', found);
     return found.sort();
@@ -517,7 +520,10 @@ function countResetLiterals(relativePath: string): number {
  * `readFileSync`, not `import`) and which would therefore land on `main` and be
  * found by someone on an unrelated branch. That is how a guard earns deletion.
  */
-function listPanelFiles(moduleDir: string): string[] {
+function listPanelFiles(moduleDir: string | null): string[] {
+    if (moduleDir === null) {
+        return [];
+    }
     const candidates: string[] = [];
     collectFiles(`${moduleDir}/presentations`, '.tsx', candidates);
     return candidates.filter((file) => readSource(file).includes('defaultValue=')).sort();
@@ -556,7 +562,7 @@ type DeviceDefaults = {
      * are derived from this — there is no per-device file list to fall out of
      * date, and no way to exclude a device's panels by omission.
      */
-    readonly moduleDir: string;
+    readonly moduleDir: string | null;
     readonly patchSources: readonly PatchSource[];
     /** Why the device declares no defaults under `models/`. Empty when it does. */
     readonly noPatchReason: string;
@@ -565,6 +571,14 @@ type DeviceDefaults = {
 };
 
 const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
+    'transient-shaper': {
+        moduleDir: null,
+        patchSources: [],
+        noPatchReason:
+            'The standalone effect has no device-owned patch or module; its two defaults belong to the descriptor and AudioParams, pinned against real WASM in transientShaperProcessor.spec.ts.',
+        noPanelReason:
+            'The standalone effect uses the generic effect panel; it has no device-owned panel or reset literals.',
+    },
     fermenter: {
         moduleDir: 'src/modules/Fermenter',
         patchSources: [
@@ -854,6 +868,11 @@ const NON_DEFAULT_MODEL_DECLARATIONS: readonly {
     readonly exportName: string;
     readonly reason: string;
 }[] = [
+    {
+        file: 'src/modules/Toaster/models/ToasterKit.ts',
+        exportName: 'DEFAULT_MORPH_STATE',
+        reason: 'The initial persisted pattern morph state, not a DSP descriptor parameter default.',
+    },
     {
         file: 'src/modules/Grinder/models/GrinderPatch.ts',
         exportName: 'DEFAULT_MIC',

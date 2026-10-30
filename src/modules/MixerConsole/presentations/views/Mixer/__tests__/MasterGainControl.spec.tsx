@@ -50,6 +50,27 @@ describe('MasterGainControl', () => {
         promptMocks.promptUser.mockResolvedValue(null);
     });
 
+    it('maps unity to 70 percent while keeping keyboard writes in raw linear gain', () => {
+        const onChange = vi.fn();
+        render(
+            <MasterGainControl
+                value={1}
+                onChange={onChange}
+                onEnterValue={vi.fn()}
+                onResetToDefault={vi.fn()}
+                {...menuActions()}
+            />
+        );
+        const slider = screen.getByRole('slider', { name: 'Master gain' });
+        const cap = slider.querySelector('[data-role="fader-cap"]') as HTMLElement;
+        expect(slider).toHaveAttribute('aria-valuenow', '1');
+        expect(slider).toHaveAttribute('aria-valuetext', '0.0 dB');
+        expect(cap.style.bottom).toBe('calc(70% - 20px)');
+
+        fireEvent.keyDown(slider, { key: 'ArrowUp' });
+        expect(onChange).toHaveBeenCalledWith(1.01, false);
+    });
+
     it('routes entered gain to the discrete entry callback, not the fader callback', async () => {
         const onChange = vi.fn();
         const onEnterValue = vi.fn();
