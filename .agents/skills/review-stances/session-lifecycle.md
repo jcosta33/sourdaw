@@ -327,6 +327,18 @@ that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Th
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
 
+### Monitor disconnect faults must not strand the shared graph (introduced by PR #4485; fixed in #5376)
+
+PR #4485 moved monitor release to the start of shared graph reset so source edges stopped while
+strips still existed. A source-wide disconnect could throw before track, bus and send retirement;
+disposal then depended on this failing reset before master teardown and `context.close()`. Public
+approval covers ordering and late-grant release, not fault continuation; private prompts and tiers are
+unknown. Exercise the real reset and dispose callers with two controlled captures and a throwing first
+source: require both tracks stopped, graph owners and sends retired, and the original error retained.
+Disposal must attempt every master disconnect, await one close, and return the same terminal result on
+repeat. Keep late-grant rejection as a separate reset case. Controlled nodes and media prove cleanup,
+not physical microphone or audible playback.
+
 ### An aborted graph repair must rearm committed monitoring intent (issue #5286)
 
 Start a connected On track, hold same-project graph repair at plugin reset, then project Off before
