@@ -1,0 +1,30 @@
+src/modules/Transport/useCases/index.ts
+  s_59e31a5c6f3e31::t_416bf671034c43 79
+src/modules/Transport/useCases/transportQueries/getTimelineRulerGrid.ts
+  s_59e31a5c6f3e31::t_416bf671034c43 1-56
+  s_59e31a5c6f3e31::t_114a66f995aea0 57-59
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.meterMap.integration.spec.tsx
+  s_59e31a5c6f3e31::t_218160cc48b18a 21-26,40-41,45-47,53-55,57-58,90,180-263,266
+  s_59e31a5c6f3e31::t_f9a391aed7ba49 1-20,27-39,42-44,48-52,56,59-89,91-125,127-142,144-179,264-265
+  s_59e31a5c6f3e31::t_ae727968144ce9 126,143
+  s_59e31a5c6f3e31::t_9dc536ab38e03f 267-269
+src/modules/Transport/useCases/transportQueries/__tests__/getTimelineRulerGrid.spec.ts
+  s_59e31a5c6f3e31::t_6969d009db6484 1-77
+  s_59e31a5c6f3e31::t_601c0e4a5f1965 78-80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "89c4b3d4ef0f5c28cc570b4a67f5ab4a95520dbc",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
