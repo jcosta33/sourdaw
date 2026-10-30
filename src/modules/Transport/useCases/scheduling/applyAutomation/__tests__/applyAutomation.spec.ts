@@ -1275,8 +1275,8 @@ describe('applyAutomation', () => {
         // without letting the value reach the engine.
         it('holds a carried built-in’s Web Audio fallback on a moving tick instead of writing the engine', () => {
             seedDeviceLane({
-                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
-                laneParameterId: 'device-k1:shift_semitones',
+                devices: [{ id: 'device-k1', type: 'bacteria', parameterValues: { mix: 0 } }],
+                laneParameterId: 'device-k1:mix',
             });
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
 
@@ -1288,12 +1288,12 @@ describe('applyAutomation', () => {
             // Two fallback holds: the scope-entry tick (#4741) at the curve's
             // own opening value, then the moving tick one glide later.
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(2);
-            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'shift_semitones', 0);
+            expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(1, 'track-1', 'device-k1', 'mix', 0);
             expect(holdWebFallbackDeviceParam).toHaveBeenNthCalledWith(
                 2,
                 'track-1',
                 'device-k1',
-                'shift_semitones',
+                'mix',
                 slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
             );
         });
@@ -1301,11 +1301,11 @@ describe('applyAutomation', () => {
         it('restates a carried built-in through the full door on release from bypass, not the fallback hold', () => {
             const device: SeedDevice = {
                 id: 'device-k1',
-                type: 'knead',
-                parameterValues: { shift_semitones: 0 },
+                type: 'bacteria',
+                parameterValues: { mix: 0 },
                 bypassed: true,
             };
-            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:shift_semitones' });
+            seedDeviceLane({ devices: [device], laneParameterId: 'device-k1:mix' });
             vi.mocked(isDeviceCarriedByNativeSession).mockReturnValue(true);
             vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0.2).mockReturnValue(0.8);
 
@@ -1313,18 +1313,18 @@ describe('applyAutomation', () => {
             commitBypass(device.id, false);
             applyAutomation(1);
 
-            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.8);
+            expect(updateDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'mix', 0.8);
             // The release went through the full door. The only fallback hold
             // is the pre-release scope-entry tick (#4741) at 0.2, on the node
             // the engine is not driving.
             expect(holdWebFallbackDeviceParam).toHaveBeenCalledTimes(1);
-            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'shift_semitones', 0.2);
+            expect(holdWebFallbackDeviceParam).toHaveBeenCalledWith('track-1', 'device-k1', 'mix', 0.2);
         });
 
         it('writes an uncarried built-in through the full door and holds nothing', () => {
             seedDeviceLane({
-                devices: [{ id: 'device-k1', type: 'knead', parameterValues: { shift_semitones: 0 } }],
-                laneParameterId: 'device-k1:shift_semitones',
+                devices: [{ id: 'device-k1', type: 'bacteria', parameterValues: { mix: 0 } }],
+                laneParameterId: 'device-k1:mix',
             });
 
             vi.mocked(getAutomationValueAtBeat).mockReturnValueOnce(0).mockReturnValue(0.75);
@@ -1334,7 +1334,7 @@ describe('applyAutomation', () => {
             expect(updateDeviceParam).toHaveBeenCalledWith(
                 'track-1',
                 'device-k1',
-                'shift_semitones',
+                'mix',
                 slewStep(0, 0.75, AUTOMATION_SLEW_ALPHA)
             );
             expect(holdWebFallbackDeviceParam).not.toHaveBeenCalled();
