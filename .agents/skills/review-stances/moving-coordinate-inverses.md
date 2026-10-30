@@ -116,3 +116,24 @@ Mutate the exact-restoration branch, actual-counterpart refresh, hydration pair 
 and abort metadata restoration independently. The corresponding connected fractional,
 peer-edit, saved-history and failed-commit cases must fail. A pure planner round trip or
 an integer-only fixture cannot establish any of those runtime obligations.
+
+### 2026-10-30 — partial-bar carries change the mounted ruler's basis (#5247)
+
+Insert 2 at 4 in 4/4 produces physical bar pieces at 0, 4, 6 and 10; the pieces
+at 4 and 6 both read as bar 2. A distinct-bar inverse therefore cannot enumerate
+the physical ruler, and a flat `bar * numerator` reader leaves bar 3 at 8 after
+its clip moves to 10. Reuse the meter model's segment origins and metrical walk;
+retain each physical piece and its canonical number instead of numbering paint rows.
+
+Compose the actual recorded Command inverse and Redo with complete raw/projected
+map and clip snapshots and the same mounted reader. Require fresh post-operation
+paint figures in both directions, including a downstream meter change and non-quarter
+denominators. A correct initial mount alone cannot prove later coordinate-basis changes.
+The flat-query and removed-subscription probes must independently break geometry and
+freshness; they are prescribed probes, not completed execution claims.
+
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`.
+Its introducing PR, historical review prompts and tiers are unverified. The earlier
+missing-carry lineage predates #5440, but its earliest musician-facing introducer is
+unestablished; #5440's next-downbeat intermediate was corrected before merge. The missed
+stance connected the producer's moving grid basis to its live reader and history.

@@ -973,6 +973,46 @@ that schema must fail the real-factory case. Preserve finite keys, band bounds, 
 identity/correlation, scheduling, nonfinite rejection and replay/generation guards; action or
 document spies alone cannot prove carrier admission or audible output.
 
+### 2026-10-30 — a carried meter reached the document but not the mounted ruler (#5247)
+
+Insert Time can preserve the canonical meter while a reader paints a different grid.
+In 4/4, Insert 2 at 4 carries the meter origin to 6 and moves the clip at 8 to 10;
+the top ruler's independent `bar * numerator` grid still put bar 3 at 8. The earliest
+tracked ruler addition, `e415a55cc406ba264dffbc229f4ac86f3e5caaab`, already mounted this
+flat reader alongside the meter model. Its commit has no verified introducing PR
+association; the historical review prompts and model tiers are unknown. The original
+missing-carry lineage is known before #5440, but its earliest musician-facing introducer
+is unestablished. #5440's intermediate next-downbeat mistake was repaired before merge.
+
+Trace a timeline operation from its committed map and clip positions to the actual
+mounted ruler's drawn labels and bar lines. Exercise partial bars, denominators other
+than 4, and a later meter change. The mounted Insert regression reached the real Command
+and raw/projected carry, then observed no new stopped paint. The model's physical bar
+origins, rather than an inverse over distinct bar names, must drive the reader: two
+partial pieces can carry the same number. A probe that passes empty changes only at the
+real ruler query call must fail the mapped paint cases. That probe is required, not a
+claim of completed execution.
+
+### 2026-10-30 — a visible fractional meter seam fell beyond the outgoing next tick
+
+The canonical metrical-beat walk entered main in `f626b84b9aed3b715780e20d3b9976c3f88fedd1`
+through PR #2078. Its termination gate remained unchanged: it stopped when the outgoing
+next tick exceeded the requested right edge, before considering an earlier meter change.
+With 4/4 from 0, 3/4 at 5.5, and a window of 5.4..5.6, it returned no beat. The actual
+metronome therefore scheduled no click, and the later ruler consumer omitted the same
+physical seam. The new ruler exposed this existing primitive defect; it did not introduce
+it. Historical private review prompts and model tiers are unestablished. The evidenced
+missed stance is finite-window coverage with a fractional change origin.
+
+A meter walk must consider both its next tick and the next canonical segment boundary.
+Adopt the boundary's exact origin once, even when another distinct origin is within grid
+rounding tolerance. Keep equal-point queries, negative starts, inclusive right tolerance,
+and last-change governance at duplicate beats. Validate the entered unit and segment as
+well as the initial one, and stop with the valid prefix if finite arithmetic cannot
+advance. Prove the list, the engine's click time/accent/volume under both clock anchors,
+and the mounted ruler's fresh seam stroke. Restoring only the old outer termination
+gate must fail those connected finite-window cases.
+
 ### 2026-10-30 — a guarded solo no-op blocked older history (#5643)
 
 PR #5631 introduced the expected-state guard on agent `soloTrack` compensation. Its public review
