@@ -341,7 +341,11 @@ describe('project projection after a partial bundle merge', () => {
                                 vi.stubGlobal('Worker', class SuccessorWorker {});
                                 vi.doMock('@automerge/automerge', async (importOriginal) => importOriginal());
                                 const { projectStore } = await open();
-                                projectStore.set({ ...projectStore.value, name: 'Successor fixture' });
+                                const state = projectStore.value;
+                                if (state === undefined) {
+                                    throw new TypeError('Expected the opened successor project state.');
+                                }
+                                projectStore.set({ ...state, name: 'Successor fixture' });
                             })(context)
                         ).rejects.toThrow('Previous projection fixture is still active');
                         expect(successorEntered).toBe(false);
