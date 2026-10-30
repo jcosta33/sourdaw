@@ -513,6 +513,9 @@ it('Basic keeps the browser, selection detail and macros while Expert reveals th
     fireEvent.click(screen.getByRole('button', { name: 'Select Close mic' }));
     expect(detail).toHaveTextContent('Selected micClose');
     expect(sendMicParamToEngine).not.toHaveBeenCalled();
+    const expertGroup = screen.getByRole('group', { name: 'Levain control detail' });
+    fireEvent.click(within(expertGroup).getByRole('button', { name: 'Basic' }));
+    expect(setLevainPanelUiLevel).toHaveBeenLastCalledWith('test-device', 1);
     panelState = { ...panelState, uiLevel: 1, currentArticulationDisplay: 'Tremolo' };
     rerender(<LevainPanel deviceId="test-device" />);
     expect(detail).toHaveTextContent('Tremolo');
