@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type TransientOnsetWorkerRequest } from '../../../models/TransientOnsetWorker';
 import { detectTransients } from '../detectTransients';
 import { readClipTransientOnsets } from '../readClipTransientOnsets';
+import { readProductTransientOnsets } from '../readProductTransientOnsets';
 
 type Clip = { id: string; type: 'audio' | 'midi'; audioBufferId?: string };
 const mocks = vi.hoisted(() => ({
@@ -277,4 +278,42 @@ describe('whole cached source transient read', () => {
             });
         }
     );
+    it('admits 120-second stereo only through product detection and transfers owned copies', async () => {
+        const left = new Float32Array(120 * 48_000);
+        const right = new Float32Array(left.length);
+        left[1024] = 0.75;
+        right[2048] = -0.25;
+        mocks.cache.mockReturnValue(buffer([left, right], 48_000));
+        const admitted = { ...request, maxChannelSamples: 12_000_000 };
+        expect(await readClipTransientOnsets(admitted)).toEqual({ status: 'failed', code: 'source-too-large' });
+        expect(mocks.worker).not.toHaveBeenCalled();
+        mocks.worker.mockImplementationOnce(async ({ channels }: TransientOnsetWorkerRequest) => {
+            const copies = structuredClone(channels, {
+                transfer: channels.map((channel) => channel.buffer as ArrayBuffer),
+            });
+            expect(channels.map((channel) => channel.byteLength)).toEqual([0, 0]);
+            expect(copies[0]![1024]).toBe(0.75);
+            expect(copies[1]![2048]).toBe(-0.25);
+            return { status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] };
+        });
+        expect(await readProductTransientOnsets(admitted)).toMatchObject({
+            status: 'complete',
+            hits: [{ sampleOffset: 1024, confidence: 1 }],
+        });
+        expect(left.byteLength).toBe(120 * 48_000 * 4);
+        expect(right.byteLength).toBe(left.byteLength);
+        expect(left[1024]).toBe(0.75);
+        expect(right[2048]).toBe(-0.25);
+    });
+
+    it('stops a product copy before Worker creation when cancelled between chunks', async () => {
+        const controller = new AbortController();
+        const samples = new Float32Array(600_000);
+        mocks.cache.mockReturnValue(buffer([samples], 48_000));
+        const read = readProductTransientOnsets({ ...request, signal: controller.signal });
+        controller.abort();
+        expect(await read).toEqual({ status: 'failed', code: 'cancelled' });
+        expect(mocks.worker).not.toHaveBeenCalled();
+        expect(samples.byteLength).toBe(600_000 * 4);
+    });
 });

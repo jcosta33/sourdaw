@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     getCrdtDoc: vi.fn(),
     hasCrdtDoc: vi.fn(),
     mutateCrdtDoc: vi.fn(),
+    cloneProspectiveCrdtMutation: vi.fn(),
     getHeads: vi.fn(),
     isMutationBlockedBySnapshotTransaction: vi.fn(),
     waitForSnapshotTransaction: vi.fn(),
@@ -35,6 +36,9 @@ vi.mock('../hasCrdtDoc', () => ({
     hasCrdtDoc: mocks.hasCrdtDoc,
 }));
 
+vi.mock('../cloneProspectiveCrdtMutation', () => ({
+    cloneProspectiveCrdtMutation: mocks.cloneProspectiveCrdtMutation,
+}));
 vi.mock('../mutateCrdtDoc', () => ({
     mutateCrdtDoc: mocks.mutateCrdtDoc,
 }));
@@ -147,6 +151,45 @@ describe('registerCrdtStorageRuntime', () => {
         });
     });
 
+    it('forwards the supported description and optional Worker request without exposing its candidate token', () => {
+        const requestMaterialization = vi.fn();
+        const candidate = { isCurrent: () => true, discard: vi.fn() };
+        mocks.cloneProspectiveCrdtMutation.mockReturnValue({
+            isCurrent: () => true,
+            discard: vi.fn(),
+            requestMaterialization,
+            materialize: () => candidate,
+        });
+        const port = getRegisteredPort();
+        const canonicalMutation = {
+            kind: 'canonical-json-slot-v1',
+            key: 'state',
+            baseValue: null,
+            value: { count: 1 },
+        };
+        const changeFn = vi.fn();
+        const prepared = port.cloneDocForMutation({
+            docId: 'root',
+            changedKeys: ['state'],
+            changeFn,
+            message: 'Detect',
+            canonicalMutation,
+        });
+        expect(mocks.cloneProspectiveCrdtMutation).toHaveBeenCalledWith({
+            id: 'root',
+            localSlots: ['state'],
+            changeFn,
+            message: 'Detect',
+            snapshotTransaction: undefined,
+            canonicalMutation,
+        });
+        expect(prepared.requestMaterialization).toBe(requestMaterialization);
+        const materialized = prepared.materialize();
+        expect(materialized.token).toEqual({});
+        materialized.discard();
+        expect(candidate.discard).toHaveBeenCalledOnce();
+    });
+
     it('waitForSnapshotTransaction delegates to automergeRepository', async () => {
         mocks.waitForSnapshotTransaction.mockResolvedValue(undefined);
 
@@ -155,5 +198,31 @@ describe('registerCrdtStorageRuntime', () => {
         await port.waitForSnapshotTransaction({ id: 'snap-2' });
 
         expect(mocks.waitForSnapshotTransaction).toHaveBeenCalledWith({ id: 'snap-2' });
+    });
+    it('forwards exact candidate validator, pre-publication gate and actual-install acknowledgement', () => {
+        const port = getRegisteredPort();
+        const changeFn = vi.fn();
+        const validateDocument = vi.fn();
+        const beforePublication = vi.fn();
+        const onPublished = vi.fn();
+        const snapshotTransaction = {};
+        port.mutateDocValidated({
+            docId: 'root',
+            changeFn,
+            changedKeys: ['warpStates'],
+            message: 'Detect',
+            snapshotTransaction,
+            validateDocument,
+            beforePublication,
+            onPublished,
+        });
+        expect(mocks.mutateCrdtDoc).toHaveBeenCalledExactlyOnceWith({
+            id: 'root',
+            changeFn,
+            localSlots: ['warpStates'],
+            message: 'Detect',
+            snapshotTransaction,
+            prospectiveValidation: { validateDocument, beforePublication, onPublished },
+        });
     });
 });

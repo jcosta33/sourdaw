@@ -419,16 +419,26 @@ function reconcileCollection(input: ReconcileCollectionInput): void {
     // saw are another actor's, or content its own projection rejected, and are
     // preserved — this is what stops one ordinary edit from wiping a row the
     // writer never had in hand.
+    let deletionStart = -1;
+    let deletionCount = 0;
+    const deleteRun = (): void => {
+        if (deletionCount === 0) {
+            return;
+        }
+        current.splice(deletionStart, deletionCount);
+        deletionStart = -1;
+        deletionCount = 0;
+    };
     for (let index = current.length - 1; index >= 0; index -= 1) {
         const identity = currentIdentities[index];
-        if (identity === undefined || desiredIdentitySet.has(identity)) {
+        if (identity !== undefined && baseIdentitySet.has(identity) && !desiredIdentitySet.has(identity)) {
+            deletionStart = index;
+            deletionCount += 1;
             continue;
         }
-        if (!baseIdentitySet.has(identity)) {
-            continue;
-        }
-        current.splice(index, 1);
+        deleteRun();
     }
+    deleteRun();
 
     // Index once rather than scanning the collection per desired row. This runs
     // on every slot write in the application, and nested collections compound.

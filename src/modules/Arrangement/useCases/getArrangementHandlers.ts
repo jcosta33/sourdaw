@@ -3,6 +3,7 @@ import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardC
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
+import { handleDetectTransients } from '../handlers/clip/handleDetectTransients';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';
@@ -174,6 +175,7 @@ export function getArrangementHandlers() {
         discardCreatedTracks: handleDiscardCreatedTracks,
         restoreTimeOperationState: handleRestoreTimeOperationState,
         restoreTrackClipStates: handleRestoreTrackClipStates,
+        detectTransients: handleDetectTransients,
         restoreScratchPadState: handleRestoreScratchPadState,
         discardCreatedCompGroup: handleDiscardCreatedCompGroup,
         selectTake: handleSelectTake,

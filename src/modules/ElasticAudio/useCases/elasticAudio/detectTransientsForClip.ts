@@ -1,115 +1,219 @@
-import { addWarpMarker, getWarpState, setWarpState, trackStore } from '#/modules/Arrangement/stores';
-import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { trackStore } from '#/modules/Arrangement/stores';
+import { preferencesStore } from '#/modules/Preferences/stores';
+import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
 
-import { detectTransients } from './detectTransients';
+import { elasticAudioStore } from '../../stores/elasticAudio';
 
-export type DetectTransientsResult =
-    | { ok: true; added: number; kept: number; removed: number }
-    | { ok: false; reason: 'CLIP_NOT_FOUND' | 'CLIP_NOT_AUDIO' | 'NO_BUFFER' | 'NO_TEMPO' };
+import { cancelTransientDetection } from './cancelTransientDetection';
+import { elasticRootIdentityProviderState } from './elasticRootIdentityProviderState';
+import { readProductTransientOnsets } from './readProductTransientOnsets';
+import { transientDetectionLifecycle } from './transientDetectionLifecycle';
 
-type DetectableClip = {
-    id: string;
-    type: 'audio' | 'midi';
-    audioBufferId?: string;
+/** Align visible commits; a hidden page can finish without its suspended animation frame. */
+function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
+    if (signal.aborted) {
+        return Promise.resolve(false);
+    }
+    if (document.hidden) {
+        return Promise.resolve(true);
+    }
+    return new Promise((resolve) => {
+        let frame: number | undefined;
+        let settled = false;
+        const finish = (admitted: boolean): void => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            if (frame !== undefined) {
+                cancelAnimationFrame(frame);
+            }
+            signal.removeEventListener('abort', abort);
+            document.removeEventListener('visibilitychange', visibilityChanged);
+            window.removeEventListener('pagehide', abort);
+            resolve(admitted);
+        };
+        const abort = (): void => finish(false);
+        const visibilityChanged = (): void => {
+            if (document.hidden) {
+                finish(true);
+            }
+        };
+        signal.addEventListener('abort', abort, { once: true });
+        document.addEventListener('visibilitychange', visibilityChanged);
+        window.addEventListener('pagehide', abort, { once: true });
+        frame = requestAnimationFrame(() => finish(true));
+    });
+}
+
+type ProductRead = Awaited<ReturnType<typeof readProductTransientOnsets>>;
+type DetectionReady = Extract<ProductRead, { status: 'complete' }> & {
+    tempo: number;
+    completeUnchanged: () => boolean;
+};
+type DetectionLifetime = {
+    readonly signal: AbortSignal;
+    isCurrent(): boolean;
+    waitForFrame(): Promise<boolean>;
 };
 
-function findClip(clipId: string): { clip: DetectableClip } | null {
-    const tracks = trackStore.value?.tracks ?? [];
-    for (const track of tracks) {
-        const clips: readonly DetectableClip[] = track.clips;
-        const clip = clips.find((candidate) => candidate.id === clipId);
-        if (clip) {
-            return { clip };
-        }
+function createDetectionAuthority(
+    clipId: string,
+    controller: AbortController,
+    captureRootIdentity: NonNullable<typeof elasticRootIdentityProviderState.captureRootIdentity>,
+    signal: AbortSignal | undefined
+) {
+    const abort = (): void => controller.abort();
+    const deadline = performance.now() + 30_000;
+    let timedOut = false;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
+    const expired = (): boolean => timedOut || performance.now() >= deadline;
+    window.addEventListener('pagehide', abort, { once: true });
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) {
+        abort();
     }
-    return null;
-}
-
-/**
- * Detect transients in an audio clip and write the resulting markers into the
- * warp-marker store with `origin: 'transient-auto'`. User-locked markers and
- * markers with origin `user`/`grid-snap` are preserved across re-runs.
- *
- * Synchronous main-thread implementation. The pure detector is fast enough to
- * run inline for clips up to a few minutes; offloading to a worker is a
- * milestone-3 concern.
- */
-export function detectTransientsForClip(clipId: string, sensitivity: number): DetectTransientsResult {
-    const found = findClip(clipId);
-    if (!found) {
-        return { ok: false, reason: 'CLIP_NOT_FOUND' };
-    }
-    const { clip } = found;
-    if (clip.type !== 'audio') {
-        return { ok: false, reason: 'CLIP_NOT_AUDIO' };
-    }
-    if (!clip.audioBufferId) {
-        return { ok: false, reason: 'NO_BUFFER' };
-    }
-    const buffer = audioBufferCache.get(clip.audioBufferId);
-    if (!buffer) {
-        return { ok: false, reason: 'NO_BUFFER' };
-    }
-
+    const projectId = getSettledProjectId();
+    const root = captureRootIdentity();
     const tempo = transportStore.value?.tempo;
-    if (!tempo || tempo <= 0) {
-        return { ok: false, reason: 'NO_TEMPO' };
-    }
-
-    const monoSamples = downmixToMono(buffer);
-    const hits = detectTransients(monoSamples, buffer.sampleRate, sensitivity);
-
-    const beatsPerSecond = tempo / 60;
-    const existing = getWarpState(clipId);
-    // Keep the preserved set stable as additions replace the store state, so
-    // duplicate checks and counts refer only to markers retained from this run.
-    const preservedSnapshot = existing.markers.filter(
-        (m) => m.locked === true || (m.origin ?? 'user') !== 'transient-auto'
-    );
-
-    setWarpState(clipId, {
-        ...existing,
-        markers: [...preservedSnapshot].sort((a, b) => a.originalBeat - b.originalBeat),
-    });
-
-    let added = 0;
-    for (const hit of hits) {
-        const beat = (hit.sampleOffset / buffer.sampleRate) * beatsPerSecond;
-        if (preservedSnapshot.some((m) => Math.abs(m.originalBeat - beat) < 1e-3)) {
-            continue;
+    const editorClip = elasticAudioStore.value?.openClipId;
+    const preference = preferencesStore.value?.elasticTransientSensitivity;
+    const unsubscribePreference = preferencesStore.subscribe((state) => {
+        if (state?.elasticTransientSensitivity !== preference) {
+            abort();
         }
-        addWarpMarker(clipId, beat, beat, {
-            origin: 'transient-auto',
-            confidence: hit.confidence,
+    });
+    let editorChanged = false;
+    const unsubscribe = elasticAudioStore.subscribe((state) => {
+        if (state?.openClipId !== editorClip) {
+            editorChanged = true;
+            abort();
+        }
+    });
+    let unsubscribeSource: (() => void) | undefined;
+    const observeSourceOwnership = (sourceIsCurrent: () => boolean): void => {
+        // A restored source must not revive work that lost ownership between awaits.
+        unsubscribeSource = trackStore.subscribe(() => {
+            if (!sourceIsCurrent()) {
+                abort();
+            }
         });
-        added++;
-    }
-
-    return {
-        ok: true,
-        added,
-        kept: preservedSnapshot.length,
-        removed: existing.markers.length - preservedSnapshot.length,
     };
+    const isCurrent = (): boolean =>
+        !controller.signal.aborted &&
+        !expired() &&
+        transientDetectionLifecycle.owns(clipId, controller) &&
+        !editorChanged &&
+        elasticAudioStore.value?.openClipId === editorClip &&
+        preferencesStore.value?.elasticTransientSensitivity === preference &&
+        elasticRootIdentityProviderState.captureRootIdentity === captureRootIdentity &&
+        captureRootIdentity() === root &&
+        getSettledProjectId() === projectId &&
+        transportStore.value?.tempo === tempo;
+    const dispose = (): void => {
+        if (deadlineTimer !== undefined) {
+            clearTimeout(deadlineTimer);
+        }
+        window.removeEventListener('pagehide', abort);
+        signal?.removeEventListener('abort', abort);
+        unsubscribe();
+        unsubscribePreference();
+        unsubscribeSource?.();
+    };
+    if (!projectId || !tempo || !Number.isFinite(tempo) || tempo <= 0) {
+        dispose();
+        return undefined;
+    }
+    deadlineTimer = setTimeout(
+        () => {
+            timedOut = true;
+            abort();
+        },
+        Math.max(0, deadline - performance.now())
+    );
+    return { projectId, tempo, expired, isCurrent, dispose, abort, observeSourceOwnership };
 }
 
-function downmixToMono(buffer: AudioBuffer): Float32Array {
-    if (buffer.numberOfChannels === 1) {
-        return buffer.getChannelData(0);
+export function detectTransientsForClip(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal
+): Promise<Extract<ProductRead, { status: 'failed' }> | DetectionReady>;
+export function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal: AbortSignal | undefined,
+    consume: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+): Promise<Extract<ProductRead, { status: 'failed' }> | { status: 'consumed'; value: Result }>;
+/** Keep source and abort ownership alive throughout an async product consumer; Arrangement owns its final write. */
+export async function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal,
+    consume?: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+) {
+    cancelTransientDetection(clipId);
+    const captureRootIdentity = elasticRootIdentityProviderState.captureRootIdentity;
+    if (!captureRootIdentity) {
+        return { status: 'failed' as const, code: 'stale-source' as const };
     }
-    const out = new Float32Array(buffer.length);
-    const channels = buffer.numberOfChannels;
-    const buffers: Float32Array[] = [];
-    for (let c = 0; c < channels; c++) {
-        buffers.push(buffer.getChannelData(c));
+    const controller = new AbortController();
+    transientDetectionLifecycle.activate(clipId, controller);
+    const authority = createDetectionAuthority(clipId, controller, captureRootIdentity, signal);
+    if (!authority) {
+        return { status: 'failed' as const, code: 'stale-source' as const };
     }
-    for (let i = 0; i < buffer.length; i++) {
-        let sum = 0;
-        for (let c = 0; c < channels; c++) {
-            sum += buffers[c]![i]!;
+    const { projectId, tempo, expired, isCurrent, dispose, abort } = authority;
+    try {
+        const result = await readProductTransientOnsets({
+            clipId,
+            sensitivity,
+            projectId,
+            isProjectRevisionCurrent: isCurrent,
+            maxSourceSeconds: 600,
+            maxChannelSamples: 12_000_000,
+            timeoutMs: 30_000,
+            signal: controller.signal,
+            onAnalysisStarted: () => undefined,
+            observeSourceOwnership: authority.observeSourceOwnership,
+        });
+        if (expired()) {
+            return { status: 'failed' as const, code: 'analysis-timed-out' as const };
         }
-        out[i] = sum / channels;
+        if (result.status === 'failed') {
+            return result;
+        }
+        const ready: DetectionReady = {
+            ...result,
+            tempo,
+            isCurrent: () => isCurrent() && result.isCurrent(),
+            completeUnchanged: () =>
+                isCurrent() && result.isCurrent() && transientDetectionLifecycle.completeUnchanged(clipId, controller),
+        };
+        if (consume) {
+            const value = await consume(ready, {
+                signal: controller.signal,
+                isCurrent: ready.isCurrent,
+                waitForFrame: async () =>
+                    ready.isCurrent() && (await waitForCommitFrame(controller.signal)) && ready.isCurrent(),
+            });
+            if (expired()) {
+                return { status: 'failed' as const, code: 'analysis-timed-out' as const };
+            }
+            return { status: 'consumed' as const, value };
+        }
+        if (!(await waitForCommitFrame(controller.signal))) {
+            abort();
+            return { status: 'failed' as const, code: 'cancelled' as const };
+        }
+        if (expired()) {
+            return { status: 'failed' as const, code: 'analysis-timed-out' as const };
+        }
+        return ready;
+    } finally {
+        dispose();
+        // Retain the identity through final commit validation. The next request or
+        // explicit cancellation revokes it even after the Worker has settled.
     }
-    return out;
 }

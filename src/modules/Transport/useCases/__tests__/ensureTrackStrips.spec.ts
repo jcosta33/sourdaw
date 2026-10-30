@@ -68,6 +68,19 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     takeLaneStore: { value: {} },
     persistDeviceParam: vi.fn(),
     warpStateStore: { value: null },
+    getWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getWarpState>(() => ({
+        enabled: false,
+        markers: [],
+        stretchMode: 'repitch',
+        originalTempo: null,
+    })),
+    getStoredWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').getStoredWarpState>(() => undefined),
+    setWarpState: vi.fn<typeof import('#/modules/Arrangement/stores').setWarpState>(() => {
+        throw new Error('Unexpected warp-state mutation in this fixture');
+    }),
+    addWarpMarker: vi.fn<typeof import('#/modules/Arrangement/stores').addWarpMarker>(() => {
+        throw new Error('Unexpected warp-marker mutation in this fixture');
+    }),
 }));
 
 // Mock AudioEngine use cases

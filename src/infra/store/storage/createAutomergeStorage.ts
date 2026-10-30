@@ -2,6 +2,10 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
 
+import {
+    applyCanonicalStorageSlotMutation,
+    type CanonicalStorageSlotMutation,
+} from './applyCanonicalStorageSlotMutation';
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
 import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
@@ -37,6 +41,7 @@ type AutomergeStorageMutationInput = {
     snapshotTransaction?: object;
     didApply?: () => void;
     isCurrent?: () => boolean;
+    prepared?: PreparedStorageReuse;
 };
 
 /**
@@ -50,6 +55,33 @@ type AutomergeStoragePortMutationInput = {
     changeFn: (doc: AutomergeStorageMutableDoc) => void;
     message?: string;
     snapshotTransaction?: object;
+    canonicalMutation?: CanonicalStorageSlotMutation;
+};
+
+type PreparedStorageCandidate = {
+    readonly token: object;
+    isCurrent(): boolean;
+    discard(): void;
+};
+type PreparedStorageClone = {
+    requestMaterialization?(signal: AbortSignal): Promise<void>;
+    isCurrent(): boolean;
+    materialize(): PreparedStorageCandidate;
+    discard(): void;
+};
+type PreparedStorageReuse = {
+    readonly candidate: PreparedStorageCandidate;
+    readonly owner: object;
+    readonly port: AutomergeStoragePort;
+    matches(): boolean;
+};
+type PreparedStorageSet = {
+    readonly requestMaterialization?: (signal: AbortSignal) => Promise<void>;
+    isCurrent(): boolean;
+    clone(): void;
+    materialize(): void;
+    stage(): boolean;
+    discard(): void;
 };
 
 type AutomergeStoragePort = {
@@ -82,6 +114,16 @@ type AutomergeStoragePort = {
      * case as committed.
      */
     mutateDoc(input: AutomergeStoragePortMutationInput): void;
+    /** Validate the exact materialized candidate before publication, acknowledging only its installation. */
+    mutateDocValidated?(
+        input: AutomergeStoragePortMutationInput & {
+            validateDocument: (document: AutomergeStorageReadableDoc) => void;
+            beforePublication: () => void;
+            onPublished: () => void;
+            preparedCandidate?: object;
+        }
+    ): void;
+    cloneDocForMutation?(input: AutomergeStoragePortMutationInput): PreparedStorageClone;
     waitForSnapshotTransaction?(snapshotTransaction?: object): Promise<void>;
 };
 
@@ -232,6 +274,11 @@ type AutomergeStorageOptions<TData, TWriteMetadata = never> = {
  */
 export type AutomergeStorageAdapter<TData> = StorageAdapter<TData> & {
     flushPendingUnscopedWrite(): void;
+    prepareSet?(
+        scope: object | undefined,
+        value: TData,
+        stageValue?: (value: TData) => void
+    ): PreparedStorageSet | undefined;
 };
 
 type AutomergeStorageWriteContext = {
@@ -308,6 +355,26 @@ const assertAutomergeStorageTransactionOpen = (transaction: ActiveAutomergeStora
     }
     throw new Error(`Automerge storage transaction has already settled (${transaction.lifecycle})`);
 };
+
+const preparationScopes = new WeakMap<
+    object,
+    {
+        transaction: ActiveAutomergeStorageTransaction;
+        message: string | undefined;
+    }
+>();
+
+/** Capture exact owner and semantic intent before the handler's first await, without staging a write. */
+export function captureAutomergeStoragePreparationScope(): object | undefined {
+    const transaction = activeAutomergeStorageTransaction;
+    if (!transaction) {
+        return undefined;
+    }
+    assertAutomergeStorageTransactionOpen(transaction);
+    const token = Object.freeze({});
+    preparationScopes.set(token, { transaction, message: getAutomergeStoragePort()?.getSemanticMessage() });
+    return token;
+}
 
 /**
  * Re-enters an open transaction for the synchronous duration of `callback`.
@@ -749,12 +816,38 @@ export function createAutomergeStoragePreview(
     };
 }
 
+function isCanonicalJsonValue(value: unknown): boolean {
+    if (value === null || typeof value === 'string' || typeof value === 'boolean') {
+        return true;
+    }
+    if (typeof value === 'number') {
+        return Number.isFinite(value);
+    }
+    if (Array.isArray(value)) {
+        return Array.from(value).every(isCanonicalJsonValue);
+    }
+    if (typeof value !== 'object' || value === null || Object.getPrototypeOf(value) !== Object.prototype) {
+        return false;
+    }
+    return Reflect.ownKeys(value).every((key) => {
+        const descriptor = Object.getOwnPropertyDescriptor(value, key);
+        return (
+            typeof key === 'string' &&
+            descriptor?.enumerable === true &&
+            Object.hasOwn(descriptor, 'value') &&
+            isCanonicalJsonValue(descriptor.value)
+        );
+    });
+}
+
 /**
  * How a coalesced document write ended, and what its failure says about the
  * document.
  *
- * The boundary is the moment the coalesced `changeFn` returns — see the
- * durability contract on `AutomergeStoragePort.mutateDoc`:
+ * Legacy ports use the moment the coalesced `changeFn` returns, as the
+ * durability contract on `AutomergeStoragePort.mutateDoc` requires. Validated
+ * ports instead acknowledge the actual installation of the accepted candidate:
+ * its mutation callback may have returned before a validator rejects it.
  *
  * - `rolled-back` — the mutation never reached the document. Either the port
  *   threw before it ran `changeFn` at all, or `changeFn` threw and the change
@@ -767,6 +860,52 @@ type AutomergeStorageCommitOutcome =
     | { readonly status: 'committed' }
     | { readonly status: 'rolled-back'; readonly error: unknown }
     | { readonly status: 'ambiguous'; readonly error: unknown };
+
+function createAutomergeStorageChangeFn(
+    mutations: readonly AutomergeStorageMutationInput[],
+    validatesMaterialized: boolean,
+    finishApplication: () => void,
+    validateDocument?: AutomergeStorageDocumentValidator,
+    publicationMetadata?: readonly unknown[]
+): (doc: AutomergeStorageMutableDoc) => void {
+    const changedKeys = [...new Set(mutations.map((mutation) => mutation.key))];
+    return (doc) => {
+        const observesMetadata =
+            publicationMetadata !== undefined || Object.hasOwn(doc, AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY);
+        const before = observesMetadata
+            ? mutations.map(({ key }) => JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] }))
+            : [];
+        for (const mutation of mutations) {
+            if (mutation.isCurrent && !mutation.isCurrent()) {
+                throw new Error('Automerge storage execution was invalidated before publication');
+            }
+            mutation.changeFn(doc);
+        }
+        const validationFailure = validatesMaterialized ? null : (validateDocument?.(doc) ?? null);
+        if (validationFailure) {
+            throw new AutomergeStorageTransactionValidationError(validationFailure);
+        }
+        if (
+            observesMetadata &&
+            mutations.some(
+                ({ key }, index) =>
+                    before[index] !== JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
+            )
+        ) {
+            if (changedKeys.includes(AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY)) {
+                throw new Error('Publication metadata overlaps an action-owned document slot');
+            }
+            if (publicationMetadata) {
+                doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY] = structuredClone(publicationMetadata);
+            } else {
+                delete doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
+            }
+        }
+        if (!validatesMaterialized) {
+            finishApplication();
+        }
+    };
+}
 
 /** One Automerge change is the atomic commit boundary for keys sharing a document and owner. */
 function commitAutomergeStorageMutations(
@@ -792,59 +931,86 @@ function commitAutomergeStorageMutations(
     // control-flow analysis does not model the write through the callback and
     // narrows a local to `false` for the whole catch below.
     const application = { appliedChangeFn: false };
+    const mutateDocValidated = validateDocument ? port.mutateDocValidated : undefined;
+    const validatesMaterialized = mutateDocValidated !== undefined;
+    const finishApplication = (): void => {
+        for (const mutation of mutations) {
+            if (mutation.isCurrent && !mutation.isCurrent()) {
+                throw new Error('Automerge storage execution was invalidated during publication');
+            }
+        }
+        for (const mutation of mutations) {
+            mutation.didApply?.();
+        }
+    };
     return runWithAutomergeStorageMutationOwner(owner, () => {
         try {
-            port.mutateDoc({
+            const input: AutomergeStoragePortMutationInput = {
                 docId: firstMutation.docId,
                 changedKeys,
-                changeFn: (doc) => {
-                    const observesMetadata =
-                        publicationMetadata !== undefined ||
-                        Object.hasOwn(doc, AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY);
-                    const before = observesMetadata
-                        ? mutations.map(({ key }) =>
-                              JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
-                          )
-                        : [];
-                    for (const mutation of mutations) {
-                        if (mutation.isCurrent && !mutation.isCurrent()) {
-                            throw new Error('Automerge storage execution was invalidated before publication');
-                        }
-                        mutation.changeFn(doc);
-                    }
-                    const validationFailure = validateDocument?.(doc) ?? null;
-                    if (validationFailure) {
-                        throw new AutomergeStorageTransactionValidationError(validationFailure);
-                    }
-                    if (
-                        observesMetadata &&
-                        mutations.some(
-                            ({ key }, index) =>
-                                before[index] !== JSON.stringify({ present: Object.hasOwn(doc, key), value: doc[key] })
-                        )
-                    ) {
-                        if (changedKeys.includes(AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY)) {
-                            throw new Error('Publication metadata overlaps an action-owned document slot');
-                        }
-                        if (publicationMetadata) {
-                            doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY] = structuredClone(publicationMetadata);
-                        } else {
-                            delete doc[AUTOMERGE_STORAGE_PUBLICATION_EVIDENCE_KEY];
-                        }
-                    }
-                    for (const mutation of mutations) {
-                        if (mutation.isCurrent && !mutation.isCurrent()) {
-                            throw new Error('Automerge storage execution was invalidated during publication');
-                        }
-                    }
-                    for (const mutation of mutations) {
-                        mutation.didApply?.();
-                    }
-                    application.appliedChangeFn = true;
-                },
+                changeFn: createAutomergeStorageChangeFn(
+                    mutations,
+                    validatesMaterialized,
+                    () => {
+                        finishApplication();
+                        application.appliedChangeFn = true;
+                    },
+                    validateDocument,
+                    publicationMetadata
+                ),
                 message,
                 snapshotTransaction: firstMutation.snapshotTransaction,
-            });
+            };
+            if (validateDocument && mutateDocValidated) {
+                const prepared = mutations.find((mutation) => mutation.prepared)?.prepared;
+                let preparedCandidate: object | undefined;
+                if (prepared) {
+                    // A changed authority is a real refusal, never a reason to conceal the race with recomputation.
+                    if (prepared.port !== port || !prepared.candidate.isCurrent()) {
+                        throw new Error('Prepared Automerge mutation authority changed before publication');
+                    }
+                    if (
+                        mutations.length === 1 &&
+                        prepared.owner === owner &&
+                        publicationMetadata === undefined &&
+                        prepared.matches()
+                    ) {
+                        preparedCandidate = prepared.candidate.token;
+                    } else {
+                        prepared.candidate.discard();
+                    }
+                }
+                const validatedInput: Parameters<typeof mutateDocValidated>[0] = {
+                    ...input,
+                    validateDocument: (document) => {
+                        const failure = validateDocument(document);
+                        if (failure) {
+                            throw new AutomergeStorageTransactionValidationError(failure);
+                        }
+                    },
+                    beforePublication: finishApplication,
+                    onPublished: () => {
+                        application.appliedChangeFn = true;
+                        if (preparedCandidate !== undefined) {
+                            const installed = performance.now();
+                            performance.measure('automerge-storage-prepared-publication', {
+                                start: installed,
+                                end: installed,
+                            });
+                            performance.clearMeasures('automerge-storage-prepared-publication');
+                        }
+                    },
+                };
+                if (preparedCandidate !== undefined) {
+                    validatedInput.preparedCandidate = preparedCandidate;
+                }
+                mutateDocValidated.call(port, validatedInput);
+                if (!application.appliedChangeFn) {
+                    throw new Error('Validated Automerge mutation did not acknowledge publication');
+                }
+            } else {
+                port.mutateDoc(input);
+            }
         } catch (error) {
             if (application.appliedChangeFn) {
                 return { status: 'ambiguous', error };
@@ -1395,6 +1561,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         value: TData | null;
         write: PendingAutomergeStorageWrite;
         claimedExecution: ClaimedAutomergeStorageWrite | null;
+        prepared?: { candidate: PreparedStorageCandidate; matches(): boolean; port: AutomergeStoragePort };
     };
     let cachedValue: TData | null = null;
     let committedCacheValue: TData | null = null;
@@ -1898,6 +2065,20 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         if (!mutation) {
             return { status: 'defer' };
         }
+        if (pending.prepared) {
+            mutation.prepared = {
+                ...pending.prepared,
+                owner: pending.write.commitOwner,
+                matches: () =>
+                    pending.prepared?.matches() === true &&
+                    frozen.revision === pending.revision &&
+                    frozen.value === pending.value &&
+                    frozen.baseValue === pending.baseValue &&
+                    frozen.message === pending.message &&
+                    frozen.metadata === null &&
+                    frozen.baseDocumentPresence === pending.baseDocumentPresence,
+            };
+        }
         return { status: 'ready', mutation };
     };
 
@@ -1909,6 +2090,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             cancelAnimationFrame(pending.rafId);
             pending.rafId = null;
         }
+        pending.prepared?.candidate.discard();
         pendingAutomergeStorageWrites.delete(pending.write);
         pendingWritesByOwner.delete(pending.write.commitOwner);
         pending.claimedExecution = null;
@@ -2516,6 +2698,198 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
     };
 
     const adapter: AutomergeStorageAdapter<TData> = {
+        prepareSet(scope, requestedValue, stageValue) {
+            const captured = scope ? preparationScopes.get(scope) : undefined;
+            const port = getAutomergeStoragePort();
+            if (
+                !captured ||
+                !port?.cloneDocForMutation ||
+                !port.mutateDocValidated ||
+                writeMetadata ||
+                resolveConflicts ||
+                resolveCrdtConflicts ||
+                rebasePending ||
+                isLocalRuntimeStateUpdate ||
+                projectCommittedLocalState ||
+                preserveLocalRuntimeStateOnRecompute ||
+                mutateCrdtWithMetadata ||
+                mutateCrdt ||
+                toCrdt ||
+                fromCrdt ||
+                committedCacheIsDeferred ||
+                pendingWritesByOwner.size > 0 ||
+                activeAutomergeStoragePreview ||
+                captured.transaction.publicationMetadata.has(docId)
+            ) {
+                return undefined;
+            }
+            assertAutomergeStorageTransactionOpen(captured.transaction);
+            const transaction = captured.transaction;
+            const cloneDocForMutation = port.cloneDocForMutation;
+            const originalDoc = port.getDoc(docId);
+            if (!originalDoc) {
+                return undefined;
+            }
+            const value = toDocSafe(requestedValue);
+            const valueJson = JSON.stringify(value);
+            const baseValue = cachedValue;
+            const baseJson = JSON.stringify(baseValue);
+            const presence = captureBaseDocumentPresence();
+            const presenceJson = JSON.stringify(presence);
+            const revision = nextRevision + 1;
+            const previousCachedRevision = cachedRevision;
+            const generation = projectionGeneration;
+            const epoch = acceptedAuthorityEpoch;
+            let discarded = false;
+            let staged = false;
+            let cloned: PreparedStorageClone | undefined;
+            let candidate: PreparedStorageCandidate | undefined;
+            const storageIsCurrent = (): boolean =>
+                !discarded &&
+                !staged &&
+                transaction.lifecycle === 'open' &&
+                getAutomergeStoragePort() === port &&
+                port.getDoc(docId) === originalDoc &&
+                projectionGeneration === generation &&
+                acceptedAuthorityEpoch === epoch &&
+                cachedRevision === previousCachedRevision &&
+                nextRevision + 1 === revision &&
+                cachedValue === baseValue &&
+                JSON.stringify(baseValue) === baseJson &&
+                pendingWritesByOwner.size === 0 &&
+                !transaction.publicationMetadata.has(docId);
+            const isCurrent = (): boolean =>
+                storageIsCurrent() && (candidate?.isCurrent() ?? cloned?.isCurrent() ?? true);
+            const assertCurrent = (): void => {
+                if (!isCurrent()) {
+                    throw new Error('Prepared Automerge set changed during preparation');
+                }
+            };
+            const mutation = createMutation(
+                value,
+                baseValue,
+                captured.message,
+                transaction.snapshotTransaction,
+                undefined,
+                null,
+                presence
+            );
+            if (!storageIsCurrent()) {
+                throw new Error('Prepared Automerge set changed while planning its mutation');
+            }
+            if (!mutation) {
+                return undefined;
+            }
+            const canonicalMutation: CanonicalStorageSlotMutation | undefined =
+                !crdtEntityIdentity &&
+                isCanonicalJsonValue(baseValue) &&
+                (captured.message === undefined || typeof captured.message === 'string')
+                    ? { kind: 'canonical-json-slot-v1', key, baseValue, value, documentPresence: presence }
+                    : undefined;
+            const changeFn = canonicalMutation
+                ? (draft: AutomergeStorageMutableDoc) => applyCanonicalStorageSlotMutation(draft, canonicalMutation)
+                : createAutomergeStorageChangeFn([mutation], true, () => undefined);
+            return {
+                isCurrent,
+                get requestMaterialization() {
+                    const request = cloned?.requestMaterialization;
+                    if (!request) {
+                        return undefined;
+                    }
+                    return (signal: AbortSignal): Promise<void> => {
+                        const started = performance.now();
+                        try {
+                            assertCurrent();
+                            return runWithAutomergeStorageMutationOwner(transaction.commitOwner, () => request(signal));
+                        } finally {
+                            performance.measure('automerge-storage-materialization-handoff-task', {
+                                start: started,
+                                end: performance.now(),
+                            });
+                            performance.clearMeasures('automerge-storage-materialization-handoff-task');
+                        }
+                    };
+                },
+                clone: () => {
+                    assertCurrent();
+                    if (cloned || candidate) {
+                        throw new Error('Prepared Automerge set was already cloned');
+                    }
+                    cloned = runWithAutomergeStorageMutationOwner(transaction.commitOwner, () =>
+                        cloneDocForMutation.call(port, {
+                            docId,
+                            changedKeys: [key],
+                            changeFn,
+                            message: captured.message,
+                            snapshotTransaction: transaction.snapshotTransaction,
+                            canonicalMutation,
+                        })
+                    );
+                    assertCurrent();
+                },
+                materialize: () => {
+                    assertCurrent();
+                    const activeClone = cloned;
+                    if (!activeClone || candidate) {
+                        throw new Error('Prepared Automerge set has no unconsumed clone');
+                    }
+                    candidate = runWithAutomergeStorageMutationOwner(transaction.commitOwner, () =>
+                        activeClone.materialize()
+                    );
+                    assertCurrent();
+                },
+                stage: () => {
+                    if (!isCurrent()) {
+                        return false;
+                    }
+                    if (!candidate) {
+                        throw new Error('Prepared Automerge set has no materialized candidate');
+                    }
+                    if (activeAutomergeStorageTransaction !== transaction) {
+                        throw new Error('Prepared Automerge set requires its captured transaction');
+                    }
+                    const preparedCandidate = candidate;
+                    if (stageValue) {
+                        stageValue(value);
+                    } else {
+                        adapter.set(value);
+                    }
+                    const pending = pendingWritesByOwner.get(transaction.commitOwner);
+                    if (
+                        !pending ||
+                        pending.revision !== revision ||
+                        JSON.stringify(pending.baseDocumentPresence) !== presenceJson ||
+                        pending.baseValue !== baseValue ||
+                        pending.value !== value
+                    ) {
+                        throw new Error('Prepared Automerge set did not stage its exact planned write');
+                    }
+                    pending.message = captured.message;
+                    pending.prepared = {
+                        candidate: preparedCandidate,
+                        port,
+                        matches: () =>
+                            pending.revision === revision &&
+                            pending.value === value &&
+                            JSON.stringify(pending.value) === valueJson &&
+                            pending.baseValue === baseValue &&
+                            JSON.stringify(pending.baseValue) === baseJson &&
+                            pending.message === captured.message &&
+                            JSON.stringify(pending.baseDocumentPresence) === presenceJson,
+                    };
+                    staged = true;
+                    return true;
+                },
+                discard: () => {
+                    if (!staged) {
+                        candidate?.discard();
+                        cloned?.discard();
+                    }
+                    discarded = true;
+                },
+            };
+        },
+
         flushPendingUnscopedWrite(): void {
             const commitOwner = unscopedCommitOwner;
             if (!commitOwner) {

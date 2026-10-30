@@ -1,6 +1,5 @@
 import { handleAddCvOutput } from '../handlers/finalFeature/handleAddCvOutput';
 import { handleCloseElasticEditor } from '../handlers/finalFeature/handleCloseElasticEditor';
-import { handleDetectTransients } from '../handlers/finalFeature/handleDetectTransients';
 import { handleElasticAddMarker } from '../handlers/finalFeature/handleElasticAddMarker';
 import { handleElasticRemoveMarker } from '../handlers/finalFeature/handleElasticRemoveMarker';
 import { handleElasticSetSensitivity } from '../handlers/finalFeature/handleElasticSetSensitivity';
@@ -17,7 +16,6 @@ import { handleSetWarpPitchShift } from '../handlers/finalFeature/handleSetWarpP
 export type FinalFeatureHandlersMap = {
     addCvOutput: typeof handleAddCvOutput;
     closeElasticEditor: typeof handleCloseElasticEditor;
-    detectTransients: typeof handleDetectTransients;
     elasticAddMarker: typeof handleElasticAddMarker;
     elasticRemoveMarker: typeof handleElasticRemoveMarker;
     elasticSetSensitivity: typeof handleElasticSetSensitivity;
@@ -37,7 +35,6 @@ export type FinalFeatureHandlersMap = {
  */
 export function getFinalFeatureHandlers(): FinalFeatureHandlersMap {
     return {
-        detectTransients: handleDetectTransients,
         quantizeTransients: handleQuantizeTransients,
         openElasticEditor: handleOpenElasticEditor,
         closeElasticEditor: handleCloseElasticEditor,

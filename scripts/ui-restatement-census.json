@@ -7166,7 +7166,7 @@
   {
     "id": "ui-45c2e45f1b9909dd",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 360,
+    "line": 400,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9830,7 +9830,7 @@
   {
     "id": "ui-60d397eea0b51d9e",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 444,
+    "line": 484,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -10397,7 +10397,7 @@
   {
     "id": "ui-666109db690ababc",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 317,
+    "line": 357,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -11675,7 +11675,7 @@
   {
     "id": "ui-755635b0660c6b94",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 165,
+    "line": 177,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14537,7 +14537,7 @@
   {
     "id": "ui-910914ceb614ac6b",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 351,
+    "line": 391,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15464,7 +15464,7 @@
   {
     "id": "ui-9b561aeb57a1c675",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 407,
+    "line": 447,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -15860,7 +15860,7 @@
   {
     "id": "ui-9fbe0ff6963ca25a",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 390,
+    "line": 430,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16463,7 +16463,7 @@
   {
     "id": "ui-a5ae180a1234b71c",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 310,
+    "line": 350,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16796,7 +16796,7 @@
   {
     "id": "ui-a9c7e4ce2442f34e",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 331,
+    "line": 371,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -18497,7 +18497,7 @@
   {
     "id": "ui-b9bd7b6325cc7c9a",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 392,
+    "line": 432,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -20819,7 +20819,7 @@
   {
     "id": "ui-d232b4bbd97dc931",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 374,
+    "line": 414,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -21278,7 +21278,7 @@
   {
     "id": "ui-d6fdeab44685a876",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 308,
+    "line": 348,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -23429,7 +23429,7 @@
   {
     "id": "ui-ed2788078fef6080",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 372,
+    "line": 412,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -24572,7 +24572,7 @@
   {
     "id": "ui-f8569d9215b085e0",
     "file": "src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx",
-    "line": 309,
+    "line": 349,
     "fingerprint": "DawControlStrip\t",
     "kind": "daw-chrome",
     "mapping": "DawControlStrip",

@@ -23,6 +23,10 @@ import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/u
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+const elasticRootMocks = vi.hoisted(() => ({
+    install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
+}));
+
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
 // dependencies and hands every module's `get<Module>Handlers()` result to the
@@ -543,6 +547,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticRootIdentityProvider: elasticRootMocks.install,
     setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
@@ -805,7 +810,12 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
-    it('wires the live root identity reader before project transition configuration', () => {
+    it('installs the same live root reader for sensitivity and Worker lifetimes before consumers', () => {
+        expect(elasticRootMocks.install).toHaveBeenCalledExactlyOnceWith(captureProjectRootIdentityMock);
+        expect(captureProjectRootIdentityMock).not.toHaveBeenCalled();
+        expect(elasticRootMocks.install.mock.invocationCallOrder[0]!).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
+        );
         expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
             captureProjectRootIdentityMock
         );

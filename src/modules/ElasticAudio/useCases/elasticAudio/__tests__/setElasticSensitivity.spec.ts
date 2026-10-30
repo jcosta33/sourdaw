@@ -8,18 +8,23 @@ import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 
 const mocks = vi.hoisted(() => ({
-    detectTransientsForClip: vi.fn().mockReturnValue({ ok: true, added: 0, kept: 0, removed: 0 }),
+    execute: vi.fn<(action: unknown, options?: { signal?: AbortSignal; onCommitted?: () => void }) => Promise<void>>(),
+    cancel: vi.fn(),
     notify: vi.fn(),
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 
-vi.mock('../detectTransientsForClip', () => ({
-    detectTransientsForClip: (...args: unknown[]) => mocks.detectTransientsForClip(...args),
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: mocks.execute,
+    executeUserAppAction: vi.fn(),
 }));
+vi.mock('../cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { setElasticSensitivityRootIdentityCapture } from '../elasticSensitivityDependencies';
 import { setElasticSensitivity } from '../setElasticSensitivity';
+import { transientDetectionLifecycle } from '../transientDetectionLifecycle';
 
 let rootIdentity = 'root-1';
 let buffer: AudioBuffer;
@@ -44,7 +49,10 @@ function makeBuffer(): AudioBuffer {
 describe('setElasticSensitivity', () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        mocks.detectTransientsForClip.mockReset().mockReturnValue({ ok: true, added: 0, kept: 0, removed: 0 });
+        mocks.execute.mockReset().mockImplementation(async (_action, options) => {
+            options?.onCommitted?.();
+        });
+        mocks.cancel.mockReset().mockImplementation((clipId: string) => transientDetectionLifecycle.cancel(clipId));
         mocks.notify.mockClear();
         rootIdentity = 'root-1';
         buffer = makeBuffer();
@@ -105,8 +113,11 @@ describe('setElasticSensitivity', () => {
         vi.advanceTimersByTime(150);
         await pending;
 
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledOnce();
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.5);
+        expect(mocks.execute).toHaveBeenCalledOnce();
+        expect(mocks.execute).toHaveBeenCalledWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.5 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it('updates the canonical preference immediately', () => {
@@ -132,13 +143,16 @@ describe('setElasticSensitivity', () => {
     it('debounces detection by 150ms when a clip is open', async () => {
         elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
         const promise = setElasticSensitivity(0.5);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         vi.advanceTimersByTime(149);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         vi.advanceTimersByTime(10);
         await promise;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.5);
+        expect(mocks.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.execute).toHaveBeenCalledWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.5 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it('collapses rapid calls into a single detection on the last value', async () => {
@@ -148,8 +162,11 @@ describe('setElasticSensitivity', () => {
         const third = setElasticSensitivity(0.9);
         vi.advanceTimersByTime(200);
         await Promise.all([first, second, third]);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledTimes(1);
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledWith('clip-1', 0.9);
+        expect(mocks.execute).toHaveBeenCalledTimes(1);
+        expect(mocks.execute).toHaveBeenCalledWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.9 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it('sets detected=true after running detection', async () => {
@@ -164,7 +181,7 @@ describe('setElasticSensitivity', () => {
         const promise = setElasticSensitivity(0.5);
         vi.advanceTimersByTime(200);
         await promise;
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 
     it('targets the displayed selected audio without pinning the editor open', async () => {
@@ -172,7 +189,10 @@ describe('setElasticSensitivity', () => {
         const pending = setElasticSensitivity(0.82);
         await vi.advanceTimersByTimeAsync(150);
         await pending;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.82);
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.82 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
         expect(elasticAudioStore.value?.openClipId).toBeNull();
         expect(elasticAudioStore.value?.detected).toBe(true);
     });
@@ -184,7 +204,10 @@ describe('setElasticSensitivity', () => {
         select(null);
         await vi.advanceTimersByTimeAsync(150);
         await pending;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.6);
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.6 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it.each(['missing', 'midi', 'no-buffer'] as const)(
@@ -215,7 +238,7 @@ describe('setElasticSensitivity', () => {
             await vi.advanceTimersByTimeAsync(150);
             await pending;
             expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.7);
-            expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+            expect(mocks.execute).not.toHaveBeenCalled();
             expect(elasticAudioStore.value?.detected).toBe(false);
         }
     );
@@ -225,7 +248,7 @@ describe('setElasticSensitivity', () => {
         select('clip-1');
         await vi.advanceTimersByTimeAsync(150);
         await pending;
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 
     it('retires a selection ABA that occurs during the preference write', async () => {
@@ -238,11 +261,14 @@ describe('setElasticSensitivity', () => {
         unsubscribe();
         await vi.advanceTimersByTimeAsync(150);
         await expect(pending).resolves.toBeUndefined();
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         const fresh = setElasticSensitivity(0.4);
         await vi.advanceTimersByTimeAsync(150);
         await fresh;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.4);
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.4 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it.each(['selection', 'selection-ABA', 'editor-ABA', 'source', 'source-ABA', 'root'] as const)(
@@ -281,14 +307,17 @@ describe('setElasticSensitivity', () => {
             }
             await vi.advanceTimersByTimeAsync(150);
             await pending;
-            expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+            expect(mocks.execute).not.toHaveBeenCalled();
             expect(elasticAudioStore.value?.detected).toBe(false);
             trackStore.set(original);
             select('clip-1');
             const fresh = setElasticSensitivity(0.4);
             await vi.advanceTimersByTimeAsync(150);
             await fresh;
-            expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.4);
+            expect(mocks.execute).toHaveBeenCalledExactlyOnceWith(
+                { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.4 } },
+                expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+            );
         }
     );
 
@@ -298,7 +327,7 @@ describe('setElasticSensitivity', () => {
         buffer = makeBuffer();
         await vi.advanceTimersByTimeAsync(150);
         await pending;
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 
     it('settles coalesced callers and releases each actual subscription once', async () => {
@@ -347,7 +376,7 @@ describe('setElasticSensitivity', () => {
         expect(second).toBe(first);
         await expect(second).resolves.toBeUndefined();
         expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.9);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         expect(logger.error).toHaveBeenCalledWith(
             new Error('Elastic sensitivity root identity capture is not configured')
         );
@@ -356,19 +385,22 @@ describe('setElasticSensitivity', () => {
         expect(clearTimer).toHaveBeenCalledTimes(1);
         await vi.advanceTimersByTimeAsync(150);
         expect(vi.getTimerCount()).toBe(0);
-        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
         setElasticSensitivityRootIdentityCapture(() => rootIdentity);
         const fresh = setElasticSensitivity(0.4);
         expect(fresh).not.toBe(first);
         await vi.advanceTimersByTimeAsync(150);
         await fresh;
-        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.4);
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith(
+            { type: 'detectTransients', payload: { clipId: 'clip-1', sensitivity: 0.4 } },
+            expect.objectContaining({ signal: expect.any(AbortSignal), onCommitted: expect.any(Function) })
+        );
     });
 
     it('reports unexpected detection failure and settles without a rejected fire-and-forget promise', async () => {
         select('clip-1');
         const error = new Error('native detector failed');
-        mocks.detectTransientsForClip.mockImplementationOnce(() => {
+        mocks.execute.mockImplementationOnce(() => {
             throw error;
         });
         const pending = setElasticSensitivity(0.8);
@@ -384,13 +416,148 @@ describe('setElasticSensitivity', () => {
         expect(vi.getTimerCount()).toBe(0);
     });
 
-    it('does not mark a refused detector result as detected success', async () => {
+    it.each(['current', 'aborted', 'stale', 'successor', 'failed'] as const)(
+        'accepts only its exact successful unchanged completion: %s',
+        async (outcome) => {
+            select('clip-1');
+            mocks.execute.mockImplementationOnce(async () => {
+                // The real registered Detect takes one revision and owns one controller.
+                transientDetectionLifecycle.cancel('clip-1');
+                const controller = new AbortController();
+                transientDetectionLifecycle.activate('clip-1', controller);
+                expect(transientDetectionLifecycle.completeUnchanged('clip-1', controller)).toBe(true);
+                if (outcome === 'aborted') {
+                    controller.abort();
+                }
+                if (outcome === 'stale') {
+                    transientDetectionLifecycle.cancel('clip-1');
+                }
+                if (outcome === 'successor') {
+                    transientDetectionLifecycle.cancel('clip-1');
+                    const successor = new AbortController();
+                    transientDetectionLifecycle.activate('clip-1', successor);
+                    expect(transientDetectionLifecycle.completeUnchanged('clip-1', successor)).toBe(true);
+                }
+                if (outcome === 'failed') {
+                    throw new Error('unchanged completion failed before return');
+                }
+            });
+            const request = setElasticSensitivity(0.8);
+            await vi.advanceTimersByTimeAsync(150);
+            await expect(request).resolves.toBeUndefined();
+            expect(elasticAudioStore.value?.detected).toBe(outcome === 'current');
+            if (outcome === 'current') {
+                expect(mocks.notify).not.toHaveBeenCalled();
+            } else {
+                expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
+            }
+        }
+    );
+
+    it('does not mark a resolved action without an actual commit as detected success', async () => {
         select('clip-1');
-        mocks.detectTransientsForClip.mockReturnValueOnce({ ok: false, reason: 'NO_BUFFER' });
+        mocks.execute.mockResolvedValueOnce(undefined);
         const pending = setElasticSensitivity(0.8);
         await vi.advanceTimersByTimeAsync(150);
         await pending;
         expect(elasticAudioStore.value?.detected).toBe(false);
         expect(mocks.notify).toHaveBeenCalledTimes(1);
+    });
+
+    it('awaits the actual async command and settles an error without detected success', async () => {
+        select('clip-1');
+        const command = Promise.withResolvers<void>();
+        mocks.execute.mockReturnValueOnce(command.promise);
+        let settled = false;
+        const request = setElasticSensitivity(0.82).then(() => {
+            settled = true;
+        });
+        await vi.advanceTimersByTimeAsync(150);
+        expect(settled).toBe(false);
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        const failure = new Error('Worker failed');
+        command.reject(failure);
+        await request;
+        expect(logger.error).toHaveBeenCalledWith(failure);
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        const fresh = setElasticSensitivity(0.4);
+        await vi.advanceTimersByTimeAsync(150);
+        await fresh;
+        expect(elasticAudioStore.value?.detected).toBe(true);
+    });
+
+    it.each(['selection-ABA', 'source-ABA', 'root'] as const)(
+        'retires only its own in-flight request after %s without cancelling a same-clip successor',
+        async (kind) => {
+            select('clip-1');
+            const first = Promise.withResolvers<void>();
+            const entered = Promise.withResolvers<AbortSignal>();
+            mocks.execute.mockImplementationOnce(async (_action, options) => {
+                if (!options?.signal) {
+                    throw new Error('Expected private abort signal');
+                }
+                entered.resolve(options.signal);
+                await first.promise;
+                if (!options.signal.aborted) {
+                    options.onCommitted?.();
+                }
+            });
+            const stale = setElasticSensitivity(0.8);
+            await vi.advanceTimersByTimeAsync(150);
+            const oldSignal = await entered.promise;
+            if (kind === 'selection-ABA') {
+                select('clip-2');
+                select('clip-1');
+            }
+            if (kind === 'source-ABA') {
+                const original = trackStore.value;
+                if (!original) {
+                    throw new Error('Expected source fixture');
+                }
+                trackStore.set({
+                    ...original,
+                    tracks: original.tracks.map((track) => ({
+                        ...track,
+                        clips: track.clips.map((clip) => ({ ...clip, audioBufferId: 'replacement' })),
+                    })),
+                });
+                trackStore.set(original);
+            }
+            if (kind === 'root') {
+                rootIdentity = 'in-flight-successor-root';
+                const original = trackStore.value;
+                if (!original) {
+                    throw new Error('Expected root fixture');
+                }
+                trackStore.set({
+                    ...original,
+                    tracks: original.tracks.map((track) => ({ ...track, name: 'Successor' })),
+                });
+            }
+            expect(oldSignal.aborted).toBe(true);
+            const fresh = setElasticSensitivity(0.4);
+            await vi.advanceTimersByTimeAsync(150);
+            await fresh;
+            const freshSignal = mocks.execute.mock.calls[1]?.[1]?.signal;
+            expect(freshSignal?.aborted).toBe(false);
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            first.resolve();
+            await stale;
+            expect(freshSignal?.aborted).toBe(false);
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            expect(vi.getTimerCount()).toBe(0);
+        }
+    );
+
+    it('settles an external abort during debounce without starting or marking success', async () => {
+        select('clip-1');
+        const controller = new AbortController();
+        const request = setElasticSensitivity(0.82, controller.signal);
+        controller.abort();
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(request).resolves.toBeUndefined();
+        expect(mocks.execute).not.toHaveBeenCalled();
+        expect(elasticAudioStore.value?.detected).toBe(false);
+        expect(vi.getTimerCount()).toBe(0);
     });
 });
