@@ -14,6 +14,8 @@ write. Removing the root-installation producer must fail the probe, while author
 prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
 capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
 cleanups. A self-check that calls only the comparator does not observe the missing producer.
+For rejected partial merges, use the complementary real-store probe in `project-integrity.md`:
+the root-installation scorer alone cannot detect a stale projected store.
 
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 

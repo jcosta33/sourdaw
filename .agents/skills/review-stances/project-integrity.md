@@ -4,10 +4,11 @@
 
 The synchronous merge loop in `0a6c596db4b9bddafab3e63a79b9e3845077d2e4` and the worker
 installation loop added by `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` notified projections
-only after the whole loop succeeded. GitHub associates no PR with either commit; historical
-review prompts, stances and tiers are unknown. PR #5880 exposed partial installation through
-root observers while preserving the existing omission from ordinary change listeners. A root
-observer proving the installed value does not prove the project stores received it.
+only after the whole loop succeeded. The GitHub commit/pulls lookup returned no associated PR for
+either commit; historical review prompts, stances and tiers are not established. PR #5880 exposed
+partial installation through root observers while preserving the existing omission from ordinary
+change listeners. A root observer proving the installed value does not prove the project stores
+received it.
 
 Fail a later decode after an earlier root is actually installed, on both the worker-result and
 synchronous fallback routes. At the caller's rejection boundary, require raw durable fields and
