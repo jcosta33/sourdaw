@@ -1,0 +1,42 @@
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  s_59e31a5c6f3e31::t_32c602be36577c 108,112
+  s_59e31a5c6f3e31::t_f9097fbda3eb27 1-9,12,17,21-23,25,27-33,36-39,41-92,94-107,109-111,113-122
+  s_59e31a5c6f3e31::t_5a4aac1abb0cf7 123-124
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  s_59e31a5c6f3e31::t_61a4f5022a28cb 39,109
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/resolveElasticEditorTarget.spec.ts
+  s_59e31a5c6f3e31::t_27ec2c65297da7 1-31
+  s_59e31a5c6f3e31::t_3488695b61f0bb 32-34
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_59e31a5c6f3e31::t_d4aaa081583d6d 27-31,65,116-118,134,268,511,535
+  s_59e31a5c6f3e31::t_260f8a76ae0ed3 288-307
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  s_59e31a5c6f3e31::t_260f8a76ae0ed3 183-185,189,251-261
+  s_59e31a5c6f3e31::t_f8822278a60729 3-7,13,15,24-43,47-78,83-84,86,169-182,186-188,190-250,262-298
+  s_59e31a5c6f3e31::t_5293911c4f275b 299-301
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_4a5aeb86c9563a 54-60,179-180,184,186,208-209,231,251
+  s_59e31a5c6f3e31::t_a4ae25c5d68ed7 9-16,116,161,169-178,181-183,185,187-189,193-195,257-258
+  s_59e31a5c6f3e31::t_0d612530a8042f 35,190-192,206,225-228,249-250
+  s_59e31a5c6f3e31::t_260f8a76ae0ed3 37,196-205,207,210-220,224,229,232-248,252-256
+  s_59e31a5c6f3e31::t_5cc3563efbc420 221-223,230
+  s_59e31a5c6f3e31::t_ba48489f728562 259
+src/modules/ElasticAudio/useCases/elasticAudio/resolveElasticEditorTarget.ts
+  s_59e31a5c6f3e31::t_61a4f5022a28cb 1-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "196ce971be8d76ad3d6977bb8678df5e80f348f1",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
