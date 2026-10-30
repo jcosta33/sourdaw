@@ -1,5 +1,18 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a forced-GC ownership bound counted the JIT's references (#5924, introduced by #5829)
+
+PR #5829's stem-export ownership case samples every observed buffer still live after `gc()` and
+bounds it at two renders. On a starved CI runner it failed with the previous stem's PCM and encoder
+state still live at the next stem's first WAV write. An in-flight background Maglev/Turbofan job
+holds its closure, and so that closure's context, as a strong root `gc()` does not drain; the
+retained objects were exactly what finished encoder and PCM-reader closures captured. The
+measurement child now runs with `--no-concurrent-recompilation` and refuses to measure without it.
+A forced-GC liveness bound counts only program references when tiering is synchronous. Probe it
+under engine delay: `--concurrent-recompilation-delay=300` must fail the case without the flag
+and pass with it, and keeping the previous render's channels reachable must still fail the bound.
+A local green run proves nothing about a measurement whose roots depend on background thread speed.
+
 ### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
 
 PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
