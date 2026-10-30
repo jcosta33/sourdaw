@@ -77,7 +77,10 @@ function deviceAcceptsAutomationParameter(
         return false;
     }
     const descriptor = getAutomationDeviceDescriptor(device.type);
-    return descriptor === undefined || descriptor.parameters.some((parameter) => parameter.id === parameterId && parameter.automatable);
+    return (
+        descriptor === undefined ||
+        descriptor.parameters.some((parameter) => parameter.id === parameterId && parameter.automatable)
+    );
 }
 
 /**
@@ -370,10 +373,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // when the incoming context temporarily has no automation state.
     const rootIdentity = captureProjectRootIdentity();
     const schedulerGeneration = schedulerSession.generation;
-    if (
-        automationState.rootIdentity !== rootIdentity ||
-        automationState.schedulerGeneration !== schedulerGeneration
-    ) {
+    if (automationState.rootIdentity !== rootIdentity || automationState.schedulerGeneration !== schedulerGeneration) {
         automationState.drivingLanes.clear();
         automationState.pluginParamSlew.clear();
         automationState.lastBypassed.clear();
@@ -553,7 +553,7 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // have written — no more, no less.
     const clipOwnedDeviceParams = new Map<string, string>();
     for (const lane of autoState.lanes) {
-        if (!lane.clipId || lane.points.length === 0) {
+        if (!lane.clipId || (lane.points.length === 0 && !lane.linkedLaneId)) {
             continue;
         }
         const track = automationState.trackIndex.get(lane.trackId);
@@ -598,7 +598,9 @@ export function applyAutomation(currentBeat: number): Set<string> {
     const zeroSpanDuplicateLaneIds = resolveZeroSpanDuplicateTrackLanes(autoState.lanes);
 
     for (const lane of autoState.lanes) {
-        if (lane.points.length === 0) {
+        // A follower's material belongs to its source, resolved by the real
+        // value lookup below; its own empty points do not make it silent.
+        if (lane.points.length === 0 && !lane.linkedLaneId) {
             continue;
         }
 

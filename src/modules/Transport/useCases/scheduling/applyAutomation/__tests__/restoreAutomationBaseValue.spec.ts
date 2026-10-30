@@ -124,7 +124,11 @@ describe('restoreAutomationBaseValue', () => {
     it('keeps the existing internal-key denial conjunctive with declared membership', () => {
         const law = vi.spyOn(Arrangement, 'isDeviceParameterAutomatable').mockReturnValue(false);
         try {
-            restoreAutomationBaseValue({ lane: { trackId: 'track-1', parameterId: 'ov-1:mix' }, track: trackWithDeviceParam('mix', 0.42), landTime: 7 });
+            restoreAutomationBaseValue({
+                lane: { trackId: 'track-1', parameterId: 'ov-1:mix' },
+                track: trackWithDeviceParam('mix', 0.42),
+                landTime: 7,
+            });
             expect(updateDeviceParam).not.toHaveBeenCalled();
         } finally {
             law.mockRestore();
@@ -134,7 +138,11 @@ describe('restoreAutomationBaseValue', () => {
     it('preserves unknown-family manual-base compatibility', () => {
         restoreAutomationBaseValue({
             lane: { trackId: 'track-1', parameterId: 'device:custom' },
-            track: { gain: 0.4, pan: 0, devices: [{ id: 'device', type: 'unregistered-family', parameterValues: { custom: 0.42 } }] },
+            track: {
+                gain: 0.4,
+                pan: 0,
+                devices: [{ id: 'device', type: 'unregistered-family', parameterValues: { custom: 0.42 } }],
+            },
             landTime: 7,
         });
         expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith('track-1', 'device', 'custom', 0.42);
@@ -143,7 +151,18 @@ describe('restoreAutomationBaseValue', () => {
     it('does not invent a separate manual base for a hosted plugin', () => {
         restoreAutomationBaseValue({
             lane: { trackId: 'track-1', parameterId: 'device:7' },
-            track: { gain: 0.4, pan: 0, devices: [{ id: 'device', type: 'external-plugin', externalInstanceId: 'instance', parameterValues: { '7': 0.42 } }] },
+            track: {
+                gain: 0.4,
+                pan: 0,
+                devices: [
+                    {
+                        id: 'device',
+                        type: 'external-plugin',
+                        externalInstanceId: 'instance',
+                        parameterValues: { '7': 0.42 },
+                    },
+                ],
+            },
             landTime: 7,
         });
         expect(updateDeviceParam).not.toHaveBeenCalled();

@@ -76,7 +76,10 @@ function deviceAcceptsAutomationParameter(
         return false;
     }
     const descriptor = getAutomationDeviceDescriptor(device.type);
-    return descriptor === undefined || descriptor.parameters.some((parameter) => parameter.id === id && parameter.automatable);
+    return (
+        descriptor === undefined ||
+        descriptor.parameters.some((parameter) => parameter.id === id && parameter.automatable)
+    );
 }
 
 /**
