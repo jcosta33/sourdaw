@@ -119,6 +119,8 @@ describe('startup server diagnostics', () => {
         const gate = deferred<string>();
         const item = await fixture('e2e', gate);
         const pending = fetch(`${item.origin}${STARTUP_DIAGNOSTIC_TARGET}?private=hidden-value`);
+        let status = 0;
+        let body = '';
         try {
             await expect.poll(() => event(item, 'transform-start')).toBeDefined();
             const received = event(item, 'http-received');
@@ -129,10 +131,12 @@ describe('startup server diagnostics', () => {
             await expect.poll(() => event(item, 'server-heartbeat'), { timeout: 8_000 }).toBeDefined();
         } finally {
             gate.resolve('export const fixtureValue = 23;');
+            const response = await pending;
+            status = response.status;
+            body = await response.text();
         }
-        const response = await pending;
-        expect(response.status).toBe(200);
-        expect(await response.text()).toContain('fixtureValue = 23');
+        expect(status).toBe(200);
+        expect(body).toContain('fixtureValue = 23');
         await expect.poll(() => event(item, 'http-close')).toMatchObject({ finished: true });
         expect(event(item, 'http-finish')).toMatchObject({
             requestId: event(item, 'http-received')?.requestId,
