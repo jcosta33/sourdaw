@@ -1,4 +1,3 @@
-import type { Page } from '@playwright/test';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +5,8 @@ import {
     installPunchRecordingClockWitness,
     RECORDING_RENDER_QUANTUM_FRAMES,
 } from '../../../../../../tests/e2e/punchRecordingClockObserver';
+
+import type { Page } from '@playwright/test';
 
 const SAMPLE_ZERO = 240_000;
 const SAMPLE_RATE = 48_000;
@@ -122,6 +123,10 @@ async function installFixture() {
                 throw new TypeError('The fixture must execute the actual init callback');
             }
             Reflect.apply(script, undefined, []);
+            return {
+                async dispose(): Promise<void> {},
+                async [Symbol.asyncDispose](): Promise<void> {},
+            };
         },
     };
     await installPunchRecordingClockWitness(page);
