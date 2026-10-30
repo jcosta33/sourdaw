@@ -1,0 +1,51 @@
+scripts/diagnostics/reloadCancellation/linuxProcessIdentity.ts
+  s_26f70b851e8f7a::t_d1d89e52b85410 1-33
+scripts/diagnostics/reloadCancellation/pageCollector.ts
+  s_26f70b851e8f7a::t_00cc69aacfc745 8,133-137,154-157,159,238
+  s_26f70b851e8f7a::t_27fa853f237f1c 7
+  s_26f70b851e8f7a::t_9ea1952e25f92f 239
+scripts/diagnostics/reloadCancellation/traceBinding.ts
+  s_26f70b851e8f7a::t_d1d89e52b85410 1-45
+  s_26f70b851e8f7a::t_d178cba0f6a6fa 46-48
+scripts/diagnostics/reloadCancellation/nativePreflight.ts
+  s_26f70b851e8f7a::t_0bff88da0ef192 6,11,13,30-37,118,144-157,181-182,197
+  s_26f70b851e8f7a::t_f4b8d53b2698fc 198-200
+scripts/diagnostics/reloadCancellation/processPhase.ts
+  s_26f70b851e8f7a::t_00cc69aacfc745 28-29,68-71
+  s_26f70b851e8f7a::t_ec9469cc2ac8f6 72-74
+scripts/diagnostics/reloadCancellation/nativeSupervisor.ts
+  s_26f70b851e8f7a::t_00cc69aacfc745 1-55
+  s_26f70b851e8f7a::t_d18a290b1adb32 56-58
+scripts/diagnostics/reloadCancellation/nativeBrowserWrapper.ts
+  s_26f70b851e8f7a::t_a68422f59dfcfa 3-4,14-18
+  s_26f70b851e8f7a::t_c873c7fe1a37e4 19-21
+scripts/diagnostics/reloadCancellation/nativeTrace.ts
+  s_26f70b851e8f7a::t_75316f0047184d 19,23,35,47-50,142-147
+  s_26f70b851e8f7a::t_a68422f59dfcfa 88-103
+  s_26f70b851e8f7a::t_98e2f78e65b52d 141
+  s_26f70b851e8f7a::t_834761cbe2223e 148-150
+scripts/__tests__/reloadCancellationNativeExit.spec.ts
+  s_26f70b851e8f7a::t_38e4cabbf49cf4 79-83
+  s_26f70b851e8f7a::t_ac85006c929daf 1-3,8-9,19,23,36-41,44-46,53-55,61-72,75-78,84-87,91,97-101,104-110,164-168,170,183,188-189,193,204-233
+  s_26f70b851e8f7a::t_6b8fdb290123b7 10-15,47-52,56-60,73-74,88-90,92-96,102-103,111-163,169,171-182,184-187,190-192,194-203,241
+  s_26f70b851e8f7a::t_3dc37bb9dfaf7a 234-236,238-240
+  s_26f70b851e8f7a::t_b72c7a6fc6265c 242-244
+scripts/diagnostics/reloadCancellation/materialize.ts
+  s_26f70b851e8f7a::t_75316f0047184d 26-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "56fc0452be2196f16f6fe615b83b8408dbe7d994",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
