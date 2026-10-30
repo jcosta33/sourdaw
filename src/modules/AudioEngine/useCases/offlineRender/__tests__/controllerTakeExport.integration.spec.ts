@@ -188,7 +188,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
 
     /** What the Grand Boule instrument receives from an export of the whole project, in arrival order. */
     async function exportArrivals(
-        onBend?: (sampleFrame: number, bendSemitones: number) => void,
+        onBend?: (sampleFrame: number | undefined, bendSemitones: number) => void,
         onNote?: (sampleFrame: number | undefined, pitch: number) => void
     ): Promise<string[]> {
         const arrivals: string[] = [];
@@ -395,7 +395,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             outputLatency: 0,
         });
         Object.defineProperty(context, 'currentTime', { get: () => inputClock.currentTime });
-        audioEngine.context = context;
+        const contextSpy = vi.spyOn(audioEngine, 'context', 'get').mockReturnValue(context);
         try {
             setWebMidiRuntimeEventBus({ eventBus: { emit: () => Promise.resolve(), on: () => () => {} } });
             await initWebMidi();
@@ -514,7 +514,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
                 });
             };
             const renderedPass = async () => {
-                const bends: { sampleFrame: number; bendSemitones: number }[] = [];
+                const bends: { sampleFrame: number | undefined; bendSemitones: number }[] = [];
                 const notes: { sampleFrame: number | undefined; pitch: number }[] = [];
                 await exportArrivals(
                     (sampleFrame, bendSemitones) => bends.push({ sampleFrame, bendSemitones }),
@@ -548,7 +548,7 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             try {
                 audioEngine.removeTrackStrip(TRACK_ID);
             } finally {
-                audioEngine.context = previousContext;
+                contextSpy.mockRestore();
                 vi.unstubAllGlobals();
             }
         }

@@ -483,7 +483,7 @@ describe('comp region source-only journal ownership', () => {
 });
 
 describe('frozen MIDI row replay ownership', () => {
-    const source: MidiTakeSource = {
+    const source = {
         sourceClipId: 'clip-a',
         rows: {
             notes: {
@@ -512,7 +512,7 @@ describe('frozen MIDI row replay ownership', () => {
         sourceEndBeat: 4,
         phaseHeadBeat: 0,
         passLengthBeats: 4,
-    };
+    } satisfies MidiTakeSource;
     const before = { lanes: [{ ...firstLane, takes: [{ ...firstLane.takes[0]!, midiSource: source }] }] };
 
     it.each(['notes', 'controlChanges', 'pitchBends'] as const)(

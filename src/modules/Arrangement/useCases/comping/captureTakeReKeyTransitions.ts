@@ -246,10 +246,12 @@ function mapLaneTakes(
             continue;
         }
         const sourceClip = input.sourceClips?.find((clip) => clip.id === take.clipId);
-        const capturedTake =
-            sourceClip?.type === 'midi'
-                ? captureMidiTakeSource(take, lane.takes, sourceClip, input)
-                : captureTakeSource(take, sourceClip, input.timeline ?? liveTempoTimeline);
+        let capturedTake: Take;
+        if (sourceClip?.type === 'midi') {
+            capturedTake = captureMidiTakeSource(take, lane.takes, sourceClip, input);
+        } else {
+            capturedTake = captureTakeSource(take, sourceClip, input.timeline ?? liveTempoTimeline);
+        }
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
             mapping.takesAfter.push(capturedTake);
