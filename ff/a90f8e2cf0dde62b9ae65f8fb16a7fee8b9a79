@@ -1,0 +1,32 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-20,800-801,906-923
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 500-501
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-22,38-39,2020-2036
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  h_beb54bf43b47b7 66-86,135-140,162-164
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 1,14-15,194-275
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 4-10,174,181,201,281,288,302-445
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 1192-1194,1249-1251
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  h_beb54bf43b47b7 1-535
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ffa90f8e2cf0dde62b9ae65f8fb16a7fee8b9a79",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
