@@ -501,6 +501,22 @@ Probe isolation by holding the shared stylesheet import beyond the case boundary
 next case; then mock only that unrelated CSS module and keep real registration, ordering assertions,
 lifecycle, and deadlines unchanged.
 
+### 2026-10-29 — mocked Freeze callbacks hid an aborted diagnostic (introduced by PR #2597)
+
+PR #2597's tests invoked mocked `updateTrack` callbacks and asserted the error value plus a
+false return. Through registered Freeze, that false return aborts the enclosing Command
+transaction, so those checks could pass while the raw project had no error reason. The missing
+oracle was committed state together with absence of successful history; the historical private
+review prompt and tier are unestablished.
+
+Keep the real registered handler, Command, transaction and CRDT/storage projection. Assert the
+failure notice, raw and projected reason, old take/material, empty Undo/action/macro history,
+and a successful retry's Undo/Redo. A mutation routing diagnostic settlement back into the aborted
+render scope must fail those assertions. Remove only the post-stage commit fence and change task,
+revision, cancellation or aggregate authority after staging: the same spec must fail. Preserve
+separate checks for rollback failure and publication followed by an exception so no-write cannot
+hide either failure or a durable diagnostic with uncertain completion.
+
 ### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
 
 The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
