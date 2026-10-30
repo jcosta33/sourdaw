@@ -119,6 +119,7 @@ describe('event-time recording beat (#4875)', () => {
         tempoMapStore.set({ changes: [] });
         playheadWrapCountRef.current = 0;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         ensure_track_strip.mockReset();
         ensure_track_strip.mockReturnValue({ gainNode: {}, deviceNodes: [] });
         performance_now = vi.spyOn(performance, 'now').mockReturnValue(NOW_MS);
@@ -129,7 +130,123 @@ describe('event-time recording beat (#4875)', () => {
         restoreTransport = null;
         playheadWrapCountRef.current = 0;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         performance_now.mockRestore();
+    });
+
+    it.each([0, 2])('keeps current and delayed incoming events exact before arrival on wrap %i', async (wraps) => {
+        const shift = wraps * 4;
+        audio_clock.currentTime = NOW_SECONDS + shift;
+        performance_now.mockReturnValue(NOW_MS + shift * 1000);
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 6 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = NOW_SECONDS + shift - 0.02;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: playheadClockRef.beat,
+            anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+            tempo: transportStore.value!.tempo,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085 + shift,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: wraps + 1,
+        };
+        wrapsSinceEpochStart(wraps);
+        await dispatch([0x91, 60, 100], 1100 + shift * 1000);
+        await dispatch([0x91, 62, 100], 1095 + shift * 1000);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))).toMatchObject({ recordingPassIndex: wraps + 1 });
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.03, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.recordingPassIndex).toBe(wraps + 1);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.startBeat).toBeCloseTo(0.02, 9);
+        playheadClockRef.pendingLoopSeam = null;
+        playheadClockRef.beat = 0.04;
+        playheadClockRef.audioTimeSeconds = 1.105 + shift;
+        audio_clock.currentTime = 1.105 + shift;
+        performance_now.mockReturnValue(1105 + shift * 1000);
+        wrapsSinceEpochStart(wraps + 1);
+        await dispatch([0x91, 64, 100], 1100 + shift * 1000);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 64))?.recordingPassIndex).toBe(wraps + 1);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 64))?.startBeat).toBeCloseTo(0.03, 9);
+    });
+
+    it('integrates the incoming tempo map from the emitted seam without quantizing its offset', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 6 });
+        tempoMapStore.set({
+            changes: [
+                { id: 'head', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'tail', beat: 0.01, tempo: 60, curve: 'instant' },
+            ],
+        });
+        audio_clock.currentTime = 5.1;
+        performance_now.mockReturnValue(5100);
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = 5.08;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 7.99,
+            anchorAudioTimeSeconds: 5.08,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 5.09,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 5100);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBeCloseTo(0.015, 9);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(1);
+    });
+
+    it('keeps the epoch floor on the first witnessed seam', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 8, playheadPosition: 7 });
+        setGestureClockSource({
+            getAudioTimeSeconds: () => audio_clock.currentTime,
+            readNativeCursorBeats: () => null,
+        });
+        playheadClockRef.beat = 7.99;
+        playheadClockRef.audioTimeSeconds = 1.08;
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 7.99,
+            anchorAudioTimeSeconds: 1.08,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 500);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(7);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(0);
+    });
+
+    it('does not consume an obsolete pending boundary after the loop region changes', async () => {
+        playTransport({ isLooping: true, loopStart: 0, loopEnd: 4, playheadPosition: 6 });
+        cursorAt(8.03);
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: playheadClockRef.beat,
+            anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+            tempo: transportStore.value!.tempo,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 1.085,
+            loopStart: 0,
+            loopEnd: 8,
+            passIndex: 1,
+        };
+        await dispatch([0x91, 60, 100], 1100);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(0);
+        expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.startBeat).toBe(8.03);
     });
 
     it('records a delayed note-on at the beat of its event time, not of the callback run', async () => {

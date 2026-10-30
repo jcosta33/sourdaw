@@ -376,11 +376,14 @@ export function startPlayheadScheduler(
     // A new roll begins at this store position, so its wrap history starts
     // here too: the count must describe the same epoch the store position
     // does, or a backwards capture bounds at the wrong traversal.
+    playheadClockRef.generation = schedulerGeneration;
     playheadWrapCountRef.current = 0;
+    playheadClockRef.pendingLoopSeam = null;
     schedulerSession.lastScheduledBeat = state.playheadPosition - INITIAL_HIGH_WATER_OFFSET_BEATS;
     schedulerSession.lastTempoMapChanges = tempoMapStore.value?.changes ?? null;
     schedulerSession.lastLoopSignature = loopSignatureOf(state);
     schedulerSession.pendingSeam = null;
+    playheadClockRef.pendingLoopSeam = null;
     resetMetronomeBeat(state.playheadPosition);
 
     let previousTempo = state.tempo;
@@ -581,6 +584,7 @@ export function startPlayheadScheduler(
                 // Re-anchor backwards by the span the main integration below
                 // will advance, so the adopted epoch lands exactly on `now`.
                 schedulerSession.pendingSeam = null;
+                playheadClockRef.pendingLoopSeam = null;
                 playheadWrapCountRef.current += 1;
                 schedulerSession.accumulatedPosition = beatAtSecondsFromAnchor(
                     changes,
@@ -607,6 +611,7 @@ export function startPlayheadScheduler(
                     }
                 }
                 schedulerSession.pendingSeam = null;
+                playheadClockRef.pendingLoopSeam = null;
                 const dyingPositionAtPreviousTick = beatAtSecondsFromAnchor(
                     changes,
                     anchorPosition,
@@ -772,6 +777,7 @@ export function startPlayheadScheduler(
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
         } else if (projectedSeam) {
             // #4656 — scheduled seam: the look-ahead horizon reaches the seam
             // while the playhead is still short of it. Wrap the scheduling
@@ -870,6 +876,7 @@ export function startPlayheadScheduler(
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
             // And the wrap it was to pivot on never happened — the fence below
             // is the teardown semantic, so the device read must not map back
             // across a region on the strength of this record (#4784).
@@ -923,6 +930,7 @@ export function startPlayheadScheduler(
         // material *this* scheduler emitted, against its own clock (ADR 0039).
         if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
             schedulerSession.pendingSeam = null;
+            playheadClockRef.pendingLoopSeam = null;
             // The seam instant has passed: the pass the published clock has
             // shown until now ended, and `publishedBeat` below is the first
             // wrapped one. Counting here — not at the look-ahead seam
@@ -953,6 +961,20 @@ export function startPlayheadScheduler(
             }
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
+            const pending = schedulerSession.pendingSeam;
+            playheadClockRef.pendingLoopSeam = pending
+                ? {
+                      generation: schedulerGeneration,
+                      anchorBeat: publishedBeat,
+                      anchorAudioTimeSeconds: now,
+                      tempo: current.tempo,
+                      tempoMapChanges: changes,
+                      audioTimeSeconds: pending.seamAudioTime,
+                      loopStart: current.loopStart,
+                      loopEnd: current.loopEnd,
+                      passIndex: playheadWrapCountRef.current + 1,
+                  }
+                : null;
             releasePlayheadClockHold(schedulerGeneration);
             if (browserCapture && jumpToPosition !== null) {
                 recordingLifecycle.observeCaptureClock(

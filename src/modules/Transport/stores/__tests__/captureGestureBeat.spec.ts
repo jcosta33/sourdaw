@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { captureGestureBeat } from '../captureGestureBeat';
+import { captureGestureBeat, captureGestureClock } from '../captureGestureBeat';
 import { type GestureClockSource } from '../gestureClockSource';
 import { holdPlayheadClock, playheadClockRef, releasePlayheadClockHold } from '../playheadClockRef';
 import { playheadPositionRef } from '../playheadPositionRef';
@@ -38,11 +38,56 @@ describe('captureGestureBeat', () => {
         playheadClockRef.beat = 2;
         playheadClockRef.audioTimeSeconds = 10;
         playheadClockRef.hold = null;
+        playheadClockRef.pendingLoopSeam = null;
         playheadPositionRef.current = 2;
         mocks.source = {
             getAudioTimeSeconds: () => 10,
             readNativeCursorBeats: () => null,
         };
+    });
+
+    it.each([
+        'current',
+        'equivalent map',
+        'generation',
+        'anchor',
+        'time',
+        'tempo',
+        'map',
+        'region',
+        'hold',
+        'native',
+        'no source',
+    ] as const)('pairs one carrier read with only its current scheduled seam: %s', (change) => {
+        transportStore.set({ ...transportStore.value!, isLooping: true, loopStart: 0, loopEnd: 4 });
+        const readNativeCursorBeats = vi.fn(() => (change === 'native' ? 0.5 : null));
+        mocks.source = { getAudioTimeSeconds: () => 10.06, readNativeCursorBeats };
+        playheadClockRef.pendingLoopSeam = {
+            generation: playheadClockRef.generation,
+            anchorBeat: 2,
+            anchorAudioTimeSeconds: 10,
+            tempo: 120,
+            tempoMapChanges: tempoMapStore.value?.changes ?? null,
+            audioTimeSeconds: 11,
+            loopStart: 0,
+            loopEnd: 4,
+            passIndex: 1,
+        };
+        const expected = playheadClockRef.pendingLoopSeam;
+        if (change === 'generation') playheadClockRef.generation += 1;
+        if (change === 'anchor') playheadClockRef.beat = 2.01;
+        if (change === 'time') playheadClockRef.audioTimeSeconds = 10.01;
+        if (change === 'tempo') transportStore.set({ ...transportStore.value!, tempo: 121 });
+        if (change === 'map') tempoMapStore.set({ changes: [{ id: 'edited', beat: 0, tempo: 140, curve: 'instant' }] });
+        if (change === 'equivalent map') tempoMapStore.set({ changes: [] });
+        if (change === 'region') transportStore.set({ ...transportStore.value!, loopEnd: 3 });
+        if (change === 'hold') holdPlayheadClock(12, 7.5);
+        if (change === 'no source') mocks.source = null;
+        const capture = captureGestureClock();
+        expect(capture.pendingLoopSeam).toBe(change === 'current' || change === 'equivalent map' ? expected : null);
+        expect(readNativeCursorBeats).toHaveBeenCalledTimes(change === 'hold' || change === 'no source' ? 0 : 1);
+        if (change === 'hold') expect(playheadClockRef.pendingLoopSeam).toBeNull();
+        if (change === 'native') expect(capture.beat).toBe(0.5);
     });
 
     it('answers from the discrete store while the transport is parked', () => {

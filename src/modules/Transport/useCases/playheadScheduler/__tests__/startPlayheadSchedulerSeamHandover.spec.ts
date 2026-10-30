@@ -4,6 +4,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
+import { prepareInitialBrowserPlayback } from '../prepareInitialBrowserPlayback';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
@@ -63,6 +64,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     warpStateStore: { value: null },
 
     trackStore: {
+        subscribe: () => () => {},
         get value() {
             return trackStoreState.value;
         },
@@ -367,6 +369,33 @@ describe('startPlayheadScheduler seam handover', () => {
         vi.unstubAllGlobals();
     });
 
+    it('publishes the admitted initial seam against its final clock anchor', async () => {
+        transportStoreState.value = playingState({
+            isLooping: true,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            playheadPosition: 3.99,
+        });
+        const prepared = prepareInitialBrowserPlayback(schedulerSession.generation);
+        if (!prepared) throw new Error('Missing initial browser programme');
+        const onRoll = vi.fn();
+        expect(await startPlayheadScheduler(prepared, onRoll)).toBe(true);
+        const pending = schedulerSession.pendingSeam;
+        expect(pending).not.toBeNull();
+        expect(playheadClockRef.pendingLoopSeam).toMatchObject({
+            generation: schedulerSession.generation,
+            anchorBeat: playheadClockRef.beat,
+            anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+            audioTimeSeconds: pending?.seamAudioTime,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            passIndex: 1,
+        });
+        expect(onRoll).toHaveBeenCalledWith(playheadClockRef.audioTimeSeconds, 3.99);
+        disposePlayheadScheduler();
+        expect(playheadClockRef.pendingLoopSeam).toBeNull();
+    });
+
     it('clicks every metrical beat of both loop passes across the seam', async () => {
         // The dying pass's window walks beats inclusive of loopEnd and lifts
         // `lastBeat` to loopEnd; the incoming window's clicks are gated on
@@ -442,6 +471,16 @@ describe('startPlayheadScheduler seam handover', () => {
         expect(pendingBeat).toBeGreaterThan(0);
         expect(pendingBeat).toBeLessThanOrEqual(LOOP_BEATS);
         expect(playheadClockRef.beat).toBe(pendingBeat);
+        const pending = schedulerSession.pendingSeam;
+        expect(pending).not.toBeNull();
+        expect(playheadClockRef.pendingLoopSeam).toMatchObject({
+            audioTimeSeconds: pending?.seamAudioTime,
+            loopStart: 0,
+            loopEnd: LOOP_BEATS,
+            passIndex: 1,
+        });
+        disposePlayheadScheduler();
+        expect(playheadClockRef.pendingLoopSeam).toBeNull();
     });
 
     it('re-anchors the frozen track once per pass at the seam instant, never mid-buffer', async () => {

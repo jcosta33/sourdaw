@@ -17,11 +17,15 @@ import {
     startRecording,
     takeOwnsRecordingRoot,
     recordingMidiSourceBeatAt,
+    stageRecordingTake,
+    selectTake,
+    resolveClipsWithComping,
 } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
+    executeUserAppAction,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -30,14 +34,17 @@ import {
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultMidiStoreState, midiStore } from '#/modules/MIDI/stores';
+import { defaultMidiStoreState, midiStore, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 import { setMidiInputTrack, setRecordingMidiAdmissionPort } from '#/modules/MIDI/useCases';
 import {
     playheadPositionRef,
+    playheadClockRef,
+    tempoMapStore,
     playheadWrapCountRef,
     setGestureClockSource,
     transportStore,
@@ -220,8 +227,12 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
             recordingMidiSourceBeatAt,
+            stageRecordingTake,
+            selectTake,
+            resolveClipsWithComping,
         });
         activeNotes.clear();
+        playheadClockRef.pendingLoopSeam = null;
         setMidiInputTrack(TRACK_ID);
         playheadWrapCountRef.current = 0;
         transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: true, playheadPosition: 8 });
@@ -257,6 +268,153 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
     });
+
+    it.each([
+        { release: 'held', compensation: 0 },
+        { release: 'released', compensation: 0 },
+        { release: 'held', compensation: 0.005 },
+    ])(
+        'keeps a first-seam $release note with $compensation compensation in its selected pass through Stop',
+        async ({ release, compensation }) => {
+            trackStore.set({
+                tracks: [
+                    {
+                        ...recordingTrack('midi'),
+                        devices: [
+                            { id: 'yeast-1', name: 'Yeast', type: 'yeast', bypassed: false, parameterValues: {} },
+                        ],
+                    },
+                ],
+                selectedTrackId: TRACK_ID,
+                ghostClips: [],
+            });
+            tempoMapStore.set({ changes: [] });
+            transportStore.set({
+                ...transportStore.value!,
+                tempo: 120,
+                isPlaying: true,
+                isRecording: true,
+                isLooping: true,
+                loopStart: 0,
+                loopEnd: 8,
+                playheadPosition: 6,
+            });
+            Object.defineProperty(audioEngine.context, 'currentTime', {
+                configurable: true,
+                get: () => mocks.audioClock.currentTime,
+            });
+            mocks.getCompensationDelay.mockReturnValue(compensation);
+            mocks.audioClock.currentTime = 0.085;
+            const [clip] = startRecording(6);
+            if (!clip) throw new Error('Missing recording clip');
+            // Same planned first-boundary input emitted by stageLoopWrapTakes:
+            // clip starts inside [0,8), so pass0 spans source [0,2) and pass1 opens.
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Take 2',
+                startBeat: 0,
+                endBeat: 8,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                passEndContextSeconds: 1.085,
+                plannedPassEnd: true,
+            });
+            flushAutomergeStorageWrites();
+            const gainNode = {} as GainNode;
+            vi.spyOn(audioEngine, 'ensureTrackStrip').mockReturnValue({
+                trackId: TRACK_ID,
+                gainNode,
+                preFaderTap: gainNode,
+                faderNode: gainNode,
+                postFaderGain: gainNode,
+                carrierGate: gainNode,
+                preFaderSendGate: gainNode,
+                panNode: {} as StereoPannerNode,
+                analyserNode: {} as AnalyserNode,
+                meterNode: null,
+                muted: false,
+                nativeCarried: false,
+                soloGated: false,
+                soloed: false,
+                deviceNodes: [],
+                midiFxNodes: [],
+                meterBuffer: new Float32Array(),
+            });
+            vi.spyOn(audioEngine, 'getTrackStrip').mockReturnValue(undefined);
+            mocks.audioClock.currentTime = 1.1;
+            vi.spyOn(performance, 'now').mockReturnValue(1100);
+            playheadClockRef.hold = null;
+            playheadClockRef.beat = 7.99;
+            playheadClockRef.audioTimeSeconds = 1.08;
+            playheadPositionRef.current = 7.99;
+            playheadWrapCountRef.current = 0;
+            playheadClockRef.pendingLoopSeam = {
+                generation: playheadClockRef.generation,
+                anchorBeat: playheadClockRef.beat,
+                anchorAudioTimeSeconds: playheadClockRef.audioTimeSeconds,
+                tempo: transportStore.value!.tempo,
+                tempoMapChanges: tempoMapStore.value?.changes ?? null,
+                audioTimeSeconds: 1.085,
+                loopStart: 0,
+                loopEnd: 8,
+                passIndex: 1,
+            };
+            setGestureClockSource({
+                getAudioTimeSeconds: () => mocks.audioClock.currentTime,
+                readNativeCursorBeats: () => null,
+            });
+            await handleWebMidiMessage({ data: new Uint8Array([0x91, 60, 100]), timeStamp: 1100 } as MIDIMessageEvent);
+            expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(1);
+            expect(activeRecordingRef.midiAdmissions[0]?.onsetSourceBeat).toBeCloseTo(2.03 - compensation * 2, 9);
+            midiStore.set({
+                ...midiStore.value!,
+                notesByClipId: {
+                    ...midiStore.value!.notesByClipId,
+                    unrelated: [{ id: 'peer', pitch: 72, startBeat: 0, duration: 1, velocity: 90 }],
+                },
+            });
+            flushAutomergeStorageWrites();
+            await handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 100]), timeStamp: 1095 } as MIDIMessageEvent);
+            expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.recordingPassIndex).toBe(1);
+            if (release === 'released') {
+                mocks.audioClock.currentTime = 1.15;
+                await handleWebMidiMessage({
+                    data: new Uint8Array([0x81, 60, 0]),
+                    timeStamp: 1150,
+                } as MIDIMessageEvent);
+            }
+            // Arrival publishes pass1 before Stop, which now seals on that pass.
+            mocks.audioClock.currentTime = 1.2;
+            playheadClockRef.beat = 0.23;
+            playheadClockRef.audioTimeSeconds = 1.2;
+            playheadPositionRef.current = 0.23;
+            playheadWrapCountRef.current = 1;
+            playheadClockRef.pendingLoopSeam = null;
+            await stopPlayback();
+            flushAutomergeStorageWrites();
+            const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
+            const raw = getCrdtDoc<{ midi?: typeof midiStore.value }>('root')?.midi?.notesByClipId[clip.id] ?? [];
+            const incoming = takeLaneStore.value?.lanes[0]?.takes.find((take) => take.recordingPassIndex === 1);
+            if (!incoming) throw new Error('Missing incoming take');
+            await selectTake(TRACK_ID, incoming.id);
+            await executeUserAppAction({
+                type: 'setCompRegion',
+                payload: { trackId: TRACK_ID, startBeat: 6, endBeat: 7, takeId: incoming.id },
+            });
+            const tracks = trackStore.value?.tracks ?? [];
+            const resolved = resolveClipsWithComping(TRACK_ID, tracks[0]?.clips ?? []);
+            const selected = resolved.find((entry) => entry.midiTakeRecordingPassIndex === 1);
+            if (!selected) throw new Error('Missing selected incoming programme');
+            const incomingRows = selectMidiNotesForRecordingPass(notes, selected.midiTakeRecordingPassIndex);
+            expect(raw).toEqual(notes);
+            expect(notes).toHaveLength(2);
+            expect(notes.map((note) => note.recordingPassIndex)).toEqual([1, 1]);
+            expect(notes[0]?.startBeat).toBeCloseTo(2.03 - compensation * 2, 9);
+            expect(committedEntryCount()).toBe(1);
+            expect(incomingRows.map((row) => row.pitch)).toEqual([60, 62]);
+        }
+    );
 
     it('seals a held MIDI note in the one Stop command before its key-up can arrive', async () => {
         const [provisional] = startRecording(4);
