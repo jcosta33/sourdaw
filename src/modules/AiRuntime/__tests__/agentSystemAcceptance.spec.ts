@@ -28,6 +28,8 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
+import { projectStore } from '#/modules/Project/stores';
+import { parseSemanticProjectQueryInput } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
@@ -46,6 +48,7 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
@@ -174,7 +177,8 @@ type CorpusProviderTurn =
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[] }
     | ProposeCommandsTurn
-    | { kind: 'decline'; args: Record<string, unknown> };
+    | { kind: 'decline'; args: Record<string, unknown> }
+    | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
 /**
  * A proposal of plain commands, the form whose card carries the grounding basis a terse refinement
@@ -206,6 +210,7 @@ type CorpusOracleInvariants = {
 };
 
 type CorpusOracle =
+    | AnswerOracle
     | {
           kind: 'proposal';
           actions: CorpusOracleAction[];
@@ -416,6 +421,15 @@ function toScriptedTurn(
         }
         case 'decline':
             return () => [declineCall(turn.args)];
+        case 'query':
+        case 'answer': {
+            const call = {
+                id: turn.id,
+                name: turn.kind === 'query' ? 'project.query' : 'answer.respond',
+                arguments: turn.args,
+            };
+            return () => [call];
+        }
         default: {
             const exhaustive: never = turn;
             throw new Error(`Corpus provider turn kind is not supported: ${JSON.stringify(exhaustive)}`);
@@ -459,6 +473,7 @@ const PROVIDER_FAILURE_REASON_PREFIX = 'Provider planning failed';
 /** Maps a corpus case's `class` to the `PlanningOutcome.kind` the frozen oracle contract requires it to declare. */
 const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceOracleKind> = {
     'execute-exact': 'proposal',
+    'answer-exact': 'answer',
     'clarify-required': 'clarify',
     'abstain-unsupported': 'unsupported',
     'deny-policy': 'denied',
@@ -843,13 +858,15 @@ async function runCorpusCase(
         await alongside?.();
         return { result, projectAfter: captureProjectTruth() };
     });
+    const unintendedMutations = Math.max(
+        barrel.count() - writesBefore,
+        projectDifferences(projectBefore, observed.result.projectAfter),
+        observedDifferences(observed, [projectBefore])
+    );
+    const result = observed.result.result;
     return {
-        result: observed.result.result,
-        unintendedMutations: Math.max(
-            barrel.count() - writesBefore,
-            projectDifferences(projectBefore, observed.result.projectAfter),
-            observedDifferences(observed, [projectBefore])
-        ),
+        result: result.class === 'answer-exact' && unintendedMutations > 0 ? { ...result, exactMatch: false } : result,
+        unintendedMutations,
     };
 }
 
@@ -867,10 +884,11 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             testCase.providerTurns.map((turn) => toScriptedTurn(turn))
         );
     }
+    const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
         context,
-        projectRevision: `revision-${testCase.id}`,
+        projectRevision,
     });
 
     if (testCase.providerTurns.length > 0) {
@@ -897,6 +915,16 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
     }
 
     let matchesOracle = true;
+    if (testCase.oracle.kind === 'answer') {
+        matchesOracle = answerMatchesOracle({
+            oracle: parseAnswerOracle(testCase.oracle),
+            outcome: result.planningOutcome,
+            actions: result.actions,
+            receipts: result.applicationToolReceipts ?? [],
+            projectId: projectStore.value?.projectId ?? null,
+            projectRevision,
+        });
+    }
     if (testCase.oracle.kind === 'proposal') {
         const expectedActions = testCase.oracle.actions;
         matchesOracle =
@@ -1468,12 +1496,14 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     const perClassF1Min = readThresholdRow(doc, 'per-class F1 (each of four classes)');
     const promptClassExecuteRecallMin = readThresholdRow(
         doc,
-        'per-prompt-class execute recall (each sealed class of twelve)'
+        'per-prompt-class execute recall (each sealed class of eleven)'
     );
     const promptClassExecutePrecisionMin = readThresholdRow(
         doc,
-        'per-prompt-class execute precision (each sealed class of twelve)'
+        'per-prompt-class execute precision (each sealed class of eleven)'
     );
+    const answerPrecisionMin = readThresholdRow(doc, 'answer-exact precision (all observed answers)');
+    const answerRecallMin = readThresholdRow(doc, 'question answer-exact recall');
     const clarifyRequiredPrecision = readThresholdRow(doc, 'clarify-required precision');
     const clarificationOnNonClarifyOracleMax = readThresholdRow(doc, 'clarification on non-clarify oracles');
     const falseAbstentionOnExecuteExactMax = readThresholdRow(doc, 'false abstention on execute-exact ground truth');
@@ -1486,6 +1516,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.development,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.development,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.development,
+            answerPrecisionMin: answerPrecisionMin.development,
+            answerRecallMin: answerRecallMin.development,
             clarifyRequiredPrecision: clarifyRequiredPrecision.development,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.development,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.development,
@@ -1498,6 +1530,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.heldOut,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.heldOut,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.heldOut,
+            answerPrecisionMin: answerPrecisionMin.heldOut,
+            answerRecallMin: answerRecallMin.heldOut,
             clarifyRequiredPrecision: clarifyRequiredPrecision.heldOut,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.heldOut,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.heldOut,
@@ -1604,6 +1638,14 @@ describe('agent acceptance corpora', () => {
                     MINIMUM_SEALED_CLASS_CASES
                 );
                 for (const testCase of cases) {
+                    if (promptClass === 'question') {
+                        expect(testCase.class).toBe('answer-exact');
+                        expect(testCase.oracle.kind).toBe('answer');
+                        parseAnswerOracle(testCase.oracle);
+                    } else {
+                        expect(testCase.class).not.toBe('answer-exact');
+                        expect(testCase.oracle.kind).not.toBe('answer');
+                    }
                     expect(
                         testCase.oracle.kind,
                         `Case ${testCase.id} is pending inside sealed ${promptClass}`
@@ -2897,6 +2939,317 @@ describe('agent acceptance corpora', () => {
     });
 });
 
+type Fact = string | number | boolean;
+type AnswerOracle = { kind: 'answer'; text: string; query: { type: string; facts: Record<string, Fact> } };
+
+/** Reject a hollow oracle rather than manufacturing default answer or query facts. */
+function parseAnswerOracle(value: unknown): AnswerOracle {
+    if (
+        !isRecord(value) ||
+        value.kind !== 'answer' ||
+        typeof value.text !== 'string' ||
+        value.text.trim().length === 0 ||
+        !isRecord(value.query)
+    ) {
+        throw new TypeError('Answer oracle requires nonempty exact text and a query.');
+    }
+    if (typeof value.query.type !== 'string' || value.query.type.trim().length === 0 || !isRecord(value.query.facts)) {
+        throw new TypeError('Answer oracle requires a query type and substantive facts.');
+    }
+    if (parseSemanticProjectQueryInput({ type: value.query.type }).status !== 'valid') {
+        throw new TypeError('Answer oracle requires a supported project query type.');
+    }
+    const facts: Record<string, Fact> = {};
+    for (const [key, fact] of Object.entries(value.query.facts)) {
+        if (
+            !key.trim() ||
+            (typeof fact !== 'string' && typeof fact !== 'number' && typeof fact !== 'boolean') ||
+            (typeof fact === 'string' && !fact.trim()) ||
+            (typeof fact === 'number' && !Number.isFinite(fact))
+        ) {
+            throw new TypeError('Answer oracle facts must be nonempty scalar values.');
+        }
+        facts[key] = fact;
+    }
+    if (!Object.keys(facts).some((key) => key !== 'id' && key !== 'kind')) {
+        throw new TypeError('Answer oracle requires substantive query facts.');
+    }
+    return { kind: 'answer', text: value.text, query: { type: value.query.type, facts } };
+}
+
+/** Compare only the cited, successful query from this actual result and its current project. */
+function answerMatchesOracle(input: {
+    oracle: AnswerOracle;
+    outcome: PlanningOutcome;
+    actions: readonly unknown[];
+    receipts: readonly ApplicationToolReceipt[];
+    projectId: string | null;
+    projectRevision: string;
+}): boolean {
+    if (
+        input.outcome.kind !== 'answer' ||
+        input.outcome.text !== input.oracle.text ||
+        input.actions.length > 0 ||
+        input.projectId === null ||
+        input.projectId.length === 0 ||
+        input.outcome.evidence.length === 0
+    ) {
+        return false;
+    }
+    let revision: unknown;
+    try {
+        revision = JSON.parse(input.projectRevision);
+    } catch {
+        return false;
+    }
+    if (!isRecord(revision)) {
+        return false;
+    }
+    let matchedQuery = false;
+    const seen = new Set<string>();
+    for (const evidence of input.outcome.evidence) {
+        if (seen.has(evidence.callId)) {
+            return false;
+        }
+        seen.add(evidence.callId);
+        const matches = input.receipts.filter((receipt) => receipt.callId === evidence.callId);
+        const receipt = matches[0];
+        if (
+            matches.length !== 1 ||
+            receipt === undefined ||
+            receipt.schema !== 'sourdaw.application-tool-receipt' ||
+            receipt.schemaVersion !== 1 ||
+            receipt.status !== 'success' ||
+            receipt.error !== null ||
+            receipt.toolName !== evidence.toolName ||
+            receipt.summary !== evidence.summary
+        ) {
+            return false;
+        }
+        if (receipt.toolName !== 'project.query') {
+            continue;
+        }
+        if (!isRecord(receipt.data)) {
+            return false;
+        }
+        const data = receipt.data;
+        if (
+            data.schema !== 'sourdaw.semantic-project-query' ||
+            data.schemaVersion !== 1 ||
+            parseSemanticProjectQueryInput({ type: data.queryType }).status !== 'valid' ||
+            data.projectId !== input.projectId ||
+            typeof data.revisionToken !== 'string' ||
+            data.revisionToken.length === 0 ||
+            receipt.revision !== data.revisionToken ||
+            !isDeepStrictEqual(data.revision, revision) ||
+            !Array.isArray(data.items) ||
+            !data.items.every((item: unknown) => isRecord(item))
+        ) {
+            return false;
+        }
+        if (data.queryType !== input.oracle.query.type) {
+            continue;
+        }
+        matchedQuery ||= data.items.some(
+            (item: unknown) =>
+                isRecord(item) &&
+                Object.entries(input.oracle.query.facts).every(([key, value]) => isDeepStrictEqual(item[key], value))
+        );
+    }
+    return matchedQuery;
+}
+
+function answerOracleFixture(): Parameters<typeof answerMatchesOracle>[0] {
+    const revision = { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] };
+    return {
+        oracle: parseAnswerOracle({
+            kind: 'answer',
+            text: 'Tempo is 120 BPM.',
+            query: { type: 'project-summary', facts: { tempo: 120 } },
+        }),
+        outcome: {
+            kind: 'answer',
+            text: 'Tempo is 120 BPM.',
+            evidence: [{ callId: 'read', toolName: 'project.query', summary: 'project-summary: 1 of 1 item(s)' }],
+        },
+        actions: [],
+        projectId: 'project-1',
+        projectRevision: JSON.stringify(revision),
+        receipts: [
+            {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'read',
+                toolName: 'project.query',
+                turn: 1,
+                status: 'success',
+                revision: 'spq1.token',
+                data: {
+                    schema: 'sourdaw.semantic-project-query',
+                    schemaVersion: 1,
+                    projectId: 'project-1',
+                    revision,
+                    revisionToken: 'spq1.token',
+                    queryType: 'project-summary',
+                    items: [{ id: 'project-1', kind: 'project-summary', tempo: 120 }],
+                },
+                summary: 'project-summary: 1 of 1 item(s)',
+                warnings: [],
+                error: null,
+            },
+        ],
+    };
+}
+
+describe('answer acceptance oracle', () => {
+    it('requires a genuine cited same-run matching project query and exact text', () => {
+        expect(answerMatchesOracle(answerOracleFixture())).toBe(true);
+    });
+    it.each([
+        'wrong text',
+        'empty evidence',
+        'foreign citation',
+        'failed receipt',
+        'wrong type',
+        'wrong fact',
+        'missing facts',
+        'wrong revision',
+        'wrong identity',
+        'wrong token',
+        'capability only',
+        'actions',
+    ] as const)('refuses %s', (failure) => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const receipt = input.receipts[0];
+        if (receipt === undefined || !isRecord(receipt.data)) {
+            throw new Error('Expected query data');
+        }
+        const data = receipt.data;
+        switch (failure) {
+            case 'wrong text':
+                input.outcome.text = 'Tempo is 121 BPM.';
+                break;
+            case 'empty evidence':
+                input.outcome.evidence = [];
+                break;
+            case 'foreign citation':
+                input.outcome.evidence = [{ callId: 'foreign', toolName: 'project.query', summary: receipt.summary }];
+                break;
+            case 'failed receipt':
+                receipt.status = 'failure';
+                break;
+            case 'wrong type':
+                data.queryType = 'tempo';
+                break;
+            case 'wrong fact':
+                data.items = [{ tempo: 121 }];
+                break;
+            case 'missing facts':
+                data.items = [];
+                break;
+            case 'wrong revision':
+                data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                break;
+            case 'wrong identity':
+                data.projectId = 'other';
+                break;
+            case 'wrong token':
+                receipt.revision = 'wrong';
+                break;
+            case 'capability only':
+                receipt.toolName = 'agent.capabilities';
+                input.outcome.evidence = [{ callId: 'read', toolName: receipt.toolName, summary: receipt.summary }];
+                break;
+            case 'actions':
+                input.actions = [{ type: 'setTempo' }];
+                break;
+        }
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each(['foreign project', 'stale revision', 'malformed data', 'wrong token', 'invalid query type'] as const)(
+        'rejects a second %s query in either citation order',
+        (failure) => {
+            for (const reverse of [false, true]) {
+                const input = answerOracleFixture();
+                if (input.outcome.kind !== 'answer') {
+                    throw new Error('Expected answer');
+                }
+                const first = input.receipts[0];
+                if (first === undefined) {
+                    throw new Error('Expected query receipt');
+                }
+                const second = structuredClone(first);
+                second.callId = 'second';
+                if (!isRecord(second.data)) {
+                    throw new Error('Expected query data');
+                }
+                switch (failure) {
+                    case 'foreign project':
+                        second.data.projectId = 'other';
+                        break;
+                    case 'stale revision':
+                        second.data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                        break;
+                    case 'malformed data':
+                        second.data.items = [null];
+                        break;
+                    case 'wrong token':
+                        second.revision = 'wrong';
+                        break;
+                    case 'invalid query type':
+                        second.data.queryType = 'invented';
+                        break;
+                }
+                input.receipts = [first, second];
+                const firstEvidence = input.outcome.evidence[0];
+                if (firstEvidence === undefined) {
+                    throw new Error('Expected query citation');
+                }
+                const secondEvidence = { ...firstEvidence, callId: second.callId };
+                input.outcome.evidence = reverse ? [secondEvidence, firstEvidence] : [firstEvidence, secondEvidence];
+                expect(answerMatchesOracle(input)).toBe(false);
+            }
+        }
+    );
+
+    it('allows another current query type as context but not as the matching query', () => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const first = input.receipts[0];
+        const citation = input.outcome.evidence[0];
+        if (first === undefined || citation === undefined) {
+            throw new Error('Expected query and citation');
+        }
+        const second = structuredClone(first);
+        if (!isRecord(second.data)) {
+            throw new Error('Expected query data');
+        }
+        second.callId = 'second';
+        second.data.queryType = 'tempo';
+        second.summary = 'tempo: 1 of 1 item(s)';
+        input.receipts = [first, second];
+        const secondCitation = { ...citation, callId: second.callId, summary: second.summary };
+        input.outcome.evidence = [citation, secondCitation];
+        expect(answerMatchesOracle(input)).toBe(true);
+        input.outcome.evidence = [secondCitation];
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each([
+        { kind: 'answer', text: '', query: { type: 'project-summary', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: {} } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: { id: 'id' } } },
+        { kind: 'answer', text: 'x', query: { type: '', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'invented', facts: { tempo: 120 } } },
+    ])('rejects malformed or hollow frozen answer oracles', (oracle) => {
+        expect(() => parseAnswerOracle(oracle)).toThrow();
+    });
+});
+
 const SEALED_LITERAL_ONLY: readonly AgentScoredPromptClass[] = ['literal-structural'];
 
 function caseResult(
@@ -2917,6 +3270,62 @@ function caseResult(
 }
 
 describe('agentAcceptanceScorer', () => {
+    it('counts answer errors across the complete population without buying precision', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            caseResult('q1', 'answer-exact', 'answer-exact', true, 'question'),
+            caseResult('q2', 'answer-exact', 'answer-exact', false, 'question'),
+            caseResult('q3', 'answer-exact', 'execute-exact', false, 'question'),
+            caseResult('e1', 'execute-exact', 'answer-exact', false),
+        ];
+        const metrics = computeAgentAcceptanceMetrics(results, 0);
+        expect(metrics.answer).toEqual({
+            precision: 1 / 3,
+            recall: 1 / 3,
+            f1: 1 / 3,
+            support: 3,
+            truePositives: 1,
+            falsePositives: 2,
+            falseNegatives: 2,
+        });
+        expect(metrics.confusion['execute-exact']).toEqual({ truePositives: 0, falsePositives: 1, falseNegatives: 1 });
+        expect(metrics.perClass['execute-exact']).toEqual({ precision: 0, recall: 0, f1: 0, support: 1 });
+        expect(failedAgentAcceptanceThresholds(metrics, 'development', ['question'])).toEqual(
+            expect.arrayContaining(['answer-exact precision', 'question answer-exact recall'])
+        );
+    });
+
+    it('requires question support and answer predictions, even when both are absent', () => {
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics([], 0), 'held-out', [
+            'question',
+        ]);
+        expect(failures).toEqual(
+            expect.arrayContaining([
+                'answer support: question',
+                'answer support: predictions',
+                'answer-exact precision',
+                'question answer-exact recall',
+            ])
+        );
+        const sparse = computeAgentAcceptanceMetrics(
+            [caseResult('q', 'answer-exact', 'answer-exact', true, 'question')],
+            0
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', ['question'])).toContain(
+            'answer support: question'
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', [])).not.toContain('answer support: question');
+    });
+
+    it('accepts three exact question answers only when all observed answers are correct', () => {
+        const cases = [1, 2, 3].map((n) => caseResult(String(n), 'answer-exact', 'answer-exact', true, 'question'));
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics(cases, 0), 'development', [
+            'question',
+        ]);
+        expect(failures).not.toContain('answer support: question');
+        expect(failures).not.toContain('answer-exact precision');
+        expect(failures).not.toContain('question answer-exact recall');
+    });
+
     it('classifies every planning outcome kind the scored corpora observe', () => {
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 3)).toBe('execute-exact');
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 0)).toBeNull();
