@@ -1,0 +1,36 @@
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 599-615
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 2104-2116
+scripts/__tests__/e2eDevServer.spec.ts
+  h_beb54bf43b47b7 6,88-103
+scripts/__tests__/e2eDevServerOnlySpecs.spec.ts
+  h_beb54bf43b47b7 11-12,21-22,56,89
+scripts/__tests__/e2eViteClientPolicy.spec.ts
+  h_beb54bf43b47b7 1-60
+scripts/e2eDevServer.ts
+  h_beb54bf43b47b7 19-24
+scripts/e2eViteClientPolicy.ts
+  h_beb54bf43b47b7 1-52
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 67-70,72
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 50
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 3-4,20
+tests/e2e/e2eViteClientPolicy.spec.ts
+  h_beb54bf43b47b7 1-99
+vite.config.ts
+  h_beb54bf43b47b7 13,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "22304f1101c835ee3e4f695af4894438c619a0b3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
