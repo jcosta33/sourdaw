@@ -1,0 +1,292 @@
+.agents/skills/review-stances/README.md
+  h_beb54bf43b47b7 39-62,70-72,74-80,82-85
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 27-40
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 852-865,880-938
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 224-229,495-508,820-877
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 3-18,468-482
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 213-228,559-573
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 28-45
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-16,417-433,1275-1280,1512-1528,1908-1922,1937-2043
+AGENTS.md
+  h_beb54bf43b47b7 114-118
+Cargo.lock
+  h_beb54bf43b47b7 2257,2259
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7-12,20-22,29-30,32,34-36,42,44-46,53,72-74,121-123,125-136,159-166,171,179,210,282-284,307-361,402-403,419-420,422,438-439,479,481,499,501-516,520-521,523-554,556-576,578-580,582-583,585-588,592-598,606-607,609
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890,1107,1993,2028,2074,2139,2277,2338,2749-2750,2752,2755,2769-2771,2777,2780-2782,2785,2787,2791-2796,2808-2815,3317,3472,3530
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/src/toaster/transient.rs
+  h_beb54bf43b47b7 71-130
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,19,23,28,42-43,54-59,61-89,91-115,122-123,126-134,136-142,144-149,153,163-165,167-192,194-195,198-259,261-275,277-282,285-338
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+crates/daw-dsp/tests/device_process_rt.rs
+  h_beb54bf43b47b7 2162-2178
+crates/daw-dsp/tests/transient_shaper_effect.rs
+  h_beb54bf43b47b7 1-143
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 308,329,350,389,416,1149,1189-1191,1405-1420,1434,1466,1497,1535,1561,1614,4524-4558,4620-4622,6611-6617,8360-8370,8476-8478,9601,9617-9618,12120-12123,12132-12134,12178,12196,12203,28306-28495
+crates/proof-chamber/src/lib.rs
+  h_beb54bf43b47b7 510-530
+crates/proof-chamber/tests/automation_ordinals.rs
+  h_beb54bf43b47b7 1-305
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 32,129-156
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  h_beb54bf43b47b7 12,403-405,528-530,557-600,604-608,611,613-614,616,620-639,686-688,704-706,1305-1451
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 2312-2320,2425-2432,2494-2498,2887-2896,3896-3900,17360-17492
+crates/sourdaw-native/src/host/mod.rs
+  h_beb54bf43b47b7 10
+crates/sourdaw-native/src/host/plugin_registry_store.rs
+  h_beb54bf43b47b7 779-781,789-801
+crates/sourdaw-native/src/host/plugin_scan_worker.rs
+  h_beb54bf43b47b7 208-224,227-230
+crates/sourdaw-native/src/host/runtime_scope.rs
+  h_beb54bf43b47b7 1-315
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 222-238
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 61-62
+electron/__tests__/nativeRuntimeScope.spec.ts
+  h_beb54bf43b47b7 1-159
+electron/__tests__/runtimeScope.spec.ts
+  h_beb54bf43b47b7 1-69
+electron/__tests__/runtimeScopeStartup.spec.ts
+  h_beb54bf43b47b7 1-231
+electron/__tests__/scanWorker.spec.ts
+  h_beb54bf43b47b7 14-17,21,264-346
+electron/createScopedNativeAddon.ts
+  h_beb54bf43b47b7 1-73
+electron/main.ts
+  h_beb54bf43b47b7 47,82,107-110,680,740-744,747-749,817,887-893
+electron/native.ts
+  h_beb54bf43b47b7 67-68
+electron/runtimeScope.ts
+  h_beb54bf43b47b7 1-74
+electron/scanWorker.ts
+  h_beb54bf43b47b7 33,35,171,186-195
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,623
+package.json
+  h_beb54bf43b47b7 164
+pnpm-lock.yaml
+  h_beb54bf43b47b7 169-170,3516-3517,8847
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9-10,191,14651,16338,20012
+public/legal/ELECTRON-SOURCES.json
+  h_beb54bf43b47b7 4-6,9,12,14,17,19,30-32,37-39,44-46,51-53
+public/legal/THIRD-PARTY-NOTICES.md
+  h_beb54bf43b47b7 5,7-8
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1247,1335-1364,1366-1367,1391-1394
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 2397-2452,2589-2591
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5-99,187-216,218-219,243-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,15-18,20-21,26,30-32,35
+public/wasm/proof-chamber/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/proof-chamber/proof_chamber_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,64,4374
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,221-223,229,280,356,403,585,795,1122,1210-1211,1213,1345,1347,1351,1741,1753,1761,1769
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_beb54bf43b47b7 119-123
+scripts/__tests__/resourceGuardStorage.spec.ts
+  h_beb54bf43b47b7 413,2819,2828,2853,2954,2968-2971,4536-4604,4654-4655,5119-5123,5128-5132
+scripts/electronRuntimeContract.ts
+  h_beb54bf43b47b7 40-42,45,48,50,53,55,66-68,73-75,80-82,87-89
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 1211,1215,1217,1221-1225,1734-1735,1737,1743
+scripts/resourceGuardLsofDiagnostics.ts
+  h_beb54bf43b47b7 1-23
+scripts/resourceGuardStorage.ts
+  h_beb54bf43b47b7 21,95-96,116-119,135,148,179,186
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  h_beb54bf43b47b7 1-508
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  h_beb54bf43b47b7 5-6,10,16-17,23-26,64-81
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  h_beb54bf43b47b7 254-255
+src/app/createCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-80
+src/app/initDeviceStateReconciliation.ts
+  h_beb54bf43b47b7 2,6-7,40-41,46-47,65
+src/app/nativeBuiltinParameterNames.ts
+  h_beb54bf43b47b7 50
+src/app/nativeModAssignments.ts
+  h_beb54bf43b47b7 53
+src/app/nativeSampleBanks.ts
+  h_beb54bf43b47b7 55
+src/app/prepareOfflineDeviceSetup.ts
+  h_beb54bf43b47b7 204
+src/app/projectNativeDeviceState.ts
+  h_beb54bf43b47b7 146
+src/modules/AiRuntime/useCases/__tests__/aiHistoryActions.spec.ts
+  h_beb54bf43b47b7 1-2,4-49,52-64,67-69,72-191,195-224,227-271,273-390,392-410,412-434,437-450,452-716,719-746
+src/modules/AiRuntime/useCases/agentRequestOrchestration/revertThreadCommit.ts
+  h_beb54bf43b47b7 2-5,49-53
+src/modules/AiRuntime/useCases/aiHistoryActions.ts
+  h_beb54bf43b47b7 1-6,14-31
+src/modules/Arrangement/models/DeviceParameter.ts
+  h_beb54bf43b47b7 21,186
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptor.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptorGuidance.ts
+  h_beb54bf43b47b7 1-42
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  h_beb54bf43b47b7 292-295,523-526,565,574-581
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 184,202,239-243,605-608,701-744,746-748
+src/modules/Arrangement/models/PluginDescriptors/__tests__/transientShaperDescriptor.spec.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  h_beb54bf43b47b7 405-445
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,88-89,175,183,187
+src/modules/AudioEngine/engine/ProofChamberNode.ts
+  h_beb54bf43b47b7 31-47,132-135
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 1-207
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/engine/__tests__/ProofChamberNode.spec.ts
+  h_beb54bf43b47b7 3-29,138-173
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 1-299
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 41,2003-2084,2086
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/models/ProofChamberAutomationParams.ts
+  h_beb54bf43b47b7 27-47
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  h_beb54bf43b47b7 17,337-346
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_beb54bf43b47b7 10,30-31,49,51-52,60,62-69,113,125,298,305-307,344-358
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationExemptions.ts
+  h_beb54bf43b47b7 26-27
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/services/__tests__/dawDspTransientShaper.spec.ts
+  h_beb54bf43b47b7 1-33
+src/modules/AudioEngine/services/__tests__/proofChamberAutomationOrdinals.spec.ts
+  h_beb54bf43b47b7 1-344
+src/modules/AudioEngine/services/__tests__/proofChamberProcessor.spec.ts
+  h_beb54bf43b47b7 3-10,12-26,237-364,374
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 1-136
+src/modules/AudioEngine/services/proofChamberProcessor.ts
+  h_beb54bf43b47b7 149-151
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  h_beb54bf43b47b7 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_beb54bf43b47b7 1135-1163
+src/modules/AudioEngine/useCases/livePlayback/__tests__/transientShaperCarrierAdmission.spec.ts
+  h_beb54bf43b47b7 1-137
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_beb54bf43b47b7 630-649
+src/modules/AudioEngine/useCases/offlineRender/__tests__/transientShaperOfflineAdmission.spec.ts
+  h_beb54bf43b47b7 1-70
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1247,1335-1364,1366-1367,1391-1394
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 2574-2629,2766-2768
+src/modules/AudioEngine/wasm/proof_chamber.d.ts
+  h_beb54bf43b47b7 1
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  h_beb54bf43b47b7 1301,1304,1324,1352,1369,1373-1383,1385-1413,1415,1417-1420,1422-1435,1966-1967,1972,1984-1985,1996,2000,2007,2009-2036
+src/modules/Command/useCases/__tests__/revertActionGroup.spec.ts
+  h_beb54bf43b47b7 284-287,300-307,442-449,480-487,490-626
+src/modules/Command/useCases/executeActionGroupUndo.ts
+  h_beb54bf43b47b7 51-54
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 120-121,1016,1018-1023,1040-1045
+src/modules/Command/useCases/revertActionGroupAtomically.ts
+  h_beb54bf43b47b7 43-57,72-90,102
+src/modules/Crumbs/presentations/components/__tests__/WaveformDisplay.spec.tsx
+  h_beb54bf43b47b7 2,6-45
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  h_beb54bf43b47b7 12-14,17-18,25-83
+src/modules/Crumbs/stores/crumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-4
+src/modules/Crumbs/stores/crumbsStore.ts
+  h_beb54bf43b47b7 8,127-130,136
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  h_beb54bf43b47b7 1,16-33,43-44,66-76
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  h_beb54bf43b47b7 37,136,140,153
+src/modules/Crumbs/useCases/__tests__/sampleWaveformPublication.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/Crumbs/useCases/configureCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-11
+src/modules/Crumbs/useCases/index.ts
+  h_beb54bf43b47b7 5
+src/modules/Crumbs/useCases/loadSample.ts
+  h_beb54bf43b47b7 12-13,16,76-86,92-96,98-105,116,120,136-139,141-143,153-155,167-169,176-178,181-183,187-189,193
+src/modules/Fermenter/presentations/views/FermenterPanel.tsx
+  h_beb54bf43b47b7 29,507-510
+src/modules/Fermenter/presentations/views/__tests__/FermenterPanel.spec.tsx
+  h_beb54bf43b47b7 50,82-85,487-491
+src/modules/Fermenter/presentations/views/__tests__/fermenterFilterSelectionUndo.integration.spec.tsx
+  h_beb54bf43b47b7 1-774
+src/modules/Fermenter/useCases/__tests__/hydrateFermenterFromProject.spec.ts
+  h_beb54bf43b47b7 110-138
+src/modules/Fermenter/useCases/fermenterParamBridge/__tests__/setFermenterParamWithAudio.spec.ts
+  h_beb54bf43b47b7 11,37-38,60-75
+src/modules/Fermenter/useCases/fermenterParamBridge/cancelPendingFermenterParam.ts
+  h_beb54bf43b47b7 1-7
+src/modules/Fermenter/useCases/fermenterParamBridge/fermenterParamBatcher.ts
+  h_beb54bf43b47b7 1-5
+src/modules/Fermenter/useCases/fermenterParamBridge/setFermenterParamWithAudio.ts
+  h_beb54bf43b47b7 5,44-48
+src/modules/Fermenter/useCases/hydrateFermenterFromProject.ts
+  h_beb54bf43b47b7 67,71-76
+src/modules/Fermenter/useCases/selectFermenterFilterChoice.ts
+  h_beb54bf43b47b7 1-82
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,412-415,430-435
+src/utils/nativeDspDeviceTypes.ts
+  h_beb54bf43b47b7 45,74
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 27
+tests/e2e/transientShaperEffect.spec.ts
+  h_beb54bf43b47b7 1-1044
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "feae7dfc1c608e8e0d08bcfac7e3193098420c0f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
