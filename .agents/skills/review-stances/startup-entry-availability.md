@@ -37,7 +37,9 @@ close or Vite polling branch does not prove a poller-triggered navigation.
 
 Reject the real initial App request after first paint and require an explicit failure path rather
 than a permanently empty shell. When recovery is allowed, require a confirmed fresh retry budget
-and a new document lifetime; spent, corrupt, unavailable or unwritable budget, desktop startup,
-bootstrap/render issuance and late failure after navigation intent must remain terminal. Keep
-transport initiation unknown unless direct lifecycle or network-initiator evidence distinguishes it.
+and a new document lifetime. Spent, corrupt, unavailable or unwritable budget, desktop startup,
+bootstrap/render issuance and late failure after navigation intent must refuse automatic retry while
+preserving manual Reload. Once retry navigation is requested, delayed App success must not start the
+runtime. Keep transport initiation unknown unless direct lifecycle or network-initiator evidence
+distinguishes it.
 Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.

@@ -2026,12 +2026,12 @@ unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Bo
 `forwards every band Body choice` must fail. Document/action spies do not prove worklet
 admission; engine-call evidence does not prove rendered PCM or listening acceptance.
 
-### 2026-10-30 — first paint and conditional controls hid initial App rejection (caught before merge)
+### 2026-10-30 — first paint did not exercise a rejected App import
 
 PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
 fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
-and first-paint marker, not a rejected App graph. The real rejection was caught before merge;
-historical private prompts and tier are unknown. A later compound reload also recorded a second
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
 same-frame document, but its initiating transport/navigation mechanism remains unknown.
 
 Inject a real failed initial App request and assert failure/recovery unconditionally, including

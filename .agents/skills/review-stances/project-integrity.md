@@ -862,11 +862,11 @@ and thread callers, same-lineage edits with the exact Undo snapshot retained, cl
 discard, original-reference restoration and request cancellation. This fence applies only
 before publication: a real committed inverse remains committed truth.
 
-## 2026-10-30 — startup retry must preserve the initialized project and its history (caught before merge)
+## 2026-10-30 — startup retry must preserve the initialized project and its history
 
 PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a second App render after first paint.
 The later initial-App rejection occurred before that App rendered, while bootstrap activity was
-already visible. The failure was caught before merge; exact private review prompts and tier are
+already visible. The App rejection defect reached main; exact private review prompts and tier are
 unknown. A retry that only proves a new page or restored controls does not prove project integrity.
 
 Begin with a canonical same-project new-document reload of a genuinely initialized project, live
