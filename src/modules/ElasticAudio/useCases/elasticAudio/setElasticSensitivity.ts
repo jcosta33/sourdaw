@@ -1,51 +1,125 @@
+import { logger } from '#/infra/logger/appLogger';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    defaultTrackState,
+    trackStore,
+} from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 
 import { detectTransientsForClip } from './detectTransientsForClip';
+import { resolveElasticEditorTarget } from './resolveElasticEditorTarget';
 
 const DEBOUNCE_MS = 150;
-
 type PendingState = {
-    timer: ReturnType<typeof setTimeout> | null;
-    inFlight: Promise<void> | null;
-    resolver: (() => void) | null;
+    timer: ReturnType<typeof setTimeout>;
+    completion: ReturnType<typeof Promise.withResolvers<void>>;
+    dispose: () => void;
 };
+let pending: PendingState | undefined;
 
-const pending: PendingState = { timer: null, inFlight: null, resolver: null };
+function currentTarget() {
+    return resolveElasticEditorTarget(
+        elasticAudioStore.value ?? defaultElasticAudioState,
+        clipSelectionStore.value ?? defaultClipSelectionState,
+        trackStore.value ?? defaultTrackState
+    );
+}
 
 export function setElasticSensitivity(sensitivity: number): Promise<void> {
+    const previous = pending;
+    if (previous) {
+        clearTimeout(previous.timer);
+        previous.dispose();
+    }
+    const completion = previous?.completion ?? Promise.withResolvers<void>();
+    const target = currentTarget();
+    const openedClipId = elasticAudioStore.value?.openClipId ?? null;
+    const clipType = target.clip?.type;
+    const bufferId = target.clip?.audioBufferId;
+    const buffer = clipType === 'audio' && bufferId ? audioBufferCache.get(bufferId) : undefined;
+    const sampleRate = buffer?.sampleRate;
+    const frames = buffer?.length;
+    const channels = buffer?.numberOfChannels;
+    const validSource =
+        buffer !== undefined &&
+        Number.isFinite(buffer.sampleRate) &&
+        buffer.sampleRate > 0 &&
+        Number.isInteger(buffer.length) &&
+        buffer.length > 0 &&
+        Number.isInteger(buffer.numberOfChannels) &&
+        buffer.numberOfChannels > 0;
+    const rootIdentity = captureProjectRootIdentity();
+    let invalidated = false;
+    const matches = (): boolean => {
+        const current = currentTarget();
+        const liveBuffer = bufferId ? audioBufferCache.get(bufferId) : undefined;
+        return (
+            captureProjectRootIdentity() === rootIdentity &&
+            (elasticAudioStore.value?.openClipId ?? null) === openedClipId &&
+            current.clipId === target.clipId &&
+            current.trackId === target.trackId &&
+            current.clip?.type === clipType &&
+            current.clip?.audioBufferId === bufferId &&
+            liveBuffer === buffer &&
+            liveBuffer?.sampleRate === sampleRate &&
+            liveBuffer?.length === frames &&
+            liveBuffer?.numberOfChannels === channels
+        );
+    };
+    const invalidate = (): void => {
+        if (!matches()) invalidated = true;
+    };
+    const subscriptions = [
+        elasticAudioStore.subscribe(invalidate),
+        clipSelectionStore.subscribe(invalidate),
+        trackStore.subscribe(invalidate),
+    ];
+    let disposed = false;
+    const dispose = (): void => {
+        if (disposed) return;
+        disposed = true;
+        for (const unsubscribe of subscriptions) unsubscribe();
+    };
     updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
-
-    if (pending.timer !== null) {
-        clearTimeout(pending.timer);
-        pending.timer = null;
+    if (validSource) {
+        elasticAudioStore.update((state) => (state ? { ...state, detected: false } : state));
     }
-
-    if (!pending.inFlight) {
-        pending.inFlight = new Promise<void>((resolve) => {
-            pending.resolver = resolve;
-        });
-    }
-
-    pending.timer = setTimeout(() => {
-        pending.timer = null;
-        const state = elasticAudioStore.value ?? defaultElasticAudioState;
-        const clipId = state.openClipId;
-        const resolver = pending.resolver;
-        pending.inFlight = null;
-        pending.resolver = null;
-        if (clipId !== null) {
-            const currentSensitivity =
-                preferencesStore.value?.elasticTransientSensitivity ?? defaultPreferences.elasticTransientSensitivity;
-            detectTransientsForClip(clipId, currentSensitivity);
-            elasticAudioStore.set({ ...state, detected: true });
-        }
-        if (resolver) {
-            resolver();
-        }
-    }, DEBOUNCE_MS);
-
-    return pending.inFlight;
+    const scheduled: PendingState = {
+        completion,
+        dispose,
+        timer: setTimeout(() => {
+            if (pending === scheduled) pending = undefined;
+            try {
+                if (!validSource || !target.clipId || invalidated || !matches()) return;
+                const currentSensitivity =
+                    preferencesStore.value?.elasticTransientSensitivity ??
+                    defaultPreferences.elasticTransientSensitivity;
+                const result = detectTransientsForClip(target.clipId, currentSensitivity);
+                if (!result.ok) {
+                    notifyUser('Transient detection failed. Try again.', 'error');
+                    return;
+                }
+                if (pending === undefined && !invalidated && matches()) {
+                    elasticAudioStore.update((state) => (state ? { ...state, detected: true } : state));
+                }
+            } catch (error) {
+                logger.error(
+                    error instanceof Error ? error : new Error('Transient detection failed', { cause: error })
+                );
+                notifyUser('Transient detection failed. Try again.', 'error');
+            } finally {
+                dispose();
+                completion.resolve();
+            }
+        }, DEBOUNCE_MS),
+    };
+    pending = scheduled;
+    return completion.promise;
 }
