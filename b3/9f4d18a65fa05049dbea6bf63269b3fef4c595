@@ -1,0 +1,14 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  h_beb54bf43b47b7 2,6-7,14-19,53-54,84,89,191-216,248-250,303-317,333-334,343,353,364,375-376,385,392,397-398,403,410,431
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b39f4d18a65fa05049dbea6bf63269b3fef4c595",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
