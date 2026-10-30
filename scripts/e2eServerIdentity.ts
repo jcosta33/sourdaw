@@ -153,6 +153,6 @@ export async function assertServingCheckoutIdentity(origin: string, expectedRoot
 }
 
 /** The required affected shard already owns an e2e build and preview. */
-export function isBuiltE2eShardRun(environment: Pick<NodeJS.ProcessEnv, 'CI' | 'E2E_SPECS'>): boolean {
+export function isBuiltE2eShardRun(environment: Partial<Pick<NodeJS.ProcessEnv, 'CI' | 'E2E_SPECS'>>): boolean {
     return Boolean(environment.CI) && environment.E2E_SPECS !== undefined;
 }
