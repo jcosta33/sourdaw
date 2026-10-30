@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { measureTruePeak } from '../measureTruePeak';
+import { createTruePeakAccumulator, measureTruePeak } from '../measureTruePeak';
 
 const TRUE_PEAK_TAIL_FRAMES = 11;
 
@@ -189,5 +189,23 @@ describe('measureTruePeak', () => {
 
         // Halving the amplitude should roughly halve the true-peak (linear system).
         expect(halfPeak).toBeCloseTo(fullPeak * 0.5, 2);
+    });
+});
+
+describe('incremental true peak', () => {
+    it('retains every phase/history and drains the final tap exactly once across partitions', () => {
+        const tone = Float32Array.from({ length: 9001 }, (_, i) => Math.sin(i * 1.3));
+        tone[0] = 1.4;
+        tone[tone.length - 1] = -1.6;
+        const expected = measureTruePeak({ channels: [tone], length: tone.length });
+        for (const size of [1, 997, 4096]) {
+            const meter = createTruePeakAccumulator(1);
+            for (let start = 0; start < tone.length; start += size) {
+                meter.push([tone.subarray(start, start + size)]);
+            }
+            expect(meter.finish()).toBeCloseTo(expected, 12);
+            expect(meter.finish()).toBe(expected);
+            expect(() => meter.push([new Float32Array(1)])).toThrow();
+        }
     });
 });
