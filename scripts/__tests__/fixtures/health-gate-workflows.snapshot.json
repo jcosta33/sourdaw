@@ -309,7 +309,7 @@
           },
           {
             "name": "Prepare private debug files",
-            "run": "mkdir -p \"$RUNNER_TEMP/sourdaw-debug\"\nnode -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\necho \"SOURDAW_DEBUG_DIR=$RUNNER_TEMP/sourdaw-debug\" >> \"$GITHUB_ENV\"\necho \"NODE_OPTIONS=${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\" >> \"$GITHUB_ENV\"\n"
+            "run": "mkdir -p \"$GITHUB_WORKSPACE/debug\"\nnode -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\necho \"SOURDAW_DEBUG_DIR=$GITHUB_WORKSPACE/debug\" >> \"$GITHUB_ENV\"\n"
           },
           {
             "name": "Verify original collection",
@@ -318,7 +318,7 @@
               "CAPTURE_BASELINE": "../control/.github/diagnostics/5860/baseline.json",
               "LIST_RECEIPT": "../collection-list.txt"
             },
-            "run": "node ../control/.github/diagnostics/5860/collection-preflight.mjs"
+            "run": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\"\nnode ../control/.github/diagnostics/5860/collection-preflight.mjs\n"
           },
           {
             "name": "Sample memory before shard",
@@ -332,7 +332,7 @@
               "DEBUG_COLORS": "0",
               "MAX_LOG_LENGTH": "1024"
             },
-            "run": "set -o pipefail\nnode scripts/prValidationScope.ts run 2>&1 | tee shard.log\n"
+            "run": "set -o pipefail\nexport NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\"\nnode -e \"const assert=require('node:assert/strict'); const path=require('node:path'); assert.equal(process.env.DEBUG_FILE,path.join(process.env.SOURDAW_DEBUG_DIR,process.pid+'.log'))\"\nnode scripts/prValidationScope.ts run 2>&1 | tee shard.log\n"
           },
           {
             "name": "Sample memory after shard",
@@ -351,7 +351,7 @@
             "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "with": {
               "name": "advisory-linux-capture",
-              "path": "source/shard.log\nsource/blob-report/\nsource/test-results/\ncollection-list.txt\nprovenance.txt\nbaseline-provenance.json\nmemory-before.txt\nmemory-after.txt\n${{ runner.temp }}/sourdaw-debug/\n",
+              "path": "source/shard.log\nsource/blob-report/\nsource/test-results/\ncollection-list.txt\nprovenance.txt\nbaseline-provenance.json\nmemory-before.txt\nmemory-after.txt\ndebug/\n",
               "retention-days": 7
             }
           }

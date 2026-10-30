@@ -73,17 +73,18 @@ jobs:
                   node -e "const p=require('@playwright/test'); console.log('playwright=' + require('@playwright/test/package.json').version); console.log('chromium=' + p.chromium.executablePath())" | tee -a ../provenance.txt
             - name: Prepare private debug files
               run: |
-                  mkdir -p "$RUNNER_TEMP/sourdaw-debug"
+                  mkdir -p "$GITHUB_WORKSPACE/debug"
                   node -e "const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))" >> "$GITHUB_ENV"
                   cp control/.github/diagnostics/5860/baseline.json baseline-provenance.json
-                  echo "SOURDAW_DEBUG_DIR=$RUNNER_TEMP/sourdaw-debug" >> "$GITHUB_ENV"
-                  echo "NODE_OPTIONS=${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs" >> "$GITHUB_ENV"
+                  echo "SOURDAW_DEBUG_DIR=$GITHUB_WORKSPACE/debug" >> "$GITHUB_ENV"
             - name: Verify original collection
               working-directory: source
               env:
                   CAPTURE_BASELINE: ../control/.github/diagnostics/5860/baseline.json
                   LIST_RECEIPT: ../collection-list.txt
-              run: node ../control/.github/diagnostics/5860/collection-preflight.mjs
+              run: |
+                  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs"
+                  node ../control/.github/diagnostics/5860/collection-preflight.mjs
             - name: Sample memory before shard
               run: |
                   for file in /proc/self/cgroup /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory.max; do
@@ -98,6 +99,8 @@ jobs:
                   MAX_LOG_LENGTH: '1024'
               run: |
                   set -o pipefail
+                  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs"
+                  node -e "const assert=require('node:assert/strict'); const path=require('node:path'); assert.equal(process.env.DEBUG_FILE,path.join(process.env.SOURDAW_DEBUG_DIR,process.pid+'.log'))"
                   node scripts/prValidationScope.ts run 2>&1 | tee shard.log
             - name: Sample memory after shard
               if: ${{ always() }}
@@ -127,5 +130,5 @@ jobs:
                       baseline-provenance.json
                       memory-before.txt
                       memory-after.txt
-                      ${{ runner.temp }}/sourdaw-debug/
+                      debug/
                   retention-days: 7

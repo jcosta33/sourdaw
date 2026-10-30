@@ -40,7 +40,11 @@ describe('PR 5860 Linux capture', () => {
         expect(step('Run original shard').run).toContain('node scripts/prValidationScope.ts run');
         expect(step('Retain capture').if).toBe('${{ always() }}');
         expect(step('Sample memory after shard').if).toBe('${{ always() }}');
-        expect(step('Prepare private debug files').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
+        expect(step('Prepare private debug files').run).not.toContain('NODE_OPTIONS=');
+        expect(step('Verify original collection').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
+        expect(step('Run original shard').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
+        expect(step('Run original shard').run).toContain('assert.equal(process.env.DEBUG_FILE');
+        expect(step('Retain capture').with?.path).toContain('debug/');
         expect(readFileSync('.github/diagnostics/5860/debug-preload.mjs', 'utf8')).toContain('`${process.pid}.log`');
     });
 
