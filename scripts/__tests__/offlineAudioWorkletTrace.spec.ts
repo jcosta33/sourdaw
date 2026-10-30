@@ -317,8 +317,7 @@ describe('offline AudioWorklet trace admission', () => {
             if (event.name !== name) {
                 continue;
             }
-            const withoutCategory: Record<string, unknown> = { ...event };
-            delete withoutCategory.cat;
+            const { cat: _cat, ...withoutCategory } = event;
             const events = validTrace().map((candidate, candidateIndex) =>
                 candidateIndex === index ? withoutCategory : candidate
             );
