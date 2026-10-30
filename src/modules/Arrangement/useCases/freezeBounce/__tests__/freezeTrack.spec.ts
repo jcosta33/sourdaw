@@ -666,6 +666,7 @@ describe('freezeTrack', () => {
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
+                    frozen: false,
                     freezeState: { status: 'unfrozen' },
                 } as any,
             ],
@@ -693,6 +694,7 @@ describe('freezeTrack', () => {
         }
         const restoredTrack = errorCall[1](storedTrack);
         expect(restoredTrack.freezeState.status).toBe('unfrozen');
+        expect(restoredTrack.frozen).toBe(false);
         expect(didWrite).toBe(true);
     });
 
