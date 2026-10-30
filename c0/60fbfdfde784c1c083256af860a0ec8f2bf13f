@@ -1,0 +1,20 @@
+src/modules/Transport/useCases/scheduling/applyAutomation/__tests__/deviceAutomationHistoryAcceptance.integration.spec.ts
+  s_59e31a5c6f3e31::t_aadf24bca04fe1 113-114,179-192,194-197,199-209,211-212,214-221
+  s_59e31a5c6f3e31::t_31ecd6aca165ba 1-112,115-178,193,198,210,213,222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c060fbfdfde784c1c083256af860a0ec8f2bf13f",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
