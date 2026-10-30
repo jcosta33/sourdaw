@@ -1,0 +1,27 @@
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_1608d1d55bcbee 15-23
+src/app/main.tsx
+  s_567a084d0540c4::t_93aa8bf5a440b4 90-95
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_567a084d0540c4::t_6a8d6ab8453d55 4,11-14,17-63,67-110
+  s_567a084d0540c4::t_48cd9b3a6fcc6b 15-16
+  s_567a084d0540c4::t_22499694be5004 64-66,275,279,311-315,327-331,349,354,387-390,396-411,453,455-457,478,486,497
+.agents/skills/review-stances/startup-entry-availability.md
+  s_567a084d0540c4::t_0ab95a5453b195 70-85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26368b0b98fbf264f56a8a78e05d31ef70b15a2f",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
