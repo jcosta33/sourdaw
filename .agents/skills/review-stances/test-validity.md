@@ -8,7 +8,9 @@ state still live at the next stem's first WAV write. An in-flight background Mag
 holds its closure, and so that closure's context, as a strong root `gc()` does not drain; the
 retained objects were exactly what finished encoder and PCM-reader closures captured. The
 measurement child now runs with `--no-concurrent-recompilation` and refuses to measure without it.
-A forced-GC liveness bound counts only program references when tiering is synchronous. Probe it
+Synchronous tiering removes background-compile roots. It does not limit `gc()` to program
+references: concurrent Sparkplug and other engine roots remain. The flag also moves compile work
+onto the measuring thread, so the case's deadline must be budgeted from CI timing. Probe it
 under engine delay: `--concurrent-recompilation-delay=300` must fail the case without the flag
 and pass with it, and keeping the previous render's channels reachable must still fail the bound.
 A local green run proves nothing about a measurement whose roots depend on background thread speed.
