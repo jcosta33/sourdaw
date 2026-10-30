@@ -791,6 +791,7 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(previousHeads).not.toContain(ownHeads[0]);
             replaceCrdtDocInLineage({ id: 'root', doc: merged });
             const before = structuredClone(rawWarpState());
+            expect(getWarpState(CLIP_ID)).toEqual(before);
             const retainedIds = before.markers.map((marker) => marker.id);
             const nativeRows = rawWarpState().markers.map((marker) => getObjectId(marker));
             const frames = holdAnimationFrames();
