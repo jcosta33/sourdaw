@@ -19,6 +19,7 @@ type BrowserExportInput = {
     extension: string;
     mime: string;
     archive: boolean;
+    requireReportPairs?: boolean;
     checkCancelled: () => void;
     signal?: AbortSignal;
 };
@@ -149,6 +150,9 @@ function createExportByteWriter(
 
 /** Owns one transactional picker writable. No Blob or retained OPFS download is created. */
 export async function streamExportToBrowser(input: BrowserExportInput) {
+    if (input.requireReportPairs && !input.archive) {
+        throw new Error('WAV reports require an export archive.');
+    }
     const writable = await openBrowserWritable(input);
     const drainState: ArchiveDrainState = { archiveBytes: 0 };
     let centralBytes = 22;
@@ -158,6 +162,8 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
     let abortPromise: Promise<void> | undefined;
     const emitted: Uint8Array[] = [];
     const names = new Set<string>();
+    const completed = new Set<string>();
+    const pairs = new Map<string, string>();
     const zip = input.archive ? createZipOutput(emitted, drainState) : undefined;
     const drain = () => drainZipOutput(emitted, writable, input.checkCancelled, drainState, input.signal);
     const abort = (): Promise<void> => {
@@ -221,13 +227,32 @@ export async function streamExportToBrowser(input: BrowserExportInput) {
                         await drain();
                     }
                     fileOpen = false;
+                    completed.add(name);
                 },
             };
+        },
+        registerReportPair(audioName: string, reportName: string) {
+            input.checkCancelled();
+            if (
+                closed ||
+                !input.requireReportPairs ||
+                !audioName.endsWith('.wav') ||
+                reportName !== `${audioName}.loudness.json` ||
+                !completed.has(audioName) ||
+                !completed.has(reportName) ||
+                pairs.has(audioName)
+            ) {
+                throw new Error('Invalid WAV report pair.');
+            }
+            pairs.set(audioName, reportName);
         },
         async commit(onCommitBegin: () => void) {
             input.checkCancelled();
             if (fileOpen || count === 0 || closed) {
                 throw new Error('Export has no completed files.');
+            }
+            if (input.requireReportPairs && (!zip || pairs.size * 2 !== completed.size)) {
+                throw new Error('WAV report pairs are incomplete.');
             }
             if (zip) {
                 zip.end();

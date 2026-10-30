@@ -36,6 +36,101 @@ const options = {
 
 afterEach(() => vi.unstubAllGlobals());
 describe('browser export transaction', () => {
+    it('requires completed, uniquely registered WAV/report pairs before closing the ZIP', async () => {
+        const { chunks, writable } = createDestination();
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        const start = vi.fn();
+        for (const name of ['one.wav', 'two.wav']) {
+            const audio = await batch.beginFile(name);
+            await audio.writer.write(new Uint8Array([1]));
+            await audio.finish();
+            await expect(batch.commit(start)).rejects.toThrow('pairs are incomplete');
+            const reportName = `${name}.loudness.json`;
+            const report = await batch.beginFile(reportName);
+            await report.writer.write(new Uint8Array([2]));
+            expect(() => batch.registerReportPair(name, reportName)).toThrow('Invalid WAV report pair');
+            await expect(batch.commit(start)).rejects.toThrow('no completed files');
+            await report.finish();
+            await expect(batch.commit(start)).rejects.toThrow('pairs are incomplete');
+            expect(() => batch.registerReportPair(name, `${name}.json`)).toThrow('Invalid WAV report pair');
+            batch.registerReportPair(name, reportName);
+            expect(() => batch.registerReportPair(name, reportName)).toThrow('Invalid WAV report pair');
+        }
+        expect(start).not.toHaveBeenCalled();
+        expect(writable.close).not.toHaveBeenCalled();
+        await batch.commit(start);
+        expect(start).toHaveBeenCalledOnce();
+        expect(writable.close).toHaveBeenCalledOnce();
+        expect(unzipSync(collect(chunks))).toEqual({
+            'one.wav': new Uint8Array([1]),
+            'one.wav.loudness.json': new Uint8Array([2]),
+            'two.wav': new Uint8Array([1]),
+            'two.wav.loudness.json': new Uint8Array([2]),
+        });
+    });
+
+    it('requires an archive for WAV reports', async () => {
+        const picker = vi.fn();
+        vi.stubGlobal('showSaveFilePicker', picker);
+        await expect(streamExportToBrowser({ ...options, archive: false, requireReportPairs: true })).rejects.toThrow(
+            'WAV reports require an export archive'
+        );
+        expect(picker).not.toHaveBeenCalled();
+    });
+
+    it('keeps the WAV open until its final ZIP bytes drain before admitting the report', async () => {
+        const { writable } = createDestination();
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        const audio = await batch.beginFile('mix.wav');
+        await audio.writer.write(new Uint8Array([1]));
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        writable.write.mockImplementationOnce(() => {
+            entered.resolve();
+            return release.promise;
+        });
+        const finishing = audio.finish();
+        await entered.promise;
+        await expect(batch.beginFile('mix.wav.loudness.json')).rejects.toThrow('Invalid export entry order');
+        expect(() => batch.registerReportPair('mix.wav', 'mix.wav.loudness.json')).toThrow('Invalid WAV report pair');
+        release.resolve();
+        await finishing;
+        const report = await batch.beginFile('mix.wav.loudness.json');
+        await report.finish();
+        batch.registerReportPair('mix.wav', 'mix.wav.loudness.json');
+        await batch.commit(() => {});
+        expect(writable.close).toHaveBeenCalledOnce();
+    });
+
+    it('keeps a failed report write uncompleted and aborts without closing', async () => {
+        const { writable } = createDestination();
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        const audio = await batch.beginFile('mix.wav');
+        await audio.finish();
+        const report = await batch.beginFile('mix.wav.loudness.json');
+        writable.write.mockRejectedValueOnce(new Error('report disk full'));
+        await expect(report.writer.write(new Uint8Array([2]))).rejects.toThrow('report disk full');
+        expect(() => batch.registerReportPair('mix.wav', 'mix.wav.loudness.json')).toThrow('Invalid WAV report pair');
+        await expect(batch.commit(() => {})).rejects.toThrow('no completed files');
+        expect(writable.close).not.toHaveBeenCalled();
+        await batch.abort();
+        expect(writable.abort).toHaveBeenCalledOnce();
+    });
+
+    it('propagates paired close failure and keeps the browser transaction abortable', async () => {
+        const { writable } = createDestination();
+        writable.close.mockRejectedValueOnce(new Error('disk full at close'));
+        const batch = await streamExportToBrowser({ ...options, requireReportPairs: true });
+        for (const name of ['mix.wav', 'mix.wav.loudness.json']) {
+            const entry = await batch.beginFile(name);
+            await entry.finish();
+        }
+        batch.registerReportPair('mix.wav', 'mix.wav.loudness.json');
+        await expect(batch.commit(() => {})).rejects.toThrow('disk full at close');
+        await batch.abort();
+        expect(writable.abort).toHaveBeenCalledOnce();
+    });
+
     it('emits real ZIP32 entries with matching local and central CRCs and stable order', async () => {
         const { chunks, writable } = createDestination();
         const batch = await streamExportToBrowser(options);
