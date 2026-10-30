@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/directLevelContextWindow.spec.ts
+  s_55244eb93b97d1::t_e6a3fd47313bb9 15,18,20
+  s_55244eb93b97d1::t_a16fef95f1158f 42-46
+  s_55244eb93b97d1::t_cc6de408f52f63 64,67-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "812cc9325c163f415714934a2e37594c6fc9a41e",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
