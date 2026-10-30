@@ -1,4 +1,4 @@
-import { clone } from '@automerge/automerge';
+import { change, clone, merge } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -18,6 +18,7 @@ import {
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     replaceCrdtDoc,
+    replaceCrdtDocInLineage,
     subscribeToPublishedActionHistory,
 } from '#/modules/CrdtDocument/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
@@ -39,6 +40,7 @@ import { syncActionReplayMetadata } from '../syncActionReplayMetadata';
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type TogglePlaybackAction = Extract<AppAction, { type: 'togglePlayback' }>;
 type IntegrationDocument = { actionHistory?: unknown };
+type HistoryEntriesDocument = { actionHistory: { entries: unknown[] } };
 
 const no_action_history_metadata_port = {
     record: () => [],
@@ -352,6 +354,36 @@ describe('Command action-history replay integration', () => {
         expect(getActionReplayStatus(entryId)).toEqual({ status: 'ready' });
         expect(await revertAction(entryId)).toEqual({ status: 'executed' });
         expect(executed_actions).toEqual(['setSnapValue:0', 'togglePlayback']);
+    });
+
+    it('keeps a just-committed action replayable across a remote history merge before its metadata flushes', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        const local = getCrdtDoc<HistoryEntriesDocument>('root');
+        if (!entry || !local) {
+            throw new Error('Expected committed replayable metadata');
+        }
+        const remote = change(clone(local), (document) => {
+            document.actionHistory.entries.push({
+                id: 'remote-entry',
+                label: 'Remote edit',
+                actionKind: 'setSnapValue',
+                source: 'manual',
+                timestamp: 2,
+                reverted: false,
+            });
+        });
+
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(clone(local), remote) });
+        flushAutomergeStorageWrites();
+
+        expect(actionHistoryStore.value?.entries.map(({ id }) => id)).toEqual(
+            expect.arrayContaining([entry.id, 'remote-entry'])
+        );
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
     });
 
     it('fences an unpublished capability on a same-content empty clear before its ID is re-added', async () => {
