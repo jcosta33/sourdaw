@@ -481,6 +481,7 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
+type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
 
 /** Materialized project values, independent of the route that wrote them. */
 function materializeProjectTruth(): ProjectTruth {
@@ -525,13 +526,15 @@ async function observeProjectChanges<T>(
     run: () => Promise<T>,
     materialize: () => ProjectTruth = materializeProjectTruth,
     materializeRoot: (document: ReturnType<typeof getCrdtDoc>) => ProjectTruth = materializeInstalledRoot
-): Promise<{ result: T; transitions: ProjectTruth[]; rootTransitions: ProjectTruth[] }> {
+): Promise<{ result: T; transitions: ProjectTruth[]; observations: ProjectObservation[] }> {
     const transitions: ProjectTruth[] = [];
-    const rootTransitions: ProjectTruth[] = [];
+    const observations: ProjectObservation[] = [];
     let failure: Error | undefined;
     const unsubscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges(() => {
         try {
-            transitions.push(materialize());
+            const truth = materialize();
+            transitions.push(truth);
+            observations.push({ kind: 'full', truth });
         } catch (error) {
             failure ??= error instanceof Error ? error : new Error('Project truth capture failed.', { cause: error });
         }
@@ -544,7 +547,7 @@ async function observeProjectChanges<T>(
                 return;
             }
             try {
-                rootTransitions.push(materializeRoot(installation.document));
+                observations.push({ kind: 'root', truth: materializeRoot(installation.document) });
             } catch (error) {
                 failure ??= error instanceof Error ? error : new Error('Active root capture failed.', { cause: error });
             }
@@ -564,7 +567,7 @@ async function observeProjectChanges<T>(
     if (failure !== undefined) {
         throw failure;
     }
-    return { result, transitions, rootTransitions };
+    return { result, transitions, observations };
 }
 
 /** Every applied state must match one oracle-authorized prefix. */
@@ -584,7 +587,7 @@ function transitionDifferences(transitions: readonly ProjectTruth[], allowed: re
 }
 
 function observedDifferences(
-    observations: { transitions: readonly ProjectTruth[]; rootTransitions: readonly ProjectTruth[] },
+    observed: { observations: readonly ProjectObservation[] },
     allowed: readonly ProjectTruth[]
 ): number {
     const allowedRoots = allowed.map((state): ProjectTruth => {
@@ -593,10 +596,18 @@ function observedDifferences(
         }
         return { root: state.root };
     });
-    return Math.max(
-        transitionDifferences(observations.transitions, allowed),
-        transitionDifferences(observations.rootTransitions, allowedRoots)
-    );
+    let earliest = 0;
+    let differences = 0;
+    for (const observation of observed.observations) {
+        const states = observation.kind === 'root' ? allowedRoots : allowed;
+        const counts = states.slice(earliest).map((state) => projectDifferences(state, observation.truth));
+        const nearest = Math.min(...counts);
+        differences = Math.max(differences, nearest);
+        if (nearest === 0) {
+            earliest += counts.indexOf(0);
+        }
+    }
+    return differences;
 }
 
 function commitPrefixes(before: ProjectTruth, actions: readonly CorpusOracleAction[]): ProjectTruth[] {
@@ -1033,7 +1044,7 @@ type ChatTurnWrites = {
     projectBefore: ProjectTruth;
     projectAfter: ProjectTruth;
     transitions: ProjectTruth[];
-    rootTransitions: ProjectTruth[];
+    observations: ProjectObservation[];
 };
 
 /** A write the turn made, counted once even where only the project revision shows it. */
@@ -1116,7 +1127,7 @@ async function sendScriptedChatTurn(input: {
             projectAfter: captureProjectTruth(),
         };
     });
-    return { ...observed.result, transitions: observed.transitions, rootTransitions: observed.rootTransitions };
+    return { ...observed.result, transitions: observed.transitions, observations: observed.observations };
 }
 
 /** The prior card or commit, with frozen originals for Undo atop the current project. */
@@ -1773,7 +1784,7 @@ describe('agent acceptance corpora', () => {
                 projectBefore,
                 projectAfter: structuredClone(projectBefore),
                 transitions: [],
-                rootTransitions: [],
+                observations: [],
                 ...overrides,
             };
         }
@@ -2310,6 +2321,41 @@ describe('agent acceptance corpora', () => {
         it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
             const testCase = phase === 'follow-up' ? relativeCase : undoCase;
             const run = await runWithBarrel(testCase, installKickPanAndRestore);
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.observedBarrelWrites).toBe(0);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts a prior root restored after a legitimate relative follow-up commits', async () => {
+            let beforeFollowUp: ReturnType<typeof getCrdtDoc> | undefined;
+            const run = await runWithBarrel(
+                relativeCase,
+                async () => {
+                    const committed = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined || committed === undefined) {
+                        throw new Error('Missing saved or committed active root');
+                    }
+                    expect(
+                        projectDifferences(
+                            materializeInstalledRoot(beforeFollowUp),
+                            materializeInstalledRoot(committed)
+                        )
+                    ).toBeGreaterThan(0);
+                    createCrdtDoc('root', beforeFollowUp);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(
+                        materializeInstalledRoot(beforeFollowUp)
+                    );
+                    createCrdtDoc('root', committed);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(materializeInstalledRoot(committed));
+                },
+                undefined,
+                async () => {
+                    beforeFollowUp = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined) {
+                        throw new Error('Missing active root before follow-up');
+                    }
+                }
+            );
             expect(run.result.exactMatch).toBe(true);
             expect(run.observedBarrelWrites).toBe(0);
             expect(run.unintendedMutations).toBeGreaterThan(0);
