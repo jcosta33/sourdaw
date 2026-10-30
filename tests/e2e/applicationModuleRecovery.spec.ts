@@ -56,6 +56,8 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
         let releaseApp = (): void => undefined;
         const appAllowed = new Promise<void>((resolve) => (releaseApp = resolve));
         let appRequests = 0;
+        const appUrls: string[] = [];
+        let observation: unknown;
         let leafRequests = 0;
         let dependencyRequests = 0;
         let fallbackFinishes = 0;
@@ -87,35 +89,45 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 failures.push(request.failure()?.errorText ?? 'missing failure reason');
             }
         });
-        await page.route('**/src/app/App.tsx', async (route) => {
-            appRequests += 1;
-            await appAllowed;
-            await route.continue();
-        });
-        await page.route('**/src/app/queryClient.ts', async (route) => {
-            dependencyRequests += 1;
-            const response = await route.fetch();
-            await route.fulfill({
-                response,
-                body: `${await response.text()}\nglobalThis.__recoveryDependencyEffects = (globalThis.__recoveryDependencyEffects ?? 0) + 1;`,
-            });
-        });
-        await page.route('**/src/app/router.ts', async (route) => {
-            leafRequests += 1;
-            if (faulty && (fault === 'permanent' || (fault === 'transient' && leafRequests === 1))) {
-                await route.abort('aborted');
-                return;
+        await page.route(
+            (url) => url.pathname === '/src/app/App.tsx',
+            async (route) => {
+                appRequests += 1;
+                appUrls.push(route.request().url());
+                await appAllowed;
+                await route.continue();
             }
-            const response = await route.fetch();
-            const body = await response.text();
-            await route.fulfill({
-                response,
-                body:
-                    fault === 'evaluation' && faulty
-                        ? `globalThis.__recoveryThrowEffects = (globalThis.__recoveryThrowEffects ?? 0) + 1; throw new Error('controlled App evaluation failure');\n${body}`
-                        : body,
-            });
-        });
+        );
+        await page.route(
+            (url) => url.pathname === '/src/app/queryClient.ts',
+            async (route) => {
+                dependencyRequests += 1;
+                const response = await route.fetch();
+                await route.fulfill({
+                    response,
+                    body: `${await response.text()}\nglobalThis.__recoveryDependencyEffects = (globalThis.__recoveryDependencyEffects ?? 0) + 1;`,
+                });
+            }
+        );
+        await page.route(
+            (url) => url.pathname === '/src/app/router.ts',
+            async (route) => {
+                leafRequests += 1;
+                if (faulty && (fault === 'permanent' || (fault === 'transient' && leafRequests === 1))) {
+                    await route.abort('aborted');
+                    return;
+                }
+                const response = await route.fetch();
+                const body = await response.text();
+                await route.fulfill({
+                    response,
+                    body:
+                        fault === 'evaluation' && faulty
+                            ? `globalThis.__recoveryThrowEffects = (globalThis.__recoveryThrowEffects ?? 0) + 1; throw new Error('controlled App evaluation failure');\n${body}`
+                            : body,
+                });
+            }
+        );
         try {
             await page.reload({ waitUntil: 'commit' });
             await expect.poll(() => appRequests).toBe(1);
@@ -160,30 +172,41 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 await expect(failure.getByRole('button', { name: 'Reload Sourdaw' })).toBeVisible();
                 expect(leafRequests).toBe(fault === 'permanent' ? 2 : 1);
             }
-            expect(
-                await identity.evaluate(async (before) => {
-                    const path = '/src/app/registerDependencies.ts';
-                    const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(path);
-                    return {
-                        eventBus: before.eventBus === eventBus,
-                        document: before.document === document,
-                        timeOrigin: before.timeOrigin === performance.timeOrigin,
-                        url: before.url === location.href,
-                    };
-                })
-            ).toEqual({ eventBus: true, document: true, timeOrigin: true, url: true });
+            const preservation = await identity.evaluate(async (before) => {
+                const path = '/src/app/registerDependencies.ts';
+                const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(path);
+                return {
+                    eventBus: before.eventBus === eventBus,
+                    document: before.document === document,
+                    timeOrigin: before.timeOrigin === performance.timeOrigin,
+                    url: before.url === location.href,
+                    beforeTimeOrigin: before.timeOrigin,
+                    afterTimeOrigin: performance.timeOrigin,
+                };
+            });
+            expect(preservation).toEqual({
+                eventBus: true,
+                document: true,
+                timeOrigin: true,
+                url: true,
+                beforeTimeOrigin: expect.any(Number),
+                afterTimeOrigin: expect.any(Number),
+            });
             expect(capabilityEmissions).toBe(1);
             expect(navigationCount).toBe(0);
             expect(fallbackReadyBeforeAbort).toBe(true);
             expect(fallbackFinishes).toBe(1);
             expect(appRequests).toBe(1);
             expect(dependencyRequests).toBe(1);
-            expect(await page.evaluate(() => Number(Reflect.get(globalThis, '__recoveryDependencyEffects') ?? 0))).toBe(
-                fault === 'permanent' ? 0 : 1
+            const dependencyEffects = await page.evaluate(() =>
+                Number(Reflect.get(globalThis, '__recoveryDependencyEffects') ?? 0)
             );
-            expect(await page.evaluate(() => Number(Reflect.get(globalThis, '__recoveryThrowEffects') ?? 0))).toBe(
-                fault === 'evaluation' ? 1 : 0
+            const throwEffects = await page.evaluate(() =>
+                Number(Reflect.get(globalThis, '__recoveryThrowEffects') ?? 0)
             );
+            expect(dependencyEffects).toBe(fault === 'permanent' ? 0 : 1);
+            expect(throwEffects).toBe(fault === 'evaluation' ? 1 : 0);
+            observation = { preservation, dependencyEffects, throwEffects, capabilityEmissions, navigationCount };
             expect(pageErrors).toEqual([]);
             if (fault === 'permanent') {
                 faulty = false;
@@ -202,6 +225,8 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                     projectId,
                     browser: page.context().browser()?.version(),
                     appRequests,
+                    appUrls,
+                    observation,
                     leafRequests,
                     dependencyRequests,
                     fallbackReadyBeforeAbort,
