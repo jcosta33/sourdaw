@@ -411,21 +411,29 @@ test.describe('Offline project smoke', () => {
 
 test.describe('Crust runtime lifecycle', () => {
     for (const warm of [false, true]) {
-        test(`keeps the live chain and history through ${warm ? 'Play before add' : 'cold add'}`, async ({ page }) => {
+        test(`keeps the live chain and history through ${warm ? 'Play before add' : 'cold add'}`, async ({
+            page,
+        }, testInfo) => {
             test.setTimeout(150_000);
             const errors: string[] = [];
             const pendingErrors: Promise<void>[] = [];
             page.on('pageerror', (error) => errors.push(`${error.name}: ${error.message}`));
             page.on('console', (message) => {
-                if (message.type() !== 'error') return;
+                if (message.type() !== 'error') {
+                    return;
+                }
                 pendingErrors.push(
                     Promise.all(
                         message.args().map((arg) =>
                             arg.evaluate((value: unknown) => {
                                 const seen = new WeakSet<object>();
                                 function describe(item: unknown): string {
-                                    if (typeof item !== 'object' || item === null) return String(item);
-                                    if (seen.has(item)) return '[circular]';
+                                    if (typeof item !== 'object' || item === null) {
+                                        return String(item);
+                                    }
+                                    if (seen.has(item)) {
+                                        return '[circular]';
+                                    }
                                     seen.add(item);
                                     if (item instanceof Error) {
                                         const nested = item instanceof AggregateError ? item.errors.map(describe) : [];
@@ -433,7 +441,7 @@ test.describe('Crust runtime lifecycle', () => {
                                             .filter(Boolean)
                                             .join(': ');
                                     }
-                                    return String(item);
+                                    return Object.prototype.toString.call(item);
                                 }
                                 return describe(value);
                             })
@@ -464,6 +472,7 @@ test.describe('Crust runtime lifecycle', () => {
                         }));
                     return {
                         trackId,
+                        stripExists: strip !== undefined,
                         devices: track?.devices.map(({ id, type }) => ({ id, type })) ?? [],
                         nodes:
                             strip?.deviceNodes.map((node) => ({
@@ -487,6 +496,7 @@ test.describe('Crust runtime lifecycle', () => {
                     'Playing'
                 );
             }
+            const preAdd = await readState();
             const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
             await inspector.getByRole('button', { name: 'Add device' }).click();
             await page.getByRole('menuitem', { name: /^Crust$/ }).click();
@@ -521,6 +531,7 @@ test.describe('Crust runtime lifecycle', () => {
                 expect(result.status).toBe('ready');
             };
             await expectReady();
+            const afterAdd = await readState();
             const undo = page.getByRole('button', { name: 'Undo', exact: true });
             await expect(undo).toBeEnabled();
             await undo.click();
@@ -530,15 +541,21 @@ test.describe('Crust runtime lifecycle', () => {
                     return { devices: state.devices, nodes: state.nodes, future: state.future.at(-1) };
                 })
                 .toEqual({ devices: before.devices, nodes: [], future: entry });
+            const afterUndo = await readState();
             const redo = page.getByRole('button', { name: 'Redo', exact: true });
             await expect(redo).toBeEnabled();
             await redo.click();
             await expect.poll(async () => (await readState()).past.at(-1)).toEqual(entry);
             await expectReady();
+            const afterRedo = await readState();
+            await testInfo.attach('crust-runtime-phases', {
+                body: JSON.stringify({ warm, preAdd, afterAdd, afterUndo, afterRedo }, null, 2),
+                contentType: 'application/json',
+            });
             await expect(page.getByText(/requires runtime retry or repair/i)).toHaveCount(0);
+            await assertOffline();
             await Promise.all(pendingErrors);
             expect(errors).toEqual([]);
-            await assertOffline();
         });
     }
 });
