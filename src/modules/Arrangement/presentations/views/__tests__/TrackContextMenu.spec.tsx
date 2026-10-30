@@ -398,9 +398,10 @@ describe('TrackContextMenu', () => {
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
-    it('shows Update Freeze label when the freeze state is stale', () => {
+    it.each(['audio', 'midi'] as const)('updates a stale frozen %s track', (kind) => {
         const staleTrack = TrackDummy.create({
             id: 'stale1',
+            kind,
             frozen: true,
             freezeState: { status: 'stale' },
         });
@@ -410,7 +411,12 @@ describe('TrackContextMenu', () => {
             </TrackContextMenu>
         );
         fireEvent.contextMenu(screen.getByTestId('track'));
-        expect(screen.getByText('Update Freeze')).toBeInTheDocument();
+        fireEvent.click(screen.getByText('Update Freeze'));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledExactlyOnceWith({
+            type: 'freezeTrack',
+            payload: { trackId: 'stale1' },
+        });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 
     it('waits for confirmation before flattening a frozen track', () => {
