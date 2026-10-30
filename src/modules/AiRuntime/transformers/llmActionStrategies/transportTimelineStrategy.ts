@@ -1,8 +1,10 @@
+import { type LevelArgument, METRONOME_LEVEL_LAW } from '#/utils/audioLevelLaw';
+
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { hasExactKeys, isFiniteNumber, rejection } from './bridgeArgumentGuards';
+import { hasExactKeys, isFiniteNumber, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 export const transportTimelineActionNames = [
@@ -54,6 +56,16 @@ type LlmActionStrategyDefinition<Name extends TransportTimelineCallName> = {
 
 function isValidTimeSignatureDenominator(value: unknown): value is 2 | 4 | 8 | 16 {
     return value === 2 || value === 4 || value === 8 || value === 16;
+}
+
+function metronomeLevelPayload(argument: LevelArgument) {
+    if ('linear' in argument) {
+        return { volume: argument.linear };
+    }
+    if ('absoluteDb' in argument) {
+        return { volumeDb: argument.absoluteDb };
+    }
+    return { deltaDb: argument.deltaDb };
 }
 
 const transportTimelineStrategyDefinitions = [
@@ -251,12 +263,17 @@ const transportTimelineStrategyDefinitions = [
     },
     {
         name: 'setMetronomeVolume',
-        transform: ({ call, index }) => {
+        transform: ({ call, context, index }) => {
             const args = call.arguments;
-            if (!hasExactKeys(args, ['volume']) || !isFiniteNumber(args.volume) || args.volume < 0 || args.volume > 1) {
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'volume', absolute: 'volumeDb', relative: 'deltaDb' },
+                { current: context.metronomeVolume, law: METRONOME_LEVEL_LAW, linearBounds: { min: 0, max: 1 } }
+            );
+            if (!level || !hasExactKeys(args, [level.statedKey])) {
                 return rejection(index, call.name, 'Expected only a finite metronome volume from 0 through 1');
             }
-            return { type: 'setMetronomeVolume', payload: { volume: args.volume } };
+            return { type: 'setMetronomeVolume', payload: metronomeLevelPayload(level.argument) };
         },
     },
 ] as const satisfies readonly LlmActionStrategyDefinition<TransportTimelineCallName>[];

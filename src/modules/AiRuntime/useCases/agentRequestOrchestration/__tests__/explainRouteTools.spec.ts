@@ -5,11 +5,11 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { markerStore, trackStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
 import { capabilityStore } from '#/modules/BrowserAi/stores';
-import { undoHistoryStore } from '#/modules/Command/stores';
-import { clearUndoHistory } from '#/modules/Command/useCases';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
+import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     captureProjectRevision,
@@ -49,9 +49,12 @@ import {
 } from '../../__tests__/aiWorkflowCommandPreflightFixture';
 import * as preparation from '../../agentReference/prepareStemImport';
 import { agentRunLifecycle } from '../../agentRunLifecycle';
+import { agentRunWorkLease } from '../../agentRunWorkLease';
 import * as commandPlanning from '../../compileArbitraryCommandList';
 import { getAgentExecutionModeAuthority } from '../../getAgentExecutionModeAuthority';
+import * as answerNotice from '../../notifyAiAnswer';
 import { sendChatMessage } from '../../sendChatMessage';
+import { submitAdmittedPromptRequest } from '../../submitAdmittedPromptRequest';
 import * as execution from '../executeImmediatePromptCommand';
 import * as preview from '../executePromptCommandPreview';
 import * as materialization from '../materializePromptCommandPlan';
@@ -262,6 +265,126 @@ afterEach(async () => {
 });
 
 describe('Explain reaches the shared answer kernel', () => {
+    it('shows a current Prompt Bar answer with its real query evidence', async () => {
+        const notice = vi.spyOn(answerNotice, 'notifyAiAnswer');
+        script([[query], [{ ...answer, arguments: { text: answerText, evidenceCallIds: ['query'] } }]]);
+        const verifyProject = observeProject();
+        try {
+            await expect(
+                submitAdmittedPromptRequest({ prompt: 'What is selected?', source: 'prompt-bar' })
+            ).resolves.toMatchObject({ status: 'no-op' });
+        } finally {
+            verifyProject();
+        }
+        expect(notice).toHaveBeenCalledWith(
+            expect.objectContaining({ text: answerText, evidence: [expect.objectContaining({ callId: 'query' })] })
+        );
+    });
+
+    it('does not publish a Prompt Bar answer when Stop arrives during resource release', async () => {
+        const controller = new AbortController();
+        const notice = vi.spyOn(answerNotice, 'notifyAiAnswer');
+        const settle = agentRunWorkLease.settle;
+        vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            const result = settle(input);
+            queueMicrotask(() => controller.abort());
+            return result;
+        });
+        script([[query], [{ ...answer, arguments: { text: answerText, evidenceCallIds: ['query'] } }]]);
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'What is selected?',
+            source: 'prompt-bar',
+            signal: controller.signal,
+        });
+        expect(result.status).toBe('rejected');
+        expect(notice).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(result.runId)?.phase).toBe('cancelled');
+    });
+
+    it('does not publish a Prompt Bar answer when its project is replaced during resource release', async () => {
+        const notice = vi.spyOn(answerNotice, 'notifyAiAnswer');
+        const settle = agentRunWorkLease.settle;
+        vi.spyOn(agentRunWorkLease, 'settle').mockImplementation((input) => {
+            const result = settle(input);
+            queueMicrotask(() => {
+                removeCrdtDoc('root');
+                createCrdtDoc('root');
+            });
+            return result;
+        });
+        script([[query], [{ ...answer, arguments: { text: answerText, evidenceCallIds: ['query'] } }]]);
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'What is selected?', source: 'prompt-bar' })
+        ).rejects.toMatchObject({ name: 'AiProposalInvalidatedError' });
+        expect(notice).not.toHaveBeenCalled();
+        expect(agentRunStore.value?.runs[0]?.phase).not.toBe('completed');
+    });
+
+    it('does not publish a Prompt Bar answer after a real project edit', async () => {
+        const started = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<unknown>();
+        const notice = vi.spyOn(answerNotice, 'notifyAiAnswer');
+        provider.mockResolvedValueOnce(response([query]));
+        provider.mockResolvedValueOnce(response([measure]));
+        provider.mockImplementationOnce(async () => {
+            started.resolve();
+            return released.promise;
+        });
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
+        setArrangementEventBus({ emit: () => Promise.resolve() });
+        try {
+            const pending = submitAdmittedPromptRequest({
+                prompt: 'What is the Vocal loudness over Verse?',
+                source: 'prompt-bar',
+            });
+            await started.promise;
+            await executeAppAction({ type: 'renameTrack', payload: { trackId: vocalId, name: 'Changed Vocal' } });
+            const afterEdit = truth();
+            released.resolve(
+                response([{ ...answer, arguments: { text: 'STALE ANSWER', evidenceCallIds: ['query', 'measure'] } }])
+            );
+            await expect(pending).rejects.toMatchObject({ name: 'AiProposalInvalidatedError' });
+            flushAutomergeStorageWrites();
+            expect(notice).not.toHaveBeenCalled();
+            expect(truth()).toStrictEqual(afterEdit);
+        } finally {
+            clearHandlerRegistry();
+        }
+    });
+    it.each(['plan', 'explain'] as const)(
+        'does not publish a stale %s answer after a real project edit',
+        async (mode) => {
+            const started = Promise.withResolvers<void>();
+            const released = Promise.withResolvers<unknown>();
+            provider.mockResolvedValueOnce(response([query]));
+            provider.mockResolvedValueOnce(response([measure]));
+            provider.mockImplementationOnce(async () => {
+                started.resolve();
+                return released.promise;
+            });
+            clearHandlerRegistry();
+            registerHandlerMap(getArrangementHandlers());
+            setArrangementEventBus({ emit: () => Promise.resolve() });
+            try {
+                const pending = sendChatMessage('What is the Vocal loudness over Verse?', { mode });
+                await started.promise;
+                await executeAppAction({ type: 'renameTrack', payload: { trackId: vocalId, name: 'Changed Vocal' } });
+                const afterEdit = truth();
+                released.resolve(
+                    response([
+                        { ...answer, arguments: { text: 'STALE ANSWER', evidenceCallIds: ['query', 'measure'] } },
+                    ])
+                );
+                await pending;
+                flushAutomergeStorageWrites();
+                expect(chatStore.value?.messages.some((message) => message.content === 'STALE ANSWER')).toBe(false);
+                expect(truth()).toStrictEqual(afterEdit);
+            } finally {
+                clearHandlerRegistry();
+            }
+        }
+    );
     it.each(['webllm', 'cloud'] as const)(
         'answers from real query, measurement and recipe receipts through %s without project writes',
         async (backend) => {
