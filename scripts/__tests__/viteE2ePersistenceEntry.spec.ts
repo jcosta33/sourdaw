@@ -17,7 +17,7 @@ describe('same-build persistence inspection entry', () => {
         expect(e2e.build.rolldownOptions.preserveEntrySignatures).toBe('strict');
         const output = e2e.build.rolldownOptions.output;
         if (Array.isArray(output) || typeof output?.entryFileNames !== 'function') {
-            throw new Error('The persistence entry requires its own deterministic filename');
+            throw new TypeError('The persistence entry requires its own deterministic filename');
         }
         const entry = readFileSync(resolve(root, 'tests/e2e/persistedHydrationEntry.ts'), 'utf8');
         expect(

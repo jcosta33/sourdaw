@@ -57,7 +57,7 @@ describe('selected persistence acceptance server', () => {
         const buildOrder = vite.build.mock.invocationCallOrder[0];
         const previewOrder = vite.preview.mock.invocationCallOrder[0];
         if (typeof buildOrder !== 'number' || typeof previewOrder !== 'number') {
-            throw new Error('Build and preview must both be observed');
+            throw new TypeError('Build and preview must both be observed');
         }
         expect(buildOrder).toBeLessThan(previewOrder);
         expect(server.origin).toBe('http://127.0.0.1:43210');
