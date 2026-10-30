@@ -754,15 +754,31 @@ describe('locked transient markers through the real Elastic editor', () => {
             const samples = burstSamples();
             const originalPcm = samples.slice();
             supplyBuffer(samples);
-            setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+            const legacyLockedMarker = { ...lockedMarker, id: 'warp-12345678-9abc-4def-8123-456789abcdef' };
+            const peerMarker = {
+                ...selectedUserMarker,
+                id: 'peer opaque existing marker',
+                originalBeat: 1.7,
+                warpedBeat: 1.9,
+            };
+            setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [legacyLockedMarker, selectedUserMarker] });
             flushAutomergeStorageWrites();
             clearUndoHistory();
-            const base = getCrdtDoc('root');
+            const base = getCrdtDoc<{
+                warpStates: { states: Record<string, WarpState> };
+                peerLeft?: { retained: string };
+                peerRight?: { retained: string };
+            }>('root');
             if (!base) throw new Error('Expected real native root');
             const actor = getActorId(base);
             const ownHeads = getHeads(base);
             const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (draft) => {
                 draft.peerLeft = { retained: 'left' };
+                const state = draft.warpStates.states[CLIP_ID];
+                if (!state) {
+                    throw new Error('Expected peer marker owner');
+                }
+                state.markers.push(peerMarker);
             });
             const right = change(clone(base, { actor: 'cccccccccccccccc' }), (draft) => {
                 draft.peerRight = { retained: 'right' };
@@ -787,7 +803,10 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(additions[0]?.actor).toBe(actor);
             expect([...(additions[0]?.deps ?? [])].sort()).toEqual([...previousHeads, ...ownHeads].sort());
             const after = structuredClone(rawWarpState());
-            expect(after.markers).toHaveLength(3);
+            expect(after.markers).toHaveLength(4);
+            const created = after.markers.filter((marker) => !retainedIds.includes(marker.id));
+            expect(created).toHaveLength(1);
+            expect(created[0]?.id).toMatch(/^warp-[A-Za-z0-9_-]{22}$/);
             for (const [index, id] of retainedIds.entries()) {
                 const retained = rawWarpState().markers.find((marker) => marker.id === id);
                 expect(retained).toEqual(before.markers[index]);
@@ -806,6 +825,53 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(getWarpState(CLIP_ID)).toEqual(after);
             expect(getCrdtDoc('root')?.peerLeft).toEqual({ retained: 'left' });
             expect(getCrdtDoc('root')?.peerRight).toEqual({ retained: 'right' });
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(originalPcm);
+
+            toggleMarkerLock(CLIP_ID, legacyLockedMarker.id);
+            flushAutomergeStorageWrites();
+            const beforeUnlockedDetection = structuredClone(rawWarpState());
+            expect(beforeUnlockedDetection.markers.find((marker) => marker.id === legacyLockedMarker.id)?.locked).toBe(
+                false
+            );
+            const historyBeforeDetection = undoHistoryStore.value?.past.length ?? 0;
+            await frames.complete(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } }));
+            expect(materialization).toHaveBeenCalledTimes(2);
+            const afterUnlockedDetection = structuredClone(rawWarpState());
+            expect(afterUnlockedDetection.markers).toHaveLength(3);
+            expect(afterUnlockedDetection.markers.some((marker) => marker.id === legacyLockedMarker.id)).toBe(false);
+            expect(afterUnlockedDetection.markers.some((marker) => marker.id === created[0]?.id)).toBe(false);
+            const replacement = afterUnlockedDetection.markers.filter((marker) => marker.origin === 'transient-auto');
+            expect(replacement).toHaveLength(1);
+            expect(replacement[0]?.id).toMatch(/^warp-[A-Za-z0-9_-]{22}$/);
+            for (const marker of [selectedUserMarker, peerMarker]) {
+                const retained = rawWarpState().markers.find((candidate) => candidate.id === marker.id);
+                expect(retained).toEqual(marker);
+                expect(getObjectId(retained!)).toBe(nativeRows[retainedIds.indexOf(marker.id)]);
+            }
+            expect(undoHistoryStore.value?.past).toHaveLength(historyBeforeDetection + 1);
+            await undo();
+            expect(rawWarpState()).toEqual(beforeUnlockedDetection);
+            await redo();
+            expect(rawWarpState()).toEqual(afterUnlockedDetection);
+            const current = getCrdtDoc('root');
+            if (!current) {
+                throw new Error('Expected detected root for checked reload');
+            }
+            const encodingClone = clone(current);
+            let checked: typeof current | undefined;
+            try {
+                checked = load(save(encodingClone), { actor });
+                expect(toJS(checked)).toEqual(toJS(current));
+                expect(getHeads(checked)).toEqual(getHeads(current));
+            } finally {
+                if (checked) {
+                    free(checked);
+                }
+                free(encodingClone);
+            }
+            expect(current.peerLeft).toEqual({ retained: 'left' });
+            expect(current.peerRight).toEqual({ retained: 'right' });
             expect(rawWarpState('other-clip')).toEqual(otherWarpState);
             expect(samples).toEqual(originalPcm);
         }
