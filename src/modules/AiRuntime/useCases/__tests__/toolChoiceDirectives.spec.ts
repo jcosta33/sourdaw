@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { querySemanticProject } from '#/modules/Project/useCases';
 
-import { type ToolCallResult } from '../../transformers/toolCallParser';
 import { AUTO_TOOL_CHOICE } from '../../repositories/cloudLlm/cloudInference/hostedToolPlan';
+import { type ToolCallResult } from '../../transformers/toolCallParser';
 import {
     type ApplicationOwnedToolLoopInterpretationAdmission,
     runApplicationOwnedToolLoop,
@@ -216,19 +216,27 @@ describe('caller-bound measurement receipt sequence', () => {
             options.execute ?? vi.fn<MeasurementExecutor>(async (call, identity) => executeResult(call, identity));
         const requestTurn = vi.fn(async ({ turn }: { turn: number }) => {
             options.onTurn?.(turn);
-            return {
-                status: 'complete' as const,
+            const result: Awaited<ReturnType<Parameters<typeof runApplicationOwnedToolLoop>[0]['requestTurn']>> = {
+                status: 'complete',
                 toolCalls: calls[turn - 1] ?? [],
-                ...(options.history
-                    ? {
-                          providerTurn: {
-                              provider: 'openai' as const,
-                              assistantItems: [{ type: 'reasoning', id: `reason-${turn}` }],
-                          },
-                      }
-                    : {}),
             };
+            if (options.history) {
+                result.providerTurn = {
+                    provider: 'openai',
+                    assistantItems: [{ type: 'reasoning', id: `reason-${turn}` }],
+                };
+            }
+            return result;
         });
+        let measurement: Parameters<typeof runApplicationOwnedToolLoop>[0]['measurement'];
+        if (!options.noExecutor) {
+            measurement = {
+                toolName: 'analysis.measure',
+                companionToolNames: ['analysis.compareReference'],
+                revision: 'revision-1',
+                execute,
+            };
+        }
         const result = runApplicationOwnedToolLoop({
             loopId: 'sequence-loop',
             terminalToolNames: new Set(['setTempo', 'selectWorkflowCapability']),
@@ -240,14 +248,7 @@ describe('caller-bound measurement receipt sequence', () => {
             },
             readMeasurementOpportunity: () =>
                 options.readPolicy?.() ?? options.policy ?? { ...opportunity, available: options.available ?? true },
-            measurement: options.noExecutor
-                ? undefined
-                : {
-                      toolName: 'analysis.measure',
-                      companionToolNames: ['analysis.compareReference'],
-                      revision: 'revision-1',
-                      execute,
-                  },
+            measurement,
             recipe: {
                 toolName: 'recipe.expand',
                 revision: 'revision-1',
@@ -378,10 +379,12 @@ describe('caller-bound measurement receipt sequence', () => {
     it.each(['stale', 'pre-intake'] as const)(
         'requires a receipt independently of a %s retained candidate',
         async (kind) => {
-            const calls =
-                kind === 'pre-intake'
-                    ? [[candidate], [{ ...intake, id: 'intake-later' }], [read('read-3')], [measure], [terminal]]
-                    : [[intake], [read('read-2')], [candidate], [measure], [terminal]];
+            let calls: ToolCallResult[][];
+            if (kind === 'pre-intake') {
+                calls = [[candidate], [{ ...intake, id: 'intake-later' }], [read('read-3')], [measure], [terminal]];
+            } else {
+                calls = [[intake], [read('read-2')], [candidate], [measure], [terminal]];
+            }
             const run = runSequence(calls, {
                 candidateRevision: kind === 'stale' ? 'old-revision' : undefined,
                 policy: kind === 'pre-intake' ? { ...opportunity, callId: 'intake-later', turn: 2 } : undefined,
@@ -446,7 +449,7 @@ describe('caller-bound measurement receipt sequence', () => {
                 if (identity.turn !== 2) {
                     return result;
                 }
-                const receipt = { ...result.receipt };
+                const receipt = Object.assign({}, result.receipt);
                 if (field === 'turn') {
                     receipt.turn = 1;
                 } else {
@@ -705,7 +708,7 @@ describe('caller-bound measurement receipt sequence', () => {
         async (field) => {
             const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
                 const result = executeResult(call, identity);
-                const receipt = { ...result.receipt };
+                const receipt = Object.assign({}, result.receipt);
                 if (field === 'turn') {
                     receipt.turn = 1;
                 } else {

@@ -310,15 +310,24 @@ function scriptTurns(
 ): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
     planning.mockImplementationOnce(async (_systemPrompt, userMessage, toolSchemas) => {
-        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find((row) =>
-            criterion === 'unsupported'
-                ? row.kind === 'unsupported'
-                : row.goals.some((goal) => goal.relation === 'match-current')
-        );
+        const unsupported = readMetricPublication({ function: advertisedAnswerSchema(toolSchemas) }).find((row) => {
+            if (criterion === 'unsupported') {
+                return row.kind === 'unsupported';
+            }
+            return row.goals.some((goal) => goal.relation === 'match-current');
+        });
         if (unsupported === undefined) {
             throw new TypeError('Expected the actual published unsupported acoustic objective.');
         }
         const call = interpretationCall(revision, prompt);
+        let scopeCandidateId: string | null = null;
+        let referenceScopeCandidateId: string | null = null;
+        let rangeCandidateId: string | null = null;
+        if (criterion === 'match') {
+            scopeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'drums');
+            referenceScopeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'bass');
+            rangeCandidateId = advertisedAnswerCandidateId([toolSchemas, userMessage], 'Passage', 'ranges');
+        }
         return {
             status: 'complete',
             toolCalls: [
@@ -333,22 +342,9 @@ function scriptTurns(
                             objectives: [
                                 {
                                     objectiveId: unsupported.id,
-                                    scopeCandidateId:
-                                        criterion === 'match'
-                                            ? advertisedAnswerCandidateId([toolSchemas, userMessage], 'drums')
-                                            : null,
-                                    referenceScopeCandidateId:
-                                        criterion === 'match'
-                                            ? advertisedAnswerCandidateId([toolSchemas, userMessage], 'bass')
-                                            : null,
-                                    rangeCandidateId:
-                                        criterion === 'match'
-                                            ? advertisedAnswerCandidateId(
-                                                  [toolSchemas, userMessage],
-                                                  'Passage',
-                                                  'ranges'
-                                              )
-                                            : null,
+                                    scopeCandidateId,
+                                    referenceScopeCandidateId,
+                                    rangeCandidateId,
                                 },
                             ],
                         },

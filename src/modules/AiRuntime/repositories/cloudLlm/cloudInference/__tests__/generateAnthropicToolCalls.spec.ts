@@ -11,7 +11,7 @@ import { getPlanningProviderToolSchemas } from '../../../../useCases/getPlanning
 import { getHostedProposalWireToolSchema } from '../../../../useCases/llmOrchestration/getHostedProposalWireToolSchema';
 import { encodeWireToolName } from '../encodeWireToolName';
 import { generateAnthropicToolCalls } from '../generateAnthropicToolCalls';
-import { AUTO_TOOL_CHOICE } from '../hostedToolPlan';
+import { AUTO_TOOL_CHOICE, type HostedToolChoiceDirective } from '../hostedToolPlan';
 
 const requestProvider = vi.hoisted(() => vi.fn());
 
@@ -169,10 +169,12 @@ describe('generateAnthropicToolCalls', () => {
             content: [{ type: 'tool_use', id: 'single', name: 'setTempo', input: { bpm: 120 } }],
             stop_reason: 'tool_use',
         });
-        const directive =
-            mode === 'required'
-                ? { mode, toolNames: ['setTempo'], parallelToolCalls: false }
-                : { mode, parallelToolCalls: false };
+        let directive: HostedToolChoiceDirective;
+        if (mode === 'required') {
+            directive = { mode, toolNames: ['setTempo'], parallelToolCalls: false };
+        } else {
+            directive = { mode, parallelToolCalls: false };
+        }
         await generateAnthropicToolCalls({
             runtime,
             systemPrompt: 'system',

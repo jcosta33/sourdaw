@@ -548,7 +548,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/planAgentRun.spec.ts",
-                    "digest": "e0e61b256a11cb849f8a56258d2e8fc96f67ea89714b76b905383fc3d3bcfb9b"
+                    "digest": "23433fc3229b6fccb94ccbf46c70910220c04a85c62fa1f6ba23e5c217dcc5e7"
                 }
             ]
         },
@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "a0e2abe49dc64c91bf9a77fb826fbef8d1ba4f700f36ccf009b7c62d2705c107"
+                    "digest": "7b292050bf3791b582a92b34048dd93207ed15ed6aacd064ab0aa3a98658b2be"
                 }
             ]
         },

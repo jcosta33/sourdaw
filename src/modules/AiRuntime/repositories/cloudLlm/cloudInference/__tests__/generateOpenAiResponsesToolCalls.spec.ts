@@ -255,10 +255,12 @@ describe('generateOpenAiResponsesToolCalls', () => {
         'disables parallel calls only for an explicit single %s step',
         async (mode) => {
             respondWith({ id: 'resp_single', status: 'completed', output: [] });
-            const directive =
-                mode === 'required'
-                    ? { mode, toolNames: ['muteTrack'], parallelToolCalls: false }
-                    : { mode, parallelToolCalls: false };
+            let directive: HostedToolChoiceDirective;
+            if (mode === 'required') {
+                directive = { mode, toolNames: ['muteTrack'], parallelToolCalls: false };
+            } else {
+                directive = { mode, parallelToolCalls: false };
+            }
             await planTools(runtime, directive);
             const body = readSentBody();
             expect(body.parallel_tool_calls).toBe(false);

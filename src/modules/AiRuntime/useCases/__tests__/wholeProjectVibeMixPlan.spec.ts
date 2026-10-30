@@ -31,9 +31,11 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type TerminalMeasurementSettlement } from '../../models/ApplicationOwnedTool';
 import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
+import { readAgentRunState, sanitizeAgentRunState, persistAgentRunState } from '../../stores/agentRunStore';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -41,14 +43,12 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
-import { readAgentRunState, sanitizeAgentRunState, persistAgentRunState } from '../../stores/agentRunStore';
-import { type TerminalMeasurementSettlement } from '../../models/ApplicationOwnedTool';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
-import { planPromptActions } from '../planPromptActions';
 import { planAgentRun } from '../planAgentRun';
+import { planPromptActions } from '../planPromptActions';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
 
@@ -831,11 +831,12 @@ describe('whole-project vibe-mix planning', () => {
             if (control === undefined) {
                 throw new TypeError('Expected the real deferred control receipt.');
             }
+            const existingReceipts = plan.applicationToolReceipts ?? [];
             expect(
                 planAgentRun({
                     ...replanInput,
                     applicationToolReceipts: [
-                        ...(plan.applicationToolReceipts ?? []),
+                        ...existingReceipts,
                         { ...control, callId: 'failed-catalog', toolName: 'agent.catalog.discover' },
                     ],
                 })
@@ -873,10 +874,10 @@ describe('whole-project vibe-mix planning', () => {
         await sendChatMessage(PROMPT);
         const confirmationId = getConfirmationId();
         const confirmation = getPendingActionConfirmation(confirmationId);
-        const originalRun =
-            confirmation === null || confirmation === undefined
-                ? null
-                : agentRunLifecycle.get(confirmation.runId ?? '');
+        let originalRun: ReturnType<typeof agentRunLifecycle.get> | null = null;
+        if (confirmation !== null && confirmation !== undefined) {
+            originalRun = agentRunLifecycle.get(confirmation.runId ?? '');
+        }
         const originalSettlement = originalRun?.plan?.terminalMeasurementSettlement;
         if (confirmation === null || confirmation === undefined || originalSettlement === undefined) {
             throw new TypeError('Expected the genuine workflow proposal and settlement.');
