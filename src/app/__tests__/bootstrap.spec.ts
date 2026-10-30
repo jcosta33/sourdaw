@@ -24,10 +24,8 @@ import type { setProjectIdentityTransitionDependencies } from '#/modules/Project
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
 const elasticRootMocks = vi.hoisted(() => ({
-    capture: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(() => 'root-epoch-1'),
     install: vi.fn<typeof import('#/modules/ElasticAudio/useCases').setElasticRootIdentityProvider>(),
 }));
-vi.mock('#/modules/ElasticAudio/useCases', () => ({ setElasticRootIdentityProvider: elasticRootMocks.install }));
 
 // bootstrap.ts is the app's composition root: it imports ~40 module barrels
 // and, at import time (not inside a callable function), wires their runtime
@@ -162,6 +160,8 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectRootIdentityMock,
+    setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
@@ -295,6 +295,8 @@ const {
         initInputMonitoringProjectAccessMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
+        setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
@@ -522,7 +524,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectIdentity: captureProjectIdentityMock,
-    captureProjectRootIdentity: elasticRootMocks.capture,
+    captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -542,6 +544,11 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     // collaboration bridge registers at session start. A noop unsubscribe is
     // all any of them need here: no document change fires under this fixture.
     subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticRootIdentityProvider: elasticRootMocks.install,
+    setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
 vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
@@ -803,11 +810,17 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
-    it('installs the live root epoch reader before command consumers register', () => {
-        expect(elasticRootMocks.install).toHaveBeenCalledExactlyOnceWith(elasticRootMocks.capture);
-        expect(elasticRootMocks.capture).not.toHaveBeenCalled();
+    it('installs the same live root reader for sensitivity and Worker lifetimes before consumers', () => {
+        expect(elasticRootMocks.install).toHaveBeenCalledExactlyOnceWith(captureProjectRootIdentityMock);
+        expect(captureProjectRootIdentityMock).not.toHaveBeenCalled();
         expect(elasticRootMocks.install.mock.invocationCallOrder[0]!).toBeLessThan(
             registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
+        );
+        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
+            captureProjectRootIdentityMock
+        );
+        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
+            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
         );
     });
     it('binds committed project access during bootstrap', () => {

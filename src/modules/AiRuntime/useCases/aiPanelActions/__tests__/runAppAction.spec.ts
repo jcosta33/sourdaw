@@ -40,6 +40,7 @@ function create_unknown_internal_replay_action(): RunAppActionInput {
 
 vi.mock('#/modules/Command/useCases', () => ({
     commitRedoInverseCapture: vi.fn(),
+    readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
     getExecutableAppActionEffect: vi.fn(() => null),
     clearUndoHistory: vi.fn(),

@@ -6,8 +6,8 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b
-- pnpm-lock.yaml sha256:bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294
+- Cargo.lock sha256:eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563
+- pnpm-lock.yaml sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6
 - server/package-lock.json sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef
 
 Package inventory: 353 npm, 319 Cargo
@@ -188,7 +188,7 @@ cargo:rubato@5.0.0 | MIT OR Apache-2.0 | sha256:0a0f8b42d28c6aaee4f5aff8f684af2b
 cargo:rusb@0.9.4 | MIT | sha256:d6b63b280f7998e4a5e9e21c7b0d2dbe79426e1b28a75e39e41bb8feae0f8b03 | Cargo.lock
 cargo:rustc-hash@2.1.3 | Apache-2.0 OR MIT | sha256:30fefc3a7d6a0041541858293bcbea2dde4caa4c0a5802f996a7f7e8c0085652,sha256:95bd3988beee069fa2848f648dab43cc6e0b2add2ad6bcb17360caf749802bcc | Cargo.lock
 cargo:rustfft@6.4.1 | MIT OR Apache-2.0 | sha256:2e54cd84a645bea25943c75dd8ae67cb291e66a47a11578333c9b4b3b6b86c85,sha256:8f5442dfa8e9169045697e386bc91d19f393c939635741fa2a665ec36ca6f0ad | Cargo.lock
-cargo:rustls@0.23.45 | Apache-2.0 OR ISC OR MIT | sha256:709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c,sha256:7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
+cargo:rustls@0.23.46 | Apache-2.0 OR ISC OR MIT | sha256:709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c,sha256:7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2 | Cargo.lock
 cargo:rustls-native-certs@0.8.4 | Apache-2.0 OR ISC OR MIT | sha256:709e3175b4212f7b13aa93971c9f62ff8c69ec45ad8c6532a7e0c41d7a7d6f8c,sha256:7cfafc877eccc46c0e346ccbaa5c51bb6b894d2b818e617d970211e232785ad4,sha256:a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2,sha256:d75967ce788187f83c3bd3328210974acfc443d4dc44909f1d7e34f21623a0c6 | Cargo.lock
 cargo:rustls-pki-types@1.15.1 | MIT OR Apache-2.0 | sha256:45fd05c4865e7c350b98ad7ac50e1b15462d49af4a91e9b0c9dd933dc9a69742,sha256:9117d922e667125508dde62b02c1f57ed22f5ad21eb536aa2e2d99e1c796e639 | Cargo.lock
 cargo:rustls-platform-verifier@0.7.1 | MIT OR Apache-2.0 | sha256:1c7cf76689c837a68ed8d704994e52a0f2940c087958f860d17f3186afbdcc0c,sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4 | Cargo.lock
@@ -14648,7 +14648,7 @@ Evidence labels: LICENSE-MIT
 Packages:
 - cargo:hyper-rustls@0.27.10
 - cargo:rustls-native-certs@0.8.4
-- cargo:rustls@0.23.45
+- cargo:rustls@0.23.46
 
 Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>
 
@@ -16335,7 +16335,7 @@ Evidence labels: LICENSE-ISC
 Packages:
 - cargo:hyper-rustls@0.27.10
 - cargo:rustls-native-certs@0.8.4
-- cargo:rustls@0.23.45
+- cargo:rustls@0.23.46
 
 ISC License (ISC)
 Copyright (c) 2016, Joseph Birr-Pixton <jpixton@gmail.com>
@@ -20009,7 +20009,7 @@ Packages:
 - cargo:ring@0.17.14
 - cargo:rtrb@0.4.0
 - cargo:rustls-native-certs@0.8.4
-- cargo:rustls@0.23.45
+- cargo:rustls@0.23.46
 - cargo:scopeguard@1.2.0
 - cargo:security-framework-sys@2.17.0
 - cargo:security-framework@3.7.0

@@ -95,6 +95,7 @@ const BAND_PARAMETER_IDS = [
     'freqShiftMix',
     'lofiAmount',
     'codecArtifact',
+    'convolutionIr',
     'convolutionMix',
     'convolutionSeparation',
     'routingMode',

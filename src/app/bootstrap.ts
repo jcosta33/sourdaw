@@ -111,12 +111,15 @@ import {
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
-import { setElasticRootIdentityProvider } from '#/modules/ElasticAudio/useCases';
+import {
+    setElasticRootIdentityProvider,
+    setElasticSensitivityRootIdentityCapture,
+} from '#/modules/ElasticAudio/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
-    captureProjectRootIdentity,
     initBranchState,
+    captureProjectRootIdentity,
     captureProjectRevision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
@@ -255,6 +258,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,

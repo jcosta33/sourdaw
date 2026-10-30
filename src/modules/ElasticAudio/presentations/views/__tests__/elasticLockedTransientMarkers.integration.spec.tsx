@@ -11,7 +11,14 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { getWarpState, setWarpState, trackStore, warpStateStore } from '#/modules/Arrangement/stores';
+import {
+    clipSelectionStore,
+    defaultClipSelectionState,
+    getWarpState,
+    setWarpState,
+    trackStore,
+    warpStateStore,
+} from '#/modules/Arrangement/stores';
 import { createTrack, getArrangementHandlers, updateWarpMarkerBeat } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
@@ -42,6 +49,8 @@ import {
     type TransientOnsetWorkerRequest,
     type TransientOnsetWorkerResult,
 } from '../../../models/TransientOnsetWorker';
+import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
+import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { setElasticRootIdentityProvider } from '../../../useCases/elasticAudio/setElasticRootIdentityProvider';
 import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
@@ -78,6 +87,13 @@ const lockedMarker: WarpState['markers'][number] = {
     origin: 'transient-auto',
     confidence: 0.73,
     locked: true,
+};
+const selectedUserMarker: WarpState['markers'][number] = {
+    id: 'selected-user',
+    originalBeat: 0.9,
+    warpedBeat: 1.2,
+    origin: 'user',
+    locked: false,
 };
 const otherWarpState: WarpState = {
     enabled: true,
@@ -195,6 +211,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
         setElasticRootIdentityProvider(captureProjectRootIdentity);
+        setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
+        clipSelectionStore.set(defaultClipSelectionState);
         clearHandlerRegistry();
         clearUndoHistory();
         registerHandlerMap({ ...getArrangementHandlers(), ...getFinalFeatureHandlers() });
@@ -259,7 +277,190 @@ describe('locked transient markers through the real Elastic editor', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         setElasticRootIdentityProvider(null);
+        setElasticSensitivityRootIdentityCapture(null);
+        clipSelectionStore.set(defaultClipSelectionState);
     });
+
+    it.each(['explicitly-open', 'selected-only'] as const)(
+        'changes real marker source from sensitivity with an %s audio target',
+        async (mode) => {
+            if (mode === 'selected-only') {
+                elasticAudioStore.set(defaultElasticAudioState);
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+            }
+            const samples = burstSamples();
+            const original = samples.slice();
+            supplyBuffer(samples);
+            setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+            flushAutomergeStorageWrites();
+            render(<ElasticEditorPanel />);
+            const slider = screen.getByRole('slider', { name: 'Transient detection sensitivity' });
+            expect(slider).toBeVisible();
+            expect(rawWarpState().markers).toEqual([lockedMarker, selectedUserMarker]);
+            fireEvent.keyDown(slider, { key: 'End' });
+            await waitFor(() => expect(rawWarpState().markers.length).toBeGreaterThan(2));
+            flushAutomergeStorageWrites();
+            expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+            expect(rawWarpState().markers.find((marker) => marker.id === lockedMarker.id)).toEqual(lockedMarker);
+            expect(rawWarpState().markers.find((marker) => marker.id === selectedUserMarker.id)).toEqual(
+                selectedUserMarker
+            );
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(original);
+            expect(elasticAudioStore.value?.openClipId).toBe(mode === 'selected-only' ? null : CLIP_ID);
+        }
+    );
+
+    it.each(['selection-ABA', 'root-replacement', 'preference-root-replacement'] as const)(
+        'preserves real native rows when the pending %s owner expires',
+        async (change) => {
+            vi.useFakeTimers();
+            const frames = holdAnimationFrames();
+            try {
+                const samples = burstSamples();
+                const original = samples.slice();
+                expect(detectTransients(samples, SAMPLE_RATE, 0.4).length).toBeGreaterThan(0);
+                supplyBuffer(samples);
+                setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+                flushAutomergeStorageWrites();
+                elasticAudioStore.set(defaultElasticAudioState);
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+                render(<ElasticEditorPanel />);
+                expect(screen.getByRole('slider', { name: 'Transient detection sensitivity' })).toBeVisible();
+                const replaceRoot = (): void => {
+                    const tracks = trackStore.value;
+                    if (!tracks) {
+                        throw new Error('Original track fixture missing');
+                    }
+                    const warp = getWarpState(CLIP_ID);
+                    const root = getCrdtDoc('root');
+                    if (!root) {
+                        throw new Error('Expected complete root fixture');
+                    }
+                    createCrdtDoc('root', clone(root));
+                    trackStore.set({
+                        ...tracks,
+                        tracks: tracks.tracks.map((track) => ({ ...track, name: 'Successor' })),
+                    });
+                    setWarpState(CLIP_ID, {
+                        ...warp,
+                        markers: [{ ...lockedMarker, id: 'successor-root-locked' }, selectedUserMarker],
+                    });
+                    flushAutomergeStorageWrites();
+                };
+                const unsubscribe =
+                    change === 'preference-root-replacement' ? preferencesStore.subscribe(replaceRoot) : undefined;
+                const pending = setElasticSensitivity(0.9);
+                unsubscribe?.();
+                if (change === 'selection-ABA') {
+                    act(() => {
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+                    });
+                } else if (change === 'root-replacement') {
+                    replaceRoot();
+                }
+                const root = getCrdtDoc('root');
+                if (!root) {
+                    throw new Error('Root fixture missing');
+                }
+                const before = toJS(root);
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(150);
+                    await pending;
+                });
+                flushAutomergeStorageWrites();
+                expect(getCrdtDoc('root')).toEqual(before);
+                expect(elasticAudioStore.value?.detected).toBe(false);
+                expect(samples).toEqual(original);
+                const fresh = setElasticSensitivity(0.4);
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(150);
+                    await frames.complete(fresh);
+                });
+                expect(getWarpState(CLIP_ID).markers.length).toBeGreaterThan(2);
+                flushAutomergeStorageWrites();
+                expect(rawWarpState().markers.length).toBeGreaterThan(2);
+                expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+                expect(samples).toEqual(original);
+            } finally {
+                vi.useRealTimers();
+            }
+        }
+    );
+
+    it.each(['Worker', 'materialization', 'commit'] as const)(
+        'refuses a selected-owner ABA during %s and preserves native rows until a fresh gesture',
+        async (phase) => {
+            const samples = burstSamples();
+            const originalSamples = samples.slice();
+            supplyBuffer(samples);
+            elasticAudioStore.set(defaultElasticAudioState);
+            clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+            setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+            flushAutomergeStorageWrites();
+            const before = toJS(getCrdtDoc('root')!);
+            const history = structuredClone(undoHistoryStore.value);
+            const entered = Promise.withResolvers<void>();
+            const release = Promise.withResolvers<void>();
+            const invalidate = (): void => {
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
+                clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+            };
+            if (phase === 'Worker') {
+                worker.mockImplementationOnce(async () => {
+                    entered.resolve();
+                    await release.promise;
+                    return { status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] };
+                });
+            } else if (phase === 'materialization') {
+                const canonical = materialization.getMockImplementation();
+                if (!canonical) {
+                    throw new Error('Expected real native materialization fixture');
+                }
+                materialization.mockImplementationOnce(async (request, signal) => {
+                    const result = await canonical(request, signal);
+                    entered.resolve();
+                    await release.promise;
+                    return result;
+                });
+            } else {
+                const set = warpStateStore.set.bind(warpStateStore);
+                vi.spyOn(warpStateStore, 'set').mockImplementationOnce((value) => {
+                    set(value);
+                    invalidate();
+                    entered.resolve();
+                });
+            }
+            const pending = setElasticSensitivity(0.82);
+            await entered.promise;
+            if (phase !== 'commit') {
+                invalidate();
+            }
+            release.resolve();
+            await pending;
+            flushAutomergeStorageWrites();
+            expect(toJS(getCrdtDoc('root')!)).toEqual(before);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expect(rawWarpState().markers).toEqual([lockedMarker, selectedUserMarker]);
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(originalSamples);
+            const fresh = setElasticSensitivity(0.4);
+            await fresh;
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            expect(rawWarpState().markers.length).toBeGreaterThan(2);
+            expect(rawWarpState().markers).toEqual(getWarpState(CLIP_ID).markers);
+            expect(rawWarpState().markers).toContainEqual(lockedMarker);
+            expect(rawWarpState().markers).toContainEqual(selectedUserMarker);
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(originalSamples);
+            await undo();
+            expect(rawWarpState().markers).toEqual([lockedMarker, selectedUserMarker]);
+            await redo();
+            expect(rawWarpState().markers.length).toBeGreaterThan(2);
+        }
+    );
 
     it('Detect preserves the edited locked automatic row in raw CRDT, store and visible count', async () => {
         const samples = new Float32Array(SAMPLE_RATE);
@@ -303,6 +504,30 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(getWarpState(CLIP_ID).markers).toEqual([lockedMarker]);
         expect(rawWarpState('other-clip')).toEqual(otherWarpState);
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 0 user, 1 locked');
+        expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+    });
+
+    it('completes a genuine native no-change sensitivity through the actual registered commit route', async () => {
+        const samples = new Float32Array(SAMPLE_RATE);
+        supplyBuffer(samples);
+        const root = getCrdtDoc('root');
+        if (!root) {
+            throw new Error('Expected native root');
+        }
+        const heads = getHeads(root);
+        const before = toJS(root);
+        const history = undoHistoryStore.value?.past.length ?? 0;
+        await setElasticSensitivity(0.5);
+        expect(elasticAudioStore.value?.detected).toBe(true);
+        const current = getCrdtDoc('root');
+        if (!current) {
+            throw new Error('Expected completed native root');
+        }
+        expect(getHeads(current)).toEqual(heads);
+        expect(toJS(current)).toEqual(before);
+        expect(undoHistoryStore.value?.past).toHaveLength(history + 1);
+        expect(rawWarpState().markers).toEqual([lockedMarker]);
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
         expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
     });
 
@@ -736,6 +961,8 @@ describe('locked transient markers through the real Elastic editor', () => {
     it('requires the configured root reader on the registered route and permits retry', async () => {
         supplyBuffer(burstSamples());
         setElasticRootIdentityProvider(null);
+        setElasticSensitivityRootIdentityCapture(null);
+        clipSelectionStore.set(defaultClipSelectionState);
         const calls = worker.mock.calls.length;
         const before = toJS(getCrdtDoc('root')!);
         await expect(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } })).rejects.toThrow(
@@ -745,6 +972,8 @@ describe('locked transient markers through the real Elastic editor', () => {
         expect(getCrdtDoc('root')).toEqual(before);
         expect(undoHistoryStore.value?.past).toHaveLength(0);
         setElasticRootIdentityProvider(captureProjectRootIdentity);
+        setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
+        clipSelectionStore.set(defaultClipSelectionState);
         await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
         expect(rawWarpState().markers.length).toBeGreaterThan(1);
     });
@@ -764,6 +993,8 @@ describe('locked transient markers through the real Elastic editor', () => {
             const frame = await frames.next();
             if (change === 'removed') {
                 setElasticRootIdentityProvider(null);
+                setElasticSensitivityRootIdentityCapture(null);
+                clipSelectionStore.set(defaultClipSelectionState);
             } else if (change === 'replaced') {
                 setElasticRootIdentityProvider(() => captureProjectRootIdentity());
                 expect(captureProjectRootIdentity()).toBe(epoch);

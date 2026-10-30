@@ -24,6 +24,11 @@ const mocks = vi.hoisted(() => {
         selectedClipId: 'c1',
         snapValue: 0.25,
     };
+    const clipSelectionValue: { selectedClipId: string | null; selectedClipIds: string[]; marqueeSelection: null } = {
+        selectedClipId: 'c1',
+        selectedClipIds: [],
+        marqueeSelection: null,
+    };
     const elasticStoreValue: {
         openClipId: string | null;
         tool: 'select';
@@ -58,6 +63,7 @@ const mocks = vi.hoisted(() => {
         getWaveformPeaks: vi.fn((..._args: unknown[]) => new Float32Array(200).fill(0.3)),
         trackStoreValue,
         workspaceStoreValue,
+        clipSelectionValue,
         elasticStoreValue,
         warpStates: new Map<
             string,
@@ -108,6 +114,9 @@ vi.mock('#/infra/store/useStore', async (importOriginal) => {
             if (marker === 'workspace') {
                 return mocks.workspaceStoreValue;
             }
+            if (marker === 'clip-selection') {
+                return mocks.clipSelectionValue;
+            }
             if (marker === 'warp-states') {
                 return { states: Object.fromEntries(mocks.warpStates) };
             }
@@ -123,6 +132,7 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return {
         ...actual,
+        clipSelectionStore: { __kind: 'clip-selection' },
         trackStore: {
             __kind: 'track',
             subscribe: vi.fn<TrackStoreSubscribe>((_callback) => () => {}),
@@ -258,6 +268,7 @@ describe('ElasticEditorPanel', () => {
             selectedTrackId: 't1',
         };
         mocks.workspaceStoreValue = { selectedClipId: 'c1', snapValue: 0.25 };
+        mocks.clipSelectionValue = { selectedClipId: 'c1', selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: 'c1',
             tool: 'select',
@@ -275,6 +286,29 @@ describe('ElasticEditorPanel', () => {
         render(<ElasticEditorPanel />);
         expect(screen.getByTestId('elastic-waveform-canvas')).toBeInTheDocument();
         expect(screen.getByTestId('elastic-detail-strip')).toHaveTextContent('1 transient, 1 user, 0 locked');
+    });
+
+    it('uses the selected audio target without requiring an explicitly opened editor', () => {
+        mocks.elasticStoreValue.openClipId = null;
+        render(<ElasticEditorPanel />);
+        expect(screen.getByRole('slider', { name: 'Transient detection sensitivity' })).toBeVisible();
+        fireEvent.click(screen.getByRole('button', { name: 'Detect' }));
+        expect(mocks.execute).toHaveBeenCalledWith({
+            type: 'detectTransients',
+            payload: { clipId: 'c1', sensitivity: 0.5 },
+        });
+        expect(mocks.elasticStoreValue.openClipId).toBeNull();
+    });
+
+    it.each(['missing', 'midi'])('does not fall through an explicitly opened %s target to selected audio', (id) => {
+        if (id === 'midi') {
+            mocks.trackStoreValue.tracks[0]?.clips.push({ id, type: 'midi', audioBufferId: undefined });
+        }
+        mocks.elasticStoreValue.openClipId = id;
+        render(<ElasticEditorPanel />);
+        expect(screen.getByText(/Select an audio clip/i)).toBeInTheDocument();
+        expect(screen.queryByRole('slider', { name: 'Transient detection sensitivity' })).not.toBeInTheDocument();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 
     it('hides the warp algorithm selector and surfaces no third-party engine while only repitch is available', () => {
@@ -525,6 +559,7 @@ describe('ElasticEditorPanel', () => {
 
     it('shows an empty state when no audio clip is selected', () => {
         mocks.workspaceStoreValue = { selectedClipId: null, snapValue: 0.25 };
+        mocks.clipSelectionValue = { selectedClipId: null, selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: null,
             tool: 'select',
@@ -548,6 +583,7 @@ describe('ElasticEditorPanel', () => {
             selectedTrackId: 't1',
         };
         mocks.workspaceStoreValue = { selectedClipId: 'cmidi', snapValue: 0.25 };
+        mocks.clipSelectionValue = { selectedClipId: 'cmidi', selectedClipIds: [], marqueeSelection: null };
         mocks.elasticStoreValue = {
             openClipId: null,
             tool: 'select',
