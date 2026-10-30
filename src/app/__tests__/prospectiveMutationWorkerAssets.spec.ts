@@ -1,12 +1,13 @@
 // @vitest-environment node
 import { createHash, webcrypto } from 'node:crypto';
-import { readFileSync, realpathSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 
 import { change, clone, free, from, getChanges, getHeads, load, save } from '@automerge/automerge';
-import { build, loadConfigFromFile } from 'vite';
+import { build, createLogger, createServer, loadConfigFromFile } from 'vite';
 import { describe, expect, it, vi } from 'vitest';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -16,6 +17,100 @@ const RESOLVED_ENTRY = `\0${ENTRY}`;
 const WASM_SHA256 = '2a613b3ba557689889eadd66a54732223859be0f9a45b933d1512d8f2686367a';
 
 describe('shipping prospective Worker public WASM assets', () => {
+    it('prebundles public Slim before the first Worker request without reloading', async () => {
+        const loaded = await loadConfigFromFile(
+            { command: 'serve', mode: 'development' },
+            path.join(ROOT, 'vite.config.ts'),
+            ROOT
+        );
+        if (!loaded) throw new Error('Shipping Vite config missing');
+        const cacheDir = mkdtempSync(path.join(tmpdir(), 'prospective-worker-optimizer-'));
+        const logger = createLogger('info', { allowClearScreen: false });
+        const info = vi.spyOn(logger, 'info');
+        const config = loaded.config;
+        let server: Awaited<ReturnType<typeof createServer>> | undefined;
+        try {
+            server = await createServer({
+                ...config,
+                root: ROOT,
+                configFile: false,
+                cacheDir,
+                customLogger: logger,
+                // Select the actual client leaf; retain all shipping optimizer options and plugins.
+                optimizeDeps: { ...config.optimizeDeps, entries: [CLIENT] },
+                server: { ...config.server, port: 0, strictPort: true },
+            });
+            await server.listen();
+            await server.transformRequest('/src/modules/CrdtDocument/repositories/prospectiveMutationWorkerClient.ts');
+            await server.waitForRequestsIdle();
+            type Metadata = {
+                browserHash: string;
+                optimized: Record<string, { src: string; file: string; fileHash: string }>;
+            };
+            const metadataPath = path.join(cacheDir, 'deps/_metadata.json');
+            const readMetadata = (): Metadata => JSON.parse(readFileSync(metadataPath, 'utf8')) as Metadata;
+            await vi.waitFor(() => expect(readMetadata().browserHash).toBeTruthy(), { timeout: 15_000 });
+            const initial = readMetadata();
+            const slim = initial.optimized['@automerge/automerge/slim'];
+            // This must fail on actual cold optimizer output when the startup include is removed.
+            expect(slim, 'Public Slim must be optimized before any Worker entry request').toBeDefined();
+            if (!slim) throw new Error('Initial optimizer output is missing public Slim');
+            expect(realpathSync(path.resolve(path.dirname(metadataPath), slim.src))).toBe(
+                realpathSync(fileURLToPath(import.meta.resolve('@automerge/automerge/slim')))
+            );
+            const binary = readFileSync(fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm')));
+            const embeddedPrefix = binary.toString('base64').slice(0, 128);
+            const pending = [path.resolve(path.dirname(metadataPath), slim.file)];
+            const visited = new Set<string>();
+            while (pending.length > 0) {
+                const file = pending.pop();
+                if (!file || visited.has(file)) continue;
+                visited.add(file);
+                const code = readFileSync(file, 'utf8');
+                expect(code, `Optimized Slim closure embeds WASM: ${file}`).not.toContain(embeddedPrefix);
+                for (const match of code.matchAll(/\b(?:from\s*|import\s*)(['"])([^'"]+)\1/g)) {
+                    const imported = match[2];
+                    if (imported?.startsWith('.')) pending.push(path.resolve(path.dirname(file), imported));
+                }
+            }
+            expect(visited.size).toBeGreaterThan(1);
+            const origin = server.resolvedUrls?.local[0];
+            if (!origin) throw new Error('Cold dev server did not expose its temporary listener');
+            const entry = await fetch(
+                new URL(
+                    '/src/modules/CrdtDocument/workers/prospectiveMutationWorker.ts?worker_file&type=module',
+                    origin
+                )
+            );
+            expect(entry.status).toBe(200);
+            const entryCode = await entry.text();
+            const slimImport = [...entryCode.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)]
+                .map((match) => match[1])
+                .find((url) => url && new URL(url, origin).pathname.endsWith(`/${path.basename(slim.file)}`));
+            if (!slimImport) throw new Error('Actual Worker transform did not import the startup optimized Slim');
+            const optimized = await fetch(new URL(slimImport, origin));
+            expect(optimized.status).toBe(200);
+            expect(await optimized.text()).toContain('initializeWasm');
+            expect(readMetadata()).toEqual(initial);
+            expect(readMetadata().browserHash).toBe(initial.browserHash);
+            expect(info.mock.calls.map(([message]) => message).join('\n')).not.toContain(
+                'optimized dependencies changed. reloading'
+            );
+            console.info('Cold public Slim startup metadata:', {
+                browserHash: initial.browserHash,
+                optimized: slim,
+                reachableFiles: [...visited].map((file) => path.relative(cacheDir, file)),
+            });
+        } finally {
+            try {
+                await server?.close();
+            } finally {
+                info.mockRestore();
+                rmSync(cacheDir, { recursive: true, force: true });
+            }
+        }
+    }, 30_000);
+
     it('keeps root initialization and emits a self-relative raw binary used by the actual IIFE Worker', async () => {
         const loaded = await loadConfigFromFile(
             { command: 'build', mode: 'production' },

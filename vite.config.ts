@@ -52,6 +52,9 @@ function sourdawE2eServingCheckoutPlugin(): Plugin {
 // eslint-disable-next-line import-x/no-default-export
 export default defineConfig({
     base: './',
+    optimizeDeps: {
+        include: ['@automerge/automerge/slim'],
+    },
     worker: {
         // Force IIFE format for all worker bundles so each processor file is
         // compiled into a single self-contained script. ES module format (the
