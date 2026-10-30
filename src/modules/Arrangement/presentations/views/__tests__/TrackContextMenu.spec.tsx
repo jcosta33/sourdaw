@@ -1370,18 +1370,30 @@ describe('TrackContextMenu Flatten failure with canonical project truth', () => 
         const handler = getArrangementHandlers().flattenTrack;
         const execute = handler.execute;
         const failure = new Error('Menu Flatten post-commit effect');
+        const reconciliationFailure = new Error('Menu Flatten ambiguous recovery');
         const effect = vi.fn(() => {
             throw failure;
+        });
+        const reconcile = vi.fn(() => {
+            throw reconciliationFailure;
         });
         vi.spyOn(handler, 'execute').mockImplementation((...args) => {
             const result = execute(...args);
             if (result instanceof Promise) {
-                throw new Error('Expected the real Flatten handler to return synchronously');
+                throw new TypeError('Expected the real Flatten handler to return synchronously');
             }
             if (!result || result.status !== 'written') {
                 throw new Error('Expected the real Flatten handler to write');
             }
-            return { ...result, afterCommit: effect };
+            if (
+                result.afterCommit !== undefined ||
+                result.afterAmbiguousCommit !== undefined ||
+                result.postCommitEffect !== undefined ||
+                result.afterRuntimeExecution !== undefined
+            ) {
+                throw new TypeError('Expected the real Flatten handler to return without deferred effects');
+            }
+            return { ...result, afterCommit: effect, afterAmbiguousCommit: reconcile };
         });
         openFrozenMenu(sourceTrack);
         await vi.waitFor(() =>
@@ -1397,8 +1409,12 @@ describe('TrackContextMenu Flatten failure with canonical project truth', () => 
         expect(committed.actionHistory.entries).toHaveLength(1);
         expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledTimes(1);
         expect(vi.mocked(notifyUser)).toHaveBeenCalledTimes(1);
-        await expect(dispatches[0]).rejects.toMatchObject({ name: 'AppActionCommittedError', cause: failure });
+        await expect(dispatches[0]).rejects.toMatchObject({
+            name: 'AppActionCommittedError',
+            cause: expect.objectContaining({ errors: [failure, reconciliationFailure] }),
+        });
         expect(effect).toHaveBeenCalledExactlyOnceWith();
+        expect(reconcile).toHaveBeenCalledExactlyOnceWith();
         expect((await undo()).headConsumed).toBe(true);
         expect(readTruth().tracks).toEqual(original.tracks);
         expect(readTruth().takeLanes).toEqual(original.takeLanes);

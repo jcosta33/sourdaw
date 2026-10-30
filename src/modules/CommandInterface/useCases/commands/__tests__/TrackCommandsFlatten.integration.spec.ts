@@ -626,26 +626,38 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
     it('reports a real post-commit effect failure while retaining canonical Flatten and usable Undo/Redo', async () => {
         const original = readTruth();
         const failure = new Error('Flatten follow-up effect failed');
+        const reconciliationFailure = new Error('Flatten ambiguous recovery failed');
         const handler = getArrangementHandlers().flattenTrack;
         const execute = handler.execute;
         const effect = vi.fn(() => {
             throw failure;
         });
+        const reconcile = vi.fn(() => {
+            throw reconciliationFailure;
+        });
         vi.spyOn(handler, 'execute').mockImplementation((...args) => {
             const result = execute(...args);
             if (result instanceof Promise) {
-                throw new Error('Expected the real Flatten handler to return synchronously');
+                throw new TypeError('Expected the real Flatten handler to return synchronously');
             }
             if (!result || result.status !== 'written') {
                 throw new Error('Expected the real Flatten handler to write');
             }
-            return { ...result, afterCommit: effect };
+            if (
+                result.afterCommit !== undefined ||
+                result.afterAmbiguousCommit !== undefined ||
+                result.postCommitEffect !== undefined ||
+                result.afterRuntimeExecution !== undefined
+            ) {
+                throw new TypeError('Expected the real Flatten handler to return without deferred effects');
+            }
+            return { ...result, afterCommit: effect, afterAmbiguousCommit: reconcile };
         });
 
         invokeFlatten();
         await expect(settleConfirmation(true)).rejects.toMatchObject({
             name: 'AppActionCommittedError',
-            cause: failure,
+            cause: expect.objectContaining({ errors: [failure, reconciliationFailure] }),
         });
 
         const committed = readTruth();
@@ -655,6 +667,7 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
         expect(committed.actionHistory.entries).toHaveLength(1);
         expect(actionHarness.opens).toHaveLength(1);
         expect(effect).toHaveBeenCalledExactlyOnceWith();
+        expect(reconcile).toHaveBeenCalledExactlyOnceWith();
         await vi.waitFor(() =>
             expect(notices).toEqual([
                 {
