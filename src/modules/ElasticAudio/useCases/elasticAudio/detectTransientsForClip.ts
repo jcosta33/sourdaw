@@ -1,3 +1,4 @@
+import { trackStore } from '#/modules/Arrangement/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -47,7 +48,10 @@ function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
 }
 
 type ProductRead = Awaited<ReturnType<typeof readProductTransientOnsets>>;
-type DetectionReady = Extract<ProductRead, { status: 'complete' }> & { tempo: number };
+type DetectionReady = Extract<ProductRead, { status: 'complete' }> & {
+    tempo: number;
+    completeUnchanged: () => boolean;
+};
 type DetectionLifetime = {
     readonly signal: AbortSignal;
     isCurrent(): boolean;
@@ -87,6 +91,15 @@ function createDetectionAuthority(
             abort();
         }
     });
+    let unsubscribeSource: (() => void) | undefined;
+    const observeSourceOwnership = (sourceIsCurrent: () => boolean): void => {
+        // A restored source must not revive work that lost ownership between awaits.
+        unsubscribeSource = trackStore.subscribe(() => {
+            if (!sourceIsCurrent()) {
+                abort();
+            }
+        });
+    };
     const isCurrent = (): boolean =>
         !controller.signal.aborted &&
         !expired() &&
@@ -106,6 +119,7 @@ function createDetectionAuthority(
         signal?.removeEventListener('abort', abort);
         unsubscribe();
         unsubscribePreference();
+        unsubscribeSource?.();
     };
     if (!projectId || !tempo || !Number.isFinite(tempo) || tempo <= 0) {
         dispose();
@@ -118,7 +132,7 @@ function createDetectionAuthority(
         },
         Math.max(0, deadline - performance.now())
     );
-    return { projectId, tempo, expired, isCurrent, dispose, abort };
+    return { projectId, tempo, expired, isCurrent, dispose, abort, observeSourceOwnership };
 }
 
 export function detectTransientsForClip(
@@ -162,6 +176,7 @@ export async function detectTransientsForClip<Result>(
             timeoutMs: 30_000,
             signal: controller.signal,
             onAnalysisStarted: () => undefined,
+            observeSourceOwnership: authority.observeSourceOwnership,
         });
         if (expired()) {
             return { status: 'failed' as const, code: 'analysis-timed-out' as const };
@@ -173,6 +188,8 @@ export async function detectTransientsForClip<Result>(
             ...result,
             tempo,
             isCurrent: () => isCurrent() && result.isCurrent(),
+            completeUnchanged: () =>
+                isCurrent() && result.isCurrent() && transientDetectionLifecycle.completeUnchanged(clipId, controller),
         };
         if (consume) {
             const value = await consume(ready, {

@@ -11,6 +11,7 @@ import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasti
 import { cancelTransientDetection } from './cancelTransientDetection';
 import { elasticSensitivityDependencies } from './elasticSensitivityDependencies';
 import { resolveElasticEditorTarget } from './resolveElasticEditorTarget';
+import { transientDetectionLifecycle } from './transientDetectionLifecycle';
 import { transientDetectionRevision } from './transientDetectionRevision';
 
 const DEBOUNCE_MS = 150;
@@ -23,6 +24,15 @@ type PendingState = {
 let pending: PendingState | undefined;
 let inFlight: PendingState | undefined;
 let generation = 0;
+
+function hasDetectionAcknowledgment(committed: boolean, clipId: string, revision: number): boolean {
+    if (committed) {
+        return true;
+    }
+    // The registered Detect takes its own revision once; another invocation cannot acknowledge this one.
+    const unchanged = transientDetectionLifecycle.readCompletion(clipId, revision + 1);
+    return unchanged?.status === 'unchanged';
+}
 
 function currentTarget() {
     return resolveElasticEditorTarget(
@@ -206,7 +216,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             if (owner.isInvalidated() || owner.signal.aborted || request !== generation || !owner.matches()) {
                 return;
             }
-            if (!committed) {
+            if (!hasDetectionAcknowledgment(committed, owner.clipId, owner.revision)) {
                 throw new Error('Transient detection completed without a committed mutation');
             }
             elasticAudioStore.update((state) => (state ? { ...state, detected: true } : state));

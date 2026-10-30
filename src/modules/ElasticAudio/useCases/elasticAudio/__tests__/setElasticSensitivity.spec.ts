@@ -20,11 +20,11 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeUserAppAction: vi.fn(),
 }));
 vi.mock('../cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
-vi.mock('../transientDetectionRevision', () => ({ transientDetectionRevision: () => 0 }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { setElasticSensitivityRootIdentityCapture } from '../elasticSensitivityDependencies';
 import { setElasticSensitivity } from '../setElasticSensitivity';
+import { transientDetectionLifecycle } from '../transientDetectionLifecycle';
 
 let rootIdentity = 'root-1';
 let buffer: AudioBuffer;
@@ -52,7 +52,7 @@ describe('setElasticSensitivity', () => {
         mocks.execute.mockReset().mockImplementation(async (_action, options) => {
             options?.onCommitted?.();
         });
-        mocks.cancel.mockClear();
+        mocks.cancel.mockReset().mockImplementation((clipId: string) => transientDetectionLifecycle.cancel(clipId));
         mocks.notify.mockClear();
         rootIdentity = 'root-1';
         buffer = makeBuffer();
@@ -415,6 +415,44 @@ describe('setElasticSensitivity', () => {
         expect(elasticAudioStore.value?.detected).toBe(true);
         expect(vi.getTimerCount()).toBe(0);
     });
+
+    it.each(['current', 'aborted', 'stale', 'successor', 'failed'] as const)(
+        'accepts only its exact successful unchanged completion: %s',
+        async (outcome) => {
+            select('clip-1');
+            mocks.execute.mockImplementationOnce(async () => {
+                // The real registered Detect takes one revision and owns one controller.
+                transientDetectionLifecycle.cancel('clip-1');
+                const controller = new AbortController();
+                transientDetectionLifecycle.activate('clip-1', controller);
+                expect(transientDetectionLifecycle.completeUnchanged('clip-1', controller)).toBe(true);
+                if (outcome === 'aborted') {
+                    controller.abort();
+                }
+                if (outcome === 'stale') {
+                    transientDetectionLifecycle.cancel('clip-1');
+                }
+                if (outcome === 'successor') {
+                    transientDetectionLifecycle.cancel('clip-1');
+                    const successor = new AbortController();
+                    transientDetectionLifecycle.activate('clip-1', successor);
+                    expect(transientDetectionLifecycle.completeUnchanged('clip-1', successor)).toBe(true);
+                }
+                if (outcome === 'failed') {
+                    throw new Error('unchanged completion failed before return');
+                }
+            });
+            const request = setElasticSensitivity(0.8);
+            await vi.advanceTimersByTimeAsync(150);
+            await expect(request).resolves.toBeUndefined();
+            expect(elasticAudioStore.value?.detected).toBe(outcome === 'current');
+            if (outcome === 'current') {
+                expect(mocks.notify).not.toHaveBeenCalled();
+            } else {
+                expect(mocks.notify).toHaveBeenCalledExactlyOnceWith('Transient detection failed. Try again.', 'error');
+            }
+        }
+    );
 
     it('does not mark a resolved action without an actual commit as detected success', async () => {
         select('clip-1');

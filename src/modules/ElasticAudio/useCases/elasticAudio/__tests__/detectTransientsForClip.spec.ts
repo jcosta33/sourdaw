@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { trackStore } from '#/modules/Arrangement/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 
@@ -7,6 +8,7 @@ import { elasticAudioStore, defaultElasticAudioState } from '../../../stores/ela
 import { cancelTransientDetection } from '../cancelTransientDetection';
 import { detectTransientsForClip } from '../detectTransientsForClip';
 import { setElasticRootIdentityProvider } from '../setElasticRootIdentityProvider';
+import { transientDetectionLifecycle } from '../transientDetectionLifecycle';
 
 const mocks = vi.hoisted(() => ({ read: vi.fn(), root: 'root-1', tempo: 120 }));
 vi.mock('../readProductTransientOnsets', () => ({ readProductTransientOnsets: mocks.read }));
@@ -104,6 +106,31 @@ describe('product transient Worker source lifetime', () => {
         }
         expect(result.isCurrent()).toBe(false);
     });
+    it('binds unchanged completion to the current controller and exact invocation revision', async () => {
+        const first = await detectTransientsForClip('clip-1', 0.5);
+        if (first.status !== 'complete') {
+            throw new Error('Expected completed first analysis');
+        }
+        const revision = transientDetectionLifecycle.revision('clip-1');
+        expect(first.completeUnchanged()).toBe(true);
+        expect(transientDetectionLifecycle.readCompletion('clip-1', revision)).toEqual({
+            status: 'unchanged',
+            revision,
+        });
+        expect(transientDetectionLifecycle.readCompletion('clip-1', revision + 1)).toBeUndefined();
+        const successor = await detectTransientsForClip('clip-1', 0.5);
+        if (successor.status !== 'complete') {
+            throw new Error('Expected completed successor analysis');
+        }
+        expect(first.completeUnchanged()).toBe(false);
+        expect(transientDetectionLifecycle.readCompletion('clip-1', revision)).toBeUndefined();
+        expect(transientDetectionLifecycle.readCompletion('clip-1', revision + 1)).toBeUndefined();
+        expect(successor.completeUnchanged()).toBe(true);
+        cancelTransientDetection('clip-1');
+        expect(successor.completeUnchanged()).toBe(false);
+        expect(transientDetectionLifecycle.readCompletion('clip-1', revision + 1)).toBeUndefined();
+    });
+
     it('propagates Worker failure and allows retry', async () => {
         mocks.read.mockResolvedValueOnce({ status: 'failed', code: 'analysis-failed' });
         expect(await detectTransientsForClip('clip-1', 0.5)).toEqual({ status: 'failed', code: 'analysis-failed' });
@@ -175,6 +202,75 @@ describe('scoped product preparation consumer', () => {
         expect(await request).toEqual({ status: 'failed', code: 'analysis-timed-out' });
         expect(vi.getTimerCount()).toBe(0);
     });
+    it.each(['success', 'refusal', 'consumer-error'] as const)(
+        'disposes the exact source ownership observer on %s',
+        async (outcome) => {
+            const unsubscribe = vi.fn();
+            const subscribe = vi.spyOn(trackStore, 'subscribe').mockReturnValue(unsubscribe);
+            mocks.read.mockImplementationOnce(
+                async (input: { observeSourceOwnership?: (current: () => boolean) => void }) => {
+                    input.observeSourceOwnership?.(() => true);
+                    if (outcome === 'refusal') {
+                        return { status: 'failed', code: 'stale-source' };
+                    }
+                    return { status: 'complete', hits: [], identity: { clipId: 'clip-1' }, isCurrent: () => true };
+                }
+            );
+            const request = detectTransientsForClip('clip-1', 0.5, undefined, async (ready) => {
+                if (outcome === 'consumer-error') {
+                    throw new Error('consumer stopped');
+                }
+                return ready.isCurrent();
+            });
+            if (outcome === 'consumer-error') {
+                await expect(request).rejects.toThrow('consumer stopped');
+            } else if (outcome === 'refusal') {
+                expect(await request).toEqual({ status: 'failed', code: 'stale-source' });
+            } else {
+                expect(await request).toEqual({ status: 'consumed', value: true });
+            }
+            expect(subscribe).toHaveBeenCalledOnce();
+            expect(unsubscribe).toHaveBeenCalledOnce();
+        }
+    );
+
+    it('keeps source revocation latched through an awaited consumer and rejects aborted completion', async () => {
+        let sourceCurrent = true;
+        let sourceChanged: (() => void) | undefined;
+        const unsubscribe = vi.fn();
+        vi.spyOn(trackStore, 'subscribe').mockImplementation((listener) => {
+            sourceChanged = () => listener(trackStore.value);
+            return unsubscribe;
+        });
+        mocks.read.mockImplementationOnce(
+            async (input: { observeSourceOwnership?: (current: () => boolean) => void }) => {
+                input.observeSourceOwnership?.(() => sourceCurrent);
+                return { status: 'complete', hits: [], identity: { clipId: 'clip-1' }, isCurrent: () => sourceCurrent };
+            }
+        );
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<void>();
+        const request = detectTransientsForClip('clip-1', 0.5, undefined, async (ready, lifetime) => {
+            entered.resolve();
+            await release.promise;
+            expect(lifetime.signal.aborted).toBe(true);
+            expect(ready.completeUnchanged()).toBe(false);
+            return ready.isCurrent();
+        });
+        await entered.promise;
+        sourceChanged?.();
+        sourceCurrent = false;
+        sourceChanged?.();
+        sourceCurrent = true;
+        sourceChanged?.();
+        release.resolve();
+        expect(await request).toEqual({ status: 'consumed', value: false });
+        expect(
+            transientDetectionLifecycle.readCompletion('clip-1', transientDetectionLifecycle.revision('clip-1'))
+        ).toBeUndefined();
+        expect(unsubscribe).toHaveBeenCalledOnce();
+    });
+
     it('releases subscriptions on consumer error and permits a truthful retry', async () => {
         const editorRelease = vi.fn();
         const preferenceRelease = vi.fn();

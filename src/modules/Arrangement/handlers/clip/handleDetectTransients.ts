@@ -2,6 +2,7 @@ import {
     captureAutomergeStoragePreparationScope,
     captureAutomergeStorageTransactionScope,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { getCrdtDoc } from '#/modules/CrdtDocument/useCases';
 import { detectTransientsForClip } from '#/modules/ElasticAudio/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
@@ -11,7 +12,13 @@ import { type HandlerExecutionResult, type TrackClipStateSnapshot } from '#/util
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { createWarpMarker } from '../../models/WarpMarker';
-import { getWarpState, prepareTransientWarpState, setWarpState } from '../../stores/warpStates';
+import {
+    getStoredWarpState,
+    getWarpState,
+    isDefaultWarpState,
+    prepareTransientWarpState,
+    setWarpState,
+} from '../../stores/warpStates';
 import { captureTrackClipStates } from '../../useCases/captureTrackClipStates';
 
 type Capture = { before: TrackClipStateSnapshot[]; after: TrackClipStateSnapshot[] };
@@ -66,8 +73,8 @@ export function transientStateMatches(actual: unknown, expected: unknown): boole
 function captureTransientClipStates(trackId: string, clipId: string): TrackClipStateSnapshot[] {
     return captureTrackClipStates([trackId]).map((entry) => {
         let clipSatellites = entry.clipSatellites;
-        // A first detection creates this satellite. Its inverse must name absence,
-        // otherwise the restore's replacement-only noop check cannot see the new rows.
+        // Detection can create or remove this satellite. Name absence in both
+        // snapshots so the restore's replacement-only noop check sees the transition.
         if (!clipSatellites.some((satellite) => satellite.clipId === clipId)) {
             clipSatellites = [...clipSatellites, { clipId, gainEnvelope: null, warpState: null }];
         }
@@ -140,6 +147,7 @@ function createTransientWriteResult(
     commitStarted: number
 ): HandlerExecutionResult {
     let storageCommitStarted: number | undefined;
+    const expectedState = isDefaultWarpState(replacement) ? undefined : replacement;
     const refusal = (): string | null =>
         result.isCurrent() && !context?.signal?.aborted ? null : 'Transient detection source changed before commit';
     const complete = (): void => {
@@ -189,7 +197,7 @@ function createTransientWriteResult(
                     typeof bufferId === 'string' &&
                     digest(bufferId) === result.identity.bufferId &&
                     record(document.transport)?.tempo === result.tempo &&
-                    transientStateMatches(states?.[clipId], replacement)
+                    transientStateMatches(states?.[clipId], expectedState)
                         ? null
                         : 'Transient detection authority changed inside commit');
                 performance.measure('elastic-transient-validation-task', {
@@ -204,6 +212,34 @@ function createTransientWriteResult(
         afterCommit: complete,
         afterAmbiguousCommit: complete,
     };
+}
+
+function completeUnchangedDetection(
+    result: DetectedSource,
+    context: DetectContext,
+    rows: TransientRows,
+    commitStarted: number
+): HandlerExecutionResult {
+    const { trackId, clipId } = result.identity;
+    const validation = createTransientWriteResult(
+        result,
+        context,
+        trackId,
+        clipId,
+        rows.preserved,
+        rows.added,
+        rows.replacement,
+        commitStarted
+    ).commitValidation;
+    const document = getCrdtDoc<Record<string, unknown>>('root');
+    if (!validation || !document) {
+        return transientConflict();
+    }
+    if (validation.validateDocument(document) !== null || !result.completeUnchanged()) {
+        return transientConflict();
+    }
+    notifyUser('Detected 0 transients (0 preserved)', 'success');
+    return { status: 'no-write' };
 }
 
 function commitTransientRows(
@@ -226,6 +262,9 @@ function commitTransientRows(
         return transientConflict();
     }
     const { preserved, added, replacement } = rows;
+    if (isDefaultWarpState(replacement) && getStoredWarpState(clipId) === undefined) {
+        return completeUnchangedDetection(result, context, rows, commitStarted);
+    }
     const before = captureTransientClipStates(trackId, clipId);
     const staged = scope(() => {
         if (plan) {
@@ -236,7 +275,7 @@ function commitTransientRows(
             setWarpState(clipId, replacement);
         }
         capture.before.push(...before);
-        capture.after.push(...captureTrackClipStates([trackId]));
+        capture.after.push(...captureTransientClipStates(trackId, clipId));
         return true;
     });
     if (!staged) {

@@ -215,6 +215,12 @@ function rawWarpState(clipId = CLIP_ID): WarpState {
     return state;
 }
 
+function expectCanonicalWarpAbsence(): void {
+    const doc = getCrdtDoc<{ warpStates: { states: Record<string, WarpState> } }>('root');
+    expect(doc?.warpStates.states[CLIP_ID]).toBeUndefined();
+    expect(warpStateStore.value?.states[CLIP_ID]).toBeUndefined();
+}
+
 function holdAnimationFrames() {
     const callbacks: FrameRequestCallback[] = [];
     const waiters: ((callback: FrameRequestCallback) => void)[] = [];
@@ -370,6 +376,189 @@ describe('locked transient markers through the real Elastic editor', () => {
         clipSelectionStore.set(defaultClipSelectionState);
         vi.unstubAllGlobals();
     });
+
+    it.each(['Detect', 'sensitivity'] as const)(
+        'review repair: completes silent absent state through %s without creating Undo history',
+        async (route) => {
+            const samples = new Float32Array(SAMPLE_RATE);
+            supplyBuffer(samples);
+            vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+            warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+            flushAutomergeStorageWrites();
+            clearUndoHistory();
+            const original = getCrdtDoc('root');
+            if (!original) {
+                throw new Error('Expected silent source root');
+            }
+            const heads = getHeads(original);
+            const before = toJS(original);
+            const projection = structuredClone(getWarpState(CLIP_ID));
+            expect(detectTransients(samples, SAMPLE_RATE, 0.5)).toEqual([]);
+            if (route === 'Detect') {
+                await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
+            } else {
+                await setElasticSensitivity(0.5);
+                expect(elasticAudioStore.value?.detected).toBe(true);
+            }
+            const current = getCrdtDoc('root');
+            if (!current) {
+                throw new Error('Expected completed silent root');
+            }
+            expect(getHeads(current)).toEqual(heads);
+            expect(toJS(current)).toEqual(before);
+            expect(getWarpState(CLIP_ID)).toEqual(projection);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+        }
+    );
+
+    it.each(['Detect', 'sensitivity'] as const)(
+        'review repair: removes the last unlocked automatic marker on silence through %s with real UndoRedo',
+        async (route) => {
+            const samples = new Float32Array(SAMPLE_RATE);
+            supplyBuffer(samples);
+            vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+            warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+            const defaults = structuredClone(getWarpState(CLIP_ID));
+            const original = { ...defaults, markers: [{ ...lockedMarker, locked: false }] };
+            setWarpState(CLIP_ID, original);
+            flushAutomergeStorageWrites();
+            clearUndoHistory();
+            if (route === 'Detect') {
+                await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID, sensitivity: 0.5 } });
+            } else {
+                await setElasticSensitivity(0.5);
+                expect(elasticAudioStore.value?.detected).toBe(true);
+            }
+            expect(getWarpState(CLIP_ID)).toEqual(defaults);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(1);
+            expect((await undo()).headConsumed).toBe(true);
+            expect(rawWarpState()).toEqual(original);
+            expect(getWarpState(CLIP_ID)).toEqual(original);
+            await redo();
+            expect(getWarpState(CLIP_ID)).toEqual(defaults);
+            expectCanonicalWarpAbsence();
+            expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+            expect(samples).toEqual(new Float32Array(SAMPLE_RATE));
+        }
+    );
+
+    it.each([
+        ['removed', null],
+        ['removed', CLIP_ID],
+        ['swapped', null],
+        ['swapped', CLIP_ID],
+    ] as const)('review repair: revokes direct Detect after source %s ABA with editor %s', async (change, editor) => {
+        const samples = burstSamples();
+        const originalSamples = samples.slice();
+        supplyBuffer(samples);
+        vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+        elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: editor });
+        const tracks = trackStore.value;
+        if (!tracks) {
+            throw new Error('Expected original source tracks');
+        }
+        const cached = audioBufferCache.get(BUFFER_ID);
+        const rootIdentity = captureProjectRootIdentity();
+        const preference = preferencesStore.value?.elasticTransientSensitivity;
+        const tempo = transportStore.value?.tempo;
+        const entered = Promise.withResolvers<void>();
+        const release = Promise.withResolvers<TransientOnsetWorkerResult>();
+        worker.mockImplementationOnce(() => {
+            entered.resolve();
+            return release.promise;
+        });
+        clearUndoHistory();
+        const original = structuredClone(rawWarpState());
+        const execution = executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        const rejected = expect(execution).rejects.toThrow(/cancelled|changed|conflict/i);
+        await entered.promise;
+        trackStore.set({
+            ...tracks,
+            tracks: tracks.tracks.map((track) => {
+                let clips: typeof track.clips;
+                if (change === 'removed') {
+                    clips = track.clips.filter((clip) => clip.id !== CLIP_ID);
+                } else {
+                    clips = track.clips.map((clip) =>
+                        clip.id === CLIP_ID ? { ...clip, audioBufferId: 'temporary-other-buffer' } : clip
+                    );
+                }
+                return { ...track, clips };
+            }),
+        });
+        flushAutomergeStorageWrites();
+        trackStore.set(tracks);
+        flushAutomergeStorageWrites();
+        const restored = getCrdtDoc('root');
+        if (!restored) {
+            throw new Error('Expected restored native source');
+        }
+        const restoredHeads = getHeads(restored);
+        expect(trackStore.value).toEqual(tracks);
+        expect(audioBufferCache.get(BUFFER_ID)).toBe(cached);
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(preference);
+        expect(transportStore.value?.tempo).toBe(tempo);
+        expect(elasticAudioStore.value?.openClipId).toBe(editor);
+        release.resolve({ status: 'complete', hits: [{ sampleOffset: 1024, confidence: 1 }] });
+        await rejected;
+        expect(getHeads(getCrdtDoc('root')!)).toEqual(restoredHeads);
+        expect(rawWarpState()).toEqual(original);
+        expect(getWarpState(CLIP_ID)).toEqual(original);
+        expect(undoHistoryStore.value?.past).toHaveLength(0);
+        await executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } });
+        expect(rawWarpState().markers).toHaveLength(2);
+        expect(rawWarpState().markers).toContainEqual(lockedMarker);
+        expect(getWarpState(CLIP_ID)).toEqual(rawWarpState());
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+        expect(samples).toEqual(originalSamples);
+    });
+
+    it.each(['no-write', 'conflict', 'failure'] as const)(
+        'rejects a later real Command %s as unchanged completion from an earlier invocation',
+        async (outcome) => {
+            supplyBuffer(new Float32Array(SAMPLE_RATE));
+            vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+            warpStateStore.set({ states: { 'other-clip': otherWarpState } });
+            flushAutomergeStorageWrites();
+            clearUndoHistory();
+            await setElasticSensitivity(0.5);
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            const before = toJS(getCrdtDoc('root')!);
+            const actualHandler = getArrangementHandlers().detectTransients;
+            const refuse = async (): Promise<{ status: 'no-write' } | { status: 'conflict'; reason: string }> => {
+                if (outcome === 'failure') {
+                    throw new Error('registered detector refused');
+                }
+                if (outcome === 'conflict') {
+                    return { status: 'conflict', reason: 'registered detector refused' };
+                }
+                return { status: 'no-write' };
+            };
+            clearHandlerRegistry();
+            registerHandlerMap({
+                ...getArrangementHandlers(),
+                ...getFinalFeatureHandlers(),
+                detectTransients: { ...actualHandler, execute: refuse },
+            });
+            await expect(setElasticSensitivity(0.9)).resolves.toBeUndefined();
+            expect(elasticAudioStore.value?.detected).toBe(false);
+            expect(toJS(getCrdtDoc('root')!)).toEqual(before);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+            clearHandlerRegistry();
+            registerHandlerMap({ ...getArrangementHandlers(), ...getFinalFeatureHandlers() });
+            await setElasticSensitivity(0.4);
+            expect(elasticAudioStore.value?.detected).toBe(true);
+            expectCanonicalWarpAbsence();
+            expect(undoHistoryStore.value?.past).toHaveLength(0);
+        }
+    );
 
     it.each(['explicitly-open', 'selected-only'] as const)(
         'changes real marker source from sensitivity with an %s audio target',

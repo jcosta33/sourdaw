@@ -79,6 +79,7 @@ type ReadInput = {
     timeoutMs: number;
     signal?: AbortSignal;
     onAnalysisStarted: () => void;
+    observeSourceOwnership?: (isCurrent: () => boolean) => void;
 };
 type SourceGeometry = Pick<SourceIdentity, 'sampleRate' | 'frameCount' | 'channelCount'>;
 type CachedSource = { rawBufferId: string; buffer: AudioBuffer; identity: SourceIdentity };
@@ -237,6 +238,7 @@ export async function readTransientOnsetSource(input: ReadInput, channelSampleCe
         if (!isCurrent()) {
             return { status: 'failed', code: 'stale-source' };
         }
+        input.observeSourceOwnership?.(isCurrent);
         let channels: ReturnType<typeof copySourceChannels>;
         if (channelSampleCeiling === 10_000_000) {
             channels = copySourceChannels(source);
