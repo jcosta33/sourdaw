@@ -156,6 +156,8 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectRootIdentityMock,
+    setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
@@ -289,6 +291,8 @@ const {
         initInputMonitoringProjectAccessMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
+        setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
@@ -516,6 +520,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectIdentity: captureProjectIdentityMock,
+    captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -535,6 +540,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     // collaboration bridge registers at session start. A noop unsubscribe is
     // all any of them need here: no document change fires under this fixture.
     subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
 vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
@@ -796,6 +805,14 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('wires the live root identity reader before project transition configuration', () => {
+        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
+            captureProjectRootIdentityMock
+        );
+        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
+            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
+        );
+    });
     it('binds committed project access during bootstrap', () => {
         expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
     });
