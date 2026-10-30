@@ -44,8 +44,15 @@ function controlsByName(role: 'slider' | 'button'): Map<string, HTMLElement[]> {
     const byName = new Map<string, HTMLElement[]>();
     for (const control of controls) {
         const name = names.get(control);
-        if (name === undefined) throw new Error(`Missing accessible name for ${role}`);
-        byName.set(name, [...(byName.get(name) ?? []), control]);
+        if (name === undefined) {
+            throw new Error(`Missing accessible name for ${role}`);
+        }
+        const group = byName.get(name);
+        if (group) {
+            group.push(control);
+        } else {
+            byName.set(name, [control]);
+        }
     }
     return byName;
 }
