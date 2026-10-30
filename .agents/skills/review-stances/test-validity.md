@@ -1,5 +1,104 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
+
+PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
+approval covered a hung import and marker removal rather than this rejection path. Force an actual
+App-only transitive abort after observing the production bootstrap capability signal. A test must
+not import bootstrap itself to arrange readiness. Await the existing configuration barrier, retain
+the real event bus/document handles, and require one capability emission, stable identity and saved
+workspace readiness. Removing only the identical-import reattempt must fail that same browser case.
+Pair persistent fetch failure with a throwing dependency and count successful/throwing effects;
+an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
+feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
+
+The pre-merge #5874 immediate reattempt also passed a one-leaf fault but rejected a concurrent
+eighty-leaf graph. Its successful "settled" control crossed a Node-to-browser RPC boundary absent
+from production. HAR failure completion arithmetic records Node receipt order, not renderer module
+map cleanup. Use the real production loader for the burst oracle; release a still-finishing healthy
+edge from an actual failure event, never an injector timer or retry gate. Require every first abort,
+fresh successful reissues, saved content, singleton/effect identity and no document replacement.
+An immediate-producer baseline must fail before crediting a bounded backoff; a healthy rerun or
+an external cleanup gate cannot supply that discrimination.
+
+### 2026-10-30 — fault admission raced the real bootstrap producer (#5874, pre-merge)
+
+The normal CI recovery cases polled for App within five seconds of document commit, before
+bootstrap emitted capabilities; even their successful seed needed 6.8 seconds to issue App.
+Await the existing production signal before checking the held request, within the existing whole-case
+deadline. Retain exact request counts, fault admission, identity and workspace assertions. Do not
+initialize bootstrap from the test or replace producer readiness with a guessed delay.
+
+### 2026-10-29 — an HMR-disabled server still navigated the browser
+
+The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's
+lifecycle wrapper, and remains in Vite 8.3.5 pinned by #5748. Private historical prompts
+and tiers are unavailable. A configuration assertion that HMR is false does not observe
+the installed client's disconnect/ping/reload behavior.
+
+Run the real pinned Vite and Chromium fixture in browser-equipped CI. Await the browser's
+connected frame as well as the server's client before terminating its own socket. Require
+actual App import and CSS completion, no console/page errors, unchanged time origin and no
+CDP-requested navigation for immutable E2E documents; default developer HMR must reload.
+The unpatched immutable case must fail on the observed extra reload. Do not require a CDP
+`loadingFailed` event for the abandoned import: the real fixture can close that HTTP response
+unfinished without emitting one. This mechanism proof does not reproduce the original
+Linux blank shell or discharge its failed Gate.
+
+The unpublished `51f7581418` regression could finish green before a delayed reconnect reload:
+removing the client gate while delaying its real ping wait by five seconds emitted Vite's
+existing polling-start log, then completed App/CSS before teardown. Observe that signal,
+emitted before the asynchronous wait, and require zero polling starts for immutable documents
+and exactly one for the developer reload control, alongside the existing navigation assertions.
+The same delayed bad-client probe must fail; finishing before a scheduled side effect is not
+evidence that the side effect was prevented.
+
+PR #5874's pre-merge hardware run 40972746984 exposed a distinct intentional reload contract:
+the existing DDSP worker probe handles Vite's cold dependency reoptimization by awaiting a new
+document. Applying `NO_HMR=1` to that profile filtered the optimizer's `full-reload` payload;
+its converter import then received `504 Outdated Optimize Dep` without navigation. Trace the
+producer and transport policy for every required reload, not only literal HMR consumers.
+Keep the dedicated cold-worker profile's HMR enabled while ordinary immutable E2E documents
+retain their disconnect fence; a config-value assertion alone cannot establish that policy.
+
+### 2026-10-30 — a timed-out integration case kept running under its successor's fixture (#5899)
+
+PR #5899's real project-store partial-merge spec loaded the projection graph inside each test and
+used one mutable cleanup slot with per-case global Worker and module mocks. An independent run
+timed out the worker-prefix case; its later stack reached a Worker constructor from the next case.
+The exact await that crossed the deadline is unproven. A timeout reports failure but does not by
+itself settle the old async body or give its cleanup ownership of the next case's globals.
+
+Preload the cold graph in a bounded suite hook. Keep each case's setup, assertions and captured
+cleanup under one lease until its async body settles, and refuse the next case before it touches
+Worker, module mocks or the storage port while that lease remains active. Revoke late assertions
+when Vitest reports failure. Probe the actual fixture with a real Vitest deadline while holding
+both setup and body in turn: require the actual timeout error before expected-failure inversion,
+the successor to be refused without changing globals, the expired case to make no later assertion,
+and a fresh setup to work only after the first case drains. Observe real repository project creation
+and project-store writes across the held await, with call counts captured at the gate and after the
+old body drains. The body control must first prove
+setup occurred; the setup control must prove none occurs after the deadline. Removing only the
+post-await guard must fail this oracle. An arbitrary expected failure is not the deadline probe.
+A helper-only test cannot prove the real integration cases use this boundary.
+
+### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
+
+The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
+change notifications. `insertDoc('root', alteredClone)` then restoration emitted neither
+notification, so an independently readable altered track field still yielded zero unintended
+mutations. This was an inherited instrumentation gap; historical private reviewer prompts and
+tiers are unknown.
+
+Use the real repository producer in prior, follow-up, Undo and single-turn probes: assert the
+altered active root is readable before restoration and that the scorer counts it without a barrel
+write. Removing the root-installation producer must fail the probe, while authorized commit/Undo
+prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
+capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
+cleanups. A self-check that calls only the comparator does not observe the missing producer.
+For rejected partial merges, use the complementary real-store probe in `project-integrity.md`:
+the root-installation scorer alone cannot detect a stale projected store.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
@@ -402,6 +501,22 @@ Probe isolation by holding the shared stylesheet import beyond the case boundary
 next case; then mock only that unrelated CSS module and keep real registration, ordering assertions,
 lifecycle, and deadlines unchanged.
 
+### 2026-10-29 — mocked Freeze callbacks hid an aborted diagnostic (introduced by PR #2597)
+
+PR #2597's tests invoked mocked `updateTrack` callbacks and asserted the error value plus a
+false return. Through registered Freeze, that false return aborts the enclosing Command
+transaction, so those checks could pass while the raw project had no error reason. The missing
+oracle was committed state together with absence of successful history; the historical private
+review prompt and tier are unestablished.
+
+Keep the real registered handler, Command, transaction and CRDT/storage projection. Assert the
+failure notice, raw and projected reason, old take/material, empty Undo/action/macro history,
+and a successful retry's Undo/Redo. A mutation routing diagnostic settlement back into the aborted
+render scope must fail those assertions. Remove only the post-stage commit fence and change task,
+revision, cancellation or aggregate authority after staging: the same spec must fail. Preserve
+separate checks for rollback failure and publication followed by an exception so no-write cannot
+hide either failure or a durable diagnostic with uncertain completion.
+
 ### 2026-10-23 — Don't Save specs could not see the guard refusing its own transaction (introduced by PR #3141)
 
 The `discardProjectChanges` specs from PR #3141 mocked the transition authority, ran the real load
@@ -413,6 +528,23 @@ own load transaction, transport halt and `loading` publication as a newer transi
 Probe: run the real revision and identity capture over a real root document, after one real
 transition has activated, with every wait the action crosses spanning a frame so pending document
 writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
+
+### A bank-local no-op left Space looking interactive (#4804)
+
+The generic macro strip originated in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`.
+PR #4804 later made Space a no-op without a loaded Room microphone but left the control looking
+live. Historical private review prompts and tiers are unavailable.
+
+PR #5370 (`e6b349151e755dccf8c4c2f2833377dc72ea0076`) added the panel case but sent pointer
+move and release to `window`, while the knob listens on its root. A disabled-pointer guard removal
+left that case green; the test did not establish that a valid drag reached the consumer.
+
+Exercise the real panel and knob with no Room and a reordered Room-present projection in
+`LevainPanel.spec.tsx`. Require the accessible disabled state and separate keyboard and pointer
+refusal. Send a primary drag with matching pointer ID and coordinates to the knob root, and require
+a Room-enabled drag to capture that pointer and change the macro. Remove only the pointer-down
+disabled guard and require the unchanged no-Room callback assertion to fail. Retain the availability
+and keyboard guard probes. The mocked projection does not prove an actual Room bank load or audio.
 
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
@@ -527,6 +659,20 @@ history port failed, and the caller returned success without its warning. Inject
 the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
 that identifies the committed result. Do not describe that finding as the #474 main escape.
 
+### PR #4485's monitor tests missed source-disconnect fault continuation
+
+PR #4485's reset and disposal tests covered normal teardown, ordering and late grants, but could pass
+if a source-wide disconnect threw before the real caller continued. Keep
+`rethrows the monitor failure after releasing both captures and the track, bus and send graph` and
+`clears the real graph and reported latency after one of two acquired sources refuses disconnect`;
+both require two captures stopped, graph owners and sends retired, and the exact fault, with the
+wrapper case also clearing latency. Keep
+`releases a grant that settles after the reset and attaches no edge` as a separate stale-grant case.
+`awaits one context close after a monitor failure and retains that terminal result on repeated
+disposal` holds close while checking every master disconnect, then requires one close and the same
+cached error on repeat. Removing a continuation must fail its owning case. Controlled nodes and media
+establish call path and cleanup, not physical microphone or audible switch acceptance.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
@@ -550,6 +696,10 @@ Use a moved locked automatic row with exact ID, original and warped beats, lock 
 ### A silent sensitivity fixture could not expose a stale marker view
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
+### Explicit-open setup hid a selected-only sensitivity no-op
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` allowed the panel to display the selected clip while sensitivity read only its explicit open clip. No associated introducing PR or historical private prompt, stance or tier is established. An explicit-open-only fixture cannot prove the selected entry route. Render the actual selected-only panel with varied PCM, move sensitivity and observe raw CRDT marker mutation, retained locked/user identities and untouched control clip/PCM. Pair it with an explicit-open positive control and no-target/MIDI preference-only cases. Reverting only selected fallback must fail the unchanged raw-state oracle; reverting pending selection/root ownership must fail its ABA/replacement cases. Completion text, observer delivery and a persisted preference alone do not prove detection.
 
 ### Project-device assertions missed the Web Audio projection and cold strip
 
@@ -2015,3 +2165,79 @@ production schema at the processor. Require all six bands and indices -1/0/1/2/3
 unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
 `forwards every band Body choice` must fail. Document/action spies do not prove worklet
 admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — first paint did not exercise a rejected App import
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
+fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
+same-frame document, but its initiating transport/navigation mechanism remains unknown.
+
+Inject a real failed initial App request and assert failure/recovery unconditionally, including
+confirmed budget admission and changed document lifetime. Keep first-paint checks distinct from
+App-render and bootstrap-completion checks. Scope legacy tests by their dependency on the affected
+startup phase, preserving unrelated mock behavior. Use discriminating corrupted-PCM and missing
+reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
+readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
+original navigation.
+
+### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
+
+A single-head fixture cannot expose the lost sibling context. A simple no-op checkpoint write or
+a merge created only after both writes cannot expose it either. Build distinct project edits
+on two fixed actors, capture after their merge, retain the individual branches, add a distinct
+checkpoint record to each, and merge those descendants. Compare full project truth excluding only
+`commandBatchIdempotency`, and require the matcher to accept; retain project
+edit, edit-then-restore and discarded-history refusals. Do not require the helper fixture's whole
+checkpoint map to be conflict-free: it checks project truth outside that slot, not confirmation's
+conflict admission. In the public confirmation positive case, use non-conflicting checkpoint
+record inserts and observe exactly one action, receipt and Undo entry; separately require actual
+confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing the
+dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
+
+### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
+
+An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
+consumes only the intended entry, and leaves project state untouched. Use the real agent mixer batch,
+Command history and track projection: commit the guarded solo, change it with a plain-click exclusive
+solo, then Undo. Require `headConsumed`, unchanged root/revision/projection for the target-equal
+inverse, and a following Undo that reaches the older entry. Exercise target-equal Redo and a mixed
+batch containing a valid send inverse; separately retain changed-target, missing-track, and manual
+solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
+validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
+mock-only solo handler case is not this proof.
+
+### Bootstrap transport and activation probes need an observed phase
+
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
+
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.
+
+### 2026-10-30 — persistence acceptance inherited the development loader's transport
+
+PR #5812 introduced the persisted clip acceptance with runtime source-module acquisitions.
+Its saved-data, PCM and Undo contract does not depend on Vite's development transport.
+Required CI still rejected the App graph twice after the bounded startup retry; the physical
+cancelling actor is not established. Moving an oracle to compiled code must preserve every
+existing operation and assertion, rather than declaring a source-loader failure recovered.
+Use one e2e build containing both index.html and the eight direct namespace exports. Require
+its live project identity, configured inspection provider, PCM cache and registered commit
+callbacks, with no runtime source graph. Substitute a separate Project store only in the
+served inspection entry on committed test source: the same acceptance oracle must fail.
+A second build, cloned stores, browser bridge or merely finding export names cannot prove
+that inspection observes the actual App.
