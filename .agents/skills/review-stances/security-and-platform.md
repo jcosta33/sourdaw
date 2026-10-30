@@ -35,6 +35,12 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Admit every managed-directory component before creating its children or publishing scheduler
+  files. PR #5869's pre-delivery installer probe showed that a symlinked `Library` or `LaunchAgents`
+  could replace an unrelated external plist before launchd inspection. Require an existing canonical
+  home anchor, refuse each parent alias without external child creation or scheduler calls, and
+  preserve an external plist sentinel byte-for-byte. Keep canonical directory creation and
+  reinstallation positive controls. This was caught before delivery, not a main escape.
 - Trace every authoritative field from its native response parser through the final equality
   witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
   child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.

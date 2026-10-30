@@ -112,6 +112,55 @@ function runRuntime(runtime: string, binding = runtimeBinding(runtime)) {
 }
 
 describe('cleanup installation', () => {
+    it.each(['Library', 'LaunchAgents'])('refuses an aliased %s before plist writes or scheduler actions', (name) => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-launchagents-alias-')));
+        try {
+            const parent = name === 'Library' ? f.root : join(f.root, 'Library');
+            mkdirSync(parent, { recursive: true });
+            symlinkSync(foreign, join(parent, name), 'dir');
+            const agents = name === 'Library' ? join(foreign, 'LaunchAgents') : foreign;
+            mkdirSync(agents, { recursive: true });
+            const sentinel = join(agents, `${CLEANUP_LABEL}.plist`);
+            writeFileSync(sentinel, 'unrelated external plist\n');
+            expect(() => installCleanupLanes(f.port)).toThrow('canonical');
+            expect(readFileSync(sentinel, 'utf8')).toBe('unrelated external plist\n');
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
+    it('does not create a LaunchAgents child through an aliased Library', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-library-alias-')));
+        try {
+            symlinkSync(foreign, join(f.root, 'Library'), 'dir');
+            expect(() => installCleanupLanes(f.port)).toThrow('canonical');
+            expect(existsSync(join(foreign, 'LaunchAgents'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
+    it('requires an existing canonical home anchor before creating managed directories', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-home-alias-')));
+        try {
+            const alias = join(foreign, 'home');
+            symlinkSync(f.root, alias, 'dir');
+            expect(() => installCleanupLanes({ ...f.port, home: alias })).toThrow('canonical');
+            expect(existsSync(join(f.root, 'Library'))).toBe(false);
+            expect(f.events).toHaveLength(0);
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
     it('never reopens a checked installation receipt after a foreign-payload swap', () => {
         const f = fixture();
         const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-install-read-swap-')));

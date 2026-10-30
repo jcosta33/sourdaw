@@ -190,6 +190,21 @@ function assertExclusiveCleanupLog(path: string): void {
     }
 }
 
+function cleanupLaunchAgents(home: string): string {
+    const agents = join(home, 'Library/LaunchAgents');
+    // The selected home is an existing authority anchor, never an alias to adopt or create.
+    for (const path of [home, join(home, 'Library'), agents]) {
+        if (path !== home && lstatSync(path, { throwIfNoEntry: false }) === undefined) {
+            mkdirSync(path, { mode: 0o700 });
+        }
+        const stat = lstatSync(path);
+        if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(path) !== path) {
+            throw new Error('cleanup launchd installation requires canonical home and managed directories');
+        }
+    }
+    return agents;
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -258,8 +273,7 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     writeFileSync(join(runtime, 'package.json'), PACKAGE, { flag: 'wx', mode: 0o600 });
     writeFileSync(join(runtime, 'manifest.json'), `${JSON.stringify(binding)}\n`, { flag: 'wx', mode: 0o600 });
     refreshCleanupLauncher(port, commit, directory);
-    const agents = join(port.home, 'Library/LaunchAgents');
-    mkdirSync(agents, { recursive: true });
+    const agents = cleanupLaunchAgents(port.home);
     const plist = join(agents, `${CLEANUP_LABEL}.plist`);
     atomicWrite(plist, cleanupPlist(binding, runtime));
     const service = `gui/${port.uid}/${CLEANUP_LABEL}`;
