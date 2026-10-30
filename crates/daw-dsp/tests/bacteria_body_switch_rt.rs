@@ -1,7 +1,6 @@
 //! Choosing a Bacteria body is a `convolutionIr` write, and on the web that
 //! write runs in the worklet's message handler, on the audio rendering
-//! thread. So switching between the built-in bodies has to select a response
-//! the processor already holds instead of synthesizing one.
+//! thread. Switching selects prebuilt FIR/model state and never constructs it.
 //!
 //! The interceptor is debug-only (`assert_no_alloc`'s `disable_release`
 //! feature) — run this through `pnpm cargo:test`, and expect a violation to
@@ -120,7 +119,8 @@ fn switching_bodies_on_a_rendering_engine_does_not_allocate() {
 
 /// The body chosen without allocating is the body named: an impulse through
 /// the stage, with no body chosen when it is built, rings at the resonance
-/// each body is synthesized around. Spring shares metal's response.
+/// each FIR body is synthesized around. Spring's distinct long-tail model is
+/// exercised by the audible guard below and bacteria_spring_body.
 #[test]
 fn the_body_chosen_without_allocating_is_the_body_heard() {
     for sample_rate in SAMPLE_RATES {
@@ -128,7 +128,6 @@ fn the_body_chosen_without_allocating_is_the_body_heard() {
             (0.0_f32, "ceramic", 2_200),
             (1.0, "wood", 800),
             (2.0, "metal", 3_500),
-            (3.0, "spring", 3_500),
         ] {
             let mut body = ConvolutionProcessor::new(sample_rate);
             body.set_param("convolutionMix", 1.0);
@@ -151,7 +150,7 @@ fn the_body_chosen_without_allocating_is_the_body_heard() {
     }
 }
 
-/// Longer than the 23.2 ms body at 384 kHz, so this span outlasts every tested tail.
+/// Outlasts the 23.2 ms FIR at 384 kHz; Spring has a separate long-tail guard.
 const LONGER_THAN_ANY_BODY: usize = 16_384;
 
 /// Choosing a body again after a spell of none starts it from silence. A burst
@@ -287,4 +286,58 @@ fn assert_engine_wood_tail(rate: f32, body_end: usize) {
         left[body_end], 0.0,
         "the engine output continued after the wood body ended"
     );
+}
+
+#[test]
+fn audible_spring_switches_and_first_resumed_render_allocate_and_free_nothing() {
+    for rate in SAMPLE_RATES {
+        let mut engine = BacteriaEngine::new(rate);
+        engine.set_param("globalRouting", 0.0);
+        engine.set_param("band0_convolutionEnabled", 1.0);
+        engine.set_param("band0_convolutionMix", 1.0);
+        engine.set_param("band0_convolutionSeparation", 0.0);
+        engine.set_param("band0_convolutionIr", 3.0);
+        let blocks = (rate * 0.1 / BLOCK as f32).ceil() as usize;
+        let mut tail = 0.0_f64;
+        for block in 0..blocks {
+            let mut left = [0.0; BLOCK];
+            if block == 0 {
+                left[0] = 1.0;
+            }
+            let mut right = left;
+            engine.process_block(&mut left, &mut right);
+            if block + 1 == blocks {
+                tail = left.iter().map(|&x| f64::from(x).powi(2)).sum();
+            }
+        }
+        assert!(
+            tail > 1e-6,
+            "{rate}: Spring must already carry a real late tail"
+        );
+        let mut finite = true;
+        let mut stale = 0.0_f32;
+        assert_no_alloc(|| {
+            for choice in [3.0, 2.0, 3.0] {
+                engine.set_param("band0_convolutionIr", choice);
+                let mut left = [0.0; BLOCK];
+                let mut right = left;
+                engine.process_block(&mut left, &mut right);
+                finite &= left.iter().chain(&right).all(|x| x.is_finite());
+            }
+            engine.set_param("band0_convolutionEnabled", 0.0);
+            let mut left = [0.0; BLOCK];
+            let mut right = left;
+            engine.process_block(&mut left, &mut right);
+            engine.set_param("band0_convolutionEnabled", 1.0);
+            engine.process_block(&mut left, &mut right);
+            stale += left.iter().chain(&right).map(|x| x.abs()).sum::<f32>();
+            engine.set_param("band0_convolutionIr", -1.0);
+            engine.process_block(&mut left, &mut right);
+            engine.set_param("band0_convolutionIr", 3.0);
+            engine.process_block(&mut left, &mut right);
+            stale += left.iter().chain(&right).map(|x| x.abs()).sum::<f32>();
+        });
+        assert!(finite);
+        assert_eq!(stale, 0.0, "{rate}: resume/None retained old Spring audio");
+    }
 }

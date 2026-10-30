@@ -62,4 +62,13 @@ describe('checked-in Bacteria WASM body duration', () => {
             expect(Math.abs(energy - 48_000 / rate)).toBeLessThan(1e-3);
         }
     });
+
+    it('retains the distinct Spring tail beyond the FIR duration at 384 kHz', () => {
+        const rate = 384_000;
+        const pcm = impulse(rate, 3, rate * 0.2);
+        const lateEnergy = pcm.slice(rate * 0.1).reduce((sum, sample) => sum + sample * sample, 0);
+        // The existing native Spring oracle's 100–200 ms energy bound, scaled
+        // by its physical-rate normalization. A Metal alias has no such tail.
+        expect(lateEnergy).toBeGreaterThan((0.05 * 48_000) / rate);
+    });
 });
