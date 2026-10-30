@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 /**
  * A Web MIDI input the take's live route listens on. Stubbed before the MIDI
@@ -16,6 +15,7 @@ const liveMidi = vi.hoisted(() => {
     return { input };
 });
 
+import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
