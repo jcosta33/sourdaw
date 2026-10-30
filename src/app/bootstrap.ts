@@ -236,6 +236,7 @@ import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMa
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
+import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -672,6 +673,7 @@ initToasterKitPersistence();
 // neither Levain's instrument id nor Crumbs' sample reference is one. Registered
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStateProjectAccess();
 initLevainDeviceStatePersistence();
 initBacteriaSubscribers({ eventBus, logger });
 // Same shape and the same reason, subscriber first so the device's first

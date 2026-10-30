@@ -62,6 +62,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mocks.logger }));
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: mocks.agentProjectRepairStateStore,
+    captureProjectIdentity: vi.fn(() => 'command-batch-project'),
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
     branchStore: mocks.branchStore,

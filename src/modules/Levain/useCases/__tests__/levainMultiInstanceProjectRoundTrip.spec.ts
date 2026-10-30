@@ -31,6 +31,7 @@ vi.mock('#/modules/Transport/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
+import { initLevainDeviceStateProjectAccess } from '#/app/initLevainDeviceStateProjectAccess';
 import { Container } from '#/infra/di/Container';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
@@ -50,6 +51,7 @@ import {
 } from '#/modules/Project/useCases';
 
 import { defaultLevainState, levainStore, setLoadedMicPositions, updateMicPosition } from '../../stores/levainStore';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { hydrateLevainStateFromProject } from '../hydrateLevainStateFromProject';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { levainBridge } from '../levainParamBridge/levainBridge';
@@ -103,12 +105,14 @@ describe('two Levain patches across a named-project reopen', () => {
         });
         setArrangementEventBus({ emit: () => Promise.resolve() });
         expect(await newProject('Two Levain instruments')).toBe(true);
+        initLevainDeviceStateProjectAccess();
         stopPersistence = initLevainDeviceStatePersistence();
     });
 
     afterEach(async () => {
         audioEngine.resetGraph();
         stopPersistence?.();
+        configureLevainDeviceStateProjectAccess(null);
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
