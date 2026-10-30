@@ -11,8 +11,8 @@ import { automationStore } from '#/modules/Automation/stores';
 import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue } from '#/modules/Automation/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
-import { appliedAutomationBases } from '../appliedAutomationBases';
 import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
+import { appliedAutomationBases } from '../appliedAutomationBases';
 import { applyAutomation } from '../applyAutomation';
 
 /**

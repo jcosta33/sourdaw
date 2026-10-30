@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import * as Arrangement from '#/modules/Arrangement/useCases';
 import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import * as Arrangement from '#/modules/Arrangement/useCases';
 import {
     getCompensationDelay,
     getCurrentTime,

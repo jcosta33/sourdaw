@@ -4,9 +4,11 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
+import { relinkClipAudioSource } from '#/modules/Arrangement/useCases';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
-import { createAutomationLane } from '#/modules/Automation/useCases';
 import { automationStore } from '#/modules/Automation/stores';
+import { createAutomationLane } from '#/modules/Automation/useCases';
 import {
     captureProjectRootIdentity,
     createCrdtDoc,
@@ -16,15 +18,13 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { isTransportIdle } from '#/modules/Transport/useCases';
-import { type Clip, type Track, trackStore } from '#/modules/Arrangement/stores';
-import { relinkClipAudioSource } from '#/modules/Arrangement/useCases';
 
 import { type ArrangementSnapshot, arrangementStore } from '../../../stores/arrangementStore';
+import { missingMediaStore } from '../../../stores/missingMediaStore';
 import { defaultProjectStoreState, projectStore } from '../../../stores/projectStore';
 import { runProjectLoadTransaction } from '../../projectPersistence/helpers/runProjectLoadTransaction';
-import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
-import { missingMediaStore } from '../../../stores/missingMediaStore';
 import { verifyAudioBufferReferences } from '../../projectPersistence/helpers/verifyAudioBufferReferences';
+import { setProjectIdentityTransitionDependencies } from '../../projectPersistence/projectIdentityTransitionDependencies';
 import * as subject from '../switchArrangement';
 
 const mocks = vi.hoisted(() => ({

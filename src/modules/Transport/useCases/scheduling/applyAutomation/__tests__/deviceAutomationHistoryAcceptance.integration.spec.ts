@@ -48,14 +48,14 @@ import { setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import { runProjectLoadTransaction, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 
-import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
+import { tempoMapStore } from '../../../../stores/tempoMapStore';
+import { defaultTransportState, transportStore } from '../../../../stores/transportStore';
 import { disposePlayheadScheduler } from '../../../playheadScheduler/disposePlayheadScheduler';
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { stopPlayheadScheduler } from '../../../playheadScheduler/stopPlayheadScheduler';
 import { executePlayheadSeek } from '../../../transportControls/executePlayheadSeek';
 import { pausePlayback } from '../../../transportControls/pausePlayback';
 import { stopPlayback } from '../../../transportControls/stopPlayback';
-import { tempoMapStore } from '../../../../stores/tempoMapStore';
-import { defaultTransportState, transportStore } from '../../../../stores/transportStore';
 import { applyAutomation } from '../applyAutomation';
 
 // Engine clocks, carrier admission and terminal engine I/O are controlled.
@@ -200,7 +200,9 @@ function assertRuntimeOnly(run: () => void, assertRuntime: () => void): void {
 }
 
 function expectedRuntimeKey(type: string, paramId: string): string {
-    if (type !== 'fermenter') return paramId;
+    if (type !== 'fermenter') {
+        return paramId;
+    }
     const aliases: Record<string, string> = {
         filterCutoff: 'cutoff',
         filterResonance: 'resonance',
@@ -286,7 +288,7 @@ describe('device automation preserves real manual history', () => {
         macroStore.set({ macros: [], recording: false, currentRecording: [] });
         automationStore.set({ lanes: [] });
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
-        transportStore.set({ ...defaultTransportState });
+        transportStore.set(defaultTransportState);
         fermenterStore.set({});
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
@@ -389,7 +391,9 @@ describe('device automation preserves real manual history', () => {
             const parameter = getAutomationDeviceDescriptor(input.type)?.parameters.find(
                 (candidate) => candidate.id === input.paramId
             );
-            if (!parameter) throw new Error('Missing admitted representative');
+            if (!parameter) {
+                throw new Error('Missing admitted representative');
+            }
             const value = parameter.maxValue;
             const key = expectedRuntimeKey(input.type, input.paramId);
             const lane = constantLane(value, `${DEVICE_ID}:${input.paramId}`, parameter.minValue, parameter.maxValue);
@@ -474,7 +478,12 @@ describe('device automation preserves real manual history', () => {
         'resolves the real %s target without history',
         async (form) => {
             await seedManualMix();
-            const target = form === 'canonical' ? `${DEVICE_ID}:mix` : form === 'legacy-type' ? 'bacteria:mix' : 'mix';
+            let target = 'mix';
+            if (form === 'canonical') {
+                target = `${DEVICE_ID}:mix`;
+            } else if (form === 'legacy-type') {
+                target = 'bacteria:mix';
+            }
             automationStore.set({ lanes: [constantLane(0.8, target)] });
             assertRuntimeOnly(
                 () => applyAutomation(2),
@@ -493,10 +502,14 @@ describe('device automation preserves real manual history', () => {
     ] as const)('refuses %s without runtime, history or macro effects', async (refusal) => {
         await seedManualMix();
         let target = `${DEVICE_ID}:mix`;
-        if (refusal === 'missing-owner') target = 'absent:mix';
+        if (refusal === 'missing-owner') {
+            target = 'absent:mix';
+        }
         if (refusal === 'duplicate-owner') {
             const track = trackStore.value?.tracks[0];
-            if (!track) throw new Error('Expected the owner');
+            if (!track) {
+                throw new Error('Expected the owner');
+            }
             trackStore.set({ tracks: [track, { ...track, id: 'second-owner' }], selectedTrackId: TRACK_ID });
         }
         if (refusal === 'duplicate-type') {
@@ -518,11 +531,12 @@ describe('device automation preserves real manual history', () => {
             ).toBe(false);
             target = `${DEVICE_ID}:autoDivisi`;
         }
-        if (refusal === 'missing-key')
+        if (refusal === 'missing-key') {
             editTrack((track) => ({
                 ...track,
                 devices: track.devices.map((device) => ({ ...device, parameterValues: {} })),
             }));
+        }
         // Reconcile the intentional old lane removal before the refusal baseline.
         automationStore.set({ lanes: [] });
         applyAutomation(2);
@@ -584,7 +598,9 @@ describe('device automation preserves real manual history', () => {
             await seedManualMix();
             setAutomationMode(TRACK_ID, mode);
             startAutomationRecording();
-            if (mode !== 'write') recordAutomationValue(TRACK_ID, `${DEVICE_ID}:mix`, 0.3, 1);
+            if (mode !== 'write') {
+                recordAutomationValue(TRACK_ID, `${DEVICE_ID}:mix`, 0.3, 1);
+            }
             expect(isRecordingAutomation(TRACK_ID, `${DEVICE_ID}:mix`)).toBe(true);
             assertRuntimeOnly(
                 () => applyAutomation(2),
@@ -691,9 +707,15 @@ describe('device automation preserves real manual history', () => {
             expect(storedValue('mix')).toBe(0.65);
             expect(undoStore.value?.past).toHaveLength(2);
             expect(macroStore.value?.currentRecording).toHaveLength(3);
-            if (gate === 'off') setAutomationMode(TRACK_ID, 'off');
-            if (gate === 'disabled') automationStore.set({ lanes: [{ ...lane, enabled: false }] });
-            if (gate === 'removed') automationStore.set({ lanes: [] });
+            if (gate === 'off') {
+                setAutomationMode(TRACK_ID, 'off');
+            }
+            if (gate === 'disabled') {
+                automationStore.set({ lanes: [{ ...lane, enabled: false }] });
+            }
+            if (gate === 'removed') {
+                automationStore.set({ lanes: [] });
+            }
             assertRuntimeOnly(
                 () => applyAutomation(2),
                 () => expectMix(0.65)
@@ -751,23 +773,30 @@ describe('device automation preserves real manual history', () => {
         async (replacement) => {
             await seedManualMix();
             const identity = captureProjectRootIdentity();
-            const incoming =
-                replacement === 'same-bytes'
-                    ? clone(requireRoot())
-                    : change(clone(requireRoot()), (document) => {
-                          document.tracks.tracks[0]!.devices[0]!.parameterValues.mix = 0.2;
-                          document.tracks.tracks[0]!.automationMode = 'off';
-                          if (replacement === 'same-ids-empty') document.automation.lanes = [];
-                      });
+            let incoming = clone(requireRoot());
+            if (replacement !== 'same-bytes') {
+                incoming = change(incoming, (document) => {
+                    document.tracks.tracks[0]!.devices[0]!.parameterValues.mix = 0.2;
+                    document.tracks.tracks[0]!.automationMode = 'off';
+                    if (replacement === 'same-ids-empty') {
+                        document.automation.lanes = [];
+                    }
+                });
+            }
             replaceCrdtDoc({ id: 'root', doc: incoming });
             projectCrdtToStores({ resetProjections: true });
             expect(captureProjectRootIdentity()).not.toBe(identity);
-            if (replacement === 'null-intermediate') automationStore.set(null);
+            if (replacement === 'null-intermediate') {
+                automationStore.set(null);
+            }
             assertRuntimeOnly(
                 () => applyAutomation(2),
                 () => {
-                    if (replacement === 'same-bytes') expectMix(0.9);
-                    else expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+                    if (replacement === 'same-bytes') {
+                        expectMix(0.9);
+                    } else {
+                        expect(audioEngine.updateDeviceParam).not.toHaveBeenCalled();
+                    }
                 }
             );
             if (replacement === 'same-bytes') {
@@ -813,9 +842,15 @@ describe('device automation preserves real manual history', () => {
                 expect(transportStore.value?.playheadPosition).toBe(3);
                 stopPlayheadScheduler();
             }
-            if (teardown === 'stop-scheduler') stopPlayheadScheduler();
-            if (teardown === 'dispose') disposePlayheadScheduler();
-            if (teardown === 'stop') await stopPlayback();
+            if (teardown === 'stop-scheduler') {
+                stopPlayheadScheduler();
+            }
+            if (teardown === 'dispose') {
+                disposePlayheadScheduler();
+            }
+            if (teardown === 'stop') {
+                await stopPlayback();
+            }
             if (teardown === 'pause') {
                 pausePlayback();
                 await vi.waitFor(() => expect(schedulerSession.generation).toBeGreaterThan(generation));
@@ -854,7 +889,9 @@ describe('device automation preserves real manual history', () => {
                 }));
             } else {
                 const oldTrack = trackStore.value?.tracks[0];
-                if (!oldTrack) throw new Error('Expected the track');
+                if (!oldTrack) {
+                    throw new Error('Expected the track');
+                }
                 editTrack((track) => ({ ...track, devices: [] }));
                 automationStore.set({ lanes: [] });
                 applyAutomation(2);
@@ -1023,8 +1060,12 @@ describe('device automation preserves real manual history', () => {
             automationStore.set({ lanes: [] });
             applyAutomation(0);
             const empty = { ...constantLane(), points: [] };
-            if (shape === 'nonlinked-empty') automationStore.set({ lanes: [empty] });
-            if (shape === 'missing-source') automationStore.set({ lanes: [{ ...empty, linkedLaneId: 'missing' }] });
+            if (shape === 'nonlinked-empty') {
+                automationStore.set({ lanes: [empty] });
+            }
+            if (shape === 'missing-source') {
+                automationStore.set({ lanes: [{ ...empty, linkedLaneId: 'missing' }] });
+            }
             if (shape === 'cycle') {
                 const other = { ...constantLane(0.8, `${DEVICE_ID}:macro1`), points: [], linkedLaneId: empty.id };
                 automationStore.set({ lanes: [{ ...empty, linkedLaneId: other.id }, other] });
@@ -1049,8 +1090,12 @@ describe('device automation preserves real manual history', () => {
                 () => applyAutomation(1),
                 () => expectMix(0.4)
             );
-            if (gate === 'off') setAutomationMode(TRACK_ID, 'off');
-            if (gate === 'disabled') automationStore.set({ lanes: [source, { ...follower, enabled: false }] });
+            if (gate === 'off') {
+                setAutomationMode(TRACK_ID, 'off');
+            }
+            if (gate === 'disabled') {
+                automationStore.set({ lanes: [source, { ...follower, enabled: false }] });
+            }
             if (gate === 'recording') {
                 setAutomationMode(TRACK_ID, 'touch');
                 startAutomationRecording();
