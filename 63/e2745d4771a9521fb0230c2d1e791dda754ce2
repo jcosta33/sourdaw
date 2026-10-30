@@ -1,0 +1,23 @@
+src/modules/Arrangement/useCases/comping/__tests__/setCompRegion.spec.ts
+  s_29d8df116c5b92::t_a7b583d402fb04 12-13
+src/modules/Arrangement/useCases/__tests__/captureTrackRemovalSnapshot.spec.ts
+  s_29d8df116c5b92::t_a7b583d402fb04 68
+src/modules/Arrangement/useCases/comping/__tests__/removeCompRegion.spec.ts
+  s_29d8df116c5b92::t_a7b583d402fb04 23-24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63e2745d4771a9521fb0230c2d1e791dda754ce2",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
