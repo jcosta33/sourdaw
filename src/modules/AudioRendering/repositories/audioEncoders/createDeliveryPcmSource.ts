@@ -13,13 +13,46 @@ function sinc(value: number): number {
     return Math.abs(value) < 1e-12 ? 1 : Math.sin(Math.PI * value) / (Math.PI * value);
 }
 
-/** Replayable target PCM. Absolute rational phase makes block partitioning immaterial. */
-export function createDeliveryPcmSource(input: {
-    source: ExportAudioSource;
-    sampleRate: number;
-    channels: number;
-}): ExportAudioSource {
-    const { source, sampleRate, channels } = input;
+function createKernel(position: number, base: number, cutoff: number): Float64Array {
+    const kernel = new Float64Array(TAPS * 2);
+    for (let tap = -HALF + 1; tap <= HALF; tap++) {
+        const distance = base + tap - position;
+        const index = (tap + HALF - 1) * 2;
+        kernel[index] = sinc(cutoff * distance);
+        kernel[index + 1] =
+            0.42 + 0.5 * Math.cos((Math.PI * distance) / HALF) + 0.08 * Math.cos((2 * Math.PI * distance) / HALF);
+    }
+    return kernel;
+}
+
+function createKernelCache(cutoff: number): (position: number, base: number) => Float64Array {
+    // Absolute-position rounding gives multiple binary fractions per rational phase. Keep
+    // those exact, retaining at most one bounded block's kernels across channels and replays.
+    const kernels = new Map<number, Float64Array>();
+    return (position, base) => {
+        // Past this boundary base + tap can round away an integer, so phase alone cannot
+        // identify the original distances. Preserve that admitted long-index behavior.
+        if (base > Number.MAX_SAFE_INTEGER - HALF) {
+            return createKernel(position, base, cutoff);
+        }
+        const phase = position - base;
+        const cached = kernels.get(phase);
+        if (cached) {
+            return cached;
+        }
+        const kernel = createKernel(position, base, cutoff);
+        if (kernels.size === MAX_BLOCK) {
+            const oldest = kernels.keys().next().value;
+            if (oldest !== undefined) {
+                kernels.delete(oldest);
+            }
+        }
+        kernels.set(phase, kernel);
+        return kernel;
+    };
+}
+
+function assertValidInput(source: ExportAudioSource, sampleRate: number): void {
     if (
         !Number.isSafeInteger(source.length) ||
         source.length < 0 ||
@@ -32,9 +65,9 @@ export function createDeliveryPcmSource(input: {
     ) {
         throw new Error('Invalid delivery PCM source.');
     }
-    if (sampleRate === source.sampleRate && channels === source.numberOfChannels) {
-        return source;
-    }
+}
+
+function assertSupportedConversion(source: ExportAudioSource, sampleRate: number, channels: number): void {
     if (
         ![44100, 48000, 88200, 96000].includes(source.sampleRate) ||
         ![44100, 48000, 88200, 96000].includes(sampleRate) ||
@@ -43,11 +76,26 @@ export function createDeliveryPcmSource(input: {
     ) {
         throw new Error('Unsupported delivery PCM conversion.');
     }
+}
+
+/** Replayable target PCM. Absolute rational phase makes block partitioning immaterial. */
+export function createDeliveryPcmSource(input: {
+    source: ExportAudioSource;
+    sampleRate: number;
+    channels: number;
+}): ExportAudioSource {
+    const { source, sampleRate, channels } = input;
+    assertValidInput(source, sampleRate);
+    if (sampleRate === source.sampleRate && channels === source.numberOfChannels) {
+        return source;
+    }
+    assertSupportedConversion(source, sampleRate, channels);
     const length = Math.round((source.length * sampleRate) / source.sampleRate);
     if (!Number.isSafeInteger(length)) {
         throw new TypeError('Delivery PCM exceeds the frame limit.');
     }
     const cutoff = Math.min(1, sampleRate / source.sampleRate);
+    const kernelAt = createKernelCache(cutoff);
     return {
         length,
         numberOfChannels: channels,
@@ -114,15 +162,13 @@ export function createDeliveryPcmSource(input: {
                     }
                     continue;
                 }
+                const kernel = kernelAt(position, base);
                 for (let channel = 0; channel < channels; channel++) {
                     let sum = 0;
                     for (let tap = -HALF + 1; tap <= HALF; tap++) {
-                        const distance = base + tap - position;
-                        const window =
-                            0.42 +
-                            0.5 * Math.cos((Math.PI * distance) / HALF) +
-                            0.08 * Math.cos((2 * Math.PI * distance) / HALF);
-                        sum += mixedAt(channel, base + tap) * cutoff * sinc(cutoff * distance) * window;
+                        const index = (tap + HALF - 1) * 2;
+                        // Keep the factors separate to preserve the PCM multiplication order.
+                        sum += mixedAt(channel, base + tap) * cutoff * kernel[index]! * kernel[index + 1]!;
                     }
                     output[channel]![frame] = sum;
                 }
