@@ -44,7 +44,7 @@ export function e2eViteClientPolicyPlugin(): Plugin {
         transform(code, id) {
             const transformed = transformE2eViteClient(code, id, policy);
             if (transformed === code) {
-                return;
+                return null;
             }
             return { code: transformed, map: null };
         },
