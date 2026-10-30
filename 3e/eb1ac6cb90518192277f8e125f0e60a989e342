@@ -1,0 +1,27 @@
+tests/e2e/firstPaintWarmup.ts
+  s_57fdb7ae7b3ba4::t_e76620e74e5ba1 9-14,103-128
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_57fdb7ae7b3ba4::t_f8c1c0a79d5cce 350-356,360-382,385-415,417
+  s_57fdb7ae7b3ba4::t_31c0f8e3644d8d 227,251
+  s_57fdb7ae7b3ba4::t_280888494301b2 357-359,383-384
+  s_57fdb7ae7b3ba4::t_b6e0c9662ba845 416
+  s_57fdb7ae7b3ba4::t_7e63e2fcf945f5 418
+tests/e2e/firstPaintDiagnostics.ts
+  s_57fdb7ae7b3ba4::t_cdca4b3587ac0b 113-149,173,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3eeb1ac6cb90518192277f8e125f0e60a989e342",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
