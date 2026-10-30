@@ -72,6 +72,33 @@ function assertHostedArtifactUpload(named: (name: string) => Record<string, unkn
     );
 }
 
+function assertHostedSourceTooling(named: (name: string) => Record<string, unknown>): void {
+    assertHostedCheckout(
+        named,
+        'Checkout workflow control',
+        '${{ github.workflow_sha }}',
+        'control',
+        'workflow control'
+    );
+    assertHostedCheckout(
+        named,
+        'Checkout source head',
+        '${{ github.event.pull_request.head.sha }}',
+        'source',
+        'exact head'
+    );
+    requireHostedWasmEqual(
+        named('Set up pnpm').uses,
+        './control/.github/actions/setup-pnpm',
+        'pnpm setup from workflow control'
+    );
+    requireHostedWasmEqual(
+        named('Set up pnpm').with,
+        { package_json_file: 'source/package.json' },
+        'pnpm target from the source manifest'
+    );
+}
+
 export function assertHostedWasmWorkflow(value: unknown): void {
     const workflow = readHostedWasmWorkflowMapping(value);
     requireHostedWasmEqual(
@@ -116,20 +143,7 @@ export function assertHostedWasmWorkflow(value: unknown): void {
         }
         return step;
     };
-    assertHostedCheckout(
-        named,
-        'Checkout workflow control',
-        '${{ github.workflow_sha }}',
-        'control',
-        'workflow control'
-    );
-    assertHostedCheckout(
-        named,
-        'Checkout source head',
-        '${{ github.event.pull_request.head.sha }}',
-        'source',
-        'exact head'
-    );
+    assertHostedSourceTooling(named);
     requireHostedWasmEqual(
         named('Select affected packages').run,
         'node control/scripts/hostedWasmArtifacts.ts plan "$GITHUB_WORKSPACE/source"',
