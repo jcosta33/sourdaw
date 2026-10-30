@@ -17,7 +17,7 @@ use daw_dsp::bacteria::engine::BacteriaEngine;
 #[global_allocator]
 static ALLOCATOR: AllocDisabler = AllocDisabler;
 
-const SAMPLE_RATES: [f32; 2] = [48_000.0, 192_000.0];
+const SAMPLE_RATES: [f32; 3] = [48_000.0, 192_000.0, 384_000.0];
 const BLOCK: usize = 128;
 
 /// Strongest frequency in `signal` between `low` and `high` Hz, in 10 Hz steps.
@@ -151,8 +151,8 @@ fn the_body_chosen_without_allocating_is_the_body_heard() {
     }
 }
 
-/// Longer than the 23.2 ms body at 192 kHz, so this span outlasts every tail.
-const LONGER_THAN_ANY_BODY: usize = 8_192;
+/// Longer than the 23.2 ms body at 384 kHz, so this span outlasts every tested tail.
+const LONGER_THAN_ANY_BODY: usize = 16_384;
 
 /// Choosing a body again after a spell of none starts it from silence. A burst
 /// played into the body, then a long stretch with no body chosen, then the
@@ -243,19 +243,24 @@ fn switching_or_repeating_a_body_preserves_the_rendering_history() {
 /// exactly silent once the prebuilt response ends.
 #[test]
 fn engine_output_retains_late_wood_tail_at_192khz() {
-    const FRAME_COUNT: usize = 4_459;
-    const LATE_TAIL_START: usize = 4_394;
-    const BODY_END: usize = 4_458;
+    assert_engine_wood_tail(192_000.0, 4_458);
+}
 
-    let mut engine = BacteriaEngine::new(192_000.0);
+#[test]
+fn engine_output_retains_late_wood_tail_at_384khz() {
+    assert_engine_wood_tail(384_000.0, 8_916);
+}
+
+fn assert_engine_wood_tail(rate: f32, body_end: usize) {
+    let mut engine = BacteriaEngine::new(rate);
     engine.set_param("globalRouting", 0.0);
     engine.set_param("band0_convolutionEnabled", 1.0);
     engine.set_param("band0_convolutionIr", 1.0);
     engine.set_param("band0_convolutionMix", 1.0);
     assert_eq!(engine.latency_samples(), 0);
 
-    let mut left = vec![0.0_f32; FRAME_COUNT];
-    let mut right = vec![0.0_f32; FRAME_COUNT];
+    let mut left = vec![0.0_f32; body_end + 1];
+    let mut right = vec![0.0_f32; body_end + 1];
     left[0] = 1.0;
     right[0] = 1.0;
 
@@ -267,19 +272,19 @@ fn engine_output_retains_late_wood_tail_at_192khz() {
 
     assert!(
         left.iter().chain(&right).all(|sample| sample.is_finite()),
-        "the engine rendered a non-finite sample at 192 kHz"
+        "the engine rendered a non-finite sample at {rate} Hz"
     );
     assert_eq!(left, right, "identical stereo input rendered unevenly");
-    let late_tail_energy: f32 = left[LATE_TAIL_START..BODY_END]
+    let late_tail_energy: f32 = left[body_end - 64..body_end]
         .iter()
         .map(|sample| sample.abs())
         .sum();
     assert!(
         late_tail_energy > 0.0,
-        "the engine output lost wood's late 192 kHz tail"
+        "the engine output lost wood's late {rate} Hz tail"
     );
     assert_eq!(
-        left[BODY_END], 0.0,
+        left[body_end], 0.0,
         "the engine output continued after the wood body ended"
     );
 }
