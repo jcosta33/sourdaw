@@ -1,0 +1,16 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  h_beb54bf43b47b7 342-398,951-1028
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 25,584-730
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "480983f81c1dad23da2483000ea1b59373dcbdfe",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
