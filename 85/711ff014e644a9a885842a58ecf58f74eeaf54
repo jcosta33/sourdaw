@@ -1,0 +1,91 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_3168504f6ce387::t_99fecea2f43d80 4,6-11,22-69,523-532,534-549,551-553,556-561,563-574,576-580,583-590,599-604,616
+  s_3168504f6ce387::t_c55110e0ae880d 13-21,157-166,168-172,174-177,344-374,554,575,581-582,610-611,613-615
+  s_3168504f6ce387::t_4ec4a4e4607b8b 226-227,276-279,317-318
+  s_3168504f6ce387::t_83813a675b7d3c 550
+  s_3168504f6ce387::t_21113b29caf5e2 3,94-104,151-156,179-180,280-288,290-316,379
+  s_3168504f6ce387::t_c037bdbbc97387 375-378
+  s_3168504f6ce387::t_e322de3853130f 380-382
+  s_3168504f6ce387::t_eafe1e4d972497 555
+  s_3168504f6ce387::t_e5b66bf81205c5 605
+  s_3168504f6ce387::t_f27c6a7603d72c 617-619
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_3168504f6ce387::t_43900ee3a3f1c6 10,26-28,46-48,170-172,263-265
+  s_3168504f6ce387::t_2235027fe862b6 312
+src/modules/WorkspaceShell/presentations/views/AgentWorkspace.tsx
+  s_3168504f6ce387::t_66f1f4a2b57aca 5,12
+  s_3168504f6ce387::t_5906017875631e 30-37,113-114
+src/modules/AiRuntime/useCases/getMeasuredPreviewAuditionView.ts
+  s_3168504f6ce387::t_4b557c265ecc34 26,28-31
+src/modules/AudioEngine/useCases/__tests__/audition.spec.ts
+  s_3168504f6ce387::t_43900ee3a3f1c6 11,217-219
+  s_3168504f6ce387::t_2235027fe862b6 130-133
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_3168504f6ce387::t_abed792b08e435 33,53,78-82,344-366,368
+  s_3168504f6ce387::t_719623dd018b0d 367
+  s_3168504f6ce387::t_0cffdf4b542184 369-371
+src/modules/AiRuntime/presentations/hooks/__tests__/useClipAudition.spec.ts
+  s_3168504f6ce387::t_abed792b08e435 7,12-24
+src/modules/AiRuntime/useCases/stopMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_4b557c265ecc34 13-14
+src/modules/AudioEngine/useCases/playAudioBufferPreview.ts
+  s_3168504f6ce387::t_4b557c265ecc34 25
+  s_3168504f6ce387::t_c3450bab7ab369 32
+  s_3168504f6ce387::t_1e90fe470607df 33-34
+src/modules/AiRuntime/useCases/__tests__/measuredPreviewAudition.spec.ts
+  s_3168504f6ce387::t_99fecea2f43d80 185
+  s_3168504f6ce387::t_f774b18214e546 3-13,15-56,84,107-115,117-119,141-159,161-173,187,191,193,202,208,210-211,213-218,256,258
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_3168504f6ce387::t_4b557c265ecc34 124-127,129
+src/modules/Transport/useCases/transportControls/toggleRecording.ts
+  s_3168504f6ce387::t_4b557c265ecc34 5
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_3168504f6ce387::t_5906017875631e 376-379,389
+  s_3168504f6ce387::t_635a113d5a9d2a 387
+  s_3168504f6ce387::t_66f1f4a2b57aca 1,90-91,94,416-418,491-492,499,524
+src/modules/AudioEngine/useCases/playExclusiveAudioBufferPreview.ts
+  s_3168504f6ce387::t_c3450bab7ab369 38-40,48,50,87-89,100-102,108-110,133
+  s_3168504f6ce387::t_ea33ecca0e4c3b 134-135
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_43900ee3a3f1c6 15,55,58,61,63,603,605,609-611,622-624,667-669,738-740
+  s_3168504f6ce387::t_2235027fe862b6 634-647,650-663,676-690,694-713,717-730
+src/modules/ContentBrowser/presentations/hooks/__tests__/usePreviewAudio.spec.tsx
+  s_3168504f6ce387::t_f774b18214e546 72-77,79,300
+  s_3168504f6ce387::t_df48f30db1a4cb 4-6,8,78,80,86,97,100-101,109-110,120-121,133-134,143-144,155-156,170,205,236,293,313-314
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_3168504f6ce387::t_abed792b08e435 12,65-75
+src/modules/Transport/useCases/transportControls/startPlayback.ts
+  s_3168504f6ce387::t_4b557c265ecc34 2
+src/modules/AudioEngine/useCases/livePlayback/reconcileNativeAuditionMonitoring.ts
+  s_3168504f6ce387::t_43900ee3a3f1c6 15,60,67-72,74,102-104,107-110,112,115-117,123,125,134,136,139,141,150-152,158,160-161,163-166,176-178,203,205
+src/modules/AiRuntime/useCases/resolveMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_c3450bab7ab369 49,51,78-80,82,84,134,136,138,140,147,149,158,160,162-164,174,176,204,208,221-223,237,239,243,268,270,295,297,322,325
+  s_3168504f6ce387::t_ed94c20bb028de 321
+  s_3168504f6ce387::t_26f7c8e8eadeae 323
+  s_3168504f6ce387::t_df4e047b0b1803 326-327
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_3168504f6ce387::t_4b557c265ecc34 190-193,200
+src/modules/WorkspaceShell/presentations/__tests__/preCommitAudition.spec.tsx
+  s_3168504f6ce387::t_abed792b08e435 1,6-11,51,53-60,64,71,78,82-84
+  s_3168504f6ce387::t_361fee129df243 85-86
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspaceReference.spec.tsx
+  s_3168504f6ce387::t_abed792b08e435 25
+src/modules/AiRuntime/useCases/startMeasuredPreviewAudition.ts
+  s_3168504f6ce387::t_5906017875631e 2,98-100,109-111
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85711ff014e644a9a885842a58ecf58f74eeaf54",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
