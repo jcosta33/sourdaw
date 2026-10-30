@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
+import { createMockAudioContext, createMockAudioNode } from '#/helpers/__tests__/audioContext.mock';
 
 /**
  * A Web MIDI input the take's live route listens on. Stubbed before the MIDI
@@ -187,7 +187,10 @@ describe('a recorded controller-only take, rendered by the offline export schedu
     }
 
     /** What the Grand Boule instrument receives from an export of the whole project, in arrival order. */
-    async function exportArrivals(onBend?: (sampleFrame: number, bendSemitones: number) => void): Promise<string[]> {
+    async function exportArrivals(
+        onBend?: (sampleFrame: number, bendSemitones: number) => void,
+        onNote?: (sampleFrame: number | undefined, pitch: number) => void
+    ): Promise<string[]> {
         const arrivals: string[] = [];
         const strategy: DeviceNodeEntry['strategy'] = {
             node: { inputNode: {} as AudioNode, outputNode: {} as AudioNode, nodes: [] },
@@ -205,7 +208,10 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             node: strategy.node,
             strategy,
             instrumentControls: {
-                noteOn: ({ sampleFrame }) => arrivals.push(`noteOn @${sampleFrame}`),
+                noteOn: ({ sampleFrame, noteOrPad }) => {
+                    arrivals.push(`noteOn @${sampleFrame}`);
+                    onNote?.(sampleFrame, noteOrPad);
+                },
                 noteOff: ({ sampleFrame }) => arrivals.push(`noteOff @${sampleFrame}`),
             },
         };
@@ -377,6 +383,12 @@ describe('a recorded controller-only take, rendered by the offline export schedu
 
     it('renders captured selected-pass bends and a neutral carry after the source is split', async () => {
         const previousContext = audioEngine.context;
+        vi.stubGlobal(
+            'AudioWorkletNode',
+            vi.fn(function () {
+                return createMockAudioNode('audio-worklet');
+            })
+        );
         const inputClock = createMockAudioContext();
         const context = Object.assign({}, previousContext, inputClock, {
             baseLatency: 0,
@@ -440,7 +452,12 @@ describe('a recorded controller-only take, rendered by the offline export schedu
             }
             inputClock.currentTime = 6.25;
             playheadClockRef.hold = { generation: 123, beat: 6.5 };
-            await stopRecording(6.5);
+            const stopContextSeconds = context.currentTime;
+            expect(captureEventPositionAt({ audioTime: stopContextSeconds })).toEqual({ beat: 6.5, passIndex: 2 });
+            await stopRecording(6.5, {
+                contextSeconds: stopContextSeconds,
+                beatAtContextSeconds: (seconds) => 6.5 + (seconds - stopContextSeconds) * 2,
+            });
             transportStore.set({ ...transportStore.value!, isRecording: false, isPlaying: false });
             flushAutomergeStorageWrites();
             const recordedNotes = midiStore.value?.notesByClipId[clip.id];
@@ -496,29 +513,43 @@ describe('a recorded controller-only take, rendered by the offline export schedu
                     payload: { trackId: TRACK_ID, takeId: take.id, startBeat: 4, endBeat: 7 },
                 });
             };
-            const renderedBends = async (): Promise<{ sampleFrame: number; bendSemitones: number }[]> => {
+            const renderedPass = async () => {
                 const bends: { sampleFrame: number; bendSemitones: number }[] = [];
-                await exportArrivals((sampleFrame, bendSemitones) => bends.push({ sampleFrame, bendSemitones }));
-                return bends;
+                const notes: { sampleFrame: number | undefined; pitch: number }[] = [];
+                await exportArrivals(
+                    (sampleFrame, bendSemitones) => bends.push({ sampleFrame, bendSemitones }),
+                    (sampleFrame, pitch) => notes.push({ sampleFrame, pitch })
+                );
+                return { bends, notes };
             };
             await selectPass(0);
-            expect(await renderedBends()).toEqual([
-                { sampleFrame: 114_000, bendSemitones: -1 },
-                { sampleFrame: 138_000, bendSemitones: 0 },
-            ]);
+            expect(await renderedPass()).toEqual({
+                notes: [{ sampleFrame: 102_000, pitch: 60 }],
+                bends: [
+                    { sampleFrame: 114_000, bendSemitones: -1 },
+                    { sampleFrame: 138_000, bendSemitones: 0 },
+                ],
+            });
             await selectPass(1);
-            expect(await renderedBends()).toEqual([
-                { sampleFrame: 102_000, bendSemitones: 0 },
-                { sampleFrame: 114_000, bendSemitones: (8191 / 8192) * 2 },
-                { sampleFrame: 138_000, bendSemitones: 0 },
-            ]);
+            expect(await renderedPass()).toEqual({
+                notes: [{ sampleFrame: 102_000, pitch: 62 }],
+                bends: [
+                    { sampleFrame: 102_000, bendSemitones: 0 },
+                    { sampleFrame: 114_000, bendSemitones: (8191 / 8192) * 2 },
+                    { sampleFrame: 138_000, bendSemitones: 0 },
+                ],
+            });
             await selectPass(2);
-            expect(await renderedBends()).toEqual([{ sampleFrame: 102_000, bendSemitones: 0 }]);
+            expect(await renderedPass()).toEqual({
+                notes: [{ sampleFrame: 102_000, pitch: 64 }],
+                bends: [{ sampleFrame: 102_000, bendSemitones: 0 }],
+            });
         } finally {
             try {
                 audioEngine.removeTrackStrip(TRACK_ID);
             } finally {
                 audioEngine.context = previousContext;
+                vi.unstubAllGlobals();
             }
         }
     });
