@@ -32,7 +32,11 @@ Every other path under `scripts/` (including `scripts/__tests__/`), `.agents/`, 
 keeps the broad non-browser profile, so its unit, type, Rust, and WASM checks still run. Generator and
 build scripts reach the browser only through their outputs, which land under `src/` or `public/` and
 select browser coverage there; a harness helper the browser imports from `scripts/` is proved by the
-nightly full train. Configuration, dependency, workflow, and product paths keep their own routes.
+nightly full train. Vitest-collected spec files under `src/` likewise select no browser suite and
+keep the broad non-browser profile: the production dependency graph excludes them and no browser
+harness loads them. They are not product paths, so a feature presentation edited with its colocated
+spec can still narrow. Non-spec files under `__tests__/` stay on the product route, because a browser
+harness page may load them. Configuration, dependency, workflow, and product paths keep their own routes.
 The planner retains the broad validation profile for product changes, CodeQL selection, anchored
 literal filenames at the runner boundary, and the required Gate's selected-job checks. A failed
 graph or missing dependency installation must never produce an empty or silently narrowed matrix.

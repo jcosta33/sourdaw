@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { assertCollectedBrowserInventory } from './e2eCollectorInventory.ts';
 import { partitionByDuration, readSpecDurations, type SpecDurations } from './e2eShardPartition.ts';
 import { readCheckoutDiff } from './prValidationScopeCheckout.ts';
-import { isPlaywrightCollected } from './vitestCollectionPatterns.ts';
+import { isPlaywrightCollected, isVitestCollected } from './vitestCollectionPatterns.ts';
 
 import type { AffectedSelection } from './e2eAffectedGraph.ts';
 
@@ -121,6 +121,15 @@ function isRepositoryTooling(path: string): boolean {
         /^release\/[^/]+\.json$/.test(path) ||
         (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
     );
+}
+
+/**
+ * Vitest specs under src/ never reach the browser: the production dependency graph excludes them and
+ * Playwright ignores them. Non-spec files under `__tests__/` are not matched, because a browser
+ * harness page may load them.
+ */
+function isProductUnitSpec(path: string): boolean {
+    return path.startsWith('src/') && isVitestCollected(path);
 }
 
 function needsCodeql(path: string): boolean {
@@ -379,6 +388,11 @@ export function selectValidationPlan(
             });
             continue;
         }
+        if (isProductUnitSpec(path)) {
+            nonBrowser = true;
+            reasons.push({ path, reason: 'unit test source; broad non-browser validation without browser execution' });
+            continue;
+        }
         browser = true;
         const selection = browserPathSelection(path, available, affected);
         for (const spec of selection.specs) {
@@ -434,7 +448,7 @@ function listSpecs(root: string): string[] {
     return specs;
 }
 
-/** Paths that need browser coverage beyond documentation, repository tooling, and collected specs. */
+/** Paths that need browser coverage beyond documentation, repository tooling, unit specs, and collected specs. */
 export function productPathsOf(
     paths: readonly string[],
     specs: readonly string[],
@@ -445,6 +459,7 @@ export function productPathsOf(
             !isDocumentation(path) &&
             toolingReason(path, packageScriptOnly) === null &&
             !isRepositoryTooling(path) &&
+            !isProductUnitSpec(path) &&
             !(isSpec(path) && specs.includes(path))
     );
 }
