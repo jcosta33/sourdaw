@@ -1,0 +1,30 @@
+tests/e2e/firstPaintWarmup.ts
+  s_57fdb7ae7b3ba4::t_e76620e74e5ba1 9-14,104-129
+  s_57fdb7ae7b3ba4::t_9f4594e37fe974 88,130-132,135-147
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_57fdb7ae7b3ba4::t_f8c1c0a79d5cce 351-357,361-383,386-399,464-480,482
+  s_57fdb7ae7b3ba4::t_31c0f8e3644d8d 228,252
+  s_57fdb7ae7b3ba4::t_280888494301b2 358-360,384-385
+  s_57fdb7ae7b3ba4::t_b6e0c9662ba845 481
+  s_57fdb7ae7b3ba4::t_7e63e2fcf945f5 483
+  s_57fdb7ae7b3ba4::t_d72158e654fbc4 206
+  s_57fdb7ae7b3ba4::t_588f974f5b5cd3 400-463
+tests/e2e/firstPaintDiagnostics.ts
+  s_57fdb7ae7b3ba4::t_cdca4b3587ac0b 113-149,173,175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64a83698d51f35831fdb4d2433b817b1da21969f",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
