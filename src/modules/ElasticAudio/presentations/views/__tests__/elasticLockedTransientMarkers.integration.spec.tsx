@@ -769,7 +769,9 @@ describe('locked transient markers through the real Elastic editor', () => {
                 peerLeft?: { retained: string };
                 peerRight?: { retained: string };
             }>('root');
-            if (!base) throw new Error('Expected real native root');
+            if (!base) {
+                throw new Error('Expected real native root');
+            }
             const actor = getActorId(base);
             const ownHeads = getHeads(base);
             const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (draft) => {
@@ -799,7 +801,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             await frames.complete(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } }));
             expect(materialization).toHaveBeenCalledTimes(1);
             const actual = getCrdtDoc('root');
-            if (!actual) throw new Error('Expected detected native root');
+            if (!actual) {
+                throw new Error('Expected detected native root');
+            }
             const additions = getChangesMetaSince(actual, previousHeads);
             expect(additions).toHaveLength(1);
             expect(additions[0]?.actor).toBe(actor);
@@ -883,7 +887,9 @@ describe('locked transient markers through the real Elastic editor', () => {
         supplyBuffer(burstSamples());
         const frames = holdAnimationFrames();
         const complete = materialization.getMockImplementation();
-        if (!complete) throw new Error('Expected real native codec transport fixture');
+        if (!complete) {
+            throw new Error('Expected real native codec transport fixture');
+        }
         const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
         const result = Promise.withResolvers<MaterializationResult>();
         materialization.mockImplementationOnce((request, signal) => {
@@ -909,7 +915,9 @@ describe('locked transient markers through the real Elastic editor', () => {
         result.resolve(await complete(request.request, request.signal));
         await frames.complete(execution);
         const after = structuredClone(rawWarpState());
-        for (const marker of latest.markers) expect(after.markers).toContainEqual(marker);
+        for (const marker of latest.markers) {
+            expect(after.markers).toContainEqual(marker);
+        }
         expect(undoHistoryStore.value?.past).toHaveLength(priorHistoryLength + 1);
         await undo();
         expect(rawWarpState()).toEqual(latest);
@@ -923,7 +931,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             supplyBuffer(burstSamples());
             const frames = holdAnimationFrames();
             const complete = materialization.getMockImplementation();
-            if (!complete) throw new Error('Expected native codec fixture');
+            if (!complete) {
+                throw new Error('Expected native codec fixture');
+            }
             const entered = Promise.withResolvers<{ request: MaterializationRequest; signal: AbortSignal }>();
             const result = Promise.withResolvers<MaterializationResult>();
             materialization.mockImplementationOnce((request, signal) => {
