@@ -2174,6 +2174,28 @@ confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing th
 dependency-frontier comparison with the old singleton-versus-merged comparison must make
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
 
+### 2026-10-30 — meter properties did not observe the ruler consumer (#5247)
+
+The retained #5440 property and forward-Command checks establish carried map/clip
+semantics; their historical carry-removal red does not establish a mounted reader or
+its subscription. The top ruler still used a flat numerator grid, and the new mounted
+original-case red confirmed the committed raw/projected carry before failing because
+no stopped repaint occurred. Its Undo/Redo assertions were not reached in that red run.
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; no
+introducing PR association, historical prompt or model tier is verified. The original
+missing-carry introducer remains unestablished. Do not attribute #5440's corrected
+pre-merge intermediate to a main escape.
+
+Mount the required Beat ruler surface unconditionally with a valid canvas platform
+fixture. Observe the real painter's gradient background `fillRect` boundary, emitted
+labels and stroked bar lines. Save a draw cursor before each actual Command or map write
+and require a new drawing after it; canvas presence, mocked query results, counters or
+an older matching frame prove less. Keep Command, CRDT projection, owner validators and
+Undo/Redo real. Independently pass an empty map at the real query call and replace only
+the map hook with an imperative read. The mapped geometry cases and stopped fresh-paint
+cases respectively must fail. These ruler probes are prescribed and have not yet run;
+they must not inherit the older carry mutation's credit.
+
 ### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
 
 An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
