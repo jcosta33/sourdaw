@@ -11,7 +11,10 @@ import {
     merge,
     getChanges,
     getHeads,
+    getMissingDeps,
     getObjectId,
+    hasHeads,
+    init,
     load,
     loadIncremental,
     save,
@@ -99,6 +102,20 @@ function seed() {
     repository.insertDoc('root', doc);
     return doc;
 }
+function multiheadFixture() {
+    const base = from<Document>({ slot: { count: 0 } }, { actor });
+    const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
+        doc.other = true;
+    });
+    const right = change(clone(base, { actor: 'cccccccccccccccc' }), (doc) => {
+        doc.slot.rows = [{ id: 'retained', value: 0.9 }];
+    });
+    const merged = merge(merge(clone(base, { actor }), left), right);
+    const rightHeads = getHeads(right);
+    free(base);
+    free(right);
+    return { merged, left, rightHeads };
+}
 function plan(original: Doc<Document>, unchanged = false) {
     const mutation: CanonicalStorageSlotMutation = {
         kind: 'canonical-json-slot-v1',
@@ -144,6 +161,126 @@ afterEach(() => {
 });
 
 describe('repository canonical Worker candidate adoption', () => {
+    it('matches native applied-history membership for complete, partial and absent multihead frontiers', () => {
+        const { merged, left, rightHeads } = multiheadFixture();
+        const loaded = load<Document>(save(merged), { actor });
+        const partial = load<Document>(save(left), { actor });
+        const unrelated = from<Document>({ slot: { count: 99 } }, { actor: 'dddddddddddddddd' });
+        try {
+            const heads = getHeads(merged);
+            expect(heads).toHaveLength(2);
+            expect(getMissingDeps(loaded, [])).toEqual([]);
+            expect(getMissingDeps(partial, [])).toEqual([]);
+            const cases = [
+                { doc: loaded, frontier: heads, missing: [] },
+                { doc: loaded, frontier: [...heads, ...heads], missing: [] },
+                { doc: loaded, frontier: [], missing: [] },
+                { doc: partial, frontier: heads, missing: rightHeads },
+                { doc: partial, frontier: rightHeads, missing: rightHeads },
+                { doc: loaded, frontier: getHeads(unrelated), missing: getHeads(unrelated) },
+            ];
+            for (const { doc, frontier, missing } of cases) {
+                expect(getMissingDeps(doc, frontier)).toEqual(missing);
+                expect(hasHeads(doc, frontier)).toBe(missing.length === 0);
+            }
+        } finally {
+            free(unrelated);
+            free(partial);
+            free(loaded);
+            free(left);
+            free(merged);
+        }
+    });
+
+    it.each([true, false])('accepts a complete multihead frontier with a genuine no-op: %s', async (unchanged) => {
+        const { merged, left } = multiheadFixture();
+        free(left);
+        repository.insertDoc('root', merged);
+        const previousHeads = getHeads(merged);
+        const rowId = getObjectId(merged.slot.rows![0]);
+        const prepared = plan(merged, unchanged);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        publish(prepared.materialize());
+        const actual = repository.getDoc<Document>('root');
+        if (!actual) throw new Error('Expected accepted native candidate');
+        expect(getMissingDeps(actual, previousHeads)).toEqual([]);
+        expect(hasHeads(actual, previousHeads)).toBe(true);
+        expect(getChanges(merged, actual)).toHaveLength(unchanged ? 0 : 1);
+        expect(actual.slot.count).toBe(unchanged ? 0 : 1);
+        expect(getObjectId(actual.slot.rows![0])).toBe(rowId);
+    });
+
+    it.each(['partial', 'absent'] as const)(
+        'refuses a native %s multihead frontier and accepts a fresh valid candidate afterwards',
+        async (kind) => {
+            const { merged, left, rightHeads } = multiheadFixture();
+            repository.insertDoc('root', merged);
+            const observer = vi.fn();
+            repository.onChange(observer);
+            const unrelated = from<Document>({ slot: { count: 0 } }, { actor });
+            const returned = kind === 'partial' ? left : unrelated;
+            const bytes = Uint8Array.from(save(returned));
+            const checked = load<Document>(bytes, { actor });
+            try {
+                expect(getMissingDeps(checked, [])).toEqual([]);
+                expect(hasHeads(checked, getHeads(merged))).toBe(false);
+                expect(getMissingDeps(checked, getHeads(merged))).toEqual(
+                    kind === 'partial' ? rightHeads : [...getHeads(merged)].sort()
+                );
+                mocks.request.mockResolvedValueOnce({ bytes, heads: getHeads(checked) });
+            } finally {
+                free(checked);
+                free(unrelated);
+                free(left);
+            }
+            const prepared = plan(merged);
+            await prepared.requestMaterialization!(new AbortController().signal);
+            expect(prepared.materialize).toThrow('lost the native frontier');
+            prepared.discard();
+            expect(repository.getDoc('root')).toBe(merged);
+            expect(observer).not.toHaveBeenCalled();
+            const fresh = plan(merged);
+            await fresh.requestMaterialization!(new AbortController().signal);
+            publish(fresh.materialize());
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
+            expect(observer).toHaveBeenCalledOnce();
+        }
+    );
+
+    it('rejects a real queued unapplied head before checked adoption and remains usable', async () => {
+        const original = seed();
+        const first = change(clone(original, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
+            doc.other = true;
+        });
+        const second = change(first, (doc) => {
+            doc.slot.count = 2;
+        });
+        const [queued] = applyChanges(init<Document>({ actor }), getChanges(original, second).slice(1));
+        try {
+            const queuedHeads = getHeads(second);
+            expect(getHeads(queued)).toEqual([]);
+            expect(hasHeads(queued, queuedHeads)).toBe(false);
+            expect(getMissingDeps(queued, queuedHeads)).toEqual(getHeads(first));
+            const bytes = Uint8Array.from(save(queued));
+            expect(() => load<Document>(bytes, { actor })).toThrow();
+            mocks.request.mockResolvedValueOnce({ bytes, heads: queuedHeads });
+            const prepared = plan(original);
+            await prepared.requestMaterialization!(new AbortController().signal);
+            vi.mocked(native.load).mockClear();
+            expect(prepared.materialize).toThrow('invalid document length');
+            expect(native.load).not.toHaveBeenCalled();
+            prepared.discard();
+            expect(repository.getDoc('root')).toBe(original);
+            const fresh = plan(original);
+            await fresh.requestMaterialization!(new AbortController().signal);
+            publish(fresh.materialize());
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
+        } finally {
+            free(queued);
+            free(second);
+        }
+    });
+
     it('persists an unsaved prior edit and accepted document from the older IDB baseline with retained row identities', async () => {
         const original = from<Document>(
             {
