@@ -52,10 +52,6 @@ const REVIEW_TOOLING = new Set([
     'reviewRepair',
     'reviewShadowStatus',
     'savedProjectStatePaths',
-    'semanticReview',
-    'semanticReviewContext',
-    'semanticReviewEvaluation',
-    'semanticReviewMeasurement',
     'reviewDiffSummary',
     'reviewCommentDiffPreflight',
     'reviewBundleLocator',
@@ -77,7 +73,6 @@ const REVIEW_TOOLING = new Set([
     'supersedePullRequestGh',
     'syncParentLane',
     'trustedGithubWriteBootstrap',
-    'typesafeRequest',
     'trackerIssueReconciliation',
 ]);
 
@@ -93,54 +88,6 @@ const RELEASE_TOOLING_METADATA = new Set([
     'release/open-source-inventory.json',
     'release/dependency-license-proofs.json',
 ]);
-
-const SEMANTIC_REVIEW_TOOLING = new Set([
-    '__tests__/admissionScheduling.spec.ts',
-    '__tests__/candidateFindings.spec.ts',
-    '__tests__/changeFacts.spec.ts',
-    '__tests__/digestProbes.ts',
-    '__tests__/egressVendorShapeExtraction.spec.ts',
-    '__tests__/multiPassTransport.spec.ts',
-    '__tests__/semanticReview.spec.ts',
-    'admissionBytes.ts',
-    'candidateFindings.ts',
-    'changeFacts.ts',
-    'contractCarrying.ts',
-    'contracts.ts',
-    'egressVendorShapeExtraction.ts',
-    'egressVendorShapes.ts',
-    'egressVendorToml.ts',
-    'evaluation/__tests__/semanticEvaluation.spec.ts',
-    'evaluation/corpus.ts',
-    'evaluation/runEvaluation.ts',
-    'evaluation/semanticEvaluationCorpus.json',
-    'evidence.ts',
-    'evidenceOrdering.ts',
-    'fit.ts',
-    'gitSource.ts',
-    'interpret.ts',
-    'passes.ts',
-    'pathOrder.ts',
-    'planPublication.ts',
-    'provider.ts',
-    'report.ts',
-    'reportAssessments.ts',
-    'reporting.ts',
-    'requestPayload.ts',
-    'requiredEvidence.ts',
-    'replay.ts',
-    'rules.ts',
-    'run.ts',
-    'scopeAccounting.ts',
-    'sensitive.ts',
-    'slicing.ts',
-    'unitAssessment.ts',
-    'unitPriority.ts',
-    'verify.ts',
-    'withheldReasons.ts',
-]);
-
-const SEMANTIC_MEASUREMENT_TOOLING = new Set(['artifacts.ts', 'contracts.ts', 'gaps.ts', 'record.ts']);
 
 const OPERATIONAL_PACKAGE_SCRIPTS = new Map([['retarget:plan', 'node scripts/retargetCapabilitySnapshot.ts']]);
 
@@ -169,6 +116,8 @@ function isRepositoryTooling(path: string): boolean {
     return (
         path.startsWith('scripts/') ||
         path.startsWith('.agents/') ||
+        path === '.gitleaksignore' ||
+        path === '.gitleaks.toml' ||
         /^release\/[^/]+\.json$/.test(path) ||
         (path.endsWith('.md') && !/^(?:src|public|tests)\//.test(path))
     );
@@ -188,12 +137,6 @@ function isReviewTooling(path: string): boolean {
     }
     if (RELEASE_TOOLING_METADATA.has(path)) {
         return true;
-    }
-    if (path.startsWith('scripts/semanticReview/')) {
-        return SEMANTIC_REVIEW_TOOLING.has(path.slice('scripts/semanticReview/'.length));
-    }
-    if (path.startsWith('scripts/semanticReviewMeasurement/')) {
-        return SEMANTIC_MEASUREMENT_TOOLING.has(path.slice('scripts/semanticReviewMeasurement/'.length));
     }
     const source = /^scripts\/([A-Za-z]+)\.ts$/.exec(path)?.[1];
     if (source !== undefined) {

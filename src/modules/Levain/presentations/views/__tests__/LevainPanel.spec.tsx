@@ -376,6 +376,18 @@ describe('LevainPanel', () => {
     });
 
     describe('Space macro availability follows the loaded bank', () => {
+        function dragSpace(knob: HTMLElement): void {
+            for (const [type, clientY] of [
+                ['pointerdown', 100],
+                ['pointermove', 80],
+                ['pointerup', 80],
+            ] as const) {
+                const event = new MouseEvent(type, { bubbles: true, button: 0, clientY });
+                Object.defineProperty(event, 'pointerId', { value: 1 });
+                fireEvent(knob, event);
+            }
+        }
+
         it.each([
             ['unloaded positions', undefined],
             ['no committed bank', null],
@@ -396,10 +408,11 @@ describe('LevainPanel', () => {
             expect(screen.getByText('Requires a Room mic')).toBeInTheDocument();
 
             fireEvent.keyDown(spaceKnob, { key: 'ArrowUp' });
-            fireEvent.pointerDown(spaceKnob, { button: 0, pointerId: 1, clientY: 100 });
-            fireEvent.pointerMove(window, { pointerId: 1, clientY: 20 });
-            fireEvent.pointerUp(window, { pointerId: 1 });
             expect(setMacroWithAudio).not.toHaveBeenCalled();
+            const capture = vi.spyOn(spaceKnob, 'setPointerCapture');
+            dragSpace(spaceKnob);
+            expect(setMacroWithAudio).not.toHaveBeenCalled();
+            expect(capture).not.toHaveBeenCalled();
         });
 
         it('enables Space and sends its macro change when Room loads in any position', () => {
@@ -414,7 +427,12 @@ describe('LevainPanel', () => {
             expect(spaceKnob).not.toHaveAttribute('aria-disabled', 'true');
             expect(screen.queryByText('Requires a Room mic')).not.toBeInTheDocument();
             fireEvent.keyDown(spaceKnob, { key: 'ArrowUp' });
-            expect(setMacroWithAudio).toHaveBeenCalledWith('test-device', 4, expect.any(Number));
+            expect(setMacroWithAudio).toHaveBeenCalledWith('test-device', 4, 0.51);
+            vi.mocked(setMacroWithAudio).mockClear();
+            const capture = vi.spyOn(spaceKnob, 'setPointerCapture');
+            dragSpace(spaceKnob);
+            expect(capture).toHaveBeenCalledWith(1);
+            expect(setMacroWithAudio).toHaveBeenCalledWith('test-device', 4, 0.63);
         });
     });
 

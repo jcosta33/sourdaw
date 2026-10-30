@@ -50,6 +50,7 @@ const NATIVE_MOD_ASSIGNMENTS: Record<NativeDspDeviceType, NativeModAssignmentsFo
     'dutch-oven': null,
     'native-scoring': null,
     knead: null,
+    'transient-shaper': null,
 };
 
 /**

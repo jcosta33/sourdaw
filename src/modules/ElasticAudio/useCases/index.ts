@@ -10,6 +10,7 @@ export { openElasticEditor } from './elasticAudio/openElasticEditor';
 export { closeElasticEditor } from './elasticAudio/closeElasticEditor';
 export { setElasticTool } from './elasticAudio/setElasticTool';
 export { setElasticSensitivity } from './elasticAudio/setElasticSensitivity';
+export { setElasticSensitivityRootIdentityCapture } from './elasticAudio/elasticSensitivityDependencies';
 export { addManualMarker } from './elasticAudio/addManualMarker';
 export { removeMarker } from './elasticAudio/removeMarker';
 export { toggleMarkerLock } from './elasticAudio/toggleMarkerLock';

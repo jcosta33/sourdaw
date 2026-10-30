@@ -22,6 +22,7 @@ import {
 import { readRegisteredLaneStack, writeLaneStack, type LaneStack } from '../stackedLanes.ts';
 import {
     parseSupersessionParentBinding,
+    inspectNativeParentCompletion,
     parseSupersedePullRequestArgs,
     readFindingLineageFile,
     runSupersedePullRequestCli,
@@ -5764,5 +5765,108 @@ describe('pull-request supersession', () => {
             expect(calls.filter((call) => call.startsWith('comment:'))).toHaveLength(2);
             expect(calls.filter((call) => call.startsWith('delete:'))).toEqual([]);
         });
+    });
+});
+
+describe('native read-only main parent completion inspection', () => {
+    const selection = { parentNumber, head: parentHead, replacementNumber, sourceCommit: '9'.repeat(40) };
+    it('uses the canonical receipt and total lineage with final core witnesses and no mutation or lock', () => {
+        const { port, calls } = fakePort();
+        const witnesses: number[] = [];
+        const noMutation = () => {
+            throw new Error('mutation forbidden');
+        };
+        const lock = vi.spyOn(mutationOwnership, 'withPullRequestMutationLock').mockImplementation(noMutation);
+        try {
+            const raw = inspectNativeParentCompletion(selection, {
+                inspect: port.inspect,
+                inspectReviewThreads: port.inspectReviewThreads,
+                assertCurrentPullRequest: (number) => {
+                    witnesses.push(number);
+                },
+            });
+            const proof = JSON.parse(raw);
+            expect(raw).toBe(canonicalJson(proof));
+            expect(proof).toMatchObject({
+                version: 1,
+                sourceCommit: selection.sourceCommit,
+                parent: { number: parentNumber, head: parentHead, state: 'CLOSED' },
+                replacement: { number: replacementNumber, mergeCommit: childMerge },
+                receipt: { body: receiptBody, authorNodeId: AUTHOR_BOT_NODE_ID },
+                lineage: { body: parentLineageBody },
+                findingIds: [],
+            });
+            expect(witnesses).toEqual([parentNumber, replacementNumber]);
+            expect(calls.filter((call) => /^(comment|close|delete):/.test(call))).toEqual([]);
+            expect(lock).not.toHaveBeenCalled();
+        } finally {
+            lock.mockRestore();
+        }
+    });
+    it.each([
+        { parentStates: ['OPEN'] },
+        { parentMerged: true },
+        { parentHeadRepositories: ['other/repo'] },
+        { parentBases: ['release'] },
+        { replacementState: 'CLOSED' },
+        { replacementBases: ['release'] },
+        { parentComments: [validParentComments[0]] },
+        { parentComments: [...validParentComments, validParentComments[0]] },
+        {
+            parentComments: [
+                markerComment('foreign', '123', receiptBody, 'Bot', REVIEWER_BOT_NODE_ID),
+                validParentComments[1],
+            ],
+        },
+        { parentThreads: [{ threadId: 'new-root', rootCommentId: '3001' }] },
+        { parentHeads: [parentHead, movedHead] },
+        { parentThreadsByRead: [[], [{ threadId: 'new-root', rootCommentId: '3001' }]] },
+    ] satisfies Input[])('refuses invalid or moving completion evidence %j', (input) => {
+        const { port, calls } = fakePort(input);
+        expect(() => inspectNativeParentCompletion(selection, port)).toThrow();
+        expect(calls.filter((call) => /^(comment|close|delete):/.test(call))).toEqual([]);
+    });
+    it('fails when either final independent core witness moves', () => {
+        for (const moved of [parentNumber, replacementNumber]) {
+            const { port } = fakePort();
+            expect(() =>
+                inspectNativeParentCompletion(selection, {
+                    ...port,
+                    assertCurrentPullRequest: (number) => {
+                        if (number === moved) {
+                            throw new Error('final core moved');
+                        }
+                    },
+                })
+            ).toThrow('final core moved');
+        }
+    });
+    it('bounds the wire and never treats unknown inspection argv as closure', () => {
+        const { port } = fakePort({
+            parentComments: [markerComment('x'.repeat(32768), '123', receiptBody), validParentComments[1]],
+        });
+        expect(() => inspectNativeParentCompletion(selection, port)).toThrow('inspection bound');
+        const args = [
+            '--inspect-parent-completion',
+            '--parent-pr',
+            String(parentNumber),
+            '--expected-head',
+            parentHead,
+            '--replacement',
+            String(replacementNumber),
+        ];
+        expect(parseSupersedePullRequestArgs(args).inspection).toEqual({
+            parentNumber,
+            head: parentHead,
+            replacementNumber,
+        });
+        for (const wrong of [
+            [...args, '--lineage', '/private'],
+            [...args, '--help'],
+            args.slice(0, -1),
+            args.map((arg) => (arg === '--expected-head' ? '--head' : arg)),
+        ]) {
+            expect(() => parseSupersedePullRequestArgs(wrong)).toThrow('inspection arguments');
+        }
     });
 });

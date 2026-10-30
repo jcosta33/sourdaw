@@ -111,10 +111,11 @@ Every reviewer carries the baseline posture regardless of stance: establish what
 each existing check to fail and whether it observes what its name claims. A pass alone is not
 evidence. The reviewer names a mechanical probe: revert the behavioral hunk or apply one targeted
 mutation, then run the named spec; remaining green fails the round. The probe is a reviewer duty
-the orchestrator checks in the report, not a publication gate. Reviewers have no writable tree:
-they create a probe worktree and report a probe they cannot run as the probe-isolation rules in
-`.agents/skills/review-stances/README.md` prescribe, and the orchestrator validates or the author
-repairs in the change's existing lane.
+the orchestrator checks in the report, not a publication gate. Reviewers read the fixed commit and
+bundle by default and never create a worktree or clone. They may probe in the clean, committed author
+lane only through the exclusive handoff in [reviewer isolation](.agents/skills/review-stances/README.md#reviewer-isolation).
+If a probe cannot run, report its exact mutation, named check, and limitation for orchestrator or
+author execution; never report an unrun probe as passed.
 
 Conditional admission is a standing escape in UI specs (#4441, introduced by #1531): a case whose
 whole body sits inside `if (await locator.isVisible().catch(() => false))` reaches its end without
@@ -166,25 +167,6 @@ files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-writte
 ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
-
-`pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
-should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
-findings are collected and before `review.json` is written. Both are advisory and optional: their
-output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
-a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. `review:publish` imposes no duty on their output. Their
-sidecars live outside the review bundle, in gitignored `.agents/semantic-review/`, so a blind reviewer
-is never handed a proposed verdict. They never substitute for the reproduction and baseline-probe
-duties above, and no semantic result may approve, request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
-
-The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
-same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
-still gets it. Read it the same way: green means the assessment was delivered, never that the change is
-clean, and a red check means no assessment was delivered at all — a coverage gap, not a finding to
-weigh and not a blocker. A stacked lane whose base is another lane branch is not assessed: it would
-run that branch's revision of the command rather than the default branch's, which the command's own
-trusted-execution assertion refuses.
 
 A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
@@ -500,19 +482,13 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
   `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
 - `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is the cheap pre-review signal, and a new head has no `Gate` until it is approved again.
+  never required: it is a preliminary pre-review signal that skips broad unit, build, Rust and native jobs, and a new head has no `Gate` until it is approved again.
   Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
   does not cancel an admitted run still working on the old head, and any later label event on the pull request
   cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
-- `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
-  `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
-  reviewed head as Git objects and never checks out or executes it, and it mints the non-required
-  `Semantic review` check. Its whole trust boundary is pinned by
-  `scripts/semanticReviewWorkflowContract.ts`
-  ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
   native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
-  each push and in the admitted run. Nightly and `release:proof:assemble` also run release inventory;
+  in the admitted full run; preliminary push validation omits the broad unit, build, Rust and native jobs. Nightly and `release:proof:assemble` also run release inventory;
   the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run

@@ -402,4 +402,45 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Older kit sounds come mostly from soft transient rounding plus reduced high-frequency bandwidth, so modest drive is paired with a top-end roll rather than with obvious distortion. The negative output trim keeps the added harmonics from flattering the comparison through level alone.',
     },
+    {
+        id: 'drums-tight-transient',
+        descriptor: 'tight',
+        roles: ['drums'],
+        title: 'Shorter drum tails with the strike unchanged',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'transient-shaper',
+                parameters: [{ paramId: 'sustainGain', minimum: 0.5, maximum: 0.75 }],
+            },
+        ],
+        prerequisites: ['Distinct close-mic strikes and tails reach the fixed level-dependent detector.'],
+        contraindications: [
+            'Skip already-gated tails and stereo room or overhead material whose independent image changes are unwanted.',
+        ],
+        metrics: [
+            { metric: 'rms', direction: 'decrease' },
+            { metric: 'crestFactor', direction: 'increase' },
+        ],
+        source: 'Tail-classified samples are multiplied by 0.5 to 0.75 while Attack remains at unity. RMS falls and crest factor rises when the peak belongs to a transient; these are bounded gain consequences, not a source-independent optimum.',
+    },
+    {
+        id: 'drums-punchy-transient',
+        descriptor: 'punchy',
+        roles: ['drums'],
+        title: 'Stronger drum strikes with the tail unchanged',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'transient-shaper',
+                parameters: [{ paramId: 'attackGain', minimum: 1.25, maximum: 1.5 }],
+            },
+        ],
+        prerequisites: ['Unsquashed close-mic onsets and at least 3.52 dB headroom for the maximum boost.'],
+        contraindications: [
+            'Skip clipped or heavily limited drums and stereo room or overhead material whose independent image changes are unwanted.',
+        ],
+        metrics: [{ metric: 'crestFactor', direction: 'increase' }],
+        source: 'Transient-classified samples rise by 1.94 to 3.52 dB while Sustain remains at unity. Crest factor increases only when the source has useful detected onsets; no makeup gain or limiting is added.',
+    },
 ];

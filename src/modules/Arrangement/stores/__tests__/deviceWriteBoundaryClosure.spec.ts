@@ -1065,9 +1065,9 @@ const DEVICE_DATA_COUNTS = {
         'src/modules/Arrangement/useCases/preset/presetStorage/saveCurrentAsPreset.ts': 3,
         'src/modules/Arrangement/useCases/preset/presetStorage/saveUserPreset.ts': 2,
         'src/modules/Arrangement/useCases/saveTrackAsTemplate.ts': 1,
-        // Count provenance: measured 2 — type field plus a read-only Yeast-stripped
-        // projection for the runtime graph. No store write.
-        'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 2,
+        // Count provenance: measured 3 — type field, read-only Yeast-stripped
+        // project identity, and read-only synth/drum-filtered Web Audio projection.
+        'src/modules/Arrangement/useCases/runtimeGraphTopology.ts': 3,
         'src/modules/Project/stores/arrangementStore.ts': 3,
         'src/modules/Project/useCases/demoProjects/demoUtils/applyPreset.ts': 4,
         // Count provenance: measured 7 in code — the `parameterValues:` patch

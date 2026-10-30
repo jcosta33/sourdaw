@@ -30,6 +30,20 @@ alone does not authorize an older request to publish its result.
   loading guard and recheck request ownership before bookkeeping and after synchronous dirty
   subscribers, before publishing success. A mocked store cannot prove autosave admission.
 
+## Crumbs waveform publication outlived its accepted sample
+
+Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced the sampler's unfenced
+post-peaks continuation; no associated public PR is established. PR #5041 later guarded
+decode completion, leaving telemetry and peaks as separate stale-publication windows (#5780).
+Historical private prompts and reviewer tiers are unknown.
+
+Hold each await independently against the real session store. Complete B before releasing A,
+and separately leave B decoding: require B's exact metadata/vector and pending flag. Replace
+the accepted sample without starting another load. Check project/device lifetime and the
+actual accepted leaf after each await and synchronous subscriber, while ordinary edits and
+the accepted sample's own persistence round trip remain valid. Removing either post-await
+check must redden its corresponding case; a decode-only inverse-completion test cannot.
+
 ## Escape: a project-lifetime fence did not order Scala imports
 
 PR #5397 (`2dc50d1388dd27a72a1661a26a79571f28c3a3a9`) brought project-lifetime

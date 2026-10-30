@@ -1,6 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
+
 import { act, isValidElement } from 'react';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { onNotification as OnNotification } from '#/infra/dialogService/onNotification';
 import type { setVoiceToggleEventBus } from '#/modules/AiRuntime/useCases';
@@ -33,6 +37,7 @@ const mocks = vi.hoisted(() => {
 
     return {
         appImportPending: false,
+        appImport: vi.fn(),
         appImportRelease: null as ((value: { App: () => null }) => void) | null,
         appImportPromise: null as Promise<{ App: () => null }> | null,
         bootstrap: vi.fn(),
@@ -40,11 +45,13 @@ const mocks = vi.hoisted(() => {
         criticalPathImportPending: false,
         criticalPathImportPromise: null as Promise<Record<string, never>> | null,
         criticalPathImportRelease: null as (() => void) | null,
+        createRoot: vi.fn(),
         failIdentityTransition: vi.fn(),
         identity,
         mountBrowserDisplayScaleHost: vi.fn(),
         onNotification: null as null | typeof OnNotification,
         render: vi.fn(),
+        reportError: vi.fn(),
         resetBrowserDisplayScaleForChildStartup: vi.fn(),
         resetDisplayScaleForStartup: vi.fn(),
         resolveAppComposition: vi.fn(),
@@ -144,25 +151,29 @@ vi.mock('#/modules/Transport/useCases', () => ({
     syncTransportMapsToNativeSession: vi.fn(() => vi.fn()),
 }));
 
-vi.mock('../App', () => ({
-    __esModule: true,
-    then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
-        const appImport =
-            mocks.appImportPending && mocks.appImportPromise !== null
-                ? mocks.appImportPromise
-                : Promise.resolve({
-                      App: function App() {
-                          return null;
-                      },
-                  });
-        return appImport.then(onFulfilled, onRejected);
-    },
-}));
+vi.mock('../App', () => {
+    mocks.appImport();
+    return {
+        __esModule: true,
+        then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
+            const appImport =
+                mocks.appImportPending && mocks.appImportPromise !== null
+                    ? mocks.appImportPromise
+                    : Promise.resolve({
+                          App: function App() {
+                              return null;
+                          },
+                      });
+            return appImport.then(onFulfilled, onRejected);
+        },
+    };
+});
 
 vi.mock('react-dom/client', async (importOriginal) => {
     const actual = await importOriginal<typeof import('react-dom/client')>();
     const client = {
         createRoot: (container: Parameters<typeof actual.createRoot>[0]) => {
+            mocks.createRoot();
             const root = actual.createRoot(container);
             return {
                 render: (element: Parameters<typeof root.render>[0]) => {
@@ -270,7 +281,10 @@ describe('app main first paint', () => {
         mocks.onNotification = null;
         Reflect.deleteProperty(window, 'sourdaw');
         window.name = '';
-        document.body.innerHTML = '<div id="root"></div>';
+        document.documentElement.removeAttribute('data-sourdaw-entry-started');
+        const html = readFileSync(resolve(process.cwd(), 'index.html'), 'utf8');
+        document.body.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML;
+        vi.stubGlobal('reportError', mocks.reportError);
         mocks.resolveAppComposition.mockReturnValue('application');
         try {
             localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -287,9 +301,18 @@ describe('app main first paint', () => {
         mocks.sharedEventBus = eventBus;
     });
 
+    afterEach(() => {
+        vi.unstubAllGlobals();
+    });
+
     // Runs first so no prior main import leaves async renderApplication on a stale #root.
 
     it('exposes app-shell before css, react-dom, and first-paint imports resolve', async () => {
+        mocks.resolveAppComposition.mockImplementation(() => {
+            expect(document.documentElement.hasAttribute('data-sourdaw-entry-started')).toBe(true);
+            expect(document.getElementById('entry-startup')).not.toBeNull();
+            return 'application';
+        });
         mocks.criticalPathImportPending = true;
         mocks.criticalPathImportPromise = new Promise<Record<string, never>>((resolve) => {
             mocks.criticalPathImportRelease = () => resolve({});
@@ -302,6 +325,7 @@ describe('app main first paint', () => {
             expectAppShellMarkerInRoot();
         });
         expect(mocks.render).not.toHaveBeenCalled();
+        expect(document.getElementById('entry-startup-title')?.textContent).toBe('Starting Sourdaw');
 
         const release = mocks.criticalPathImportRelease;
         if (release === null) {
@@ -314,6 +338,58 @@ describe('app main first paint', () => {
         await mainImport;
         await rendered;
         expectFirstPaintRendered();
+        expect(document.getElementById('entry-startup')).toBeNull();
+    });
+
+    it('retains manual entry recovery when critical rendering imports reject without starting React or App', async () => {
+        const addedListeners = vi.spyOn(window, 'addEventListener');
+        runInNewContext(readFileSync(resolve(process.cwd(), 'public/entryLoadRecovery.js'), 'utf8'), {
+            window,
+            document,
+            navigator,
+            HTMLScriptElement,
+        });
+        const listeners = [...addedListeners.mock.calls];
+        addedListeners.mockRestore();
+        const failure = new TypeError('critical rendering dependency failed');
+        let rejectCritical: (reason: unknown) => void = () => undefined;
+        const criticalImport = new Promise<{ registerNotificationEventBus: () => void }>((_resolve, reject) => {
+            rejectCritical = reject;
+        });
+        vi.doMock('../registerNotificationEventBus', () => criticalImport);
+        try {
+            await import('../main');
+            await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
+            expectAppShellMarkerInRoot();
+            expect(document.getElementById('entry-startup-title')?.textContent).toBe('Starting Sourdaw');
+
+            rejectCritical(failure);
+            await vi.waitFor(() => expect(mocks.reportError).toHaveBeenCalledOnce());
+            const reported = mocks.reportError.mock.calls[0]?.[0];
+            if (!(reported instanceof Error)) {
+                throw new Error('Critical import failure was not reported');
+            }
+            expect(reported.cause).toBe(failure);
+
+            expect(document.getElementById('entry-startup-title')?.textContent).toBe('Sourdaw could not start');
+            expect(document.querySelector('#entry-startup [role="alert"]')).not.toBeNull();
+            expect(document.getElementById('entry-startup-reload')?.hasAttribute('hidden')).toBe(false);
+            expect(mocks.reportError).toHaveBeenCalledOnce();
+            expect(mocks.bootstrap).toHaveBeenCalledOnce();
+            expect(mocks.createRoot).not.toHaveBeenCalled();
+            expect(mocks.appImport).not.toHaveBeenCalled();
+            expect(mocks.render).not.toHaveBeenCalled();
+            expect(mocks.setWorkspaceEventBus).not.toHaveBeenCalled();
+            expect(mocks.setVoiceToggleEventBus).not.toHaveBeenCalled();
+            expect(mocks.setNotificationEventBus).not.toHaveBeenCalled();
+            expect(mocks.setWebMidiRuntimeEventBus).not.toHaveBeenCalled();
+            expect(mocks.setCommandEventBus).not.toHaveBeenCalled();
+        } finally {
+            vi.doUnmock('../registerNotificationEventBus');
+            for (const [type, listener, options] of listeners) {
+                window.removeEventListener(type, listener, options);
+            }
+        }
     });
 
     it('renders the child application while bootstrap is still loading', async () => {

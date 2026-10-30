@@ -87,6 +87,7 @@ async function executeUndo({ entry, runExecuteAppAction }: ExecuteUndoInput): Pr
     try {
         const inverseAction = normalizeLegacyLoopAnchorInverse(entry.inverseAction);
         const options: ExecuteAppActionOptions = {
+            undoEntryId: entry.id,
             skipUndo: true,
             skipMacroRecording: true,
         };

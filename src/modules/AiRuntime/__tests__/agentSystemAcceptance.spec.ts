@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
-import { Counter, toJS } from '@automerge/automerge';
+import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -15,8 +15,11 @@ import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrang
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
+import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     createCrdtDoc,
+    createCommandPreviewWorkspace,
+    captureProjectRevision,
     getCrdtDoc,
     getCrdtDocIds,
     mutateCrdtDoc,
@@ -24,8 +27,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
-    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
+import { projectStore } from '#/modules/Project/stores';
+import { parseSemanticProjectQueryInput } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
 import { type AppAction } from '#/utils/handlerContract';
@@ -44,6 +48,7 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
+import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
@@ -176,7 +181,8 @@ type CorpusProviderTurn =
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[] }
     | ProposeCommandsTurn
-    | { kind: 'decline'; args: Record<string, unknown> };
+    | { kind: 'decline'; args: Record<string, unknown> }
+    | { kind: 'query' | 'answer'; id: string; args: Record<string, unknown> };
 
 /**
  * A proposal of plain commands, the form whose card carries the grounding basis a terse refinement
@@ -208,6 +214,7 @@ type CorpusOracleInvariants = {
 };
 
 type CorpusOracle =
+    | AnswerOracle
     | {
           kind: 'proposal';
           actions: CorpusOracleAction[];
@@ -423,6 +430,15 @@ function toScriptedTurn(
         }
         case 'decline':
             return () => [declineCall(turn.args)];
+        case 'query':
+        case 'answer': {
+            const call = {
+                id: turn.id,
+                name: turn.kind === 'query' ? 'project.query' : 'answer.respond',
+                arguments: turn.args,
+            };
+            return () => [call];
+        }
         default: {
             const exhaustive: never = turn;
             throw new Error(`Corpus provider turn kind is not supported: ${JSON.stringify(exhaustive)}`);
@@ -466,6 +482,7 @@ const PROVIDER_FAILURE_REASON_PREFIX = 'Provider planning failed';
 /** Maps a corpus case's `class` to the `PlanningOutcome.kind` the frozen oracle contract requires it to declare. */
 const ORACLE_KIND_BY_CLASS: Record<AgentAcceptanceOutcomeClass, AgentAcceptanceOracleKind> = {
     'execute-exact': 'proposal',
+    'answer-exact': 'answer',
     'clarify-required': 'clarify',
     'abstain-unsupported': 'unsupported',
     'deny-policy': 'denied',
@@ -488,6 +505,7 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
+type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
 
 /** Materialized project values, independent of the route that wrote them. */
 function materializeProjectTruth(): ProjectTruth {
@@ -515,31 +533,65 @@ function captureProjectTruth(): ProjectTruth {
     return materializeProjectTruth();
 }
 
+function materializeInstalledRoot(document: ReturnType<typeof getCrdtDoc>): ProjectTruth {
+    if (document === undefined) {
+        return {};
+    }
+    const value: unknown = toJS(document);
+    if (!isRecord(value)) {
+        throw new TypeError('The acceptance active root has no object value.');
+    }
+    delete value.commandBatchIdempotency;
+    return { root: value };
+}
+
 /** Capture applied CRDT content without settling from inside a repository notification. */
 async function observeProjectChanges<T>(
     run: () => Promise<T>,
-    materialize: () => ProjectTruth = materializeProjectTruth
-): Promise<{ result: T; transitions: ProjectTruth[] }> {
+    materialize: () => ProjectTruth = materializeProjectTruth,
+    materializeRoot: (document: ReturnType<typeof getCrdtDoc>) => ProjectTruth = materializeInstalledRoot
+): Promise<{ result: T; transitions: ProjectTruth[]; observations: ProjectObservation[] }> {
     const transitions: ProjectTruth[] = [];
+    const observations: ProjectObservation[] = [];
     let failure: Error | undefined;
-    const unsubscribe = subscribeToCrdtChanges(() => {
+    const unsubscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges(() => {
         try {
-            transitions.push(materialize());
+            const truth = materialize();
+            transitions.push(truth);
+            observations.push({ kind: 'full', truth });
         } catch (error) {
             failure ??= error instanceof Error ? error : new Error('Project truth capture failed.', { cause: error });
         }
     });
+    let unsubscribeRoot: () => void;
+    try {
+        unsubscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations((installation) => {
+            if (installation.kind === 'reset') {
+                failure ??= new Error('Acceptance project reset during observation.');
+                return;
+            }
+            try {
+                observations.push({ kind: 'root', truth: materializeRoot(installation.document) });
+            } catch (error) {
+                failure ??= error instanceof Error ? error : new Error('Active root capture failed.', { cause: error });
+            }
+        });
+    } catch (error) {
+        unsubscribeChanges();
+        throw error;
+    }
     let result: T;
     try {
         result = await run();
         captureSettledRevision();
     } finally {
-        unsubscribe();
+        unsubscribeChanges();
+        unsubscribeRoot();
     }
     if (failure !== undefined) {
         throw failure;
     }
-    return { result, transitions };
+    return { result, transitions, observations };
 }
 
 /** Every applied state must match one oracle-authorized prefix. */
@@ -549,6 +601,30 @@ function transitionDifferences(transitions: readonly ProjectTruth[], allowed: re
     for (const transition of transitions) {
         const remaining = allowed.slice(earliest);
         const counts = remaining.map((state) => projectDifferences(state, transition));
+        const nearest = Math.min(...counts);
+        differences = Math.max(differences, nearest);
+        if (nearest === 0) {
+            earliest += counts.indexOf(0);
+        }
+    }
+    return differences;
+}
+
+function observedDifferences(
+    observed: { observations: readonly ProjectObservation[] },
+    allowed: readonly ProjectTruth[]
+): number {
+    const allowedRoots = allowed.map((state): ProjectTruth => {
+        if (state.root === undefined) {
+            return {};
+        }
+        return { root: state.root };
+    });
+    let earliest = 0;
+    let differences = 0;
+    for (const observation of observed.observations) {
+        const states = observation.kind === 'root' ? allowedRoots : allowed;
+        const counts = states.slice(earliest).map((state) => projectDifferences(state, observation.truth));
         const nearest = Math.min(...counts);
         differences = Math.max(differences, nearest);
         if (nearest === 0) {
@@ -791,13 +867,15 @@ async function runCorpusCase(
         await alongside?.();
         return { result, projectAfter: captureProjectTruth() };
     });
+    const unintendedMutations = Math.max(
+        barrel.count() - writesBefore,
+        projectDifferences(projectBefore, observed.result.projectAfter),
+        observedDifferences(observed, [projectBefore])
+    );
+    const result = observed.result.result;
     return {
-        result: observed.result.result,
-        unintendedMutations: Math.max(
-            barrel.count() - writesBefore,
-            projectDifferences(projectBefore, observed.result.projectAfter),
-            transitionDifferences(observed.transitions, [projectBefore])
-        ),
+        result: result.class === 'answer-exact' && unintendedMutations > 0 ? { ...result, exactMatch: false } : result,
+        unintendedMutations,
     };
 }
 
@@ -815,10 +893,11 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
             testCase.providerTurns.map((turn) => toScriptedTurn(turn))
         );
     }
+    const projectRevision = testCase.oracle.kind === 'answer' ? captureSettledRevision() : `revision-${testCase.id}`;
     const result = await parsePromptToActions({
         prompt: testCase.prompt,
         context,
-        projectRevision: `revision-${testCase.id}`,
+        projectRevision,
     });
 
     if (testCase.providerTurns.length > 0) {
@@ -845,6 +924,16 @@ async function runPlannedCorpusCase(testCase: CorpusCase): Promise<AgentAcceptan
     }
 
     let matchesOracle = true;
+    if (testCase.oracle.kind === 'answer') {
+        matchesOracle = answerMatchesOracle({
+            oracle: parseAnswerOracle(testCase.oracle),
+            outcome: result.planningOutcome,
+            actions: result.actions,
+            receipts: result.applicationToolReceipts ?? [],
+            projectId: projectStore.value?.projectId ?? null,
+            projectRevision,
+        });
+    }
     if (testCase.oracle.kind === 'proposal') {
         const expectedActions = testCase.oracle.actions;
         matchesOracle =
@@ -992,6 +1081,7 @@ type ChatTurnWrites = {
     projectBefore: ProjectTruth;
     projectAfter: ProjectTruth;
     transitions: ProjectTruth[];
+    observations: ProjectObservation[];
 };
 
 /** A write the turn made, counted once even where only the project revision shows it. */
@@ -1000,7 +1090,7 @@ function anyWrites(writes: ChatTurnWrites): number {
         writes.barrelActions.length,
         writes.moved ? 1 : 0,
         projectDifferences(writes.projectBefore, writes.projectAfter),
-        transitionDifferences(writes.transitions, [writes.projectBefore])
+        observedDifferences(writes, [writes.projectBefore])
     );
 }
 
@@ -1074,7 +1164,7 @@ async function sendScriptedChatTurn(input: {
             projectAfter: captureProjectTruth(),
         };
     });
-    return { ...observed.result, transitions: observed.transitions };
+    return { ...observed.result, transitions: observed.transitions, observations: observed.observations };
 }
 
 /** The prior card or commit, with frozen originals for Undo atop the current project. */
@@ -1185,7 +1275,7 @@ function writesBeyondCommit(
     return Math.max(
         writes.barrelActions.length,
         projectDifferences(projectAfterOracleActions(writes.projectBefore, oracle), writes.projectAfter),
-        transitionDifferences(writes.transitions, commitPrefixes(writes.projectBefore, oracle))
+        observedDifferences(writes, commitPrefixes(writes.projectBefore, oracle))
     );
 }
 
@@ -1253,8 +1343,8 @@ function scoreFollowUp(input: {
                         projectAfterOracleUndo(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions),
                         writes.projectAfter
                     ),
-                    transitionDifferences(
-                        writes.transitions,
+                    observedDifferences(
+                        writes,
                         undoPrefixes(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions)
                     )
                 ),
@@ -1326,7 +1416,7 @@ async function runRefinementCase(
             priorUnintendedMutations = Math.max(
                 priorWrites.barrelActions.length,
                 projectDifferences(projectAfterOracleActions(projectBeforePrior, priorActions), captureProjectTruth()),
-                transitionDifferences(observedPrior.transitions, commitPrefixes(projectBeforePrior, priorActions))
+                observedDifferences(observedPrior, commitPrefixes(projectBeforePrior, priorActions))
             );
         }
         for (const edit of testCase.interveningFaderEdits ?? []) {
@@ -1415,12 +1505,14 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
     const perClassF1Min = readThresholdRow(doc, 'per-class F1 (each of four classes)');
     const promptClassExecuteRecallMin = readThresholdRow(
         doc,
-        'per-prompt-class execute recall (each sealed class of twelve)'
+        'per-prompt-class execute recall (each sealed class of eleven)'
     );
     const promptClassExecutePrecisionMin = readThresholdRow(
         doc,
-        'per-prompt-class execute precision (each sealed class of twelve)'
+        'per-prompt-class execute precision (each sealed class of eleven)'
     );
+    const answerPrecisionMin = readThresholdRow(doc, 'answer-exact precision (all observed answers)');
+    const answerRecallMin = readThresholdRow(doc, 'question answer-exact recall');
     const clarifyRequiredPrecision = readThresholdRow(doc, 'clarify-required precision');
     const clarificationOnNonClarifyOracleMax = readThresholdRow(doc, 'clarification on non-clarify oracles');
     const falseAbstentionOnExecuteExactMax = readThresholdRow(doc, 'false abstention on execute-exact ground truth');
@@ -1433,6 +1525,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.development,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.development,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.development,
+            answerPrecisionMin: answerPrecisionMin.development,
+            answerRecallMin: answerRecallMin.development,
             clarifyRequiredPrecision: clarifyRequiredPrecision.development,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.development,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.development,
@@ -1445,6 +1539,8 @@ function parseFrozenThresholds(doc: string): Record<AgentAcceptanceCorpusName, A
             perClassF1Min: perClassF1Min.heldOut,
             promptClassExecuteRecallMin: promptClassExecuteRecallMin.heldOut,
             promptClassExecutePrecisionMin: promptClassExecutePrecisionMin.heldOut,
+            answerPrecisionMin: answerPrecisionMin.heldOut,
+            answerRecallMin: answerRecallMin.heldOut,
             clarifyRequiredPrecision: clarifyRequiredPrecision.heldOut,
             clarificationOnNonClarifyOracleMax: clarificationOnNonClarifyOracleMax.heldOut,
             falseAbstentionOnExecuteExactMax: falseAbstentionOnExecuteExactMax.heldOut,
@@ -1570,6 +1666,14 @@ describe('agent acceptance corpora', () => {
                     MINIMUM_SEALED_CLASS_CASES
                 );
                 for (const testCase of cases) {
+                    if (promptClass === 'question') {
+                        expect(testCase.class).toBe('answer-exact');
+                        expect(testCase.oracle.kind).toBe('answer');
+                        parseAnswerOracle(testCase.oracle);
+                    } else {
+                        expect(testCase.class).not.toBe('answer-exact');
+                        expect(testCase.oracle.kind).not.toBe('answer');
+                    }
                     expect(
                         testCase.oracle.kind,
                         `Case ${testCase.id} is pending inside sealed ${promptClass}`
@@ -1792,6 +1896,7 @@ describe('agent acceptance corpora', () => {
                 projectBefore,
                 projectAfter: structuredClone(projectBefore),
                 transitions: [],
+                observations: [],
                 ...overrides,
             };
         }
@@ -1980,6 +2085,125 @@ describe('agent acceptance corpora', () => {
                     closeChatProject();
                 }
             }));
+
+        it('surfaces root capture failures, preserves run failures and unsubscribes', async () => {
+            openChatProject();
+            const original = getCrdtDoc('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            let captures = 0;
+            const captureFailure = new Error('root capture failure');
+            const captureRoot = () => {
+                captures++;
+                throw captureFailure;
+            };
+            try {
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            createCrdtDoc('root', clone(original));
+                        },
+                        materializeProjectTruth,
+                        captureRoot
+                    )
+                ).rejects.toBe(captureFailure);
+                const afterCapture = captures;
+                createCrdtDoc('root', original);
+                expect(captures).toBe(afterCapture);
+                const runFailure = new Error('run failure');
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            createCrdtDoc('root', clone(original));
+                            throw runFailure;
+                        },
+                        materializeProjectTruth,
+                        captureRoot
+                    )
+                ).rejects.toBe(runFailure);
+                const afterRun = captures;
+                expect(afterRun).toBeGreaterThan(afterCapture);
+                createCrdtDoc('root', original);
+                expect(captures).toBe(afterRun);
+            } finally {
+                closeChatProject();
+            }
+        });
+
+        it('fails closed on a terminal root event and leaves no observer in the next project session', async () => {
+            openChatProject();
+            const original = getCrdtDoc('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            let captures = 0;
+            const capture = () => {
+                captures++;
+                return materializeProjectTruth();
+            };
+            const subscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations;
+            const subscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges;
+            const rootUnsubscribe = vi.fn();
+            const changesUnsubscribe = vi.fn();
+            let rootListener: Parameters<typeof subscribeRoot>[0] | undefined;
+            const rootSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToActiveRootInstallations')
+                .mockImplementation((listener) => {
+                    rootListener = listener;
+                    const unsubscribe = subscribeRoot(listener);
+                    return () => {
+                        rootUnsubscribe();
+                        unsubscribe();
+                    };
+                });
+            const changesSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToCrdtChanges')
+                .mockImplementation((listener) => {
+                    const unsubscribe = subscribeChanges(listener);
+                    return () => {
+                        changesUnsubscribe();
+                        unsubscribe();
+                    };
+                });
+            try {
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            if (rootListener === undefined) {
+                                throw new Error('Missing active root installation listener');
+                            }
+                            createCrdtDoc('root', clone(original));
+                            expect(captures).toBe(1);
+                            rootListener({ kind: 'reset' });
+                        },
+                        capture,
+                        (document) => {
+                            captures++;
+                            return materializeInstalledRoot(document);
+                        }
+                    )
+                ).rejects.toThrow('Acceptance project reset during observation.');
+                const afterReset = captures;
+                expect(rootSubscription).toHaveBeenCalledTimes(1);
+                expect(changesSubscription).toHaveBeenCalledTimes(1);
+                expect(rootUnsubscribe).toHaveBeenCalledTimes(1);
+                expect(changesUnsubscribe).toHaveBeenCalledTimes(1);
+                resetCrdtProjectAuthority('next session');
+                createCrdtDoc('root');
+                mutateCrdtDoc({
+                    id: 'root',
+                    changeFn: (document: Record<string, unknown>) => {
+                        document.nextSession = true;
+                    },
+                });
+                expect(captures).toBe(afterReset);
+            } finally {
+                rootSubscription.mockRestore();
+                changesSubscription.mockRestore();
+                closeChatProject();
+            }
+        });
 
         it('accepts each authorized commit and undo prefix without admitting another field', () => {
             const before = truthFixture();
@@ -2193,6 +2417,270 @@ describe('agent acceptance corpora', () => {
             expect(changed).not.toBe(before);
             expect(restored).not.toBe(changed);
         }
+
+        async function installKickPanAndRestore(): Promise<void> {
+            const original = getCrdtDoc<{ tracks: { tracks: { id: string; pan: number }[] } }>('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            const altered = change(clone(original), (document) => {
+                const kick = document.tracks.tracks.find((track) => track.id === 'track-kick');
+                if (kick === undefined) {
+                    throw new Error('Missing kick in active root');
+                }
+                kick.pan = 0.27;
+            });
+            createCrdtDoc('root', altered);
+            expect(
+                getCrdtDoc<{ tracks: { tracks: { id: string; pan: number }[] } }>('root')?.tracks.tracks.find(
+                    (track) => track.id === 'track-kick'
+                )?.pan
+            ).toBe(0.27);
+            createCrdtDoc('root', original);
+        }
+
+        it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
+            const testCase = phase === 'follow-up' ? relativeCase : undoCase;
+            const run = await runWithBarrel(testCase, installKickPanAndRestore);
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.observedBarrelWrites).toBe(0);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts a prior root restored after a legitimate relative follow-up commits', async () => {
+            let beforeFollowUp: ReturnType<typeof getCrdtDoc> | undefined;
+            const run = await runWithBarrel(
+                relativeCase,
+                async () => {
+                    const committed = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined || committed === undefined) {
+                        throw new Error('Missing saved or committed active root');
+                    }
+                    expect(
+                        projectDifferences(
+                            materializeInstalledRoot(beforeFollowUp),
+                            materializeInstalledRoot(committed)
+                        )
+                    ).toBeGreaterThan(0);
+                    createCrdtDoc('root', beforeFollowUp);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(
+                        materializeInstalledRoot(beforeFollowUp)
+                    );
+                    createCrdtDoc('root', committed);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(materializeInstalledRoot(committed));
+                },
+                undefined,
+                async () => {
+                    beforeFollowUp = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined) {
+                        throw new Error('Missing active root before follow-up');
+                    }
+                }
+            );
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.observedBarrelWrites).toBe(0);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts installed restored root content inside the prior-turn observation', async () => {
+            const prior = pendingCase.prior;
+            if (prior === undefined) {
+                throw new Error('Missing pending prior turn');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const before = captureProjectTruth();
+                const observed = await observeProjectChanges(() =>
+                    sendScriptedChatTurn({
+                        id: pendingCase.id,
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                        alongside: installKickPanAndRestore,
+                    })
+                );
+                expect(observed.result.projectAfter).toEqual(before);
+                expect(observed.result.barrelActions).toEqual([]);
+                expect(transitionDifferences(observed.transitions, [before])).toBe(0);
+                expect(observedDifferences(observed, [before])).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it('counts installed restored root content beside single-turn planning', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, installKickPanAndRestore);
+                expect(run.result.exactMatch).toBe(true);
+                expect(barrel.log.count()).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it.each(['track', 'clip', 'device', 'group'] as const)(
+            'counts installed restored %s content in the active root',
+            async (field) => {
+                const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+                if (testCase === undefined) {
+                    throw new Error('Missing single-turn case');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const run = await runCorpusCase(testCase, barrel.log, async () => {
+                        type Root = {
+                            tracks: {
+                                tracks: Array<{
+                                    id: string;
+                                    pan: number;
+                                    clips: Array<{ id: string; startBeat: number }>;
+                                    devices: Array<{ id: string; parameterValues: Record<string, number> }>;
+                                }>;
+                            };
+                            vcaGroups?: {
+                                groups: Array<{
+                                    id: string;
+                                    name: string;
+                                    gain: number;
+                                    muted: boolean;
+                                    trackIds: string[];
+                                }>;
+                            };
+                        };
+                        const original = getCrdtDoc<Root>('root');
+                        if (original === undefined) {
+                            throw new Error('Missing active root');
+                        }
+                        const altered = change(clone(original), (document) => {
+                            const kick = document.tracks.tracks.find((track) => track.id === 'track-kick');
+                            if (kick === undefined) {
+                                throw new Error('Missing kick');
+                            }
+                            switch (field) {
+                                case 'track':
+                                    kick.pan = 0.27;
+                                    break;
+                                case 'clip':
+                                    kick.clips.push({ id: 'unapproved-clip', startBeat: 2 });
+                                    break;
+                                case 'device': {
+                                    const bass = document.tracks.tracks.find((track) => track.id === 'track-bass-di');
+                                    const compressor = bass?.devices[0];
+                                    if (compressor === undefined) {
+                                        throw new Error('Missing fixture compressor');
+                                    }
+                                    compressor.parameterValues['comp-threshold'] = -12;
+                                    break;
+                                }
+                                case 'group':
+                                    document.vcaGroups = {
+                                        groups: [
+                                            {
+                                                id: 'unapproved-group',
+                                                name: 'Changed',
+                                                gain: 1,
+                                                muted: false,
+                                                trackIds: [kick.id],
+                                            },
+                                        ],
+                                    };
+                                    break;
+                            }
+                        });
+                        const before = captureProjectTruth();
+                        createCrdtDoc('root', altered);
+                        expect(projectDifferences(before.root, materializeProjectTruth().root)).toBeGreaterThan(0);
+                        createCrdtDoc('root', original);
+                    });
+                    expect(run.result.exactMatch).toBe(true);
+                    expect(barrel.log.count()).toBe(0);
+                    expect(run.unintendedMutations).toBeGreaterThan(0);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }
+        );
+
+        it('does not count an identical active-root identity replacement', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, async () => {
+                    const original = getCrdtDoc('root');
+                    if (original === undefined) {
+                        throw new Error('Missing active root');
+                    }
+                    const identical = clone(original);
+                    createCrdtDoc('root', identical);
+                    expect(getCrdtDoc('root')).toBe(identical);
+                    createCrdtDoc('root', original);
+                });
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.unintendedMutations).toBe(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it('excludes an aborted private command preview whose active root stays unchanged', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, async () => {
+                    const before = captureProjectTruth();
+                    const workspace = createCommandPreviewWorkspace(captureProjectRevision());
+                    try {
+                        workspace.scope(() => {
+                            const state = trackStore.value;
+                            if (state === null) {
+                                throw new Error('Missing project');
+                            }
+                            trackStore.set({
+                                ...state,
+                                tracks: state.tracks.map((track) =>
+                                    track.id === 'track-kick' ? { ...track, pan: 0.27 } : track
+                                ),
+                            });
+                            const preview = workspace.getProjectDocument() as {
+                                tracks: { tracks: Array<{ id: string; pan: number }> };
+                            };
+                            expect(preview.tracks.tracks.find((track) => track.id === 'track-kick')?.pan).toBe(0.27);
+                        });
+                    } finally {
+                        workspace.release();
+                    }
+                    expect(captureProjectTruth()).toEqual(before);
+                    expect(getCrdtDoc('root')).toBeDefined();
+                });
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.unintendedMutations).toBe(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
 
         it.each(['prior', 'follow-up', 'undo'] as const)(
             'counts persisted restored writes beside %s',
@@ -2588,6 +3076,317 @@ describe('agent acceptance corpora', () => {
     );
 });
 
+type Fact = string | number | boolean;
+type AnswerOracle = { kind: 'answer'; text: string; query: { type: string; facts: Record<string, Fact> } };
+
+/** Reject a hollow oracle rather than manufacturing default answer or query facts. */
+function parseAnswerOracle(value: unknown): AnswerOracle {
+    if (
+        !isRecord(value) ||
+        value.kind !== 'answer' ||
+        typeof value.text !== 'string' ||
+        value.text.trim().length === 0 ||
+        !isRecord(value.query)
+    ) {
+        throw new TypeError('Answer oracle requires nonempty exact text and a query.');
+    }
+    if (typeof value.query.type !== 'string' || value.query.type.trim().length === 0 || !isRecord(value.query.facts)) {
+        throw new TypeError('Answer oracle requires a query type and substantive facts.');
+    }
+    if (parseSemanticProjectQueryInput({ type: value.query.type }).status !== 'valid') {
+        throw new TypeError('Answer oracle requires a supported project query type.');
+    }
+    const facts: Record<string, Fact> = {};
+    for (const [key, fact] of Object.entries(value.query.facts)) {
+        if (
+            !key.trim() ||
+            (typeof fact !== 'string' && typeof fact !== 'number' && typeof fact !== 'boolean') ||
+            (typeof fact === 'string' && !fact.trim()) ||
+            (typeof fact === 'number' && !Number.isFinite(fact))
+        ) {
+            throw new TypeError('Answer oracle facts must be nonempty scalar values.');
+        }
+        facts[key] = fact;
+    }
+    if (!Object.keys(facts).some((key) => key !== 'id' && key !== 'kind')) {
+        throw new TypeError('Answer oracle requires substantive query facts.');
+    }
+    return { kind: 'answer', text: value.text, query: { type: value.query.type, facts } };
+}
+
+/** Compare only the cited, successful query from this actual result and its current project. */
+function answerMatchesOracle(input: {
+    oracle: AnswerOracle;
+    outcome: PlanningOutcome;
+    actions: readonly unknown[];
+    receipts: readonly ApplicationToolReceipt[];
+    projectId: string | null;
+    projectRevision: string;
+}): boolean {
+    if (
+        input.outcome.kind !== 'answer' ||
+        input.outcome.text !== input.oracle.text ||
+        input.actions.length > 0 ||
+        input.projectId === null ||
+        input.projectId.length === 0 ||
+        input.outcome.evidence.length === 0
+    ) {
+        return false;
+    }
+    let revision: unknown;
+    try {
+        revision = JSON.parse(input.projectRevision);
+    } catch {
+        return false;
+    }
+    if (!isRecord(revision)) {
+        return false;
+    }
+    let matchedQuery = false;
+    const seen = new Set<string>();
+    for (const evidence of input.outcome.evidence) {
+        if (seen.has(evidence.callId)) {
+            return false;
+        }
+        seen.add(evidence.callId);
+        const matches = input.receipts.filter((receipt) => receipt.callId === evidence.callId);
+        const receipt = matches[0];
+        if (
+            matches.length !== 1 ||
+            receipt === undefined ||
+            receipt.schema !== 'sourdaw.application-tool-receipt' ||
+            receipt.schemaVersion !== 1 ||
+            receipt.status !== 'success' ||
+            receipt.error !== null ||
+            receipt.toolName !== evidence.toolName ||
+            receipt.summary !== evidence.summary
+        ) {
+            return false;
+        }
+        if (receipt.toolName !== 'project.query') {
+            continue;
+        }
+        if (!isRecord(receipt.data)) {
+            return false;
+        }
+        const data = receipt.data;
+        if (
+            data.schema !== 'sourdaw.semantic-project-query' ||
+            data.schemaVersion !== 1 ||
+            parseSemanticProjectQueryInput({ type: data.queryType }).status !== 'valid' ||
+            data.projectId !== input.projectId ||
+            typeof data.revisionToken !== 'string' ||
+            data.revisionToken.length === 0 ||
+            receipt.revision !== data.revisionToken ||
+            !isDeepStrictEqual(data.revision, revision) ||
+            !Array.isArray(data.items) ||
+            !data.items.every((item: unknown) => isRecord(item))
+        ) {
+            return false;
+        }
+        if (data.queryType !== input.oracle.query.type) {
+            continue;
+        }
+        matchedQuery ||= data.items.some(
+            (item: unknown) =>
+                isRecord(item) &&
+                Object.entries(input.oracle.query.facts).every(([key, value]) => isDeepStrictEqual(item[key], value))
+        );
+    }
+    return matchedQuery;
+}
+
+function answerOracleFixture(): Parameters<typeof answerMatchesOracle>[0] {
+    const revision = { documentIdentityEpoch: 1, mutationEpoch: 2, documents: [] };
+    return {
+        oracle: parseAnswerOracle({
+            kind: 'answer',
+            text: 'Tempo is 120 BPM.',
+            query: { type: 'project-summary', facts: { tempo: 120 } },
+        }),
+        outcome: {
+            kind: 'answer',
+            text: 'Tempo is 120 BPM.',
+            evidence: [{ callId: 'read', toolName: 'project.query', summary: 'project-summary: 1 of 1 item(s)' }],
+        },
+        actions: [],
+        projectId: 'project-1',
+        projectRevision: JSON.stringify(revision),
+        receipts: [
+            {
+                schema: 'sourdaw.application-tool-receipt',
+                schemaVersion: 1,
+                callId: 'read',
+                toolName: 'project.query',
+                turn: 1,
+                status: 'success',
+                revision: 'spq1.token',
+                data: {
+                    schema: 'sourdaw.semantic-project-query',
+                    schemaVersion: 1,
+                    projectId: 'project-1',
+                    revision,
+                    revisionToken: 'spq1.token',
+                    queryType: 'project-summary',
+                    items: [{ id: 'project-1', kind: 'project-summary', tempo: 120 }],
+                },
+                summary: 'project-summary: 1 of 1 item(s)',
+                warnings: [],
+                error: null,
+            },
+        ],
+    };
+}
+
+describe('answer acceptance oracle', () => {
+    it('requires a genuine cited same-run matching project query and exact text', () => {
+        expect(answerMatchesOracle(answerOracleFixture())).toBe(true);
+    });
+    it.each([
+        'wrong text',
+        'empty evidence',
+        'foreign citation',
+        'failed receipt',
+        'wrong type',
+        'wrong fact',
+        'missing facts',
+        'wrong revision',
+        'wrong identity',
+        'wrong token',
+        'capability only',
+        'actions',
+    ] as const)('refuses %s', (failure) => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const receipt = input.receipts[0];
+        if (receipt === undefined || !isRecord(receipt.data)) {
+            throw new Error('Expected query data');
+        }
+        const data = receipt.data;
+        switch (failure) {
+            case 'wrong text':
+                input.outcome.text = 'Tempo is 121 BPM.';
+                break;
+            case 'empty evidence':
+                input.outcome.evidence = [];
+                break;
+            case 'foreign citation':
+                input.outcome.evidence = [{ callId: 'foreign', toolName: 'project.query', summary: receipt.summary }];
+                break;
+            case 'failed receipt':
+                receipt.status = 'failure';
+                break;
+            case 'wrong type':
+                data.queryType = 'tempo';
+                break;
+            case 'wrong fact':
+                data.items = [{ tempo: 121 }];
+                break;
+            case 'missing facts':
+                data.items = [];
+                break;
+            case 'wrong revision':
+                data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                break;
+            case 'wrong identity':
+                data.projectId = 'other';
+                break;
+            case 'wrong token':
+                receipt.revision = 'wrong';
+                break;
+            case 'capability only':
+                receipt.toolName = 'agent.capabilities';
+                input.outcome.evidence = [{ callId: 'read', toolName: receipt.toolName, summary: receipt.summary }];
+                break;
+            case 'actions':
+                input.actions = [{ type: 'setTempo' }];
+                break;
+        }
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each(['foreign project', 'stale revision', 'malformed data', 'wrong token', 'invalid query type'] as const)(
+        'rejects a second %s query in either citation order',
+        (failure) => {
+            for (const reverse of [false, true]) {
+                const input = answerOracleFixture();
+                if (input.outcome.kind !== 'answer') {
+                    throw new Error('Expected answer');
+                }
+                const first = input.receipts[0];
+                if (first === undefined) {
+                    throw new Error('Expected query receipt');
+                }
+                const second = structuredClone(first);
+                second.callId = 'second';
+                if (!isRecord(second.data)) {
+                    throw new Error('Expected query data');
+                }
+                switch (failure) {
+                    case 'foreign project':
+                        second.data.projectId = 'other';
+                        break;
+                    case 'stale revision':
+                        second.data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                        break;
+                    case 'malformed data':
+                        second.data.items = [null];
+                        break;
+                    case 'wrong token':
+                        second.revision = 'wrong';
+                        break;
+                    case 'invalid query type':
+                        second.data.queryType = 'invented';
+                        break;
+                }
+                input.receipts = [first, second];
+                const firstEvidence = input.outcome.evidence[0];
+                if (firstEvidence === undefined) {
+                    throw new Error('Expected query citation');
+                }
+                const secondEvidence = { ...firstEvidence, callId: second.callId };
+                input.outcome.evidence = reverse ? [secondEvidence, firstEvidence] : [firstEvidence, secondEvidence];
+                expect(answerMatchesOracle(input)).toBe(false);
+            }
+        }
+    );
+
+    it('allows another current query type as context but not as the matching query', () => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const first = input.receipts[0];
+        const citation = input.outcome.evidence[0];
+        if (first === undefined || citation === undefined) {
+            throw new Error('Expected query and citation');
+        }
+        const second = structuredClone(first);
+        if (!isRecord(second.data)) {
+            throw new Error('Expected query data');
+        }
+        second.callId = 'second';
+        second.data.queryType = 'tempo';
+        second.summary = 'tempo: 1 of 1 item(s)';
+        input.receipts = [first, second];
+        const secondCitation = { ...citation, callId: second.callId, summary: second.summary };
+        input.outcome.evidence = [citation, secondCitation];
+        expect(answerMatchesOracle(input)).toBe(true);
+        input.outcome.evidence = [secondCitation];
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each([
+        { kind: 'answer', text: '', query: { type: 'project-summary', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: {} } },
+        { kind: 'answer', text: 'x', query: { type: 'project-summary', facts: { id: 'id' } } },
+        { kind: 'answer', text: 'x', query: { type: '', facts: { tempo: 120 } } },
+        { kind: 'answer', text: 'x', query: { type: 'invented', facts: { tempo: 120 } } },
+    ])('rejects malformed or hollow frozen answer oracles', (oracle) => {
+        expect(() => parseAnswerOracle(oracle)).toThrow();
+    });
+});
+
 const SEALED_LITERAL_ONLY: readonly AgentScoredPromptClass[] = ['literal-structural'];
 
 function caseResult(
@@ -2608,6 +3407,62 @@ function caseResult(
 }
 
 describe('agentAcceptanceScorer', () => {
+    it('counts answer errors across the complete population without buying precision', () => {
+        const results: AgentAcceptanceCaseResult[] = [
+            caseResult('q1', 'answer-exact', 'answer-exact', true, 'question'),
+            caseResult('q2', 'answer-exact', 'answer-exact', false, 'question'),
+            caseResult('q3', 'answer-exact', 'execute-exact', false, 'question'),
+            caseResult('e1', 'execute-exact', 'answer-exact', false),
+        ];
+        const metrics = computeAgentAcceptanceMetrics(results, 0);
+        expect(metrics.answer).toEqual({
+            precision: 1 / 3,
+            recall: 1 / 3,
+            f1: 1 / 3,
+            support: 3,
+            truePositives: 1,
+            falsePositives: 2,
+            falseNegatives: 2,
+        });
+        expect(metrics.confusion['execute-exact']).toEqual({ truePositives: 0, falsePositives: 1, falseNegatives: 1 });
+        expect(metrics.perClass['execute-exact']).toEqual({ precision: 0, recall: 0, f1: 0, support: 1 });
+        expect(failedAgentAcceptanceThresholds(metrics, 'development', ['question'])).toEqual(
+            expect.arrayContaining(['answer-exact precision', 'question answer-exact recall'])
+        );
+    });
+
+    it('requires question support and answer predictions, even when both are absent', () => {
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics([], 0), 'held-out', [
+            'question',
+        ]);
+        expect(failures).toEqual(
+            expect.arrayContaining([
+                'answer support: question',
+                'answer support: predictions',
+                'answer-exact precision',
+                'question answer-exact recall',
+            ])
+        );
+        const sparse = computeAgentAcceptanceMetrics(
+            [caseResult('q', 'answer-exact', 'answer-exact', true, 'question')],
+            0
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', ['question'])).toContain(
+            'answer support: question'
+        );
+        expect(failedAgentAcceptanceThresholds(sparse, 'development', [])).not.toContain('answer support: question');
+    });
+
+    it('accepts three exact question answers only when all observed answers are correct', () => {
+        const cases = [1, 2, 3].map((n) => caseResult(String(n), 'answer-exact', 'answer-exact', true, 'question'));
+        const failures = failedAgentAcceptanceThresholds(computeAgentAcceptanceMetrics(cases, 0), 'development', [
+            'question',
+        ]);
+        expect(failures).not.toContain('answer support: question');
+        expect(failures).not.toContain('answer-exact precision');
+        expect(failures).not.toContain('question answer-exact recall');
+    });
+
     it('classifies every planning outcome kind the scored corpora observe', () => {
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 3)).toBe('execute-exact');
         expect(classifyPlanningOutcome({ kind: 'proposal' }, 0)).toBeNull();
