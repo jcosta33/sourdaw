@@ -1,0 +1,14 @@
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 4,73,96,135-163,165,170-171,183-186,188-189,197,199,205,213,223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49f405890572d0076e19402b67e08dfe38bbeaf4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
