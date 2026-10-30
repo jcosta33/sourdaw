@@ -21,19 +21,8 @@ cannot disagree. Classes union when several fire, no class earns a stance
 outside its own entry, and parsing recomputes the union from `riskClasses`, so a
 hand-edited plan can neither widen nor narrow its own review. The earned stances
 name risk surfaces to weigh; the dispatched stances are the orchestrator's
-task-derived judgement.
-
-| Class                                                                                       | Earns                                                     | Draw floor |
-| ------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ---------- |
-| `docs-only` (every path Markdown outside `public/`)                                         | correctness                                               | 1          |
-| `test-only` (every path a test)                                                             | test-validity                                             | 1          |
-| `small` (no specialist surface, within the line budget, handwritten paths all under `src/`) | correctness, test-validity                                | 2          |
-| `small-tooling` (the same, with handwritten paths outside `src/`)                           | correctness, module-boundaries, test-validity             | 3          |
-| `ordinary` (no specialist surface, over the budget)                                         | correctness, code-craft, module-boundaries, test-validity | 3          |
-| `cross-domain`                                                                              | correctness, module-boundaries, test-validity             | 3          |
-| `realtime-audio`                                                                            | correctness, realtime-audio, test-validity                | 3          |
-| `native-security`                                                                           | correctness, security-platform, test-validity             | 3          |
-| `undo`                                                                                      | correctness, project-integrity-undo, test-validity        | 3          |
+task-derived judgement. The class table with each class's earned stances and
+draw floor lives in the [review round](../SKILL.md#f-review-round) step.
 
 Every `.github/` path classifies as handwritten whatever its name, so it never
 plans `test-only` or `docs-only`, on either side of a rename. Generated paths —
@@ -45,10 +34,7 @@ either name, the JavaScript dependency manifests, the native addon build, the
 desktop packaging files and entitlements, the fuse, preload and Electron runtime
 scripts, and the review tooling that admits CI or feeds the bundle earn
 `native-security`; worklet sources under `public/audio/worklets/` and their
-generators earn `realtime-audio`. A generated-only change plans `small`. A plan
-of several classes needs three distinct stances, or every stance its classes
-earn when they earn fewer. Specialist classes keep those stance and evidence
-obligations within the same reviewer cost ceiling.
+generators earn `realtime-audio`. A generated-only change plans `small`.
 
 `review:publish` prints the review id and posts as reviewer App only if
 GitHub's live head matches the bundle; fresh approvals also require matching
@@ -57,7 +43,7 @@ base context. For a plan-carrying bundle it derives the canonical record from
 refuses before any remote write when the plan is missing, malformed, or rebound
 from the head/base/pr it must bind; when `review.json` carries no `draws` and no
 reusable unpublished record supplies them; when
-the draws miss the floor above; when the summary reviewer model or any effective
+the draws miss the plan's draw floor; when the summary reviewer model or any effective
 draw exceeds the review cost ceiling below; or when a value is unsafe. Effective
 draws include an unpublished historical dossier reused by a caller document with
 no draws. These are fresh-publication gates: exact published replay and recovery
@@ -94,38 +80,10 @@ When the harness cannot select subagent models, run each stance on another agent
 
 ## Review document formats
 
-### Inline comments (REQUEST_CHANGES)
+The `review.json` fields, inline-comment rules, round record, value safety, and
+APPROVE compact-v1 evidence live in the [delivery path](../SKILL.md#h-write-reviewjson).
 
-Read every changed line and surrounding code as needed. Comment on the
-defective line with one problem, discussing code rather than author. Use
-literal fields `defect`, `consequence`, and `done` for what is wrong, why it
-matters, and the required result; retired `body` is refused with an error
-naming the replacement. Each field is one non-empty line without edge
-whitespace; target one precise sentence, never padding. Tooling space-joins
-fields and appends a period where terminal punctuation is absent. The composed
-comment must fit 600 bytes, not characters; there is no minimum.
-
-Request changes when this head must not merge, and post every blocking comment
-with that review. The summary is a short pointer to those comments, not a
-report.
-
-### Round record in review.json
-
-`review.json` is the only caller document. Beside its review fields it carries
-`draws`, one `{ stance, reviewerModel, tier, outcome }` per completed blind draw —
-several draws on one stance with distinct models count once toward the floor —
-with fresh `tier` `economy`/`standard` and `outcome` `clean`/`findings`,
-and optional `discarded`, one `{ finding, reason }` per discarded candidate. The
-fields are exact; an unknown tier or outcome, a repeated stance-and-model pair,
-or an extra field is refused. Discards are shape-checked and never posted or
-recorded. The accepted findings are the document's own inline comments.
-Canonical historical parsers retain `strongest`; that metadata cannot authorize
-a fresh publication and is preserved on published replay and recovery.
-
-Every draw, discard, and approval-claim value must be single-line, trimmed and
-bounded, and is refused when it carries a credential-shaped value, a private-key
-header, a JWT, a bearer token, or raw session-transcript markers. Private
-reviewer prose belongs nowhere in the record.
+### Historical round records
 
 Records persisted under earlier contracts — with per-draw `exhaustion`,
 discards, `assessmentImpact`, `assessmentIgnoredReason`, `signalDispositions`,
@@ -163,32 +121,6 @@ Reconstruction places confirmations beside, not inside, a finding's repair list
 and requires their digest to match an author record bound to that pull request,
 thread, and root finding. This remains structural evidence, not independent
 proof that a runtime repair is true.
-
-### APPROVE: compact-v1 evidence
-
-New APPROVE publication requires `format: compact-v1` and
-`evidence: { headSha, claims: [{ observable, verification, observed }] }` in
-`review.json`. Bind `headSha` to the reviewed bundle head. Supply at least one
-claim, with every value a nonblank, trimmed, single-line string: `observable`
-is expected behavior from the request or contract, `verification` is the exact
-command, check URL, or source comparison, and `observed` is the decisive result
-or excerpt. Keep the body to a short conclusion. Publication posts only that
-reviewer-written body; the structured evidence stays unpublished in
-`review.json`/`acceptance.json`, bound to the head by `headSha`.
-`review:accept` validates only `acceptance.json`'s own head-bound evidence;
-`review.json`'s evidence is read by the orchestrator, not by any script. The
-posted body must fit 600 Unicode code points; reject excess and report the
-actual and allowed lengths, never truncate. Record completeness and head
-binding do not prove truthful execution; the orchestrator remains responsible
-for verifying the claims.
-REQUEST_CHANGES must not carry approval evidence.
-Unknown fresh formats fail closed. Historical unversioned documents remain
-readable only for exact reconstruction and recovery; never rewrite old bundles
-or posted reviews.
-
-Keep detailed logs in the session and the concise head-bound verification
-record in structured bundle evidence. The public approval carries only its
-short conclusion; the structured evidence never leaves the bundle.
 
 ### Stack children
 

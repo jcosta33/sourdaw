@@ -66,7 +66,11 @@ acceptance observable (event, counter, or caller-read figure) to its producing l
 prescribed mechanism to every required code route. Unemitted observables and partially covered routes
 are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
 check, or dispatch inventories into it, and do not require another plan file or issue for work the
-session owns. Require back only status, changed paths, decisive evidence, and blockers.
+session owns. Require back only status, changed paths, decisive evidence, and blockers. Author and
+repair dispatches also say how to do the work, as a senior engineer briefs a junior and never as
+pseudo-code: the approach and rejected alternative, where to work and the code to follow, step order,
+area traps and generated artifacts, per-step verification, and stop-and-report conditions. Reviewer
+dispatches never carry that reasoning; the templates live in [delivery-orchestration].
 
 Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
 together. Split distinct outcomes when separate review materially helps, provided each slice can land
@@ -204,7 +208,7 @@ one motion: the public record must retain the reviewer identity's findings again
 head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
-delivery authorization, and the author then merges through `deliver` as the immutable author App.
+delivery authorization, and `deliver` then merges as the immutable author App.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
@@ -491,8 +495,8 @@ login selects it, and an isolated API session must verify actor type `User` and 
 workers; receipt and tracker writes retain their author App identities, and the merge itself runs
 as the author App. Lock, recovery, and receipt procedure: [delivery-orchestration].
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; `review:accept` remains only for legacy pre-policy heads.
+Run every trusted GitHub-write script through the protected primary checkout's package route; the
+[delivery-orchestration] skill lists them, and `review:accept` remains only for legacy pre-policy heads.
 Lane files are data, never executable delivery code. Launcher snapshot mechanics:
 [delivery-orchestration].
 
