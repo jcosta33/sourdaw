@@ -334,6 +334,18 @@ describe('public PR and immutable local evidence', () => {
         expect(() => assertNoAdoptionGuardFailure(root, PR.branch)).toThrow('guard-failure evidence');
         expect(() => assertNoAdoptionGuardFailure(root, 'feat/other')).not.toThrow();
     });
+    it('refuses guard failure evidence redirected through a symlink or a non-file entry', () => {
+        const root = temporary();
+        const directory = join(root, '.agents', 'guard-failures');
+        mkdirSync(directory, { recursive: true });
+        const elsewhere = join(root, 'elsewhere.json');
+        writeFileSync(elsewhere, '{}');
+        symlinkSync(elsewhere, join(directory, 'linked.json'));
+        expect(() => assertNoAdoptionGuardFailure(root, PR.branch)).toThrow('guard failure evidence is redirected');
+        unlinkSync(join(directory, 'linked.json'));
+        mkdirSync(join(directory, 'nested.json'));
+        expect(() => assertNoAdoptionGuardFailure(root, PR.branch)).toThrow('guard failure evidence is redirected');
+    });
     it('strictly reads atomic immutable receipts and rejects symlink/extra-field substitution', () => {
         const root = temporary();
         const f = fakeAdoption();

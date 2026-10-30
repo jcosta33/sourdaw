@@ -1260,14 +1260,29 @@ export function assertNoAdoptionGuardFailure(primaryRoot: string, branch: string
         if (!file.endsWith('.json')) {
             continue;
         }
-        const path = join(directory, file);
-        const stat = lstatSync(path);
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-            fail('guard failure evidence is redirected');
-        }
-        if (parseGuardFailureReceipt(readFileSync(path, 'utf8')).branch === branch) {
+        if (parseGuardFailureReceipt(readGuardFailureEvidence(join(directory, file))).branch === branch) {
             fail('adoption refuses unresolved guard-failure evidence for this branch');
         }
+    }
+}
+/** Checks and reads one descriptor so the evidence cannot be swapped between the check and the read. */
+function readGuardFailureEvidence(path: string): string {
+    let fd: number;
+    try {
+        fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ELOOP') {
+            fail('guard failure evidence is redirected');
+        }
+        throw error;
+    }
+    try {
+        if (!fstatSync(fd).isFile()) {
+            fail('guard failure evidence is redirected');
+        }
+        return readFileSync(fd, 'utf8');
+    } finally {
+        closeSync(fd);
     }
 }
 
