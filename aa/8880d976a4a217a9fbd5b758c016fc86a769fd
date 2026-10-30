@@ -1,0 +1,14 @@
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  h_beb54bf43b47b7 161,170,261,264,386,389,427,432,580,583,648,651,712,715
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa8880d976a4a217a9fbd5b758c016fc86a769fd",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
