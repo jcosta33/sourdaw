@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:4082b470c2b743a67205ab9a24cce0f3175759844a0e432963e8c00190f592fa:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:01081de13255933af105c006f5b205407500688699222be606cf90e05051c2cd:release/dependency-license-proofs.json"
+                "sha256:13a2ec7a8e56d685f18e90aca15d6fc0b3ff6486e9e8bfebe05ba5435035ec98:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:0bfc4866b5c17c7c36bef8a01dce6295da8174a9c301c4282faf41c28704df4c:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -264,20 +264,22 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml"
+                "pnpm-workspace.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
+                "sha256:98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -289,7 +291,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -1385,7 +1387,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:49cfd1ddc956b6b08931d1ebaf2e9b41d15eacf3eadc0f1d4e9ec6fdc0ff83dc:public/entryLoadRecovery.js"
+                "sha256:c0537f9e862db90028295659eb03c694f645a2c8d795f82d9ed19ded0bae5bda:public/entryLoadRecovery.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1738,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
+            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1752,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
+            "sha256": "98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321"
         },
         {
             "path": "Cargo.toml",
@@ -2257,6 +2259,11 @@
             "file": "scripts/run-gitleaks-history-scan.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/setupPnpm.ts",
+            "value": "https://registry.npmjs.org/"
         },
         {
             "surface": "project-source",

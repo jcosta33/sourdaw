@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a
@@ -101,6 +115,19 @@ repository, `setupProjectionBridge`, the store and `replaceCrdtDocInLineage` wit
 to an unrelated slot after a local edit, and require the runtime fields to survive while the durable field
 takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
 fingerprint: ask which caller it speaks for.
+
+### 2026-10-29 — failed Freeze settlement needs current attempt authority (PR #2597 escape)
+
+The #2597 diagnostic/no-history escape requires a separate failure settlement after the render
+refuses. That continuation must still belong to the exact project root, revision, task and freeze
+aggregate when admitted and immediately before commit. A track ID or reused project timestamp
+cannot establish ownership, and the old attempt must not clear a newer task in its finalizer.
+
+Hold settlement admission and separately its staged-write commit boundary. Cancel, start a newer
+task, replace the root with the same timestamp and track ID, remove/recreate the track, or replace
+its take. Require the successor to survive with no failed-Freeze history. Pair each refusal with
+a genuinely current retry that persists its reason and later freezes, undoes and redoes normally.
+The missed real Command/durable-state stance cannot be replaced by a direct use-case callback.
 
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 

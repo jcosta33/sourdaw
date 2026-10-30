@@ -35,7 +35,7 @@ const FAUSTWASM_WORKLET_SCOPE_NAMES = [
 /**
  * E2E-only serving-identity marker. Browser verification on a shared machine
  * must prove which checkout answers before reusing a server, so every dev
- * response in `--mode e2e` carries this checkout's vite root. The plugin
+ * and preview response in `--mode e2e` carries this checkout's vite root. The plugin
  * self-gates on the resolved command and mode: plain `pnpm dev`, vitest, and
  * production builds carry no marker.
  */
@@ -45,6 +45,40 @@ function sourdawE2eServingCheckoutPlugin(): Plugin {
         apply: (_config, { command, mode }) => command === 'serve' && isSourdawE2eServeMode(mode),
         configureServer(server) {
             server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+        },
+        configurePreviewServer(server) {
+            server.middlewares.use(createSourdawRootHeaderMiddleware(server.config.root));
+        },
+    };
+}
+
+/** The inspection exports and App must share one emitted module graph. */
+function sourdawE2ePersistenceEntryPlugin(): Plugin {
+    return {
+        name: 'sourdaw-e2e-persistence-entry',
+        apply: (_config, { command, mode }) => command === 'build' && mode === 'e2e',
+        config() {
+            return {
+                build: {
+                    rolldownOptions: {
+                        input: {
+                            index: fileURLToPath(new URL('./index.html', import.meta.url)),
+                            'persisted-hydration': fileURLToPath(
+                                new URL('./tests/e2e/persistedHydrationEntry.ts', import.meta.url)
+                            ),
+                        },
+                        preserveEntrySignatures: 'strict',
+                        output: {
+                            entryFileNames: (chunk: { name: string }) => {
+                                if (chunk.name === 'persisted-hydration') {
+                                    return 'e2e/persisted-hydration.js';
+                                }
+                                return 'assets/[name]-[hash].js';
+                            },
+                        },
+                    },
+                },
+            };
         },
     };
 }
@@ -76,6 +110,7 @@ export default defineConfig({
         react(),
         tailwindcss(),
         sourdawE2eServingCheckoutPlugin(),
+        sourdawE2ePersistenceEntryPlugin(),
     ],
     test: {
         environment: 'jsdom',
