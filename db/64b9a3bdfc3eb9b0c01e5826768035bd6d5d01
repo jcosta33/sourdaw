@@ -1,0 +1,21 @@
+scripts/prContract.ts
+  s_9091c7fb2989db::t_4178b2dc06bcff 1263-1274,1277-1281,1283-1285
+scripts/__tests__/laneAdoption.spec.ts
+  s_9091c7fb2989db::t_9250db16eba803 337-348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db64b9a3bdfc3eb9b0c01e5826768035bd6d5d01",
+  "prompts": {},
+  "sessions": {
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
