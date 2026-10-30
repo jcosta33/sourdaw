@@ -2084,3 +2084,21 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.

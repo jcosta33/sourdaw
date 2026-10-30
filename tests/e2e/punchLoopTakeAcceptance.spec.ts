@@ -756,6 +756,12 @@ async function configurePunchTrack(page: Page): Promise<string> {
     return trackId;
 }
 
+function reportPunchDiagnosticFailure(testInfo: TestInfo, name: string, error: unknown): void {
+    const description = `${name}: ${String(error)}`;
+    testInfo.annotations.push({ type: 'incomplete-diagnostics', description });
+    console.error(`[Punch diagnostics incomplete] ${description}`);
+}
+
 async function retainPunchFailureDiagnostics(page: Page, testInfo: TestInfo, name: string): Promise<void> {
     let deadline: ReturnType<typeof setTimeout> | undefined;
     let snapshot: unknown;
@@ -863,9 +869,13 @@ async function retainPunchFailureDiagnostics(page: Page, testInfo: TestInfo, nam
     } finally {
         clearTimeout(deadline);
     }
-    const path = testInfo.outputPath(`${name}.json`);
-    await writeFile(path, JSON.stringify(snapshot, null, 2));
-    await testInfo.attach(name, { path, contentType: 'application/json' });
+    try {
+        const path = testInfo.outputPath(`${name}.json`);
+        await writeFile(path, JSON.stringify(snapshot, null, 2));
+        await testInfo.attach(name, { path, contentType: 'application/json' });
+    } catch (error) {
+        reportPunchDiagnosticFailure(testInfo, name, error);
+    }
 }
 
 async function recordThroughTwoWraps(page: Page, trackId: string): Promise<void> {
@@ -1377,21 +1387,24 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         });
         completed = true;
     } finally {
-        if (!completed && activePage) {
-            await retainPunchFailureDiagnostics(activePage, testInfo, 'punch-failure-state');
-            if (!activePage.isClosed()) {
-                await activePage
-                    .screenshot({ path: testInfo.outputPath('failure.png'), fullPage: true })
-                    .catch(() => undefined);
-            }
-        }
-        await writeFile(testInfo.outputPath('browser-console.json'), JSON.stringify(browserConsole, null, 2)).catch(
-            () => undefined
-        );
         try {
-            await context?.close();
+            if (!completed && activePage) {
+                await retainPunchFailureDiagnostics(activePage, testInfo, 'punch-failure-state');
+                if (!activePage.isClosed()) {
+                    await activePage
+                        .screenshot({ path: testInfo.outputPath('failure.png'), fullPage: true })
+                        .catch((error: unknown) => reportPunchDiagnosticFailure(testInfo, 'failure screenshot', error));
+                }
+            }
+            await writeFile(testInfo.outputPath('browser-console.json'), JSON.stringify(browserConsole, null, 2)).catch(
+                (error: unknown) => reportPunchDiagnosticFailure(testInfo, 'browser console', error)
+            );
         } finally {
-            await browser.close();
+            try {
+                await context?.close();
+            } finally {
+                await browser.close();
+            }
         }
     }
 });
@@ -1556,19 +1569,25 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         });
         completed = true;
     } finally {
-        if (!completed) {
-            await retainPunchFailureDiagnostics(activePage, testInfo, 'pause-replacement-failure-state');
-        }
-        if (!activePage.isClosed()) {
-            await activePage
-                .screenshot({ path: testInfo.outputPath('pause-replacement-final.png') })
-                .catch(() => undefined);
-        }
-        await writeFile(testInfo.outputPath('pause-browser-console.json'), JSON.stringify(consoleMessages, null, 2));
         try {
-            await context.close();
+            if (!completed) {
+                await retainPunchFailureDiagnostics(activePage, testInfo, 'pause-replacement-failure-state');
+            }
+            if (!activePage.isClosed()) {
+                await activePage
+                    .screenshot({ path: testInfo.outputPath('pause-replacement-final.png') })
+                    .catch((error: unknown) => reportPunchDiagnosticFailure(testInfo, 'pause screenshot', error));
+            }
+            await writeFile(
+                testInfo.outputPath('pause-browser-console.json'),
+                JSON.stringify(consoleMessages, null, 2)
+            ).catch((error: unknown) => reportPunchDiagnosticFailure(testInfo, 'pause browser console', error));
         } finally {
-            await browser.close();
+            try {
+                await context.close();
+            } finally {
+                await browser.close();
+            }
         }
     }
 });
