@@ -16,6 +16,7 @@ import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { readCleanupFile } from './cleanupLaneBookkeeping.ts';
 import { cleanupDirectory } from './cleanupLanes.ts';
 import { githubAuthorizationGitEnv, resolvePrimaryRoot } from './githubAppIdentity.ts';
 import { BOOTSTRAP_PATH, snapshotImportSpecifiers, trustedLocalImportClosure } from './trustedGithubWriteBootstrap.ts';
@@ -157,11 +158,9 @@ export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: st
     const receiptPath = join(directory, 'launcher-installation.json');
     type InstalledBlob = { commit: string; hash: string };
     let receipt: (InstalledBlob & { previous?: InstalledBlob }) | undefined;
-    if (existsSync(receiptPath)) {
-        if (!lstatSync(receiptPath).isFile() || lstatSync(receiptPath).isSymbolicLink()) {
-            throw new Error('protected primary launcher installation receipt is not regular');
-        }
-        receipt = JSON.parse(readFileSync(receiptPath, 'utf8')) as InstalledBlob & { previous?: InstalledBlob };
+    const installedFile = readCleanupFile(receiptPath);
+    if (installedFile !== undefined) {
+        receipt = JSON.parse(installedFile.bytes.toString('utf8')) as InstalledBlob & { previous?: InstalledBlob };
     }
     const head = port.capture(port.git, ['show', `HEAD:${BOOTSTRAP_PATH}`]);
     const index = port.capture(port.git, ['show', `:${BOOTSTRAP_PATH}`]);

@@ -21,6 +21,7 @@ import {
     ensureCleanupExclusionFile,
     finishRemovedWorktree,
     ownedGuardReceipt,
+    readCleanupFile,
     type GuardReceiptFingerprint,
 } from './cleanupLaneBookkeeping.ts';
 import { unsafeCredentialReason } from './evidenceSafety.ts';
@@ -122,6 +123,8 @@ export function cleanupDirectory(primaryRoot: string): string {
 }
 
 function atomicJson(path: string, value: unknown): void {
+    // Callers choose fixed state names or hashes of local lane identity. Remote facts and errors
+    // remain JSON data; they never choose a destination or become executable source.
     const temporary = `${path}.${randomUUID()}.candidate`;
     const fd = openSync(temporary, 'wx', 0o600);
     try {
@@ -143,10 +146,11 @@ export function readCleanupRecords(primaryRoot: string): CleanupRecord[] {
         .filter((name) => /^[a-f0-9]{64}\.json$/.test(name))
         .map((name) => {
             const path = join(directory, name);
-            if (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink()) {
+            const file = readCleanupFile(path);
+            if (file === undefined) {
                 throw new Error('cleanup record is not a regular file');
             }
-            const record = JSON.parse(readFileSync(path, 'utf8')) as CleanupRecord;
+            const record = JSON.parse(file.bytes.toString('utf8')) as CleanupRecord;
             if (
                 record.version !== 1 ||
                 record.repository !== REQUIRED_REPOSITORY ||

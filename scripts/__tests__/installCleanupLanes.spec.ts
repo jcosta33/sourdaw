@@ -112,6 +112,52 @@ function runRuntime(runtime: string, binding = runtimeBinding(runtime)) {
 }
 
 describe('cleanup installation', () => {
+    it('never reopens a checked installation receipt after a foreign-payload swap', () => {
+        const f = fixture();
+        const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-install-read-swap-')));
+        try {
+            installCleanupLanes(f.port);
+            const directory = join(f.root, '.agents/lane-cleanup');
+            const path = join(directory, 'launcher-installation.json');
+            const target = join(foreign, 'payload');
+            writeFileSync(target, JSON.stringify({ commit: f.commit, hash: 'foreign payload' }));
+            const program = `
+                import fs from 'node:fs';import cp from 'node:child_process';
+                import {syncBuiltinESMExports} from 'node:module';
+                const path=${JSON.stringify(path)},target=${JSON.stringify(target)},root=${JSON.stringify(f.root)};
+                const read=fs.readFileSync,open=fs.openSync,close=fs.closeSync;
+                let owned,swapped=false,foreignRead=false;const opened=[],closed=new Set();
+                fs.openSync=(file,...args)=>{const fd=open(file,...args);if(file===path){owned=fd;opened.push(fd);}return fd;};
+                fs.closeSync=(fd)=>{closed.add(fd);return close(fd);};
+                fs.readFileSync=(file,...args)=>{
+                    if((file===path||file===owned)&&!swapped){fs.renameSync(path,path+'.original');fs.symlinkSync(target,path);swapped=true;}
+                    if(file===path&&swapped)foreignRead=true;
+                    return read(file,...args);
+                };
+                syncBuiltinESMExports();
+                const {refreshCleanupLauncher}=await import(${JSON.stringify(join(import.meta.dirname, '../installCleanupLanes.ts'))});
+                let error;try{refreshCleanupLauncher({primaryRoot:root,git:${JSON.stringify(f.port.git)},capture:(command,args)=>cp.execFileSync(command,['-C',root,...args],{encoding:'utf8'})},${JSON.stringify(f.commit)},${JSON.stringify(directory)});}catch(caught){error=caught.message;}
+                console.log(JSON.stringify({swapped,foreignRead,error,opened:opened.length,closed:opened.every(fd=>closed.has(fd))}));
+            `;
+            const result = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: f.root,
+                    encoding: 'utf8',
+                    env: githubAuthorizationGitEnv(),
+                })
+            );
+            expect(result.swapped).toBe(true);
+            expect(result.foreignRead).toBe(false);
+            expect(result.error).toBeDefined();
+            expect(result.opened).toBeGreaterThan(0);
+            expect(result.closed).toBe(true);
+            expect(readFileSync(target, 'utf8')).toBe(JSON.stringify({ commit: f.commit, hash: 'foreign payload' }));
+        } finally {
+            f.dispose();
+            rmSync(foreign, { recursive: true });
+        }
+    });
+
     it('installs and reinstalls a launchd job with absolute verified runtime and preserves unrelated primary dirt', () => {
         const f = fixture();
         try {

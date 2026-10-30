@@ -1,12 +1,24 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+    existsSync,
+    mkdirSync,
+    mkdtempSync,
+    readdirSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    statSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { ownedGuardReceipt, readCleanupFile } from '../cleanupLaneBookkeeping.ts';
 import {
     authenticateCleanup,
     cleanupBackoff,
@@ -129,6 +141,179 @@ function installLock(root: string, owner: unknown): string {
 }
 
 describe('automatic lane cleanup', () => {
+    it('preserves raw bytes and original receipt fingerprints, and distinguishes absent files', () => {
+        const f = fixture();
+        try {
+            const missing = join(f.root, 'missing-file');
+            expect(readCleanupFile(missing)).toBeUndefined();
+            expect(readCleanupRecords(f.root)).toEqual([]);
+            expect(
+                ownedGuardReceipt(f.root, {
+                    path: f.lane,
+                    head: f.head,
+                    branch: 'fix/fixture',
+                    detached: false,
+                    directory: { dev: 0, ino: 0, birthtimeMs: 0 },
+                })
+            ).toBeNull();
+            const bytes = Buffer.from([0xff, 0, 0x41]);
+            writeFileSync(missing, bytes);
+            expect(readCleanupFile(missing)?.bytes).toEqual(bytes);
+            writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+            const path = guardFailureReceiptPath(f.root, 'author');
+            const stat = statSync(path);
+            expect(
+                ownedGuardReceipt(f.root, {
+                    path: f.lane,
+                    head: f.head,
+                    branch: 'fix/fixture',
+                    detached: false,
+                    directory: { dev: 0, ino: 0, birthtimeMs: 0 },
+                })
+            ).toEqual({
+                hash: createHash('sha256').update(readFileSync(path)).digest('hex'),
+                dev: stat.dev,
+                ino: stat.ino,
+                birthtimeMs: stat.birthtimeMs,
+            });
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each(['directory', 'fifo', 'symlink', 'dangling symlink', 'symlink parent', 'dangling parent', 'read failure'])(
+        'refuses %s promptly and closes every opened descriptor',
+        (kind) => {
+            const f = fixture();
+            try {
+                let path = join(f.root, 'read-target');
+                if (kind === 'directory') {
+                    mkdirSync(path);
+                } else if (kind === 'fifo') {
+                    execFileSync('mkfifo', [path], { env: githubAuthorizationGitEnv() });
+                } else if (kind.endsWith('symlink')) {
+                    const target = join(f.root, 'target');
+                    if (kind === 'symlink') {
+                        writeFileSync(target, 'unrelated bytes');
+                    }
+                    symlinkSync(target, path);
+                } else if (kind.endsWith('parent')) {
+                    const target = join(f.root, 'real-parent');
+                    if (kind === 'symlink parent') {
+                        mkdirSync(target);
+                    }
+                    symlinkSync(target, path, 'dir');
+                    path = join(path, 'receipt');
+                    if (kind === 'symlink parent') {
+                        writeFileSync(path, 'unrelated parent bytes');
+                    }
+                } else {
+                    writeFileSync(path, 'keep bytes');
+                }
+                const program = `
+                    import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';
+                    const path=${JSON.stringify(path)},kind=${JSON.stringify(kind)};
+                    const open=fs.openSync,close=fs.closeSync,read=fs.readFileSync;
+                    const opened=[],closed=new Set();
+                    fs.openSync=(file,...args)=>{const fd=open(file,...args);if(file===path)opened.push(fd);return fd;};
+                    fs.closeSync=(fd)=>{closed.add(fd);return close(fd);};
+                    fs.readFileSync=(file,...args)=>{if(kind==='read failure'&&opened.includes(file))throw Object.assign(new Error('read denied'),{code:'EACCES'});return read(file,...args);};
+                    syncBuiltinESMExports();
+                    const {readCleanupFile}=await import(${JSON.stringify(resolve('scripts/cleanupLaneBookkeeping.ts'))});
+                    let error,code;try{readCleanupFile(path);}catch(caught){error=caught.message;code=caught.code;}
+                    console.log(JSON.stringify({error,code,opened:opened.length,closed:opened.every(fd=>closed.has(fd))}));
+                `;
+                const result = JSON.parse(
+                    execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                        cwd: f.root,
+                        encoding: 'utf8',
+                        env: githubAuthorizationGitEnv(),
+                        timeout: 5_000,
+                    })
+                );
+                expect(result.error).toBeDefined();
+                expect(result.closed).toBe(true);
+                if (!kind.endsWith('symlink') && !kind.endsWith('parent')) {
+                    expect(result.opened).toBeGreaterThan(0);
+                }
+                if (kind === 'read failure') {
+                    expect(result.code).toBe('EACCES');
+                }
+            } finally {
+                f.dispose();
+            }
+        }
+    );
+
+    it.each(['guard receipt', 'cleanup journal'])(
+        'never reads a foreign payload swapped into a checked %s',
+        (route) => {
+            const f = fixture();
+            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-read-swap-')));
+            try {
+                cleanupLanes(f.port, undefined, true);
+                const record = readCleanupRecords(f.root)[0]!;
+                writeGuardFailureReceipt(f.root, guardReceipt(f.head));
+                const directory = join(f.root, '.agents/lane-cleanup');
+                const name = readdirSync(directory).find((entry) => /^[a-f0-9]{64}\.json$/.test(entry))!;
+                const victim =
+                    route === 'guard receipt' ? guardFailureReceiptPath(f.root, 'author') : join(directory, name);
+                const target = join(foreign, 'payload');
+                let payload: Record<string, unknown>;
+                if (route === 'guard receipt') {
+                    payload = { ...guardReceipt(f.head), command: 'foreign payload' };
+                } else {
+                    payload = { ...record, reason: 'foreign payload' };
+                }
+                writeFileSync(target, JSON.stringify(payload));
+                const program = `
+                    import fs from 'node:fs';
+                    import {syncBuiltinESMExports} from 'node:module';
+                    const path=${JSON.stringify(victim)},target=${JSON.stringify(target)};
+                    const read=fs.readFileSync,open=fs.openSync,close=fs.closeSync;
+                    const opened=[],closed=new Set();let swapped=false,foreignRead=false,owned;
+                    fs.openSync=(file,...args)=>{const fd=open(file,...args);if(file===path){owned=fd;opened.push(fd);}return fd;};
+                    fs.closeSync=(fd)=>{closed.add(fd);return close(fd);};
+                    fs.readFileSync=(file,...args)=>{
+                        if((file===path||file===owned)&&!swapped){fs.renameSync(path,path+'.original');fs.symlinkSync(target,path);swapped=true;}
+                        if(file===path&&swapped)foreignRead=true;
+                        return read(file,...args);
+                    };
+                    syncBuiltinESMExports();
+                    let error;
+                    try{
+                        if(${JSON.stringify(route)}==='guard receipt'){
+                            const {ownedGuardReceipt}=await import(${JSON.stringify(resolve('scripts/cleanupLaneBookkeeping.ts'))});
+                            ownedGuardReceipt(${JSON.stringify(f.root)},${JSON.stringify(record.identity)});
+                        }else{
+                            const {readCleanupRecords}=await import(${JSON.stringify(resolve('scripts/cleanupLanes.ts'))});
+                            readCleanupRecords(${JSON.stringify(f.root)});
+                        }
+                    }catch(caught){error=caught.message;}
+                    console.log(JSON.stringify({swapped,foreignRead,error,opened:opened.length,closed:opened.every(fd=>closed.has(fd))}));
+                `;
+                const result = JSON.parse(
+                    execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                        cwd: f.root,
+                        encoding: 'utf8',
+                        env: githubAuthorizationGitEnv(),
+                    })
+                );
+                expect(result.swapped).toBe(true);
+                expect(result.foreignRead).toBe(false);
+                expect(result.error).toBeDefined();
+                expect(result.opened).toBeGreaterThan(0);
+                expect(result.closed).toBe(true);
+                expect(JSON.parse(readFileSync(target, 'utf8'))).toMatchObject(
+                    route === 'guard receipt' ? { command: 'foreign payload' } : { reason: 'foreign payload' }
+                );
+            } finally {
+                f.dispose();
+                rmSync(foreign, { recursive: true });
+            }
+        }
+    );
+
     it('requests only read permissions under the author identity for cleanup', async () => {
         const requests: Array<Parameters<typeof authenticateRole>[0]> = [];
         const refused = new Error('stop before authentication');

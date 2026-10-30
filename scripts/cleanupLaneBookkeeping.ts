@@ -10,16 +10,82 @@ import {
     realpathSync,
     rmSync,
     writeFileSync,
+    type Stats,
 } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
-import { guardFailureReceiptPath, readGuardFailureReceipt } from './prContract.ts';
+import { guardFailureReceiptPath, parseGuardFailureReceipt } from './prContract.ts';
 import { inside, type LaneIdentity } from './removeLane.ts';
 import { clearGuardFailureReceiptIfUnchanged } from './resourceGuard.ts';
 
 import type { CleanupPort, CleanupRecord } from './cleanupLanes.ts';
 
 export type GuardReceiptFingerprint = { hash: string; dev: number; ino: number; birthtimeMs: number };
+
+type CleanupFile = { bytes: Buffer; stat: Stats };
+
+function canonicalCleanupParent(path: string): boolean {
+    const parent = dirname(path);
+    let stat: Stats;
+    try {
+        stat = lstatSync(parent);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return false;
+        }
+        throw error;
+    }
+    if (!stat.isDirectory() || stat.isSymbolicLink() || realpathSync(parent) !== parent) {
+        throw new Error('cleanup file parent is not canonical');
+    }
+    return true;
+}
+
+function checkedCleanupFile(fd: number, path: string): Stats {
+    const stat = fstatSync(fd);
+    const current = lstatSync(path);
+    if (
+        !stat.isFile() ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        stat.dev !== current.dev ||
+        stat.ino !== current.ino ||
+        stat.birthtimeMs !== current.birthtimeMs ||
+        realpathSync(dirname(path)) !== dirname(path)
+    ) {
+        throw new Error('cleanup file is not regular at its canonical path or changed during inspection');
+    }
+    return stat;
+}
+
+export function readCleanupFile(path: string): CleanupFile | undefined {
+    if (!(constants.O_NOFOLLOW > 0) || !(constants.O_NONBLOCK > 0)) {
+        throw new Error('cleanup file no-follow nonblocking inspection is unavailable');
+    }
+    if (!canonicalCleanupParent(path)) {
+        return undefined;
+    }
+    let fd: number;
+    try {
+        fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
+    try {
+        const stat = checkedCleanupFile(fd, path);
+        const bytes = readFileSync(fd);
+        const after = checkedCleanupFile(fd, path);
+        if (stat.size !== after.size || stat.mtimeMs !== after.mtimeMs || stat.ctimeMs !== after.ctimeMs) {
+            throw new Error('cleanup file changed during inspection');
+        }
+        return { bytes, stat };
+    } finally {
+        closeSync(fd);
+    }
+}
 
 function exclusiveExclusionFile(fd: number, path: string): void {
     const descriptor = fstatSync(fd);
@@ -59,45 +125,32 @@ export function ensureCleanupExclusionFile(path: string): void {
     }
 }
 
+function fingerprint(file: CleanupFile): GuardReceiptFingerprint {
+    const hash = createHash('sha256').update(file.bytes).digest('hex');
+    return { hash, dev: file.stat.dev, ino: file.stat.ino, birthtimeMs: file.stat.birthtimeMs };
+}
+
 function guardReceiptFingerprint(path: string): GuardReceiptFingerprint | null {
-    try {
-        const parent = dirname(path);
-        if (!lstatSync(parent).isDirectory() || realpathSync(parent) !== parent) {
-            throw new Error('guard receipt parent is not canonical');
-        }
-        const stat = lstatSync(path);
-        if (!stat.isFile() || stat.isSymbolicLink()) {
-            throw new Error('guard receipt is not a regular file');
-        }
-        const hash = createHash('sha256').update(readFileSync(path)).digest('hex');
-        const after = lstatSync(path);
-        if (stat.dev !== after.dev || stat.ino !== after.ino || stat.birthtimeMs !== after.birthtimeMs) {
-            throw new Error('guard receipt changed during inspection');
-        }
-        return { hash, dev: stat.dev, ino: stat.ino, birthtimeMs: stat.birthtimeMs };
-    } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-            return null;
-        }
-        throw error;
-    }
+    const file = readCleanupFile(path);
+    return file === undefined ? null : fingerprint(file);
 }
 
 export function ownedGuardReceipt(primaryRoot: string, identity: LaneIdentity): GuardReceiptFingerprint | null {
     const laneName = basename(identity.path);
-    const fingerprint = guardReceiptFingerprint(guardFailureReceiptPath(primaryRoot, laneName));
-    if (fingerprint === null) {
+    const path = guardFailureReceiptPath(primaryRoot, laneName);
+    const file = readCleanupFile(path);
+    if (file === undefined) {
         return null;
     }
-    const receipt = readGuardFailureReceipt(primaryRoot, laneName);
+    const receipt = parseGuardFailureReceipt(file.bytes.toString('utf8'), path);
     if (
-        receipt?.headSha !== identity.head ||
+        receipt.headSha !== identity.head ||
         (identity.branch !== undefined && receipt.branch !== identity.branch) ||
         (receipt.cwd !== undefined && receipt.cwd !== identity.path)
     ) {
         return null;
     }
-    return fingerprint;
+    return fingerprint(file);
 }
 
 function removedWorktreeAbsent(record: CleanupRecord, port: CleanupPort): boolean {
@@ -132,17 +185,14 @@ export function finishRemovedWorktree(record: CleanupRecord, port: CleanupPort):
     if (expected === undefined || expected === null) {
         return 'worktree absent from filesystem and registry; unbound guard bookkeeping preserved';
     }
-    const current = guardReceiptFingerprint(path);
-    if (current === null) {
+    const file = readCleanupFile(path);
+    if (file === undefined) {
         return completed;
     }
-    if (JSON.stringify(current) !== JSON.stringify(expected)) {
+    if (JSON.stringify(fingerprint(file)) !== JSON.stringify(expected)) {
         return 'worktree absent from filesystem and registry; newer guard bookkeeping preserved';
     }
-    const receipt = readGuardFailureReceipt(record.primaryRoot, laneName);
-    if (receipt === undefined) {
-        return completed;
-    }
+    const receipt = parseGuardFailureReceipt(file.bytes.toString('utf8'), path);
     const result = clearGuardFailureReceiptIfUnchanged(record.primaryRoot, laneName, receipt, {
         rmSync: (claimed, options) => {
             // The native receipt helper claims atomically; recheck file identity and bytes on that
