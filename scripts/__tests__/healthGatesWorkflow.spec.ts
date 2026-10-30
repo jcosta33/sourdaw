@@ -152,7 +152,7 @@ const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./
 const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
 const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
-const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_RUNNER = 'macos-15';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
@@ -2200,7 +2200,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its selected hardware condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
         throw new Error(
@@ -2258,7 +2258,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -4598,11 +4598,11 @@ describe('health gates workflow contract', () => {
             }
         }
 
-        for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
+        for (const runner of ['self-hosted', 'macos-14', 'macos-15-large', 'macos-15-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
             jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
             expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
-                'Browser AI WebGPU job must use the standard macos-14 runner'
+                'Browser AI WebGPU job must use the standard macos-15 runner'
             );
         }
 
