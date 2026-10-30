@@ -3,7 +3,7 @@ import { env } from 'node:process';
 
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 
-import { e2eOrigin, resolveE2ePort, SOURDAW_E2E_PORT_ENV } from './scripts/e2eServerIdentity';
+import { e2eOrigin, isBuiltE2eShardRun, resolveE2ePort, SOURDAW_E2E_PORT_ENV } from './scripts/e2eServerIdentity';
 import { devServerOnlySpecs } from './tests/e2e/devServerOnlySpecs';
 
 // One lane-scoped port feeds baseURL and webServer together, so lanes sharing
@@ -16,7 +16,7 @@ const port = resolveE2ePort(env.SOURDAW_E2E_PORT);
 // CI shard (the only caller that sets E2E_SPECS, via scripts/prValidationScope.ts
 // `run`) serves a production-mode build instead. Local runs, the offline smoke
 // job and nightly keep the dev server.
-const builtShardRun = Boolean(env.CI) && env.E2E_SPECS !== undefined;
+const builtShardRun = isBuiltE2eShardRun(env);
 
 function selectedShardSpecs(): readonly string[] {
     const parsed: unknown = JSON.parse(env.E2E_SPECS ?? '[]');
