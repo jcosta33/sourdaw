@@ -1,0 +1,21 @@
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/detectTransientsForClip.spec.ts
+  s_59e31a5c6f3e31::t_95378dcef9d280 16-17
+src/modules/Arrangement/handlers/clip/__tests__/handleDetectTransients.spec.ts
+  s_59e31a5c6f3e31::t_95378dcef9d280 10-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "817403b1c499e70f2f4724e49d57f39c00f0c42e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
