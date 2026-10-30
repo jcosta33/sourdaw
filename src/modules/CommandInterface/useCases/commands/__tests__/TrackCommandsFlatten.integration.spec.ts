@@ -633,6 +633,9 @@ describe('palette Flatten Track confirmation through the real command and CRDT w
         });
         vi.spyOn(handler, 'execute').mockImplementation((...args) => {
             const result = execute(...args);
+            if (result instanceof Promise) {
+                throw new Error('Expected the real Flatten handler to return synchronously');
+            }
             if (!result || result.status !== 'written') {
                 throw new Error('Expected the real Flatten handler to write');
             }
