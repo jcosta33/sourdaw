@@ -206,6 +206,31 @@ describe('the mounted ruler follows committed meter-map history', () => {
         vi.unstubAllGlobals();
     });
 
+    it('paints a freshly published fractional seam before the outgoing next tick leaves the viewport', async () => {
+        canvasWidth = 136;
+        timelineViewStore.set({ scrollX: 320, scrollY: 0, pixelsPerBeat: 80, autoScrollEnabled: true });
+        mountRuler();
+        await expectFreshBar(0, 2, 4);
+        const cursor = paints.length;
+
+        act(() => {
+            timeSignatureMapStore.set({
+                changes: [
+                    { id: 'original-meter', beat: 0, numerator: 4, denominator: 4 },
+                    { id: 'fractional', beat: 5.5, numerator: 3, denominator: 4 },
+                ],
+            });
+        });
+
+        await expectFreshBar(cursor, 2, 5.5);
+        expect(paints.at(-1)?.lines).toContainEqual({ x: 120, y: 0, endX: 120, endY: 18 });
+        expect(paints.at(-1)?.lines).toContainEqual({ x: 80, y: 14, endX: 80, endY: 18 });
+        act(() => {
+            const project = owners();
+            expect(project.raw.timeSignatureMap).toEqual(project.projected.timeSignatureMap);
+        });
+    });
+
     it('paints bar 3 at beat 10 after Insert 2 at 4 and repaints the same ruler through real Undo/Redo', async () => {
         mountRuler();
         await expectFreshBar(0, 3, 8);

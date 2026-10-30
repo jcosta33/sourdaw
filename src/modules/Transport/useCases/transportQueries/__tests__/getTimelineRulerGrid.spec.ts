@@ -13,6 +13,19 @@ function grid(changes: readonly Meter[], fromBeat = 0, toBeat = 12) {
 }
 
 describe('the canonical timeline ruler grid', () => {
+    it('visits a fractional seam before the outgoing next tick leaves the viewport', () => {
+        const result = grid([meter(0), meter(5.5, 3)], 4, 5.7);
+
+        expect(
+            result.map(({ startBeat, endBeat, bar, nominalBeats }) => [startBeat, endBeat, bar, nominalBeats])
+        ).toEqual([
+            [4, 5.5, 2, 4],
+            [5.5, 5.7, 2, 3],
+        ]);
+        expect(result[0]?.ticks).toEqual([{ beat: 5, index: 1 }]);
+        expect(result[1]?.ticks).toEqual([]);
+    });
+
     it('keeps the original empty-map grid and its metrical subdivision indexes', () => {
         const result = grid([]);
         expect(result.map(({ startBeat, bar, nominalBeats }) => ({ startBeat, bar, nominalBeats }))).toEqual([

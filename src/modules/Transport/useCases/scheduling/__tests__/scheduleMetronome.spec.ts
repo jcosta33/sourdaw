@@ -53,6 +53,25 @@ describe('scheduleMetronome', () => {
         expect(scheduleClick).not.toHaveBeenCalled();
     });
 
+    it.each([undefined, 20])('clicks a fractional seam in a short window with anchor %s', (anchor) => {
+        timeSignatureMapStore.value = {
+            changes: [{ id: 'fractional', beat: 5.5, numerator: 3, denominator: 4 }],
+        };
+        mockGetCurrentTime.mockReturnValue(10);
+        const transport = { ...metronomeOn, tempo: 120, metronomeVolume: 0.37 };
+        const origin = anchor ?? 10;
+
+        scheduleMetronome(5.4, 5.6, 5.4, transport, anchor);
+
+        expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+        expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo(origin + 0.05, 8), true, 0.37);
+        scheduleMetronome(5.6, 5.8, 5.4, transport, anchor);
+        expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+        scheduleMetronome(6.4, 6.6, 5.4, transport, anchor);
+        expect(mockScheduleClick).toHaveBeenCalledTimes(2);
+        expect(mockScheduleClick).toHaveBeenNthCalledWith(2, expect.closeTo(origin + 0.55, 8), false, 0.37);
+    });
+
     it('schedules one click per integer beat in the look-ahead window', () => {
         scheduleMetronome(0.5, 4.2, 0, metronomeOn);
 

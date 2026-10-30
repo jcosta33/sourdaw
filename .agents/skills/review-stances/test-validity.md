@@ -2196,6 +2196,25 @@ the map hook with an imperative read. The mapped geometry cases and stopped fres
 cases respectively must fail. These ruler probes are prescribed and have not yet run;
 they must not inherit the older carry mutation's credit.
 
+### 2026-10-30 — wide meter windows concealed a fractional seam stopping defect
+
+PR #2078 introduced the metrical-beat walk in `f626b84b9aed3b715780e20d3b9976c3f88fedd1`.
+Whole-span tests, integer change origins and fractional pulse lengths did not isolate a
+fractional change whose outgoing next tick lies outside the queried window. A change at
+5 with later ticks at 5.5 is not that input. The private historical review prompt and
+tier are unknown; the missed input/window stance is established by the unchanged walk.
+
+For 4/4 at 0 and 3/4 at 5.5, require exactly `[4, 5, 5.5]` in 4..5.7 and `[5.5]` in
+5.4..5.6. Follow the real model into `scheduleClick`: assert the seam's absolute time,
+accent and volume with both the audio clock and supplied initial anchor, then the next
+nonaccent tick and adjacent-window absence of a duplicate. Require the real ruler query's
+two physical pieces and an unconditionally mounted, freshly published map's full-height
+x120 stroke in the 136-pixel viewport at 80 pixels per beat, scrolled to beat 4. A list
+assertion alone cannot prove either consumer. These valid-input regressions failed on
+the old gate at their list, event, query and mounted-paint assertions. After a clean
+repair commit, restoring only that gate must make them fail again. Add invalid-unit and
+non-advancing arithmetic controls after the repair; do not baseline a known hanging walk.
+
 ### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
 
 An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
