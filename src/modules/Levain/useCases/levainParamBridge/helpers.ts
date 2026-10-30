@@ -83,7 +83,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
     const activePorts = new Map<string, MessagePort>();
     const registrationProgress = new Map<
         string,
-        { port: MessagePort; report: (epoch: number, progress: number) => void }
+        { port: MessagePort; report: (epoch: number, progress: number | { type: 'activity' }) => void }
     >();
     // Per-device load cancellation. A new instrument load for a device aborts
     // the previous one so the last-started load — not the last-finishing one —
@@ -359,7 +359,7 @@ export function createLevainBridge(deps: LevainBridgeDeps) {
         deviceId: string,
         device: LevainDevice,
         port?: MessagePort,
-        onProgress?: (epoch: number, progress: number) => void
+        onProgress?: (epoch: number, progress: number | { type: 'activity' }) => void
     ): Promise<LevainSampleLoadOutcome> {
         const target = deps.resolveEligibleDeviceWriteTarget(deviceId);
         if (target.status !== 'eligible') {

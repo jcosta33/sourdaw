@@ -57,7 +57,7 @@ export type AudioDeviceRuntimeSink = {
         deviceId: string;
         device: LevainRuntimeDevice;
         port?: MessagePort;
-        onProgress?: (epoch: number, progress: number) => void;
+        onProgress?: (epoch: number, progress: number | { type: 'activity' }) => void;
     }) => Promise<DeviceContentLoadOutcome>;
     /**
      * Release the registration `port` made for `deviceId`. A no-op when a newer
