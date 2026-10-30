@@ -1,0 +1,67 @@
+src/modules/Gluten/models/GlutenDisclosure.ts
+  s_59e31a5c6f3e31::t_2ded1633950732 1-17
+src/modules/Gluten/models/__tests__/GlutenDisclosure.spec.ts
+  s_59e31a5c6f3e31::t_d0d9b8b99f66f0 1-30
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_59e31a5c6f3e31::t_515f03b2cd8101 5,23-27,51-52,447-454,461-462,464,698,706-712,741-777,779-782,960-1015,1048-1103,1106,1108-1109,1111,1115-1116,1120-1121,1123-1124,1126,1130-1131,1135-1136,1138-1139,1141,1145-1146,1150-1151,1153-1154,1156,1160-1161,1165-1166,1169-1285,1287-1298,1300-1311,1313-1324,1326,1328-1329,1331-1332,1334-1335,1337,1339-1341,1344-1345,1347-1348,1350-1351,1353,1355-1357,1362-1364,1366-1367,1369-1381,1386-1387,1389-1455,1457-1458,1460,1462-1466,1469-1615
+  h_beb54bf43b47b7 438,460,463
+src/modules/Gluten/presentations/views/__tests__/GlutenDisclosure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_887fd43c9b9ecd 1,3-12,14-35,60,62-63,65,68,70-75,77-101,103,106,108-160,165,167-172,176,178,180,182-186,188,190,192-194,219-242
+  h_beb54bf43b47b7 2,13,36-46,47-55,56-59,61,64,66-67,69,76,102,104-105,107,161-164,166,173-175,177,179,181,187,189,191,195-218
+src/modules/Gluten/presentations/views/__tests__/GlutenPanel.spec.tsx
+  s_59e31a5c6f3e31::t_ff12cdba305dd1 4,17-18,23
+src/modules/Gluten/presentations/views/__tests__/glutenDiodeRecoveryHint.spec.tsx
+  s_59e31a5c6f3e31::t_c0a0b96fc93209 252
+src/modules/Gluten/presentations/views/__tests__/glutenProjectHydration.spec.tsx
+  s_59e31a5c6f3e31::t_a2d87c7bfe4b0f 16-25
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_59e31a5c6f3e31::t_b083d98e270bf6 59
+src/modules/Gluten/useCases/__tests__/setGlutenPanelUiLevel.spec.ts
+  s_59e31a5c6f3e31::t_a1f5ef34e5c2df 1-11,13-29,31-66,99-117,127-156,158-261,340-414,416-429,432-433,435,438-441,443-447
+  s_59e31a5c6f3e31::t_bfdcb88d412bf1 95-98,268-270,309-312,314-324,327-329,331-338
+  s_59e31a5c6f3e31::t_a7fe97630c2e61 118-126,313,325-326,330,431,436-437,442
+  s_59e31a5c6f3e31::t_72c12a2eb1ef36 12,30,67-82,89-90,92-94,157,262-267,271-283,294,296,303-308,415
+  s_59e31a5c6f3e31::t_d1e11594792ae0 430,434
+  s_b3201877f50e8a::t_aa80d2fd61a05e 339
+  s_59e31a5c6f3e31::t_e7ed082a55bf89 284-286
+  s_59e31a5c6f3e31::t_489fceeeadf48f 287-289
+  s_59e31a5c6f3e31::t_37dc434d564e39 83-88,91
+src/modules/Gluten/useCases/hydrateGlutenDisclosureFromProject.ts
+  s_59e31a5c6f3e31::t_66f77a98d447cc 1-18
+src/modules/Gluten/useCases/setGlutenPanelUiLevel.ts
+  s_59e31a5c6f3e31::t_ed5581e29527bf 1-7,10-11,31-36,39-40,42-64,66-67,71-82
+  s_59e31a5c6f3e31::t_a7fe97630c2e61 14
+  s_59e31a5c6f3e31::t_d1e11594792ae0 8-9,12-13,15-22,24-30,37-38,41,65,68-70
+  s_59e31a5c6f3e31::t_3c534ea8d933b1 23
+tests/e2e/glutenPresetSearchTestId.spec.ts
+  s_59e31a5c6f3e31::t_48df4e5ce4dce6 10-13,43-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6e733284df7d01049d3022c70334ebdd269de79",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b3201877f50e8a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe3-a4c6-79f2-962f-2879ed04e527",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
