@@ -424,4 +424,32 @@ export const bassMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Older bass recordings read as vintage through added low-order harmonics and a bandwidth that stops well short of the top octave, so a small amount of drive is paired with a shelf rather than pushed hard on its own. Partial mix keeps the dry fundamental underneath the harmonics the drive adds.',
     },
+    {
+        id: 'bass-controlled',
+        descriptor: 'controlled',
+        roles: ['bass'],
+        title: 'Even unwanted played-bass note levels',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -24, maximum: -16 },
+                    { paramId: 'comp-ratio', minimum: 4, maximum: 6 },
+                    { paramId: 'comp-attack', minimum: 8, maximum: 20 },
+                    { paramId: 'comp-release', minimum: 80, maximum: 160 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'This is a played bass with unwanted note-to-note variation, not a constant-level synth sub.',
+            'The input is clean of low rumble that would dominate reduction, and notes allow envelope settling.',
+        ],
+        contraindications: [
+            'Skip intentional note accents or a fixed-level synth bass.',
+            'Skip a release that modulates the lowest wanted notes within their cycles.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing bass level-control component uses firm 4:1 to 6:1 compression. Here it operates alone, without the high-pass or makeup move, and can reduce only unwanted note-level variation that actually crosses threshold.',
+    },
 ];

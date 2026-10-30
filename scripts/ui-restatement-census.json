@@ -612,6 +612,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-05b8491de08cef44",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1173,
+    "fingerprint": "DawCompactSelect\t",
+    "kind": "generic-control",
+    "mapping": "DawCompactSelect",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-05bac782cf296705",
     "file": "src/modules/Setlist/presentations/views/SetlistPanel.tsx",
     "line": 280,
@@ -1028,7 +1037,7 @@
   {
     "id": "ui-08f9013c001bc578",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 947,
+    "line": 1072,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -1163,7 +1172,7 @@
   {
     "id": "ui-0aa35da3226341d0",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1160,
+    "line": 1343,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2637,9 +2646,18 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-193e3c9b03422c71",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1360,
+    "fingerprint": "Input\t",
+    "kind": "generic-control",
+    "mapping": "Input",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-19458e759567f305",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 813,
+    "line": 938,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -2702,7 +2720,7 @@
   {
     "id": "ui-19c327813d5da9b8",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1251,
+    "line": 1260,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -2774,10 +2792,19 @@
   {
     "id": "ui-1a5e9a1056ab1388",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1101,
+    "line": 1275,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-1a679fe9664e3d27",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1457,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -2900,7 +2927,7 @@
   {
     "id": "ui-1c3841771172c437",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 767,
+    "line": 883,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -3323,7 +3350,7 @@
   {
     "id": "ui-1f85221bacbe57a1",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1002,
+    "line": 1127,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -3741,6 +3768,15 @@
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-23848dd45ef53b11",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1188,
+    "fingerprint": "Input\t",
+    "kind": "generic-control",
+    "mapping": "Input",
     "disposition": "already-migrated"
   },
   {
@@ -5249,7 +5285,7 @@
   {
     "id": "ui-32a343b2df521e6e",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 984,
+    "line": 1109,
     "fingerprint": "Input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -5258,7 +5294,7 @@
   {
     "id": "ui-32ad0e63afee88a0",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 894,
+    "line": 1019,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -5528,7 +5564,7 @@
   {
     "id": "ui-35ff19be8e3fc4ed",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1099,
+    "line": 1273,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -5555,7 +5591,7 @@
   {
     "id": "ui-36137eab62202966",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1183,
+    "line": 1378,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -7247,7 +7283,7 @@
   {
     "id": "ui-46bf8515c26e318d",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1024,
+    "line": 1149,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -7445,7 +7481,7 @@
   {
     "id": "ui-4843a98cfdd2b275",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1120,
+    "line": 1300,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -8147,7 +8183,7 @@
   {
     "id": "ui-505fec1c483bed9a",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1126,
+    "line": 1306,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -8422,6 +8458,15 @@
     "kind": "generic-control",
     "mapping": "DawCompactCheckbox",
     "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-5302c1da9173d00f",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1448,
+    "fingerprint": "DawDialogSection\t",
+    "kind": "daw-chrome",
+    "mapping": "DawDialogSection",
+    "disposition": "semantic-wrapper"
   },
   {
     "id": "ui-5314900b4b17695b",
@@ -9110,7 +9155,7 @@
   {
     "id": "ui-5a3d2268f25c433f",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1229,
+    "line": 1426,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -9353,7 +9398,7 @@
   {
     "id": "ui-5c50057021290717",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1227,
+    "line": 1424,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9587,7 +9632,7 @@
   {
     "id": "ui-5e704a755b4b5e1d",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1189,
+    "line": 1384,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -9947,7 +9992,7 @@
   {
     "id": "ui-61b4388a0ccf4e37",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 826,
+    "line": 951,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -10658,10 +10703,19 @@
   {
     "id": "ui-69a0991ead3b0477",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1153,
+    "line": 1336,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-69c841da9dce6d7b",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1197,
+    "fingerprint": "Input\t",
+    "kind": "generic-control",
+    "mapping": "Input",
     "disposition": "already-migrated"
   },
   {
@@ -11036,7 +11090,7 @@
   {
     "id": "ui-6e0d72968efa2bb0",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1260,
+    "line": 1473,
     "fingerprint": "DawDialogFooter\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogFooter",
@@ -13554,6 +13608,15 @@
     "disposition": "semantic-wrapper"
   },
   {
+    "id": "ui-8665be2b4b85478f",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1459,
+    "fingerprint": "Row\t",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-8674480892ed2f6c",
     "file": "src/modules/Arrangement/presentations/views/TrackListView.tsx",
     "line": 355,
@@ -13808,7 +13871,7 @@
   {
     "id": "ui-893dd62cf186b2b2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1147,
+    "line": 1330,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -14168,7 +14231,7 @@
   {
     "id": "ui-8cbc9f43cfeed8b3",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 766,
+    "line": 882,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -14357,7 +14420,7 @@
   {
     "id": "ui-8ee0c3921465b967",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 895,
+    "line": 1020,
     "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",
@@ -14438,7 +14501,7 @@
   {
     "id": "ui-8f6a3ebc0fcb3cf3",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 983,
+    "line": 1108,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -14465,7 +14528,7 @@
   {
     "id": "ui-8fc5074e9d5d75fb",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1053,
+    "line": 1227,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15185,7 +15248,7 @@
   {
     "id": "ui-98aaa8ace6e8e595",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 839,
+    "line": 964,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -15509,7 +15572,7 @@
   {
     "id": "ui-9bf966218727cb27",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 798,
+    "line": 919,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -16058,7 +16121,7 @@
   {
     "id": "ui-a1e8379d3f19e0d6",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 911,
+    "line": 1036,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -16193,7 +16256,7 @@
   {
     "id": "ui-a344326802dea89e",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1286,
+    "line": 1499,
     "fingerprint": "input\t",
     "kind": "generic-control",
     "mapping": "Input",
@@ -16521,6 +16584,15 @@
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-a71182e0918da510",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1073,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
     "disposition": "already-migrated"
   },
   {
@@ -17903,7 +17975,7 @@
   {
     "id": "ui-b3db920fbf6debd1",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1086,
+    "line": 1222,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -18011,7 +18083,7 @@
   {
     "id": "ui-b4ad9ff19eb338b2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 948,
+    "line": 926,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -18470,7 +18542,7 @@
   {
     "id": "ui-b98606213e7fb39d",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 848,
+    "line": 973,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -19028,7 +19100,7 @@
   {
     "id": "ui-bfa1aad86d1f4431",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 982,
+    "line": 1107,
     "fingerprint": "Row\t",
     "kind": "layout",
     "mapping": "Row",
@@ -19442,7 +19514,7 @@
   {
     "id": "ui-c4334c4f68df8602",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1029,
+    "line": 1154,
     "fingerprint": "DawCompactSelect\t",
     "kind": "generic-control",
     "mapping": "DawCompactSelect",
@@ -19973,7 +20045,7 @@
   {
     "id": "ui-c9eed2f402e9e5b2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1093,
+    "line": 1267,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -20405,7 +20477,7 @@
   {
     "id": "ui-cd234c558d030fe4",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1221,
+    "line": 1418,
     "fingerprint": "DawEyebrowLabel\t",
     "kind": "daw-chrome",
     "mapping": "DawEyebrowLabel",
@@ -20535,6 +20607,15 @@
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
+    "id": "ui-cf0c65341c6ac772",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1206,
+    "fingerprint": "Input\t",
+    "kind": "generic-control",
+    "mapping": "Input",
     "disposition": "already-migrated"
   },
   {
@@ -20747,7 +20828,7 @@
   {
     "id": "ui-d1606b03e90d16b2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1197,
+    "line": 1393,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -21305,7 +21386,7 @@
   {
     "id": "ui-d7699143356d1f06",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 804,
+    "line": 917,
     "fingerprint": "Stack\t",
     "kind": "layout",
     "mapping": "Stack",
@@ -21404,7 +21485,7 @@
   {
     "id": "ui-d7ec39a713a8b62f",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 981,
+    "line": 1106,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -21557,7 +21638,7 @@
   {
     "id": "ui-d9880b0e3c52766b",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1048,
+    "line": 1172,
     "fingerprint": "DawDialogSection\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogSection",
@@ -21890,7 +21971,7 @@
   {
     "id": "ui-dd5efcb67bc2fae0",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 926,
+    "line": 1051,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -22286,7 +22367,7 @@
   {
     "id": "ui-e1cf1fc4ba91c2af",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1003,
+    "line": 1128,
     "fingerprint": "DawCompactCheckbox\t",
     "kind": "generic-control",
     "mapping": "DawCompactCheckbox",
@@ -23564,7 +23645,7 @@
   {
     "id": "ui-eead0c67a779d50d",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 893,
+    "line": 1018,
     "fingerprint": "DawDialogBody\t",
     "kind": "daw-chrome",
     "mapping": "DawDialogBody",
@@ -24059,7 +24140,7 @@
   {
     "id": "ui-f3647dde68d6dc12",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1128,
+    "line": 1308,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
@@ -24282,6 +24363,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-f639a40284c21457",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1492,
+    "fingerprint": "label\tflex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-compact transition-all",
+    "kind": "layout",
+    "mapping": "Row",
+    "disposition": "responsive-or-dynamic"
+  },
+  {
     "id": "ui-f63af9cf24748e3e",
     "file": "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
     "line": 357,
@@ -24410,20 +24500,11 @@
   {
     "id": "ui-f726e4cad7ec79b6",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 896,
+    "line": 1021,
     "fingerprint": "Button\t",
     "kind": "generic-control",
     "mapping": "Button",
     "disposition": "already-migrated"
-  },
-  {
-    "id": "ui-f74466c336bbbfcf",
-    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1279,
-    "fingerprint": "label\tflex cursor-pointer items-center gap-2 rounded-md border px-2 py-1.5 text-[11px] transition-all",
-    "kind": "layout",
-    "mapping": "Row",
-    "disposition": "responsive-or-dynamic"
   },
   {
     "id": "ui-f75c58b9fe9af6c6",
@@ -24750,6 +24831,15 @@
     "disposition": "already-migrated"
   },
   {
+    "id": "ui-fa07593727e2aced",
+    "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
+    "line": 1184,
+    "fingerprint": "Stack\t",
+    "kind": "layout",
+    "mapping": "Stack",
+    "disposition": "already-migrated"
+  },
+  {
     "id": "ui-fa12c62e0c971bce",
     "file": "src/modules/Arrangement/presentations/views/AdjustmentLayerStrip.tsx",
     "line": 1030,
@@ -24788,7 +24878,7 @@
   {
     "id": "ui-fa3164216c558cc2",
     "file": "src/modules/AudioRendering/presentations/views/ExportDialog.tsx",
-    "line": 1049,
+    "line": 1223,
     "fingerprint": "Grid\t",
     "kind": "layout",
     "mapping": "Grid",

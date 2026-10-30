@@ -4,12 +4,14 @@ type FixtureDevice = { id: string; type: string; deviceState: unknown };
 type FixtureTracks = { tracks: { id: string; kind: string; devices: FixtureDevice[] }[] };
 
 const mocks = vi.hoisted(() => ({
-    trackStore: { value: undefined as FixtureTracks | undefined },
+    trackStore: { value: undefined as FixtureTracks | undefined, subscribe: vi.fn(() => () => undefined) },
+    coordinateRequests: [] as Promise<void>[],
     resolveWriteTarget: vi.fn(),
     applyPatchToEngine: vi.fn(),
     loadSamplesForInstrument: vi.fn(),
     setLevainParamWithAudio: vi.fn(),
     executeAppAction: vi.fn((_action: unknown) => Promise.resolve()),
+    executeUserAppAction: vi.fn<typeof executeUserAppAction>(() => Promise.resolve()),
 }));
 
 // Exhaustive over this spec's graph: the sweep reads `trackStore`, the preset
@@ -35,12 +37,29 @@ vi.mock('../levainParamBridge/levainBridgeDependencies', () => ({
 }));
 // The persistence subscriber commits through this door; captured so the
 // data-loss case can read exactly what a local edit mirrored into the document.
-vi.mock('#/modules/Command/useCases', () => ({ executeAppAction: mocks.executeAppAction }));
+vi.mock('#/modules/Command/useCases', () => ({
+    executeAppAction: mocks.executeAppAction,
+    executeUserAppAction: mocks.executeUserAppAction,
+}));
+
+vi.mock('../coordinateLevainDeviceState', async (importOriginal) => {
+    const original = await importOriginal<typeof import('../coordinateLevainDeviceState')>();
+    return {
+        coordinateLevainDeviceState: (...args: Parameters<typeof original.coordinateLevainDeviceState>) => {
+            const request = original.coordinateLevainDeviceState(...args);
+            mocks.coordinateRequests.push(request);
+            return request;
+        },
+    };
+});
 
 import { createDefaultPatch } from '../../models/LevainPatch';
 import { defaultLevainState, levainStore, setCurrentArticulation } from '../../stores/levainStore';
+import { configureLevainDeviceStateProjectAccess } from '../configureLevainDeviceStateProjectAccess';
 import { initLevainDeviceStatePersistence } from '../initLevainDeviceStatePersistence';
 import { reconcileLevainDeviceStatesFromProject } from '../reconcileLevainDeviceStatesFromProject';
+
+import type { executeUserAppAction } from '#/modules/Command/useCases';
 
 const DEVICE_ID = 'levain-peer-1';
 const TRACK_ID = 'track-1';
@@ -69,6 +88,8 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
     let stopPersistence: () => void;
 
     beforeEach(() => {
+        // Only the unit fixture's visible projection exists; committed membership is tested separately.
+        configureLevainDeviceStateProjectAccess({ hasDevice: () => false, subscribe: () => () => undefined });
         vi.clearAllMocks();
         mocks.resolveWriteTarget.mockReturnValue({ status: 'eligible', trackId: TRACK_ID, deviceId: DEVICE_ID });
         mocks.trackStore.value = undefined;
@@ -79,8 +100,11 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
         stopPersistence = initLevainDeviceStatePersistence();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
         stopPersistence();
+        await Promise.all(mocks.coordinateRequests);
+        configureLevainDeviceStateProjectAccess(null);
+        mocks.coordinateRequests.length = 0;
         levainStore.set({});
     });
 
@@ -142,10 +166,34 @@ describe('reconcileLevainDeviceStatesFromProject', () => {
 
         reconcileLevainDeviceStatesFromProject();
         setCurrentArticulation(DEVICE_ID, 'spiccato');
+        await Promise.all(mocks.coordinateRequests);
 
         const commit = mocks.executeAppAction.mock.calls.map((call) => call[0]).findLast(isSetDeviceStateAction);
         expect(commit).toBeDefined();
         expect(commit?.payload.state.data.instrumentId).toBe('cello');
         expect(commit?.payload.state.data.currentArticulation).toBe('spiccato');
     });
+});
+
+it('projects a peer-only tier without engine, sample or persistence writes', () => {
+    vi.clearAllMocks();
+    levainStore.set({
+        [DEVICE_ID]: { ...defaultLevainState, patch: createDefaultPatch('violin-1') },
+        sibling: structuredClone(defaultLevainState),
+    });
+    expect(levainStore.value?.sibling?.patch).not.toBe(levainStore.value?.[DEVICE_ID]?.patch);
+    const stop = initLevainDeviceStatePersistence();
+    projectWith(
+        levainDevice({ ...VIOLIN_SUSTAIN_CHUNK, data: { ...VIOLIN_SUSTAIN_CHUNK.data, disclosureTier: 'expert' } })
+    );
+    const patch = levainStore.value?.[DEVICE_ID]?.patch;
+    reconcileLevainDeviceStatesFromProject();
+    expect(levainStore.value?.[DEVICE_ID]?.uiLevel).toBe(6);
+    expect(levainStore.value?.sibling?.uiLevel).toBe(1);
+    expect(levainStore.value?.[DEVICE_ID]?.patch).toBe(patch);
+    expect(mocks.applyPatchToEngine).not.toHaveBeenCalled();
+    expect(mocks.loadSamplesForInstrument).not.toHaveBeenCalled();
+    expect(mocks.setLevainParamWithAudio).not.toHaveBeenCalled();
+    expect(mocks.executeAppAction).not.toHaveBeenCalled();
+    stop();
 });

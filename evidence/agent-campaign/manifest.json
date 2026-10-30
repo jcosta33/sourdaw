@@ -536,7 +536,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts",
-                    "digest": "083f504cc742c2724982bc973988065946ccc794b91d5c3f21ef556bf35aa519"
+                    "digest": "b5a726bea2456676c0dfd486975ffa7b27d37b7badc6ff450145ae4aeb7c2b0e"
                 }
             ]
         },
@@ -797,15 +797,15 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "7263c3e3c8c25218375d9cb573880713101ff65ef1ac6daff412acd441696448"
+                    "digest": "29799c911a66e3c3a317741be14b5326f613387792652fb9e7e4ebf3cf34dfff"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "0a6f07e0f30b603d4b5e54c09eebbc9b5d08bec6708fcce3c9217df2e85f48ec"
+                    "digest": "b5615d7e95539640cae79a2e9277383376ee6b1acc0957c8583ab99f120ebef5"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "98062b681030aea4021dedded0f1b256da27ad0ca55cf969d19ff0c6f9c538b1"
+                    "digest": "b7b69685efd34cee568034bf007805f7152bc6d9dbee77c33f488348c6629cd2"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -817,7 +817,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "f8f164413af9f20302b303223599dfe0de468cb0e94a94be3505c5238d2556aa"
+                    "digest": "aa94b2ac85018490a9b8c9297f85817b71c2dfb4bc465adf48ee83e2447b2dd0"
                 }
             ]
         },
@@ -883,7 +883,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts",
-                    "digest": "25c5c28e656b6b5977da7f81df23fc72bea8b279cd0bb423e44a5fb83d67a747"
+                    "digest": "423ac1a776322891c3c782f2d120bf9cf8819937e8f4931d5df098d8103b13af"
                 }
             ]
         },

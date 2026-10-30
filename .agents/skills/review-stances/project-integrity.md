@@ -249,6 +249,21 @@ PR #4111 introduced Yeast processor undo guards without exercising the codec's d
 
 Review every serialized inverse guard through its real prepare, write, fresh durable projection, undo, and redo route. Reorder nested object keys and pass absent, explicitly undefined, empty, and populated optional fields through their owning codec. Unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
 
+## Lesson from the PR #2597 failed-Freeze transaction escape
+
+PR #2597 returned no-write after staging Freeze's error in the render transaction inherited
+from #2387. Aborting the failed render correctly suppressed successful history but also erased
+its diagnostic. Settle that reason through a separate typed, non-undoable action while retaining
+the prior freeze aggregate; do not commit the refused render to keep its error.
+
+Probe the actual registered action against raw CRDT, store projection, material and history.
+Withdraw task, cancellation, root, revision or expected-aggregate authority both before admission
+and after settlement stages its replacement but before commit. A late attempt must preserve its
+successor. Keep genuine rollback, cleanup and storage failures observable, and preserve the
+committed classification when storage publishes before throwing. Compose any caller fence with
+handler and production-brief validation, and retain Redo capture discard on refusal and proven
+publication/settlement on durable or ambiguous commits.
+
 ## Lesson from the PR #806 transaction-scope escape
 
 PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until
@@ -917,6 +932,25 @@ durable witness-bound history, and successful Undo/Redo after recovery. Confirm 
 `performance.timeOrigin`; a same-URL fragment navigation is not a new document. Playback controls
 and mirror existence alone are insufficient.
 
+### 2026-10-30 — a timeline reader retained the pre-insert meter basis (#5247)
+
+The meter carry fixed by #5440 and the clip moved by Insert Time can be correct in both
+the CRDT and projections while the stopped top ruler remains on its old basis. Capture
+complete raw and projected map/track figures before and after the real registered
+Command, then run its recorded Undo and Redo with the same mounted ruler. Require each
+history transition to restore the captured owner figures and emit a fresh drawing at the
+corresponding bar positions; a previously matching frame is not a fresh read. Keep the
+owner validators and saved restore plans real. Do not manufacture history or substitute
+a new forward insert for Redo.
+
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; its
+introducing PR, review prompts and tiers are unverified. The earlier missing-carry
+introducer is also unestablished; #5440's repaired pre-merge intermediate is not a main
+escape. The missed stance is connected owner-state restoration through the live reader.
+A probe replacing only the map subscription with an imperative read must fail stopped
+map-change and history fresh-paint checks. This is a prescribed probe, not completed
+mutation evidence.
+
 ### 2026-10-30 — checkpoint descendants lost the captured sibling frontier (#5681)
 
 The root checkpoint-equivalence helper originated in PR #3175. Its first form compared each
@@ -939,3 +973,13 @@ restore the previous value. Separately retain refusal at actual confirmation for
 whole-map checkpoint conflict. Reverting the dependency-frontier comparison to compare each
 singleton descendant with the merged capture must fail the focused regression in
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts`.
+
+## 2026-10-30 — compiled inspection exports can inspect a different project singleton
+
+The persisted acceptance from #5812 reads raw CRDT truth, projections, session history and
+source PCM through eight module namespaces. Moving acquisition to compiled ESM must not
+create an independent bundle or initialize replacement stores. Build the inspection entry
+and real App together, trace each owning module's emitted identity, and retain every
+project-ID, witness, exact material, commit callback and two-cycle Undo/Redo assertion.
+A served inspection entry exporting a separate Project store must fail the same oracle;
+an export census or configured inspection port alone does not prove all live identities.
