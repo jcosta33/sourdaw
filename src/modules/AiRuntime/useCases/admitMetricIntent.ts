@@ -10,6 +10,7 @@ type MetricIntentInput = {
     catalog: MetricIntentCatalog;
     value: unknown;
     creativeAuthority: CreativeRequestAuthority | null;
+    workflowTargetIds?: readonly string[];
     callId: string;
     turn: number;
 };
@@ -42,7 +43,8 @@ function intentValue(value: unknown): value is IntentValue {
     );
 }
 
-function semanticIntentRefusal(value: IntentValue, authority: CreativeRequestAuthority | null): Refusal | null {
+function semanticIntentRefusal(value: IntentValue, input: MetricIntentInput): Refusal | null {
+    const authority = input.creativeAuthority;
     if (value.uncertainty !== 'none') {
         return {
             status: 'clarify',
@@ -57,7 +59,7 @@ function semanticIntentRefusal(value: IntentValue, authority: CreativeRequestAut
     }
     if (
         (value.kind === 'perceptual' || value.kind === 'comparative') &&
-        (value.objectives.length === 0 || authority === null)
+        (value.objectives.length === 0 || (authority === null && !input.workflowTargetIds?.length))
     ) {
         return {
             status: 'rejected',
@@ -122,7 +124,8 @@ function selectedScopeRefusal(
             reason: 'The selected metric relation requires two distinct current-preview subjects.',
         };
     }
-    const writableIds = input.creativeAuthority?.targets.flatMap((target) => target.objectIds) ?? [];
+    const writableIds =
+        input.workflowTargetIds ?? input.creativeAuthority?.targets.flatMap((target) => target.objectIds) ?? [];
     if (scope?.objectIds.some((id) => !writableIds.includes(id))) {
         return { status: 'rejected', reason: 'Metric intent cannot widen the creative mutation subjects.' };
     }
@@ -165,7 +168,7 @@ export function admitMetricIntent(
     if (!intentValue(value)) {
         return { status: 'rejected', reason: 'Metric intent does not match its closed candidate contract.' };
     }
-    const semanticRefusal = semanticIntentRefusal(value, input.creativeAuthority);
+    const semanticRefusal = semanticIntentRefusal(value, input);
     if (semanticRefusal !== null) {
         return semanticRefusal;
     }
@@ -191,7 +194,7 @@ export function admitMetricIntent(
         authority: {
             schemaVersion: 1,
             authorityId: `metric-${digest({ catalog: input.catalog.catalogId, callId: input.callId, value })}`,
-            origin: 'configured-joint-intake',
+            origin: input.workflowTargetIds === undefined ? 'configured-joint-intake' : 'admitted-workflow',
             callId: input.callId,
             turn: input.turn,
             catalogId: input.catalog.catalogId,

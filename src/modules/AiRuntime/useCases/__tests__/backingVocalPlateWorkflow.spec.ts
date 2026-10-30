@@ -32,6 +32,8 @@ import {
     configureCommandBatchIdempotency,
     executeAppAction,
     getExecutableAppActionToolSchemas,
+    parseVersionedCommandBatchEnvelope,
+    parseVersionedCommandEnvelope,
     redo,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
@@ -47,8 +49,10 @@ import {
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
+import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -57,14 +61,21 @@ import {
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { evaluateMetricGoalAdmission } from '../evaluateMetricGoalAdmission';
 import { getPlannedActionAffectedIds } from '../getPlannedActionAffectedIds';
+import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -347,6 +358,21 @@ const noActionHistoryMetadataPort = {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isToolSchema(value: unknown): value is ToolSchema {
+    if (!isRecord(value) || value.type !== 'function' || !isRecord(value.function)) {
+        return false;
+    }
+    const parameters = value.function.parameters;
+    return (
+        typeof value.function.name === 'string' &&
+        typeof value.function.description === 'string' &&
+        isRecord(parameters) &&
+        parameters.type === 'object' &&
+        isRecord(parameters.properties) &&
+        Array.isArray(parameters.required)
+    );
 }
 
 function isUnknownArray(value: unknown): value is unknown[] {
@@ -663,7 +689,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -693,21 +719,24 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
 }
 
 /**
- * Wraps a WebLLM fixture so the first provider turn discovers the command
- * catalog it needs and only the second turn returns the actual plan, matching
- * the two-turn contract `runApplicationOwnedToolLoop` enforces.
+ * Wraps a WebLLM fixture with the production intake, discovery, and proposal
+ * sequence. The final proposal must use schemas exposed by live discovery.
  */
 function createTurnTrackedWebLlmResponder(
-    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         const finalCalls = buildFinalCalls(userMessage);
         if (turn === 1) {
+            return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
+        }
+        if (turn === 2) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
@@ -736,7 +765,8 @@ function toolCallsResponse(calls: readonly ProviderPlanCall[]): Response {
 
 /** The hosted-provider equivalent of {@link createTurnTrackedWebLlmResponder}. */
 function createTurnTrackedHostedResponder(
-    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
     let turn = 0;
     return (_input, init) => {
@@ -744,11 +774,19 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
-        const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init.body);
+        const finalCalls = buildFinalCalls(userMessage);
         if (turn === 1) {
+            const request: unknown = JSON.parse(init.body);
+            if (!isRecord(request) || !Array.isArray(request.tools) || !request.tools.every(isToolSchema)) {
+                throw new TypeError('Expected the live hosted tool schemas');
+            }
+            return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        if (turn === 2) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
@@ -756,11 +794,16 @@ function createTurnTrackedHostedResponder(
     };
 }
 
-function useHostedProviderFixture(createPlan: (userMessage: string) => ProviderPlanCall[]): void {
+function useHostedProviderFixture(
+    createPlan: (userMessage: string) => ProviderPlanCall[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
+): void {
     runtimeMocks.backend.value = 'cloud';
     runtimeMocks.fetch.mockImplementation(
-        createTurnTrackedHostedResponder((userMessage) =>
-            withWorkflowCapabilitySelection('backing-vocal-plate', asCommandBatchProposal(createPlan(userMessage)))
+        createTurnTrackedHostedResponder(
+            (userMessage) =>
+                withWorkflowCapabilitySelection('backing-vocal-plate', asCommandBatchProposal(createPlan(userMessage))),
+            intake
         )
     );
 }
@@ -1047,7 +1090,7 @@ describe('backing-vocal plate workflow', () => {
     it('compiles EX-01 into one exact protected, dependency-ordered confirmation', async () => {
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(createProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual(providerPlan);
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
@@ -1236,14 +1279,33 @@ describe('backing-vocal plate workflow', () => {
     });
 
     it('keeps the EX-01 render primitive unavailable outside the exact admitted workflow', async () => {
-        runtimeMocks.generateWebLlmCompletion.mockResolvedValue(
-            JSON.stringify([
-                {
-                    name: 'renderProjectSections',
-                    arguments: { sectionIds: ['section-chorus-one'] },
-                },
-            ])
-        );
+        let turn = 0;
+        runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt, userMessage) => {
+            turn += 1;
+            if (turn === 1) {
+                return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+            }
+            if (turn === 2) {
+                return Promise.resolve(
+                    JSON.stringify([
+                        {
+                            name: 'agent.catalog.discover',
+                            arguments: { category: 'command', names: ['renderProjectSections'] },
+                        },
+                    ])
+                );
+            }
+            return Promise.resolve(
+                JSON.stringify(
+                    asCommandBatchProposal([
+                        {
+                            name: 'renderProjectSections',
+                            arguments: { sectionIds: ['section-chorus-one'] },
+                        },
+                    ])
+                )
+            );
+        });
 
         await sendChatMessage('Render Chorus One');
 
@@ -1258,7 +1320,7 @@ describe('backing-vocal plate workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const requestBody = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
         if (typeof requestBody !== 'string') {
@@ -1625,6 +1687,239 @@ describe('backing-vocal plate workflow', () => {
         expect(getAgentSectionRenderArtifacts()).toHaveLength(2);
         expect(undoStore.value?.past).toHaveLength(11);
         expect(undoStore.value?.future).toEqual([]);
+    });
+
+    it('binds the requested native cutoff through actual intake, grounding and the final Command batch', async () => {
+        await sendChatMessage(PROMPT);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        const snapshot = confirmation?.approvalSnapshot;
+        const commandBatch = snapshot?.commandBatch;
+        const state = metricGoalStateCodec(snapshot?.metricGoalState);
+        const use = state?.nativeLiteralUses?.[0];
+        if (!confirmation || !snapshot || !commandBatch || !state || !use?.binding) {
+            throw new Error('Expected actual workflow native literal bound to its final Command batch');
+        }
+        expect(state.authorities).toEqual([
+            expect.objectContaining({ kind: 'literal', origin: 'configured-joint-intake', goals: [] }),
+        ]);
+        expect(use).toMatchObject({
+            workflow: 'backing-vocal-plate',
+            field: 'highPassHz',
+            candidateId: 'number:102',
+            token: '250 Hz',
+            unit: 'Hz',
+            value: 250,
+        });
+        expect(snapshot.actions[use.ownerActionIndex]).toMatchObject({
+            type: 'createBus',
+            payload: { busId: use.ownerId },
+        });
+        expect(snapshot.actions[use.deviceActionIndex]).toMatchObject({
+            type: 'addDevice',
+            payload: { trackId: use.ownerId, deviceId: use.deviceId, deviceType: 'builtin-filter' },
+        });
+        expect(snapshot.actions[use.actionIndex]).toMatchObject({
+            type: 'setDeviceParameter',
+            payload: {
+                deviceId: use.deviceId,
+                expectedTrackId: use.ownerId,
+                paramId: 'filter-cutoff',
+                value: 250,
+                valueUnit: 'Hz',
+                automationRecordingPolicy: 'suppressed',
+            },
+        });
+        expect(
+            evaluateMetricGoalAdmission({ state, commandBatch, currentRevision: captureProjectRevision() }).status
+        ).toBe('not-required');
+        expect(snapshot.agentApproval?.metricGoalState).toBe(snapshot.metricGoalState);
+        expect(agentRunLifecycle.get(confirmation.runId)?.plan?.metricGoalState).toBe(snapshot.metricGoalState);
+
+        const withoutCarrier = { ...state, nativeLiteralUses: undefined };
+        expect(evaluateMetricGoalAdmission({ state: withoutCarrier, commandBatch }).status).toBe('blocked');
+        for (const patch of [
+            { ownerId: 'track-lead-vocal' },
+            { deviceId: 'device-lead-vocal-reverb' },
+            { paramId: 'filter-type' },
+            { unit: 'ms' },
+            { value: 251 },
+            { field: 'other' },
+            { actionIndex: use.actionIndex + 1 },
+            { ownerActionIndex: use.deviceActionIndex },
+            { deviceActionIndex: use.ownerActionIndex },
+            { candidateId: 'number:999' },
+            { token: '251 Hz' },
+            { start: 999 },
+            { authorityId: 'forged' },
+            { requestDigest: 'forged' },
+        ]) {
+            const altered = metricGoalStateCodec(
+                JSON.stringify({ ...state, nativeLiteralUses: [{ ...use, ...patch }] })
+            );
+            expect(evaluateMetricGoalAdmission({ state: altered, commandBatch }).status, JSON.stringify(patch)).toBe(
+                'blocked'
+            );
+        }
+        for (const key of [
+            'projectId',
+            'revision',
+            'runId',
+            'batchId',
+            'contentHash',
+            'commandId',
+            'ownerCommandId',
+            'deviceCommandId',
+        ]) {
+            const altered = metricGoalStateCodec(
+                JSON.stringify({
+                    ...state,
+                    nativeLiteralUses: [{ ...use, binding: { ...use.binding, [key]: 'forged' } }],
+                })
+            );
+            expect(evaluateMetricGoalAdmission({ state: altered, commandBatch }).status, key).toBe('blocked');
+        }
+        for (const origin of ['complete-literal-parser', 'admitted-workflow']) {
+            const altered = metricGoalStateCodec(
+                JSON.stringify({
+                    ...state,
+                    authorities: state.authorities.map((authority) => ({ ...authority, origin })),
+                })
+            );
+            expect(evaluateMetricGoalAdmission({ state: altered, commandBatch }).status).toBe('blocked');
+        }
+        expect(
+            evaluateMetricGoalAdmission({ state: { ...state, nativeLiteralUses: [use, use] }, commandBatch }).status
+        ).toBe('blocked');
+    });
+
+    it('refuses a changed Command, creation lineage or request instead of rebinding the native use', async () => {
+        await sendChatMessage(PROMPT);
+        const snapshot = getPendingActionConfirmation(getConfirmationId())?.approvalSnapshot;
+        const state = metricGoalStateCodec(snapshot?.metricGoalState);
+        const use = state?.nativeLiteralUses?.[0];
+        if (!snapshot || !state || !use) {
+            throw new Error('Expected genuine selected workflow and native state');
+        }
+        type Mutation =
+            | {
+                  index: number;
+                  type: 'createBus';
+                  payload: Partial<Extract<AppAction, { type: 'createBus' }>['payload']>;
+              }
+            | {
+                  index: number;
+                  type: 'addDevice';
+                  payload: Partial<Extract<AppAction, { type: 'addDevice' }>['payload']>;
+              }
+            | {
+                  index: number;
+                  type: 'setDeviceParameter';
+                  payload: Partial<Extract<AppAction, { type: 'setDeviceParameter' }>['payload']>;
+              };
+        const changes: Mutation[] = [
+            { index: use.ownerActionIndex, type: 'createBus', payload: { name: 'Other bus' } },
+            { index: use.deviceActionIndex, type: 'addDevice', payload: { trackId: 'track-lead-vocal' } },
+            { index: use.actionIndex, type: 'setDeviceParameter', payload: { valueUnit: undefined } },
+            { index: use.actionIndex, type: 'setDeviceParameter', payload: { valueUnit: 'ms' } },
+            { index: use.actionIndex, type: 'setDeviceParameter', payload: { expectedValue: 999 } },
+            { index: use.actionIndex, type: 'setDeviceParameter', payload: { expectedDeviceIds: [] } },
+        ];
+        for (const change of changes) {
+            const actions = snapshot.actions.map((action, index): AppAction => {
+                if (index !== change.index) {
+                    return action;
+                }
+                if (action.type === 'createBus' && change.type === 'createBus') {
+                    return { type: 'createBus', payload: { ...action.payload, ...change.payload } };
+                }
+                if (action.type === 'addDevice' && change.type === 'addDevice') {
+                    return { type: 'addDevice', payload: { ...action.payload, ...change.payload } };
+                }
+                if (action.type === 'setDeviceParameter' && change.type === 'setDeviceParameter') {
+                    return { type: 'setDeviceParameter', payload: { ...action.payload, ...change.payload } };
+                }
+                throw new Error('Expected the actual workflow operation at its native provenance occurrence');
+            });
+            const commandBatch = compilePlannedActionCommandBatch({
+                actions,
+                actionLabels: snapshot.actionLabels,
+                autoCommit: false,
+                context: getProjectContext(),
+                group: { groupId: 'changed-native', groupLabel: PROMPT },
+                intent: PROMPT,
+                projectRevision: captureProjectRevision(),
+                runId: 'changed-native',
+            }).commandBatch;
+            const unbound = { ...state, binding: null, nativeLiteralUses: [{ ...use, binding: null }] };
+            const rebound = bindMetricGoalsToBatch({ state: unbound, commandBatch });
+            expect(rebound.nativeLiteralUses?.[0]?.binding, JSON.stringify(change)).toBeNull();
+            expect(evaluateMetricGoalAdmission({ state: rebound, commandBatch }).status).toBe('blocked');
+        }
+        if (snapshot.commandBatch === undefined) {
+            throw new Error('Expected the actual compiled workflow Command batch');
+        }
+        const parsed = parseVersionedCommandBatchEnvelope(
+            snapshot.commandBatch.serialized,
+            snapshot.commandBatch.authority
+        );
+        if (parsed.status !== 'valid') {
+            throw new Error(parsed.reason);
+        }
+        const invalidWireChanges = [
+            { index: use.ownerActionIndex, payload: { extraProviderField: true } },
+            { index: use.actionIndex, payload: { automationRecordingPolicy: 'record' } },
+        ];
+        for (const change of invalidWireChanges) {
+            const command = parsed.envelope.commands[change.index];
+            if (command === undefined) {
+                throw new Error('Expected the genuine native workflow Command occurrence');
+            }
+            const wire: unknown = { ...command, arguments: { ...command.arguments, ...change.payload } };
+            expect(parseVersionedCommandEnvelope(JSON.stringify(wire))).toEqual({
+                status: 'invalid',
+                reason: 'Command operation or arguments are not allowlisted',
+            });
+        }
+        for (const intent of [PROMPT, `${PROMPT} Keep the lead centroid at 250 Hz.`]) {
+            const commandBatch = compilePlannedActionCommandBatch({
+                actions: snapshot.actions,
+                actionLabels: snapshot.actionLabels,
+                autoCommit: false,
+                context: getProjectContext(),
+                group: { groupId: 'reused-native', groupLabel: intent },
+                intent,
+                projectRevision: captureProjectRevision(),
+                runId: 'reused-native',
+            }).commandBatch;
+            const rebound = bindMetricGoalsToBatch({ state, commandBatch });
+            expect(rebound.nativeLiteralUses?.[0]?.binding).toEqual(use.binding);
+            expect(evaluateMetricGoalAdmission({ state: rebound, commandBatch }).status).toBe('blocked');
+        }
+    });
+
+    it('does not use the native cutoff as an additional acoustic 250 Hz obligation', async () => {
+        settleFixtureProjectWrites();
+        const before = structuredClone(trackStore.value?.tracks);
+        const revision = captureProjectRevision();
+        await sendChatMessage(`${PROMPT} Keep the lead centroid at 250 Hz.`);
+        const confirmation = getPendingActionConfirmation(getConfirmationId());
+        const snapshot = confirmation?.approvalSnapshot;
+        const state = metricGoalStateCodec(snapshot?.metricGoalState);
+        if (!confirmation || !snapshot?.commandBatch || !state) {
+            throw new Error('Expected visible original workflow with complete numeric request');
+        }
+        expect(state.nativeLiteralUses).toEqual([]);
+        expect(evaluateMetricGoalAdmission({ state, commandBatch: snapshot.commandBatch }).status).toBe('blocked');
+        expect(confirmation.risk.reason).toContain('250 Hz');
+        expect(await confirmPendingChatActions({ confirmationId: confirmation.id })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringMatching(/metric|250 Hz/iu),
+        });
+        expect(trackStore.value?.tracks).toEqual(before);
+        expect(captureProjectRevision()).toBe(revision);
+        expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        expect(getAgentSectionRenderArtifacts()).toEqual([]);
+        expect(undoStore.value?.past).toEqual([]);
     });
 
     it('atomically commits the workflow, renders both choruses, and groups undo and redo', async () => {

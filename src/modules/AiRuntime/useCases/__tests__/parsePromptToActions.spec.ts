@@ -8,7 +8,12 @@ import { AiRuntimeConfigurationChangedError } from '../../errors/AiRuntimeConfig
 import { type AgentRunProviderProposal } from '../../models/AgentRun';
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type StemImportPromptScope } from '../../models/StemImportCapability';
-import { tryPresetMatch, tryParameterizedPath, tryCompoundFastPath } from '../../transformers/promptParser/parsing';
+import {
+    buildPresetContext,
+    tryPresetMatch,
+    tryParameterizedPath,
+    tryCompoundFastPath,
+} from '../../transformers/promptParser/parsing';
 import { getExplicitClipProtection } from '../agentReference/getExplicitlyProtectedClips';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
@@ -17,14 +22,17 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome as generateToolCalls } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
-import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
 import {
     readCreativeInterpretationCatalog,
     selectCreativeInterpretationCall,
     type ScriptedTurn,
 } from './highLevelIntentWorkflowFixture';
-import { advertisedAnswerSchema } from './answerWireFixture';
-import { readMetricPublication } from './metricGoalWorkflowFixture';
+import {
+    literalMetricIntakeTurn,
+    nonAcousticMetricIntakeTurn,
+    readMetricPublication,
+} from './metricGoalWorkflowFixture';
 
 const {
     mockLogger,
@@ -369,15 +377,13 @@ function completePlan<TToolCall extends { name: string; arguments: Record<string
         } as unknown as CompletePlanOutcome;
     }
     // Every request attempt admits the whole request before discovery and proposal.
-    return scriptedPlan(
-        intake,
-        commandCalls.length > 0
-            ? [catalogPlan, proposalPlan]
-            : workflowCalls.length > 0
-              ? [proposalPlan]
-              : [noActionPlan],
-        afterIntake
-    );
+    let planningTurns = [noActionPlan];
+    if (commandCalls.length > 0) {
+        planningTurns = [catalogPlan, proposalPlan];
+    } else if (workflowCalls.length > 0) {
+        planningTurns = [proposalPlan];
+    }
+    return scriptedPlan(intake, planningTurns, afterIntake);
 }
 
 function createGlueProviderContext(): ProjectContext {
@@ -503,6 +509,89 @@ describe('parsePromptToActions', () => {
     afterEach(() => {
         clearHandlerRegistry();
         vi.restoreAllMocks();
+    });
+
+    it.each(['view-mix', 'open-mixer'])('admits the selected %s ID despite its shared label', async (id) => {
+        const result = await parsePromptToActions({
+            prompt: 'Open Mixer Panel',
+            context: baseContext,
+            preset: { id, expectedContext: buildPresetContext(baseContext) },
+        });
+        expect(result.actions).toHaveLength(1);
+        expect(result.metricGoalState).toContain('complete-literal-parser');
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    it('preserves free-text ambiguity and selects clipboard copy by its ID', async () => {
+        const context = createMixerContext();
+        context.selectedTrackId = 'track-vocals';
+        context.selectedClipId = 'clip-vocal';
+        context.tracks[0]!.clips = [
+            { id: 'clip-vocal', name: 'Vocal', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 },
+        ];
+        vi.mocked(tryPresetMatch).mockImplementation(actualParsing.tryPresetMatch);
+        for (const prompt of ['Open Mixer Panel', 'copy clip']) {
+            const result = await parsePromptToActions({ prompt, context, providerPlanning: 'disabled' });
+            expect(result.actions).toEqual([]);
+            expect(result.metricGoalState).toBeUndefined();
+        }
+        const copied = await parsePromptToActions({
+            prompt: 'Copy Clip',
+            context,
+            preset: { id: 'copy-clip', expectedContext: buildPresetContext(context) },
+        });
+        expect(copied.actions).toEqual([{ type: 'copyClip' }]);
+        expect(generateToolCalls).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['unknown ID', 'missing', 'Play', 'none'],
+        ['wrong label', 'play', 'Delete Track', 'none'],
+        ['extended label', 'add-eq', 'Add EQ and make Vocal warmer', 'track'],
+        ['missing track', 'add-eq', 'Add EQ', 'none'],
+        ['stale track', 'add-eq', 'Add EQ', 'stale-track'],
+        ['changed track kind', 'add-eq', 'Add EQ', 'track-kind'],
+        ['changed clip type', 'copy-clip', 'Copy Clip', 'clip-type'],
+        ['unavailable MIDI clip', 'quantize', 'Quantize Notes', 'audio-clip'],
+        ['null builder', 'add-auto-lane', 'Add Automation Lane', 'track'],
+        ['readonly', 'play', 'Play', 'readonly'],
+    ])('refuses a selected preset with %s without provider fallback', async (_case, id, prompt, variation) => {
+        const context = createMixerContext();
+        if (variation !== 'none') {
+            context.selectedTrackId = 'track-vocals';
+        }
+        if (variation === 'clip-type' || variation === 'audio-clip') {
+            context.selectedClipId = 'clip-vocal';
+            context.tracks[0]!.clips = [
+                { id: 'clip-vocal', name: 'Vocal', type: 'audio', startBeat: 0, endBeat: 4, noteCount: 0 },
+            ];
+        }
+        const expectedContext = buildPresetContext(context);
+        if (variation === 'stale-track') {
+            expectedContext.selectedTrackId = 'track-guitar';
+        }
+        if (variation === 'track-kind') {
+            expectedContext.selectedTrackKind = 'midi';
+        }
+        if (variation === 'clip-type') {
+            expectedContext.selectedClipType = 'midi';
+        }
+        const options: Parameters<typeof parsePromptToActions>[0] = {
+            prompt: prompt!,
+            context,
+            preset: { id: id!, expectedContext },
+        };
+        if (variation === 'readonly') {
+            options.profile = 'readonly-answer';
+        }
+        const result = await parsePromptToActions(options);
+        expect(result.actions).toEqual([]);
+        expect(result.metricGoalState).toBeUndefined();
+        expect(result.planningOutcome.kind).toBe('denied');
+        expect(generateToolCalls).not.toHaveBeenCalled();
+        expect(tryPresetMatch).not.toHaveBeenCalled();
+        expect(tryParameterizedPath).not.toHaveBeenCalled();
+        expect(tryCompoundFastPath).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -1309,17 +1398,29 @@ describe('parsePromptToActions', () => {
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
-                }),
-                expect.objectContaining({
                     function: expect.objectContaining({ name: 'selectCreativeInterpretation' }),
                 }),
+            ])
+        );
+        expect(firstProviderCall?.[2]).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ function: expect.objectContaining({ name: 'selectWorkflowCapability' }) }),
             ])
         );
         expect(vi.mocked(generateToolCalls).mock.calls[1]?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+                expect.objectContaining({
+                    function: expect.objectContaining({
+                        name: 'selectWorkflowCapability',
+                        parameters: expect.objectContaining({
+                            properties: { capabilityId: expect.any(Object) },
+                            required: ['capabilityId'],
+                            additionalProperties: false,
+                        }),
+                    }),
                 }),
             ])
         );
@@ -1334,6 +1435,8 @@ describe('parsePromptToActions', () => {
         });
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.executionMode).toBe('atomic');
+        expect(baseContext.tempo).toBe(120);
+        expect(currentContext.tempo).toBe(121);
     });
 
     it('passes the persisted selected alternative as typed context to the provider planning request', async () => {
@@ -1659,10 +1762,29 @@ describe('parsePromptToActions', () => {
         expect(firstProviderCall?.[2]).toEqual(
             expect.arrayContaining([
                 expect.objectContaining({
-                    function: expect.objectContaining({ name: 'selectWorkflowCapability' }),
+                    function: expect.objectContaining({ name: 'selectCreativeInterpretation' }),
                 }),
                 expect.objectContaining({
                     function: expect.objectContaining({ name: 'agent.catalog.discover' }),
+                }),
+            ])
+        );
+        expect(firstProviderCall?.[2]).not.toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({ function: expect.objectContaining({ name: 'selectWorkflowCapability' }) }),
+            ])
+        );
+        expect(vi.mocked(generateToolCalls).mock.calls[1]?.[2]).toEqual(
+            expect.arrayContaining([
+                expect.objectContaining({
+                    function: expect.objectContaining({
+                        name: 'selectWorkflowCapability',
+                        parameters: expect.objectContaining({
+                            properties: { capabilityId: expect.any(Object) },
+                            required: ['capabilityId'],
+                            additionalProperties: false,
+                        }),
+                    }),
                 }),
             ])
         );
@@ -1823,7 +1945,7 @@ describe('parsePromptToActions', () => {
             if (turn === 1) {
                 return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
             }
-            return await proposal;
+            return proposal;
         });
         const providerContext: ProjectContext = {
             ...baseContext,

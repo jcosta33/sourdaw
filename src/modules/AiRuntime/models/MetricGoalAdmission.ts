@@ -68,11 +68,50 @@ export type MetricGoalProof = {
     readonly receiptDigest: string;
 };
 
+/** A native field emitted only by the exact accepted application workflow. It grants no mutation. */
+export type WorkflowNativeLiteralUse = {
+    readonly workflow: 'backing-vocal-plate';
+    readonly field: 'highPassHz';
+    readonly actionIndex: number;
+    readonly ownerActionIndex: number;
+    readonly deviceActionIndex: number;
+    readonly ownerId: string;
+    readonly deviceId: string;
+    readonly deviceType: 'builtin-filter';
+    readonly paramId: 'filter-cutoff';
+    readonly unit: 'Hz';
+    readonly value: number;
+};
+
+/** Literal accounting beside frozen intent, never an acoustic goal or measured proof. */
+export type MetricNativeLiteralUse = WorkflowNativeLiteralUse & {
+    readonly authorityId: string;
+    readonly requestDigest: string;
+    readonly candidateId: string;
+    readonly token: string;
+    readonly start: number;
+    readonly actionHash: string;
+    readonly ownerActionHash: string;
+    readonly deviceActionHash: string;
+    readonly binding: {
+        readonly contentHash: string;
+        readonly projectId: string;
+        readonly revision: string;
+        readonly runId: string;
+        readonly batchId: string;
+        readonly commandId: string;
+        readonly ownerCommandId: string;
+        readonly deviceCommandId: string;
+        readonly schedulePosition: number | null;
+    } | null;
+};
+
 export type MetricGoalState<MetricId extends string> = {
     readonly schemaVersion: 1;
     readonly authorities: readonly MetricRequestAuthority<MetricId>[];
     readonly steps: readonly MetricGoalStep[];
     readonly proofs: readonly MetricGoalProof[];
+    readonly nativeLiteralUses?: readonly MetricNativeLiteralUse[];
     readonly binding: {
         readonly contentHash: string;
         readonly revision: string;

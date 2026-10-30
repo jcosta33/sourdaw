@@ -34,6 +34,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
@@ -122,14 +123,18 @@ function createTrack(id: string, name: string): Track {
 }
 
 /**
- * A provider that never stops proposing: it answers catalog discovery once and then returns a fresh
- * command batch proposal for every later turn. Only the application decides the run is over, so the
- * observed provider call count is the number of turns the application asked for.
+ * A provider that never stops proposing after live intake and catalog discovery. Only the
+ * application decides the run is over, so its call count includes both required protocol steps.
  */
 function installGreedyProvider(): void {
     const commandNames = [...new Set(PROVIDER_PLAN.map((call) => call.name))];
+    let admittedIntake = false;
     let answeredDiscovery = false;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation(() => {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt, userMessage) => {
+        if (!admittedIntake) {
+            admittedIntake = true;
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
         if (!answeredDiscovery) {
             answeredDiscovery = true;
             return Promise.resolve(
@@ -244,9 +249,9 @@ describe('vibe mixing control loop (AC-045)', () => {
     it('ends one explicit request after its terminal proposal even when the provider would keep proposing', async () => {
         await sendChatMessage(PROMPT);
 
-        // The greedy provider would answer forever; the application asked twice — discovery, then
-        // the terminal proposal — and stopped.
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        // The greedy provider would answer forever; the application stopped after intake,
+        // discovery and the terminal proposal for this exact literal control request.
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         expect(getConfirmations()).toHaveLength(1);
         expect(getRunIds()).toHaveLength(1);
     });

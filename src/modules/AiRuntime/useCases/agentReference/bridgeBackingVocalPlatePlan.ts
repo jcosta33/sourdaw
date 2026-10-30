@@ -1,7 +1,13 @@
 import { getPluginById } from '#/modules/Arrangement/useCases';
+import { digest } from '#/utils/canonicalDigest';
+import { type AppAction } from '#/utils/handlerContract';
 
+import { type MetricNativeLiteralUse, type WorkflowNativeLiteralUse } from '../../models/MetricGoalAdmission';
 import { type RuntimeAction } from '../../models/RuntimeAction';
 import { type ToolCallResult } from '../../transformers/toolCallParser';
+import { getExactAgentActionHash } from '../getExactAgentActionHash';
+import { type MetricRequestAuthority } from '../metricGoalContractTypes';
+import { readRequestMetricNumbers } from '../readRequestMetricNumbers';
 
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
 import { getBackingVocalPlatePromptScope } from './getBackingVocalPlatePromptScope';
@@ -21,6 +27,7 @@ type BridgeBackingVocalPlatePlanResult =
           identities: BatchLocalActionIdentity[];
           renderTailSeconds: number;
           providerKnownTargetIds: string[];
+          nativeLiteralUses: WorkflowNativeLiteralUse[];
       };
 
 const EX_01_ONLY_TOOL_NAMES = new Set(['automateSendRanges', 'renderProjectSections']);
@@ -156,12 +163,105 @@ export function bridgeBackingVocalPlatePlan({
     return {
         status: 'accepted',
         actions,
+        ...createdPlateProvenance(actions, busId, filterDeviceId, plateDeviceId, values.highPassHz),
+        renderTailSeconds: values.renderTailSeconds,
+        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
+    };
+}
+
+/** Join an actual workflow field to one written candidate after final identity materialization. */
+export function freezeWorkflowNativeLiteralUses(input: {
+    uses: readonly WorkflowNativeLiteralUse[] | undefined;
+    actions: readonly AppAction[];
+    authority: MetricRequestAuthority | undefined;
+    request: string;
+}): MetricNativeLiteralUse[] {
+    const authority = input.authority;
+    if (
+        authority === undefined ||
+        authority.kind !== 'literal' ||
+        authority.origin !== 'configured-joint-intake' ||
+        authority.callId === null ||
+        authority.turn === null ||
+        authority.requestDigest !== digest(input.request.trim())
+    ) {
+        return [];
+    }
+    const numbers = readRequestMetricNumbers(input.request);
+    return (input.uses ?? []).flatMap((use) => {
+        const matches = numbers.filter((candidate) => candidate.unit === use.unit && candidate.value === use.value);
+        const action = input.actions[use.actionIndex];
+        const owner = input.actions[use.ownerActionIndex];
+        const device = input.actions[use.deviceActionIndex];
+        if (
+            matches.length !== 1 ||
+            action?.type !== 'setDeviceParameter' ||
+            owner?.type !== 'createBus' ||
+            device?.type !== 'addDevice'
+        ) {
+            return [];
+        }
+        const candidate = matches[0]!;
+        if (
+            action.payload.deviceId !== use.deviceId ||
+            action.payload.expectedTrackId !== use.ownerId ||
+            action.payload.expectedDeviceType !== use.deviceType ||
+            action.payload.paramId !== use.paramId ||
+            action.payload.value !== use.value ||
+            action.payload.valueUnit !== use.unit ||
+            owner.payload.busId !== use.ownerId ||
+            device.payload.deviceId !== use.deviceId ||
+            device.payload.trackId !== use.ownerId ||
+            device.payload.deviceType !== use.deviceType
+        ) {
+            return [];
+        }
+        return [
+            {
+                ...use,
+                authorityId: authority.authorityId,
+                requestDigest: authority.requestDigest,
+                candidateId: candidate.candidateId,
+                token: candidate.token,
+                start: candidate.start,
+                actionHash: getExactAgentActionHash({ operation: action.type, arguments: action.payload }),
+                ownerActionHash: getExactAgentActionHash({ operation: owner.type, arguments: owner.payload }),
+                deviceActionHash: getExactAgentActionHash({ operation: device.type, arguments: device.payload }),
+                binding: null,
+            },
+        ];
+    });
+}
+
+function createdPlateProvenance(
+    actions: readonly RuntimeAction[],
+    busId: string,
+    filterDeviceId: string,
+    plateDeviceId: string,
+    highPassHz: number
+): Pick<Extract<BridgeBackingVocalPlatePlanResult, { status: 'accepted' }>, 'identities' | 'nativeLiteralUses'> {
+    return {
         identities: [
             { actionType: 'createBus', actionOrdinal: 0, busId },
             { actionType: 'addDevice', actionOrdinal: 0, deviceId: filterDeviceId },
             { actionType: 'addDevice', actionOrdinal: 1, deviceId: plateDeviceId },
         ],
-        renderTailSeconds: values.renderTailSeconds,
-        providerKnownTargetIds: [...removableReverbIds, ...trackIds],
+        nativeLiteralUses: [
+            {
+                workflow: 'backing-vocal-plate',
+                field: 'highPassHz',
+                actionIndex: actions.findIndex(
+                    (action) => action.type === 'setDeviceParameter' && action.payload.paramId === 'filter-cutoff'
+                ),
+                ownerActionIndex: actions.findIndex((action) => action.type === 'createBus'),
+                deviceActionIndex: actions.findIndex((action) => action.type === 'addDevice'),
+                ownerId: busId,
+                deviceId: filterDeviceId,
+                deviceType: 'builtin-filter',
+                paramId: 'filter-cutoff',
+                unit: 'Hz',
+                value: highPassHz,
+            },
+        ],
     };
 }

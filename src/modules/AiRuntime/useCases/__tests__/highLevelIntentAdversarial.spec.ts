@@ -107,15 +107,15 @@ async function planWith(
     context: ProjectContext = emptyProject
 ) {
     const mocked = vi.mocked(generateToolPlanningOutcome);
-    const intake =
-        prompt === CREATIVE_PROMPT
-            ? nonAcousticMetricIntakeTurn({
-                  modeId: 'create',
-                  dimensions: ['arrangement', 'midi-content'],
-                  creationSlotObjectTypes: ['track'],
-                  nestedCreationSlotObjectTypes: ['clip'],
-              })
-            : literalMetricIntakeTurn;
+    let intake = literalMetricIntakeTurn;
+    if (prompt === CREATIVE_PROMPT) {
+        intake = nonAcousticMetricIntakeTurn({
+            modeId: 'create',
+            dimensions: ['arrangement', 'midi-content'],
+            creationSlotObjectTypes: ['track'],
+            nestedCreationSlotObjectTypes: ['clip'],
+        });
+    }
     mocked.mockImplementationOnce(async (_system, message, schemas) => ({
         status: 'complete',
         toolCalls: intake(message, schemas).map((call) => ({ ...call, id: 'intake' })),
@@ -486,8 +486,8 @@ describe('high-level intent adversarial planning', () => {
      * at. Creating an object never buys authority over what surrounds it.
      */
     it.each([
-        ['soloTrack', { trackId: '$lead', soloed: true }, 'Creative authority does not extend to monitoring effects'],
-        ['armTrack', { trackId: '$lead', armed: true }, 'Creative authority does not extend to monitoring effects'],
+        ['soloTrack', { trackId: '$lead', soloed: true }, 'Provider action is not grounded in the user request'],
+        ['armTrack', { trackId: '$lead', armed: true }, 'Provider action is not grounded in the user request'],
         ['duplicateTrack', { trackId: '$lead' }, 'Creative authority does not extend to routing effects'],
         ['reorderTrack', { trackId: '$lead', newIndex: 0 }, 'Creative authority does not cover the track $lead'],
     ])('(p) refuses %s outside the creative authority for a new track', async (name, args, reason) => {

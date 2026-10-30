@@ -383,7 +383,11 @@ function batchBinding(binding: unknown): boolean {
 function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoalState {
     return (
         record(entry) &&
-        keys(entry, ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding']) &&
+        keys(entry, ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding'], ['nativeLiteralUses']) &&
+        (entry.nativeLiteralUses === undefined ||
+            (Array.isArray(entry.nativeLiteralUses) &&
+                entry.nativeLiteralUses.length <= MAX_LLM_ACTIONS_PER_BATCH &&
+                entry.nativeLiteralUses.every(nativeLiteralUse))) &&
         entry.schemaVersion === 1 &&
         Array.isArray(entry.authorities) &&
         entry.authorities.every((authorityEntry: unknown) => authority(authorityEntry, metricIds)) &&
@@ -393,6 +397,83 @@ function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoa
         entry.proofs.every((proofEntry: unknown) => proof(proofEntry, metricIds)) &&
         entry.steps.every(logicalStep) &&
         batchBinding(entry.binding)
+    );
+}
+
+function nativeLiteralUse(entry: unknown): boolean {
+    if (
+        !record(entry) ||
+        !keys(entry, [
+            'workflow',
+            'field',
+            'actionIndex',
+            'ownerActionIndex',
+            'deviceActionIndex',
+            'ownerId',
+            'deviceId',
+            'deviceType',
+            'paramId',
+            'unit',
+            'value',
+            'authorityId',
+            'requestDigest',
+            'candidateId',
+            'token',
+            'start',
+            'actionHash',
+            'ownerActionHash',
+            'deviceActionHash',
+            'binding',
+        ])
+    ) {
+        return false;
+    }
+    return (
+        entry.workflow === 'backing-vocal-plate' &&
+        entry.field === 'highPassHz' &&
+        entry.deviceType === 'builtin-filter' &&
+        entry.paramId === 'filter-cutoff' &&
+        entry.unit === 'Hz' &&
+        finite(entry.value) &&
+        integer(entry.actionIndex) &&
+        integer(entry.ownerActionIndex) &&
+        integer(entry.deviceActionIndex) &&
+        integer(entry.start) &&
+        ['ownerId', 'deviceId', 'authorityId', 'requestDigest', 'candidateId', 'token'].every(
+            (key) => text(entry[key]) && entry[key].length > 0
+        ) &&
+        nativeLiteralBinding(entry.binding)
+    );
+}
+
+function nativeLiteralBinding(entry: unknown): boolean {
+    if (entry === null) {
+        return true;
+    }
+    return (
+        record(entry) &&
+        keys(entry, [
+            'contentHash',
+            'projectId',
+            'revision',
+            'runId',
+            'batchId',
+            'commandId',
+            'ownerCommandId',
+            'deviceCommandId',
+            'schedulePosition',
+        ]) &&
+        [
+            'contentHash',
+            'projectId',
+            'revision',
+            'runId',
+            'batchId',
+            'commandId',
+            'ownerCommandId',
+            'deviceCommandId',
+        ].every((key) => text(entry[key]) && entry[key].length > 0) &&
+        (entry.schedulePosition === null || integer(entry.schedulePosition))
     );
 }
 
