@@ -1,0 +1,14 @@
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-413,417-421,425-430,437-443,445-474,476-498,500-533,535-543,545-549,555,557-558,559-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6ca519e2340be1ff4f49e14f3a7d4e0c3c548d1f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
