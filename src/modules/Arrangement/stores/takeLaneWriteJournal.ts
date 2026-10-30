@@ -5,12 +5,12 @@ import {
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
+import { applyTakeFieldOperation } from './applyTakeFieldOperation';
 import {
     captureBaseGapAudioSources,
     replaceBaseGapAudioSources,
     reconcileBaseGapAudioSourceDelta,
 } from './baseGapAudioSourceDelta';
-import { applyTakeFieldOperation } from './applyTakeFieldOperation';
 import { captureMidiSourceChanges } from './captureMidiTakeSourceDelta';
 import { type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
