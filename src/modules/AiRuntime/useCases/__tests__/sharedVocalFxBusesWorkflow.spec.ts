@@ -644,11 +644,21 @@ function createTurnTrackedWebLlmResponder(
     let turn = 0;
     return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 3) {
+        if (turn > (intake === sharedBalanceMetricIntake ? 4 : 3)) {
             throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (turn === 1) {
             return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
+        }
+        if (turn === 4 && intake === sharedBalanceMetricIntake) {
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'analysis.measure',
+                        arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                    },
+                ])
+            );
         }
         const finalCalls = buildFinalCalls(userMessage);
         if (turn === 2) {
@@ -1146,6 +1156,13 @@ describe('shared vocal FX buses workflow', () => {
             ]);
             expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
             expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
             expect(confirmation?.actions).toHaveLength(27);
             expect(getAgentApprovalView({ confirmationId })).toMatchObject({
                 canConfirm: false,

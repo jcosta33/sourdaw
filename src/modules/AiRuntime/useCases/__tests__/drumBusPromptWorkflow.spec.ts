@@ -701,8 +701,18 @@ function createTurnTrackedWebLlmResponder(
     let turn = 0;
     return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > planningRounds * 3) {
+        if (turn > planningRounds * (intake === maskingMetricIntake ? 4 : 3)) {
             throw new Error(`Expected at most ${planningRounds * 3} WebLLM provider turns`);
+        }
+        if (intake === maskingMetricIntake && turn % 4 === 0) {
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'analysis.measure',
+                        arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                    },
+                ])
+            );
         }
         if (turn % 3 === 1) {
             return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
@@ -746,13 +756,23 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 3) {
+        if (turn > (intake === maskingMetricIntake ? 4 : 3)) {
             throw new Error('Expected exactly three hosted provider turns');
         }
         const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
             const request = JSON.parse(init.body) as { tools: ToolSchema[] };
             return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        if (turn === 4 && intake === maskingMetricIntake) {
+            return Promise.resolve(
+                toolCallsResponse([
+                    {
+                        name: 'analysis.measure',
+                        arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+                    },
+                ])
+            );
         }
         const finalCalls = buildFinalCalls(userMessage);
         if (turn === 2) {
@@ -4349,6 +4369,13 @@ describe('drum bus prompt workflow', () => {
             ]);
             expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
             expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
             expect(confirmation?.actions.map((action) => action.type)).toEqual([
                 'addSidechainRoute',
                 'addSidechainRoute',

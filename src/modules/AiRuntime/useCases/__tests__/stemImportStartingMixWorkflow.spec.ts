@@ -51,6 +51,7 @@ import { cancelPendingChatActions } from '../cancelPendingChatActions';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
+import * as promptParser from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
 
 import {
@@ -628,12 +629,37 @@ function getProviderCallsForUserMessage(
     ) {
         return intake(userMessage, providerView);
     }
+    if (
+        intake === startingMixMetricIntake &&
+        receipts.some(
+            (receipt) =>
+                isRecord(receipt) &&
+                receipt.toolName === 'selectWorkflowCapability' &&
+                isRecord(receipt.error) &&
+                receipt.error.code === 'measurement-required'
+        ) &&
+        !receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'analysis.measure')
+    ) {
+        return [
+            {
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+            },
+        ];
+    }
     if (getProviderContext(userMessage).stemImportCapability === undefined) {
         return withWorkflowCapabilitySelection('stem-import-starting-mix', []);
     }
     const finalCalls = getFinalStemImportCalls(userMessage, transformPlan);
     if (!receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover')) {
-        return catalogDiscoveryPlan(finalCalls);
+        const discovery = catalogDiscoveryPlan(finalCalls);
+        if (intake === startingMixMetricIntake) {
+            discovery.push({
+                name: 'analysis.measure',
+                arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } },
+            });
+        }
+        return discovery;
     }
     assertDiscoveredCommandSchemas(receipts, finalCalls);
     return finalCalls;
@@ -805,6 +831,7 @@ describe('stem import and starting mix workflow', () => {
             mocks.generateWebLlmCompletion.mockImplementation(
                 createWebLlmResponder((plan) => plan, startingMixMetricIntake)
             );
+            const planning = vi.spyOn(promptParser, 'parsePromptToActions');
             flushAutomergeStorageWrites();
             const before = {
                 tracks: structuredClone(trackStore.value),
@@ -813,6 +840,51 @@ describe('stem import and starting mix workflow', () => {
             };
 
             await sendChatMessage(prompt);
+            expect(mocks.generateWebLlmCompletion).toHaveBeenCalledTimes(6);
+            expect(planning).toHaveBeenCalledTimes(2);
+            const plans = await Promise.all(planning.mock.results.map((result) => result.value));
+            planning.mockRestore();
+            expect(plans[0]?.preparationRequest).toBe('stem-import');
+            for (const plan of plans) {
+                const receipts = plan.applicationToolReceipts ?? [];
+                const intake = receipts.find((receipt) => receipt.toolName === 'selectCreativeInterpretation');
+                const measurement = receipts.find((receipt) => receipt.toolName === 'analysis.measure');
+                expect(intake).toMatchObject({ status: 'success', revision: null });
+                expect(measurement).toMatchObject({
+                    status: 'failure',
+                    revision: null,
+                    error: { code: 'unknown-section' },
+                });
+                expect(measurement?.callId).not.toBe(intake?.callId);
+                expect(measurement?.turn).toBeGreaterThan(intake?.turn ?? 0);
+            }
+            const firstReceipts = plans[0]?.applicationToolReceipts ?? [];
+            expect(firstReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'selectWorkflowCapability',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            const firstSettlement = plans[0]?.terminalMeasurementSettlement;
+            if (firstSettlement === undefined) {
+                throw new TypeError('Expected the held selection settlement.');
+            }
+            const settlement: { revision: string; intake: { callId: string }; measurement: { callId: string } } =
+                JSON.parse(firstSettlement);
+            expect(settlement.revision).toBe(before.revision);
+            expect(settlement.intake.callId).toBe(
+                firstReceipts.find((receipt) => receipt.toolName === 'selectCreativeInterpretation')?.callId
+            );
+            expect(settlement.measurement.callId).toBe(
+                firstReceipts.find((receipt) => receipt.toolName === 'analysis.measure')?.callId
+            );
+            const secondIntake = plans[1]?.applicationToolReceipts?.find(
+                (receipt) => receipt.toolName === 'selectCreativeInterpretation'
+            );
+            expect(metricGoalStateCodec(plans[1]?.metricGoalState)?.authorities).toContainEqual(
+                expect.objectContaining({ revision: before.revision, callId: secondIntake?.callId })
+            );
+            expect(plans[1]?.actions.map((action) => action.type)).toEqual(['importStemSet']);
 
             const id = confirmationId();
             const confirmation = getPendingActionConfirmation(id);
@@ -834,6 +906,13 @@ describe('stem import and starting mix workflow', () => {
             expect(metricGoalStateCodec(metricState)?.proofs).toEqual([]);
             expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
             expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
             expect(confirmation?.actions.map((action) => action.type)).toEqual(['importStemSet']);
             expect(getAgentApprovalView({ confirmationId: id })).toMatchObject({
                 canConfirm: false,
