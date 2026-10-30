@@ -59,6 +59,13 @@ export type NativeLiveGraphSession = {
      * making the sound.
      */
     audibleCarrier: boolean;
+    /** Underlying programme ownership while the audition temporarily closes output. */
+    programmeCarrier: boolean;
+    auditionOwner: symbol | null;
+    auditionRestorationOwner: symbol | null;
+    auditionOutputSuppressed: boolean;
+    auditionEpoch: number;
+    auditionInvalidation: (() => void) | null;
     /**
      * Whether this session left the engine's monitor shadowed.
      *
@@ -196,6 +203,12 @@ export const nativeLiveGraphSession: NativeLiveGraphSession = {
     backend: null,
     orphanedBackend: null,
     audibleCarrier: false,
+    programmeCarrier: false,
+    auditionOwner: null,
+    auditionRestorationOwner: null,
+    auditionOutputSuppressed: false,
+    auditionEpoch: 0,
+    auditionInvalidation: null,
     // Shadowed until a session says otherwise. This is the initial state, not
     // the default a session starts in — the safe reading before any session has
     // spoken is the silent one, so a reader that runs first cannot conclude the

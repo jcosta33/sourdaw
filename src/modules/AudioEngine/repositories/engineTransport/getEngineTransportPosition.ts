@@ -5,6 +5,7 @@ import {
     type EngineTransportPosition,
     type NativeTunerReading,
 } from '../../models/EngineTransportPosition';
+import { readNativeEngineIncarnation } from '../nativeEngineIncarnation';
 
 function readNumber(payload: Record<string, unknown>, key: keyof EngineTransportPosition): number {
     const value = payload[key];
@@ -94,13 +95,38 @@ function asTunerReading(value: unknown): NativeTunerReading | null {
     return { active: entry.active, frequency, cents, confidence, noteIndex, octave, midiNote };
 }
 
+// Normalization can turn malformed facts into stopped defaults. Authenticate
+// the optional readiness witness against the raw wire values first.
+function readPositionIncarnation(payload: Record<string, unknown>): string | null | undefined {
+    const batchesApplied = payload.batchesApplied;
+    if (
+        typeof payload.running !== 'boolean' ||
+        typeof payload.playing !== 'boolean' ||
+        typeof batchesApplied !== 'number' ||
+        !Number.isSafeInteger(batchesApplied) ||
+        batchesApplied < 0
+    ) {
+        return undefined;
+    }
+    if (payload.engineIncarnation === null) {
+        return !payload.running && !payload.playing && batchesApplied === 0 ? null : undefined;
+    }
+    return readNativeEngineIncarnation(payload.engineIncarnation);
+}
+
 function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     if (typeof response !== 'object' || response === null) {
         return stoppedEngineTransportPosition;
     }
 
     const payload = response as Record<string, unknown>;
+    const incarnation = readPositionIncarnation(payload);
+    const identity: Pick<EngineTransportPosition, 'engineIncarnation'> = {};
+    if (incarnation !== undefined) {
+        identity.engineIncarnation = incarnation;
+    }
     return {
+        ...identity,
         running: payload.running === true,
         playing: payload.playing === true,
         positionSeconds: readNumber(payload, 'positionSeconds'),

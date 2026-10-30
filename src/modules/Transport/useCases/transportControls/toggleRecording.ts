@@ -2,6 +2,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
+    audioEngine,
     resumeEngine,
     getAudioContext,
     scheduleClick,
@@ -448,6 +449,7 @@ function armCountInRecordingStart(countInEndTimeSec: number, countInDurationSec:
 }
 
 export function toggleRecording(): void {
+    audioEngine.beginAudioPreviewIntent().release();
     const state = getTransportState();
     if (!state) {
         return;

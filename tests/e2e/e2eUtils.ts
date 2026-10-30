@@ -47,6 +47,8 @@ type LaunchNewProjectOptions = {
 };
 
 type SetupWorkspaceOptions = {
+    /** Fresh-context persistence proofs must keep their own saved data across reload. */
+    clearLocalStorage?: boolean;
     localStorage?: Array<{ name: string; value: string }>;
 };
 
@@ -89,8 +91,10 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
 
     await enable_direct_e2e_viewport(page);
     await page.addInitScript(
-        ({ alphaDismissed, alphaNoticeKey, localStorage }) => {
-            window.localStorage.clear();
+        ({ alphaDismissed, alphaNoticeKey, clearLocalStorage, localStorage }) => {
+            if (clearLocalStorage) {
+                window.localStorage.clear();
+            }
             window.localStorage.setItem('wd:onboarding-completed', '1');
             window.localStorage.setItem(alphaNoticeKey, alphaDismissed);
             window.localStorage.setItem('wd:first-load-hint-shown', '1');
@@ -101,6 +105,7 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
         {
             alphaDismissed,
             alphaNoticeKey: ALPHA_NOTICE_DISMISSED_STORAGE_KEY,
+            clearLocalStorage: options.clearLocalStorage ?? true,
             localStorage: options.localStorage ?? [],
         }
     );

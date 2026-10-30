@@ -10,6 +10,8 @@
 
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
+    /** String: witnessed handle; null: modern no-handle; absent: legacy/unavailable. */
+    engineIncarnation?: string | null;
     /**
      * False when no native engine has been started, and also false for an
      * engine that exists but whose output stream has produced no render

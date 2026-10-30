@@ -21,6 +21,7 @@ import {
     TrackNode,
     type TrackNodeRuntimeGraphMutation,
 } from '../engine/TrackNode';
+import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeviceChainDelta,
@@ -351,6 +352,8 @@ class AudioEngineImpl implements AudioEngine {
      */
     private monitorMonoNode!: GainNode;
     private monitorDimNode!: GainNode;
+    private previewProgrammeGate!: GainNode;
+    private previewRestoration: Promise<void> | null = null;
     /**
      * Silent (gain 0) sink the stereo tap analysers connect through to the
      * destination. Web Audio only pulls nodes with a path to the destination,
@@ -463,11 +466,13 @@ class AudioEngineImpl implements AudioEngine {
 
             this.monitorMonoNode = this.context.createGain();
             this.monitorDimNode = this.context.createGain();
+            this.previewProgrammeGate = this.context.createGain();
 
             this.masterGainNode.connect(this.masterAnalyser);
             // The listening leg runs through the control-room insert; the
             // programme (everything upstream of this edge) stays untouched by it.
-            this.masterAnalyser.connect(this.monitorMonoNode);
+            this.masterAnalyser.connect(this.previewProgrammeGate);
+            this.previewProgrammeGate.connect(this.monitorMonoNode);
             this.monitorMonoNode.connect(this.monitorDimNode);
             this.monitorDimNode.connect(this.context.destination);
 
@@ -513,6 +518,7 @@ class AudioEngineImpl implements AudioEngine {
         this.masterGainNode.gain.value = 0;
         this.monitorMonoNode = this.context.createGain();
         this.monitorDimNode = this.context.createGain();
+        this.previewProgrammeGate = this.context.createGain();
         this.masterMeterNode = {
             connect: () => {},
             disconnect: () => {},
@@ -2648,11 +2654,124 @@ class AudioEngineImpl implements AudioEngine {
     }
 
     public beginAudioPreviewIntent() {
-        return this.previewIntents.beginOrdinary();
+        const intent = this.previewIntents.beginOrdinary();
+        if (this.previewRestoration === null) {
+            return intent;
+        }
+        return { ...intent, ready: this.previewRestoration };
     }
 
     public beginExclusiveAudioPreviewIntent() {
+        // A suspended context must resume with programme already closed, in
+        // the gesture itself, before any asynchronous native admission.
+        this.setAudioPreviewProgrammeSuppressed(true);
         return this.previewIntents.beginExclusive();
+    }
+
+    public get audioPreviewOutput(): AudioNode {
+        return this.monitorMonoNode;
+    }
+
+    public setAudioPreviewProgrammeSuppressed(suppressed: boolean): void {
+        if (this.disposed || (!suppressed && this.previewIntents.hasExclusive())) {
+            return;
+        }
+        const now = this.context.currentTime;
+        this.previewProgrammeGate.gain.cancelScheduledValues(now);
+        this.previewProgrammeGate.gain.setValueAtTime(suppressed ? 0 : 1, now);
+    }
+
+    public holdAudioPreviewRestoration(restoration: Promise<void>): void {
+        this.previewRestoration = restoration;
+        void restoration.then(
+            () => {
+                if (this.previewRestoration === restoration) {
+                    this.previewRestoration = null;
+                }
+            },
+            () => undefined
+        );
+    }
+
+    public playAudioPreviewTone(frequency: number, durationSeconds: number, intent: AudioPreviewIntent) {
+        if (!Number.isFinite(frequency) || !Number.isFinite(durationSeconds) || durationSeconds < 0) {
+            throw new RangeError('Preview tone frequency and duration must be finite.');
+        }
+        if (!intent.isCurrent()) {
+            return null;
+        }
+        let oscillator: OscillatorNode;
+        let gain: GainNode;
+        try {
+            oscillator = this.context.createOscillator();
+            try {
+                gain = this.context.createGain();
+            } catch (error) {
+                oscillator.disconnect();
+                throw error;
+            }
+        } catch (error) {
+            intent.release();
+            throw error;
+        }
+        let ended = false;
+        let started = false;
+        const finish = (stopSource: boolean) => {
+            if (ended) {
+                return;
+            }
+            ended = true;
+            oscillator.onended = null;
+            intent.signal.removeEventListener('abort', stop);
+            runAllEffects([
+                () => gain.gain.setValueAtTime(0, this.context.currentTime),
+                () => {
+                    if (stopSource && started) {
+                        oscillator.stop();
+                    }
+                },
+                () => oscillator.disconnect(),
+                () => gain.disconnect(),
+                () => intent.release(),
+            ]);
+        };
+        const stop = () => finish(true);
+        try {
+            oscillator.type = 'sine';
+            oscillator.frequency.value = frequency;
+            oscillator.connect(gain);
+            gain.connect(this.context.destination);
+            oscillator.onended = () => finish(false);
+            intent.signal.addEventListener('abort', stop, { once: true });
+        } catch (error) {
+            finish(false);
+            throw error;
+        }
+        const start = () => {
+            if (ended || !intent.isCurrent()) {
+                return;
+            }
+            const now = this.context.currentTime;
+            gain.gain.setValueAtTime(0.4, now);
+            gain.gain.exponentialRampToValueAtTime(0.001, now + durationSeconds);
+            started = true;
+            oscillator.start();
+            oscillator.stop(now + durationSeconds);
+        };
+        try {
+            if (intent.ready === undefined) {
+                start();
+            }
+        } catch (error) {
+            stop();
+            throw error;
+        }
+        const ready = intent.ready === undefined ? Promise.resolve() : intent.ready.then(start);
+        void ready.catch((error: unknown) => {
+            stop();
+            logger.warn(new Error('Preview tone could not restore its listening output', { cause: error }));
+        });
+        return { stop, ready };
     }
 
     public resetGraph(): void {
@@ -2787,6 +2906,7 @@ class AudioEngineImpl implements AudioEngine {
                         }
                     },
                     () => this.masterAnalyser.disconnect(),
+                    () => this.previewProgrammeGate.disconnect(),
                     () => this.monitorMonoNode.disconnect(),
                     () => this.monitorDimNode.disconnect(),
                     () => this.masterStereoSplitter.disconnect(),

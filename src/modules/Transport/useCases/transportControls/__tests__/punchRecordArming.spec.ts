@@ -97,6 +97,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     waitForOverdubLanding: () => Promise.resolve(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
     resumeEngine: mocks.resumeEngine,
     getAudioContext: mocks.getAudioContext,
     scheduleClick: mocks.scheduleClick,

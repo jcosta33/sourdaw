@@ -1019,6 +1019,8 @@ export type AudioGraphApplyResult =
            * applied.
            */
           admittedBatch?: number;
+          /** Same native handle as admittedBatch; absent on legacy or unavailable witnesses. */
+          engineIncarnation?: string;
           reports: readonly AudioGraphStripReport[];
           /**
            * External plugin instances this batch handed to the engine.

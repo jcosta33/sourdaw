@@ -119,6 +119,27 @@ describe('createNativeLiveGraphBackend', () => {
         });
     });
 
+    it('carries only a canonical live incarnation with the actual admitted fence', async () => {
+        const identity = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:9007199254740993';
+        for (const wireIdentity of [identity, undefined, null, 'engine:6']) {
+            const transport = stubTransport(async () => ({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 4,
+                admittedBatch: 6,
+                engineIncarnation: wireIdentity,
+                reports: [],
+            }));
+            const result = await createNativeLiveGraphBackend({ transport }).apply(BATCH);
+            expect(result).toMatchObject({ application: 'applied', admittedBatch: 6 });
+            if (wireIdentity === identity) {
+                expect(result).toHaveProperty('engineIncarnation', identity);
+            } else {
+                expect(result).not.toHaveProperty('engineIncarnation');
+            }
+        }
+    });
+
     // The list exists because the load that created these instances already
     // told their devices there was no engine, and nothing else ever revises
     // that. A payload without the field attached nothing — it is not a defect
