@@ -1,0 +1,16 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1600-1605
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  h_beb54bf43b47b7 1,21,30,360-386,388-477,1161,1163-1192,1194-1196,1198-1212,1783-1835
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dfea4cd9354d5a626d1186ad656bd66febb147f4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
