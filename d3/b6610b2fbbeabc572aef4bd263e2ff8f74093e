@@ -1,0 +1,21 @@
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_59e31a5c6f3e31::t_29bf89210e3a67 390-393,402-412,480-482,498-534
+  s_59e31a5c6f3e31::t_8c512766ef175f 1-389,394-399,413-479,483-497,535
+  s_59e31a5c6f3e31::t_7080e28552b2ec 400-401
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3b6610b2fbbeabc572aef4bd263e2ff8f74093e",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
