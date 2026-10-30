@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
 const launcher = pathToFileURL(resolve(root, 'scripts/e2eDevServer.ts')).href;
@@ -85,6 +85,22 @@ function records(stderr: string): Record<string, unknown>[] {
 }
 
 describe('observed e2e dev server', () => {
+    it.each([undefined, '0', '1'])(
+        'defaults ordinary child HMR off while preserving explicit %s',
+        async (noHmr) => {
+            vi.stubEnv('NO_HMR', noHmr);
+            try {
+                await withFixture("console.log('no-hmr=' + process.env.NO_HMR);", async ({ closed, output }) => {
+                    expect(await closed).toEqual({ code: 0, signal: null });
+                    expect(output().stdout).toContain(`no-hmr=${noHmr ?? '1'}`);
+                });
+            } finally {
+                vi.unstubAllEnvs();
+            }
+        },
+        15_000
+    );
+
     it('records the child identity and failure after retaining both output streams', async () => {
         await withFixture(
             "console.log('fixture-stdout'); console.log('fixture-pid=' + process.pid); console.error('fixture-stderr'); process.exitCode = 7;",

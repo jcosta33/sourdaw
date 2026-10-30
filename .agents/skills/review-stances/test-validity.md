@@ -2101,3 +2101,16 @@ batch containing a valid send inverse; separately retain changed-target, missing
 solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
 validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
 mock-only solo handler case is not this proof.
+
+### 2026-10-30 — a healthy reload began its UI allowance before bootstrap admission
+
+The new recovery fixture in PR #5901 began its five-second Playback controls assertion immediately
+after `domcontentloaded`. Its exact transient seed trace showed the App graph arriving late in that
+allowance; this failed before the controlled transport fault. This fixture defect was caught before
+merge, independently of the original persisted-edit parent's later target crash.
+
+Arm a passive listener for the production capability emission before the healthy seed reload,
+then retain the same unconditional controls, saved project and both history-stack assertions.
+The observer must neither import bootstrap nor initialize owner dependencies. Preserve the original
+persisted-edit acceptance and its bounds. Real App recovery still requires a retry-only mutation to
+fail workspace readiness; readiness admission must not perform the initialization it claims to observe.

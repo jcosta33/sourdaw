@@ -64,7 +64,12 @@ async function seedProject(page: Page): Promise<SavedState> {
     await command(page, 'Save Project');
     await expect(page.locator('[title="Unsaved changes"]')).toHaveCount(0);
     // The first real hydration binds a newly created project's history owner.
+    // Observe production bootstrap before starting the existing controls bound.
+    const booted = page.waitForEvent('console', {
+        predicate: (message) => message.text().includes('[capabilities] {'),
+    });
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await booted;
     await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible();
     await expect(page.getByTestId('project-name')).toHaveText(PROJECT);
     await command(page, 'Add Audio Track');

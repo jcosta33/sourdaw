@@ -596,3 +596,20 @@ module effects must run once. Pin the tested browser/runtime coherently: a brows
 failed module fetch cannot prove identical-URL transport recovery. Removing only the retry must
 fail the named real-App case. This mitigates a rejected import; it does not identify or repair the
 initiator of the recorded socket loss.
+
+### 2026-10-30 — disabling HMR did not disable Vite's document controller
+
+Commit `57b7349f7864eca0bd177333d720a50186bd33e9` introduced the `NO_HMR`
+server setting. The installed Vite client still starts its transport with `server.hmr=false`.
+A controlled native WebSocket close, with HTTP and the server process alive, causes its
+poll-and-reload path to replace the document. Disabling the server WebSocket alone still
+constructs failing sockets and starts console forwarding. This proves a competing lifecycle
+mechanism, not the initiator of the original saved-reload socket loss. The historical introducing
+PR and private review dispatch are unestablished.
+
+For ordinary E2E, admit the actual served client through the repository configuration and runner,
+then require completed module evaluation, working CSS insertion/removal and zero synchronous
+native Vite WebSocket constructions. Remove only the configuration registration and require that
+browser case to fail. Keep developer and explicit hardware HMR as positive controls; preserve the
+client's real exports and fail closed when its expected startup sites change. A bare helper fixture
+or delayed CDP event census cannot establish that the real serving chain applies the policy.

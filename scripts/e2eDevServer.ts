@@ -16,7 +16,12 @@ export function runE2eDevServer(root: string, port: number, command: string, arg
             done
         );
     };
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit' });
+    const child = spawn(command, args, {
+        cwd: root,
+        stdio: 'inherit',
+        // Explicit opt-in keeps hardware/optimizer proofs on their existing HMR path.
+        env: { ...process.env, NO_HMR: process.env.NO_HMR ?? '1' },
+    });
     let timer: NodeJS.Timeout | undefined;
     let requestedSignal: ShutdownSignal | undefined;
     const stop = (signal: ShutdownSignal): void => {

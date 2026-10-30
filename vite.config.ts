@@ -10,6 +10,7 @@ import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import { configDefaults, defineConfig, type Plugin } from 'vitest/config';
 
 import { createSourdawRootHeaderMiddleware, isSourdawE2eServeMode } from './scripts/e2eServerIdentity';
+import { e2eViteClientPolicyPlugin } from './scripts/e2eViteClientPolicy';
 
 const { version } = JSON.parse(readFileSync('./package.json', 'utf-8')) as { version: string };
 
@@ -76,6 +77,7 @@ export default defineConfig({
         react(),
         tailwindcss(),
         sourdawE2eServingCheckoutPlugin(),
+        e2eViteClientPolicyPlugin(),
     ],
     test: {
         environment: 'jsdom',

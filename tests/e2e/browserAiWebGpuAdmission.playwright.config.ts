@@ -47,6 +47,7 @@ export default defineConfig({
     webServer: {
         command: `pnpm dev --host 127.0.0.1 --port ${WEBGPU_ADMISSION_PORT} --strictPort`,
         cwd: resolve(import.meta.dirname, '../..'),
+        env: { NO_HMR: '0' },
         url: WEBGPU_ADMISSION_ORIGIN,
         reuseExistingServer: false,
         gracefulShutdown: { signal: 'SIGTERM', timeout: 5_000 },

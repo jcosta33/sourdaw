@@ -8,8 +8,8 @@ import { devServerOnlySpecs } from '../../tests/e2e/devServerOnlySpecs.ts';
 import { isPlaywrightCollected, playwrightTestDir } from '../vitestCollectionPatterns.ts';
 
 /**
- * CI browser shards serve a production build, which has no `/src/` module
- * URLs. A browser file that loads one at runtime (directly, through a helper
+ * CI browser shards serve a production build, which has no `/src/` modules
+ * or `/@vite/client`. A browser file that loads one at runtime (directly, through a helper
  * it imports, or through an HTML probe it opens) must therefore be listed in
  * tests/e2e/devServerOnlySpecs.ts, and a listed file that stopped doing so
  * should leave the list and run against the build. Vitest does not collect
@@ -18,8 +18,8 @@ import { isPlaywrightCollected, playwrightTestDir } from '../vitestCollectionPat
 
 const root = resolve(import.meta.dirname, '../..');
 
-/** A quoted `/src/` URL: a module specifier, a URL constant, or a script `src` attribute. */
-const runtimeSourceUrl = /['"`]\/src\//;
+/** Source modules and the real Vite client both require the development server. */
+const runtimeSourceUrl = /['"`]\/(?:src\/|@vite\/client(?:['"`?#]))/;
 const relativeImport = /(?:from\s+|import\(\s*)['"](\.\/[^'"]+)['"]/g;
 const htmlProbeReference = /['"`]\/?(?:tests\/e2e\/)?([\w.-]+\.html)['"`]/g;
 const resolvableExtensions = ['', '.ts', '.tsx', '.js', '.mjs'];
@@ -53,7 +53,7 @@ function referencedFiles(path: string, text: string): string[] {
     );
 }
 
-/** Whether the file, or anything it pulls in from the e2e directory, loads a `/src/` URL at runtime. */
+/** Whether the file, or anything it pulls in from the e2e directory, loads a development-only URL at runtime. */
 function loadsSourceUrl(entry: string): boolean {
     const visited = new Set<string>();
     const pending = [entry];
@@ -86,6 +86,7 @@ describe('dev-server-only browser files', () => {
         expect(derived).toContain('tests/e2e/smoke.spec.ts');
         expect(derived).toContain('tests/e2e/agentWorkspace.spec.ts');
         expect(derived).toContain('tests/e2e/browserAiWebGpuAdmission.spec.ts');
+        expect(derived).toContain('tests/e2e/e2eViteClientPolicy.spec.ts');
     });
 
     it('does not flag a collected file whose source imports run in Node, not in the page', () => {
