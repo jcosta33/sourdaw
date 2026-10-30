@@ -1,0 +1,39 @@
+src/modules/CrdtDocument/useCases/index.ts
+  s_29d8df116c5b92::t_8e393cd0d7f2ba 38
+src/modules/Command/useCases/__tests__/actionHistoryReplay.integration.spec.ts
+  s_29d8df116c5b92::t_5bf9346775ae22 4-8,195-276
+  s_29d8df116c5b92::t_3a1063551b472f 358,368-372
+  s_29d8df116c5b92::t_8e393cd0d7f2ba 1,20-21,70-72
+  s_29d8df116c5b92::t_3f3a4c21f5591f 277-357,359-367,373-394
+  s_29d8df116c5b92::t_f2811014b10f0e 395,397-424
+  s_29d8df116c5b92::t_9a28ca487c80c4 396
+  s_29d8df116c5b92::t_e51014273ab8ed 425-427
+src/modules/CrdtDocument/useCases/__tests__/subscribeToPublishedActionHistory.spec.ts
+  s_29d8df116c5b92::t_cb2b87e45b5891 1-33,35-52,54-116,118-142,144-158,160-165
+  s_29d8df116c5b92::t_f2811014b10f0e 34,53,117,143,159
+.agents/skills/review-stances/project-integrity.md
+  s_29d8df116c5b92::t_6fa2c641411fab 3-20
+src/modules/CrdtDocument/useCases/subscribeToPublishedActionHistory.ts
+  s_29d8df116c5b92::t_8e393cd0d7f2ba 1-60
+  s_29d8df116c5b92::t_21c7c2b4b6267d 61
+src/app/bootstrap.ts
+  s_29d8df116c5b92::t_8e393cd0d7f2ba 111,127,293-295
+.agents/skills/review-stances/test-validity.md
+  s_29d8df116c5b92::t_6fa2c641411fab 3-19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30d07a2025edab5e53ee828fce01ed1b21d11f46",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
