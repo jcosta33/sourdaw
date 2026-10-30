@@ -1,0 +1,16 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1211-1212
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc03d9ec0a908646fb5878935c2838d78eaeb706",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
