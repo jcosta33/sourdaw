@@ -48,8 +48,8 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
-import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
+import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
     classifyPlanningOutcome,
@@ -2989,7 +2989,7 @@ function answerMatchesOracle(input: {
     if (
         input.outcome.kind !== 'answer' ||
         input.outcome.text !== input.oracle.text ||
-        input.actions.length !== 0 ||
+        input.actions.length > 0 ||
         input.projectId === null ||
         input.projectId.length === 0 ||
         input.outcome.evidence.length === 0
