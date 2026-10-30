@@ -1,0 +1,16 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 816
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 3020-3021,3029,3032-3034,3039,3045-3046,3048-3050,3172-3241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96a998c9942bb6e0b661a8232f7feb614278d7e2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
