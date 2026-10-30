@@ -157,6 +157,7 @@ class LevainInstanceMock {
     }
     // Whether a bank is staged, which is what the real abort reports retiring.
     bankStaged = false;
+    retiredBankPresent = false;
     begin_sample_bank(instrumentId: string): void {
         calls.push({ method: 'begin_sample_bank', args: [instrumentId] });
         this.bankStaged = true;
@@ -177,6 +178,7 @@ class LevainInstanceMock {
         }
         const retired = this.bankStaged;
         this.bankStaged = false;
+        this.retiredBankPresent = retired;
         return retired;
     }
     commit_sample_bank(): boolean {
@@ -189,7 +191,20 @@ class LevainInstanceMock {
         if (retiredBankStepsLeft > 0) {
             retiredBankStepsLeft--;
         }
+        if (retiredBankStepsLeft === 0) {
+            this.retiredBankPresent = false;
+        }
         return retiredBankStepsLeft === 0;
+    }
+    has_retired_bank(): boolean {
+        return this.retiredBankPresent;
+    }
+    retire_sample_bank(): boolean {
+        calls.push({ method: 'retire_sample_bank', args: [] });
+        return false;
+    }
+    free(): void {
+        calls.push({ method: 'free', args: [] });
     }
     sample_bank_bytes(): number {
         return 16;
@@ -360,15 +375,25 @@ describe('LevainProcessor message handling', () => {
         expect(ready).toHaveLength(1);
     });
 
-    it('reports an init error when WASM instantiation throws', async () => {
+    it('refuses init after a failed WASM creation without replaying or announcing ready', async () => {
         const { initSync } = await import('../../wasm/daw_dsp.js');
         vi.mocked(initSync).mockImplementationOnce(() => {
             throw new Error('WASM instantiation failed');
         });
         const proc = await loadProcessor();
+        send(proc, { type: 'noteOn', note: 60, velocity: 90 });
         send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
-        const errors = proc.port.postMessage.mock.calls.filter((c) => (c[0] as { type?: string }).type === 'error');
-        expect(errors).toHaveLength(1);
+        send(proc, { type: 'noteOn', note: 62, velocity: 90 });
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'beginSampleBank', bankKey: 'later-bank', instrumentId: 'violin', loadToken: 1 });
+        send(proc, { type: 'releaseRetiredBank', loadToken: 1 });
+        proc.process([], [makeChannels(2, FRAMES)]);
+
+        const error = { type: 'error', message: 'WASM instantiation failed' };
+        expect(proc.port.postMessage.mock.calls.map(([message]) => message)).toEqual([error, error, error, error]);
+        expect(initSync).toHaveBeenCalledTimes(1);
+        expect(method('note_on')).toBeUndefined();
+        expect(engineProcessCalls).toBe(0);
     });
 
     it('dispatches immediate noteOn/noteOff and allNotesOff to the instance', async () => {
@@ -847,6 +872,34 @@ describe('LevainProcessor message handling', () => {
 
         expect(proc.port.postMessage).toHaveBeenCalledWith({ type: 'disposed' });
         expect(proc.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'ready' }));
+        expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
+    });
+
+    it('answers repeated disposal while one bank is drained in paced steps', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        send(proc, { type: 'beginSampleBank', bankKey: 'retiring-bank', instrumentId: 'violin', loadToken: 1 });
+        proc.port.postMessage.mockClear();
+        retiredBankStepsLeft = 2;
+
+        send(proc, { type: 'dispose' });
+        send(proc, { type: 'dispose' });
+        send(proc, { type: 'beginSampleBank', bankKey: 'ended-bank', instrumentId: 'violin', loadToken: 1 });
+        send(proc, { type: 'releaseDisposedBanks' });
+        send(proc, { type: 'releaseDisposedBanks' });
+        send(proc, { type: 'releaseDisposedBanks' });
+        send(proc, { type: 'releaseDisposedBanks' });
+
+        expect(proc.port.postMessage.mock.calls.map(([message]) => message)).toEqual([
+            { type: 'disposed' },
+            { type: 'disposed' },
+            { type: 'disposedBanksReleased', done: false },
+            { type: 'disposedBanksReleased', done: false },
+            { type: 'disposedBanksReleased', done: true },
+            { type: 'disposedBanksReleased', done: true },
+        ]);
+        expect(calls.filter(({ method }) => method === 'release_retired_bank')).toHaveLength(2);
+        expect(calls.filter(({ method }) => method === 'free')).toHaveLength(1);
         expect(proc.process([], [makeChannels(2, FRAMES)])).toBe(false);
     });
 

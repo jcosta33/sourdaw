@@ -29,6 +29,15 @@ function makePattern(id: string, velocities: number[]): Pattern {
 }
 
 describe('morphPatterns', () => {
+    it('selects the sound lock with the other discrete locks at the midpoint', () => {
+        const alpha = makePattern('a', [0]);
+        const b = makePattern('b', [1]);
+        alpha.tracks[0]!.steps[0] = { ...baseStep, soundLock: 'kick-808' };
+        b.tracks[0]!.steps[0] = { ...baseStep, soundLock: 'snare-808' };
+
+        expect(morphPatterns(alpha, b, 0.49).tracks[0]!.steps[0]!.soundLock).toBe('kick-808');
+        expect(morphPatterns(alpha, b, 0.5).tracks[0]!.steps[0]!.soundLock).toBe('snare-808');
+    });
     it('lerps velocity between two patterns at the midpoint', () => {
         const alpha = makePattern('a', [0, 0.5]);
         const b = makePattern('b', [1, 0.5]);

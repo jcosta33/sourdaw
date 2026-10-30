@@ -1,6 +1,5 @@
 import { prepareMidiClipSplit } from '#/modules/MIDI/useCases';
-import { restampLoopOriginEntry, shiftLoopOriginEntry } from '#/utils/clipLoopOrigin';
-import { type ClipSplitActionSnapshot } from '#/utils/handlerContract';
+import { type AppAction, type ClipSplitActionSnapshot } from '#/utils/handlerContract';
 
 import { getNextClipId } from '../../repositories/clipIdCounter';
 import { getTrackState } from '../../repositories/track/getTrackState';
@@ -9,6 +8,9 @@ import { type Clip } from '../../stores/trackStore';
 import { snapToZeroCrossing } from '../timelineInteractions/snapToZeroCrossing';
 
 import { consumedStretchFactor } from './consumedStretchFactor';
+import { projectClipReplayPrefix } from './projectClipReplayPrefix';
+import { projectClipSplitSourceWindow } from './projectClipSplitSourceWindow';
+import { readClipSplitIdentityIds } from './readClipSplitIdentityIds';
 import { prepareClipSplitSatellites } from './splitClipSatellites';
 
 type PrepareClipSplitInput = {
@@ -17,25 +19,8 @@ type PrepareClipSplitInput = {
     rightClipId?: string;
     resolvedSplitBeat?: number;
     targetNoteIds?: readonly string[];
+    priorActions?: readonly AppAction[];
 };
-
-/**
- * The spread entry the right fragment writes for the loop anchor (#4988): the
- * MIDI fragment restamps at its own start, the audio fragment shifts by
- * `timelineSplitDelta - contentSplitDelta`, and an unanchored source keeps the
- * key absent.
- */
-function fragmentLoopOriginEntry(
-    clip: Clip,
-    anchoredStartBeat: number,
-    timelineSplitDelta: number,
-    contentSplitDelta: number
-): { loopOriginBeat: number } | Record<string, never> {
-    if (clip.type === 'midi') {
-        return restampLoopOriginEntry(clip, anchoredStartBeat);
-    }
-    return shiftLoopOriginEntry(clip, timelineSplitDelta - contentSplitDelta);
-}
 
 export function prepareClipSplit({
     clipId,
@@ -43,6 +28,7 @@ export function prepareClipSplit({
     rightClipId,
     resolvedSplitBeat,
     targetNoteIds,
+    priorActions = [],
 }: PrepareClipSplitInput) {
     if (
         !Number.isFinite(splitBeat) ||
@@ -95,12 +81,32 @@ export function prepareClipSplit({
     const contentSplitDelta = timelineSplitDelta * consumedStretchFactor(clip);
     const contentSplitBeats = (clip.audioOffsetBeats ?? 0) + contentSplitDelta;
 
+    let reservedIdentityIds: ReadonlySet<string> | undefined;
+    let rightClipOrder = [...track.clips.map((clip) => clip.id), effectiveRightClipId];
+    let rightClipIndex = track.clips.length;
+    if (priorActions.length > 0) {
+        const projected = projectClipReplayPrefix(priorActions);
+        if (!projected) {
+            return null;
+        }
+        rightClipOrder = [
+            ...projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip.id),
+            effectiveRightClipId,
+        ];
+        rightClipIndex = rightClipOrder.length - 1;
+        reservedIdentityIds = readClipSplitIdentityIds(
+            projected.lanes,
+            projected.clips.map((owner) => owner.clip)
+        );
+    }
+
     const satellites = prepareClipSplitSatellites({
         clipId,
         rightClipId: effectiveRightClipId,
         clipRelativeSplitBeats: timelineSplitDelta,
         contentSplitBeats,
         absoluteSplitBeats: adjustedSplitBeat,
+        reservedIdentityIds,
     });
 
     const leftClip: Clip = {
@@ -130,27 +136,20 @@ export function prepareClipSplit({
     // Carried unshifted, a stretched split displaces the region by
     // `timelineSplitDelta * (stretch - 1)` source beats and the fragment
     // enters on the wrong material at the cut.
-    const rightLoopOriginEntry = fragmentLoopOriginEntry(
-        clip,
-        adjustedSplitBeat,
-        timelineSplitDelta,
-        contentSplitDelta
-    );
     const rightClip: Clip = {
         ...clip,
         id: effectiveRightClipId,
         name: `${clip.name} (R)`,
         startBeat: adjustedSplitBeat,
         fadeInBeats: 0,
-        audioOffsetBeats: contentSplitBeats,
-        midiOffsetBeats: 0,
-        ...rightLoopOriginEntry,
+        ...projectClipSplitSourceWindow(clip, adjustedSplitBeat),
     };
     const previous: ClipSplitActionSnapshot = {
         trackId: track.id,
         leftClip: structuredClone(clip),
         rightClip: null,
-        rightClipIndex: track.clips.length,
+        rightClipIndex,
+        rightClipOrder,
         sourceMidi: midiPlan.previousSource,
         rightMidi: midiPlan.previousRight,
         clipSatellites: satellites.previous,
@@ -162,7 +161,8 @@ export function prepareClipSplit({
         trackId: track.id,
         leftClip: structuredClone(leftClip),
         rightClip: structuredClone(rightClip),
-        rightClipIndex: track.clips.length,
+        rightClipIndex,
+        rightClipOrder,
         sourceMidi: midiPlan.nextSource,
         rightMidi: midiPlan.nextRight,
         clipSatellites: satellites.next,

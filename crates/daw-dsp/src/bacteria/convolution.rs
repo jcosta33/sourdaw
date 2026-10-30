@@ -1,13 +1,15 @@
 //! Convolution body modeling for Bacteria.
 //!
-//! Direct-form (time-domain) convolution applying impulse responses of
-//! physical objects (ceramic, wood, metal, spring) to create resonant body
-//! character. Includes a stereo separation control for widening the mono
-//! responses.
+//! Ceramic, wood and metal use the original short direct FIR responses.
+//! Spring uses a prebuilt dispersive feedback model with a longer tail.
+//! The wet/dry and stereo separation controls apply to all four bodies.
 //!
-//! Cost is O(N) multiply-accumulates per sample per channel, with N the
-//! response length — 23.2 ms of it, capped at 4096 samples. There is no
-//! partitioning and no FFT here; a longer response would need one.
+//! The FIR cost is O(N) multiply-accumulates per sample per channel, with N the
+//! response length — 23.2 ms of it through 192 kHz, capped at 4458 samples.
+//! Spring adds fixed work while any body is active; see `spring_body` for its
+//! operation and state bounds. Neither bound proves a render deadline.
+
+use super::spring_body::SpringBody;
 
 /// Duration of the built-in body IRs, in seconds.
 ///
@@ -15,37 +17,40 @@
 /// kept as a duration so the shape survives a change of rate.
 const BUILTIN_IR_SECONDS: f32 = 1024.0 / 44_100.0;
 
-/// Longest response the direct convolution runs: the per-sample cost is the
-/// length.
-const MAX_IR_LENGTH: usize = 4096;
+/// Rounded 1024/44100-second duration at 192 kHz. Keep the direct-form work
+/// bounded while retaining the full built-in response at the highest session rate.
+const MAX_IR_LENGTH: usize = 4_458;
 
 /// Rate at which a built-in body IR carries unit energy. Its energy at any
 /// other rate scales by this over the session rate, which keeps the body's
 /// audible-band level the same at every rate.
 const BODY_REFERENCE_RATE: f32 = 48_000.0;
 
-/// The built-in bodies, in the order `convolutionIr` indexes them.
-const BUILTIN_BODIES: [&str; 4] = ["ceramic", "wood", "metal", "spring"];
+const FIR_BODIES: [&str; 3] = ["ceramic", "wood", "metal"];
+const SPRING_INDEX: usize = 3;
 
-/// Direct-form convolution against one of the built-in body responses.
+/// Resonant body stage: three short FIRs and one prebuilt Spring model.
 ///
-/// Every body is synthesized when the processor is built, and choosing one
-/// afterwards only changes which prebuilt response the convolution reads.
+/// Every body's response or model is built once. Both the FIR input history
+/// and Spring model stay warm while a body is chosen, so changing bodies
+/// hears the same past input as a continuously selected reference.
 /// `convolutionIr` arrives through `set_param`, and on the web that runs in the
 /// worklet's message handler on the audio rendering thread, so the choice
 /// must not allocate, free or synthesize; `tests/bacteria_body_switch_rt.rs`
 /// pins that.
 pub struct ConvolutionProcessor {
-    /// Each built-in body's mono response, indexed as [`BUILTIN_BODIES`] is.
+    /// Each short body's mono response, indexed as [`FIR_BODIES`] is.
     /// Both channels convolve with the same response; `separation` widens it.
-    bodies: [Vec<f32>; BUILTIN_BODIES.len()],
+    bodies: [Vec<f32>; FIR_BODIES.len()],
+    spring: SpringBody,
+    spring_suspended: bool,
     /// The body the stage convolves with, or `None` to pass audio through.
     active_body: Option<usize>,
 
     input_buffer_l: Vec<f32>,
     input_buffer_r: Vec<f32>,
     write_pos: usize,
-    /// Length of every body's response, and so of both input rings.
+    /// Length of the three FIR responses and their shared input rings.
     ir_length: usize,
 
     // Parameters
@@ -64,7 +69,9 @@ impl ConvolutionProcessor {
         let ir_length =
             ((sample_rate * BUILTIN_IR_SECONDS).round() as usize).clamp(1, MAX_IR_LENGTH);
         Self {
-            bodies: BUILTIN_BODIES.map(|name| synthesize_body(name, sample_rate, ir_length)),
+            bodies: FIR_BODIES.map(|name| synthesize_body(name, sample_rate, ir_length)),
+            spring: SpringBody::new(sample_rate),
+            spring_suspended: false,
             active_body: None,
             input_buffer_l: vec![0.0; ir_length],
             input_buffer_r: vec![0.0; ir_length],
@@ -111,16 +118,22 @@ impl ConvolutionProcessor {
         self.input_buffer_l[self.write_pos] = left;
         self.input_buffer_r[self.write_pos] = right;
 
-        // Direct convolution (for short IRs)
-        let ir = &self.bodies[body];
-        let mut conv_l = 0.0_f32;
-        let mut conv_r = 0.0_f32;
-
-        for (k, tap) in ir.iter().enumerate() {
-            let read_pos = (self.write_pos + self.ir_length - k) % self.ir_length;
-            conv_l += self.input_buffer_l[read_pos] * tap;
-            conv_r += self.input_buffer_r[read_pos] * tap;
+        if self.spring_suspended {
+            self.spring.reset();
+            self.spring_suspended = false;
         }
+        let spring = self.spring.process_stereo(left, right);
+        let (mut conv_l, mut conv_r) = if body == SPRING_INDEX {
+            spring
+        } else {
+            let mut wet = (0.0_f32, 0.0_f32);
+            for (k, tap) in self.bodies[body].iter().enumerate() {
+                let read_pos = (self.write_pos + self.ir_length - k) % self.ir_length;
+                wet.0 += self.input_buffer_l[read_pos] * tap;
+                wet.1 += self.input_buffer_r[read_pos] * tap;
+            }
+            wet
+        };
 
         self.write_pos = (self.write_pos + 1) % self.ir_length;
 
@@ -143,11 +156,19 @@ impl ConvolutionProcessor {
         self.input_buffer_l.fill(0.0);
         self.input_buffer_r.fill(0.0);
         self.write_pos = 0;
+        self.spring.reset();
+        self.spring_suspended = false;
+    }
+
+    /// A skipped stage cannot freeze a long Spring tail for later playback.
+    /// Mark once in O(1); clear preallocated Spring state only on resumption.
+    pub(super) fn suspend_spring(&mut self) {
+        self.spring_suspended = true;
     }
 }
 
 /// The body a `convolutionIr` value selects: its nearest whole number when that
-/// indexes [`BUILTIN_BODIES`], otherwise none.
+/// indexes the three FIR bodies or Spring at index 3, otherwise none.
 ///
 /// None is a value of its own rather than a fallback body. The project stores a
 /// band with no body chosen as -1, and that band has always passed its audio
@@ -155,7 +176,7 @@ impl ConvolutionProcessor {
 /// passing through rather than quietly switch a body on.
 fn body_index(value: f32) -> Option<usize> {
     let rounded = value.round();
-    if rounded >= 0.0 && rounded < BUILTIN_BODIES.len() as f32 {
+    if rounded >= 0.0 && rounded <= SPRING_INDEX as f32 {
         Some(rounded as usize)
     } else {
         None
@@ -186,7 +207,7 @@ fn synthesize_body(name: &str, sample_rate: f32, length: usize) -> Vec<f32> {
             }
         }
         _ => {
-            // Metal and spring: bright metallic ring
+            // Metal: bright metallic ring
             for (i, sample) in ir.iter_mut().enumerate() {
                 let t = i as f32 / sample_rate;
                 *sample = (-t * 15.0).exp()
@@ -258,13 +279,9 @@ mod tests {
 
     const BODY_TEST_RATE: f32 = 48_000.0;
 
-    /// Every built-in body by the `convolutionIr` index that selects it.
-    const BUILTIN_BODIES: [(f32, &str); 4] = [
-        (0.0, "ceramic"),
-        (1.0, "wood"),
-        (2.0, "metal"),
-        (3.0, "spring"),
-    ];
+    /// The unchanged FIR bodies. Spring's long-tail/dispersion obligations
+    /// live in spring_body and tests/bacteria_spring_body, not a short-IR golden.
+    const FIR_BODY_CASES: [(f32, &str); 3] = [(0.0, "ceramic"), (1.0, "wood"), (2.0, "metal")];
 
     /// A built-in body chosen through `set_param`, as the engine chooses one,
     /// fully wet.
@@ -285,6 +302,61 @@ mod tests {
             .active_body
             .expect("no body is chosen, so there is no response to read");
         &body.bodies[index]
+    }
+
+    /// Render the selected response through the fully wet stereo path.
+    fn impulse_pcm(index: f32, sample_rate: f32, frames: usize) -> Vec<f32> {
+        let mut body = builtin_body_at(index, sample_rate);
+        (0..frames)
+            .map(|n| {
+                let impulse = if n == 0 { 1.0 } else { 0.0 };
+                let (left, right) = body.process_stereo(impulse, impulse);
+                assert_eq!(
+                    left, right,
+                    "identical inputs must not acquire a side signal"
+                );
+                left
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_high_rate_fir_body_spans_the_physical_duration() {
+        let mut complete = true;
+        for (index, name) in FIR_BODY_CASES {
+            let body = builtin_body_at(index, 192_000.0);
+            let length = response(&body).len();
+            eprintln!("{name}: 192 kHz response length {length}, required 4458");
+            complete &= length == 4_458;
+            complete &= (length as f64 / 192_000.0 - 1024.0 / 44_100.0).abs() <= 1.0 / 192_000.0;
+        }
+        assert!(
+            complete,
+            "each 192 kHz FIR body must span 1024/44100 seconds (4458 frames)"
+        );
+    }
+
+    #[test]
+    fn every_high_rate_fir_body_renders_the_tail_past_frame_4095() {
+        let mut complete = true;
+        for (index, name) in FIR_BODY_CASES {
+            let heard = impulse_pcm(index, 192_000.0, 4_459);
+            let tail_energy: f64 = heard[4_096..4_458]
+                .iter()
+                .map(|s| f64::from(*s).powi(2))
+                .sum();
+            eprintln!("{name}: 192 kHz rendered energy after frame 4095 = {tail_energy}");
+            complete &= tail_energy > 0.0;
+            complete &= heard[4_394..4_458].iter().any(|sample| *sample != 0.0);
+            assert_eq!(
+                heard[4_458], 0.0,
+                "{name} must finish after its physical duration"
+            );
+        }
+        assert!(
+            complete,
+            "each FIR body's fully wet impulse must retain its high-rate tail"
+        );
     }
 
     /// Mean power gain of `ir`, in dB, over the audible band: its squared
@@ -327,8 +399,8 @@ mod tests {
     /// built-in body 20.2 to 23.4 dB above the dry on white noise at 48 kHz,
     /// so even the default 0.3 mix was mostly body.
     #[test]
-    fn every_builtin_body_passes_broadband_noise_at_unity_gain() {
-        for (index, name) in BUILTIN_BODIES {
+    fn every_fir_body_passes_broadband_noise_at_unity_gain() {
+        for (index, name) in FIR_BODY_CASES {
             let mut body = builtin_body(index);
             let gain = white_noise_gain_db(&mut body);
             assert!(
@@ -344,10 +416,10 @@ mod tests {
     /// every rate put each body's audible band 3 dB higher per doubling of the
     /// rate: +0.79 dB at 48 kHz, +3.80 dB at 96 kHz and +6.81 dB at 192 kHz.
     #[test]
-    fn a_builtin_body_keeps_its_audible_band_level_at_every_context_rate() {
-        for (index, name) in BUILTIN_BODIES {
+    fn a_fir_body_keeps_its_audible_band_level_at_every_context_rate() {
+        for (index, name) in FIR_BODY_CASES {
             let reference = audible_band_level_db(response(&builtin_body(index)), BODY_TEST_RATE);
-            for sample_rate in [44_100.0_f32, 96_000.0] {
+            for sample_rate in [44_100.0_f32, 96_000.0, 176_400.0, 192_000.0] {
                 let level = audible_band_level_db(
                     response(&builtin_body_at(index, sample_rate)),
                     sample_rate,
@@ -363,9 +435,8 @@ mod tests {
 
     /// Magnitude response at a handful of frequencies, in dB, of each body's
     /// pre-change peak-normalised impulse response scaled to unit energy — the
-    /// colour each body had before its level changed. Spring is metal's
-    /// response.
-    const PRE_CHANGE_SHAPE_DB: [(&str, [(f32, f64); 6]); 4] = [
+    /// colour each FIR body had before its level changed.
+    const PRE_CHANGE_SHAPE_DB: [(&str, [(f32, f64); 6]); 3] = [
         (
             "ceramic",
             [
@@ -399,26 +470,15 @@ mod tests {
                 (7_000.0, 17.342),
             ],
         ),
-        (
-            "spring",
-            [
-                (200.0, -10.775),
-                (800.0, -7.153),
-                (2_200.0, -17.263),
-                (3_500.0, 26.197),
-                (4_400.0, -23.243),
-                (7_000.0, 17.342),
-            ],
-        ),
     ];
 
     /// Normalising a body changes its level and nothing else: each chosen
     /// response, read against its own energy, still matches the pre-change
     /// response read the same way, to 0.05 dB at every frequency.
     #[test]
-    fn energy_normalising_a_body_keeps_its_spectral_shape() {
+    fn energy_normalising_a_fir_body_keeps_its_spectral_shape() {
         for ((index, name), (expected_name, expected)) in
-            BUILTIN_BODIES.into_iter().zip(PRE_CHANGE_SHAPE_DB)
+            FIR_BODY_CASES.into_iter().zip(PRE_CHANGE_SHAPE_DB)
         {
             assert_eq!(name, expected_name);
             let body = builtin_body(index);
@@ -436,57 +496,104 @@ mod tests {
         }
     }
 
-    /// A "wood" body resonates at 800 Hz. It has to do that at whatever rate
-    /// the audio context runs at — synthesizing the IR against a hardcoded
-    /// 44.1 kHz puts the resonance at 800·fs/44100, which is 871 Hz at 48 kHz
-    /// and 1600 Hz at 88.2 kHz: the body changes pitch with the session rate.
+    /// The named resonances belong to the physical bodies, independent of rate.
     #[test]
-    fn a_builtin_body_resonates_at_the_same_hz_at_every_context_rate() {
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
-            let convolution = builtin_body_at(1.0, sample_rate);
+    fn a_fir_body_resonates_at_the_same_hz_at_every_context_rate() {
+        for ((index, name), resonance) in FIR_BODY_CASES.into_iter().zip([2_200, 800, 3_500]) {
+            for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
+                let convolution = builtin_body_at(index, sample_rate);
+                let peak = dominant_frequency(
+                    response(&convolution),
+                    sample_rate,
+                    resonance - 400,
+                    resonance + 400,
+                );
+                let error = (peak - resonance as f32).abs() / resonance as f32;
+                assert!(
+                    error < 0.03,
+                    "{name} resonates at {peak} Hz at {sample_rate} Hz, expected {resonance} Hz"
+                );
+            }
+        }
+    }
 
-            let peak = dominant_frequency(response(&convolution), sample_rate, 400, 1_200);
-            let error = (peak - 800.0).abs() / 800.0;
+    /// The last tenth of the rendered response must reach the same point on
+    /// each body's decay as at 48 kHz. Retain the existing 0.02 peak-ratio band.
+    #[test]
+    fn a_fir_body_decays_over_the_same_milliseconds_at_every_context_rate() {
+        let peak = |slice: &[f32]| slice.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
+        let tail_ratio = |ir: &[f32]| {
+            let window = ir.len() / 10;
+            peak(&ir[ir.len() - window..]) / peak(&ir[..window])
+        };
+        for (index, name) in FIR_BODY_CASES {
+            let reference = impulse_pcm(index, BODY_TEST_RATE, 1_115);
+            let reference_tail = tail_ratio(&reference);
+            for (sample_rate, frames) in [
+                (44_100.0_f32, 1_024),
+                (48_000.0, 1_115),
+                (96_000.0, 2_229),
+                (176_400.0, 4_096),
+                (192_000.0, 4_458),
+            ] {
+                let ir = impulse_pcm(index, sample_rate, frames);
+                let duration = response(&builtin_body_at(index, sample_rate)).len() as f64
+                    / f64::from(sample_rate);
+                assert!(
+                    (duration - 1024.0 / 44_100.0).abs() <= 1.0 / f64::from(sample_rate),
+                    "the {name} body lasts {duration} seconds at {sample_rate} Hz"
+                );
+                let tail = tail_ratio(&ir);
+                assert!(
+                    (tail - reference_tail).abs() < 0.02,
+                    "the {name} body ends at {tail} of its peak at {sample_rate} Hz, \
+                     against {reference_tail} at 48 kHz"
+                );
+            }
+        }
+    }
+
+    /// Rates unaffected by the cap change define the physical sampling
+    /// envelope. Deep notches vary more than broadband gain as sample times
+    /// move; retain the existing 0.05 dB shape precision around that envelope.
+    fn assert_high_rate_shape(index: f32, name: &str, frequencies: &[f32]) {
+        let reference = [
+            (44_100.0_f32, 1_024),
+            (48_000.0, 1_115),
+            (96_000.0, 2_229),
+            (176_400.0, 4_096),
+        ]
+        .map(|(rate, frames)| (rate, impulse_pcm(index, rate, frames)));
+        let heard = impulse_pcm(index, 192_000.0, 4_458);
+        for &hz in frequencies {
+            let mut low = f64::INFINITY;
+            let mut high = f64::NEG_INFINITY;
+            for (rate, pcm) in &reference {
+                let db = 20.0 * amplitude_at(pcm, hz, *rate).log10();
+                low = low.min(db);
+                high = high.max(db);
+            }
+            let db = 20.0 * amplitude_at(&heard, hz, 192_000.0).log10();
             assert!(
-                error < 0.03,
-                "wood body resonates at {peak} Hz when the context runs at \
-                 {sample_rate} Hz; it is named for 800 Hz"
+                db >= low - 0.05 && db <= high + 0.05,
+                "{name} at {hz} Hz: {db:.6} dB at 192 kHz, outside the unchanged-rate \
+                 sampling envelope [{low:.6}, {high:.6}] dB plus 0.05 dB shape precision"
             );
         }
     }
 
-    /// Frequency is only half of what a body is. Its envelope is written in
-    /// seconds too, so the IR has to span the same milliseconds and reach the
-    /// same point on its decay at every rate — a fixed 1024-sample length cuts
-    /// the wood body at 0.40 of its peak at 44.1 kHz and 0.65 at 96 kHz, which
-    /// is a different body.
     #[test]
-    fn a_builtin_body_decays_over_the_same_milliseconds_at_every_context_rate() {
-        let mut reference_tail = None;
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
-            let convolution = builtin_body_at(1.0, sample_rate);
-            let ir = response(&convolution);
-
-            let duration_ms = ir.len() as f32 / sample_rate * 1_000.0;
-            assert!(
-                (duration_ms - 23.22).abs() < 0.1,
-                "the wood body lasts {duration_ms} ms at {sample_rate} Hz"
-            );
-
-            // Envelope at the truncation point, against the normalized peak.
-            let window = ir.len() / 10;
-            let peak = |slice: &[f32]| slice.iter().fold(0.0_f32, |m, s| m.max(s.abs()));
-            let tail = peak(&ir[ir.len() - window..]) / peak(&ir[..window]);
-            match reference_tail {
-                None => reference_tail = Some(tail),
-                Some(expected) => assert!(
-                    (tail - expected).abs() < 0.02,
-                    "the wood body is at {tail} of its peak when it ends at \
-                     {sample_rate} Hz, against {expected} at 44.1 kHz — the decay \
-                     still tracks the session rate"
-                ),
-            }
+    fn a_fir_body_keeps_its_rendered_spectral_shape_at_192_khz() {
+        for ((index, name), (_, shape)) in FIR_BODY_CASES.into_iter().zip(PRE_CHANGE_SHAPE_DB) {
+            assert_high_rate_shape(index, name, &shape.map(|(hz, _)| hz));
         }
+    }
+
+    /// The original high-rate truncation moved this bin by about 2.15 dB.
+    /// Keep it separate so the spectral oracle runs even when length fails.
+    #[test]
+    fn the_192_khz_wood_body_keeps_its_one_khz_response() {
+        assert_high_rate_shape(1.0, "wood", &[1_000.0]);
     }
 
     /// Unit energy belongs to 48 kHz, where the guidance levels are measured,
@@ -496,10 +603,10 @@ mod tests {
     /// other, so only the stored energy pins the reference rate. Both channels
     /// convolve with the one response read here.
     #[test]
-    fn a_builtin_body_carries_unit_energy_at_48_khz_and_scales_it_with_the_rate() {
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0] {
+    fn a_fir_body_carries_unit_energy_at_48_khz_and_scales_it_with_the_rate() {
+        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
             let expected = 48_000.0 / f64::from(sample_rate);
-            for (index, name) in BUILTIN_BODIES {
+            for (index, name) in FIR_BODY_CASES {
                 let body = builtin_body_at(index, sample_rate);
                 let energy: f64 = response(&body).iter().map(|s| f64::from(*s).powi(2)).sum();
                 assert!(

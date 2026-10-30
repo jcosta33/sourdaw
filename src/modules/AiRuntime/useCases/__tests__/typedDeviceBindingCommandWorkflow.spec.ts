@@ -43,6 +43,12 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 
+const { createMockAudioContext } = await vi.hoisted(async () => {
+    const { createMockAudioContext } = await import('#/helpers/__tests__/audioContext.mock');
+    vi.stubGlobal('AudioContext', createMockAudioContext);
+    return { createMockAudioContext };
+});
+
 const runtimeMocks = vi.hoisted(() => ({
     matchesRuntimeDeviceChainTopology: vi.fn(() => true),
     updateDeviceParam: vi.fn(),
@@ -333,6 +339,7 @@ function compileWorkflowCommandBatch(
 describe('typed created-device binding Command workflow', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.stubGlobal('AudioContext', createMockAudioContext);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Typed created-device binding workflow test');
         removeCrdtDoc('root');
@@ -364,6 +371,7 @@ describe('typed created-device binding Command workflow', () => {
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
         vi.restoreAllMocks();
+        vi.unstubAllGlobals();
     });
 
     it('requires and applies the requested device anchor ahead of an intervening sibling', async () => {

@@ -68,7 +68,10 @@
  * `dispose`, which it answers with `disposed` and starts the drain, and
  * `beginSampleBank` and `releaseRetiredBank`, which it answers by posting its
  * `error` again, so a host that began listening after the fault still learns
- * that no answer will come.
+ * that no answer will come. A fault before internal initialization also refuses
+ * a later `init` with that original error: partial WASM creation is not retried.
+ * A terminal buffered-replay fault follows internal initialization, so a later
+ * `init` is silent even though no healthy `ready` was posted.
  *
  * ADR 0052's Message contract tables every answer by state.
  */
@@ -315,8 +318,14 @@ class LevainProcessor extends AudioWorkletProcessor {
             if (this._disposed) {
                 return;
             }
-            if (this._faulted && (msg.type === 'beginSampleBank' || msg.type === 'releaseRetiredBank')) {
-                this._answerAfterFault();
+            if (this._faulted) {
+                if (
+                    msg.type === 'beginSampleBank' ||
+                    msg.type === 'releaseRetiredBank' ||
+                    (msg.type === 'init' && !this._ready)
+                ) {
+                    this._answerAfterFault();
+                }
                 return;
             }
             try {
@@ -335,6 +344,9 @@ class LevainProcessor extends AudioWorkletProcessor {
                     this._handleMessage(msg);
                 }
             } catch (error) {
+                if (msg.type === 'init') {
+                    wasmModule = null;
+                }
                 this._handleMessageError(error);
             }
         };
@@ -524,6 +536,7 @@ class LevainProcessor extends AudioWorkletProcessor {
     _faultWithError(error: unknown): void {
         this._faulted = true;
         this._faultMessage = error instanceof Error ? error.message : String(error);
+        this._pendingMessages.length = 0;
         this._leaveBankLoad(error);
         this.port.postMessage({ type: 'error', message: this._faultMessage });
     }

@@ -8,17 +8,22 @@
  */
 export const devServerOnlySpecs: readonly string[] = [
     'tests/e2e/agentWorkspace.spec.ts',
+    'tests/e2e/applicationModuleRecovery.spec.ts',
     'tests/e2e/aiConfirmApplyUndo.spec.ts',
     'tests/e2e/aiProviderToolAuthority.spec.ts',
     'tests/e2e/audioOwnership.native.spec.ts',
     'tests/e2e/browserAiWebGpuAdmission.spec.ts',
     'tests/e2e/browserDisplayScale.spec.ts',
     'tests/e2e/builtinDeviceAutomationOffline.spec.ts',
+    'tests/e2e/controlGallery.spec.ts',
     'tests/e2e/crdtPersistence.native.spec.ts',
     'tests/e2e/grinderOfflineNumericParity.spec.ts',
+    'tests/e2e/modulationHaloInteraction.spec.ts',
     'tests/e2e/monoModulationInput.spec.ts',
+    'tests/e2e/persistedClipEditAcceptance.spec.ts',
     'tests/e2e/pianoRollDockAcceptance.spec.ts',
     'tests/e2e/smoke.spec.ts',
     'tests/e2e/spatialPannerArrangementTestId.spec.ts',
     'tests/e2e/transientOnsetRead.spec.ts',
+    'tests/e2e/transientShaperEffect.spec.ts',
 ];

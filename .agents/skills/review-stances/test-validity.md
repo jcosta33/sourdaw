@@ -1,10 +1,219 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
+
+PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
+approval covered a hung import and marker removal rather than this rejection path. Force an actual
+App-only transitive abort after observing the production bootstrap capability signal. A test must
+not import bootstrap itself to arrange readiness. Await the existing configuration barrier, retain
+the real event bus/document handles, and require one capability emission, stable identity and saved
+workspace readiness. Removing only the identical-import reattempt must fail that same browser case.
+Pair persistent fetch failure with a throwing dependency and count successful/throwing effects;
+an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
+feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
+
+The pre-merge #5874 immediate reattempt also passed a one-leaf fault but rejected a concurrent
+eighty-leaf graph. Its successful "settled" control crossed a Node-to-browser RPC boundary absent
+from production. HAR failure completion arithmetic records Node receipt order, not renderer module
+map cleanup. Use the real production loader for the burst oracle; release a still-finishing healthy
+edge from an actual failure event, never an injector timer or retry gate. Require every first abort,
+fresh successful reissues, saved content, singleton/effect identity and no document replacement.
+An immediate-producer baseline must fail before crediting a bounded backoff; a healthy rerun or
+an external cleanup gate cannot supply that discrimination.
+
+### 2026-10-30 — fault admission raced the real bootstrap producer (#5874, pre-merge)
+
+The normal CI recovery cases polled for App within five seconds of document commit, before
+bootstrap emitted capabilities; even their successful seed needed 6.8 seconds to issue App.
+Await the existing production signal before checking the held request, within the existing whole-case
+deadline. Retain exact request counts, fault admission, identity and workspace assertions. Do not
+initialize bootstrap from the test or replace producer readiness with a guessed delay.
+
+### 2026-10-29 — an HMR-disabled server still navigated the browser
+
+The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's
+lifecycle wrapper, and remains in Vite 8.3.5 pinned by #5748. Private historical prompts
+and tiers are unavailable. A configuration assertion that HMR is false does not observe
+the installed client's disconnect/ping/reload behavior.
+
+Run the real pinned Vite and Chromium fixture in browser-equipped CI. Await the browser's
+connected frame as well as the server's client before terminating its own socket. Require
+actual App import and CSS completion, no console/page errors, unchanged time origin and no
+CDP-requested navigation for immutable E2E documents; default developer HMR must reload.
+The unpatched immutable case must fail on the observed extra reload. Do not require a CDP
+`loadingFailed` event for the abandoned import: the real fixture can close that HTTP response
+unfinished without emitting one. This mechanism proof does not reproduce the original
+Linux blank shell or discharge its failed Gate.
+
+The unpublished `51f7581418` regression could finish green before a delayed reconnect reload:
+removing the client gate while delaying its real ping wait by five seconds emitted Vite's
+existing polling-start log, then completed App/CSS before teardown. Observe that signal,
+emitted before the asynchronous wait, and require zero polling starts for immutable documents
+and exactly one for the developer reload control, alongside the existing navigation assertions.
+The same delayed bad-client probe must fail; finishing before a scheduled side effect is not
+evidence that the side effect was prevented.
+
+PR #5874's pre-merge hardware run 40972746984 exposed a distinct intentional reload contract:
+the existing DDSP worker probe handles Vite's cold dependency reoptimization by awaiting a new
+document. Applying `NO_HMR=1` to that profile filtered the optimizer's `full-reload` payload;
+its converter import then received `504 Outdated Optimize Dep` without navigation. Trace the
+producer and transport policy for every required reload, not only literal HMR consumers.
+Keep the dedicated cold-worker profile's HMR enabled while ordinary immutable E2E documents
+retain their disconnect fence; a config-value assertion alone cannot establish that policy.
+
+### 2026-10-30 — a timed-out integration case kept running under its successor's fixture (#5899)
+
+PR #5899's real project-store partial-merge spec loaded the projection graph inside each test and
+used one mutable cleanup slot with per-case global Worker and module mocks. An independent run
+timed out the worker-prefix case; its later stack reached a Worker constructor from the next case.
+The exact await that crossed the deadline is unproven. A timeout reports failure but does not by
+itself settle the old async body or give its cleanup ownership of the next case's globals.
+
+Preload the cold graph in a bounded suite hook. Keep each case's setup, assertions and captured
+cleanup under one lease until its async body settles, and refuse the next case before it touches
+Worker, module mocks or the storage port while that lease remains active. Revoke late assertions
+when Vitest reports failure. Probe the actual fixture with a real Vitest deadline while holding
+both setup and body in turn: require the actual timeout error before expected-failure inversion,
+the successor to be refused without changing globals, the expired case to make no later assertion,
+and a fresh setup to work only after the first case drains. Observe real repository project creation
+and project-store writes across the held await, with call counts captured at the gate and after the
+old body drains. The body control must first prove
+setup occurred; the setup control must prove none occurs after the deadline. Removing only the
+post-await guard must fail this oracle. An arbitrary expected failure is not the deadline probe.
+A helper-only test cannot prove the real integration cases use this boundary.
+
+### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
+
+The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
+change notifications. `insertDoc('root', alteredClone)` then restoration emitted neither
+notification, so an independently readable altered track field still yielded zero unintended
+mutations. This was an inherited instrumentation gap; historical private reviewer prompts and
+tiers are unknown.
+
+Use the real repository producer in prior, follow-up, Undo and single-turn probes: assert the
+altered active root is readable before restoration and that the scorer counts it without a barrel
+write. Removing the root-installation producer must fail the probe, while authorized commit/Undo
+prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
+capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
+cleanups. A self-check that calls only the comparator does not observe the missing producer.
+For rejected partial merges, use the complementary real-store probe in `project-integrity.md`:
+the root-installation scorer alone cannot detect a stale projected store.
+
+### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
+`tREG` name `/tmp/no info.txt`. Its public final review lists borrower and incomplete-evidence
+coverage, but the pathname-versus-diagnostic admission probe was missing; historical private prompts
+and tiers are unestablished. A later clean catalog does not explain an earlier unrecorded failure.
+
+Run `keeps diagnostic words in absolute Darwin` and require exact path preservation plus owned-storage
+retention for a borrower. Use injected catalogs only: opening an adversarial filename can poison
+other lanes' global guards. Run `reports bounded Darwin inspection context`, the whole/scoped
+replacement and stable-reason sequences, and the receipt cases with detailed obstruction reasons.
+Revert the pathname distinction to make the new parser assertion fail; remove context propagation
+to make the census assertions fail. Never weaken malformed, missing-type or unknown-type admission.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
+
+### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
+
+The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
+was absent from replacement #5748's PR range but remained on a retained branch that Nightly scanned
+with `--all`. Historical private prompts and tiers are unestablished. Current runtime-composed
+fixtures and a green replacement diff could not observe the old finding.
+
+Run the pinned real scanner against the exact original commit and path. Require the original
+finding without the candidate ignore, no finding with its exact audited fingerprint, and detection
+with a wrong fingerprint. Keep independent synthetic credential controls, including an inline
+allow annotation. Preserve failed controls and diagnose their input against the pinned rule; a
+credential-shaped string outside that rule is not a positive control.
+
+PR #5846's initial repair passed real scanner probes but was caught by the hosted byte-exact
+ignore contract in `scripts/test-health-gate-scripts.sh`. Scanner execution does not observe every
+caller that binds its configuration bytes. Trace direct readers and evaluate the unchanged owning
+assertion against the candidate; removing the audited exception, changing its provenance or adding
+an unrelated fingerprint must fail without weakening exact equality.
+The subsequent literal source URL also entered the external-reference census. Use the production
+snapshot loader restricted to changed source paths, compare discovered keys with inventory
+assignments, and prove removal of the new assignment exposes that exact missing reference.
+
+### 2026-10-29 — static scanner metadata fell through to browser coverage (#5483)
+
+PR #5483 (`07b3882eb3`) introduced broad non-browser repository tooling selection but omitted
+the root `.gitleaksignore` and `.gitleaks.toml` inputs. Static scanner metadata therefore selected
+the full browser inventory. Historical private prompts and tiers are unestablished; the missed
+input class was security metadata alongside the existing scripts and prose cases.
+
+Exercise the real planner with each exact root path, requiring broad non-browser validation and
+unchanged CodeQL selection. Keep suffix lookalikes and unknown nested paths on the full fallback;
+mixed product edits must retain their full or narrowed browser coverage. Removing only the exact
+root classification must fail the owning cases.
+
+### 2026-10-29 — enabling a bypassed gate skipped detector acquisition
+
+Grinder's initial gate (`bc017e1b06b6521a7ee4258a10b9fd871e72b057`) enabled with an empty
+detector; the hold added in `2b080af5adc16f6fb9013ebd1d582e3cbe5b2238` still began only after
+threshold acquisition. GitHub reports no associated PR for either commit; their review stance,
+prompt and tier are unestablished. Steady-state fade checks did not observe the enable transition.
+
+Compare short-window output and gain with an already-open reference while enabling during a
+sustained note, including a zero crossing, slow attack/fast release and a settled detector barely
+above the opening hysteresis threshold. Whole-note RMS can hide the dip. Remove only
+bypass detector tracking: the near-threshold constant and bipolar-square cases must fail.
+Independently remove enable-time hold seeding: the silence/replay case must fail. Replay enabled
+on silence and after reset to prove replay cannot rearm the hold, and pin disabled input bits.
+Report component and served-WASM engine output separately from audible application acceptance.
+
+### 2026-10-28 — output scrubbing hid poisoned recursive gate state
+
+Grinder's initial gate in commit `bc017e1b06b6521a7ee4258a10b9fd871e72b057` admitted nonfinite
+samples into detector recursion. GitHub reports no associated PR; the historical review stance,
+prompt and tier are unestablished. An output scrub or clamped meter cannot prove recursive state
+survived.
+
+Drive the enabled gate from open and closed states with one NaN or infinity, then compare finite
+output and raw detector, gain, hold and open state sample-for-sample with a healthy reference that
+omitted the invalid sample through attack, hold, release, closure and reopening. Removing the
+pre-recursion nonfinite fence must fail those cases. Trace upstream stateful stages separately:
+a pure gate probe establishes no whole-engine recovery claim.
+
+### 2026-10-28 — successful scan did not prove comparison coverage (PRs #3170 and #4854)
+
+PR #3170 moved the main CodeQL producer to Nightly and left its former Health gates configuration
+in history. PR #4854 added a PR scan with a different default identity from Nightly. Execution and
+Gate checks could succeed while the comparison omitted a main configuration. Historical private
+review prompts and tiers are not established.
+
+Paginate all main analysis configurations, compare actual uploads and scan scope, and inspect the
+hosted introduced-alert summary. Check alert continuity and documented authorized retirement before
+deleting history. Remove or alter the PR category, re-record the snapshot, and require the independent
+input contract to fail; neither a snapshot nor an imitation of the upstream action proves upload.
+
+### 2026-10-28 — composite factory flow exhausted its aggregate budget (PR #5798)
+
+PR #5798 introduced a multi-step factory persistence case whose separate bounded state waits share
+the default aggregate deadline. Bounded slow work can exceed that deadline while each state arrives
+within its own limit. The exact phase of the historical CI timeout was not established.
+
+Inject bounded slow work through the complete flow: the old aggregate bound must fail and the revised
+bound must finish all assertions. Keep each state wait and assertion unchanged, and require a missing
+state to fail its original wait rather than pass under the larger aggregate budget.
+
+### 2026-10-28 — speculative entry requests can impersonate recovery (#5595)
+
+The empty-root external entry introduced by commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`
+had no independent failure surface. Its introducing PR and private review history are unestablished;
+the missed negative probe was an unavailable entry before application code could handle failure.
+Abort the real served entry after its element is parsed, then require changed document
+`performance.timeOrigin` and unconditional application readiness. A speculative fetch can fail
+and be refetched in the same document, so two requests alone do not prove a reload. Removing the
+independent recovery must fail the transient case; removing its budget or entry-body fence must
+fail the persistent or late-error case. Exercise source and generated entry identity under the
+actual production CSP, plus controller absence without conditional test admission.
 
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
@@ -304,6 +513,23 @@ Probe: run the real revision and identity capture over a real root document, aft
 transition has activated, with every wait the action crosses spanning a frame so pending document
 writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
 
+### A bank-local no-op left Space looking interactive (#4804)
+
+The generic macro strip originated in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`.
+PR #4804 later made Space a no-op without a loaded Room microphone but left the control looking
+live. Historical private review prompts and tiers are unavailable.
+
+PR #5370 (`e6b349151e755dccf8c4c2f2833377dc72ea0076`) added the panel case but sent pointer
+move and release to `window`, while the knob listens on its root. A disabled-pointer guard removal
+left that case green; the test did not establish that a valid drag reached the consumer.
+
+Exercise the real panel and knob with no Room and a reordered Room-present projection in
+`LevainPanel.spec.tsx`. Require the accessible disabled state and separate keyboard and pointer
+refusal. Send a primary drag with matching pointer ID and coordinates to the knob root, and require
+a Room-enabled drag to capture that pointer and change the macro. Remove only the pointer-down
+disabled guard and require the unchanged no-Room callback assertion to fail. Retain the availability
+and keyboard guard probes. The mocked projection does not prove an actual Room bank load or audio.
+
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
 PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
@@ -371,6 +597,23 @@ identity binding must fail the unchanged cluster cases. A deliberate full-histor
 also updates its owning independent assertion and regenerated snapshot; the snapshot diff must
 contain only the intended checkout depth, and a depth-two mutation must fail the assertion.
 
+### VCA Inspector call mocks missed the real Command entry
+
+Commit `22a84b216658f593391e7e141d90f7c84d13648b` introduced the Inspector's direct
+Create, Assign and None calls. PR #1049 later added typed VCA history and committed gain
+reconciliation but did not connect that entry. The missed observable was the actual Inspector
+caller reaching Command and runtime projection; historical private review prompts and tiers
+are unknown.
+
+Mount the Inspector with real registered Command handlers and CRDT storage. For each gesture,
+observe one history entry, raw and projected membership, Undo/Redo and committed runtime gain;
+locked gestures must warn without writes, and no-op gestures must complete without writes.
+Revert each component dispatch to its direct use case and require its connected case to fail.
+For a queued gesture, hold the real snapshot queue, replace the root with a same-ID successor
+through the production repository and projection path, then release the queue. Require unchanged
+successor state, history and engine calls; a same-project snapshot remains a positive control.
+This queued-successor case was caught during review of #5789, not established as a main escape.
+
 ### 2026-10-12 — a release budget missed the still-open PCM entry (PR #5239 review repair)
 
 An aborted bank could hold both a sealed sample and an unfinished reservation. Release freed
@@ -383,6 +626,36 @@ PCM and the second must finish. Pair native PCM-allocation counts with an open-o
 shared sounding owner. Charge every PCM holder to the normalized budget; never forward zero
 remaining budget to a lower helper that independently normalizes it to one. This is an entry
 count contract, not a browser deallocation-time or audio-deadline measurement.
+
+### Timeline-bake writer spies missed partial project commits
+
+PR #474's exporter spec checked direct writer calls while a new groove-projection refusal could
+occur after an earlier clip was added. Those spies could not establish atomic project truth or a
+single Undo; historical private review prompts and tiers are unknown.
+
+Run the real Command and CRDT batch with at least two active pad lanes. Reject or freeze the later
+lane and compare the raw document, projected stores and history before and after. On success require
+one grouped Undo to remove both lanes and Redo to restore them. Replace the batch with the prior
+direct per-pad writers and require the later-lane case to fail.
+
+A separate warning failure was caught in #5798 review before merge: the batch committed but the
+history port failed, and the caller returned success without its warning. Inject that failure through
+the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
+that identifies the committed result. Do not describe that finding as the #474 main escape.
+
+### PR #4485's monitor tests missed source-disconnect fault continuation
+
+PR #4485's reset and disposal tests covered normal teardown, ordering and late grants, but could pass
+if a source-wide disconnect threw before the real caller continued. Keep
+`rethrows the monitor failure after releasing both captures and the track, bus and send graph` and
+`clears the real graph and reported latency after one of two acquired sources refuses disconnect`;
+both require two captures stopped, graph owners and sends retired, and the exact fault, with the
+wrapper case also clearing latency. Keep
+`releases a grant that settles after the reset and attaches no edge` as a separate stale-grant case.
+`awaits one context close after a monitor failure and retains that terminal result on repeated
+disposal` holds close while checking every master disconnect, then requires one close and the same
+cached error on repeat. Removing a continuation must fail its owning case. Controlled nodes and media
+establish call path and cleanup, not physical microphone or audible switch acceptance.
 
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
@@ -397,6 +670,36 @@ could leave both renders equally wrong, while nonzero allocator leftovers passed
 check. Poison the reserved PCM span, compare each acknowledged window with the independent
 input bit-for-bit, and remove only the production copy in a committed private probe. Require
 that unchanged oracle to fail; shared-path equality and non-silence cannot prove PCM transfer.
+
+### An unlocked-only fixture could not expose locked automatic-row loss (#4630)
+
+The original re-detection case seeded a user marker and an unlocked `transient-auto` marker; dropping every automatic row therefore still passed. It could not falsify loss of a locked automatic row. Current main retains locked rows regardless of origin and suppresses hits within `1e-3` of a retained original beat (PR #5515).
+
+Use a moved locked automatic row with exact ID, original and warped beats, lock and confidence beside user, grid and unlocked automatic rows. Exercise real Detect, sensitivity re-detection and registered Command; assert the exact raw CRDT and projected row. Vary the input or sensitivity so redetection changes the detected population, and require visible counts, draws and hit state to reflect the new projection while other-clip state and source PCM remain unchanged. Then unlock that same held automatic marker and detect again; it must be replaceable, so retaining it after unlock fails the control. Remove only locked-row retention and require the exact-row assertion to fail; independently remove equal/near-hit suppression and require both equal and near-collision cases to fail. Empty-hit mocks cannot prove suppression. These are falsifiable review probes, not evidence of a new runtime test, Worker behavior, performance, or full issue acceptance.
+
+### A silent sensitivity fixture could not expose a stale marker view
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
+### Explicit-open setup hid a selected-only sensitivity no-op
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` allowed the panel to display the selected clip while sensitivity read only its explicit open clip. No associated introducing PR or historical private prompt, stance or tier is established. An explicit-open-only fixture cannot prove the selected entry route. Render the actual selected-only panel with varied PCM, move sensitivity and observe raw CRDT marker mutation, retained locked/user identities and untouched control clip/PCM. Pair it with an explicit-open positive control and no-target/MIDI preference-only cases. Reverting only selected fallback must fail the unchanged raw-state oracle; reverting pending selection/root ownership must fail its ABA/replacement cases. Completion text, observer delivery and a persisted preference alone do not prove detection.
+
+### Project-device assertions missed the Web Audio projection and cold strip
+
+PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
+scheduler synths and drums. A project snapshot can be correct while its Web Audio chain still
+contains devices with no Web Audio node. The missed evidence joined actual MIDI editing to strip
+construction; historical private review prompts and tiers are unknown.
+
+Create a MIDI track with a scheduler synth or drum and a node-backed effect. Through real user
+commands, inspect complete project identity and the Web Audio initializer and live chain before
+Play, then after Play, Undo and Redo. Require only node-backed effects in Web Audio while the
+project and native snapshots retain all devices; preserve unknown types for normal failure. Use
+a deterministic AudioContext fixture that actually implements the strip constructor's required
+methods, rather than treating a minimal mock's missing method as a product warning. Reintroduce
+the unfiltered topology or remove cold initialization and require the corresponding unchanged
+case to fail. A controlled engine boundary does not establish audible or hardware behavior.
 
 ### 2026-10-11 — callback assertions accepted the wrong history origin (PR #5323 review repair)
 
@@ -427,6 +730,23 @@ seconds from beat four to six are `4.8 * ln(175/150)`. Assert terminal values an
 times/frames, not just captured callback identity or lane presence. Reverting inverse forwarding,
 subregion anchoring or the consumer's inverse must independently turn the relevant case red.
 
+### 2026-10-28 — live bank errors did not test buffered replay or repeated disposal (#5227)
+
+Commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57` introduced the buffered loop with no
+associated PR returned; PR #946 later handled bank-local errors on the live port but left that
+buffered route behind the outer init catch. PR #5204 documented the broader contract. Private
+review prompts and tiers are unknown. A live-error pass cannot prove that queued release and
+ready replies survive a buffered bank-local error, that a terminal replay stops its tail, or
+that a second dispose still answers after the first.
+
+Use the real message handler with distinct bank tokens: queue a bank-local refusal followed by
+its release and require decision, bank error, matching release and healthy ready in order. Pair
+the terminal buffered case with a later request that receives the original error. Inject one
+failed `initSync`, send a second init, and require the original error with no second construction
+or ready. Count two `disposed` replies from one processor and a terminal drain reply; a mere
+`toHaveBeenCalledWith` assertion misses the lost second answer. Removing the refusal guard and
+removing the already-disposed post must each fail its unchanged focused case in a committed probe.
+
 ### 2026-10-11 — installed graph result hid a requested-root escape (introduced by PR #5284)
 
 The installed affected-E2E loader case asserted full selection for opaque runtime dependencies, but the actual alias graph escaped its temporary root into the checkout. The published missing-consumer-or-opaque-edge probe preserved that result without observing resolved sources; requested-root scope isolation was the missing stance and probe.
@@ -456,6 +776,10 @@ the owned group on its first `ESRCH`, share that ownership through helper shutdo
 rescue, and never signal the raw descendant PID. Intercept every nonzero signal after a real
 absence observation, model reuse without forwarding it, and require zero retired-ID signals.
 Keep live-group rescue and fixture removal after independently observed group exit.
+
+### Recording ownership refusals need pre-write and independent negative probes
+
+PR #4564 (`40c5218228c542c5a4cf3cdd73388f4da893ea4e`) allowed a recorded clip ID moved by a peer to be restored twice and globally removed. A normal recording round trip cannot observe that input. Require real Command/CRDT cases with the same ID on another track before each history leg, nonempty peer facets, duplicate occurrences, unchanged raw/projected state and the identical pending entries. Place a writing sentinel before the recording action in a group and require its write count to remain zero, since rollback alone cannot prove preflight. On a committed head, omit only discard owner authentication and require the before-Undo cases to fail; separately omit global restore absence and require the before-Redo case to fail. Retain legacy singleton, multi-recording group, distinct-ID peer and isolated-preview controls. Historical reviewer prompts and tiers are unverified.
 
 ### 2026-10-10 — a required Rust job fetched its compiler before its caches (introduced by PR #3119)
 
@@ -710,6 +1034,10 @@ can make that later census `unknown` while the new run itself succeeds. Require 
 only for the exact later PID-coverage diagnostic, reject other unexpected diagnostics,
 and inspect both the original run and claim payloads. Keep complete-proof deletion
 unconditional; observing a prior sample or the new run's exit code cannot prove it.
+
+### FLAC metadata alone did not prove decodable residuals
+
+Commit `1d27112e9ac94295f965b35ec8856a07023f63cc` introduced inverted Rice unary polarity; the associated introducing PR and historical private prompt and tier are unknown. Exercise the real streaming FLAC bytes with the shipped decoder and compare seeded 16- and 24-bit samples to WAV PCM, zero decoder warnings, frame shape and STREAMINFO MD5. Demonstrate that the fixture reaches Rice coding by reverting only the polarity fix on a committed probe and requiring the unchanged named parity case to fail. A metadata or shared-encoder comparison alone cannot prove lossless decoding.
 
 ### 2026-10-10 — ZIP fixtures left paired writer timestamps to chance (introduced by PR #4057, commit `d608d165a49`)
 
@@ -1061,6 +1389,12 @@ later, fake that host receiver-sensitively — a plain function or class method 
 `this` is the host — so an unbound call fails the spec; then diff every call site reading the same
 kind of host for consistent receiver handling, and flag one that binds where another does not.
 
+### Fermenter filter chips changed state without recording Undo
+
+Filter Type originated in `c40d444ff96520cb2f718dd2a397173d72dc1b50` and Filter Model in `66b0569af54525fc983a0632ce0c12d92f83fe90`, both through the direct bridge. Neither source origin has an evidenced public PR association, and historical reviewer prompts and tiers are unknown. A handler-only test cannot observe a panel callback that never dispatches that handler.
+
+Mount the real panel with unconditional entry-point admission and the real registered Command/CRDT path. Assert raw absent-versus-explicit defaults, projected values, pressed chips, independent Model/Type history entries, live macro preservation and both Undo/Redo legs. Hold the actual snapshot wait for latest same-parameter choices and independent different-parameter choices, and vary each stale authority guard separately. Restore only the panel's direct-bridge branch on a committed head: the unchanged owning test must fail its history assertion even while the chip and document update. Controlled engine calls prove parameter-boundary behavior; they do not prove audible, native or hardware acceptance.
+
 ### 2026-09-03 — a missing-environment assertion that read the runner's ambient variables (escaped via PR #3513)
 
 The spec expected the `GITHUB_REPOSITORY` refusal while stubbing neither GitHub variable. Actions
@@ -1159,6 +1493,33 @@ case with equal start timestamps and one with equal end timestamps; for each pai
 with the enclosure a single unit narrower. The equality cases must admit only unique enclosures;
 the narrower and existing overlap fixtures must refuse.
 
+### Projection-only rearm must fail the aborted-repair probe (issue #5286)
+
+Use the connected same-project repair path with a real connected On track and hold plugin reset.
+Project Off before repair and during reset in aborting version restores; require committed root On
+and projected Off while held, then a fresh source connected only to the rebuilt gain, one stop of
+the old source, and empty aborted history. The discriminator is to restore projection-only rearm:
+the unchanged committed-On cases must then lose the second acquisition and rebuilt edge. Also keep
+the committed-Off-during-reset, root-replacement, pending/refused-permission, and armed-Auto
+controls so no-reopen and successor-root fences remain covered. These existing assertions are in
+`repairRuntimeGraphFromProject.optimisticRestore.integration.spec.ts` and
+`repairRuntimeGraphFromProject.autoMonitoring.spec.ts`; they exercise controlled ports, not
+physical hardware or browser audio.
+
+### A held removal and committed retarget need one discriminating oracle (issue #5283)
+
+Use the registered removal handler and real storage transaction with On track `a` at input `null`
+and eligible shared owner `b`. While removal hides `a` optimistically, commit
+`replacement-input` independently via `mutateCrdtDoc`. Assert in the same held interval that the
+raw committed root still contains `a`, the projection hides it, and runtime owners contain only
+`b`, whose capture, edge, and stream are unchanged. Require no absent-strip recreation or new
+permission request; in a last-owner case, require the old input to stop. Commit removes `a`; abort
+re-admits the current input; a same-input abort retains the original owner and capture.
+
+As the discriminator, remove only the committed-selector retirement branch: the unchanged combined
+shared-commit case must fail before removal commits, reporting owners `a, b` instead of `b`. Two
+separate single-condition cases cannot establish this combined observation.
+
 ### 2026-09-12 — groove identity guards compared object serialization (escaped via PR #471)
 
 PR #471 introduced the extraction and inverse guards in `10bbf0bdcc` and the creation identity
@@ -1206,6 +1567,12 @@ Blind spot: the fixture's chosen actor looked deterministic, and the stance neve
 
 Probe that would have caught it: for any fixture that merges two concurrent writes to one key and asserts the surviving value, name both actors; if either is random, require the fixture to fix the ordering (an actor that sorts above or below every possible peer) and run the spec with the chosen actor flipped to the opposite extreme, expecting it to redden.
 
+### Escape: attached composite conflicts were not exercised by the repair spec (PR #4292)
+
+PR #4292 (`ac8e123b5e`) introduced `structuredClone` of an attached Automerge proxy in project repair. A real map input throws `DataCloneError: '#<Object> could not be cloned.'`; a real list input throws `DataCloneError: '[object Array] could not be cloned.'`. The scalar-only repair case did not reveal either failure. This is separate from the concurrent-actor ordering flake above.
+
+Probe both real concurrent shapes (`tracks` map and `tracks.tracks` list) using two fixed actors and the registered `repairProjectData` action. Require the repair gate to reject an edit before repair, then require conflicts and the gate to clear without changing the full resolved tracks or MIDI, including exact `0.9999999999999999` leaves. After real Automerge save/load and reprojection, a registered `setTrackPan` edit must update raw and projected state and create one undo entry. Replace only the behavioral repair with direct assignment of the attached proxy: both unchanged composite cases must fail with `RangeError: Cannot create a reference to an existing document object`. A scalar-only case or a detached plain-object clone is not this oracle.
+
 ### 2026-09-17 — an arm click waited for a track a fresh project never has (escaped via commit 32179299b)
 
 Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').first().click()` right after `launch_new_project(page)`. A new project starts with zero tracks, so the locator never resolved and both tests hit the 90 s suite timeout on every nightly run. E2E never runs on pull requests, only on approving-review runs and the nightly train, so Gate never executed the edited specs.
@@ -1213,6 +1580,19 @@ Two Playwright specs added `await page.locator('[data-testid^="track-arm-"]').fi
 Blind spot: an E2E spec edit was accepted on a Gate that never runs E2E; the added step's precondition (a track exists) was never traced to the fixture (`launch_new_project` yields an empty arrangement).
 
 Probe that would have caught it: for every edited or added Playwright step, name the fixture state the locator needs and trace it to the helper that produces it; run the edited spec locally with `pnpm test:e2e <spec>` as the focused regression check, and inspect the selected PR CI E2E result. A locator whose precondition no helper in the test produces is the finding.
+
+### 2026-10-28 — Grinder shard assertions disagreed with the configured origin (introduced across PRs #5437 and #5723)
+
+PR #5437 added a Grinder-only dev-companion assertion using `localhost`; PR #5723 pinned
+`e2eOrigin` to `127.0.0.1` because Vite binds IPv4 loopback. The exact shard assertion therefore
+contradicted the shared serving-origin contract and failed in PR #5371's unit suite. Passing adjacent
+shard cases did not exercise this pairing.
+
+Probe that would have caught it: run `runs a shard selecting only Grinder PCM parity through its
+matching dev companion` with `SOURDAW_E2E_PORT=6123`. Require the companion `baseURL` and both
+readiness URLs to use the explicit `http://127.0.0.1` origin. Keep literal expectations so changing
+the production origin back to `localhost` makes the unchanged named case fail; deriving expected
+values from `e2eOrigin` would couple the oracle to the helper.
 
 ### Parameter replay-operation escape — unregistered alternatives hide owner-validation gaps
 
@@ -1246,6 +1626,23 @@ Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/co
 
 Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
 
+### Crumbs setter spies and canvas presence missed stale waveform pixels
+
+Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced both the unfenced
+peak continuation and the empty-before-clear canvas return. PR #5041's tests held decode,
+while the component checks observed mounting/cursor/style rather than bitmap clearing (#5780).
+The origin has no evidenced associated PR; historical private prompts and tiers are unknown.
+
+Keep unconditional rendered entry points, real store metadata/vector/loading assertions and
+explicit promise-entry/settlement observations. Drive project/device authority from actual
+committed root events, including same-ID ABA with no newer sequence/leaf masking the guard.
+Paint the production component in Chromium, prove known colored pixels at the expected DPR
+dimensions, then pass empty peaks to the same canvas without remounting or resizing. Require
+transparent or exact opaque-background pixels, and retain refill/resize controls. Restore the
+early return on a committed head and require the unchanged unit and pixel probes to fail.
+DOM presence, a setter call, or an unpainted transparent canvas is not pixel evidence; controlled
+desktop bridge responses do not establish native OS, audible or hardware acceptance.
+
 ### 2026-09-20 — mocked cancellation hid failed durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) added run-controller cancellation before pending-confirmation settlement,
@@ -1272,10 +1669,9 @@ reader's suite red; the producer and consumer of a CI-generated name lived in un
 no case tied either side to the other.
 
 Probe that would have caught it: for a consumer of a CI-produced artifact, check, or payload name,
-derive the spec's fixture from the producer's own definition — here, `SEMANTIC_REVIEW_UPLOAD_ARTIFACT_NAME`
-in `scripts/semanticReviewWorkflowContract.ts`, itself pinned against the live workflow YAML by
-`healthGatesWorkflow.spec.ts` — with concrete values substituted for its template placeholders, and
-assert the reader selects an artifact under that derived name; then mutate the producer's shape (add
+derive the spec's fixture from the producer's own definition, with concrete values substituted for
+its template placeholders, and assert the reader selects an artifact under that derived name. Then
+mutate the producer's shape (add
 or drop a segment, as the attempt scoping did) and require the derived case to fail rather than the
 hand-written fixture staying silently valid.
 
@@ -1388,6 +1784,50 @@ independent beyond-hunk fallback case. Require the final unchanged fixture to fa
 only the committed recognizer is reverted. A full-source screen assertion does not prove
 which region the real scan caller admitted.
 
+### 2026-10-09 — copied split automation identities broke saved-project replay (PR #4036)
+
+Commit `7961816964ebfe247ead1f057a2cd0f33571f624`, merged through PR #4036, copied
+surviving automation point IDs onto the right fragment while retaining the source lane.
+A split before those points therefore violated global ID uniqueness after binary reload.
+PR #4036's public round-four review described curve, stretch, and link-law probes, but
+its published evidence did not include binary reload or a global identity census. The
+missed stance was reload identity and global-ID preservation; its historical tier is not inferred.
+
+Split before surviving identified main, trim, and ghost points, using both a dyadic cut
+and a non-dyadic cut. Produce entries through real Command, save/load the Automerge
+document, replace it in its lineage, reset every owner projection, and hydrate the separate
+session history mirror. Require a full global-ID census, valid project invariants, exact
+scalar values/order/curves, and all owner projections before real Undo and Redo. Retaining
+copied point IDs must turn that reload assertion red; fresh in-memory curve checks alone
+do not observe this obligation.
+
+### Saved replay authority refinements measured in PR #5064
+
+A saved clip inverse must use its MIDI owner's complete snapshot law before hydration or any
+Arrangement write. Duplicate note identities, malformed CC or pitch-bend rows, and a missing
+required capture are not an empty or null capture. Probe a real removal's saved inverse through
+production hydration, then require no raw, projection or history write; retain separate valid null
+and present-empty controls. Minimal mocked rows cannot establish that the restore owner admitted
+what the earlier Arrangement write already published.
+
+For split replay, recreate either target identity under another track after Undo and binary reload,
+then require direct and grouped Redo to preserve every owner and the pending history. Delete just
+one side of a mirrored optional satellite or automation guard: reject the group before a later peer
+value can be replaced. Both historically absent sides remain valid, and present empty is distinct.
+A durable-head change alone cannot authorize refresh of a removal inverse; roll the root back in
+its lineage from a committed observer before the finalizer, and require the old inverse to survive
+on ordinary and ambiguous commit paths. Keep genuine own-commit warning and refused-flush controls.
+
+Copied split lane, main, trim, ghost and seam identities must reserve the entire live namespace.
+Preoccupy the preferred generated identity under an unrelated owner before the split, then require
+binary reload and repeated Undo/Redo with exact values and valid invariants. After Undo, let a peer
+claim an actual captured identity and require zero-write refusal rather than reminting that saved
+capture. A census only against the source lane misses both collisions. Include nested object points
+and cross-domain clip owners, while preserving clip-local gain point and arrangement namespaces.
+For a batch-admitted restored clip preceding a split, compare captured IDs with the actual committed
+IDs before reloading and replaying twice; a live execution that remints a preflight capture is not
+replay-stable. Draw is singleton-only, so a rejected draw/split batch proves admission, not prefix
+execution. Read executable entries from the full history owner rather than its label-only UI view.
 PR #5091's head `1297f963` had green single-owner disconnect and direct-root retirement checks,
 but the surrounding sweep could abandon a second deleted owner and the Command tail could reach
 a replacement root. Use two owners for failure isolation and the real Command commit callbacks
@@ -1469,6 +1909,32 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
+
+PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
+At #5613 head `af579c26`, real Undo-first peer sync could publish an unrelated surviving-clip
+rename after restoreClip staged its track write but before Command committed. Hydration erased
+the local restoration; Undo still consumed history. Historical introducing-review stance coverage
+is unverified. The missing probe was actual commit preservation after replay admission.
+
+Drive real Command removal/Undo and actual AutomergeSync continuations in both admission orders.
+Require either both edits in raw authority/projection or zero-write refusal with past retained.
+Repeat with identical and different same-ID recreation, plus no-peer, fully published unrelated
+peer, grouped/ripple and same-target placement/split controls. A setter-injected microtask alone
+does not establish the production receive protocol. Authenticate affected raw pre-images and the
+prospective committed owners; a written handler result or optimistic store does not prove either.
+A projection may run inside an entered transaction scope, so ambient owner equality cannot
+certify its data as newly authored intent. Interpose publication and hydration there, with an
+unrelated notification before hydration, and require the original restoration obligation to remain.
+
+Track presence does not certify the restored source programme. Independently race MIDI notes,
+controllers/bend, clip-scoped automation, gain and warp owners without changing raw tracks; a late
+peer owner must survive refusal and history must remain pending. Preserve captured child-ID
+availability in its existing namespace, including unrelated owner buckets. Exercise the prospective
+mutable document as well as the immutable root: proxy identity is not an ownership witness, and
+canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
+unrelated programme edit and a valid same-target successor that commits the final owning projection.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
@@ -1549,3 +2015,192 @@ complete placed passes, including negative finite anchors, and assert exact
 selected-take and comp-region retention after real owner hydration. Removing only
 placement admission must redden the rejection case; testing a store sanitizer
 alone cannot observe the file admission gap.
+
+### 2026-10-28 — dirty-work retention was mistaken for busy-pump delivery (introduced by PR #5461)
+
+The native live automation real-store test held an apply, changed a store, settled the apply, and then explicitly pumped again. It proved that the dirty revision survived, but could not fail when the in-flight pump dropped the only next-frame request. The issue's remaining one-invocation qualification required backend submission after that held request. Historical private reviewer prompts and tiers are unknown.
+
+Capture the actual composed backend batch and leave its apply unresolved. Change each real owning store, call the busy pump once, assert no second apply while the first is held, then settle it and await the session's actual queued work without another pump. Assert the successor's exact target, Hold or Step time, accepted revision, unchanged unrelated queued stamps and one active backend apply at a time. Repeat for refused and thrown predecessors, latest-input coalescing, and stale pass/backend suppression. Reverting the completion scheduling must redden the named case; observing a pending revision or manually issuing another pump is insufficient. The controlled backend proves command delivery, not hardware audibility.
+
+## 2026-10-29 — a delegation spy could not observe partial AI history replay (#5565)
+
+`78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` tested that the history caller delegated to
+Command and marked its row, while the member loop introduced by
+`22a84b216658f593391e7e141d90f7c84d13648b` could partially revert a group. GitHub reports
+no associated PR for either commit; historical private reviewer prompts, models and tiers
+are unknown. A mocked void result could not expose project or history corruption.
+
+Run the public caller against real Command replay, registered handlers and a CRDT root.
+Use gain plus mute, make the older inverse conflict, and compare complete project and
+history state before asserting that the UI promise resolves with refusal feedback. Also
+exercise absent, partially undone and nonreplayable groups, a committed warning, runtime
+inertness and a valid group with Redo. Replacing only atomic replay with the member loop
+must fail preservation; removing result admission must fail the metadata assertions.
+
+### 2026-10-29 — an ignored routing parameter hid Mid/Side delay mismatch (PR #2606)
+
+PR #2606 (`b15e223e9e661ea72d1113baf53fa392cef26c6b`) introduced the single-band
+Mid/Side fixture with `routing`, while the engine consumes `globalRouting`. Its strict
+centroid comparison therefore exercised the default route. The historical private review
+prompts and tier are unknown; the missed probe was admission into the named real route.
+
+Assert the selected route before rendering, retain the original centroid bound, and measure
+independent mid and side impulses through the actual instance. Compare each added delay with
+the unchanged converter response and an independent ideal-delay oracle across factors and
+enable states. Include raw side, settled dry/mixed output, unread crossover controls and
+source lifecycle boundaries. Remove the actual mid or side compensation separately: the
+named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
+fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
+returned. #5849's pre-commit snapshot-wait cases missed the later asynchronous effects. A
+provisional live-entry reference filter also missed a real captured project/history restoration,
+because captureUndoHistory and restoreUndoHistory retain the original entry objects. Historical
+private review prompts and model tiers are unknown.
+
+Observe the real inverse commit, hold afterCommit or actual afterAmbiguousCommit, then restore
+both the captured project and original-reference history through public producers. Compare the
+restored past, future and tree after release; assert the original commit truth separately rather
+than requiring false unchanged AI metadata. Keep new-object restoration, ordinary success,
+post-commit warnings and a real musician edit as independent controls. Mutating finalization back
+to after the wait must fail these oracles. Check notification timing before publication callbacks,
+exactly-once history finalization, unchanged normal callback isolation and an ambiguity observer
+throw that retains the original committed error without rollback or retry.
+
+A mock returning no-op cannot observe the async gap after a real handler skips execution.
+Use a real inverse that the handler already considers applied, delegate its actual isNoop
+boolean unchanged, and signal that observation before replacing or editing the project.
+Require no handler/engine write and compare project, projections, both history stacks, tree
+and AI metadata together after completion. A same-lineage edit retaining the exact Undo
+snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
+Pair it with clear-only and original-reference restore, normal no-op consumption and caller
+cancellation. Await the observation and completion, never a chosen number of microtasks.
+
+### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
+
+Bacteria's original constructor (`b87a9fb0de`) selected Parallel while the patch selected
+Serial; GitHub reports no associated PR for that commit. PR #2079 (`c6a1310929`)
+made Serial actually chain the bands, but its routing fixture selected both modes explicitly
+and never observed a fresh constructor. Historical private review prompts and tiers are unknown.
+The missed stance was the audio produced before any routing parameter write.
+
+Render a fresh instance through an active two-band clipper then low-pass chain without setting
+routing. Require exact equality with explicit Serial on both channels, non-silent references,
+and separation from explicit Parallel. Revert only the constructor default: the named default
+case must fail. Keep crossover, summed latency, mute and skipped-band fixtures explicitly in
+Parallel so their assertions continue to observe the path they claim.
+
+### 2026-10-29 — inventory merge dropped a curated reference (PR #5851)
+
+PR #5846 added both the scanner fixture's RFC URL and its inventory entry. PR #5851's merge resolution (`5893703`) dropped that entry; preliminary CI caught the omission before merge.
+
+When resolving shared inventory changes, preserve the union of independent curated external-reference assignments while rebuilding package-owned metadata. A package-specific restamp does not restore a lost curated reference; verify the resulting census against both sides of the merge.
+
+### 2026-10-29 — a duration fixture ended below its truncation boundary (PR #2055)
+
+PR #2055 (`d2efdde850`) tested built-in body duration only at 44.1, 48 and 96 kHz.
+The rate-derived duration still met an inherited 4096-sample cap, which truncates its
+192 kHz response before the required 4458th frame. PR #5254's body selection retained
+that limit. Public reviews do not establish the historical private prompts or tiers.
+
+Use actual rendered PCM as well as the response length: select Wood through the real
+engine parameter, render 128-frame blocks at 192 kHz, require output in frames
+4096..4457 and the final 64-frame window, then silence at frame 4458. A cap-only revert
+must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-rate
+duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
+Native execution time, offline browser throughput and allocation guards cannot certify
+live AudioWorklet deadline or listening acceptance.
+
+### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
+
+The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
+production route (`33a3549990`), integrated on the first-parent history at `adfc95a453`.
+GitHub associates none of these commits with a PR; historical reviewer prompts, stance
+and tier are unavailable. #5371 delivered the fix. The original consumer test asserted
+the requested end even with a shorter returned buffer, so its oracle could preserve silence.
+
+In `renderToClip.spec.ts`, require the one-frame cap-boundary case for both tail settings:
+`2^30 + 1` requested frames and `2^30` returned. Reverting the returned-frame endpoint
+branch must fail that case. Also retain short-buffer conversion across a tempo change from
+a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
+end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
+a six-hour PCM render or listening result from it.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+A fixture that hand-supplies permissive `parameterIds` bypasses the omission it claims to
+test. Capture the real factory's initialization and outgoing controls, then use the same
+production schema at the processor. Require all six bands and indices -1/0/1/2/3, with
+unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
+`forwards every band Body choice` must fail. Document/action spies do not prove worklet
+admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — first paint did not exercise a rejected App import
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
+fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
+same-frame document, but its initiating transport/navigation mechanism remains unknown.
+
+Inject a real failed initial App request and assert failure/recovery unconditionally, including
+confirmed budget admission and changed document lifetime. Keep first-paint checks distinct from
+App-render and bootstrap-completion checks. Scope legacy tests by their dependency on the affected
+startup phase, preserving unrelated mock behavior. Use discriminating corrupted-PCM and missing
+reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
+readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
+original navigation.
+
+### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
+
+A single-head fixture cannot expose the lost sibling context. A simple no-op checkpoint write or
+a merge created only after both writes cannot expose it either. Build distinct project edits
+on two fixed actors, capture after their merge, retain the individual branches, add a distinct
+checkpoint record to each, and merge those descendants. Compare full project truth excluding only
+`commandBatchIdempotency`, and require the matcher to accept; retain project
+edit, edit-then-restore and discarded-history refusals. Do not require the helper fixture's whole
+checkpoint map to be conflict-free: it checks project truth outside that slot, not confirmation's
+conflict admission. In the public confirmation positive case, use non-conflicting checkpoint
+record inserts and observe exactly one action, receipt and Undo entry; separately require actual
+confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing the
+dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
+
+### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
+
+An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
+consumes only the intended entry, and leaves project state untouched. Use the real agent mixer batch,
+Command history and track projection: commit the guarded solo, change it with a plain-click exclusive
+solo, then Undo. Require `headConsumed`, unchanged root/revision/projection for the target-equal
+inverse, and a following Undo that reaches the older entry. Exercise target-equal Redo and a mixed
+batch containing a valid send inverse; separately retain changed-target, missing-track, and manual
+solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
+validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
+mock-only solo handler case is not this proof.
+
+### Bootstrap transport and activation probes need an observed phase
+
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
+
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.
