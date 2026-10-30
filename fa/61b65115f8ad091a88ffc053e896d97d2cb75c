@@ -1,0 +1,14 @@
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  h_beb54bf43b47b7 2629-2631,2648-2649
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa61b65115f8ad091a88ffc053e896d97d2cb75c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
