@@ -1,0 +1,23 @@
+.agents/skills/review-stances/test-validity.md
+  s_b6d960d6f9ffc4::t_9c13ec9221d89e 3-15
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_b6d960d6f9ffc4::t_434cd0025a47c7 892-894
+  s_b6d960d6f9ffc4::t_716b1c758fa135 28-32
+  s_b6d960d6f9ffc4::t_be77046e730e6d 145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e82d7ddba92676330c4608fddabef63ed67d7cba",
+  "prompts": {},
+  "sessions": {
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
