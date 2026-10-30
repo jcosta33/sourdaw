@@ -1,0 +1,26 @@
+src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts
+  h_beb54bf43b47b7 31,41-44,1111-1115,3830-3835
+src/modules/Arrangement/handlers/clip/__tests__/commandMetadataSourceAdmission.integration.spec.ts
+  h_beb54bf43b47b7 25,240-282
+src/modules/Command/useCases/__tests__/commandHistoryOwnership.integration.spec.ts
+  h_beb54bf43b47b7 1-282
+src/modules/Command/useCases/__tests__/executeAppAction.spec.ts
+  h_beb54bf43b47b7 366,1028,1088,1380,1395-1401,1409,1414,1416-1417
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  h_beb54bf43b47b7 623
+src/modules/Command/useCases/executeAppAction.ts
+  h_beb54bf43b47b7 28,434-448,454-460,534,537-538
+src/modules/Command/useCases/executeAppActionBatch.ts
+  h_beb54bf43b47b7 474,477-502,554,591-594,1046-1047,1051-1055,1141
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55464c53fa99b0fc88cc50480c560560ff2b05a3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
