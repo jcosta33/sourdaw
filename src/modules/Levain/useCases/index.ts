@@ -1,5 +1,6 @@
 export { acquireLevainNativeBank } from './acquireLevainNativeBank';
 export { configureLevainZoneTableBuilder } from './configureLevainZoneTableBuilder';
+export { createLevainTemplateDeviceState } from './createLevainTemplateDeviceState';
 export { getDecodedBankDiagnostics } from './getDecodedBankDiagnostics';
 export { getLevainArticulationId } from './getLevainArticulationId';
 export { getLevainEngineParameterName } from './getLevainEngineParameterName';
