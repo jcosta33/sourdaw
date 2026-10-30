@@ -37,8 +37,7 @@ function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: Abort
     });
 }
 
-/** Acquire output storage before rendering; every render then drains into this one staged batch. */
-export async function streamExport(input: {
+type StreamExportInput = {
     destination:
         | { kind: 'native'; directoryPath?: string; selectedFilePath?: string }
         | { kind: 'browser'; suggestedName: string; extension: string; mime: string; archive: boolean };
@@ -50,7 +49,17 @@ export async function streamExport(input: {
     normalization?: { targetLufs: number; ceilingDbTp: number };
     checkCancelled: () => void;
     signal?: AbortSignal;
-}) {
+};
+
+type StreamExportAudioOptions = {
+    source: ExportAudioSource;
+    name: string;
+    onProgress: (format: StreamExportInput['formats'][number], fraction: number) => void;
+    onLimited: () => void;
+};
+
+/** Acquire output storage before rendering; every render then drains into this one staged batch. */
+export async function streamExport(input: StreamExportInput) {
     if (
         input.formats.length === 0 ||
         input.formats.some((format) => !['wav', 'mp3', 'flac', 'ogg', 'opus'].includes(format))
@@ -69,12 +78,7 @@ export async function streamExport(input: {
         });
     }
     return {
-        async writeAudio(options: {
-            source: ExportAudioSource;
-            name: string;
-            onProgress: (format: (typeof input.formats)[number], fraction: number) => void;
-            onLimited: () => void;
-        }) {
+        async writeAudio(options: StreamExportAudioOptions) {
             input.checkCancelled();
             let preparation: Awaited<ReturnType<typeof prepareDeliveryTarget>> | undefined;
             let preparedRate: number | undefined;

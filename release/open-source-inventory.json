@@ -1543,6 +1543,7 @@
                 "docs/manual/devices/11-grinder.md",
                 "docs/manual/devices/17-fermenter.md",
                 "public/faust/libfaust-wasm.js",
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "public/legal/TRADEMARKS.md",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
@@ -2499,6 +2500,7 @@
         {
             "value": "Hammond",
             "paths": [
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx"

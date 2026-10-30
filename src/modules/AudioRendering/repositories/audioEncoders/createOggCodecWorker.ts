@@ -16,14 +16,37 @@ type Pending = {
     reject: (error: unknown) => void;
 };
 
-/** One request and one awaited sink write; each file owns and terminates its Worker. */
-export async function createOggCodecWorker(input: {
+type CodecWorkerInput = {
     codec: 'ogg' | 'opus';
     sampleRate: number;
     channels: 1 | 2;
     writer: ExportByteWriter;
     signal?: AbortSignal;
-}) {
+};
+
+function assertCodecOutputChunk(message: Extract<OggCodecWorkerResponse, { kind: 'chunk' }>, active: Pending) {
+    if (
+        active.writing ||
+        message.sequence !== active.sequence ||
+        !(message.bytes instanceof Uint8Array) ||
+        message.bytes.length === 0 ||
+        message.bytes.length > OGG_CODEC_MAX_BYTES
+    ) {
+        throw new Error('Invalid or concurrent codec output');
+    }
+}
+
+function acknowledgeCodecChunk(worker: Worker, session: number, active: Pending, sequence: number) {
+    worker.postMessage({
+        session,
+        id: active.id,
+        kind: 'ack',
+        sequence,
+    } satisfies OggCodecWorkerRequest);
+}
+
+/** One request and one awaited sink write; each file owns and terminates its Worker. */
+export async function createOggCodecWorker(input: CodecWorkerInput) {
     if (input.signal?.aborted) {
         throw new Error('Export cancelled');
     }
@@ -68,15 +91,7 @@ export async function createOggCodecWorker(input: {
             active.resolve();
             return;
         }
-        if (
-            active.writing ||
-            message.sequence !== active.sequence ||
-            !(message.bytes instanceof Uint8Array) ||
-            message.bytes.length === 0 ||
-            message.bytes.length > OGG_CODEC_MAX_BYTES
-        ) {
-            throw new Error('Invalid or concurrent codec output');
-        }
+        assertCodecOutputChunk(message, active);
         active.writing = true;
         input.writer.checkCancelled?.();
         await input.writer.write(message.bytes);
@@ -86,12 +101,7 @@ export async function createOggCodecWorker(input: {
         input.writer.checkCancelled?.();
         active.writing = false;
         active.sequence += 1;
-        worker.postMessage({
-            session,
-            id: active.id,
-            kind: 'ack',
-            sequence: message.sequence,
-        } satisfies OggCodecWorkerRequest);
+        acknowledgeCodecChunk(worker, session, active, message.sequence);
     };
     const onMessage = (event: MessageEvent<OggCodecWorkerResponse>) => {
         void receive(event.data).catch(close);

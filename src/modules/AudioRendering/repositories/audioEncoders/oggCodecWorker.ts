@@ -5,16 +5,54 @@ import {
     type OggCodecWorkerRequest,
     type OggCodecWorkerResponse,
 } from '../../models/OggCodecWorkerProtocol';
+
 import opus from './vendor/opus/opus-encode.js';
 import ogg from './vendor/vorbis/ogg-encode.js';
 
 type Encoder = { encode: (channels: Float32Array[]) => Uint8Array; flush: () => Uint8Array; free: () => void };
 
-/** The codec retains its frame state; acknowledgement gates every emitted output slice. */
-export function installOggCodecWorker(scope: {
+type CodecWorkerScope = {
     postMessage: (message: OggCodecWorkerResponse, transfers: Transferable[]) => void;
     onmessage: ((event: MessageEvent<OggCodecWorkerRequest>) => void) | null;
-}) {
+};
+type CodecInitialization = Extract<OggCodecWorkerRequest, { kind: 'init' }>;
+
+function assertCodecInitialization(message: CodecInitialization, encoder: Encoder | undefined) {
+    if (encoder || (message.channels !== 1 && message.channels !== 2)) {
+        throw new Error('Invalid codec initialization');
+    }
+}
+
+function createCodecEncoder(message: CodecInitialization, channels: number): Promise<Encoder> {
+    if (message.codec === 'opus') {
+        if (message.sampleRate !== 48000) {
+            throw new Error('Opus requires prepared 48 kHz PCM');
+        }
+        return opus({ sampleRate: 48000, channels, bitrate: 128, application: 'audio', complexity: 10 });
+    }
+    if (![44100, 48000, 88200, 96000].includes(message.sampleRate)) {
+        throw new Error('Unsupported Vorbis sample rate');
+    }
+    return ogg({ sampleRate: message.sampleRate, channels, quality: 4 });
+}
+
+function assertCodecPcmBlock(
+    message: Extract<OggCodecWorkerRequest, { kind: 'encode' }>,
+    channels: number | undefined
+) {
+    const length = message.channels[0]?.length ?? 0;
+    if (
+        message.channels.length !== channels ||
+        length < 1 ||
+        length > OGG_CODEC_BLOCK_FRAMES ||
+        message.channels.some((channel) => !(channel instanceof Float32Array) || channel.length !== length)
+    ) {
+        throw new Error('Invalid bounded codec PCM block');
+    }
+}
+
+/** The codec retains its frame state; acknowledgement gates every emitted output slice. */
+export function installOggCodecWorker(scope: CodecWorkerScope) {
     let session: number | undefined;
     let channels: number | undefined;
     let encoder: Encoder | undefined;
@@ -50,43 +88,15 @@ export function installOggCodecWorker(scope: {
         try {
             let bytes: Uint8Array | undefined;
             if (message.kind === 'init') {
-                if (encoder || (message.channels !== 1 && message.channels !== 2)) {
-                    throw new Error('Invalid codec initialization');
-                }
+                assertCodecInitialization(message, encoder);
                 channels = message.channels;
-                if (message.codec === 'opus') {
-                    if (message.sampleRate !== 48000) {
-                        throw new Error('Opus requires prepared 48 kHz PCM');
-                    }
-                    encoder = await opus({
-                        sampleRate: 48000,
-                        channels,
-                        bitrate: 128,
-                        application: 'audio',
-                        complexity: 10,
-                    });
-                } else {
-                    if (![44100, 48000, 88200, 96000].includes(message.sampleRate)) {
-                        throw new Error('Unsupported Vorbis sample rate');
-                    }
-                    encoder = await ogg({ sampleRate: message.sampleRate, channels, quality: 4 });
-                }
+                encoder = await createCodecEncoder(message, channels);
             } else {
                 if (!encoder) {
                     throw new Error('Codec is not initialized');
                 }
                 if (message.kind === 'encode') {
-                    const length = message.channels[0]?.length ?? 0;
-                    if (
-                        message.channels.length !== channels ||
-                        length < 1 ||
-                        length > OGG_CODEC_BLOCK_FRAMES ||
-                        message.channels.some(
-                            (channel) => !(channel instanceof Float32Array) || channel.length !== length
-                        )
-                    ) {
-                        throw new Error('Invalid bounded codec PCM block');
-                    }
+                    assertCodecPcmBlock(message, channels);
                     bytes = encoder.encode(message.channels);
                 } else {
                     bytes = encoder.flush();
