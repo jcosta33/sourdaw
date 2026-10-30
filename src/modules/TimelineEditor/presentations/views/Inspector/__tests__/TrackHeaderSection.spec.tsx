@@ -241,6 +241,20 @@ describe('TrackHeaderSection', () => {
         });
     });
 
+    it('unfreezes a frozen track whose refresh failed', () => {
+        const failedTrack = {
+            ...mockTrack,
+            frozen: true,
+            freezeState: { status: 'error' as const, errorMessage: 'render failed' },
+        };
+        render(<TrackHeaderSection track={failedTrack} />);
+        fireEvent.click(screen.getByText(/Unfreeze/i));
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'unfreezeTrack',
+            payload: { trackId: 'track-1' },
+        });
+    });
+
     it('starts a new render when update freeze is clicked on a stale frozen track', () => {
         const staleTrack = { ...mockTrack, frozen: true, freezeState: { status: 'stale' as const } };
         render(<TrackHeaderSection track={staleTrack} />);
