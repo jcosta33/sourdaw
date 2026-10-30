@@ -429,6 +429,23 @@ Probe: run the real revision and identity capture over a real root document, aft
 transition has activated, with every wait the action crosses spanning a frame so pending document
 writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
 
+### A bank-local no-op left Space looking interactive (#4804)
+
+The generic macro strip originated in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`.
+PR #4804 later made Space a no-op without a loaded Room microphone but left the control looking
+live. Historical private review prompts and tiers are unavailable.
+
+PR #5370 (`e6b349151e755dccf8c4c2f2833377dc72ea0076`) added the panel case but sent pointer
+move and release to `window`, while the knob listens on its root. A disabled-pointer guard removal
+left that case green; the test did not establish that a valid drag reached the consumer.
+
+Exercise the real panel and knob with no Room and a reordered Room-present projection in
+`LevainPanel.spec.tsx`. Require the accessible disabled state and separate keyboard and pointer
+refusal. Send a primary drag with matching pointer ID and coordinates to the knob root, and require
+a Room-enabled drag to capture that pointer and change the macro. Remove only the pointer-down
+disabled guard and require the unchanged no-Room callback assertion to fail. Retain the availability
+and keyboard guard probes. The mocked projection does not prove an actual Room bank load or audio.
+
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
 PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
@@ -2008,3 +2025,34 @@ branch must fail that case. Also retain short-buffer conversion across a tempo c
 a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
 end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
 a six-hour PCM render or listening result from it.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+A fixture that hand-supplies permissive `parameterIds` bypasses the omission it claims to
+test. Capture the real factory's initialization and outgoing controls, then use the same
+production schema at the processor. Require all six bands and indices -1/0/1/2/3, with
+unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
+`forwards every band Body choice` must fail. Document/action spies do not prove worklet
+admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — first paint did not exercise a rejected App import
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
+fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
+same-frame document, but its initiating transport/navigation mechanism remains unknown.
+
+Inject a real failed initial App request and assert failure/recovery unconditionally, including
+confirmed budget admission and changed document lifetime. Keep first-paint checks distinct from
+App-render and bootstrap-completion checks. Scope legacy tests by their dependency on the affected
+startup phase, preserving unrelated mock behavior. Use discriminating corrupted-PCM and missing
+reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
+readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
+original navigation.
