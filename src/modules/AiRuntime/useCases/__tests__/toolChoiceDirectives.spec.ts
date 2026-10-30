@@ -150,7 +150,7 @@ describe('application-owned tool loop directive forcing', () => {
 });
 
 /** Genuine primary-executor results are correlated only after receipt admission. */
-describe('caller-bound single measurement opportunity', () => {
+describe('caller-bound measurement receipt sequence', () => {
     type MeasurementExecutor = NonNullable<Parameters<typeof runApplicationOwnedToolLoop>[0]['measurement']>['execute'];
     const opportunity = {
         authorityId: 'authority-1',
@@ -205,24 +205,41 @@ describe('caller-bound single measurement opportunity', () => {
             policy?: typeof opportunity;
             signal?: AbortSignal;
             candidateRevision?: string;
+            workflowIntake?: boolean;
+            history?: boolean;
+            limits?: Parameters<typeof runApplicationOwnedToolLoop>[0]['limits'];
+            readPolicy?: () => typeof opportunity;
+            onTurn?: (turn: number) => void;
         } = {}
     ) {
         const execute =
             options.execute ?? vi.fn<MeasurementExecutor>(async (call, identity) => executeResult(call, identity));
-        const requestTurn = vi.fn(async ({ turn }: { turn: number }) => ({
-            status: 'complete' as const,
-            toolCalls: calls[turn - 1] ?? [],
-        }));
+        const requestTurn = vi.fn(async ({ turn }: { turn: number }) => {
+            options.onTurn?.(turn);
+            return {
+                status: 'complete' as const,
+                toolCalls: calls[turn - 1] ?? [],
+                ...(options.history
+                    ? {
+                          providerTurn: {
+                              provider: 'openai' as const,
+                              assistantItems: [{ type: 'reasoning', id: `reason-${turn}` }],
+                          },
+                      }
+                    : {}),
+            };
+        });
         const result = runApplicationOwnedToolLoop({
             loopId: 'sequence-loop',
             terminalToolNames: new Set(['setTempo', 'selectWorkflowCapability']),
             requestTurn,
             interpretation: {
                 toolName: 'selectCreativeInterpretation',
+                workflowToolName: options.workflowIntake ? 'selectWorkflowCapability' : undefined,
                 admit: () => ({ status: 'admitted', receipt: { data: {}, summary: 'Admitted.' } }),
             },
             readMeasurementOpportunity: () =>
-                options.policy ?? { ...opportunity, available: options.available ?? true },
+                options.readPolicy?.() ?? options.policy ?? { ...opportunity, available: options.available ?? true },
             measurement: options.noExecutor
                 ? undefined
                 : {
@@ -256,6 +273,7 @@ describe('caller-bound single measurement opportunity', () => {
                 }),
             },
             signal: options.signal,
+            limits: options.limits,
         });
         return { result, execute, requestTurn };
     }
@@ -357,19 +375,26 @@ describe('caller-bound single measurement opportunity', () => {
         });
     });
 
-    it.each(['stale', 'pre-intake'] as const)('does not schedule from a %s retained candidate', async (kind) => {
-        const calls =
-            kind === 'pre-intake'
-                ? [[candidate], [{ ...intake, id: 'intake-later' }], [read('read-3')], [read('read-4')], [terminal]]
-                : [[intake], [read('read-2')], [candidate], [read('read-4')], [terminal]];
-        const run = runSequence(calls, {
-            candidateRevision: kind === 'stale' ? 'old-revision' : undefined,
-            policy: kind === 'pre-intake' ? { ...opportunity, callId: 'intake-later', turn: 2 } : undefined,
-        });
-        expect(await run.result).toMatchObject({ status: 'complete', turns: 5 });
-        expect(run.execute).not.toHaveBeenCalled();
-        expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', AUTO_TOOL_CHOICE);
-    });
+    it.each(['stale', 'pre-intake'] as const)(
+        'requires a receipt independently of a %s retained candidate',
+        async (kind) => {
+            const calls =
+                kind === 'pre-intake'
+                    ? [[candidate], [{ ...intake, id: 'intake-later' }], [read('read-3')], [measure], [terminal]]
+                    : [[intake], [read('read-2')], [candidate], [measure], [terminal]];
+            const run = runSequence(calls, {
+                candidateRevision: kind === 'stale' ? 'old-revision' : undefined,
+                policy: kind === 'pre-intake' ? { ...opportunity, callId: 'intake-later', turn: 2 } : undefined,
+            });
+            expect(await run.result).toMatchObject({ status: 'complete', turns: 5 });
+            expect(run.execute).toHaveBeenCalledOnce();
+            expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', {
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+        }
+    );
 
     it.each(['refusal', 'throw', 'oversized'] as const)(
         'does not reattempt an earlier admitted primary %s after a candidate is prepared',
@@ -538,9 +563,208 @@ describe('caller-bound single measurement opportunity', () => {
         });
     });
 
-    it('keeps an early inert proposal without inventing an attempt', async () => {
-        const run = runSequence([[intake], [terminal]]);
-        expect(await run.result).toMatchObject({ status: 'complete', turns: 2, retainedCompilations: [] });
+    it.each([false, true])(
+        'holds an early terminal until its actual receipt, workflow intake %s',
+        async (workflowIntake) => {
+            const selected = workflowIntake ? { ...intake, name: 'selectWorkflowCapability' } : intake;
+            const run = runSequence([[selected], [terminal], [measure]], {
+                workflowIntake,
+                history: true,
+                limits: { maxTotalCalls: 3 },
+            });
+            const result = await run.result;
+            expect(result).toMatchObject({
+                status: 'complete',
+                turns: 3,
+                toolCalls: [terminal],
+                retainedCompilations: [],
+            });
+            expect(run.execute).toHaveBeenCalledOnce();
+            expect(result.receipts).toContainEqual(
+                expect.objectContaining({
+                    callId: 'terminal',
+                    toolName: 'setTempo',
+                    turn: 2,
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'measurement-required' }),
+                })
+            );
+            expect(result.receipts).toContainEqual(
+                expect.objectContaining({ callId: 'measure', turn: 3, status: 'success' })
+            );
+            expect(run.requestTurn).toHaveBeenCalledTimes(3);
+            expect(run.requestTurn.mock.calls[2]?.[0]).toMatchObject({
+                directive: { mode: 'required', toolNames: ['analysis.measure'], parallelToolCalls: false },
+                history: expect.arrayContaining([
+                    expect.objectContaining({
+                        turn: 2,
+                        assistantItems: [{ type: 'reasoning', id: 'reason-2' }],
+                        calls: [terminal],
+                        receipts: [
+                            expect.objectContaining({
+                                callId: 'terminal',
+                                error: expect.objectContaining({ code: 'measurement-required' }),
+                            }),
+                        ],
+                    }),
+                ]),
+            });
+        }
+    );
+
+    it('keeps a whole early workflow terminal and answers each original call in native history', async () => {
+        const workflow = {
+            id: 'workflow-execution',
+            name: 'selectWorkflowCapability',
+            arguments: { capabilityId: 'stem-import-starting-mix' },
+        };
+        const run = runSequence([[intake], [workflow, terminal], [measure]], {
+            history: true,
+            limits: { maxTotalCalls: 4 },
+        });
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [workflow, terminal] });
+        expect(run.execute).toHaveBeenCalledOnce();
+        expect(run.requestTurn.mock.calls[2]?.[0]).toMatchObject({
+            history: expect.arrayContaining([
+                expect.objectContaining({
+                    turn: 2,
+                    calls: [workflow, terminal],
+                    receipts: [
+                        expect.objectContaining({
+                            callId: workflow.id,
+                            toolName: workflow.name,
+                            error: expect.objectContaining({ code: 'measurement-required' }),
+                        }),
+                        expect.objectContaining({
+                            callId: terminal.id,
+                            toolName: terminal.name,
+                            error: expect.objectContaining({ code: 'measurement-required' }),
+                        }),
+                    ],
+                }),
+            ]),
+        });
+        expect(run.requestTurn).toHaveBeenCalledTimes(3);
+    });
+
+    it.each([{ calls: [] }, { calls: [terminal] }, { calls: [measure, read('extra-read')] }])(
+        'never releases held calls after a nonconforming required response: $calls',
+        async ({ calls }) => {
+            const run = runSequence([[intake], [terminal], calls]);
+            expect(await run.result).toMatchObject({ status: 'rejected', turns: 3 });
+            expect(run.execute).not.toHaveBeenCalled();
+        }
+    );
+
+    it('requires the primary fallback without any retained compilation', async () => {
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [measure], [terminal]]);
+        expect(await run.result).toMatchObject({ status: 'complete', turns: 5, retainedCompilations: [] });
+        expect(run.execute).toHaveBeenCalledOnce();
+        expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', {
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+    });
+
+    it('uses the final turn for a held complete proposal without another proposal call', async () => {
+        let available = false;
+        const run = runSequence([[intake], [terminal], [measure]], {
+            limits: { maxTurns: 2 },
+            readPolicy: () => ({ ...opportunity, available }),
+            onTurn: (turn) => {
+                if (turn === 2) {
+                    available = true;
+                }
+            },
+        });
+        expect(await run.result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(run.requestTurn).toHaveBeenCalledTimes(3);
+    });
+
+    it('refuses a late positive workflow intake that leaves no measure plus terminal budget', async () => {
+        const run = runSequence(
+            [[read('read-1')], [read('read-2')], [read('read-3')], [{ ...intake, name: 'selectWorkflowCapability' }]],
+            {
+                workflowIntake: true,
+                policy: { ...opportunity, turn: 4 },
+            }
+        );
+        expect(await run.result).toMatchObject({
+            status: 'rejected',
+            turns: 4,
+            reason: expect.stringContaining('insufficient budget'),
+        });
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(run.requestTurn).toHaveBeenCalledTimes(4);
+    });
+
+    it.each(['callId', 'toolName', 'turn', 'revision'] as const)(
+        'never releases a held proposal after a mismatched required %s',
+        async (field) => {
+            const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
+                const result = executeResult(call, identity);
+                const receipt = { ...result.receipt };
+                if (field === 'turn') {
+                    receipt.turn = 1;
+                } else receipt[field] = 'foreign';
+                return { ...result, receipt };
+            });
+            const run = runSequence([[intake], [terminal], [measure]], { execute });
+            expect(await run.result).toMatchObject({
+                status: 'rejected',
+                turns: 3,
+                reason: expect.stringContaining('did not match'),
+            });
+            expect(execute).toHaveBeenCalledOnce();
+        }
+    );
+
+    it('does not release a held proposal when cancelled during the real primary call', async () => {
+        const controller = new AbortController();
+        const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
+            controller.abort();
+            return executeResult(call, identity);
+        });
+        const run = runSequence([[intake], [terminal], [measure]], { execute, signal: controller.signal });
+        const result = await run.result;
+        expect(result).toMatchObject({
+            status: 'rejected',
+            turns: 3,
+            reason: 'Application-owned tool loop was cancelled.',
+        });
+        expect(result.receipts.map((receipt) => receipt.callId)).toEqual(['intake', 'terminal']);
+    });
+
+    it('keeps a valid held proposal unverified when the snapshot becomes unavailable', async () => {
+        let available = true;
+        const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
+            available = false;
+            return {
+                ...executeResult(call, identity),
+                receipt: {
+                    ...executeResult(call, identity).receipt,
+                    status: 'failure',
+                    revision: null,
+                    error: { code: 'stale-revision', safeMessage: 'Project moved.', retryable: false },
+                },
+            };
+        });
+        const run = runSequence([[intake], [terminal], [measure]], {
+            execute,
+            readPolicy: () => ({ ...opportunity, available }),
+        });
+        expect(await run.result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(execute).toHaveBeenCalledOnce();
+    });
+
+    it('bounds the real deferred control receipts before requesting a measurement', async () => {
+        const run = runSequence([[intake], [terminal], [measure]], { limits: { maxReceiptBytesPerCall: 260 } });
+        expect(await run.result).toMatchObject({
+            status: 'rejected',
+            reason: expect.stringContaining('receipt budget'),
+        });
         expect(run.execute).not.toHaveBeenCalled();
     });
 });

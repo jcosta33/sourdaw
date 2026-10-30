@@ -673,8 +673,10 @@ const planPromptIntent = inject({ logger })(
                 };
             }
 
-            let applicationToolReceiptFields: { applicationToolReceipts?: IntentResult['applicationToolReceipts'] } =
-                {};
+            let applicationToolReceiptFields: Pick<
+                IntentResult,
+                'applicationToolReceipts' | 'terminalMeasurementSettlement'
+            > = {};
             try {
                 const drumRoutingScope = readonly ? null : getDrumRoutingPromptScope(context, projectRevision);
                 const drumRenderComparisonScope = readonly
@@ -965,6 +967,7 @@ const planPromptIntent = inject({ logger })(
                 };
                 const planningOutcome = await runApplicationOwnedToolLoop({
                     ...(readonly ? {} : { requireWholeRequestIntake: true as const }),
+                    // The loop binds this authority to the actual admitted generic or workflow intake.
                     readMeasurementOpportunity: () => {
                         if (
                             readonly ||
@@ -1305,7 +1308,13 @@ const planPromptIntent = inject({ logger })(
                 applicationToolReceiptFields =
                     planningOutcome.receipts.length === 0
                         ? {}
-                        : { applicationToolReceipts: [...planningOutcome.receipts] };
+                        : {
+                              applicationToolReceipts: [...planningOutcome.receipts],
+                              ...(planningOutcome.status === 'complete' &&
+                              planningOutcome.terminalMeasurementSettlement !== undefined
+                                  ? { terminalMeasurementSettlement: planningOutcome.terminalMeasurementSettlement }
+                                  : {}),
+                          };
 
                 if (signal?.aborted) {
                     return {

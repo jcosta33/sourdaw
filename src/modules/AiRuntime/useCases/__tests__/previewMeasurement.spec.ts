@@ -849,7 +849,7 @@ describe('a measured preview through proposal and approval', () => {
     // Red when the query branch the planning prompt states (the context cannot resolve the target: the
     // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
     // stops fitting the loop's turns or completing without a rejection.
-    it('completes the prompt-stated query branch in the loop turns: query alone, discover, expand, then adopt the expansion', async () => {
+    it('completes the prompt-stated query branch in the loop turns: query and baseline, discover, expand, then adopt the expansion', async () => {
         projectStore.set({
             ...structuredClone(defaultProjectStoreState),
             projectId: '405e744b-dead-843a-9395-86fdcd66368c',
@@ -865,7 +865,10 @@ describe('a measured preview through proposal and approval', () => {
             { paramId: 'comp-makeup', value: 4.5 },
         ];
         scriptTurns(revision, [
-            [{ id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } }],
+            [
+                { id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } },
+                { id: 'query-baseline', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } },
+            ],
             [
                 {
                     id: 'discover-1',
@@ -1850,8 +1853,9 @@ describe('real caller sequential measurement opportunity', () => {
         assertUnchanged(before);
     });
 
-    it('keeps a candidate first prepared on the penultimate turn visible and unverified within five turns', async () => {
+    it('forces a receipt without an earlier retained candidate and adopts a preview first prepared on the penultimate turn', async () => {
         const before = captureBefore();
+        const proposal = proposalOf(lowerGain(DRUMS_GAIN_ID, -6));
         scriptTurns(before.revision, [
             [queryCall()],
             [
@@ -1861,8 +1865,8 @@ describe('real caller sequential measurement opportunity', () => {
                     arguments: { descriptors: ['punchy'], targetId: 'drums' },
                 },
             ],
-            [recipeExpansionCall()],
-            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            [measureCallFor('late-preview', proposal)],
+            [proposeCall({ commands: [], compiledCallIds: ['late-preview'] })],
         ]);
         const planned = await parsePromptToActions({
             prompt: PROMPT,
@@ -1871,9 +1875,23 @@ describe('real caller sequential measurement opportunity', () => {
         });
         expect(planned.rejectionReason).toBeUndefined();
         expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({ mode: 'auto' });
-        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
-        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, value: -6 } },
+        ]);
+        expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'late-preview',
+                toolName: 'analysis.measure',
+                status: 'success',
+                turn: 4,
+            })
+        );
         const confirmationId = persistForApproval(planned, before.revision);
         expect(getAgentApprovalView({ confirmationId })).toMatchObject({
             status: 'proposed',
@@ -1883,21 +1901,115 @@ describe('real caller sequential measurement opportunity', () => {
         assertUnchanged(before);
     });
 
-    it('retains an early valid inert proposal with no invented measurement or metric proof', async () => {
+    it('holds an early valid proposal through the real render and releases it after the admitted receipt', async () => {
         const before = captureBefore();
+        const entered = Promise.withResolvers<void>();
+        const released = Promise.withResolvers<void>();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            entered.resolve();
+            await released.promise;
+            return renderSubgraph(request);
+        });
         scriptTurns(before.revision, [
             [recipeExpansionCall()],
             [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            [recipePreviewCall()],
+        ]);
+        let completed = false;
+        const pending = parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        void pending.then(() => {
+            completed = true;
+        });
+        await entered.promise;
+        expect(completed).toBe(false);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[9]?.history).toContainEqual(
+            expect.objectContaining({
+                turn: 3,
+                calls: [expect.objectContaining({ id: 'propose-1', name: 'command.batch.propose' })],
+                receipts: [
+                    expect.objectContaining({
+                        callId: 'propose-1',
+                        toolName: 'command.batch.propose',
+                        status: 'failure',
+                        error: expect.objectContaining({ code: 'measurement-required' }),
+                    }),
+                ],
+            })
+        );
+        assertUnchanged(before);
+        released.resolve();
+        const planned = await pending;
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.actions.length).toBeGreaterThan(0);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'measure-recipe',
+                toolName: 'analysis.measure',
+                status: 'success',
+                turn: 4,
+            })
+        );
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
+    it('holds an inline proposal without a retained compiler result until the actual failed attempt receipt', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [
+                {
+                    id: 'inline-catalog',
+                    name: 'agent.catalog.discover',
+                    arguments: { category: 'command', names: ['setDeviceParameter'] },
+                },
+            ],
+            [
+                proposeCall({
+                    commands: [
+                        {
+                            name: 'setDeviceParameter',
+                            arguments: { deviceId: DRUMS_GAIN_ID, paramId: 'gain-level', value: -6 },
+                        },
+                    ],
+                }),
+            ],
+            [{ id: 'inline-baseline', name: 'analysis.measure', arguments: { scope: DRUMS_SCOPE, range: RANGE } }],
         ]);
         const planned = await parsePromptToActions({
             prompt: PROMPT,
             context: getProjectContext(),
             projectRevision: before.revision,
+            onMeasurementAttempt: () => ({ status: 'refused', category: 'maxRenderJobs' }),
         });
         expect(planned.rejectionReason).toBeUndefined();
-        expect(planned.actions.length).toBeGreaterThan(0);
-        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
-        expect(planned.applicationToolReceipts?.some((receipt) => receipt.toolName === 'analysis.measure')).toBe(false);
+        expect(planned.actions).toMatchObject([
+            { type: 'setDeviceParameter', payload: { deviceId: DRUMS_GAIN_ID, value: -6 } },
+        ]);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(planned.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'inline-baseline',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-budget-exhausted' }),
+            })
+        );
+        expect(planned.measuredPreview).toBeUndefined();
         const confirmationId = persistForApproval(planned, before.revision);
         expect(getAgentApprovalView({ confirmationId })).toMatchObject({
             status: 'proposed',
