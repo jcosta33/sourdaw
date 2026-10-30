@@ -1,0 +1,27 @@
+scripts/__tests__/reloadCancellationNativeExit.spec.ts
+  s_26f70b851e8f7a::t_431d09689a793e 1,16,46-70,330-358,360-380,382,384-387,389,391-392
+  s_26f70b851e8f7a::t_d54f3cae06cdd3 17,359,381,383,388
+  s_26f70b851e8f7a::t_19aef9543daa2e 390
+  s_26f70b851e8f7a::t_466ae84a4857ca 393-395
+scripts/diagnostics/reloadCancellation/processPhase.ts
+  s_26f70b851e8f7a::t_aa40f51450860e 61,115,131
+scripts/diagnostics/reloadCancellation/qualification.ts
+  s_26f70b851e8f7a::t_d54f3cae06cdd3 57-62,71-72,79,81-85,156
+  s_26f70b851e8f7a::t_aa40f51450860e 63-70,73-78,80
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9c9bddea6ed9f453dec00062d8ef688454299bf5",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
