@@ -1,6 +1,7 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
     existsSync,
+    linkSync,
     mkdirSync,
     mkdtempSync,
     readFileSync,
@@ -156,6 +157,105 @@ describe('cleanup installation', () => {
             f.dispose();
         }
     });
+
+    it.each(['hardlink', 'symlink', 'dangling symlink'])(
+        'refuses an exclusion %s without modifying or creating its external target',
+        (alias) => {
+            const f = fixture();
+            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-exclude-alias-')));
+            try {
+                const target = join(foreign, 'exclude');
+                const bytes = '# foreign exclusion bytes\nforeign-only';
+                if (alias !== 'dangling symlink') {
+                    writeFileSync(target, bytes);
+                }
+                const exclude = join(f.root, '.git/info/exclude');
+                rmSync(exclude);
+                if (alias === 'hardlink') {
+                    linkSync(target, exclude);
+                } else {
+                    symlinkSync(target, exclude);
+                }
+                expect(() => installCleanupLanes(f.port)).toThrow();
+                if (alias === 'dangling symlink') {
+                    expect(existsSync(target)).toBe(false);
+                } else {
+                    expect(readFileSync(target, 'utf8')).toBe(bytes);
+                }
+                expect(readFileSync(join(f.root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')).toBe(
+                    'old approved launcher\n'
+                );
+                expect(f.events).toHaveLength(0);
+            } finally {
+                f.dispose();
+                rmSync(foreign, { recursive: true });
+            }
+        }
+    );
+
+    it('creates a missing exclusion file once and preserves existing regular-file bytes', () => {
+        const f = fixture();
+        try {
+            const path = join(f.root, '.git/info/exclude');
+            rmSync(path);
+            installCleanupLanes(f.port);
+            installCleanupLanes(f.port);
+            expect(readFileSync(path, 'utf8')).toBe('/.agents/lane-cleanup/\n');
+            writeFileSync(path, '# keep CRLF bytes\r\nother-only');
+            installCleanupLanes(f.port);
+            installCleanupLanes(f.port);
+            expect(readFileSync(path, 'utf8')).toBe('# keep CRLF bytes\r\nother-only\n/.agents/lane-cleanup/\n');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each(['new hardlink', 'replacement symlink'])(
+        'refuses a %s introduced after the exclusion descriptor was opened',
+        (race) => {
+            const f = fixture();
+            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-exclude-race-')));
+            try {
+                const program = `
+                    import fs from 'node:fs';
+                    import {syncBuiltinESMExports} from 'node:module';
+                    const root=${JSON.stringify(f.root)},foreign=${JSON.stringify(foreign)},race=${JSON.stringify(race)};
+                    const path=root+'/.git/info/exclude',alias=foreign+'/exclude';
+                    const read=fs.readFileSync,open=fs.openSync;
+                    let owned,swapped=false;
+                    fs.openSync=(file,...args)=>{const fd=open(file,...args);if(file===path)owned=fd;return fd;};
+                    fs.readFileSync=(file,...args)=>{
+                        const bytes=read(file,...args);
+                        if(file===owned&&!swapped){
+                            swapped=true;
+                            if(race==='new hardlink')fs.linkSync(path,alias);
+                            else{fs.renameSync(path,alias);fs.symlinkSync(foreign+'/missing',path);}
+                        }
+                        return bytes;
+                    };
+                    syncBuiltinESMExports();
+                    const {ensureCleanupExcluded}=await import(${JSON.stringify(join(import.meta.dirname, '../cleanupLanes.ts'))});
+                    let error;
+                    try{ensureCleanupExcluded(root);}catch(caught){error=caught.message;}
+                    console.log(JSON.stringify({swapped,error,bytes:read(alias,'utf8'),created:fs.existsSync(foreign+'/missing')}));
+                `;
+                const result = JSON.parse(
+                    execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                        cwd: f.root,
+                        encoding: 'utf8',
+                        env: githubAuthorizationGitEnv(),
+                    })
+                );
+                expect(result.swapped).toBe(true);
+                expect(result.error).toContain('exclusively owned');
+                expect(result.bytes).toBe('# preserve existing bytes\nlocal-only\n');
+                expect(result.created).toBe(false);
+            } finally {
+                f.dispose();
+                rmSync(foreign, { recursive: true });
+            }
+        }
+    );
 
     it('refuses a launcher reached through a symlinked scripts parent before any refresh writes', () => {
         const f = fixture();

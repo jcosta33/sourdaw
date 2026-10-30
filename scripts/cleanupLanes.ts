@@ -17,7 +17,12 @@ import {
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { finishRemovedWorktree, ownedGuardReceipt, type GuardReceiptFingerprint } from './cleanupLaneBookkeeping.ts';
+import {
+    ensureCleanupExclusionFile,
+    finishRemovedWorktree,
+    ownedGuardReceipt,
+    type GuardReceiptFingerprint,
+} from './cleanupLaneBookkeeping.ts';
 import { unsafeCredentialReason } from './evidenceSafety.ts';
 import {
     assertRequiredRepository,
@@ -98,23 +103,7 @@ export function ensureCleanupExcluded(primaryRoot: string): void {
     if (!lstatSync(info).isDirectory() || lstatSync(info).isSymbolicLink() || realpathSync(info) !== info) {
         throw new Error('cleanup Git exclusion directory is not regular');
     }
-    const path = join(info, 'exclude');
-    if (existsSync(path) && (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())) {
-        throw new Error('cleanup Git exclusion file is not regular');
-    }
-    const previous = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    const entry = '/.agents/lane-cleanup/';
-    if (previous.split(/\r?\n/).includes(entry)) {
-        return;
-    }
-    const fd = openSync(path, 'a', 0o600);
-    try {
-        // One append preserves existing bytes and concurrent unrelated exclusions.
-        writeFileSync(fd, `${previous === '' || previous.endsWith('\n') ? '' : '\n'}${entry}\n`);
-        fsyncSync(fd);
-    } finally {
-        closeSync(fd);
-    }
+    ensureCleanupExclusionFile(join(info, 'exclude'));
 }
 
 /** Never follow an operational-state symlink into a different checkout. */

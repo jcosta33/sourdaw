@@ -1,5 +1,16 @@
 import { createHash } from 'node:crypto';
-import { lstatSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import {
+    closeSync,
+    constants,
+    fstatSync,
+    fsyncSync,
+    lstatSync,
+    openSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    writeFileSync,
+} from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 
 import { guardFailureReceiptPath, readGuardFailureReceipt } from './prContract.ts';
@@ -9,6 +20,44 @@ import { clearGuardFailureReceiptIfUnchanged } from './resourceGuard.ts';
 import type { CleanupPort, CleanupRecord } from './cleanupLanes.ts';
 
 export type GuardReceiptFingerprint = { hash: string; dev: number; ino: number; birthtimeMs: number };
+
+function exclusiveExclusionFile(fd: number, path: string): void {
+    const descriptor = fstatSync(fd);
+    const current = lstatSync(path);
+    if (
+        !descriptor.isFile() ||
+        descriptor.nlink !== 1 ||
+        !current.isFile() ||
+        current.isSymbolicLink() ||
+        current.nlink !== 1 ||
+        current.dev !== descriptor.dev ||
+        current.ino !== descriptor.ino ||
+        realpathSync(dirname(path)) !== dirname(path)
+    ) {
+        throw new Error('cleanup Git exclusion file is not exclusively owned at its registered path');
+    }
+}
+
+export function ensureCleanupExclusionFile(path: string): void {
+    if (!(constants.O_NOFOLLOW > 0)) {
+        throw new Error('cleanup Git exclusion no-follow inspection is unavailable');
+    }
+    const fd = openSync(path, constants.O_RDWR | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+    try {
+        exclusiveExclusionFile(fd, path);
+        const previous = readFileSync(fd, 'utf8');
+        const entry = '/.agents/lane-cleanup/';
+        if (previous.split(/\r?\n/).includes(entry)) {
+            return;
+        }
+        // Append only to this still-private descriptor; never replace the file or follow a new path.
+        exclusiveExclusionFile(fd, path);
+        writeFileSync(fd, `${previous === '' || previous.endsWith('\n') ? '' : '\n'}${entry}\n`);
+        fsyncSync(fd);
+    } finally {
+        closeSync(fd);
+    }
+}
 
 function guardReceiptFingerprint(path: string): GuardReceiptFingerprint | null {
     try {
