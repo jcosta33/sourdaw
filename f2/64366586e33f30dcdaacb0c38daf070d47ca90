@@ -1,0 +1,40 @@
+.agents/skills/review-stances/test-validity.md
+  s_567a084d0540c4::t_797a33a68dfab8 3-14
+.agents/skills/review-stances/startup-entry-availability.md
+  s_567a084d0540c4::t_797a33a68dfab8 54-67
+src/app/__tests__/main.spec.tsx
+  s_567a084d0540c4::t_9e8c0b46a9ae58 245,288-293,436-473
+  s_567a084d0540c4::t_9c3a2193896ea0 284-286
+  s_567a084d0540c4::t_342c88dbb1f890 474
+src/app/DesktopStartupError.tsx
+  s_567a084d0540c4::t_9e8c0b46a9ae58 5,8-11
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_567a084d0540c4::t_3dbc3cf5e5ebd5 17-20,113-116,123,125-127,140-142,145-151,155-157,161-172,179-182,196-209
+  s_567a084d0540c4::t_4e83d4f97463c9 45-47,61-62,70-72,75-82,134,175-176
+  s_567a084d0540c4::t_8c5fb27ddd8d5d 1-16,21-44,48-60,63-69,73-74,83-112,117-122,124,128-133,135-139,143-144,152-154,158-160,173-174,177-178,183-195,210-214
+  s_567a084d0540c4::t_22df61f7aacbbe 215-217
+src/app/ApplicationFirstPaint.tsx
+  s_567a084d0540c4::t_9e8c0b46a9ae58 3-4,10-18
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  s_567a084d0540c4::t_9e8c0b46a9ae58 1-2,7-16
+tests/e2e/devServerOnlySpecs.ts
+  s_567a084d0540c4::t_8c5fb27ddd8d5d 11
+src/app/main.tsx
+  s_567a084d0540c4::t_9e8c0b46a9ae58 5,77-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f264366586e33f30dcdaacb0c38daf070d47ca90",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
