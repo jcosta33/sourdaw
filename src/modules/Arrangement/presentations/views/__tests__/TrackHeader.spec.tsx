@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -245,6 +245,32 @@ describe('TrackHeader', () => {
         }
         expect(await screen.findByRole('tooltip')).toHaveTextContent('Render failed');
     });
+
+    it.each(['audio', 'folder'] as const)(
+        'keeps the current selection when the %s freeze error is activated',
+        (kind) => {
+            const track = {
+                ...(kind === 'folder' ? mockFolderTrack : mockTrack),
+                freezeState: { status: 'error' as const, errorMessage: 'Render failed' },
+            };
+            renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
+            fireEvent.click(screen.getByRole('row'));
+            expect(selectTrack).toHaveBeenCalledWith(track.id);
+            vi.mocked(selectTrack).mockClear();
+
+            const badge = screen.getByRole('button', { name: 'Freeze error: Render failed' });
+            fireEvent.click(badge, { detail: 1 });
+            expect(selectTrack).not.toHaveBeenCalled();
+
+            act(() => badge.focus());
+            expect(badge).toHaveFocus();
+            fireEvent.keyDown(badge, { key: 'Enter' });
+            // jsdom does not synthesize the native click for a keyboard-activated button.
+            fireEvent.click(badge, { detail: 0 });
+            fireEvent.keyUp(badge, { key: 'Enter' });
+            expect(selectTrack).not.toHaveBeenCalled();
+        }
+    );
 
     it('should render InputSelector for selected audio track', () => {
         renderWithTooltip(<TrackHeader track={mockTrack} isSelected={true} />);
