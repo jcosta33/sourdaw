@@ -295,17 +295,10 @@ function recordReplacementBatch(
     }
 }
 
-/**
- * Replace a stale or partially accepted proposal with a fresh one bound to the current
- * revision. The run stays alive: the superseded proposal is invalidated and its prepared
- * resources discarded, but nothing cancels the run the musician is still steering.
- */
-export async function reproposePendingChatActions(
-    input: ReproposePendingChatActionsInput
-): Promise<ReproposePendingChatActionsResult> {
+function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
-        return { status: 'missing' };
+        return { status: 'missing' as const };
     }
     const refusal = admitReproposal(confirmation);
     if (refusal) {
@@ -313,14 +306,14 @@ export async function reproposePendingChatActions(
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {
-        return { status: 'rejected', reason: 'The confirmation has no approved command batch to re-preview.' };
+        return { status: 'rejected' as const, reason: 'The confirmation has no approved command batch to re-preview.' };
     }
     if (!agentApproval) {
-        return { status: 'rejected', reason: 'The confirmation has no exact risk approval binding.' };
+        return { status: 'rejected' as const, reason: 'The confirmation has no exact risk approval binding.' };
     }
     const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
     if (parsedOriginal.status === 'invalid') {
-        return { status: 'rejected', reason: parsedOriginal.reason };
+        return { status: 'rejected' as const, reason: parsedOriginal.reason };
     }
     const originalCommandIds = parsedOriginal.envelope.commands.map((command) => command.commandId);
     const selectsSubset =
@@ -346,7 +339,7 @@ export async function reproposePendingChatActions(
         return rebound;
     }
     const { parsed: parsedRefreshed, refreshed } = rebound;
-    let approval = rebound.approval;
+    const approval = rebound.approval;
 
     const { actions, actionLabels, includedActionIndexes } = selectIncludedPlan(
         confirmation,
@@ -357,6 +350,97 @@ export async function reproposePendingChatActions(
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }
+    return {
+        status: 'prepared' as const,
+        confirmation,
+        parsedOriginal,
+        originalCommandIds,
+        includedOriginalCommandIds,
+        selectsSubset,
+        parsedRefreshed,
+        refreshed,
+        approval,
+        actions,
+        actionLabels,
+        carriedSelection,
+    };
+}
+
+type PreparedReproposal = Extract<ReturnType<typeof prepareReproposal>, { status: 'prepared' }>;
+
+function persistReproposalConfirmation(
+    prepared: PreparedReproposal,
+    approval: ReturnType<typeof compileAgentRiskApproval>
+): string | null {
+    const { confirmation, parsedRefreshed, refreshed, actions, actionLabels, carriedSelection, selectsSubset } =
+        prepared;
+    const assistantMessageId = `msg-${crypto.randomUUID()}`;
+    appendChatMessage({
+        id: assistantMessageId,
+        role: 'assistant',
+        content: REPROPOSED_CONTENT,
+        timestamp: Date.now(),
+        isCommandAction: true,
+    });
+    return persistPromptActionConfirmation({
+        runId: confirmation.runId,
+        prompt: confirmation.prompt,
+        assistantMessageId,
+        actions,
+        actionLabels,
+        commandEnvelopes: refreshed.commandEnvelopes,
+        commandBatch: refreshed.commandBatch,
+        agentApproval: approval,
+        metricGoalState: approval.metricGoalState ?? undefined,
+        affectedIds: [...carriedSelection.affectedIds],
+        protectedUnchanged: confirmation.protectedUnchanged,
+        // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
+        // in the working batch's commands rather than re-resolving any `match` selector, so this
+        // re-preview is itself a point where a selector could go stale unnoticed; `revalidateApprovedMatchSelectors`
+        // above already replayed the filtered set (subset-covered only) against the live project and
+        // rejected before persisting anything if any selector no longer resolves the same targets. What
+        // survives that check is carried forward so a later `resolveConfirmationAdmission`
+        // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
+        // guards a first-proposed one.
+        matchSelectorPredicates: carriedSelection.matchSelectorPredicates,
+        // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
+        // carried only for the whole proposal, never guessed for a part of it.
+        adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
+        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
+        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
+        // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
+        batchPosition: confirmation.approvalSnapshot.batchPosition,
+        // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
+        groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
+        protectionFacts: confirmation.approvalSnapshot.protectionFacts,
+        executionMode: confirmation.executionMode,
+        group: {
+            groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,
+            groupLabel: confirmation.groupLabel ?? confirmation.prompt,
+        },
+        projectRevision: refreshed.currentRevision,
+        parsedCommandBatch: parsedRefreshed,
+        content: REPROPOSED_CONTENT,
+        supersedes: confirmation.id,
+    });
+}
+
+/**
+ * Replace a stale or partially accepted proposal with a fresh one bound to the current
+ * revision. The run stays alive: the superseded proposal is invalidated and its prepared
+ * resources discarded, but nothing cancels the run the musician is still steering.
+ */
+export async function reproposePendingChatActions(
+    input: ReproposePendingChatActionsInput
+): Promise<ReproposePendingChatActionsResult> {
+    const prepared = prepareReproposal(input);
+    if (prepared.status !== 'prepared') {
+        return prepared;
+    }
+    const { confirmation, parsedOriginal, includedOriginalCommandIds, selectsSubset, parsedRefreshed, refreshed } =
+        prepared;
+    let approval = prepared.approval;
+
     let goalState = metricGoalStateCodec(approval.metricGoalState);
     if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
         if (selectsSubset) {
@@ -413,55 +497,7 @@ export async function reproposePendingChatActions(
             });
         }
     }
-    const assistantMessageId = `msg-${crypto.randomUUID()}`;
-    appendChatMessage({
-        id: assistantMessageId,
-        role: 'assistant',
-        content: REPROPOSED_CONTENT,
-        timestamp: Date.now(),
-        isCommandAction: true,
-    });
-    const reproposedConfirmationId = persistPromptActionConfirmation({
-        runId: confirmation.runId,
-        prompt: confirmation.prompt,
-        assistantMessageId,
-        actions,
-        actionLabels,
-        commandEnvelopes: refreshed.commandEnvelopes,
-        commandBatch: refreshed.commandBatch,
-        agentApproval: approval,
-        metricGoalState: approval.metricGoalState ?? undefined,
-        affectedIds: [...carriedSelection.affectedIds],
-        protectedUnchanged: confirmation.protectedUnchanged,
-        // Rebinding here (`rebindToCurrentProject`) reuses the original resolved target ids embedded
-        // in the working batch's commands rather than re-resolving any `match` selector, so this
-        // re-preview is itself a point where a selector could go stale unnoticed; `revalidateApprovedMatchSelectors`
-        // above already replayed the filtered set (subset-covered only) against the live project and
-        // rejected before persisting anything if any selector no longer resolves the same targets. What
-        // survives that check is carried forward so a later `resolveConfirmationAdmission`
-        // changed-revision re-resolution keeps guarding a reproposed confirmation the same way it
-        // guards a first-proposed one.
-        matchSelectorPredicates: carriedSelection.matchSelectorPredicates,
-        // A subset no longer says which recipe built what it keeps, so it claims none: provenance is
-        // carried only for the whole proposal, never guessed for a part of it.
-        adoptedRecipes: selectsSubset ? undefined : confirmation.approvalSnapshot.adoptedRecipes,
-        // Subsets drop evidence unconditionally; persistence binds whole batches to their digest and revision.
-        measuredPreview: selectsSubset ? undefined : confirmation.approvalSnapshot.measuredPreview,
-        // A re-preview replaces one batch of a schedule with the same batch, so it keeps its place.
-        batchPosition: confirmation.approvalSnapshot.batchPosition,
-        // The same batch keeps the grounding a refinement inherits; a subset no longer is that batch.
-        groundingBasis: selectsSubset ? undefined : confirmation.approvalSnapshot.groundingBasis,
-        protectionFacts: confirmation.approvalSnapshot.protectionFacts,
-        executionMode: confirmation.executionMode,
-        group: {
-            groupId: confirmation.groupId ?? parsedRefreshed.envelope.batchId,
-            groupLabel: confirmation.groupLabel ?? confirmation.prompt,
-        },
-        projectRevision: refreshed.currentRevision,
-        parsedCommandBatch: parsedRefreshed,
-        content: REPROPOSED_CONTENT,
-        supersedes: confirmation.id,
-    });
+    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval);
     if (!reproposedConfirmationId) {
         return { status: 'rejected', reason: 'Prepared action resources exceed the live confirmation limit.' };
     }

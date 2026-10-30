@@ -21,6 +21,56 @@ type CompileAgentActionExecutionInput = Omit<
     trustCeiling?: AgentTrustCeiling;
 };
 
+function compileAutoCommitAgentBatch(
+    proposed: ReturnType<typeof compilePlannedActionCommandBatch>,
+    agentApproval: ReturnType<typeof compileAgentRiskApproval>,
+    mode: AgentExecutionMode,
+    trustCeiling: AgentTrustCeiling
+) {
+    const parsed = parseVersionedCommandBatchEnvelope(
+        proposed.commandBatch.serialized,
+        proposed.commandBatch.authority
+    );
+    if (parsed.status === 'invalid') {
+        throw new Error(parsed.reason);
+    }
+    const envelope = parsed.envelope;
+    return compileVersionedCommandBatchEnvelope({
+        autoCommit: true,
+        autoCommitApproval: () => {
+            const approvalValidation = validateAgentRiskApproval({
+                approval: agentApproval,
+                commandBatch: proposed.commandBatch,
+                currentRevision: captureProjectRevision(),
+            });
+            if (approvalValidation.status === 'invalid') {
+                return approvalValidation;
+            }
+            const currentAuthorityFailure = getAgentExecutionModeFailure({
+                mode,
+                operation: 'commit',
+                requiredTrustMode: agentApproval.policy.requiredTrustMode,
+                trustCeiling,
+            });
+            return currentAuthorityFailure
+                ? { status: 'invalid', reason: currentAuthorityFailure }
+                : { status: 'valid' };
+        },
+        baseRevision: envelope.baseRevision,
+        batchId: envelope.batchId,
+        batchLocalBindings: envelope.batchLocalBindings,
+        commands: proposed.commandEnvelopes,
+        dynamicEffects: envelope.dynamicEffects,
+        idempotencyKey: envelope.idempotencyKey,
+        intent: envelope.intent,
+        mode: envelope.mode,
+        projectId: envelope.projectId,
+        protectedRanges: envelope.scope.protectedRanges,
+        protectedTargetIds: envelope.scope.protectedTargetIds,
+        runId: envelope.runId,
+    });
+}
+
 export function compileAgentActionExecution(input: CompileAgentActionExecutionInput) {
     const {
         mode = 'apply',
@@ -81,48 +131,7 @@ export function compileAgentActionExecution(input: CompileAgentActionExecutionIn
         };
     }
 
-    const parsed = parseVersionedCommandBatchEnvelope(
-        proposed.commandBatch.serialized,
-        proposed.commandBatch.authority
-    );
-    if (parsed.status === 'invalid') {
-        throw new Error(parsed.reason);
-    }
-    const envelope = parsed.envelope;
-    const commandBatch = compileVersionedCommandBatchEnvelope({
-        autoCommit: true,
-        autoCommitApproval: () => {
-            const approvalValidation = validateAgentRiskApproval({
-                approval: agentApproval,
-                commandBatch: proposed.commandBatch,
-                currentRevision: captureProjectRevision(),
-            });
-            if (approvalValidation.status === 'invalid') {
-                return approvalValidation;
-            }
-            const currentAuthorityFailure = getAgentExecutionModeFailure({
-                mode,
-                operation: 'commit',
-                requiredTrustMode: agentApproval.policy.requiredTrustMode,
-                trustCeiling,
-            });
-            return currentAuthorityFailure
-                ? { status: 'invalid', reason: currentAuthorityFailure }
-                : { status: 'valid' };
-        },
-        baseRevision: envelope.baseRevision,
-        batchId: envelope.batchId,
-        batchLocalBindings: envelope.batchLocalBindings,
-        commands: proposed.commandEnvelopes,
-        dynamicEffects: envelope.dynamicEffects,
-        idempotencyKey: envelope.idempotencyKey,
-        intent: envelope.intent,
-        mode: envelope.mode,
-        projectId: envelope.projectId,
-        protectedRanges: envelope.scope.protectedRanges,
-        protectedTargetIds: envelope.scope.protectedTargetIds,
-        runId: envelope.runId,
-    });
+    const commandBatch = compileAutoCommitAgentBatch(proposed, agentApproval, mode, trustCeiling);
     // `agentApproval` keeps its confirmation-flow shape (null without a pending
     // proposal); the compiled allow-path approval is exposed separately through
     // `allowApproval` so only the immediate dispatch sites re-bind it with an

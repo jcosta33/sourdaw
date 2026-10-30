@@ -6,7 +6,7 @@ import {
 } from '../models/WorkflowCapability';
 
 import { APPLICATION_OWNED_TOOL_SCHEMAS } from './applicationOwnedToolLoop';
-import { createMetricIntentSelectionSchema } from './createPlanningInterpretationToolSchema';
+import { createMetricIntentSelectionSchema } from './createMetricIntentSelectionSchema';
 
 /** Exact provider-visible planning schema contract used for decision resume admission. */
 export function getPlanningProviderSchemaContract(): { schemas: readonly ToolSchema[]; identity: string } {

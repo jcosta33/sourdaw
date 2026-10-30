@@ -91,6 +91,30 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
     });
 }
 
+function recordConfirmationMetricGoalPlan(
+    input: PersistPromptActionConfirmationInput,
+    confirmation: NonNullable<ReturnType<typeof proposePendingActionConfirmation>>
+): void {
+    const run = agentRunLifecycle.get(input.runId);
+    if (run?.plan !== null && run?.plan !== undefined && confirmation.approvalSnapshot.metricGoalState !== undefined) {
+        agentRunLifecycle.recordPlan({
+            runId: input.runId,
+            summary: run.plan.summary,
+            commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+            serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
+            revision: input.projectRevision,
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: {
+                ...run.plan,
+                metricGoalState: confirmation.approvalSnapshot.metricGoalState,
+                revision: input.projectRevision,
+            },
+        });
+    }
+}
+
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
@@ -148,28 +172,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             return null;
         }
 
-        const run = agentRunLifecycle.get(input.runId);
-        if (
-            run?.plan !== null &&
-            run?.plan !== undefined &&
-            confirmation.approvalSnapshot.metricGoalState !== undefined
-        ) {
-            agentRunLifecycle.recordPlan({
-                runId: input.runId,
-                summary: run.plan.summary,
-                commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
-                serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
-                revision: input.projectRevision,
-                scope: run.scope,
-                grants: run.grants,
-                budgets: run.budgets,
-                plan: {
-                    ...run.plan,
-                    metricGoalState: confirmation.approvalSnapshot.metricGoalState,
-                    revision: input.projectRevision,
-                },
-            });
-        }
+        recordConfirmationMetricGoalPlan(input, confirmation);
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,

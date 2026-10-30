@@ -7,8 +7,8 @@ import { type MetricGoalEvaluation, type MetricNativeLiteralUse } from '../model
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
-import { readNativeLiteralCommandBinding } from './bindMetricGoalsToBatch';
 import { type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
+import { readNativeLiteralCommandBinding } from './readNativeLiteralCommandBinding';
 import { readRequestMetricNumbers, type RequestMetricNumber } from './readRequestMetricNumbers';
 
 type Envelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];

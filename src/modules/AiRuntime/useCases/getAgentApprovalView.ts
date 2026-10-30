@@ -375,38 +375,7 @@ function projectRisk(agentApproval: ApprovalSnapshot['agentApproval']): AgentApp
     };
 }
 
-/**
- * Everything a musician needs to judge one pending proposal: what it changes, what it destroys
- * and how recoverable that is, what it is allowed to touch, whether it still matches the project,
- * what it cost and disclosed, and who approved it. Plain data only — no serialized batch text, no
- * provider reasoning, and no callable the caller could execute the proposal through.
- */
-export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApprovalView | null {
-    const confirmation = getPendingActionConfirmation(input.confirmationId);
-    if (!confirmation) {
-        return null;
-    }
-    const { adoptedRecipes, agentApproval, batchPosition, commandBatch, measuredPreview, semanticDiff } =
-        confirmation.approvalSnapshot;
-    const freshness = getFreshness(confirmation);
-    const routeView = getProviderRouteView({ runId: confirmation.runId });
-    const recipes = Array.from(adoptedRecipes ?? []);
-    if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
-        recipes.push(measuredPreview.recipeSource);
-    }
-    let metricEvaluation: MetricGoalEvaluation = {
-        status: 'blocked',
-        failure: 'missing',
-        reason: 'This proposal has no command batch to verify.',
-        criteria: [],
-    };
-    if (commandBatch !== undefined) {
-        metricEvaluation = evaluateMetricGoalAdmission({
-            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
-            commandBatch,
-            currentRevision: freshness.currentRevision ?? undefined,
-        });
-    }
+function projectMetricGoals(metricEvaluation: MetricGoalEvaluation): AgentApprovalView['metricGoals'] {
     const metricRecipeCatalog = getMixRecipeCatalog();
     const metricGoals: AgentApprovalView['metricGoals'] = {
         ...metricEvaluation,
@@ -468,12 +437,58 @@ export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApp
             };
         }),
     };
+    return metricGoals;
+}
+
+function canConfirmApproval(
+    confirmation: PendingAppActionConfirmation,
+    freshness: ApprovalFreshness,
+    metricGoals: AgentApprovalView['metricGoals'],
+    agentApproval: ApprovalSnapshot['agentApproval']
+): boolean {
+    return (
+        confirmation.status === 'proposed' &&
+        freshness.status === 'current' &&
+        metricGoals.status !== 'blocked' &&
+        agentApproval !== undefined
+    );
+}
+
+/**
+ * Everything a musician needs to judge one pending proposal: what it changes, what it destroys
+ * and how recoverable that is, what it is allowed to touch, whether it still matches the project,
+ * what it cost and disclosed, and who approved it. Plain data only — no serialized batch text, no
+ * provider reasoning, and no callable the caller could execute the proposal through.
+ */
+export function getAgentApprovalView(input: GetAgentApprovalViewInput): AgentApprovalView | null {
+    const confirmation = getPendingActionConfirmation(input.confirmationId);
+    if (!confirmation) {
+        return null;
+    }
+    const { adoptedRecipes, agentApproval, batchPosition, commandBatch, measuredPreview, semanticDiff } =
+        confirmation.approvalSnapshot;
+    const freshness = getFreshness(confirmation);
+    const routeView = getProviderRouteView({ runId: confirmation.runId });
+    const recipes = Array.from(adoptedRecipes ?? []);
+    if (measuredPreview?.revision === confirmation.projectRevision && measuredPreview.recipeSource !== undefined) {
+        recipes.push(measuredPreview.recipeSource);
+    }
+    let metricEvaluation: MetricGoalEvaluation = {
+        status: 'blocked',
+        failure: 'missing',
+        reason: 'This proposal has no command batch to verify.',
+        criteria: [],
+    };
+    if (commandBatch !== undefined) {
+        metricEvaluation = evaluateMetricGoalAdmission({
+            state: metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState),
+            commandBatch,
+            currentRevision: freshness.currentRevision ?? undefined,
+        });
+    }
+    const metricGoals = projectMetricGoals(metricEvaluation);
     return {
-        canConfirm:
-            confirmation.status === 'proposed' &&
-            freshness.status === 'current' &&
-            metricGoals.status !== 'blocked' &&
-            agentApproval !== undefined,
+        canConfirm: canConfirmApproval(confirmation, freshness, metricGoals, agentApproval),
         metricGoals,
         confirmationId: confirmation.id,
         runId: confirmation.runId,
