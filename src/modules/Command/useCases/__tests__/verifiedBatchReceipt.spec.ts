@@ -933,7 +933,8 @@ describe('verified batch receipt', () => {
     });
 
     it('reports observer warnings without claiming a partial project commit', async () => {
-        mocks.recordActionHistoryMetadata.mockImplementationOnce(() => {
+        // Macro recording observes the batch only after its commit published.
+        mocks.recordAction.mockImplementationOnce(() => {
             throw new Error('history observer unavailable');
         });
         const batch = compileBatch();
@@ -945,12 +946,53 @@ describe('verified batch receipt', () => {
         });
 
         expect(result.status).toBe('committed-with-warning');
+        expect(mutationCount).toBe(1);
+        expect(projectDocument).toMatchObject({ trackGain: { value: 0.8 }, trackPan: { value: -0.2 } });
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'committed-with-warning',
             atomicity: 'atomic',
             warnings: ['history observer unavailable'],
             compensation: { available: false, commandIds: [] },
             modelSummary: 'Committed 2 commands atomically; reporting completed with warnings.',
+        });
+    });
+
+    it('reports a history staging failure as a failed batch with nothing committed', async () => {
+        const history = createAutomergeStorage<{ entries: ActionHistoryMetadata[] }>('root', 'actionHistory');
+        history.hydrate?.();
+        // History is staged inside the batch's own transaction: the first entry
+        // stages, the second refuses, and the whole transaction must abort.
+        mocks.recordActionHistoryMetadata
+            .mockImplementationOnce((entry) => {
+                history.set({ entries: [...(history.get()?.entries ?? []), entry] });
+                return [];
+            })
+            .mockImplementationOnce(() => {
+                throw new Error('history staging refused');
+            });
+        const batch = compileBatch();
+
+        const result = await executeVersionedCommandBatchEnvelope({
+            authority: batch.authority,
+            confirmed: true,
+            serialized: batch.serialized,
+        });
+        flushAutomergeStorageWrites();
+
+        expect(result.status).toBe('failed');
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(2);
+        expect(mutationCount).toBe(0);
+        expect(projectDocument).toEqual({ trackGain: { value: 1 }, trackPan: { value: 0 } });
+        expect(history.get()?.entries ?? []).toEqual([]);
+        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.recordAction).not.toHaveBeenCalled();
+        expect(receiptFrom(result)).toMatchObject({
+            outcome: 'failed',
+            commandOutcomes: [{ outcome: 'not-applied' }, { outcome: 'not-applied' }],
+            affectedIds: [],
+            errors: ['history staging refused'],
+            resulting: { normalizedRevision: revision(0) },
+            semanticDiff: null,
         });
     });
 
