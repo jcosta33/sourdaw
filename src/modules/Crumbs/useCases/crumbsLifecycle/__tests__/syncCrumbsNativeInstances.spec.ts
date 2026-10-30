@@ -245,14 +245,13 @@ describe('syncCrumbsNativeInstances', () => {
 
         projectWithCrumbs();
         emptyProject();
-        await settle();
+        await vi.waitFor(() => expect(createMock).toHaveBeenCalledExactlyOnceWith(DEVICE));
 
         expect(destroyMock).not.toHaveBeenCalled();
 
         finishCreate({ attached: true });
-        await settle();
+        await vi.waitFor(() => expect(destroyMock).toHaveBeenCalledExactlyOnceWith(DEVICE));
 
-        expect(destroyMock).toHaveBeenCalledExactlyOnceWith(DEVICE);
         expect(crumbsEngineAttachmentStore.value).toEqual(new Set());
     });
 
