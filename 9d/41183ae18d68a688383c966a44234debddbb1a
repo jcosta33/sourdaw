@@ -1,0 +1,18 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 417-422,423-426,427,428-432,433
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,411-413,415,430-435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d41183ae18d68a688383c966a44234debddbb1a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
