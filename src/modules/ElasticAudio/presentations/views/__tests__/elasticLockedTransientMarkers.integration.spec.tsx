@@ -11,14 +11,13 @@ import {
     merge,
     toJS,
 } from '@automerge/automerge';
-import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
-import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { notifyUser } from '#/utils/Notification/notifyUser';
 import { createEventBus } from '#/infra/events/createEventBus';
+import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
+import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
@@ -44,9 +43,9 @@ import {
     removeCrdtDoc,
     replaceCrdtDocInLineage,
 } from '#/modules/CrdtDocument/useCases';
-import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import {
     type ConfirmPayload,
@@ -54,18 +53,19 @@ import {
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 
-import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { detectTransients } from '../../../models/TransientDetection';
 import {
     type TransientOnsetWorkerRequest,
     type TransientOnsetWorkerResult,
 } from '../../../models/TransientOnsetWorker';
+import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
+import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
 import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
-import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { setElasticRootIdentityProvider } from '../../../useCases/elasticAudio/setElasticRootIdentityProvider';
-import { addManualMarker } from '../../../useCases/elasticAudio/addManualMarker';
+import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
 
@@ -177,9 +177,12 @@ function holdAnimationFrames() {
             });
             while (!settled) {
                 const callback = callbacks.shift();
-                const next = callback
-                    ? Promise.resolve(callback)
-                    : new Promise<FrameRequestCallback>((resolve) => waiters.push(resolve));
+                let next: Promise<FrameRequestCallback>;
+                if (callback) {
+                    next = Promise.resolve(callback);
+                } else {
+                    next = new Promise<FrameRequestCallback>((resolve) => waiters.push(resolve));
+                }
                 const result = await Promise.race([next, finished]);
                 if (result) {
                     result(performance.now());
@@ -807,7 +810,8 @@ describe('locked transient markers through the real Elastic editor', () => {
             const additions = getChangesMetaSince(actual, previousHeads);
             expect(additions).toHaveLength(1);
             expect(additions[0]?.actor).toBe(actor);
-            expect([...(additions[0]?.deps ?? [])].sort()).toEqual([...previousHeads, ...ownHeads].sort());
+            const dependencies = additions[0]?.deps ?? [];
+            expect([...dependencies].sort()).toEqual([...previousHeads, ...ownHeads].sort());
             const after = structuredClone(rawWarpState());
             expect(after.markers).toHaveLength(4);
             const created = after.markers.filter((marker) => !retainedIds.includes(marker.id));
@@ -950,8 +954,11 @@ describe('locked transient markers through the real Elastic editor', () => {
             (await frames.next())(performance.now());
             const request = await entered.promise;
             expect(materialization).toHaveBeenCalledTimes(1);
-            if (kind === 'abort') controller.abort();
-            else createCrdtDoc('root');
+            if (kind === 'abort') {
+                controller.abort();
+            } else {
+                createCrdtDoc('root');
+            }
             const current = JSON.stringify(getCrdtDoc('root'));
             result.resolve(await complete(request.request, request.signal));
             await rejected;
