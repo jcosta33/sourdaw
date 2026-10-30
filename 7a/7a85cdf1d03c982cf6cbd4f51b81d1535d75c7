@@ -1,0 +1,14 @@
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  h_beb54bf43b47b7 3,190-193,211-214,386-391,455-460,516,518-523,526-532,534-541,543-546,552
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7a7a85cdf1d03c982cf6cbd4f51b81d1535d75c7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
