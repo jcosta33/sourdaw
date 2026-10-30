@@ -211,7 +211,6 @@ const hostedQuantumMeasurement = parse(
 );
 const hostedWasm = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/wasm-artifacts.yml`, 'utf8'));
 const prChecks = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr-checks.yml`, 'utf8'));
-const linuxCapture = parse(readFileSync(`${process.env.REPO_ROOT}/.github/workflows/pr5860-linux-capture.yml`, 'utf8'));
 assertHostedQuantumMeasurementWorkflow(hostedQuantumMeasurement);
 assertHostedWasmWorkflow(hostedWasm);
 const gitleaksHelper = readFileSync(`${process.env.REPO_ROOT}/scripts/run-gitleaks-history-scan.sh`, 'utf8');
@@ -480,7 +479,6 @@ try {
         'nightly.yml': nightly,
         'quantum-measurements.yml': hostedQuantumMeasurement,
         'wasm-artifacts.yml': hostedWasm,
-        'pr5860-linux-capture.yml': linuxCapture,
     });
 } catch (error) {
     approvalGateError = error;
@@ -527,7 +525,6 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
-    ['pr5860-linux-capture.yml', linuxCapture],
 ]) {
     for (const violation of gateNameViolations(file, parsed.jobs ?? {})) {
         expect(false, violation);
@@ -1150,7 +1147,6 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
-    ['pr5860-linux-capture.yml', linuxCapture],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         expect(
@@ -1208,7 +1204,6 @@ const workflowsByFile = {
     'nightly.yml': nightly,
     'quantum-measurements.yml': hostedQuantumMeasurement,
     'wasm-artifacts.yml': hostedWasm,
-    'pr5860-linux-capture.yml': linuxCapture,
 };
 // A shrunk shard list still reports green: every shard that ran passed, and
 // the dropped shards never ran at all.
@@ -1644,7 +1639,6 @@ for (const [file, parsed] of [
     ['nightly.yml', nightly],
     ['quantum-measurements.yml', hostedQuantumMeasurement],
     ['wasm-artifacts.yml', hostedWasm],
-    ['pr5860-linux-capture.yml', linuxCapture],
 ]) {
     for (const [id, job] of Object.entries(parsed.jobs ?? {})) {
         for (const step of job?.steps ?? []) {
