@@ -528,33 +528,17 @@ function midiFile(): Buffer {
     return Buffer.concat([header, Buffer.from('MTrk'), length, events]);
 }
 
-test('failed initial App request recovers only the child and preserves saved material and Undo', async ({
+test('failed initial App graph recovers in the same child document and preserves saved material and Undo', async ({
     page,
 }, info) => {
     test.setTimeout(240_000);
     await page.setViewportSize(VIEWPORT);
-    const budgetWrites: { frame: Frame; value: string; timeOrigin: number }[] = [];
-    await page.exposeBinding('observeStartupBudgetWrite', ({ frame }, value: string, timeOrigin: number) => {
-        budgetWrites.push({ frame, value, timeOrigin });
-    });
     await page.addInitScript((dismissed) => {
         if (window.parent === window) {
             localStorage.setItem('wd:onboarding-completed', '1');
             localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
             localStorage.setItem('wd:first-load-hint-shown', '1');
-            return;
         }
-        // Observe the actual native budget write without replacing its storage semantics.
-        const nativeSetItem = Storage.prototype.setItem;
-        Storage.prototype.setItem = function (key: string, value: string): void {
-            nativeSetItem.call(this, key, value);
-            if (this === sessionStorage && key === 'sourdaw:app-import-retry-v1') {
-                const observe: unknown = Reflect.get(window, 'observeStartupBudgetWrite');
-                if (typeof observe === 'function') {
-                    void observe(value, performance.timeOrigin);
-                }
-            }
-        };
     }, superjsonStringify(true));
     await page.goto('/?startup-recovery=1#retained-position');
     const frame = await findApplicationFrame(page);
@@ -714,86 +698,152 @@ test('failed initial App request recovers only the child and preserves saved mat
         href: location.href,
         name: window.name,
     }));
-    expect(await frame.evaluate(() => sessionStorage.getItem('sourdaw:app-import-retry-v1'))).toBeNull();
-    const failures: string[] = [];
+    const failures: { url: string; error: string | undefined }[] = [];
+    const pageErrors: string[] = [];
     const childNavigations: string[] = [];
+    let appRequests = 0;
+    let routerRequests = 0;
+    let capabilityEmissions = 0;
+    let markCapabilitiesReady = (): void => undefined;
+    const capabilitiesReady = new Promise<void>((resolve) => (markCapabilitiesReady = resolve));
+    let releaseApp = (): void => undefined;
+    const appAllowed = new Promise<void>((resolve) => (releaseApp = resolve));
+    page.on('console', (message) => {
+        if (message.text().includes('[capabilities] {')) {
+            capabilityEmissions += 1;
+            markCapabilitiesReady();
+        }
+    });
+    page.on('pageerror', (error) => pageErrors.push(error.message));
     page.on('framenavigated', (navigated) => {
         if (navigated === frame) childNavigations.push(navigated.url());
     });
     page.on('requestfailed', (request) => {
-        if (request.frame() === frame && new URL(request.url()).pathname === '/src/app/App.tsx')
-            failures.push(request.url());
-    });
-    let failedDocument: typeof beforeNavigation | undefined;
-    await page.route('**/src/app/App.tsx*', async (route) => {
-        if (route.request().frame() !== frame || failedDocument) {
-            await route.continue();
-            return;
+        if (request.frame() === frame && new URL(request.url()).pathname === '/src/app/router.ts') {
+            failures.push({ url: request.url(), error: request.failure()?.errorText });
         }
-        failedDocument = await frame.evaluate(() => {
+    });
+    await page.route(
+        (url) => url.pathname === '/src/app/App.tsx',
+        async (route) => {
+            if (route.request().frame() !== frame) {
+                await route.continue();
+                return;
+            }
+            appRequests += 1;
+            await appAllowed;
+            await route.continue();
+        }
+    );
+    await page.route(
+        (url) => url.pathname === '/src/app/router.ts',
+        async (route) => {
+            if (route.request().frame() !== frame) {
+                await route.continue();
+                return;
+            }
+            routerRequests += 1;
+            if (routerRequests === 1) {
+                await route.abort('aborted');
+                return;
+            }
+            await route.continue();
+        }
+    );
+    try {
+        await reloadChild();
+        await capabilitiesReady;
+        await expect.poll(() => appRequests).toBe(1);
+        await expect(frame.getByTestId('app-shell')).toBeVisible();
+        expect(capabilityEmissions).toBe(1);
+        expect(routerRequests).toBe(0);
+        const identity = await frame.evaluateHandle(async () => {
+            const project = '/src/modules/Project/useCases/index.ts';
+            const {
+                whenProjectIdentityTransitionDependenciesConfigured,
+            }: typeof import('../../src/modules/Project/useCases') = await import(project);
+            await whenProjectIdentityTransitionDependenciesConfigured();
+            const dependencies = '/src/app/registerDependencies.ts';
+            const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(dependencies);
+            return { eventBus, document, timeOrigin: performance.timeOrigin, href: location.href, name: window.name };
+        });
+        const failedDocument = await frame.evaluate(() => {
             if (
                 !document.documentElement.hasAttribute('data-sourdaw-entry-started') ||
                 !document.querySelector('[data-testid="app-shell"]')
             ) {
                 throw new Error('Fault did not reach the initial App boundary after first paint');
             }
-            if (
-                document.documentElement.hasAttribute('data-sourdaw-bootstrap-started') ||
-                document.documentElement.hasAttribute('data-sourdaw-app-render-issued')
-            ) {
-                throw new Error('Fault was injected after runtime startup');
-            }
             return { timeOrigin: performance.timeOrigin, href: location.href, name: window.name };
         });
-        await route.abort('failed');
-    });
-    await reloadChild();
-    await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 45_000 });
-    const recovered = await expectStartupExact(frame, saved);
-    expect(requireStartupMirror(recovered, 'past', ['moveClip'])).toEqual(history);
-    const afterNavigation = await frame.evaluate(() => ({
-        timeOrigin: performance.timeOrigin,
-        href: location.href,
-        name: window.name,
-    }));
-    expect(failedDocument).toBeDefined();
-    expect(failedDocument!.timeOrigin).toBeGreaterThan(beforeNavigation.timeOrigin);
-    expect(afterNavigation.timeOrigin).toBeGreaterThan(failedDocument!.timeOrigin);
-    expect(afterNavigation.href).toBe(beforeNavigation.href);
-    expect(afterNavigation.name).toBe(beforeNavigation.name);
-    expect(await page.evaluate(() => performance.timeOrigin)).toBe(hostOrigin);
-    await expect(page.locator('iframe[title="Sourdaw"]')).toHaveCount(1);
-    expect(childNavigations).toEqual([beforeNavigation.href, beforeNavigation.href]);
-    expect(failures).toHaveLength(1);
-    await expect.poll(() => budgetWrites.length).toBe(1);
-    expect(budgetWrites[0]).toEqual({ frame, value: 'used', timeOrigin: failedDocument!.timeOrigin });
-    expect(await frame.evaluate(() => sessionStorage.getItem('sourdaw:app-import-retry-v1'))).toBe('used');
-    await expect(frame.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
-    await frame.getByRole('button', { name: 'Undo', exact: true }).click();
-    const undone = await expectStartupExact(frame, beforeEdit);
-    expect(requireStartupMirror(undone, 'future', ['moveClip'])).toEqual(history);
-    await expect(frame.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
-    await frame.getByRole('button', { name: 'Redo', exact: true }).click();
-    const redone = await expectStartupExact(frame, saved);
-    expect(requireStartupMirror(redone, 'past', ['moveClip'])).toEqual(history);
-    await info.attach('startup-recovery-preservation', {
-        body: JSON.stringify(
-            {
-                beforeEdit,
-                saved,
-                recovered,
-                undone,
-                redone,
-                beforeNavigation,
-                failedDocument,
-                afterNavigation,
-                failures,
-                childNavigations,
-                budgetWrites: budgetWrites.map(({ value, timeOrigin }) => ({ value, timeOrigin })),
-            },
-            null,
-            2
-        ),
-        contentType: 'application/json',
-    });
+        releaseApp();
+        await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 45_000 });
+        const recovered = await expectStartupExact(frame, saved);
+        expect(requireStartupMirror(recovered, 'past', ['moveClip'])).toEqual(history);
+        const afterNavigation = await frame.evaluate(() => ({
+            timeOrigin: performance.timeOrigin,
+            href: location.href,
+            name: window.name,
+        }));
+        const preservation = await identity.evaluate(async (before) => {
+            const dependencies = '/src/app/registerDependencies.ts';
+            const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(dependencies);
+            return {
+                document: before.document === document,
+                eventBus: before.eventBus === eventBus,
+                timeOrigin: before.timeOrigin === performance.timeOrigin,
+                href: before.href === location.href,
+                name: before.name === window.name,
+            };
+        });
+        expect(failedDocument.timeOrigin).toBeGreaterThan(beforeNavigation.timeOrigin);
+        expect(afterNavigation.timeOrigin).toBe(failedDocument.timeOrigin);
+        expect(afterNavigation.href).toBe(beforeNavigation.href);
+        expect(afterNavigation.name).toBe(beforeNavigation.name);
+        expect(preservation).toEqual({ document: true, eventBus: true, timeOrigin: true, href: true, name: true });
+        expect(await page.evaluate(() => performance.timeOrigin)).toBe(hostOrigin);
+        await expect(page.locator('iframe[title="Sourdaw"]')).toHaveCount(1);
+        expect(childNavigations).toEqual([beforeNavigation.href]);
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.error).toBe('net::ERR_ABORTED');
+        expect(appRequests).toBe(1);
+        expect(routerRequests).toBe(2);
+        expect(capabilityEmissions).toBe(1);
+        expect(pageErrors).toEqual([]);
+        await expect(frame.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+        await frame.getByRole('button', { name: 'Undo', exact: true }).click();
+        const undone = await expectStartupExact(frame, beforeEdit);
+        expect(requireStartupMirror(undone, 'future', ['moveClip'])).toEqual(history);
+        await expect(frame.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+        await frame.getByRole('button', { name: 'Redo', exact: true }).click();
+        const redone = await expectStartupExact(frame, saved);
+        expect(requireStartupMirror(redone, 'past', ['moveClip'])).toEqual(history);
+        await info.attach('startup-recovery-preservation', {
+            body: JSON.stringify(
+                {
+                    beforeEdit,
+                    saved,
+                    recovered,
+                    undone,
+                    redone,
+                    beforeNavigation,
+                    failedDocument,
+                    afterNavigation,
+                    failures,
+                    childNavigations,
+                    preservation,
+                    appRequests,
+                    routerRequests,
+                    capabilityEmissions,
+                    pageErrors,
+                },
+                null,
+                2
+            ),
+            contentType: 'application/json',
+        });
+        expect(pageErrors).toEqual([]);
+    } finally {
+        releaseApp();
+    }
 });

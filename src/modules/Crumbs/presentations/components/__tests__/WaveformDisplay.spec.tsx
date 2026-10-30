@@ -1,7 +1,47 @@
 import { render } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 import { WaveformDisplay } from '../WaveformDisplay';
+
+describe('WaveformDisplay — empty bitmap', () => {
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.unstubAllGlobals();
+    });
+
+    it.each(['transparent', '#112233'])(
+        'resets the existing canvas and paints %s before returning on empty peaks',
+        (backgroundColor) => {
+            vi.stubGlobal('ResizeObserver', undefined);
+            vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 240, 64));
+            const resetWidth = vi.spyOn(HTMLCanvasElement.prototype, 'width', 'set');
+            const props = {
+                instanceId: 'empty-owner',
+                totalFrames: 100,
+                backgroundColor,
+                onPositionSubscribe: () => () => {},
+            };
+            const { container, rerender } = render(<WaveformDisplay {...props} peaks={[-0.8, 0.7]} />);
+            const canvas = container.querySelector('canvas');
+            if (!canvas) {
+                throw new Error('Expected the mounted waveform canvas');
+            }
+            const context = canvas.getContext('2d');
+            if (!context) {
+                throw new Error('Expected the waveform drawing context');
+            }
+            const paint = vi.spyOn(context, 'fillRect');
+            resetWidth.mockClear();
+
+            rerender(<WaveformDisplay {...props} peaks={[]} />);
+
+            expect(container.querySelector('canvas')).toBe(canvas);
+            expect(resetWidth).toHaveBeenCalledExactlyOnceWith(240 * window.devicePixelRatio);
+            expect(context.fillStyle).toBe(backgroundColor);
+            expect(paint).toHaveBeenCalledExactlyOnceWith(0, 0, 240, 64);
+        }
+    );
+});
 
 describe('WaveformDisplay', () => {
     it('should render', () => {

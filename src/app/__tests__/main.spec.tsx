@@ -13,7 +13,9 @@ const mocks = vi.hoisted(() => ({
     mountBrowserDisplayScaleHost: vi.fn(),
     reloadApplication: vi.fn(),
     loadApp: vi.fn<() => Promise<void>>(() => Promise.resolve()),
+    importRejections: [] as unknown[],
     render: vi.fn<(element: unknown) => void>(),
+    reportError: vi.fn(),
     resetBrowserDisplayScaleForChildStartup: vi.fn(),
     resetDisplayScaleForStartup: vi.fn(),
     resolveAppComposition: vi.fn(),
@@ -112,11 +114,6 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
         expect(order).toBeLessThan(renderOrder);
     }
 }
-
-vi.mock('../bootstrap', () => {
-    mocks.bootstrap();
-    return {};
-});
 
 vi.mock('#/styles/main.css', () => ({}));
 
@@ -247,7 +244,7 @@ vi.mock('#/utils/Notification/notificationEventBus', () => ({
 }));
 
 vi.mock('react-dom/client', () => ({
-    createRoot: () => ({ render: mocks.render }),
+    createRoot: vi.fn(() => ({ render: mocks.render })),
 }));
 
 function expectFirstPaintRendered(): void {
@@ -277,7 +274,9 @@ describe('app main composition', () => {
         }
         vi.clearAllMocks();
         vi.resetModules();
+        vi.stubGlobal('reportError', mocks.reportError);
         mocks.loadApp.mockReset();
+        mocks.importRejections = [];
         mocks.loadApp.mockImplementation(() => Promise.resolve());
         appImportGateReleasedByCleanup = false;
         appRenderObserved = false;
@@ -286,10 +285,27 @@ describe('app main composition', () => {
         window.name = '';
         document.body.innerHTML = '<div id="root"></div>';
         mocks.resolveAppComposition.mockReturnValue('browser-host');
-        vi.doMock('../App', async () => {
-            await mocks.loadApp();
-            return { App: mocks.App };
+        vi.doMock('../bootstrap', () => {
+            mocks.bootstrap();
+            return {};
         });
+        vi.doMock('../App', () => ({
+            App: mocks.App,
+            then(onFulfilled: (value: { App: typeof mocks.App }) => unknown, onRejected: (error: unknown) => unknown) {
+                return mocks.loadApp().then(
+                    () => onFulfilled({ App: mocks.App }),
+                    (reason: unknown) => {
+                        try {
+                            return onRejected(reason);
+                        } catch (importRejection) {
+                            // Retain the actual import rejection after Vitest adds its mock-factory wrapper.
+                            mocks.importRejections.push(importRejection);
+                            throw importRejection;
+                        }
+                    }
+                );
+            },
+        }));
     });
 
     afterEach(async () => {
@@ -298,6 +314,7 @@ describe('app main composition', () => {
         await settlePendingStartup();
         expect(mocks.isExactMidiClipDataActionSnapshot).not.toHaveBeenCalled();
         vi.unstubAllEnvs();
+        vi.unstubAllGlobals();
     });
 
     it.each([
@@ -361,7 +378,7 @@ describe('app main composition', () => {
         await rendered;
         await vi.waitFor(() => expect(mocks.loadApp).toHaveBeenCalledOnce());
 
-        expect(mocks.bootstrap).not.toHaveBeenCalled();
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
         expect(appRenderObserved).toBe(false);
         expect(mocks.render).toHaveBeenCalled();
         expectFirstPaintRendered();
@@ -441,6 +458,83 @@ describe('app main composition', () => {
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expectFirstPaintBusesRegisteredBeforeRender();
     });
+
+    it('reattempts only App import while retaining the root and startup registrations', async () => {
+        mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.loadApp.mockRejectedValueOnce(new TypeError('controlled module fetch failure'));
+        observeFinalAppRender();
+
+        await import('../main');
+        await settlePendingStartup();
+
+        expect(mocks.loadApp).toHaveBeenCalledTimes(2);
+        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        const { createRoot } = await import('react-dom/client');
+        expect(createRoot).toHaveBeenCalledOnce();
+        expectFirstPaintBusesRegisteredBeforeRender();
+        expect(mocks.reloadApplication).not.toHaveBeenCalled();
+        expect(appRenderObserved).toBe(true);
+        expect(mocks.reportError).not.toHaveBeenCalled();
+    });
+
+    it.each([false, true])(
+        'renders terminal failure without navigation after the bounded App attempts (desktop=%s)',
+        async (desktop) => {
+            if (desktop) Reflect.set(window, 'sourdaw', {});
+            mocks.resolveAppComposition.mockReturnValue('application');
+            const originalDocument = document;
+            const originalLocation = window.location.href;
+            const firstReason = new TypeError('controlled first import failure');
+            const secondReason = new Error('controlled persistent import failure');
+            mocks.loadApp.mockRejectedValueOnce(firstReason).mockRejectedValueOnce(secondReason);
+
+            await import('../main');
+            await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+
+            expect(mocks.loadApp).toHaveBeenCalledTimes(2);
+            expect(mocks.bootstrap).toHaveBeenCalledOnce();
+            const { createRoot } = await import('react-dom/client');
+            expect(createRoot).toHaveBeenCalledOnce();
+            expectFirstPaintBusesRegisteredBeforeRender();
+            expect(mocks.reloadApplication).not.toHaveBeenCalled();
+            expect(document).toBe(originalDocument);
+            expect(window.location.href).toBe(originalLocation);
+            if (desktop) {
+                expect(mocks.resetDisplayScaleForStartup).toHaveBeenCalledOnce();
+                expect(mocks.clearInheritedRetrospectiveCaptureArm).toHaveBeenCalledOnce();
+                expect(mocks.clearInheritedRetrospectiveCaptureArm.mock.invocationCallOrder[0]).toBeLessThan(
+                    mocks.render.mock.invocationCallOrder[0]!
+                );
+                expect(mocks.resetDisplayScaleForStartup.mock.invocationCallOrder[0]).toBeLessThan(
+                    mocks.render.mock.invocationCallOrder[0]!
+                );
+            }
+            expect(mocks.reportError).toHaveBeenCalledOnce();
+            const reported: unknown = mocks.reportError.mock.calls[0]?.[0];
+            expect(reported).toBeInstanceOf(AggregateError);
+            if (!(reported instanceof AggregateError)) {
+                throw new Error('Terminal import causes were not reported');
+            }
+            expect(mocks.importRejections).toHaveLength(2);
+            const [firstImportRejection, secondImportRejection] = mocks.importRejections;
+            if (!(firstImportRejection instanceof Error) || !(secondImportRejection instanceof Error)) {
+                throw new Error('The actual import rejection objects are absent');
+            }
+            expect(firstImportRejection).not.toBe(secondImportRejection);
+            expect(firstImportRejection.cause).toBe(firstReason);
+            expect(secondImportRejection.cause).toBe(secondReason);
+            expect(reported.errors).toHaveLength(2);
+            expect(reported.errors[0]).toBe(firstImportRejection);
+            expect(reported.errors[1]).toBe(secondImportRejection);
+            const terminal = mocks.render.mock.calls[1]?.[0];
+            if (!isValidElement<{ onReload: () => void }>(terminal)) {
+                throw new Error('Terminal startup view was not rendered');
+            }
+            expect(typeof terminal.props.onReload).toBe('function');
+            terminal.props.onReload();
+            expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
+        }
+    );
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
         mocks.resolveAppComposition.mockReturnValue('desktop-startup-error');

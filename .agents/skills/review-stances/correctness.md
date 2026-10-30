@@ -397,6 +397,10 @@ Probe that would have caught it: drive the real use case with fake hardware and 
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced a panel snapshot that did not follow deferred sensitivity detection in the warp store. No associated introducing PR or private review prompt or tier is established. Probe the selected clip's real store projection after detection and an external update: drawing, detail counts, availability and hit-testing must agree on the same current markers without an incidental pointer refresh. Switch clips and preserve locked identity, a control clip and PCM; removing the subscription must fail the real varied-pulse regression. This establishes no Worker or performance acceptance.
 
+### Selected-only Elastic controls must target the displayed clip
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` displayed a selected audio clip when no editor clip was explicitly open, but sensitivity targeted only the explicit open ID. GitHub associates no introducing PR; historical review prompt, stance and tier are unestablished. Drive the real slider in both entry states and require authoritative automatic markers to change while locked/user rows, another clip and PCM remain exact. Preserve explicit-open precedence and preference-only no-target/MIDI behavior; do not open or pin the editor to satisfy the test. Removing only selected-target resolution must fail the selected-only source oracle. This establishes no Worker or performance acceptance.
+
 ### Stored modulation reached an Inspector target the engine refused (PR #831; exposed by #5379)
 
 Merged PR #831 (`b47d1244c2791b80f581d659cf8618d576f0944b`) made `resolveModulationBinding`
@@ -921,3 +925,36 @@ while complete tail renders retain the decay. Probe both tail settings at the `2
 requested versus `2^30` returned frame boundary; reverting the returned-frame branch must
 fail the owning `renderToClip.spec.ts` boundary case. Buffer metadata suffices for this
 arithmetic contract; it does not establish long-render PCM or listening behavior.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Drive every declared band Body key and None/Ceramic/Wood/Metal/Spring index through
+`createBacteriaNode`, its emitted initialization target and the processor using the production
+schema. Require the exact engine parameter and value. Removing only `convolutionIr` from
+that schema must fail the real-factory case. Preserve finite keys, band bounds, immutable
+identity/correlation, scheduling, nonfinite rejection and replay/generation guards; action or
+document spies alone cannot prove carrier admission or audible output.
+
+### 2026-10-30 — a guarded solo no-op blocked older history (#5643)
+
+PR #5631 introduced the expected-state guard on agent `soloTrack` compensation. Its public review
+record called out the target-already-held no-op gap, tracked as #5643; PR #5719 fixed the inverse
+and redo path. A guarded replay can reach a state that is neither its original expectation nor a
+new conflicting write: a later plain-click exclusive solo may already have put the track at the
+inverse target. Treating that state as a conflict makes Undo refuse and strands every older entry.
+The private historical prompt and tier for the final missed case are unavailable; no additional
+stance attribution is established.
+
+Commit a real guarded agent solo, then use a plain-click exclusive solo to make the agent inverse's
+target already hold. Undo must consume that entry without changing the CRDT root, project revision
+or track projection; the next Undo must reach the older solo entry. Redo must likewise consume an
+already-satisfied guarded target without a write. Keep controls where the live solo differs from
+both the target and expectation, the target track is missing, and an unguarded manual inverse
+would overwrite a later user solo. Reverting the target-equal admission and no-write handling in
+`soloTrack.ts` must fail the real Command Undo/Redo regression.

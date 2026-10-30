@@ -1,18 +1,9 @@
-import { ApplicationStartupError } from './ApplicationStartupError';
 import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup } from './browserDisplayScaleHost';
-import {
-    APP_RENDER_ISSUED_ATTRIBUTE,
-    APP_IMPORT_RETRY_ISSUED_ATTRIBUTE,
-    BOOTSTRAP_STARTED_ATTRIBUTE,
-    claimInitialAppImportRetry,
-    clearInitialAppImportRetry,
-} from './initialAppImportRecovery';
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
-// Only a failed entry graph before this boundary is safe to retry automatically.
+// Only a failed entry graph before this boundary is safe to reload automatically.
 document.documentElement.setAttribute('data-sourdaw-entry-started', '');
-document.getElementById('entry-startup')?.remove();
 
 const root = document.getElementById('root')!;
 
@@ -31,6 +22,10 @@ function paintAppShellMarker(container: HTMLElement): void {
     shell.style.width = '100vw';
     shell.style.height = '100vh';
     shell.style.overflow = 'hidden';
+    const startup = container.querySelector('#entry-startup');
+    if (startup !== null) {
+        shell.append(startup);
+    }
     container.replaceChildren(shell);
 }
 
@@ -62,64 +57,51 @@ async function renderApplication(): Promise<void> {
 
     // A remounted iframe has a 5s window for AppShell. Bootstrap's import graph
     // includes WASM and must not occupy that window; AppShell effects await init.
-    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = await Promise.all([
+    void import('./bootstrap').catch((error: unknown) => {
+        void import('./rejectIdentityTransitionOnBootstrapFailure')
+            .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
+                reject(error);
+            })
+            .catch(() => {
+                void import('#/modules/Project/useCases').then(({ failProjectIdentityTransitionDependencies }) => {
+                    failProjectIdentityTransitionDependencies(error);
+                });
+            });
+    });
+    const renderingModules = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
         import('./ApplicationFirstPaint'),
         import('./registerNotificationEventBus'),
-    ]);
+    ]).catch((error: unknown) => {
+        window.dispatchEvent(new Event('sourdaw:initial-render-failed'));
+        reportError(error);
+    });
+    if (renderingModules === undefined) {
+        return;
+    }
+    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = renderingModules;
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    void import('./App').then(
-        ({ App }) => {
-            if (document.documentElement.hasAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE)) {
-                return;
-            }
-            // Document markers survive module re-evaluation and precede every runtime invocation.
-            document.documentElement.setAttribute(BOOTSTRAP_STARTED_ATTRIBUTE, '');
-            void import('./bootstrap').catch((error: unknown) => {
-                void import('./rejectIdentityTransitionOnBootstrapFailure')
-                    .then(({ rejectIdentityTransitionOnBootstrapFailure: reject }) => {
-                        reject(error);
-                    })
-                    .catch(() => {
-                        void import('#/modules/Project/useCases').then(
-                            ({ failProjectIdentityTransitionDependencies }) => {
-                                failProjectIdentityTransitionDependencies(error);
-                            }
-                        );
-                    });
+    // The identical specifier preserves evaluated module identities; retry only
+    // this graph's failed fetch, without replaying any startup work above.
+    void import('./App')
+        .catch(async (firstReason: unknown) => {
+            // A rejected graph can still have failing sibling fetches in flight.
+            // Give their module-map entries time to settle before the sole retry.
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+            return import('./App').catch((secondReason: unknown) => {
+                reportError(
+                    new AggregateError([firstReason, secondReason], 'Sourdaw App import failed after its single retry')
+                );
+                throw secondReason;
             });
-            document.documentElement.setAttribute(APP_RENDER_ISSUED_ATTRIBUTE, '');
-            reactRoot.render(<App />);
-        },
-        () => {
-            if (
-                claimInitialAppImportRetry({
-                    protocol: window.location.protocol,
-                    userAgent: navigator.userAgent,
-                    hasDesktopBridge,
-                    bootstrapStarted: document.documentElement.hasAttribute(BOOTSTRAP_STARTED_ATTRIBUTE),
-                    appRenderIssued: document.documentElement.hasAttribute(APP_RENDER_ISSUED_ATTRIBUTE),
-                    retryIssued: document.documentElement.hasAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE),
-                    storage: () => window.sessionStorage,
-                })
-            ) {
-                document.documentElement.setAttribute(APP_IMPORT_RETRY_ISSUED_ATTRIBUTE, '');
-                reloadApplication(window.location);
-                return;
-            }
-            reactRoot.render(
-                <ApplicationStartupError
-                    onReload={() => {
-                        clearInitialAppImportRetry(() => window.sessionStorage);
-                        reloadApplication(window.location);
-                    }}
-                />
-            );
-        }
-    );
+        })
+        .then(
+            ({ App }) => reactRoot.render(<App />),
+            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+        );
 }
 
 async function renderDesktopStartupError(): Promise<void> {
