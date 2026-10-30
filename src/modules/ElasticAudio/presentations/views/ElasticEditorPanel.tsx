@@ -33,7 +33,7 @@ import { defaultElasticAudioState, elasticAudioStore, type ElasticEditorTool } f
 import { getAlgorithmInfo } from '../../useCases/audioWarping/getAlgorithmInfo';
 import { setDefaultAlgorithm } from '../../useCases/audioWarping/setDefaultAlgorithm';
 import { addManualMarker } from '../../useCases/elasticAudio/addManualMarker';
-import { cancelTransientDetection } from '../../useCases/elasticAudio/detectTransientsForClip';
+import { cancelTransientDetection } from '../../useCases/elasticAudio/cancelTransientDetection';
 import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
 import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';

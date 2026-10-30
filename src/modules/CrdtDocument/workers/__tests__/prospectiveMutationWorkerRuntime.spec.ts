@@ -20,6 +20,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 
+import { parseProspectiveMutationWorkerRequest } from '../../models/ProspectiveMutationWorkerProtocol';
 import { materializeProspectiveMutation } from '../prospectiveMutationWorkerRuntime';
 
 vi.mock('@automerge/automerge/slim', async (importOriginal) => {
@@ -60,6 +61,67 @@ function fixture() {
 }
 
 describe('private canonical materialization Worker runtime', () => {
+    it.each([
+        {},
+        { message: undefined, time: undefined },
+        { message: '', time: 0 },
+        { message: 'Detect', time: -1 },
+        { message: 'Detect', time: 0.5 },
+    ])('retains optional envelope metadata acceptance for %j', (metadata) => {
+        const { initial, mutation } = fixture();
+        const request = { seed: save(clone(initial)), actor, heads: getHeads(initial), mutation, ...metadata };
+        const parsed = parseProspectiveMutationWorkerRequest(request);
+        expect(parsed.message).toBe(metadata.message);
+        expect(parsed.time).toBe(metadata.time);
+        expect(parsed.seed.buffer).toBe(request.seed.buffer);
+    });
+
+    it('accepts inherited envelope fields without inventing an own-property requirement', () => {
+        const { initial, mutation } = fixture();
+        const request = {
+            seed: save(clone(initial)),
+            actor,
+            heads: getHeads(initial),
+            mutation,
+            message: '',
+            time: -0.5,
+        };
+        const parsed = parseProspectiveMutationWorkerRequest(Object.create(request));
+        expect(parsed).toEqual(request);
+    });
+
+    it.each([
+        { message: null },
+        { message: 1 },
+        { time: null },
+        { time: '1' },
+        { time: Number.NaN },
+        { time: Number.POSITIVE_INFINITY },
+        { time: Number.NEGATIVE_INFINITY },
+    ])('retains optional envelope metadata refusal for %j', (metadata) => {
+        const { initial, mutation } = fixture();
+        const request = { seed: save(clone(initial)), actor, heads: getHeads(initial), mutation, ...metadata };
+        expect(() => parseProspectiveMutationWorkerRequest(request)).toThrowError(TypeError);
+        expect(() => parseProspectiveMutationWorkerRequest(request)).toThrowError(
+            /^Invalid prospective mutation Worker envelope$/
+        );
+    });
+
+    it('refuses envelope metadata before an independently invalid canonical mutation', () => {
+        const { initial, mutation } = fixture();
+        const request = {
+            seed: save(clone(initial)),
+            actor,
+            heads: getHeads(initial),
+            message: null,
+            mutation: { ...mutation, value: { callback: () => undefined } },
+        };
+        expect(() => parseProspectiveMutationWorkerRequest(request)).toThrowError(TypeError);
+        expect(() => parseProspectiveMutationWorkerRequest(request)).toThrowError(
+            /^Invalid prospective mutation Worker envelope$/
+        );
+    });
+
     it.each([undefined, '', 'Detect transients'])(
         'matches actual public canonical bytes and metadata for message %s',
         (message) => {

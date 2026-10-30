@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type TransientOnsetWorkerRequest } from '../../../models/TransientOnsetWorker';
 import { detectTransients } from '../detectTransients';
-import { readClipTransientOnsets, readProductTransientOnsets } from '../readClipTransientOnsets';
+import { readClipTransientOnsets } from '../readClipTransientOnsets';
+import { readProductTransientOnsets } from '../readProductTransientOnsets';
 
 type Clip = { id: string; type: 'audio' | 'midi'; audioBufferId?: string };
 const mocks = vi.hoisted(() => ({

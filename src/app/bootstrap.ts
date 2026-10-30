@@ -111,10 +111,6 @@ import {
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
-import {
-    setElasticRootIdentityProvider,
-    setElasticSensitivityRootIdentityCapture,
-} from '#/modules/ElasticAudio/useCases';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
@@ -139,6 +135,10 @@ import {
     syncCrumbsNativeInstances,
 } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
+import {
+    setElasticRootIdentityProvider,
+    setElasticSensitivityRootIdentityCapture,
+} from '#/modules/ElasticAudio/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';

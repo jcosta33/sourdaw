@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
-import { cloneProspectiveCrdtMutation, mutateCrdtDoc } from '../mutateCrdtDoc';
+import { cloneProspectiveCrdtMutation } from '../cloneProspectiveCrdtMutation';
+import { mutateCrdtDoc } from '../mutateCrdtDoc';
 
 vi.mock('../../repositories/automergeRepository', () => ({
     automergeRepository: {

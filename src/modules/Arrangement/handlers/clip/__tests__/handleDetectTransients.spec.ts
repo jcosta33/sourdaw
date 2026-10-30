@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 import { canonicalJson } from '#/utils/canonicalDigest';
+
 import { handleDetectTransients, transientStateMatches } from '../handleDetectTransients';
 
 const mocks = vi.hoisted(() => ({ detect: vi.fn(), notice: vi.fn() }));

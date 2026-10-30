@@ -226,7 +226,7 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: (...args: unknown[]) => mocks.execute(...args),
 }));
-vi.mock('../../../useCases/elasticAudio/detectTransientsForClip', () => ({ cancelTransientDetection: mocks.cancel }));
+vi.mock('../../../useCases/elasticAudio/cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
 
 vi.mock('../../../useCases/elasticAudio/markElasticDetectionComplete', () => ({
     markElasticDetectionComplete: (...args: unknown[]) => mocks.markElasticDetectionComplete(...args),

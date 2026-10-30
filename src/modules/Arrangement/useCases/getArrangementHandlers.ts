@@ -2,8 +2,8 @@ import { adjustmentLayerHandlers } from '../handlers/batchFeature/adjustmentLaye
 import { handleDiscardCreatedCompGroup } from '../handlers/batchFeature/discardCreatedCompGroup';
 import { handleCreateCompGroup } from '../handlers/batchFeature/handleCreateCompGroup';
 import { handleSearchSamples } from '../handlers/batchFeature/handleSearchSamples';
-import { handleDetectTransients } from '../handlers/clip/handleDetectTransients';
 import { clipHandlers } from '../handlers/clip/clipHandlers';
+import { handleDetectTransients } from '../handlers/clip/handleDetectTransients';
 import { handleRestoreTimeOperationState } from '../handlers/clip/handleRestoreTimeOperationState';
 import { handleRestoreTrackClipStates } from '../handlers/clip/handleRestoreTrackClipStates';
 import { handleAddGainEnvelopePoint } from '../handlers/clipGainEnvelope/handleAddGainEnvelopePoint';

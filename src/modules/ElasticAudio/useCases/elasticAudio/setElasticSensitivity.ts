@@ -8,9 +8,10 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 
-import { cancelTransientDetection, transientDetectionRevision } from './detectTransientsForClip';
+import { cancelTransientDetection } from './cancelTransientDetection';
 import { elasticSensitivityDependencies } from './elasticSensitivityDependencies';
 import { resolveElasticEditorTarget } from './resolveElasticEditorTarget';
+import { transientDetectionRevision } from './transientDetectionRevision';
 
 const DEBOUNCE_MS = 150;
 type PendingState = {

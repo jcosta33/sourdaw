@@ -3,9 +3,10 @@ import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutom
 import { automergeRepository } from '../repositories/automergeRepository';
 import { getSemanticContext } from '../stores/semanticChangeContext';
 
+import { cloneProspectiveCrdtMutation } from './cloneProspectiveCrdtMutation';
 import { getCrdtDoc } from './getCrdtDoc';
 import { hasCrdtDoc } from './hasCrdtDoc';
-import { cloneProspectiveCrdtMutation, mutateCrdtDoc } from './mutateCrdtDoc';
+import { mutateCrdtDoc } from './mutateCrdtDoc';
 
 type StorageRuntimeDoc = {
     [key: string]: unknown;

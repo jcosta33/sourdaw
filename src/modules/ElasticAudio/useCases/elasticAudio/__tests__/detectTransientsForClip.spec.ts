@@ -1,12 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
+
 import { elasticAudioStore, defaultElasticAudioState } from '../../../stores/elasticAudio';
-import { cancelTransientDetection, detectTransientsForClip } from '../detectTransientsForClip';
+import { cancelTransientDetection } from '../cancelTransientDetection';
+import { detectTransientsForClip } from '../detectTransientsForClip';
 import { setElasticRootIdentityProvider } from '../setElasticRootIdentityProvider';
 
 const mocks = vi.hoisted(() => ({ read: vi.fn(), root: 'root-1', tempo: 120 }));
-vi.mock('../readClipTransientOnsets', () => ({ readProductTransientOnsets: mocks.read }));
+vi.mock('../readProductTransientOnsets', () => ({ readProductTransientOnsets: mocks.read }));
 vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => 'project-1' }));
 vi.mock('#/modules/Transport/stores', () => ({
     transportStore: {

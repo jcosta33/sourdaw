@@ -4,22 +4,10 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { elasticAudioStore } from '../../stores/elasticAudio';
 
-import { readProductTransientOnsets } from './readClipTransientOnsets';
+import { cancelTransientDetection } from './cancelTransientDetection';
 import { elasticRootIdentityProviderState } from './elasticRootIdentityProviderState';
-
-const active = new Map<string, AbortController>();
-const revisions = new Map<string, number>();
-
-export function transientDetectionRevision(clipId: string): number {
-    return revisions.get(clipId) ?? 0;
-}
-
-/** Revoke immediately, including during the sensitivity debounce and editor teardown. */
-export function cancelTransientDetection(clipId: string): void {
-    active.get(clipId)?.abort();
-    active.delete(clipId);
-    revisions.set(clipId, transientDetectionRevision(clipId) + 1);
-}
+import { readProductTransientOnsets } from './readProductTransientOnsets';
+import { transientDetectionLifecycle } from './transientDetectionLifecycle';
 
 /** Align visible commits; a hidden page can finish without its suspended animation frame. */
 function waitForCommitFrame(signal: AbortSignal): Promise<boolean> {
@@ -66,31 +54,12 @@ type DetectionLifetime = {
     waitForFrame(): Promise<boolean>;
 };
 
-export function detectTransientsForClip(
+function createDetectionAuthority(
     clipId: string,
-    sensitivity: number,
-    signal?: AbortSignal
-): Promise<Extract<ProductRead, { status: 'failed' }> | DetectionReady>;
-export function detectTransientsForClip<Result>(
-    clipId: string,
-    sensitivity: number,
-    signal: AbortSignal | undefined,
-    consume: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
-): Promise<Extract<ProductRead, { status: 'failed' }> | { status: 'consumed'; value: Result }>;
-/** Keep source and abort ownership alive throughout an async product consumer; Arrangement owns its final write. */
-export async function detectTransientsForClip<Result>(
-    clipId: string,
-    sensitivity: number,
-    signal?: AbortSignal,
-    consume?: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+    controller: AbortController,
+    captureRootIdentity: NonNullable<typeof elasticRootIdentityProviderState.captureRootIdentity>,
+    signal: AbortSignal | undefined
 ) {
-    cancelTransientDetection(clipId);
-    const captureRootIdentity = elasticRootIdentityProviderState.captureRootIdentity;
-    if (!captureRootIdentity) {
-        return { status: 'failed' as const, code: 'stale-source' as const };
-    }
-    const controller = new AbortController();
-    active.set(clipId, controller);
     const abort = (): void => controller.abort();
     const deadline = performance.now() + 30_000;
     let timedOut = false;
@@ -121,7 +90,7 @@ export async function detectTransientsForClip<Result>(
     const isCurrent = (): boolean =>
         !controller.signal.aborted &&
         !expired() &&
-        active.get(clipId) === controller &&
+        transientDetectionLifecycle.owns(clipId, controller) &&
         !editorChanged &&
         elasticAudioStore.value?.openClipId === editorClip &&
         preferencesStore.value?.elasticTransientSensitivity === preference &&
@@ -140,7 +109,7 @@ export async function detectTransientsForClip<Result>(
     };
     if (!projectId || !tempo || !Number.isFinite(tempo) || tempo <= 0) {
         dispose();
-        return { status: 'failed' as const, code: 'stale-source' as const };
+        return undefined;
     }
     deadlineTimer = setTimeout(
         () => {
@@ -149,6 +118,39 @@ export async function detectTransientsForClip<Result>(
         },
         Math.max(0, deadline - performance.now())
     );
+    return { projectId, tempo, expired, isCurrent, dispose, abort };
+}
+
+export function detectTransientsForClip(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal
+): Promise<Extract<ProductRead, { status: 'failed' }> | DetectionReady>;
+export function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal: AbortSignal | undefined,
+    consume: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+): Promise<Extract<ProductRead, { status: 'failed' }> | { status: 'consumed'; value: Result }>;
+/** Keep source and abort ownership alive throughout an async product consumer; Arrangement owns its final write. */
+export async function detectTransientsForClip<Result>(
+    clipId: string,
+    sensitivity: number,
+    signal?: AbortSignal,
+    consume?: (ready: DetectionReady, lifetime: DetectionLifetime) => Promise<Result>
+) {
+    cancelTransientDetection(clipId);
+    const captureRootIdentity = elasticRootIdentityProviderState.captureRootIdentity;
+    if (!captureRootIdentity) {
+        return { status: 'failed' as const, code: 'stale-source' as const };
+    }
+    const controller = new AbortController();
+    transientDetectionLifecycle.activate(clipId, controller);
+    const authority = createDetectionAuthority(clipId, controller, captureRootIdentity, signal);
+    if (!authority) {
+        return { status: 'failed' as const, code: 'stale-source' as const };
+    }
+    const { projectId, tempo, expired, isCurrent, dispose, abort } = authority;
     try {
         const result = await readProductTransientOnsets({
             clipId,

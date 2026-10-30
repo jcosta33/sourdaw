@@ -44,6 +44,15 @@ function isJson(value: unknown): boolean {
     );
 }
 
+function hasValidOptionalMetadata(
+    value: Record<string, unknown>
+): value is Record<string, unknown> & { message?: string; time?: number } {
+    return (
+        (value.message === undefined || typeof value.message === 'string') &&
+        (value.time === undefined || (typeof value.time === 'number' && Number.isFinite(value.time)))
+    );
+}
+
 export function parseProspectiveMutationWorkerRequest(value: unknown): ProspectiveMutationWorkerRequest {
     if (
         !isRecord(value) ||
@@ -55,8 +64,7 @@ export function parseProspectiveMutationWorkerRequest(value: unknown): Prospecti
         ) ||
         typeof value.actor !== 'string' ||
         !/^(?:[a-f0-9]{2})+$/.test(value.actor) ||
-        (value.message !== undefined && typeof value.message !== 'string') ||
-        (value.time !== undefined && (typeof value.time !== 'number' || !Number.isFinite(value.time)))
+        !hasValidOptionalMetadata(value)
     ) {
         throw new TypeError('Invalid prospective mutation Worker envelope');
     }

@@ -36,9 +36,11 @@ vi.mock('../hasCrdtDoc', () => ({
     hasCrdtDoc: mocks.hasCrdtDoc,
 }));
 
+vi.mock('../cloneProspectiveCrdtMutation', () => ({
+    cloneProspectiveCrdtMutation: mocks.cloneProspectiveCrdtMutation,
+}));
 vi.mock('../mutateCrdtDoc', () => ({
     mutateCrdtDoc: mocks.mutateCrdtDoc,
-    cloneProspectiveCrdtMutation: mocks.cloneProspectiveCrdtMutation,
 }));
 
 import { registerCrdtStorageRuntime } from '../registerCrdtStorageRuntime';

@@ -85,6 +85,260 @@ function measurePreparationTask<Result>(name: string, callback: () => Result): R
     }
 }
 
+type DetectExecution = Parameters<typeof createHandler<'detectTransients'>>[0]['execute'];
+type DetectAction = Parameters<DetectExecution>[0];
+type DetectContext = Parameters<DetectExecution>[1];
+type DetectConsumer = Parameters<typeof detectTransientsForClip>[3];
+type DetectedSource = Parameters<DetectConsumer>[0];
+type DetectionLifetime = Parameters<DetectConsumer>[1];
+type StorageScope = ReturnType<typeof captureAutomergeStorageTransactionScope>;
+type PreparationScope = ReturnType<typeof captureAutomergeStoragePreparationScope>;
+type TransientRows = ReturnType<typeof planTransientRows>;
+type TransientPlan = ReturnType<typeof prepareTransientWarpState>;
+
+function transientConflict(): HandlerExecutionResult {
+    return { status: 'conflict', reason: 'Transient detection was cancelled or its source changed' };
+}
+
+function planTransientRows(clipId: string, result: DetectedSource) {
+    const existing = getWarpState(clipId);
+    const preserved = existing.markers.filter(
+        (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'
+    );
+    const added = result.hits.flatMap((hit) => {
+        const beat = ((hit.sampleOffset / result.identity.sampleRate) * result.tempo) / 60;
+        if (preserved.some((marker) => Math.abs(marker.originalBeat - beat) < 1e-3)) {
+            return [];
+        }
+        return [createWarpMarker(beat, beat, { origin: 'transient-auto', confidence: hit.confidence })];
+    });
+    return {
+        preserved,
+        added,
+        replacement: {
+            ...existing,
+            markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
+        },
+    };
+}
+
+function materializationFailure(error: unknown, lifetime: DetectionLifetime): HandlerExecutionResult {
+    if (!lifetime.isCurrent()) {
+        return transientConflict();
+    }
+    throw error;
+}
+
+function createTransientWriteResult(
+    result: DetectedSource,
+    context: DetectContext,
+    trackId: string,
+    clipId: string,
+    preserved: TransientRows['preserved'],
+    added: TransientRows['added'],
+    replacement: TransientRows['replacement'],
+    commitStarted: number
+): HandlerExecutionResult {
+    let storageCommitStarted: number | undefined;
+    const refusal = (): string | null =>
+        result.isCurrent() && !context?.signal?.aborted ? null : 'Transient detection source changed before commit';
+    const complete = (): void => {
+        performance.measure('elastic-transient-commit', {
+            start: commitStarted,
+            end: performance.now(),
+        });
+        performance.clearMeasures('elastic-transient-commit');
+        notifyUser(`Detected ${added.length} transients (${preserved.length} preserved)`, 'success');
+    };
+    return {
+        status: 'written',
+        commitValidation: {
+            beforeCommit: () => {
+                storageCommitStarted ??= performance.now();
+                return refusal();
+            },
+            afterPublication: () => {
+                if (storageCommitStarted === undefined) {
+                    return;
+                }
+                performance.measure('elastic-transient-storage-commit-task', {
+                    start: storageCommitStarted,
+                    end: performance.now(),
+                });
+                performance.clearMeasures('elastic-transient-storage-commit-task');
+            },
+            documentId: 'root',
+            validateDocument: (document) => {
+                const tracks = record(document.tracks)?.tracks;
+                let track: unknown;
+                if (Array.isArray(tracks)) {
+                    track = tracks.find((entry: unknown) => record(entry)?.id === trackId);
+                }
+                const clips = record(track)?.clips;
+                let clip: unknown;
+                if (Array.isArray(clips)) {
+                    clip = clips.find((entry: unknown) => record(entry)?.id === clipId);
+                }
+                const bufferId = record(clip)?.audioBufferId;
+                const states = record(record(document.warpStates)?.states);
+                const validationStarted = performance.now();
+                const reason =
+                    refusal() ??
+                    (record(document.projectMeta)?.projectId === result.identity.projectId &&
+                    record(clip)?.type === 'audio' &&
+                    typeof bufferId === 'string' &&
+                    digest(bufferId) === result.identity.bufferId &&
+                    record(document.transport)?.tempo === result.tempo &&
+                    transientStateMatches(states?.[clipId], replacement)
+                        ? null
+                        : 'Transient detection authority changed inside commit');
+                performance.measure('elastic-transient-validation-task', {
+                    start: validationStarted,
+                    end: performance.now(),
+                });
+                performance.clearMeasures('elastic-transient-validation-task');
+                return reason;
+            },
+            release: () => undefined,
+        },
+        afterCommit: complete,
+        afterAmbiguousCommit: complete,
+    };
+}
+
+function commitTransientRows(
+    result: DetectedSource,
+    context: DetectContext,
+    scope: StorageScope,
+    capture: Capture,
+    plannedRows: TransientRows,
+    plan: TransientPlan,
+    clipId: string,
+    trackId: string
+): HandlerExecutionResult | undefined {
+    const commitStarted = performance.now();
+    let rows = plannedRows;
+    if (!plan) {
+        // Ineligible ordinary writes are still planned from the latest rows at their final frame.
+        rows = planTransientRows(clipId, result);
+    }
+    if (!result.isCurrent() || context?.signal?.aborted) {
+        return transientConflict();
+    }
+    const { preserved, added, replacement } = rows;
+    const before = captureTransientClipStates(trackId, clipId);
+    const staged = scope(() => {
+        if (plan) {
+            if (!plan.stage()) {
+                return false;
+            }
+        } else {
+            setWarpState(clipId, replacement);
+        }
+        capture.before.push(...before);
+        capture.after.push(...captureTrackClipStates([trackId]));
+        return true;
+    });
+    if (!staged) {
+        return undefined;
+    }
+    performance.measure('elastic-transient-preparation-task', {
+        start: commitStarted,
+        end: performance.now(),
+    });
+    performance.clearMeasures('elastic-transient-preparation-task');
+    return createTransientWriteResult(result, context, trackId, clipId, preserved, added, replacement, commitStarted);
+}
+
+function readTransientCapture(action: DetectAction, result: DetectedSource): Capture | HandlerExecutionResult {
+    if (!result.identity.activeAlternative) {
+        return transientConflict();
+    }
+    const capture = captures.get(action);
+    if (!capture) {
+        return { status: 'conflict', reason: 'Transient detection requires its registered command capture' };
+    }
+    return capture;
+}
+
+async function consumeDetectedTransients(
+    action: DetectAction,
+    context: DetectContext,
+    scope: StorageScope,
+    preparationScope: PreparationScope,
+    result: DetectedSource,
+    lifetime: DetectionLifetime
+): Promise<HandlerExecutionResult> {
+    const capture = readTransientCapture(action, result);
+    if ('status' in capture) {
+        return capture;
+    }
+    const { clipId, trackId } = result.identity;
+    while (lifetime.isCurrent()) {
+        const attempt = measurePreparationTask('elastic-transient-plan-task', () => {
+            const rows = planTransientRows(clipId, result);
+            return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
+        });
+        const rows = attempt.rows;
+        const plan = attempt.plan;
+        try {
+            if (plan) {
+                if (!(await lifetime.waitForFrame())) {
+                    return transientConflict();
+                }
+                if (!plan.isCurrent()) {
+                    continue;
+                }
+                measurePreparationTask('elastic-transient-clone-task', plan.clone);
+                if (!(await lifetime.waitForFrame())) {
+                    return transientConflict();
+                }
+                if (!plan.isCurrent()) {
+                    continue;
+                }
+            }
+            const requestMaterialization = plan?.requestMaterialization;
+            if (plan && requestMaterialization) {
+                const workerStarted = performance.now();
+                try {
+                    await requestMaterialization(lifetime.signal);
+                } catch (error) {
+                    return materializationFailure(error, lifetime);
+                } finally {
+                    performance.measure('elastic-transient-materialization-worker-wall', {
+                        start: workerStarted,
+                        end: performance.now(),
+                    });
+                    performance.clearMeasures('elastic-transient-materialization-worker-wall');
+                }
+                if (!(await lifetime.waitForFrame())) {
+                    return transientConflict();
+                }
+                if (!plan.isCurrent()) {
+                    continue;
+                }
+            }
+            if (plan) {
+                measurePreparationTask('elastic-transient-change-task', plan.materialize);
+            }
+            if (!(await lifetime.waitForFrame())) {
+                return transientConflict();
+            }
+            if (plan && !plan.isCurrent()) {
+                continue;
+            }
+            const committed = commitTransientRows(result, context, scope, capture, rows, plan, clipId, trackId);
+            if (committed === undefined) {
+                continue;
+            }
+            return committed;
+        } finally {
+            plan?.discard();
+        }
+    }
+    return transientConflict();
+}
+
 export const handleDetectTransients = createHandler<'detectTransients'>({
     execute: async (action, context) => {
         const scope = captureAutomergeStorageTransactionScope();
@@ -97,203 +351,7 @@ export const handleDetectTransients = createHandler<'detectTransients'>({
             action.payload.clipId,
             sensitivity,
             context?.signal,
-            async (result, lifetime): Promise<HandlerExecutionResult> => {
-                const conflict = (): HandlerExecutionResult => ({
-                    status: 'conflict',
-                    reason: 'Transient detection was cancelled or its source changed',
-                });
-                if (!result.identity.activeAlternative) {
-                    return conflict();
-                }
-                const capture = captures.get(action);
-                if (!capture) {
-                    return {
-                        status: 'conflict',
-                        reason: 'Transient detection requires its registered command capture',
-                    };
-                }
-                const { clipId, trackId } = result.identity;
-                const planRows = () => {
-                    const existing = getWarpState(clipId);
-                    const preserved = existing.markers.filter(
-                        (marker) => marker.locked === true || (marker.origin ?? 'user') !== 'transient-auto'
-                    );
-                    const added = result.hits.flatMap((hit) => {
-                        const beat = ((hit.sampleOffset / result.identity.sampleRate) * result.tempo) / 60;
-                        if (preserved.some((marker) => Math.abs(marker.originalBeat - beat) < 1e-3)) {
-                            return [];
-                        }
-                        return [createWarpMarker(beat, beat, { origin: 'transient-auto', confidence: hit.confidence })];
-                    });
-                    return {
-                        preserved,
-                        added,
-                        replacement: {
-                            ...existing,
-                            markers: [...preserved, ...added].sort((a, b) => a.originalBeat - b.originalBeat),
-                        },
-                    };
-                };
-                while (lifetime.isCurrent()) {
-                    const attempt = measurePreparationTask('elastic-transient-plan-task', () => {
-                        const rows = planRows();
-                        return { rows, plan: prepareTransientWarpState(preparationScope, clipId, rows.replacement) };
-                    });
-                    let rows = attempt.rows;
-                    const plan = attempt.plan;
-                    try {
-                        if (plan) {
-                            if (!(await lifetime.waitForFrame())) {
-                                return conflict();
-                            }
-                            if (!plan.isCurrent()) {
-                                continue;
-                            }
-                            measurePreparationTask('elastic-transient-clone-task', plan.clone);
-                            if (!(await lifetime.waitForFrame())) {
-                                return conflict();
-                            }
-                            if (!plan.isCurrent()) {
-                                continue;
-                            }
-                            const requestMaterialization = plan.requestMaterialization;
-                            if (requestMaterialization) {
-                                const workerStarted = performance.now();
-                                try {
-                                    await requestMaterialization(lifetime.signal);
-                                } catch (error) {
-                                    if (!lifetime.isCurrent()) {
-                                        return conflict();
-                                    }
-                                    throw error;
-                                } finally {
-                                    performance.measure('elastic-transient-materialization-worker-wall', {
-                                        start: workerStarted,
-                                        end: performance.now(),
-                                    });
-                                    performance.clearMeasures('elastic-transient-materialization-worker-wall');
-                                }
-                                if (!(await lifetime.waitForFrame())) {
-                                    return conflict();
-                                }
-                                if (!plan.isCurrent()) {
-                                    continue;
-                                }
-                            }
-                            measurePreparationTask('elastic-transient-change-task', plan.materialize);
-                        }
-                        if (!(await lifetime.waitForFrame())) {
-                            return conflict();
-                        }
-                        if (plan && !plan.isCurrent()) {
-                            continue;
-                        }
-                        const commitStarted = performance.now();
-                        if (!plan) {
-                            // Ineligible ordinary writes are still planned from the latest rows at their final frame.
-                            rows = planRows();
-                        }
-                        if (!result.isCurrent() || context?.signal?.aborted) {
-                            return conflict();
-                        }
-                        const { preserved, added, replacement } = rows;
-                        const before = captureTransientClipStates(trackId, clipId);
-                        const staged = scope(() => {
-                            if (plan) {
-                                if (!plan.stage()) {
-                                    return false;
-                                }
-                            } else {
-                                setWarpState(clipId, replacement);
-                            }
-                            capture.before.push(...before);
-                            capture.after.push(...captureTrackClipStates([trackId]));
-                            return true;
-                        });
-                        if (!staged) {
-                            continue;
-                        }
-                        performance.measure('elastic-transient-preparation-task', {
-                            start: commitStarted,
-                            end: performance.now(),
-                        });
-                        performance.clearMeasures('elastic-transient-preparation-task');
-                        let storageCommitStarted: number | undefined;
-                        const refusal = (): string | null =>
-                            result.isCurrent() && !context?.signal?.aborted
-                                ? null
-                                : 'Transient detection source changed before commit';
-                        const complete = (): void => {
-                            performance.measure('elastic-transient-commit', {
-                                start: commitStarted,
-                                end: performance.now(),
-                            });
-                            performance.clearMeasures('elastic-transient-commit');
-                            notifyUser(
-                                `Detected ${added.length} transients (${preserved.length} preserved)`,
-                                'success'
-                            );
-                        };
-                        return {
-                            status: 'written',
-                            commitValidation: {
-                                beforeCommit: () => {
-                                    storageCommitStarted ??= performance.now();
-                                    return refusal();
-                                },
-                                afterPublication: () => {
-                                    if (storageCommitStarted === undefined) {
-                                        return;
-                                    }
-                                    performance.measure('elastic-transient-storage-commit-task', {
-                                        start: storageCommitStarted,
-                                        end: performance.now(),
-                                    });
-                                    performance.clearMeasures('elastic-transient-storage-commit-task');
-                                },
-                                documentId: 'root',
-                                validateDocument: (document) => {
-                                    const tracks = record(document.tracks)?.tracks;
-                                    let track: unknown;
-                                    if (Array.isArray(tracks)) {
-                                        track = tracks.find((entry: unknown) => record(entry)?.id === trackId);
-                                    }
-                                    const clips = record(track)?.clips;
-                                    let clip: unknown;
-                                    if (Array.isArray(clips)) {
-                                        clip = clips.find((entry: unknown) => record(entry)?.id === clipId);
-                                    }
-                                    const bufferId = record(clip)?.audioBufferId;
-                                    const states = record(record(document.warpStates)?.states);
-                                    const validationStarted = performance.now();
-                                    const reason =
-                                        refusal() ??
-                                        (record(document.projectMeta)?.projectId === result.identity.projectId &&
-                                        record(clip)?.type === 'audio' &&
-                                        typeof bufferId === 'string' &&
-                                        digest(bufferId) === result.identity.bufferId &&
-                                        record(document.transport)?.tempo === result.tempo &&
-                                        transientStateMatches(states?.[clipId], replacement)
-                                            ? null
-                                            : 'Transient detection authority changed inside commit');
-                                    performance.measure('elastic-transient-validation-task', {
-                                        start: validationStarted,
-                                        end: performance.now(),
-                                    });
-                                    performance.clearMeasures('elastic-transient-validation-task');
-                                    return reason;
-                                },
-                                release: () => undefined,
-                            },
-                            afterCommit: complete,
-                            afterAmbiguousCommit: complete,
-                        };
-                    } finally {
-                        plan?.discard();
-                    }
-                }
-                return conflict();
-            }
+            (result, lifetime) => consumeDetectedTransients(action, context, scope, preparationScope, result, lifetime)
         );
         if (outcome.status === 'consumed') {
             return outcome.value;

@@ -18,10 +18,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeAppAction: mocks.execute,
     executeUserAppAction: vi.fn(),
 }));
-vi.mock('../detectTransientsForClip', () => ({
-    cancelTransientDetection: mocks.cancel,
-    transientDetectionRevision: () => 0,
-}));
+vi.mock('../cancelTransientDetection', () => ({ cancelTransientDetection: mocks.cancel }));
+vi.mock('../transientDetectionRevision', () => ({ transientDetectionRevision: () => 0 }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
 import { setElasticSensitivityRootIdentityCapture } from '../elasticSensitivityDependencies';
