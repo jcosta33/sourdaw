@@ -1,0 +1,18 @@
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.spec.ts
+  h_beb54bf43b47b7 164,166
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts
+  h_beb54bf43b47b7 7-9,14-16,19-21,33-35,61-63
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 1496-1513,1632-1634,1657-1659,1756-1758,2534-2588,2872,2886-2889,2901-2910,2935-2937,2967-3019
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3cf1e6f038594481926431578bad2e4e35549e2e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
