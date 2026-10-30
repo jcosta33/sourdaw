@@ -1,0 +1,20 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1588-1593
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.spec.ts
+  h_beb54bf43b47b7 1-186
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts
+  h_beb54bf43b47b7 1-56
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 7,49,1496-1497,1605-1644,1719,1729,1734-1739,1918-1958,2095-2109,2188-2205,2254-2285,2287-2303,2784-2910
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b66d4d76fe28532383c9d689f1f48c5a3b7f852e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
