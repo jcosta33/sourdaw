@@ -1,0 +1,14 @@
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 320
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a1943b51d8ad3c78c7c2edbce4a2c68d95abe834",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
