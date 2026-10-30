@@ -26,7 +26,7 @@ describe('mp3Encoder', () => {
             getChannelData: vi.fn().mockReturnValue(new Float32Array(2304).fill(0.1)),
         };
 
-        const result = await audioBufferToMp3(buffer as any);
+        const result = await audioBufferToMp3(buffer);
 
         expect(result).toBeDefined();
         // 2 blocks * 1 call each + flush
@@ -46,7 +46,7 @@ describe('mp3Encoder', () => {
         };
         const onProgress = vi.fn();
 
-        await audioBufferToMp3(buffer as any, 128, onProgress);
+        await audioBufferToMp3(buffer, 128, onProgress);
 
         expect(onProgress).toHaveBeenCalled();
         expect(onProgress).toHaveBeenCalledWith(1); // Final call

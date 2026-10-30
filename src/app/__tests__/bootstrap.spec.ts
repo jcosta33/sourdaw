@@ -122,10 +122,13 @@ const {
     reconcileVcaRuntimeGainMock,
     prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestoreMock,
+    isValidAutomationTimeStateRestorePlanMock,
     prepareMidiGlobalTimeTransactionMock,
     prepareMidiTimeStateRestoreMock,
+    isValidMidiTimeStateRestorePlanMock,
     prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestoreMock,
+    isValidTimelineMapStateRestorePlanMock,
     configureAudioDeviceRuntimeSinkMock,
     isTunerTelemetryNativelyOwnedMock,
     updateTunerTelemetryMock,
@@ -153,6 +156,8 @@ const {
     setTrackPanMock,
     setMidiLearnDependenciesMock,
     registerCrdtStorageRuntimeMock,
+    captureProjectRootIdentityMock,
+    setElasticSensitivityRootIdentityCaptureMock,
     captureProjectIdentityMock,
     captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
@@ -224,10 +229,13 @@ const {
         reconcileVcaRuntimeGainMock: vi.fn(),
         prepareAutomationTimeOperationMock: vi.fn(),
         prepareAutomationTimeStateRestoreMock: vi.fn(),
+        isValidAutomationTimeStateRestorePlanMock: vi.fn(() => false),
         prepareMidiGlobalTimeTransactionMock: vi.fn(),
         prepareMidiTimeStateRestoreMock: vi.fn(),
+        isValidMidiTimeStateRestorePlanMock: vi.fn(() => false),
         prepareTimelineMapTimeOperationMock: vi.fn(),
         prepareTimelineMapStateRestoreMock: vi.fn(),
+        isValidTimelineMapStateRestorePlanMock: vi.fn(() => false),
         configureAudioDeviceRuntimeSinkMock: vi.fn<(sink: RuntimeSinkUnderTest) => void>(),
         isTunerTelemetryNativelyOwnedMock: vi.fn<(deviceId: string) => boolean>(() => false),
         updateTunerTelemetryMock: vi.fn(),
@@ -287,6 +295,8 @@ const {
         initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
+        captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
+        setElasticSensitivityRootIdentityCaptureMock: vi.fn(),
         captureProjectIdentityMock: vi.fn<() => string>(() => 'identity-1'),
         captureProjectRevisionMock: vi.fn<() => string>(() => 'revision-1'),
         projectRevisionMatchesLiveIgnoringCommandCheckpointMock: vi.fn<(expectedRevision: string) => boolean>(
@@ -442,6 +452,7 @@ vi.mock('#/modules/Automation/useCases', () => ({
     createOfflineAutomationEvaluator: vi.fn(() => () => null),
     prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
     prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
+    isValidAutomationTimeStateRestorePlan: isValidAutomationTimeStateRestorePlanMock,
     recordAutomationValue: noop,
     setAutomationRecordingDependencies: noop,
     setAutomationParameterRangeResolver: setAutomationParameterRangeResolverMock,
@@ -513,6 +524,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     DOC_PREFIX_ROOT: 'root',
     agentProjectInspectionPort: { setProvider: agentProjectInspectionSetProviderMock },
     captureProjectIdentity: captureProjectIdentityMock,
+    captureProjectRootIdentity: captureProjectRootIdentityMock,
     captureProjectRevision: captureProjectRevisionMock,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     createCommandPreviewWorkspace: noop,
@@ -532,6 +544,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     // collaboration bridge registers at session start. A noop unsubscribe is
     // all any of them need here: no document change fires under this fixture.
     subscribeToCrdtChanges: () => noop,
+}));
+
+vi.mock('#/modules/ElasticAudio/useCases', () => ({
+    setElasticSensitivityRootIdentityCapture: setElasticSensitivityRootIdentityCaptureMock,
 }));
 
 vi.mock('#/modules/Crumbs/stores', async (importOriginal) => ({
@@ -598,6 +614,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     getPatternInstanceHandlers: sentinelHandlers('PatternInstance'),
     prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
     prepareMidiTimeStateRestore: prepareMidiTimeStateRestoreMock,
+    isValidMidiTimeStateRestorePlan: isValidMidiTimeStateRestorePlanMock,
     createChordPitchProjector: noop,
     createGrooveMidiEventProjector: noop,
     projectClipControllerEvents: noop,
@@ -701,6 +718,7 @@ vi.mock('#/modules/Transport/useCases', () => ({
     resolveTempoAtBeat: noop,
     prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
     prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
+    isValidTimelineMapStateRestorePlan: isValidTimelineMapStateRestorePlanMock,
     setStopPlaybackCallback: noop,
     reconcileVcaRuntimeGain: reconcileVcaRuntimeGainMock,
     stopPlayback: noop,
@@ -794,6 +812,14 @@ function getDurableAssetOwnerRecoveryAfterProjectLoad(): DurableAssetOwnerRecove
 }
 
 describe('bootstrap', () => {
+    it('wires the live root identity reader before project transition configuration', () => {
+        expect(setElasticSensitivityRootIdentityCaptureMock).toHaveBeenCalledExactlyOnceWith(
+            captureProjectRootIdentityMock
+        );
+        expect(setElasticSensitivityRootIdentityCaptureMock.mock.invocationCallOrder[0]).toBeLessThan(
+            setProjectIdentityTransitionDependenciesMock.mock.invocationCallOrder[0] ?? 0
+        );
+    });
     it('binds committed project access during bootstrap', () => {
         expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
     });
@@ -1018,6 +1044,11 @@ describe('bootstrap', () => {
 
     it('registers the exact forward and restore global-time owner preparations', () => {
         expect(setTimeOperationDependenciesMock).toHaveBeenCalledExactlyOnceWith({
+            savedRestorePlanValidators: {
+                automation: isValidAutomationTimeStateRestorePlanMock,
+                midi: isValidMidiTimeStateRestorePlanMock,
+                timelineMap: isValidTimelineMapStateRestorePlanMock,
+            },
             prepareAutomationTimeOperation: prepareAutomationTimeOperationMock,
             prepareAutomationTimeStateRestore: prepareAutomationTimeStateRestoreMock,
             prepareMidiGlobalTimeTransaction: prepareMidiGlobalTimeTransactionMock,
@@ -1025,6 +1056,9 @@ describe('bootstrap', () => {
             prepareTimelineMapTimeOperation: prepareTimelineMapTimeOperationMock,
             prepareTimelineMapStateRestore: prepareTimelineMapStateRestoreMock,
         });
+        expect(setTimeOperationDependenciesMock.mock.invocationCallOrder[0]).toBeLessThan(
+            registerProductionCommandHandlersMock.mock.invocationCallOrder[0]!
+        );
     });
 
     it('wires VCA runtime projection through the composition root', () => {

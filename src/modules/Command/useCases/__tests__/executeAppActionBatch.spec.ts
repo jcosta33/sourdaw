@@ -1276,131 +1276,164 @@ describe('executeAppActionBatch', () => {
         expect(runtimeEffects.editingTool).toBe('marquee');
     });
 
-    it('reports an ambiguous terminal without history when one document commits before another fails', async () => {
-        const documents: Record<string, Record<string, unknown>> = {
-            first: { editingTool: { tool: 'select' } },
-            second: { snapValue: { value: 1 } },
-        };
-        configureAutomergeStoragePort({
-            getDoc: (docId) => documents[docId],
-            getSemanticMessage: () => undefined,
-            hasDoc: (docId) => docId in documents,
-            mutateDoc: ({ docId, changeFn }) => {
-                if (docId === 'second') {
-                    throw new Error('second document failed');
-                }
-                const document = documents[docId];
-                if (document) {
-                    changeFn(document);
-                }
-            },
-        });
-        const editingToolStorage = createAutomergeStorage<{ tool: string }>('first', 'editingTool');
-        const snapValueStorage = createAutomergeStorage<{ value: number }>('second', 'snapValue');
-        const reconciledRuntime: Array<{ editingTool: unknown; snapValue: unknown }> = [];
-        const reconcileRuntime = vi.fn(() => {
-            reconciledRuntime.push({
-                editingTool: documents.first?.editingTool,
-                snapValue: documents.second?.snapValue,
+    it.each([false, true])(
+        'reports an ambiguous terminal without history after partial publication, evidence failure=%s',
+        async (publicationFails) => {
+            const documents: Record<string, Record<string, unknown>> = {
+                first: { editingTool: { tool: 'select' } },
+                second: { snapValue: { value: 1 } },
+            };
+            configureAutomergeStoragePort({
+                getDoc: (docId) => documents[docId],
+                getSemanticMessage: () => undefined,
+                hasDoc: (docId) => docId in documents,
+                mutateDoc: ({ docId, changeFn }) => {
+                    if (docId === 'second') {
+                        throw new Error('second document failed');
+                    }
+                    const document = documents[docId];
+                    if (document) {
+                        changeFn(document);
+                    }
+                },
             });
-        });
-        expect(editingToolStorage.hydrate?.()).toBe(true);
-        expect(snapValueStorage.hydrate?.()).toBe(true);
-        registerHandlerMap({
-            setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => {
-                    editingToolStorage.set({ tool: 'marquee' });
-                    return {
-                        status: 'written',
-                        afterCommit: () => undefined,
-                        afterAmbiguousCommit: reconcileRuntime,
-                    };
-                },
-            }),
-            setSnapValue: createHandler<SetSnapValueAction>({
-                execute: () => {
-                    snapValueStorage.set({ value: 0.5 });
-                    return {
-                        status: 'written',
-                        afterCommit: () => undefined,
-                        afterAmbiguousCommit: reconcileRuntime,
-                    };
-                },
-            }),
-        });
-        const actions = [
-            { type: 'setEditingTool' as const, payload: { tool: 'marquee' as const } },
-            { type: 'setSnapValue' as const, payload: { value: 0.5 } },
-        ];
-        const onCommitted = vi.fn();
-
-        const result = await executeAppActionBatch(actions, { onCommitted });
-
-        expect(result).toEqual({
-            status: 'ambiguous',
-            reason: 'Automerge storage transaction committed before a later document failed',
-            actions: [],
-        });
-        expect(documents.first).toEqual({ editingTool: { tool: 'marquee' } });
-        expect(documents.second).toEqual({ snapValue: { value: 1 } });
-        expect(reconcileRuntime).toHaveBeenCalledTimes(2);
-        expect(reconciledRuntime).toEqual([
-            { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
-            { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
-        ]);
-        expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-        expect(onCommitted).not.toHaveBeenCalled();
-    });
-
-    it('treats a first-document failure after mutation as ambiguous and reconciles runtime from durable truth', async () => {
-        const document: Record<string, unknown> = { editingTool: { tool: 'select' } };
-        configureAutomergeStoragePort({
-            getDoc: () => document,
-            getSemanticMessage: () => undefined,
-            hasDoc: () => true,
-            mutateDoc: ({ changeFn }) => {
-                changeFn(document);
-                throw new Error('adapter failed after mutation');
-            },
-        });
-        const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
-        const runtimeEffect = { tool: 'select' };
-        const reconcileRuntime = vi.fn(() => {
-            runtimeEffect.tool = (document.editingTool as { tool: string }).tool;
-        });
-        expect(editingToolStorage.hydrate?.()).toBe(true);
-        registerHandlerMap({
-            setEditingTool: createHandler<SetEditingToolAction>({
-                execute: (action) => {
-                    runtimeEffect.tool = action.payload.tool;
-                    editingToolStorage.set({ tool: action.payload.tool });
-                    return {
-                        status: 'written',
-                        afterCommit: () => undefined,
-                        afterAmbiguousCommit: reconcileRuntime,
-                    };
-                },
-                describe: () => ({
-                    label: 'Set editing tool',
-                    inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+            const editingToolStorage = createAutomergeStorage<{ tool: string }>('first', 'editingTool');
+            const snapValueStorage = createAutomergeStorage<{ value: number }>('second', 'snapValue');
+            const onAmbiguousCommit = vi.fn();
+            const reconciledRuntime: Array<{ editingTool: unknown; snapValue: unknown }> = [];
+            const reconcileRuntime = vi.fn(() => {
+                expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+                reconciledRuntime.push({
+                    editingTool: documents.first?.editingTool,
+                    snapValue: documents.second?.snapValue,
+                });
+            });
+            expect(editingToolStorage.hydrate?.()).toBe(true);
+            expect(snapValueStorage.hydrate?.()).toBe(true);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: () => {
+                        editingToolStorage.set({ tool: 'marquee' });
+                        return {
+                            status: 'written',
+                            commitValidation: {
+                                documentId: 'first',
+                                beforeCommit: () => null,
+                                validateDocument: () => null,
+                                release: () => undefined,
+                                afterPublication: () => {
+                                    expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+                                    if (publicationFails) {
+                                        throw new Error('evidence settlement failed');
+                                    }
+                                },
+                            },
+                            afterCommit: () => undefined,
+                            afterAmbiguousCommit: reconcileRuntime,
+                        };
+                    },
                 }),
-            }),
-        });
+                setSnapValue: createHandler<SetSnapValueAction>({
+                    execute: () => {
+                        snapValueStorage.set({ value: 0.5 });
+                        return {
+                            status: 'written',
+                            afterCommit: () => undefined,
+                            afterAmbiguousCommit: reconcileRuntime,
+                        };
+                    },
+                }),
+            });
+            const actions = [
+                { type: 'setEditingTool' as const, payload: { tool: 'marquee' as const } },
+                { type: 'setSnapValue' as const, payload: { value: 0.5 } },
+            ];
+            const onCommitted = vi.fn();
 
-        const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }]);
+            const result = await executeAppActionBatch(actions, { onCommitted, onAmbiguousCommit });
 
-        expect(result).toEqual({
-            status: 'ambiguous',
-            reason: 'Automerge storage transaction committed before a later document failed',
-            actions: [],
-        });
-        expect(document).toEqual({ editingTool: { tool: 'marquee' } });
-        expect(runtimeEffect.tool).toBe('marquee');
-        expect(reconcileRuntime).toHaveBeenCalledOnce();
-        expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
-    });
+            expect(result).toEqual({
+                status: 'ambiguous',
+                reason: `Automerge storage transaction committed before a later document failed${publicationFails ? '; evidence settlement failed' : ''}`,
+                actions: [],
+            });
+            expect(documents.first).toEqual({ editingTool: { tool: 'marquee' } });
+            expect(documents.second).toEqual({ snapValue: { value: 1 } });
+            expect(reconcileRuntime).toHaveBeenCalledTimes(2);
+            expect(reconciledRuntime).toEqual([
+                { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
+                { editingTool: { tool: 'marquee' }, snapValue: { value: 1 } },
+            ]);
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each([false, true])(
+        'keeps an ambiguous publication honest when its observer throws=%s',
+        async (observerThrows) => {
+            const document: Record<string, unknown> = { editingTool: { tool: 'select' } };
+            configureAutomergeStoragePort({
+                getDoc: () => document,
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: ({ changeFn }) => {
+                    changeFn(document);
+                    throw new Error('adapter failed after mutation');
+                },
+            });
+            const editingToolStorage = createAutomergeStorage<{ tool: string }>('root', 'editingTool');
+            const runtimeEffect = { tool: 'select' };
+            const onAmbiguousCommit = vi.fn(() => {
+                if (observerThrows) {
+                    throw new Error('History observer unavailable');
+                }
+            });
+            const onCommitted = vi.fn();
+            const reconcileRuntime = vi.fn(() => {
+                expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+                runtimeEffect.tool = (document.editingTool as { tool: string }).tool;
+            });
+            expect(editingToolStorage.hydrate?.()).toBe(true);
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: (action) => {
+                        runtimeEffect.tool = action.payload.tool;
+                        editingToolStorage.set({ tool: action.payload.tool });
+                        return {
+                            status: 'written',
+                            afterCommit: () => undefined,
+                            afterAmbiguousCommit: reconcileRuntime,
+                        };
+                    },
+                    describe: () => ({
+                        label: 'Set editing tool',
+                        inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+                    }),
+                }),
+            });
+
+            const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
+                onCommitted,
+                onAmbiguousCommit,
+            });
+
+            expect(result).toEqual({
+                status: 'ambiguous',
+                reason: `Automerge storage transaction committed before a later document failed${observerThrows ? '; Ambiguous commit observer failed: History observer unavailable' : ''}`,
+                actions: [],
+            });
+            expect(document).toEqual({ editingTool: { tool: 'marquee' } });
+            expect(runtimeEffect.tool).toBe('marquee');
+            expect(reconcileRuntime).toHaveBeenCalledOnce();
+            expect(onAmbiguousCommit).toHaveBeenCalledOnce();
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(mocks.recordAction).not.toHaveBeenCalled();
+            expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        }
+    );
 
     it('rejects a non-compensable action before dispatch', async () => {
         const execute = vi.fn();
@@ -1931,10 +1964,13 @@ describe('executeAppActionBatch', () => {
         });
         const onCommitted = vi.fn<(actions: readonly AppAction[]) => void>();
 
+        const onAmbiguousCommit = vi.fn();
+
         await expect(
             executeAppActionBatch([materializedAction, plainAction], {
                 groupId: 'batch-committed-identity',
                 onCommitted,
+                onAmbiguousCommit,
             })
         ).resolves.toMatchObject({ status: 'committed' });
 
@@ -1946,6 +1982,8 @@ describe('executeAppActionBatch', () => {
         expect(reportedActions?.[0]).toBe(materializedAction);
         expect(reportedActions?.[1]).toBe(plainAction);
         expect(reportedActions).toHaveLength(2);
+        expect(onCommitted).toHaveBeenCalledOnce();
+        expect(onAmbiguousCommit).not.toHaveBeenCalled();
     });
 
     it('returns a typed no-op without history when every action already matches project truth', async () => {
@@ -1956,14 +1994,45 @@ describe('executeAppActionBatch', () => {
             }),
         });
         const onCommitted = vi.fn();
+        const onAmbiguousCommit = vi.fn();
 
         const result = await executeAppActionBatch([{ type: 'setEditingTool', payload: { tool: 'marquee' } }], {
             onCommitted,
+            onAmbiguousCommit,
         });
 
         expect(result).toEqual({ status: 'no-op', actions: [] });
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(onCommitted).not.toHaveBeenCalled();
+        expect(onAmbiguousCommit).not.toHaveBeenCalled();
     });
+
+    it.each(['empty', 'cancelled', 'rejected'] as const)(
+        'never reports publication for an %s batch',
+        async (outcome) => {
+            const execute = vi.fn();
+            registerHandlerMap({ setEditingTool: createHandler<SetEditingToolAction>({ execute }) });
+            const onCommitted = vi.fn();
+            const onAmbiguousCommit = vi.fn();
+
+            const result = await executeAppActionBatch(
+                outcome === 'empty' ? [] : [{ type: 'setEditingTool', payload: { tool: 'marquee' } }],
+                {
+                    onCommitted,
+                    onAmbiguousCommit,
+                    shouldExecute: () => outcome !== 'cancelled',
+                    prepareValidation:
+                        outcome === 'rejected'
+                            ? () => ({ status: 'rejected', reason: 'Preflight refused' })
+                            : undefined,
+                }
+            );
+
+            expect(result.status).toBe(outcome === 'empty' ? 'no-op' : outcome);
+            expect(execute).not.toHaveBeenCalled();
+            expect(onCommitted).not.toHaveBeenCalled();
+            expect(onAmbiguousCommit).not.toHaveBeenCalled();
+        }
+    );
 });

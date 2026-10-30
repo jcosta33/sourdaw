@@ -73,6 +73,7 @@ import {
     createOfflineAutomationEvaluator,
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
+    isValidAutomationTimeStateRestorePlan,
     recordAutomationValue,
     setAutomationRecordingDependencies,
     setAutomationParameterRangeResolver,
@@ -114,6 +115,7 @@ import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
     initBranchState,
+    captureProjectRootIdentity,
     captureProjectRevision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
@@ -133,6 +135,7 @@ import {
     syncCrumbsNativeInstances,
 } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
+import { setElasticSensitivityRootIdentityCapture } from '#/modules/ElasticAudio/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -149,6 +152,7 @@ import {
 import {
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
+    isValidMidiTimeStateRestorePlan,
     createChordPitchProjector,
     createGrooveMidiEventProjector,
     projectChannelBend,
@@ -195,6 +199,7 @@ import {
     beatAtSecondsFromAnchor,
     prepareTimelineMapTimeOperation,
     prepareTimelineMapStateRestore,
+    isValidTimelineMapStateRestorePlan,
     readNativeEngineCursorBeats,
     resolveTempoAtBeat,
     setStopPlaybackCallback,
@@ -251,6 +256,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
@@ -411,6 +417,11 @@ setNotificationEventBus(eventBus);
 // a sealed origin. Anything they had to hold is delivered here. See #1557.
 flushDeferredStorageNotice();
 setTimeOperationDependencies({
+    savedRestorePlanValidators: {
+        automation: isValidAutomationTimeStateRestorePlan,
+        midi: isValidMidiTimeStateRestorePlan,
+        timelineMap: isValidTimelineMapStateRestorePlan,
+    },
     prepareAutomationTimeOperation,
     prepareAutomationTimeStateRestore,
     prepareMidiGlobalTimeTransaction,
@@ -649,7 +660,9 @@ configureAudioDeviceRuntimeSink({
 });
 
 assertCanonicalLlmActionStrategies(getExecutableAppActionGroundingCatalog());
-registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }));
+registerProductionCommandHandlers(getProductionCommandHandlerMaps({ canMutateBranchMetadata }), {
+    deferSessionRestore: true,
+});
 registerMidiTransforms(MIDI_TRANSFORM_IMPLEMENTATIONS);
 
 initToasterSubscribers({ eventBus, logger });

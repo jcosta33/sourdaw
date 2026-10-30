@@ -7,6 +7,8 @@ import { prepareDuplicateClipTargetId } from '../../useCases/clip/prepareDuplica
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
 import { isDuplicateClipAtSessionEntry } from '../validateCreationSessionEntries';
 
+import { createdClipMidiCapture } from './createdClipMidiCapture';
+
 type DuplicateClipAtAction = Extract<AppAction, { type: 'duplicateClipAt' }>;
 
 type DuplicateClipAtState = { targetClipId: string };
@@ -85,15 +87,29 @@ export const handleDuplicateClipAt = createHandler<'duplicateClipAt'>({
     materializeCommandArguments: (action) => {
         ensureTargetClipId(action);
     },
+    prepareAbort: (action) => () => createdClipMidiCapture({ phase: 'discard', action }),
     execute: (action) => {
         const state = getDuplicateClipAtState(action);
-        const created = duplicateClipCore({
-            clipId: action.payload.clipId,
-            targetClipId: state.targetClipId,
-            destinationTrackId: action.payload.destinationTrackId,
-            computeStartBeat: () => action.payload.startBeat,
-        });
-        return toHandlerExecutionResult(created);
+        const capture = createdClipMidiCapture({ phase: 'prepare', action, clipId: state.targetClipId });
+        try {
+            const created = duplicateClipCore({
+                clipId: action.payload.clipId,
+                targetClipId: state.targetClipId,
+                destinationTrackId: action.payload.destinationTrackId,
+                computeStartBeat: () => action.payload.startBeat,
+                captureMidiOutput: (output) => capture?.stage(output.target),
+            });
+            if (!created) {
+                capture?.discard();
+                return toHandlerExecutionResult(false);
+            }
+            capture?.complete();
+            const discard = () => createdClipMidiCapture({ phase: 'discard', action });
+            return { status: 'written', afterCommit: discard, afterAmbiguousCommit: discard };
+        } catch (error) {
+            capture?.discard();
+            throw error;
+        }
     },
     describe: (action) => {
         const state = getDuplicateClipAtState(action);

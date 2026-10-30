@@ -77,6 +77,11 @@ const mocks = vi.hoisted(() => {
         duplicateClipAutomation: vi.fn(),
         duplicateClipNotes: vi.fn(),
         removeMidiClipData: vi.fn(),
+        // These exports are reachable through imported project services, but
+        // this gesture spec does not exercise those services.
+        unrelatedService: vi.fn(() => {
+            throw new Error('Unexpected project service call in selection drag spec');
+        }),
         projectMidiNotesByClipIdThroughRestores: vi.fn(),
         serializeMidiStateForClips: vi.fn(),
         getAutomationLanes: vi.fn(() => []),
@@ -126,6 +131,7 @@ vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: mocks.executeUserAppAction,
     generateGroupId: mocks.generateGroupId,
     pushUndoEntry: mocks.pushUndoEntry,
+    resetActionReplayAuthority: mocks.unrelatedService,
 }));
 vi.mock('#/modules/Automation/useCases', () => ({
     shiftClipAutomation: mocks.shiftClipAutomation,
@@ -144,6 +150,14 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     projectMidiNotesByClipIdThroughRestores: mocks.projectMidiNotesByClipIdThroughRestores,
     serializeMidiStateForClips: mocks.serializeMidiStateForClips,
     removeMidiClipData: mocks.removeMidiClipData,
+    getMidiStoreState: mocks.unrelatedService,
+    adaptGrooveTemplateForConsumer: mocks.unrelatedService,
+    getGrooveTemplate: mocks.unrelatedService,
+    getStraightGrooveTemplateId: mocks.unrelatedService,
+    getScopedGrooveAssignment: mocks.unrelatedService,
+    getScopedGrooveConsumerId: mocks.unrelatedService,
+    restoreGrooveAssignment: mocks.unrelatedService,
+    projectDrumPreviewCandidateNotes: mocks.unrelatedService,
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notifyUser }));
 
