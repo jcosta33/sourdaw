@@ -1,0 +1,18 @@
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  h_beb54bf43b47b7 486,515
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  h_beb54bf43b47b7 249-254
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  h_beb54bf43b47b7 191,398,517,551
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "76e01924ea203ecdd2a360b776bc62f5c356f885",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
