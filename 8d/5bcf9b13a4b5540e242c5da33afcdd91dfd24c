@@ -1,0 +1,27 @@
+src/modules/Project/useCases/projectTemplates/templateFiles/__tests__/stringOrchestra.spec.ts
+  s_26f70b851e8f7a::t_4b25a8578b33e2 1-116
+  s_26f70b851e8f7a::t_66b0ad12a5beb6 117-119
+src/modules/Levain/useCases/index.ts
+  s_26f70b851e8f7a::t_5638277d731632 3
+src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts
+  s_26f70b851e8f7a::t_5638277d731632 12,95-101
+  s_26f70b851e8f7a::t_710fe3d9b51e11 102
+src/modules/Project/useCases/projectTemplates/templateDefinitions/__tests__/getTemplates.spec.ts
+  s_26f70b851e8f7a::t_4b25a8578b33e2 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8d5bcf9b13a4b5540e242c5da33afcdd91dfd24c",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
