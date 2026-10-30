@@ -65,7 +65,7 @@ vi.mock('#/modules/Automation/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
-    isFrozenMidiTakeSource: (await importOriginal<typeof import('#/modules/MIDI/stores')>()).isFrozenMidiTakeSource,
+    ...(await importOriginal<typeof import('#/modules/MIDI/stores')>()),
     midiStore: {
         get value() {
             return mocks.midiStoreValue.value;
