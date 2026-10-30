@@ -1,0 +1,27 @@
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  s_59e31a5c6f3e31::t_b7dc472c2c921d 27-31,66,117-119,135,271,291-313,562,586
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  s_59e31a5c6f3e31::t_e9a9ab92e17d2b 3-6,11,13,15,17-20,27,30-49,53-87,92-93,95,119-120,154-155,168-169,181-201,203-210,212-249,251-411,413,415,417,420-427,429-480
+  s_59e31a5c6f3e31::t_2c7d693f41a593 481-483
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_a0fae7ea325805 14-21,52-53,91-97,214-215,280-281,284-448,511
+  s_59e31a5c6f3e31::t_19c525f2fe4344 449-451
+  s_59e31a5c6f3e31::t_b5380c5c156bb5 510
+  s_59e31a5c6f3e31::t_cb65dce7177e8c 512-514
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "690a832f230b94aa70c301b7bde6594baaf4ae47",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
