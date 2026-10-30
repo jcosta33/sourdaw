@@ -1,0 +1,52 @@
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_3168504f6ce387::t_d7da24c2108951 378,440-489,491
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  s_3168504f6ce387::t_1fb21da827c2c3 9
+src/modules/AiRuntime/useCases/planningProviderSchema.ts
+  s_3168504f6ce387::t_0de46ab4639100 9
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  s_3168504f6ce387::t_0de46ab4639100 9-10
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_3168504f6ce387::t_0de46ab4639100 63,65,94,124,127
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  s_3168504f6ce387::t_1fb21da827c2c3 5
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  s_3168504f6ce387::t_a98023fafdcf1e 12,14-17
+  s_3168504f6ce387::t_e7d74322ec6191 19
+  s_3168504f6ce387::t_0de46ab4639100 39,41
+  s_3168504f6ce387::t_95f01c07025414 18
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_3168504f6ce387::t_ce24550ea158fe 14,20
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_3168504f6ce387::t_9e45ad27f39a83 3,5-8,28-52,54-67,90-95,97-99,101
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolvePresetActions.ts
+  s_3168504f6ce387::t_1fb21da827c2c3 3,7-8
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_3168504f6ce387::t_1fb21da827c2c3 3
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  s_3168504f6ce387::t_ce24550ea158fe 11
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_3168504f6ce387::t_c480c61b738e03 301,309,312,316,440-441
+  s_3168504f6ce387::t_057eb4645e27c8 298,342,353-438,442-443,500
+  s_3168504f6ce387::t_85270e790c757d 439
+src/modules/AiRuntime/useCases/projectWorkflowMetricToolSchemas.ts
+  s_3168504f6ce387::t_ce24550ea158fe 1-32
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_3168504f6ce387::t_ce24550ea158fe 58-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bef1a571297a39e1c7c55bf0571ba38ed9cfadf",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
