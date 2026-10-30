@@ -1,0 +1,21 @@
+src/modules/Command/useCases/__tests__/commandBatchPreparedStorage.integration.spec.ts
+  s_59e31a5c6f3e31::t_9e408334f63c26 355-369
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_59e31a5c6f3e31::t_9e408334f63c26 148-153
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "448f09d4f19a6e6aa121d65c362324009f0d3048",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
