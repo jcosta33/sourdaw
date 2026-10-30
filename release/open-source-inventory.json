@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:a7bafe90fb97fe027d9cc102c69b75f85a45c3d1dde5260e804942a0f39d1e1a:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:30f1f5a4623b7ced7d40e767a1e68f78dd506ec72ff1b081db58879d6a06b6e7:release/dependency-license-proofs.json"
+                "sha256:13a2ec7a8e56d685f18e90aca15d6fc0b3ff6486e9e8bfebe05ba5435035ec98:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:0bfc4866b5c17c7c36bef8a01dce6295da8174a9c301c4282faf41c28704df4c:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -264,20 +264,22 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml"
+                "pnpm-workspace.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
+                "sha256:98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -289,7 +291,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -400,7 +402,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563",
+                "sha256:7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1342,13 +1344,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:24b14fc1ce58a61f3cd63557b49c690262c5db8a14801e3870757192e67ea24b",
+                "daw-dsp sha256:3222c2040041263238bc0144ee95667fbd3fab94ee6aedc892b982a9449d004f",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:cedae292d8807bb529699282b5e4940ba87b686f489c00720b38bf147a7a4b98:public/wasm/manifest.json"
+                "sha256:6aec5edc9f763694d2b5eb3ce8e02ab26df0994bc92a3fd8d106b573f6b330cf:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1385,7 +1387,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:49cfd1ddc956b6b08931d1ebaf2e9b41d15eacf3eadc0f1d4e9ec6fdc0ff83dc:public/entryLoadRecovery.js"
+                "sha256:c0537f9e862db90028295659eb03c694f645a2c8d795f82d9ed19ded0bae5bda:public/entryLoadRecovery.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1817,7 +1819,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
+            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
         },
         {
             "path": "server/package.json",
@@ -1829,7 +1831,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
+            "sha256": "98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321"
         },
         {
             "path": "Cargo.toml",
@@ -1837,7 +1839,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563"
+            "sha256": "7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1845,7 +1847,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "cedae292d8807bb529699282b5e4940ba87b686f489c00720b38bf147a7a4b98"
+            "sha256": "6aec5edc9f763694d2b5eb3ce8e02ab26df0994bc92a3fd8d106b573f6b330cf"
         }
     ],
     "externalReferences": [
@@ -2336,6 +2338,11 @@
             "file": "scripts/run-gitleaks-history-scan.sh",
             "value": "https://github.com/gitleaks/gitleaks/releases/download/v${slot}/gitleaks_${slot}_linux_x64.tar.gz",
             "templateSha256": "cd2621ab9d84245475d6cb77f9d11a1663552fbcc42a5873573cab2e7daafee4"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/setupPnpm.ts",
+            "value": "https://registry.npmjs.org/"
         },
         {
             "surface": "project-source",

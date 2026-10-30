@@ -18308,7 +18308,7 @@
   {
     "id": "ui-b6f82957d65823db",
     "file": "src/modules/Levain/presentations/components/LevainMacroStrip.tsx",
-    "line": 17,
+    "line": 24,
     "fingerprint": "div\tgrid grid-cols-4 gap-1 flex items-center gap-2 flex-wrap",
     "kind": "layout",
     "mapping": "Grid",
