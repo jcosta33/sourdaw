@@ -1,0 +1,27 @@
+scripts/__tests__/reloadCancellationRegisteredWorkflow.spec.ts
+  s_26f70b851e8f7a::t_3cbbe3fa5a6c8b 30-84,158-159,192-235,244-245,250,252
+  s_26f70b851e8f7a::t_424865a59c71bf 243
+  s_26f70b851e8f7a::t_3d35cdb1660cef 246-249
+  s_26f70b851e8f7a::t_6399fdb0069629 251
+  s_26f70b851e8f7a::t_afa420e7822280 253-254
+.github/workflows/reload-cancellation-diagnostic.yml
+  s_26f70b851e8f7a::t_a446f23f1b5d05 76,93-104
+  s_26f70b851e8f7a::t_8f96e67a72af08 65,77-92
+  s_26f70b851e8f7a::t_c31741663d45a7 105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7500e21497be9f146d928062aca8652c6a80cf3b",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
