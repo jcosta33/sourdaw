@@ -470,11 +470,13 @@ async function compareExportWithSelectedPhrase(
     const positions = (await selectedSourcePositions(page, trackId)).filter((position) =>
         snapshot.regions.some((region) => Math.abs(position.startBeat - region.startBeat) < 0.01)
     );
+    expect(positions).toHaveLength(3);
     const points = positions.flatMap((fragment) => {
         const result: number[] = [];
         for (let beat = fragment.startBeat + 0.15; beat < fragment.endBeat - 0.15; beat += 0.1) {
             result.push(beat);
         }
+        expect(result.length, 'every selected pass must contribute an export PCM probe').toBeGreaterThan(0);
         return result;
     });
     expect(points.length).toBeGreaterThanOrEqual(8);
@@ -1028,7 +1030,18 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
             { take: passes[2], start: 8.25, end: 9 },
             { take: passes[1], start: 9.25, end: 10 },
             { take: passes[0], start: 10.25, end: 11 },
-        ];
+        ].map((region) => ({
+            ...region,
+            start: Math.max(region.start, region.take.startBeat + 0.1),
+            end: Math.min(region.end, region.take.endBeat - 0.1),
+        }));
+        expect(new Set(compPlan.map((region) => region.take.id)).size).toBe(3);
+        for (const region of compPlan) {
+            expect(
+                region.end - region.start,
+                'each comp must retain room for interior export PCM probes'
+            ).toBeGreaterThan(0.3);
+        }
         await page.evaluate(() => {
             const events: { type: string; phase: string; stripTarget: boolean; rowDraggable: boolean }[] = [];
             Reflect.set(window, '__punchCompGestureEvents', events);
