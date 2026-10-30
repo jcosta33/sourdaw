@@ -1,0 +1,64 @@
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 26,46
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  h_beb54bf43b47b7 64
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  h_beb54bf43b47b7 86
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  h_beb54bf43b47b7 1908
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 146-161,365
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 87,99-100,114-115,167-170,255,391,552-555,707,1011,1492-1495
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  h_beb54bf43b47b7 50
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  h_beb54bf43b47b7 69
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  h_beb54bf43b47b7 474-477
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 33
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 43,64,66
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  h_beb54bf43b47b7 52
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  h_beb54bf43b47b7 62-72,239,451,544,631-634,1158
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  h_beb54bf43b47b7 23-33,179
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 39,58
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 203-218,397
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 257
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  h_beb54bf43b47b7 161-164
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  h_beb54bf43b47b7 204-207,450,624
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  h_beb54bf43b47b7 57-67,256
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  h_beb54bf43b47b7 1364-1367
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  h_beb54bf43b47b7 46
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 34,52-53
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  h_beb54bf43b47b7 39
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  h_beb54bf43b47b7 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62f9647934e7603eb360c9cd5253fe979ccac930",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
