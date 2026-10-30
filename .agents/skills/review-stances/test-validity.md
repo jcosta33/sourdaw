@@ -2025,3 +2025,19 @@ production schema at the processor. Require all six bands and indices -1/0/1/2/3
 unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
 `forwards every band Body choice` must fail. Document/action spies do not prove worklet
 admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — first paint did not exercise a rejected App import
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
+fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
+same-frame document, but its initiating transport/navigation mechanism remains unknown.
+
+Inject a real failed initial App request and assert failure/recovery unconditionally, including
+confirmed budget admission and changed document lifetime. Keep first-paint checks distinct from
+App-render and bootstrap-completion checks. Scope legacy tests by their dependency on the affected
+startup phase, preserving unrelated mock behavior. Use discriminating corrupted-PCM and missing
+reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
+readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
+original navigation.
