@@ -85,7 +85,7 @@ describe('selected persistence acceptance server', () => {
         expect(existsSync(outDir)).toBe(false);
     });
 
-    it('preserves both startup and cleanup failures, chains the original cause, and still removes output', async () => {
+    it('preserves both startup and cleanup failures, chains the caught cleanup cause, and still removes output', async () => {
         const startupError = new Error('listener address failed');
         const cleanupError = new Error('preview close failed');
         vite.preview.mockResolvedValue({
@@ -107,7 +107,7 @@ describe('selected persistence acceptance server', () => {
         expect(failure.errors).toHaveLength(2);
         expect(failure.errors[0]).toBe(startupError);
         expect(failure.errors[1]).toBe(cleanupError);
-        expect(failure.cause).toBe(startupError);
+        expect(failure.cause).toBe(cleanupError);
         expect(vite.close).toHaveBeenCalledOnce();
         expect(existsSync(recordedBuild().outDir)).toBe(false);
     });
