@@ -1,0 +1,442 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 43-44,522-546
+  s_b6d960d6f9ffc4::t_c9c1149394a20d 512-521
+  s_b6d960d6f9ffc4::t_a4f1ae1e4e7ea8 4-11,16-19,25,29,39,50-488,492-511,547-633,635,637-653
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 81-104,511,512,514-518,520-525
+  s_4a92fcb4f3e922::t_a3a8382b3c17d4 38-43
+  s_b6d960d6f9ffc4::t_7a7d3543d72c40 105-117
+AGENTS.md
+  h_beb54bf43b47b7 262-275,400-425
+  s_3bb122e91d89a5::t_d51f105573982a 69-73,211,498-499
+package.json
+  h_beb54bf43b47b7 52-53,146,182
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 998-999,1111-1113,1142,1144,1147-1151,1153,1155-1158,1160-1161,1163,1167,1171
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 1159
+  s_4a92fcb4f3e922::t_7f4c0f2842251f 1294,1296,1299-1303,1305,1307-1313,1315,1319,1323
+  s_4a92fcb4f3e922::t_fea1c0ec8a6623 1143,1295
+scripts/__tests__/cleanupLanes.spec.ts
+  h_beb54bf43b47b7 1,3,18-20,22,24,25,26-31,32-37,38,40,43-63,64,65-72,74-115,145,323-343,344-359,360-376,377-379,380-395,396-398,399-434,435-449,450-462,463,464,465-477,478-483,484-607,776-799,801-802,804-825,1129-1185,1186,1187-1224
+  s_4a92fcb4f3e922::t_63c22d67a7a32a 39,41,116-117,130-132,608-613,615-616,618-625,629-638
+  s_4a92fcb4f3e922::t_4ad05bea10165f 21,42,639-648,652,655-659,669-671,713-719,722-726,730-737,742-755,767-773
+  s_4a92fcb4f3e922::t_66af280a91871c 118-129,626-628,649-651,653-654,660-664,666-668,672-712,720-721,727-728,738-741,756-766
+  s_4a92fcb4f3e922::t_67c25746c39b81 774-775
+  s_4a92fcb4f3e922::t_a9fde1b43eec1a 665,729
+  s_4a92fcb4f3e922::t_fd086a133ab81f 40
+  s_4a92fcb4f3e922::t_1f9aef3f1521fb 860-864,868,1004,1013-1043,1048,1063
+  s_4a92fcb4f3e922::t_5062fbda6abf08 1005-1012,1044-1047,1049-1062,1064
+  s_4a92fcb4f3e922::t_8ccb48b692ee43 73,137-139,614,617,800,803,828-830,833-838,840-842,855,859,879-883,887-889,904-906,923-929,931-935,947-952,955-971,983-991,993-997,1070-1078,1080-1084,1098-1121
+  s_4a92fcb4f3e922::t_510cd163b9efd9 849-851,853-854,856-858,865-867,869-878,884-886,890-903,907-922,930,936-946,953-954,972-982,992,998-1003,1065-1069,1079,1085-1097,1122-1128
+  s_4a92fcb4f3e922::t_53a3b6c20e0288 133-136,140-144,826-827,831-832,839,843-848
+  s_4a92fcb4f3e922::t_b3543fc63882aa 852
+  s_4a92fcb4f3e922::t_c3c0d533b79022 2,23,146-151,161-164,185-189,193-194,196-201,205,216-231,240-241,248-253
+  s_4a92fcb4f3e922::t_f3465d31c71e41 254,257-264,267,275-300,308-312,316-322
+  s_4a92fcb4f3e922::t_74c60f8147d500 208-210,213-215,268-274
+  s_4a92fcb4f3e922::t_04598f329193bb 4,6,8-9,11-14,15-17,152-160,190-192,195,202-204,206-207,211-212,232-239,242-247,255-256,265-266,301-307,313-315
+  s_b6d960d6f9ffc4::t_62efd44c0fe9ac 5,7,10,165-184
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 9881-9932,9933-9935,9936-9943,9944-9946,9947-9954,9955,9956,9957,9958-9963
+scripts/__tests__/installCleanupLanes.spec.ts
+  h_beb54bf43b47b7 1,14-23,25-80,81-83,84-114,219-252,253-297,298-309,461-530,531-533,534-542
+  s_4a92fcb4f3e922::t_595ac9fbdf9837 409-424,453
+  s_4a92fcb4f3e922::t_f4df96be759d4e 2-3,5-13,426-452,454-455,458-459
+  s_4a92fcb4f3e922::t_074c677a82ad53 24
+  s_4a92fcb4f3e922::t_d197f626a0f969 425
+  s_4a92fcb4f3e922::t_7df029e958d7ad 456-457
+  s_4a92fcb4f3e922::t_fc12a0dc423dd3 460
+  s_4a92fcb4f3e922::t_387f6529fe8678 342-400,402,404
+  s_4a92fcb4f3e922::t_dc7616e416952f 4,310-340
+  s_4a92fcb4f3e922::t_4022db0495f2c9 341
+  s_4a92fcb4f3e922::t_d23f55dff00752 401
+  s_4a92fcb4f3e922::t_22af6bee60967b 403
+  s_4a92fcb4f3e922::t_714855316112ff 405-407
+  s_4a92fcb4f3e922::t_0b141a9943882c 164-175,177-186,189-190,200-203,205-214,216-217
+  s_4a92fcb4f3e922::t_7986549697979c 215
+  s_4a92fcb4f3e922::t_4ceaa14ec2a178 218
+  s_4a92fcb4f3e922::t_43faec244db91e 115-163
+  s_b6d960d6f9ffc4::t_62efd44c0fe9ac 176,187-188,191-199,204
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 34-35,1027-1028,1248,1303-1315
+scripts/__tests__/removeLane.spec.ts
+  h_beb54bf43b47b7 67,129,427-429,696-777,949,1238-1243,1500-1505,1589-1591,1595,1613-1615,1617,1634,1689-1694,1712-1717,1725-1815,1816-1821,1822-1826,1827,1828,1829,1830-1832,1857,1923-1928
+scripts/cleanupLanes.ts
+  h_beb54bf43b47b7 1-19,27-31,32,33-68,70-80,81-87,88-106,108-125,128-148,151-152,154-164,166-173,189-192,217-239,294-295,302-317,320,321-330,331-387,418-427,428-435,438-441,442-445,446,447,448-458,460-465,466-468,469-479,481-483,484-487,488-491,492-501,502-526,527,528-533,534-543,544-581,582,583-602
+  s_4a92fcb4f3e922::t_2c0b80015063d2 165,174-188,196-208,210-211,436-437,480
+  s_4a92fcb4f3e922::t_b341cd22343f73 69,193-195,209,212-214
+  s_4a92fcb4f3e922::t_fe83062de22d4d 215,388-417,459
+  s_4a92fcb4f3e922::t_a2c827728a7d08 216
+  s_4a92fcb4f3e922::t_fea1c0ec8a6623 17
+  s_4a92fcb4f3e922::t_7db5dad8118574 277,289
+  s_4a92fcb4f3e922::t_4c99db78707115 247,297-300
+  s_4a92fcb4f3e922::t_078197b7a65a71 240-246,248-255,257-276,278-288,290-293,296,301,318-319
+  s_4a92fcb4f3e922::t_2bdbc9d650b48c 256
+  s_4a92fcb4f3e922::t_0221f61269e9af 20
+  s_4a92fcb4f3e922::t_7ca128e3358adb 21-23
+  s_4a92fcb4f3e922::t_1034c8fa3ebc4a 24,126-127,149-150,153
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 7,4489-4490,4515-4518,4584,4637,4644-4653
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 1-4,5,6-9,11-125,144-145,147-150,151,155,156-158,159,160,161,162-165,167-168,173-174,175-179,180-185,186-192,208-256,257,258-275,277-345
+  s_4a92fcb4f3e922::t_4a22bbcc68b328 126-143,146,166,169-172
+  s_4a92fcb4f3e922::t_1034c8fa3ebc4a 10,152-154
+  s_4a92fcb4f3e922::t_be7dee83ef7d9a 193-207,276
+scripts/laneActivity.ts
+  h_beb54bf43b47b7 1-7,8-16,17-53,54-56,57-63,64-68,69-74
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 21-23,95-99
+scripts/removeLane.ts
+  h_beb54bf43b47b7 4,14,17,39,53,115-118,240-243,305,310-324,325-327,328-336,354,368-369,372-373,440-441,449,458,477-478,488-495,512-513,518-568,572-574,587-590,593-613,805-806,810-817,818-822,823,825,832-834,856,862,868,889,927-928,942,947-948,961-962,976,981-982,1012-1017,1020-1022
+  s_4a92fcb4f3e922::t_4c99db78707115 78,807-809,824
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 145,154,156,167,170-171,173-176,199
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 172
+  s_4a92fcb4f3e922::t_fea1c0ec8a6623 144
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 174,176,179-183,185,187-190,192-193,195,199,203
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 191
+  s_4a92fcb4f3e922::t_fea1c0ec8a6623 175
+scripts/__tests__/githubAppIdentity.spec.ts
+  h_beb54bf43b47b7 19,673-725
+scripts/githubAppIdentity.ts
+  h_beb54bf43b47b7 82-87,161-162
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,267-268,274-275,282,294,405,1390,1822,1834,1842,2258-2262,2298-2308
+  s_4a92fcb4f3e922::t_478f6f8bb29bdd 1349
+  s_4a92fcb4f3e922::t_ee46ddc2f65ae0 221-223,229,1212-1213,1215
+scripts/cleanupLaneBookkeeping.ts
+  s_4a92fcb4f3e922::t_09e0bad9c8e9b4 1,15-16,18-24,30,35,71-72,74-76,136-139,143-144,146,148-152,154-187,190-191,193-194,196-214
+  s_4a92fcb4f3e922::t_0221f61269e9af 2-12,14,90-111,114,118,122,127
+  s_4a92fcb4f3e922::t_7480ed10c151c9 112-113
+  s_4a92fcb4f3e922::t_0c610013dcce18 115-117
+  s_4a92fcb4f3e922::t_c26695e4ecba84 119-121
+  s_4a92fcb4f3e922::t_b6eec654de5f98 123-126
+  s_4a92fcb4f3e922::t_04598f329193bb 27-43,48-53,64-66
+  s_4a92fcb4f3e922::t_1034c8fa3ebc4a 13,17,25-26,44-47,54-63,67-89,128-132,134-135,140-142,145,153,188-189,192,195
+  s_4a92fcb4f3e922::t_c3c0d533b79022 147
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 27-40
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 425-428,960-974,975,1016-1032
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-41,549-562,815-816,920-934,954-975
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 3-16,240-255,357-368,527-528,533-536,604-618
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 18-116,563-579,693-706,731-734,1676-1692,2197-2211,2212-2243,2285-2295
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7,9,11-12,25-26,28,30-32,38,40-42,49,67-69,116-118,120-131,154-161,166,174,205,277-279,319,321,335,337,355,399-400,416-417,435-436,476,478,498-499,527,533,597-598,651,661
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,122-123,290-292,294-343
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 223-239
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 6,10,623
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1361,1378-1381,1383-1390,1391-1394
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 213,230-233,235-242,243-246
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  h_beb54bf43b47b7 1-508
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  h_beb54bf43b47b7 5-6,10,16-17,23-26,64-81
+src/app/createCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-80
+src/app/initDeviceStateReconciliation.ts
+  h_beb54bf43b47b7 2,6-7,40-41,46-47,65
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,176,184,188
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1361,1378-1381,1383-1390,1391-1394
+src/modules/Crumbs/presentations/components/__tests__/WaveformDisplay.spec.tsx
+  h_beb54bf43b47b7 2,6-45
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  h_beb54bf43b47b7 12-14,17-18,25-83
+src/modules/Crumbs/stores/crumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-4
+src/modules/Crumbs/stores/crumbsStore.ts
+  h_beb54bf43b47b7 8,127-130,136
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  h_beb54bf43b47b7 1,16-33,43-44,66-76
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  h_beb54bf43b47b7 37,136,140,153
+src/modules/Crumbs/useCases/__tests__/sampleWaveformPublication.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/Crumbs/useCases/configureCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-11
+src/modules/Crumbs/useCases/index.ts
+  h_beb54bf43b47b7 5
+src/modules/Crumbs/useCases/loadSample.ts
+  h_beb54bf43b47b7 12-13,16,76-86,92-96,98-105,116,120,136-139,141-143,153-155,167-169,176-178,181-183,187-189,193
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 3-18,44-100
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 30,61
+.github/workflows/nightly.yml
+  h_beb54bf43b47b7 575,611
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 599,630
+Cargo.lock
+  h_beb54bf43b47b7 2538
+crates/daw-engine/src/audio_thread.rs
+  h_beb54bf43b47b7 58-182,289,300,304-324,365,384,492,633-684,752,797-800,822-823,846-854,873,1067-1069,1074-1079,1103-1105,1262-1266,1505,1519-1520,1532-1539,1565-1567,1588-1593,1596-1599,1606-1610,1613-1615,1640-1642,1663,1675,1742-1751,1773-1774,1807-1809,1846-1848,1859-2085,2118-2600,2891-2892,3044,3413
+crates/daw-engine/src/lib.rs
+  h_beb54bf43b47b7 3-8,164,323,410,418,967-1006,1504-1523,1629,1693-1746,1770,2218-2349
+crates/sourdaw-native/Cargo.toml
+  h_beb54bf43b47b7 76
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 1540-1541,1548-1549,1552-1558,1563-1567
+crates/sourdaw-native/src/commands/crumbs.rs
+  h_beb54bf43b47b7 12-21,35,51-52,87,93,99-102,108,111-112,123-124,127,130-133,139-140,158-174,176-187,194-197,202-206,208,230,257-264,470-474,492-493,495,500-503,544,627,639-640,731-739,741-745,748-768,770,773-862,1041-1043,1468-1567,1574-1585,1589,1593-1669,1672-1680,1684,1688-1703,1705-1991,2004-2731,2733-2791,2794-2802,2811,2816,2823,2826-2829,2835,2986,3026-3027,3029-3032,3035,3216-3217,3230-3243,3256-3259,3508-3509,3558-3559,3665,3668-3669,3677,3680-3687,3689-3705,3707-3718,3720-3737,3742,3744-3749,3751-3752,3754,3756-3765,3767-3771,3816-3818,3820,3880,3898-3901,3909,3922-3923,3925,3927-3928,3930-3931,3935-3942,3944-3949,3951-3954,3956-3975,3977-3978,4073-4082,4171,4241-4242,4244,4246-4251,4253-4254,4256-4259,4262-4263,4265-4266,4330-4341,4358
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  h_beb54bf43b47b7 157-167,169,174,192,226,232,863-864,885-887,896
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  h_beb54bf43b47b7 87-88,206-216,383-427,446-448
+crates/sourdaw-native/src/host/native_bridge.rs
+  h_beb54bf43b47b7 1,3,21,28-29,2166,2176-2177,2179,2182-2183,2185-2186,2221-2266,2504,2522,3304-3494,3497,3500-3504,3512-3646,3675,3712,3769-3772,3774-3798,3800-3808,3821,3839-3848
+docs/architecture/agent-release-gates.md
+  h_beb54bf43b47b7 3,9-10,17,51,68,85,119-122,130-131
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 387,421
+electron/commands.ts
+  h_beb54bf43b47b7 95
+patches/vite@8.3.5.patch
+  h_beb54bf43b47b7 1-61
+pnpm-lock.yaml
+  h_beb54bf43b47b7 7-9,112-113,116,122,128,158,220-221,242,245,1280-1281,4848-4849,4853-4854,6669,6671,7485,7492,7674,7679,7735,7744,7748,7888,8247,8250,8252,8265,8273,8280,10480,10482,10484,11220,11229,11309,11324,11327,11338
+pnpm-workspace.yaml
+  h_beb54bf43b47b7 38-43
+public/entryLoadRecovery.js
+  h_beb54bf43b47b7 52-53
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9-10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,56,64
+scripts/__tests__/agentCampaignHarness.spec.ts
+  h_beb54bf43b47b7 87-95
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  h_beb54bf43b47b7 7-8,70-81
+scripts/__tests__/e2eDevServer.spec.ts
+  h_beb54bf43b47b7 19-20,27,90-101
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 206,228,252,351-483
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 353,393,1002,1038,2006,2061
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 65,3303-3304
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 8-9,14,27,35-36,42,49,75,83-84,98,106-107,121,129-130,145,153-154,169,177-178,210-215,227-237,263-272,315-348,636
+scripts/__tests__/verifyPlaywrightRuntime.spec.ts
+  h_beb54bf43b47b7 8,13,19-20,28,35,43
+scripts/e2eDevServer.ts
+  h_beb54bf43b47b7 19-25
+scripts/offlineAudioWorkletTrace.ts
+  h_beb54bf43b47b7 65-74
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18311
+src/app/ApplicationFirstPaint.tsx
+  h_beb54bf43b47b7 3-4,10-18
+src/app/DesktopStartupError.tsx
+  h_beb54bf43b47b7 5,8-11,22
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  h_beb54bf43b47b7 1-2,7-16
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 159-160,298-299,527,549-552,815-822
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 62
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 245,284-286,288-293,436-474
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  h_beb54bf43b47b7 1-4,7,40,48,54,154-170,176,285-287,304-307,313,328,341-392
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 118,138,259
+src/app/main.tsx
+  h_beb54bf43b47b7 5,25-28,71,76-83,87-99
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 6,18,21-22,31-32,52,182-183,215,426-434,478,501,529-540,544-546,548,550,552-554,559-575,581-582,587,606-629,863-868,870-871,889,893,920-929,1077,1086,1160,1271,1339-1340,1412,1501,1505,1507-1508,1521-1522,1535-1536,1671-1678,1859,2048-2166,2372-2392,2408-2650,2987-3297,3318-3373
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  h_beb54bf43b47b7 2,14-15,18,56,90-92,108-110,129-130,151-152,165-166
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  h_beb54bf43b47b7 8-9,14,24-25,43,58,81,102-127,186-192,238-252
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_beb54bf43b47b7 8-9,12,19,102-165,284
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  h_beb54bf43b47b7 66-86,135-140,162-164
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 1-3,6-33,35,37,40-41,44,54-55,65-72,85-86,154-169,178,416-436,438-456,458-608,1119-1514
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 1,14-15,194-275
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  h_beb54bf43b47b7 216,226-228,231-233,428-435,513-522,525,542-549
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 1,3-7,126-128,130-190
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  h_beb54bf43b47b7 14,22-24,26
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  h_beb54bf43b47b7 8-9,14-22
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  h_beb54bf43b47b7 13-21,26-29,31-32,39-47,72-73,111-113,115-122,124-186
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  h_beb54bf43b47b7 1-709
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 1-479
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 267-272,309,409-416,419,430-439,444,461-463,475-477,540-542,606-608,913-915,985,1156-1170,1173-1180,1183-1190,1192-1209,1216,1218-1238,1240-1247,1249-1255,1265-1267,1283-1285,1298,1302,1351-1362
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  h_beb54bf43b47b7 8-11,73-103,165,176-194
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  h_beb54bf43b47b7 1-535
+src/modules/CrdtDocument/useCases/createCrdtDoc.ts
+  h_beb54bf43b47b7 1-2,8,14-18
+src/modules/CrdtDocument/useCases/index.ts
+  h_beb54bf43b47b7 63
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/CrdtDocument/useCases/subscribeToActiveRootInstallations.ts
+  h_beb54bf43b47b7 1-8
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  h_beb54bf43b47b7 7,24,35,94-106,119,250,253,262,264-265,267-268,278,288-292
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  h_beb54bf43b47b7 14,19,49-53,55-58,60-64,73,78-102,131,149-157,163-166,348,352-356,359,363-367,370,373-381,383-385,387-392,394-414,416,419,421-425,427-429,431-434,436-438,440-445
+src/modules/Crumbs/repositories/crumbsBridge/__tests__/recordingLifecycle.spec.ts
+  h_beb54bf43b47b7 1-89
+src/modules/Crumbs/repositories/crumbsBridge/armRecording.ts
+  h_beb54bf43b47b7 3-5,11,13-24,26
+src/modules/Crumbs/repositories/crumbsBridge/getCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Crumbs/repositories/crumbsBridge/onCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-23
+src/modules/Crumbs/repositories/crumbsBridge/stopRecording.ts
+  h_beb54bf43b47b7 3,7-10
+src/modules/Crumbs/stores/crumbsRecordingStore.ts
+  h_beb54bf43b47b7 1-151
+src/modules/Crumbs/useCases/crumbsLifecycle/__tests__/syncCrumbsNativeInstances.spec.ts
+  h_beb54bf43b47b7 248,253
+src/modules/Crumbs/useCases/crumbsLifecycle/syncCrumbsNativeInstances.ts
+  h_beb54bf43b47b7 57,107,124-125,147,172,177-183,192,211-218
+src/modules/Crumbs/useCases/recording/__tests__/armCrumbsRecording.spec.ts
+  h_beb54bf43b47b7 1,4-6,15,20-23,28-31,73-77
+src/modules/Crumbs/useCases/recording/__tests__/recordingLifecycle.spec.ts
+  h_beb54bf43b47b7 1-193
+src/modules/Crumbs/useCases/recording/__tests__/stopCrumbsRecording.spec.ts
+  h_beb54bf43b47b7 1-14,18,21-26,29,31,34,37
+src/modules/Crumbs/useCases/recording/armCrumbsRecording.ts
+  h_beb54bf43b47b7 1-2,4-13,23-39,46-53,58-88
+src/modules/Crumbs/useCases/recording/stopCrumbsRecording.ts
+  h_beb54bf43b47b7 2-9,12-71
+src/modules/Crumbs/useCases/recording/syncCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-169
+src/modules/ElasticAudio/AGENTS.md
+  h_beb54bf43b47b7 28
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 39,109
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 27-31,65,116-118,134,268,288-307,511,535
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 1,10-17,23-29,41,43,45,62-68,122,125,170,178-280
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/resolveElasticEditorTarget.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  h_beb54bf43b47b7 3-6,12,14,21,24-43,47-78,83-84,86,169-395
+src/modules/ElasticAudio/useCases/elasticAudio/elasticSensitivityDependencies.ts
+  h_beb54bf43b47b7 1-7
+src/modules/ElasticAudio/useCases/elasticAudio/resolveElasticEditorTarget.ts
+  h_beb54bf43b47b7 1-17
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 1-3,6,11-12,16-18,20,22-28,30-40,42-49,51-60,62-64,66-67,69-161
+src/modules/ElasticAudio/useCases/index.ts
+  h_beb54bf43b47b7 13
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 384-395,417-420,435-440
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 89
+src/utils/sourdawCommandArguments.ts
+  h_beb54bf43b47b7 70,104
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 1-503
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 49-51
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 11
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  h_beb54bf43b47b7 1-205
+tests/e2e/firstPaintDiagnostics.ts
+  h_beb54bf43b47b7 113-149,173,175
+tests/e2e/firstPaintWarmup.ts
+  h_beb54bf43b47b7 9-14,88,104-132,135-147
+tests/e2e/fixtures/hmrDisconnect/App.js
+  h_beb54bf43b47b7 1-3
+tests/e2e/fixtures/hmrDisconnect/entry.js
+  h_beb54bf43b47b7 1-14
+tests/e2e/fixtures/hmrDisconnect/index.html
+  h_beb54bf43b47b7 1-12
+tests/e2e/fixtures/hmrDisconnect/style.css
+  h_beb54bf43b47b7 1-3
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 349,428
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-561
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  s_3bb122e91d89a5::t_2b3008f2db8324 3-4,26,73,75-82
+.agents/skills/delivery-orchestration/references/review-records.md
+  s_3bb122e91d89a5::t_01f36b5bac9f9c 24-25,37,46,83-86
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  s_3bb122e91d89a5::t_b39068deda2103 3-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b09f52f73b7d54c42cba928cb1cefd8de866ed2d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_4a92fcb4f3e922": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188d4-5e00-7b41-a25f-393f9e294d9d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
