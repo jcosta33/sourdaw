@@ -60,7 +60,12 @@ import {
 } from '#/modules/Transport/useCases';
 import { defaultWorkspaceState, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import { getYeastHandlers } from '#/modules/Yeast/useCases';
-import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
+import {
+    type ConfirmPayload,
+    type NotifyPayload,
+    type PromptPayload,
+    setNotificationEventBus,
+} from '#/utils/Notification/notificationEventBus';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
@@ -69,6 +74,8 @@ import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { setTimeOperationDependencies } from '../../../useCases/timeOperations/timeOperationDependencies';
+
+type NotificationEvents = { 'ui.notify': NotifyPayload; 'ui.confirm': ConfirmPayload; 'ui.prompt': PromptPayload };
 
 type SourceOwners = {
     tracks: NonNullable<typeof trackStore.value>['tracks'];
@@ -127,7 +134,7 @@ describe('completed command metadata and audio source admission', () => {
         removeCrdtDoc('root');
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
-        setNotificationEventBus(createEventBus());
+        setNotificationEventBus(createEventBus<NotificationEvents>());
         clearHandlerRegistry();
         clearUndoHistory();
         resetActionReplayAuthority();
