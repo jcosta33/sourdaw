@@ -1,0 +1,23 @@
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_59e31a5c6f3e31::t_a84478db631fa5 105-112,126,263-277,279-316
+  s_59e31a5c6f3e31::t_491e570665bd3e 278
+  s_59e31a5c6f3e31::t_3285551fc96f74 317
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_59e31a5c6f3e31::t_f34d77c1b3c971 5,700-703,705-711,716-718
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eaf6cb8127210c2185e0094acbbd0a719c3f0fff",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
