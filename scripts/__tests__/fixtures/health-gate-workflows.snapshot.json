@@ -350,7 +350,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -390,7 +390,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run shard",
@@ -999,7 +999,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -1035,7 +1035,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run offline smoke set",
@@ -2003,7 +2003,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2058,7 +2058,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run shard",
