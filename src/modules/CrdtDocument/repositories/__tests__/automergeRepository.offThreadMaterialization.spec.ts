@@ -102,8 +102,14 @@ function seed() {
     repository.insertDoc('root', doc);
     return doc;
 }
-function multiheadFixture(options?: { ancestorActor?: boolean; reverse?: boolean }) {
-    const base = from<Document>({ slot: { count: 0 } }, { actor });
+function multiheadFixture(options?: { ancestorActor?: boolean; reverse?: boolean; extraAncestor?: boolean }) {
+    let base = from<Document>({ slot: { count: 0 } }, { actor });
+    const earlierHeads = getHeads(base);
+    if (options?.extraAncestor) {
+        base = change(base, (doc) => {
+            doc.other = false;
+        });
+    }
     const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
         doc.other = true;
     });
@@ -117,7 +123,7 @@ function multiheadFixture(options?: { ancestorActor?: boolean; reverse?: boolean
     const rightHeads = getHeads(right);
     free(base);
     free(right);
-    return { merged, left, rightHeads, ancestorHeads };
+    return { merged, left, rightHeads, ancestorHeads, earlierHeads };
 }
 function plan(original: Doc<Document>, unchanged = false) {
     const mutation: CanonicalStorageSlotMutation = {
@@ -253,6 +259,61 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(actual.other).toBe(true);
         expect(getObjectId(actual.slot.rows![0])).toBe(rowId);
     });
+
+    it.each(['missing head', 'extraneous ancestor', 'duplicate'] as const)(
+        'rejects a native-consistent %s dependency candidate and accepts a fresh canonical change',
+        async (kind) => {
+            const { merged, left, ancestorHeads, earlierHeads } = multiheadFixture({
+                ancestorActor: true,
+                extraAncestor: true,
+            });
+            free(left);
+            repository.insertDoc('root', merged);
+            const observer = vi.fn();
+            repository.onChange(observer);
+            const previousHeads = getHeads(merged);
+            const canonicalDependencies = [...previousHeads, ...ancestorHeads];
+            const dependencies =
+                kind === 'missing head'
+                    ? [...canonicalDependencies.filter((head) => head !== previousHeads[0]), ...earlierHeads]
+                    : [...canonicalDependencies, kind === 'duplicate' ? previousHeads[0]! : earlierHeads[0]!];
+            mocks.request.mockImplementationOnce(async (request) => {
+                const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
+                const candidate = changeAt(seed, dependencies, { message: request.message }, (draft) =>
+                    applyCanonicalStorageSlotMutation(draft, request.mutation)
+                ).newDoc;
+                try {
+                    return { bytes: Uint8Array.from(save(candidate)), heads: getHeads(candidate) };
+                } finally {
+                    free(candidate);
+                }
+            });
+            const prepared = plan(merged);
+            await prepared.requestMaterialization!(new AbortController().signal);
+            const result = await mocks.request.mock.results.at(-1)!.value;
+            const checked = load<Document>(result.bytes, { actor });
+            try {
+                const additions = native.getChangesMetaSince(checked, previousHeads);
+                expect(additions).toHaveLength(1);
+                expect(additions[0]).toMatchObject({ actor, seq: 3, message: 'Detect' });
+                expect([...(additions[0]?.deps ?? [])].sort()).toEqual([...dependencies].sort());
+                expect(getMissingDeps(checked, [])).toEqual([]);
+                expect(hasHeads(checked, previousHeads)).toBe(true);
+                expect(getHeads(checked)).toEqual(result.heads);
+            } finally {
+                free(checked);
+            }
+            expect(prepared.materialize).toThrow('changed native authority');
+            prepared.discard();
+            expect(repository.getDoc('root')).toBe(merged);
+            expect(observer).not.toHaveBeenCalled();
+            const fresh = plan(merged);
+            await fresh.requestMaterialization!(new AbortController().signal);
+            publish(fresh.materialize());
+            expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
+            expect(observer).toHaveBeenCalledOnce();
+        }
+    );
 
     it.each(['partial', 'absent'] as const)(
         'refuses a native %s multihead frontier and accepts a fresh valid candidate afterwards',

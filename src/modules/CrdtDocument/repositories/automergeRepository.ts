@@ -2,6 +2,7 @@ import {
     type Doc,
     type ChangeFn,
     type Heads,
+    type ChangeMetadata,
     init,
     load,
     save,
@@ -696,16 +697,25 @@ class AutomergeRepository {
                         }
                         const addition = additions[0];
                         if (addition) {
-                            const nextSequence = getChangesMetaSince(doc, []).reduce(
-                                (next, entry) => (entry.actor === actor ? Math.max(next, entry.seq + 1) : next),
-                                1
+                            const previousOwnChange = getChangesMetaSince(doc, []).reduce<ChangeMetadata | undefined>(
+                                (latest, entry) =>
+                                    entry.actor === actor && (!latest || entry.seq > latest.seq) ? entry : latest,
+                                undefined
                             );
+                            const nextSequence = (previousOwnChange?.seq ?? 0) + 1;
+                            const expectedDependencies = new Set(previousHeads);
+                            // Native transactions also name this actor's last change when it is no longer a head.
+                            if (previousOwnChange) {
+                                expectedDependencies.add(previousOwnChange.hash);
+                            }
+                            const dependencies = new Set(addition.deps);
                             if (
                                 addition.actor !== actor ||
                                 addition.seq !== nextSequence ||
                                 addition.message !== (message || null) ||
-                                addition.deps.length !== previousHeads.length ||
-                                addition.deps.some((head) => !previousHeads.includes(head))
+                                addition.deps.length !== dependencies.size ||
+                                dependencies.size !== expectedDependencies.size ||
+                                addition.deps.some((head) => !expectedDependencies.has(head))
                             ) {
                                 throw new Error('Prospective mutation Worker changed native authority');
                             }
