@@ -1,4 +1,4 @@
-import { change, clone, free, save, getHeads, load, toJS } from '@automerge/automerge';
+import { change, clone, free, save, getActorId, getChangesMetaSince, getHeads, getObjectId, load, merge, toJS } from '@automerge/automerge';
 import { applyCanonicalStorageSlotMutation } from '#/infra/store/storage/applyCanonicalStorageSlotMutation';
 import * as storageRuntime from '#/infra/store/storage/createAutomergeStorage';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -734,6 +734,66 @@ describe('locked transient markers through the real Elastic editor', () => {
         await redo();
         expect(rawWarpState()).toEqual(after);
         expect(getWarpState(CLIP_ID)).toEqual(after);
+    });
+
+    it.each([false, true])('Detect and UndoRedo preserve peer state after an ancestor-author merge in reverse=%s', async (reverse) => {
+        const samples = burstSamples();
+        const originalPcm = samples.slice();
+        supplyBuffer(samples);
+        setWarpState(CLIP_ID, { ...getWarpState(CLIP_ID), markers: [lockedMarker, selectedUserMarker] });
+        flushAutomergeStorageWrites();
+        clearUndoHistory();
+        const base = getCrdtDoc('root');
+        if (!base) throw new Error('Expected real native root');
+        const actor = getActorId(base);
+        const ownHeads = getHeads(base);
+        const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (draft) => {
+            draft.peerLeft = { retained: 'left' };
+        });
+        const right = change(clone(base, { actor: 'cccccccccccccccc' }), (draft) => {
+            draft.peerRight = { retained: 'right' };
+        });
+        const merged = merge(clone(reverse ? right : left, { actor }), reverse ? left : right);
+        free(left);
+        free(right);
+        const previousHeads = getHeads(merged);
+        expect(previousHeads).toHaveLength(2);
+        expect(previousHeads).not.toContain(ownHeads[0]);
+        replaceCrdtDocInLineage({ id: 'root', doc: merged });
+        const before = structuredClone(rawWarpState());
+        const retainedIds = before.markers.map((marker) => marker.id);
+        const nativeRows = rawWarpState().markers.map((marker) => getObjectId(marker));
+        const frames = holdAnimationFrames();
+        await frames.complete(executeAppAction({ type: 'detectTransients', payload: { clipId: CLIP_ID } }));
+        expect(materialization).toHaveBeenCalledTimes(1);
+        const actual = getCrdtDoc('root');
+        if (!actual) throw new Error('Expected detected native root');
+        const additions = getChangesMetaSince(actual, previousHeads);
+        expect(additions).toHaveLength(1);
+        expect(additions[0]?.actor).toBe(actor);
+        expect([...(additions[0]?.deps ?? [])].sort()).toEqual([...previousHeads, ...ownHeads].sort());
+        const after = structuredClone(rawWarpState());
+        expect(after.markers).toHaveLength(3);
+        for (const [index, id] of retainedIds.entries()) {
+            const retained = rawWarpState().markers.find((marker) => marker.id === id);
+            expect(retained).toEqual(before.markers[index]);
+            expect(getObjectId(retained!)).toBe(nativeRows[index]);
+        }
+        expect(actual.peerLeft).toEqual({ retained: 'left' });
+        expect(actual.peerRight).toEqual({ retained: 'right' });
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+        expect(undoHistoryStore.value?.past).toHaveLength(1);
+        await undo();
+        expect(rawWarpState()).toEqual(before);
+        expect(getCrdtDoc('root')?.peerLeft).toEqual({ retained: 'left' });
+        expect(getCrdtDoc('root')?.peerRight).toEqual({ retained: 'right' });
+        await redo();
+        expect(rawWarpState()).toEqual(after);
+        expect(getWarpState(CLIP_ID)).toEqual(after);
+        expect(getCrdtDoc('root')?.peerLeft).toEqual({ retained: 'left' });
+        expect(getCrdtDoc('root')?.peerRight).toEqual({ retained: 'right' });
+        expect(rawWarpState('other-clip')).toEqual(otherWarpState);
+        expect(samples).toEqual(originalPcm);
     });
 
     it('keeps the materialization await private and captures a fresh inverse after its stale result', async () => {

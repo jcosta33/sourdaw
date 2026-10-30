@@ -102,7 +102,7 @@ function seed() {
     repository.insertDoc('root', doc);
     return doc;
 }
-function multiheadFixture() {
+function multiheadFixture(options?: { ancestorActor?: boolean; reverse?: boolean }) {
     const base = from<Document>({ slot: { count: 0 } }, { actor });
     const left = change(clone(base, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
         doc.other = true;
@@ -110,11 +110,14 @@ function multiheadFixture() {
     const right = change(clone(base, { actor: 'cccccccccccccccc' }), (doc) => {
         doc.slot.rows = [{ id: 'retained', value: 0.9 }];
     });
-    const merged = merge(clone(left, { actor: getActorId(left) }), right);
+    const first = options?.reverse ? right : left;
+    const second = options?.reverse ? left : right;
+    const merged = merge(clone(first, { actor: options?.ancestorActor ? actor : getActorId(first) }), second);
+    const ancestorHeads = getHeads(base);
     const rightHeads = getHeads(right);
     free(base);
     free(right);
-    return { merged, left, rightHeads };
+    return { merged, left, rightHeads, ancestorHeads };
 }
 function plan(original: Doc<Document>, unchanged = false) {
     const mutation: CanonicalStorageSlotMutation = {
@@ -207,6 +210,47 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(hasHeads(actual, previousHeads)).toBe(true);
         expect(getChanges(merged, actual)).toHaveLength(unchanged ? 0 : 1);
         expect(actual.slot.count).toBe(unchanged ? 0 : 1);
+        expect(getObjectId(actual.slot.rows![0])).toBe(rowId);
+    });
+
+    it.each([
+        { reverse: false, unchanged: false },
+        { reverse: true, unchanged: false },
+        { reverse: false, unchanged: true },
+        { reverse: true, unchanged: true },
+    ])('accepts a native ancestor-author candidate after merge $reverse with unchanged=$unchanged', async (options) => {
+        const { merged, left, ancestorHeads } = multiheadFixture({ ...options, ancestorActor: true });
+        free(left);
+        repository.insertDoc('root', merged);
+        const previousHeads = getHeads(merged);
+        expect(previousHeads).toHaveLength(2);
+        expect(getActorId(merged)).toBe(actor);
+        expect(previousHeads).not.toContain(ancestorHeads[0]);
+        const rowId = getObjectId(merged.slot.rows![0]);
+        const prepared = plan(merged, options.unchanged);
+        await prepared.requestMaterialization!(new AbortController().signal);
+        const result = await mocks.request.mock.results.at(-1)!.value;
+        const checked = load<Document>(result.bytes, { actor });
+        let metadata: ReturnType<typeof native.getChangesMetaSince> = [];
+        try {
+            metadata = native.getChangesMetaSince(checked, previousHeads);
+            expect(getMissingDeps(checked, [])).toEqual([]);
+            expect(hasHeads(checked, previousHeads)).toBe(true);
+            expect(metadata).toHaveLength(options.unchanged ? 0 : 1);
+            if (!options.unchanged) {
+                const addition = metadata[0]!;
+                expect(addition).toMatchObject({ actor, seq: 2, message: 'Detect' });
+                expect([...addition.deps].sort()).toEqual([...previousHeads, ...ancestorHeads].sort());
+            }
+        } finally {
+            free(checked);
+        }
+        expect(() => publish(prepared.materialize()), JSON.stringify({ previousHeads, metadata })).not.toThrow();
+        const actual = repository.getDoc<Document>('root');
+        if (!actual) throw new Error('Expected accepted native ancestor candidate');
+        expect(getChanges(merged, actual)).toHaveLength(options.unchanged ? 0 : 1);
+        expect(actual.slot.count).toBe(options.unchanged ? 0 : 1);
+        expect(actual.other).toBe(true);
         expect(getObjectId(actual.slot.rows![0])).toBe(rowId);
     });
 
