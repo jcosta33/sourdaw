@@ -48,6 +48,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     discardRecording: fixture.discardRecording,
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    audioEngine: { beginAudioPreviewIntent: () => ({ release: vi.fn() }) },
     resumeEngine: () => Promise.resolve(),
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: () => Promise.resolve({ outcome: 'declined', reason: 'browser fixture' }),

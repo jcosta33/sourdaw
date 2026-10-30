@@ -138,7 +138,8 @@ const audioEngineMocks = {
     readNativeEnginePlayheadSeconds: vi.fn((): number | null => null),
 };
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
         () => 'root-identity'
     ),
@@ -245,7 +246,8 @@ vi.mock('#/modules/Arrangement/useCases', async (importOriginal) => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: (...args: unknown[]) => (notifyUserMock as (...a: unknown[]) => unknown)(...args),
 }));
-vi.mock('#/modules/MIDI/useCases', () => ({
+vi.mock('#/modules/MIDI/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/MIDI/useCases')>()),
     projectCommittedGroove: <Event>({ events }: { events: readonly Event[] }): readonly Event[] => events,
     shouldPlayMidiEvent: ({ probabilityPercent }: { probabilityPercent: number }) => {
         if (probabilityPercent <= 0) {
@@ -311,7 +313,8 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
             (audioEngineMocks.readNativeEnginePlayheadSeconds as (...a: unknown[]) => unknown)(...args),
     };
 });
-vi.mock('#/modules/Automation/useCases', () => ({
+vi.mock('#/modules/Automation/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Automation/useCases')>()),
     startAutomationRecording: (...args: unknown[]) =>
         (automationMocks.startAutomationRecording as (...a: unknown[]) => unknown)(...args),
     applyModulation: (...args: unknown[]) => (automationMocks.applyModulation as (...a: unknown[]) => unknown)(...args),
