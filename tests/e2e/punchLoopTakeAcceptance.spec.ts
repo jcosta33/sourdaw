@@ -756,6 +756,118 @@ async function configurePunchTrack(page: Page): Promise<string> {
     return trackId;
 }
 
+async function retainPunchFailureDiagnostics(page: Page, testInfo: TestInfo, name: string): Promise<void> {
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let snapshot: unknown;
+    try {
+        snapshot = await Promise.race([
+            page.evaluate(async () => {
+                const value: unknown = Reflect.get(window, '__punchRecordingClockWitness');
+                const state = typeof value === 'object' && value !== null ? value : null;
+                const context: unknown = state && 'context' in state ? state.context : null;
+                const admissionContext: unknown = state && 'admissionContext' in state ? state.admissionContext : null;
+                const control: unknown = state && 'control' in state ? state.control : null;
+                const samples: unknown = state && 'samples' in state ? state.samples : null;
+                const events: unknown = state && 'events' in state ? state.events : null;
+                const contextIds = new Map<AudioContext, number>();
+                const describeContext = (candidate: unknown) => {
+                    if (!(candidate instanceof AudioContext)) {
+                        return null;
+                    }
+                    let id = contextIds.get(candidate);
+                    if (id === undefined) {
+                        id = contextIds.size + 1;
+                        contextIds.set(candidate, id);
+                    }
+                    return {
+                        id,
+                        state: candidate.state,
+                        currentTime: candidate.currentTime,
+                        sampleRate: candidate.sampleRate,
+                        baseLatency: candidate.baseLatency,
+                        outputLatency: candidate.outputLatency,
+                    };
+                };
+                const capture = {
+                    wallTimeMs: Date.now(),
+                    performanceTimeMs: performance.now(),
+                    performanceTimeOriginMs: performance.timeOrigin,
+                    context: describeContext(context),
+                    admissionContext: describeContext(admissionContext),
+                    controlWords: control instanceof Int32Array ? Array.from(control) : null,
+                    admission: state && 'admission' in state ? state.admission : null,
+                    firstFrame: state && 'firstFrame' in state ? state.firstFrame : null,
+                    sampleCount: Array.isArray(samples) ? samples.length : null,
+                    samples: Array.isArray(samples) ? samples.slice(-512) : null,
+                    events: Array.isArray(events) ? events.slice(-64) : null,
+                    readDiagnostics: state && 'readDiagnostics' in state ? state.readDiagnostics : null,
+                    stopSent: state && 'stopSent' in state ? state.stopSent : null,
+                };
+                try {
+                    const [transport, playhead, wraps, sessions, scheduler, timing, audio] = await Promise.all([
+                        import('/src/modules/Transport/stores/transportStore.ts'),
+                        import('/src/modules/Transport/stores/playheadClockRef.ts'),
+                        import('/src/modules/Transport/stores/playheadWrapCountRef.ts'),
+                        import('/src/modules/AudioEngine/repositories/audioRecorder/recordingSession.ts'),
+                        import('/src/modules/Transport/useCases/playheadScheduler/schedulerSession.ts'),
+                        import('/src/modules/Transport/useCases/playheadScheduler/schedulerTimingDiagnostics.ts'),
+                        import('/src/modules/AudioEngine/useCases/engineAccess/getAudioContext.ts'),
+                    ]);
+                    const session = scheduler.schedulerSession;
+                    const engineContext = audio.getAudioContext();
+                    return {
+                        capture,
+                        engineContext: describeContext(engineContext),
+                        contextIdentity: {
+                            recordingMatchesEngine: context === engineContext,
+                            recordingMatchesAdmission: context === admissionContext,
+                            admissionMatchesEngine: admissionContext === engineContext,
+                        },
+                        transport: transport.transportStore.value,
+                        playheadBeat: playhead.playheadClockRef.beat,
+                        wrapCount: wraps.playheadWrapCountRef.current,
+                        recordingSessions: Array.from(sessions.activeSessions, ([trackId, recording]) => ({
+                            trackId,
+                            status: recording.status,
+                            captureSampleRate: recording.captureSampleRate,
+                            producerStopAcknowledged: recording.producerStopAcknowledged,
+                            decodePending: recording.decodePending,
+                            recordingNodeContext: describeContext(recording.recordingNode?.context),
+                            sourceNodeContext: describeContext(recording.sourceNode?.context),
+                        })).slice(0, 16),
+                        scheduler: {
+                            generation: session.generation,
+                            discontinuityEpoch: session.discontinuityEpoch,
+                            workerPresent: session.worker !== null,
+                            tickInFlight: session.tickInFlight,
+                            lastTickTime: session.lastTickTime,
+                            accumulatedPosition: session.accumulatedPosition,
+                            lastScheduledBeat: session.lastScheduledBeat,
+                            punchRecordingActive: session.punchRecordingActive,
+                            pendingSeam: session.pendingSeam,
+                            lastLoopSignature: session.lastLoopSignature,
+                            activeAudioSources: session.activeAudioSources.length,
+                        },
+                        timing: timing.schedulerTimingDiagnostics.snapshot(),
+                    };
+                } catch (error) {
+                    return { capture, storeDiagnosticError: String(error) };
+                }
+            }),
+            new Promise<never>((_resolve, reject) => {
+                deadline = setTimeout(() => reject(new Error('Punch failure snapshot exceeded 3000 ms')), 3000);
+            }),
+        ]);
+    } catch (error) {
+        snapshot = { captureError: String(error), pageClosed: page.isClosed() };
+    } finally {
+        clearTimeout(deadline);
+    }
+    const path = testInfo.outputPath(`${name}.json`);
+    await writeFile(path, JSON.stringify(snapshot, null, 2));
+    await testInfo.attach(name, { path, contentType: 'application/json' });
+}
+
 async function recordThroughTwoWraps(page: Page, trackId: string): Promise<void> {
     await page.getByTestId('transport-record').click();
     await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'true', { timeout: 20_000 });
@@ -1247,6 +1359,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                 {
                     projectId,
                     originalPcm,
+                    clockWitness: captureWitness,
                     trackId,
                     clipId: captured.clipId,
                     bufferId: captured.bufferId,
@@ -1264,10 +1377,13 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         });
         completed = true;
     } finally {
-        if (!completed && activePage && !activePage.isClosed()) {
-            await activePage
-                .screenshot({ path: testInfo.outputPath('failure.png'), fullPage: true })
-                .catch(() => undefined);
+        if (!completed && activePage) {
+            await retainPunchFailureDiagnostics(activePage, testInfo, 'punch-failure-state');
+            if (!activePage.isClosed()) {
+                await activePage
+                    .screenshot({ path: testInfo.outputPath('failure.png'), fullPage: true })
+                    .catch(() => undefined);
+            }
         }
         await writeFile(testInfo.outputPath('browser-console.json'), JSON.stringify(browserConsole, null, 2)).catch(
             () => undefined
@@ -1304,6 +1420,7 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
     });
     context.setDefaultTimeout(30_000);
     let activePage = await context.newPage();
+    let completed = false;
     const consoleMessages: string[] = [];
     const observe = (page: Page): void => {
         page.on('console', (message) => consoleMessages.push(`${message.type()}: ${message.text()}`));
@@ -1421,10 +1538,27 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         expect(owners.raw.lanes[0].regions).toEqual(closing.regions);
         expect(await pcmFingerprint(reopened, closing.bufferId)).toEqual(originalPcm);
         await testInfo.attach('immediate-pause-replacement-evidence', {
-            body: JSON.stringify({ projectId, trackId, pauseRequest, pause, request, closing, originalPcm }, null, 2),
+            body: JSON.stringify(
+                {
+                    projectId,
+                    trackId,
+                    pauseRequest,
+                    pause,
+                    request,
+                    closing,
+                    originalPcm,
+                    clockWitness: captureWitness,
+                },
+                null,
+                2
+            ),
             contentType: 'application/json',
         });
+        completed = true;
     } finally {
+        if (!completed) {
+            await retainPunchFailureDiagnostics(activePage, testInfo, 'pause-replacement-failure-state');
+        }
         if (!activePage.isClosed()) {
             await activePage
                 .screenshot({ path: testInfo.outputPath('pause-replacement-final.png') })
