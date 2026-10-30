@@ -207,8 +207,20 @@ describe('one successor of the exact adopted PR', () => {
     it('refuses disagreement between GitHub head and the actual remote before writes', () => {
         const f = fixture();
         f.setPublic({ head: FOREIGN });
-        expect(() => publishLane(12, f.port)).toThrow('head changed');
+        // The branch listing can lag the independent PR core. It cannot excuse that conflict.
+        const summary = f.port.existingOpenPullRequest;
+        f.port.existingOpenPullRequest = (branch) => {
+            const row = summary(branch);
+            return row === undefined ? undefined : { ...row, headRefOid: OLD };
+        };
+        let failure: unknown;
+        try {
+            publishLane(12, f.port);
+        } catch (error) {
+            failure = error;
+        }
         expect(f.effects).toEqual([]);
+        expect(failure).toBeInstanceOf(Error);
     });
     it('rejects an arbitrary descendant even when the ordinary fast-forward oracle says yes', () => {
         const f = fixture();
