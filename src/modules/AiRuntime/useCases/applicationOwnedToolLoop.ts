@@ -2003,10 +2003,11 @@ export async function runApplicationOwnedToolLoop(
             return { status: 'rejected', reason: validation.reason, receipts, turns: turn };
         }
         const witness = measurementWitness;
+        const admittedMeasurementIntake = measurementIntake;
         const intake =
-            measurementIntake === null
+            admittedMeasurementIntake === null
                 ? undefined
-                : receipts.find((receipt) => receipt.callId === measurementIntake.callId);
+                : receipts.find((receipt) => receipt.callId === admittedMeasurementIntake.callId);
         if (
             witness === null ||
             intake === undefined ||
