@@ -1,0 +1,14 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  h_beb54bf43b47b7 319-321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "31f6379d5fd083036248d2f0e551542440fb0e67",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
