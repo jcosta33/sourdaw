@@ -59,6 +59,17 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
+
 function fixture(prompt = 'Set Lead Vocal gain to 70%', options: { writableLeadVocal?: boolean } = {}) {
     const context = createPlanningProject(getProjectContext(), 3);
     if (options.writableLeadVocal === true) {
@@ -225,12 +236,7 @@ describe('positive whole-request metric intent', () => {
             },
         };
         const admitted = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admitted.status !== 'admitted' ||
-            admitted.kind !== 'creative' ||
-            !('metricAuthority' in admitted) ||
-            admitted.metricAuthority === undefined
-        ) {
+        if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
             throw new Error('Expected admitted bounded metric intent.');
         }
         expect(admitted.metricAuthority.goals).toHaveLength(objective.goals.length);
@@ -442,11 +448,7 @@ describe('bounded metric control admission', () => {
         });
         const call = control(value, 24);
         const admission = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admission.status !== 'admitted' ||
-            admission.kind !== 'creative' ||
-            admission.metricAuthority === undefined
-        ) {
+        if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
             throw new Error('Expected genuine authored metric admission.');
         }
         const data = {
@@ -539,11 +541,7 @@ describe('bounded metric control admission', () => {
                 projectRevision: 'metric-revision',
                 turn: 1,
             });
-            if (
-                admission.status !== 'admitted' ||
-                admission.kind !== 'creative' ||
-                admission.metricAuthority === undefined
-            ) {
+            if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
                 throw new Error('Expected real in-budget admission.');
             }
             const data = {
@@ -630,7 +628,10 @@ describe('bounded metric control admission', () => {
                         toolCalls: [{ name: 'setTrackGain', arguments: { trackId: targetId, gain: 0.7 } }],
                     };
                 }
-                const schema = schemas.find((candidate) => candidate.function.name === 'selectCreativeInterpretation');
+                const schema = schemas.find(
+                    (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        candidate.function.name === 'selectCreativeInterpretation'
+                );
                 if (schema === undefined) {
                     throw new Error('Expected actual published joint intake.');
                 }
@@ -1154,7 +1155,7 @@ describe('workflow selection dispatch preserves the first whole-request intake',
             projectRevision: 'metric-revision',
             turn: 1,
         });
-        if (result.status !== 'admitted' || !('metricAuthority' in result) || result.metricAuthority === undefined) {
+        if (result.status !== 'admitted' || !hasMetricAuthority(result)) {
             throw new Error('Expected actual positive intake.');
         }
         return result.metricAuthority;

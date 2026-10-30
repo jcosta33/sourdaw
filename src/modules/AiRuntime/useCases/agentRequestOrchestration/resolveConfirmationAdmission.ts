@@ -15,8 +15,8 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
-import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 

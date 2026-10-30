@@ -41,13 +41,13 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 type SetTempoAction = Extract<AppAction, { type: 'setTempo' }>;
 

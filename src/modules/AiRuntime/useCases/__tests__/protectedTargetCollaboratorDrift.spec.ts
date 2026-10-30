@@ -54,6 +54,17 @@ import {
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
 
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
+
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
 vi.mock('#/infra/store/storage/createAutomergeStorage', async (importOriginal) => {
@@ -242,7 +253,7 @@ function propose(input: { actions: ExecutableRuntimeAction[]; id: string; protec
             },
         },
     });
-    if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || admitted.metricAuthority === undefined) {
+    if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
         throw new TypeError('Expected genuine non-acoustic MIDI intake.');
     }
     const metricGoalState = JSON.stringify(

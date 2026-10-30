@@ -20,6 +20,17 @@ import {
     resetMetricGoalProject,
 } from './metricGoalWorkflowFixture';
 
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
+
 beforeEach(() => {
     const drums = createTrack({ id: 'drums', name: 'Drums', kind: 'audio' });
     drums.devices = [{ id: 'eq', name: 'Drums EQ', type: 'builtin-eq', bypassed: false, parameterValues: {} }];
@@ -165,7 +176,7 @@ describe('request-number closure through real Command metadata', () => {
                 },
             },
         });
-        if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || admitted.metricAuthority === undefined) {
+        if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
             throw new TypeError('Expected genuine bounded non-acoustic intake.');
         }
         const commandBatch = batch(prompt, {

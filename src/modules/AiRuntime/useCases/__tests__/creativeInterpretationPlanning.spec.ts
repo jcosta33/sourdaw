@@ -471,7 +471,10 @@ function scriptTurns(turns: ReadonlyArray<{ status: 'complete'; toolCalls: unkno
                 dimensions: [interpretation === differentInterpretationTurn ? 'arrangement' : 'processing'],
                 creationSlotObjectTypes: isRadio || isShaper ? ['device'] : [],
             });
-            const schema = schemas.find((candidate) => candidate.function.name === base.name);
+            const schema = schemas.find(
+                (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                    candidate.function.name === base.name
+            );
             if (schema === undefined) {
                 throw new TypeError('Expected the published joint intake schema');
             }

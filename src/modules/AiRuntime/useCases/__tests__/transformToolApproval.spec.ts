@@ -32,12 +32,11 @@ import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
-import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
-
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({
     setTrackGain: vi.fn(),

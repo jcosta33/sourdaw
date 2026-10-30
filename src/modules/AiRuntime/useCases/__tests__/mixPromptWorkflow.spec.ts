@@ -200,6 +200,22 @@ function getHostedRequestBody(): string {
     return body;
 }
 
+function assertAdvertisedToolSchema(
+    schema: ReturnType<typeof advertisedAnswerSchema>
+): asserts schema is ReturnType<typeof advertisedAnswerSchema> &
+    import('../../models/ToolDefinitions').ToolSchema['function'] {
+    const parameters = schema.parameters;
+    if (
+        parameters.type !== 'object' ||
+        !isRecord(parameters.properties) ||
+        !Array.isArray(parameters.required) ||
+        !parameters.required.every((entry: unknown) => typeof entry === 'string') ||
+        (parameters.additionalProperties !== undefined && typeof parameters.additionalProperties !== 'boolean')
+    ) {
+        throw new TypeError('Expected the actual advertised object tool schema.');
+    }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -378,6 +394,7 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
         }
         if (phase === 0) {
             const schema = advertisedAnswerSchema(request);
+            assertAdvertisedToolSchema(schema);
             return Promise.resolve(
                 toolCallsResponse(
                     literalMetricIntakeTurn(userMessage.content, [{ type: 'function', function: schema }])

@@ -1361,7 +1361,10 @@ describe('recipe.expand through provider planning', () => {
                     dimensions: ['processing'],
                     creationSlotObjectTypes: ['device'],
                 });
-                const schema = schemas.find((entry) => entry.function.name === base.name);
+                const schema = schemas.find(
+                    (entry: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        entry.function.name === base.name
+                );
                 if (schema === undefined) {
                     throw new Error('Missing actual published selector.');
                 }

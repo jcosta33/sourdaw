@@ -30,6 +30,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
@@ -43,7 +44,6 @@ import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import { landProjectEdit } from './landProjectEdit';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
-import { type ToolSchema } from '../../models/ToolDefinitions';
 
 const PROMPT = 'Delete all muted empty tracks, but preserve buses and groups.';
 

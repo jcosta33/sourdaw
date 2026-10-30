@@ -38,7 +38,6 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { deriveMatchSelectorPredicates } from '../deriveMatchSelectorPredicates';
@@ -50,6 +49,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 const noActionHistoryMetadataPort = {
     record: () => [],

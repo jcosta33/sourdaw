@@ -31,6 +31,7 @@ import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -47,10 +48,9 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
-import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
-import { type ToolSchema } from '../../models/ToolDefinitions';
+import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 function arpeggioIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
     const catalog = readCreativeInterpretationCatalog(userMessage, providerView);

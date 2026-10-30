@@ -23,6 +23,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { getMidiNoteTransformHandlers } from '#/modules/MIDI/useCases';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -41,9 +42,8 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { landProjectEdit } from './landProjectEdit';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
-import { type ToolSchema } from '../../models/ToolDefinitions';
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
 const PARAPHRASE =

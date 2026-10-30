@@ -1905,7 +1905,7 @@ describe('backing-vocal plate workflow', () => {
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         const snapshot = confirmation?.approvalSnapshot;
         const state = metricGoalStateCodec(snapshot?.metricGoalState);
-        if (!confirmation || !snapshot?.commandBatch || !state) {
+        if (!confirmation?.risk || !snapshot?.commandBatch || !state) {
             throw new Error('Expected visible original workflow with complete numeric request');
         }
         expect(state.nativeLiteralUses).toEqual([]);
