@@ -1,0 +1,24 @@
+docs/architecture/agent-release-gates.md
+  h_beb54bf43b47b7 3,9-10,17,51,68,85,119-122,130-131
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 6,816
+scripts/__tests__/agentCampaignHarness.spec.ts
+  h_beb54bf43b47b7 87-95
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 31-32,52,180-181,213,424-432,476,861-866,868-869,887,891,918-927,1499,1503,1505-1506,1519-1520,1533-1534,1641-1648,2942-3173,3194-3249
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  h_beb54bf43b47b7 2,14-15,18,56,90-92,108-110,129-130,151-152,165-166
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  h_beb54bf43b47b7 8-9,14,24-25,43,58,81,102-127,186-192,238-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b9b92289ebdafe999e6a849ecb2ea09ffa480d6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
