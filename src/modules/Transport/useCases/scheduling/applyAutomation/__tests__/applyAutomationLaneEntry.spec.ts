@@ -130,6 +130,7 @@ function deviceWrites(): number[] {
 
 describe('applyAutomation device-lane scope entry (#4741)', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         // Continuous play: the epoch never advances, so no discontinuity snap

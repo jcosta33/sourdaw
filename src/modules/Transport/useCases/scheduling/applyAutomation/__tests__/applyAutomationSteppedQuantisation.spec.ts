@@ -12,6 +12,7 @@ import { getAutomationValueAtBeat, isRecordingAutomation, resolveAutoMatchValue 
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
 import { appliedAutomationBases } from '../appliedAutomationBases';
+import { schedulerSession } from '../../../playheadScheduler/schedulerSession';
 import { applyAutomation } from '../applyAutomation';
 
 /**
@@ -143,6 +144,7 @@ function ride({ startValue, endValue }: { startValue: number; endValue: number }
 
 describe('applyAutomation — stepped device parameters', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         vi.mocked(isRecordingAutomation).mockReturnValue(false);
         vi.mocked(getCurrentTime).mockReturnValue(5);

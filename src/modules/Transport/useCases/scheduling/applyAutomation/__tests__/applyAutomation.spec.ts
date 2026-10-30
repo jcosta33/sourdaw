@@ -209,6 +209,7 @@ function seedTwoLanesOnOneDevice(device: SeedDevice): void {
 
 describe('applyAutomation', () => {
     beforeEach(() => {
+        schedulerSession.generation += 1;
         vi.clearAllMocks();
         // Re-arm the mocked value-at-beat after clearAllMocks resets it.
         vi.mocked(getAutomationValueAtBeat).mockReturnValue(0.75);
@@ -1514,7 +1515,13 @@ describe('applyAutomation', () => {
         }
 
         function setAutomationMode(mode: string): void {
-            (mutableTrackStore.value.tracks as GateTrack[])[0]!.automationMode = mode;
+            mutableTrackStore.value = {
+                ...mutableTrackStore.value,
+                tracks: (mutableTrackStore.value.tracks as GateTrack[]).map((track) => ({
+                    ...track,
+                    automationMode: mode,
+                })),
+            };
         }
 
         it('writes the device parameter back to its persisted value when the mode goes off', () => {

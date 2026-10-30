@@ -22,6 +22,7 @@ import {
     isRecordingAutomation,
     resolveAutoMatchValue,
 } from '#/modules/Automation/useCases';
+import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { applyFermenterRuntimeParam, mapFermenterParamToDspParam } from '#/modules/Fermenter/useCases';
 import { fromStereoPan } from '#/utils/audioLevelLaw';
 import {
@@ -269,6 +270,8 @@ const automationState: {
      * plugin-param slew to its target instead of gliding from the pre-jump value.
      */
     lastDiscontinuityEpoch: number | undefined;
+    rootIdentity: string | undefined;
+    schedulerGeneration: number | undefined;
     lastTrackStoreState: typeof trackStore.value | undefined;
     /**
      * Lane ids that wrote their parameter on the previous tick. The
@@ -282,6 +285,8 @@ const automationState: {
     trackIndex: new Map<string, NonNullable<typeof trackStore.value>['tracks'][number]>(),
     lastBypassed: new Map<string, boolean>(),
     lastDiscontinuityEpoch: undefined,
+    rootIdentity: undefined,
+    schedulerGeneration: undefined,
     lastTrackStoreState: undefined,
     drivingLanes: new Map(),
 };
@@ -355,6 +360,21 @@ export function applyAutomation(currentBeat: number): Set<string> {
     // same compensated clock this pass does (#4684) instead of the raw
     // playhead beat.
     clearDeviceReadBeatByTrack();
+    // Store snapshots also change for ordinary edits. Only an installed root
+    // or scheduler lifetime change retires the previous runtime owner, even
+    // when the incoming context temporarily has no automation state.
+    const rootIdentity = captureProjectRootIdentity();
+    const schedulerGeneration = schedulerSession.generation;
+    if (
+        automationState.rootIdentity !== rootIdentity ||
+        automationState.schedulerGeneration !== schedulerGeneration
+    ) {
+        automationState.drivingLanes.clear();
+        automationState.pluginParamSlew.clear();
+        automationState.lastBypassed.clear();
+    }
+    automationState.rootIdentity = rootIdentity;
+    automationState.schedulerGeneration = schedulerGeneration;
     // Each device's bypass-release edge, resolved on the first lane of this
     // tick that reaches it and read by every lane after that.
     const bypassReleaseEdges = new Map<string, boolean>();
@@ -467,15 +487,12 @@ export function applyAutomation(currentBeat: number): Set<string> {
     const trackState = trackStore.value;
     const tracks = trackState?.tracks;
 
-    // A replaced track snapshot is a new set of persisted bases. Drop runtime
-    // ownership from the previous snapshot before reconciling removed lanes so
-    // opening another project cannot restore a same-id track with stale data.
-    // A lane-only undo leaves this snapshot unchanged and reaches the removal
-    // restore below.
+    // A same-owner immutable edit keeps driving receipts so Off/removal can
+    // restore the latest persisted base. Retain the existing snapshot slew
+    // reset and bypass pruning independently of runtime ownership.
     const trackSnapshotReplaced =
         automationState.lastTrackStoreState !== undefined && automationState.lastTrackStoreState !== trackState;
     if (trackSnapshotReplaced) {
-        automationState.drivingLanes.clear();
         automationState.pluginParamSlew.clear();
     }
     automationState.lastTrackStoreState = trackState;
