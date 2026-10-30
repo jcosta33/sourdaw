@@ -2041,3 +2041,16 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — buffered guard output was lost after its emitter returned
+
+Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard CLI's forced exit.
+PR #3057's output checks proved collection and mocked emission, but did not observe delivery to
+an actual pipe after the CLI exited. On POSIX, a large asynchronous write can be cut short by
+`process.exit()` even when the entire child output was buffered.
+
+Probe the real CLI through pipes with output larger than pipe capacity. Require byte-exact first
+and last markers and the complete body for both success and failure, correct output channels and
+exit codes, and prompt exit. Also check the default bounded failure tail and signal cleanup. The
+same cases must lose output if the forced exit returns. Private historical reviewer prompts and
+model tiers are unknown.
