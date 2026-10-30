@@ -1,0 +1,18 @@
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordingClockWitness.spec.ts
+  h_beb54bf43b47b7 8
+tests/e2e/punchRecordingClockObserver.ts
+  h_beb54bf43b47b7 1-341
+tests/e2e/punchRecordingClockWitness.ts
+  h_beb54bf43b47b7 1,3,5
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e3960501326f1c699d72bdd7fe17bcc211d1c52",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
