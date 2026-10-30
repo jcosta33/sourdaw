@@ -16,7 +16,13 @@ export function runE2eDevServer(root: string, port: number, command: string, arg
             done
         );
     };
-    const child = spawn(command, args, { cwd: root, stdio: 'inherit' });
+    const child = spawn(command, args, {
+        cwd: root,
+        stdio: 'inherit',
+        // Acceptance documents must survive an editor socket disconnect. The
+        // pinned Vite patch also fences its reconnect reload when HMR is off.
+        env: { ...process.env, NO_HMR: '1' },
+    });
     let timer: NodeJS.Timeout | undefined;
     let requestedSignal: ShutdownSignal | undefined;
     const stop = (signal: ShutdownSignal): void => {
