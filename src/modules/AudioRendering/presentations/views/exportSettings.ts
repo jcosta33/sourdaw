@@ -5,7 +5,7 @@ import { R128_CEILING_DB_TP, R128_TARGET_LUFS } from '#/utils/audioLevelLaw';
 
 export { R128_CEILING_DB_TP, R128_TARGET_LUFS };
 
-export type ExportFormat = 'wav' | 'mp3' | 'flac';
+export type ExportFormat = 'wav' | 'mp3' | 'flac' | 'ogg' | 'opus';
 export type Mp3BitRate = 96 | 128 | 192 | 320;
 
 /**
@@ -64,7 +64,7 @@ const DEFAULT_EXPORT_SETTINGS: ExportSettings = {
     targetLufs: R128_TARGET_LUFS,
 };
 
-const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac'];
+const validExportFormats: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'opus'];
 const validBitDepths: readonly number[] = [16, 24, 32];
 
 type ReadNumberInput = {
