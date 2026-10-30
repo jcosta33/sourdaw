@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import {
     commandBatchPreflightPort,
     compileVersionedCommandBatchEnvelope,
@@ -26,6 +27,7 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 type ExecuteAppActionBatch = (typeof import('#/modules/Command/useCases'))['executeAppActionBatch'];
 type AppAction = Parameters<ExecuteAppActionBatch>[0][number];
@@ -177,7 +179,7 @@ function proposePendingActionConfirmation(
     const commandBatch = compileVersionedCommandBatchEnvelope({
         runId: input.id,
         batchId: input.groupId ?? input.id,
-        projectId: input.projectRevision,
+        projectId: captureProjectIdentity(),
         baseRevision: input.projectRevision,
         intent: input.prompt,
         commands,
@@ -190,10 +192,15 @@ function proposePendingActionConfirmation(
         },
     });
     approvedActionsByBatch.set(commandBatch.serialized, input.actions);
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     return storePendingActionConfirmation({
         ...input,
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({
+            commandBatch,
+            metricGoalState,
+        }),
     });
 }
 
@@ -221,7 +228,7 @@ describe('pending chat action confirmation', () => {
             availableAssetHashes: [],
             availableAudioBufferIds: [],
             lockedRanges: [],
-            projectId: 'revision-1',
+            projectId: captureProjectIdentity(),
             projectInvariantsValid: true,
             targetFingerprints: Object.fromEntries(targetIds.map((targetId) => [targetId, `fp:${targetId}`])),
         }));

@@ -1362,10 +1362,10 @@ describe('recipe.expand through provider planning', () => {
                     creationSlotObjectTypes: ['device'],
                 });
                 const schema = schemas.find((entry) => entry.function.name === base.name);
-                const objective =
-                    schema === undefined
-                        ? undefined
-                        : readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
+                if (schema === undefined) {
+                    throw new Error('Missing actual published selector.');
+                }
+                const objective = readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
                 if (objective === undefined) {
                     throw new Error('Missing actual published authored recipe objective.');
                 }

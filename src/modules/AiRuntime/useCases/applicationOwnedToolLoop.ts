@@ -247,6 +247,7 @@ type RunApplicationOwnedToolLoopInput = {
      */
     interpretation?: {
         toolName: string;
+        workflowToolName?: string;
         admit: (
             call: ToolCallResult,
             identity: { callId: string; turn: number }
@@ -2619,7 +2620,11 @@ export async function runApplicationOwnedToolLoop(
         }
 
         const interpretationCalls = identifiedCalls.filter(
-            ({ call }) => input.interpretation !== undefined && call.name === input.interpretation.toolName
+            ({ call }) =>
+                input.interpretation !== undefined &&
+                (call.name === input.interpretation.toolName ||
+                    (call.name === input.interpretation.workflowToolName &&
+                        (wholeRequestIntake !== 'admitted' || Object.hasOwn(call.arguments, 'metricIntent'))))
         );
         if (interpretationCalls.length > 0) {
             // The interpretation decides what the rest of the run is allowed to mean, so it cannot
@@ -2707,7 +2712,8 @@ export async function runApplicationOwnedToolLoop(
                 };
             }
             if (admission.providerProjection?.kind === 'metric-intent') {
-                wholeRequestIntake = 'admitted';
+                wholeRequestIntake =
+                    call.name === input.interpretation?.workflowToolName ? 'workflow-admitted' : 'admitted';
             }
             metricProviderProjection = admission.providerProjection;
             interpretation = 'admitted';

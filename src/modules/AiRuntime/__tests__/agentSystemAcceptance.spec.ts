@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
 import { Counter, toJS } from '@automerge/automerge';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -83,6 +83,8 @@ import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
+
+import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 
 type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
 
@@ -1491,7 +1493,26 @@ function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
     }
 }
 
+const fixtureLifetime = createAcceptanceFixtureLifetime();
+function deferredFixtureEvent() {
+    let release!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+const parentBoundary = {
+    body: deferredFixtureEvent(),
+    deadline: deferredFixtureEvent(),
+    integrationAdmission: deferredFixtureEvent(),
+    events: [] as string[],
+    reason: '',
+    owner: undefined as Promise<void> | undefined,
+    controller: undefined as Promise<void> | undefined,
+};
+
 describe('agent acceptance corpora', () => {
+    beforeEach(() => fixtureLifetime.drain());
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
         expect(new Set(allIds).size).toBe(allIds.length);
@@ -1599,38 +1620,50 @@ describe('agent acceptance corpora', () => {
     });
 
     describe.each(AGENT_ACCEPTANCE_CORPORA)('%s corpus', (corpusName) => {
-        it(
-            'scores every sealed-class case within the frozen thresholds with zero unintended mutations',
-            async () => {
-                const barrel = spyOnBarrelWrites();
-                const cases = scoredCases(corpora[corpusName]);
-                const results: AgentAcceptanceCaseResult[] = [];
-                let unintendedMutations = 0;
-                for (const testCase of cases) {
-                    const run = await runCorpusCase(testCase, barrel.log);
-                    results.push(run.result);
-                    unintendedMutations += run.unintendedMutations;
-                }
-
-                expect(results).toHaveLength(cases.length);
-                for (const result of results) {
-                    expect(result.observed).toBeDefined();
-                }
-
-                const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
-                expect(metrics.unintendedMutations).toBe(0);
-
-                const failed = failedAgentAcceptanceThresholds(
-                    metrics,
-                    corpusName,
-                    sealedScoredClasses(corpora[corpusName])
-                );
-                expect(failed).toEqual([]);
-
-                barrel.restore();
-            },
-            CORPUS_RUN_TIMEOUT_MS
-        );
+        const cases = scoredCases(corpora[corpusName]);
+        const completed = new Map<string, CaseRun>();
+        for (const testCase of cases) {
+            it(
+                `scores ${testCase.id}`,
+                async (context) => {
+                    let run: CaseRun | undefined;
+                    context.onTestFinished(() => {
+                        if (context.task.result?.state === 'pass' && !context.signal.aborted && run !== undefined) {
+                            if (completed.has(testCase.id)) {
+                                throw new Error(`Duplicate case ${testCase.id}`);
+                            }
+                            completed.set(testCase.id, run);
+                        }
+                    });
+                    await fixtureLifetime.track(async () => {
+                        const barrel = spyOnBarrelWrites();
+                        try {
+                            run = await runCorpusCase(testCase, barrel.log);
+                        } finally {
+                            barrel.restore();
+                        }
+                    });
+                },
+                CORPUS_RUN_TIMEOUT_MS
+            );
+        }
+        afterAll(() => {
+            const runs = completeAcceptanceResults(
+                cases.map((testCase) => testCase.id),
+                completed
+            );
+            const results = runs.map((run) => run.result);
+            expect(results).toHaveLength(cases.length);
+            for (const result of results) {
+                expect(result.observed).toBeDefined();
+            }
+            const unintendedMutations = runs.reduce((total, run) => total + run.unintendedMutations, 0);
+            const metrics = computeAgentAcceptanceMetrics(results, unintendedMutations);
+            expect(metrics.unintendedMutations).toBe(0);
+            expect(
+                failedAgentAcceptanceThresholds(metrics, corpusName, sealedScoredClasses(corpora[corpusName]))
+            ).toEqual([]);
+        });
     });
 
     describe('corpus validation self-checks', () => {
@@ -1705,6 +1738,7 @@ describe('agent acceptance corpora', () => {
     describe('write-counter self-checks', () => {
         let previousHistory: NonNullable<typeof undoHistoryStore.value>;
         let previousConfirmations: NonNullable<typeof pendingActionConfirmationStore.value>;
+        let setupCompleted = false;
 
         beforeEach(() => {
             const history = undoHistoryStore.value;
@@ -1714,12 +1748,19 @@ describe('agent acceptance corpora', () => {
             }
             previousHistory = history;
             previousConfirmations = confirmations;
+            setupCompleted = true;
             undoHistoryStore.set({ past: [], future: [] });
             clearPendingActionConfirmations();
         });
         afterEach(() => {
-            undoHistoryStore.set(previousHistory);
-            pendingActionConfirmationStore.set(previousConfirmations);
+            if (!setupCompleted) {
+                return;
+            }
+            setupCompleted = false;
+            return fixtureLifetime.cleanup(() => {
+                undoHistoryStore.set(previousHistory);
+                pendingActionConfirmationStore.set(previousConfirmations);
+            });
         });
 
         function truthFixture() {
@@ -1898,46 +1939,47 @@ describe('agent acceptance corpora', () => {
             expect(projectDifferences(before, after)).toBe(1);
         });
 
-        it('surfaces capture failures, preserves run failures and unsubscribes', async () => {
-            openChatProject();
-            let captures = 0;
-            const captureFailure = new Error('capture failure');
-            const capture = () => {
-                captures++;
-                throw captureFailure;
-            };
-            let writes = 0;
-            const write = () =>
-                mutateCrdtDoc<Record<string, unknown>>({
-                    id: 'root',
-                    changeFn: (document) => {
-                        document.observerProbe = ++writes;
-                    },
-                });
-            try {
-                await expect(
-                    observeProjectChanges(async () => {
-                        write();
-                    }, capture)
-                ).rejects.toBe(captureFailure);
-                const afterCapture = captures;
-                write();
-                expect(captures).toBe(afterCapture);
-                const runFailure = new Error('run failure');
-                await expect(
-                    observeProjectChanges(async () => {
-                        write();
-                        throw runFailure;
-                    }, capture)
-                ).rejects.toBe(runFailure);
-                const afterRun = captures;
-                expect(afterRun).toBeGreaterThan(afterCapture);
-                write();
-                expect(captures).toBe(afterRun);
-            } finally {
-                closeChatProject();
-            }
-        });
+        it('surfaces capture failures, preserves run failures and unsubscribes', () =>
+            fixtureLifetime.track(async () => {
+                openChatProject();
+                let captures = 0;
+                const captureFailure = new Error('capture failure');
+                const capture = () => {
+                    captures++;
+                    throw captureFailure;
+                };
+                let writes = 0;
+                const write = () =>
+                    mutateCrdtDoc<Record<string, unknown>>({
+                        id: 'root',
+                        changeFn: (document) => {
+                            document.observerProbe = ++writes;
+                        },
+                    });
+                try {
+                    await expect(
+                        observeProjectChanges(async () => {
+                            write();
+                        }, capture)
+                    ).rejects.toBe(captureFailure);
+                    const afterCapture = captures;
+                    write();
+                    expect(captures).toBe(afterCapture);
+                    const runFailure = new Error('run failure');
+                    await expect(
+                        observeProjectChanges(async () => {
+                            write();
+                            throw runFailure;
+                        }, capture)
+                    ).rejects.toBe(runFailure);
+                    const afterRun = captures;
+                    expect(afterRun).toBeGreaterThan(afterCapture);
+                    write();
+                    expect(captures).toBe(afterRun);
+                } finally {
+                    closeChatProject();
+                }
+            }));
 
         it('accepts each authorized commit and undo prefix without admitting another field', () => {
             const before = truthFixture();
@@ -2074,13 +2116,21 @@ describe('agent acceptance corpora', () => {
             alongsidePrior?: () => Promise<void>,
             beforeFollowUp?: () => Promise<void>
         ): Promise<CaseRun & { observedBarrelWrites: number }> {
-            const barrel = spyOnBarrelWrites();
-            try {
-                const result = await runRefinementCase(testCase, barrel.log, alongside, alongsidePrior, beforeFollowUp);
-                return { ...result, observedBarrelWrites: barrel.log.count() };
-            } finally {
-                barrel.restore();
-            }
+            return fixtureLifetime.track(async () => {
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const result = await runRefinementCase(
+                        testCase,
+                        barrel.log,
+                        alongside,
+                        alongsidePrior,
+                        beforeFollowUp
+                    );
+                    return { ...result, observedBarrelWrites: barrel.log.count() };
+                } finally {
+                    barrel.restore();
+                }
+            });
         }
 
         describe.each(AGENT_ACCEPTANCE_CORPORA)('%s expanded refinement cases', (corpusName) => {
@@ -2159,23 +2209,24 @@ describe('agent acceptance corpora', () => {
             }
         );
 
-        it('counts persisted restored writes beside single-turn planning', async () => {
-            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
-            if (testCase === undefined) {
-                throw new Error('Missing single-turn case');
-            }
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const run = await runCorpusCase(testCase, barrel.log, persistKickPanAndRestore);
-                expect(run.result.exactMatch).toBe(true);
-                expect(barrel.log.count()).toBe(0);
-                expect(run.unintendedMutations).toBeGreaterThan(0);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('counts persisted restored writes beside single-turn planning', () =>
+            fixtureLifetime.track(async () => {
+                const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+                if (testCase === undefined) {
+                    throw new Error('Missing single-turn case');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const run = await runCorpusCase(testCase, barrel.log, persistKickPanAndRestore);
+                    expect(run.result.exactMatch).toBe(true);
+                    expect(barrel.log.count()).toBe(0);
+                    expect(run.unintendedMutations).toBeGreaterThan(0);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
         it('scores the unaltered relative follow-up clean', async () => {
             const run = await runWithBarrel(relativeCase);
@@ -2224,54 +2275,56 @@ describe('agent acceptance corpora', () => {
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
 
-        it('observes a history-only write through the real scripted turn', async () => {
-            const prior = pendingCase.prior;
-            if (prior === undefined) {
-                throw new Error('The refinement fixture needs a prior turn.');
-            }
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const writes = await sendScriptedChatTurn({
-                    id: 'history-only-counter',
-                    prompt: prior.prompt,
-                    providerTurns: prior.providerTurns,
-                    priorProposalId: () => undefined,
-                    barrel: barrel.log,
-                    alongside: async () => {
-                        commandUseCases.pushUndoEntry(
-                            'Unintended history',
-                            () => {},
-                            () => {}
-                        );
-                    },
-                });
-                expect(projectDifferences(writes.projectBefore, writes.projectAfter)).toBe(0);
-                expect(writes.barrelActions).toEqual([]);
-                expect(writes.moved).toBe(true);
-                expect(anyWrites(writes)).toBe(1);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('observes a history-only write through the real scripted turn', () =>
+            fixtureLifetime.track(async () => {
+                const prior = pendingCase.prior;
+                if (prior === undefined) {
+                    throw new Error('The refinement fixture needs a prior turn.');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const writes = await sendScriptedChatTurn({
+                        id: 'history-only-counter',
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                        alongside: async () => {
+                            commandUseCases.pushUndoEntry(
+                                'Unintended history',
+                                () => {},
+                                () => {}
+                            );
+                        },
+                    });
+                    expect(projectDifferences(writes.projectBefore, writes.projectAfter)).toBe(0);
+                    expect(writes.barrelActions).toEqual([]);
+                    expect(writes.moved).toBe(true);
+                    expect(anyWrites(writes)).toBe(1);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
-        it('records both single-action and batch barrel writes and the actions each carried', async () => {
-            openChatProject();
-            const barrel = spyOnBarrelWrites();
-            try {
-                const mark = barrel.log.mark();
-                const single = gainMove('track-kick', -1);
-                await commandUseCases.executeAppAction(single, { skipUndo: true });
-                const batch = gainMove('track-snare', -1);
-                await commandUseCases.executeAppActionBatch([batch]);
-                expect(barrel.log.count()).toBe(2);
-                expect(barrel.log.actionsSince(mark)).toEqual([single, batch]);
-            } finally {
-                barrel.restore();
-                closeChatProject();
-            }
-        });
+        it('records both single-action and batch barrel writes and the actions each carried', () =>
+            fixtureLifetime.track(async () => {
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const mark = barrel.log.mark();
+                    const single = gainMove('track-kick', -1);
+                    await commandUseCases.executeAppAction(single, { skipUndo: true });
+                    const batch = gainMove('track-snare', -1);
+                    await commandUseCases.executeAppActionBatch([batch]);
+                    expect(barrel.log.count()).toBe(2);
+                    expect(barrel.log.actionsSince(mark)).toEqual([single, batch]);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }));
 
         it.each(['other-track-gain', 'target-track-gain', 'target-track-pan'] as const)(
             'counts an out-of-oracle project write that bypasses Command and history: %s',
@@ -2478,6 +2531,61 @@ describe('agent acceptance corpora', () => {
             expect(run.unintendedMutations).toBeGreaterThan(0);
         });
     });
+
+    it.fails(
+        'fixture lifetime deadline integration holds a real parent callback',
+        async ({ signal }) => {
+            const sentinel = new Error('parent fixture release');
+            signal.addEventListener(
+                'abort',
+                () => {
+                    parentBoundary.reason = String(signal.reason);
+                    parentBoundary.events.push('parent deadline');
+                    parentBoundary.deadline.release();
+                },
+                { once: true }
+            );
+            const barrel = spyOnBarrelWrites();
+            parentBoundary.owner = fixtureLifetime.track(async () => {
+                try {
+                    await runRefinementCase(
+                        corpusCase('held-out', 'AC004-HO-UNDO-MULTI-TRACK'),
+                        barrel.log,
+                        undefined,
+                        async () => {
+                            parentBoundary.events.push('parent held');
+                            await parentBoundary.body.promise;
+                            throw sentinel;
+                        }
+                    );
+                    throw new Error('expected parent release');
+                } catch (error) {
+                    if (error !== sentinel) {
+                        throw error;
+                    }
+                } finally {
+                    barrel.restore();
+                    parentBoundary.events.push('parent closed and restored');
+                }
+            });
+            parentBoundary.controller = (async () => {
+                try {
+                    await parentBoundary.deadline.promise;
+                    await parentBoundary.integrationAdmission.promise;
+                    expect(parentBoundary.events).toEqual([
+                        'parent held',
+                        'parent deadline',
+                        'integration admission entered',
+                    ]);
+                } finally {
+                    parentBoundary.body.release();
+                }
+            })();
+            void parentBoundary.controller.catch(() => undefined);
+            await parentBoundary.owner;
+        },
+        10_000
+    );
 });
 
 const SEALED_LITERAL_ONLY: readonly AgentScoredPromptClass[] = ['literal-structural'];
@@ -2751,4 +2859,162 @@ describe('payloadMatches', () => {
         expect(throwsFromNestedHollowRecord).toThrow(/payload\.notes\[0\]/);
         expect(throwsFromNestedHollowRecord).toThrow(/names no fields to pin/);
     });
+});
+
+describe('fixture lifetime deadline integration', () => {
+    function deferred() {
+        let release!: () => void;
+        const promise = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        return { promise, release };
+    }
+    const lifetime = fixtureLifetime;
+    const holdBody = deferred();
+    const holdCleanup = deferred();
+    const oldClosed = deferred();
+    const admissionEntered = deferred();
+    const timedOut = deferred();
+    const events: string[] = [];
+    const sentinel = new Error('controlled fixture release');
+    let reason = '';
+    let first = true;
+    let controller: Promise<void>;
+    let owner: Promise<void>;
+
+    beforeEach(async () => {
+        if (first && parentBoundary.owner !== undefined) {
+            parentBoundary.events.push('integration admission entered');
+            parentBoundary.integrationAdmission.release();
+        }
+        if (!first) {
+            events.push('admission entered');
+            admissionEntered.release();
+        }
+        first = false;
+        await lifetime.drain();
+    });
+
+    it.fails(
+        'times out while a real refinement remains held',
+        async ({ signal }) => {
+            if (parentBoundary.owner !== undefined) {
+                await parentBoundary.controller;
+                expect(parentBoundary.reason).toContain('timed out');
+                expect(parentBoundary.events).toEqual([
+                    'parent held',
+                    'parent deadline',
+                    'integration admission entered',
+                    'parent closed and restored',
+                ]);
+            }
+            signal.addEventListener(
+                'abort',
+                () => {
+                    reason = String(signal.reason);
+                    events.push('deadline');
+                    timedOut.release();
+                },
+                { once: true }
+            );
+            const barrel = spyOnBarrelWrites();
+            owner = lifetime.track(async () => {
+                try {
+                    await runRefinementCase(
+                        corpusCase('held-out', 'AC004-HO-UNDO-MULTI-TRACK'),
+                        barrel.log,
+                        undefined,
+                        async () => {
+                            events.push('old held');
+                            await holdBody.promise;
+                            throw sentinel;
+                        }
+                    );
+                    throw new Error('expected controlled release');
+                } catch (error) {
+                    if (error !== sentinel) {
+                        throw error;
+                    }
+                } finally {
+                    events.push('old closed');
+                    oldClosed.release();
+                    try {
+                        await holdCleanup.promise;
+                    } finally {
+                        barrel.restore();
+                        events.push('old restored');
+                    }
+                }
+            });
+            controller = (async () => {
+                try {
+                    await timedOut.promise;
+                    await admissionEntered.promise;
+                    expect(events).toEqual(['old held', 'deadline', 'admission entered']);
+                    holdBody.release();
+                    await oldClosed.promise;
+                    expect(events).toEqual(['old held', 'deadline', 'admission entered', 'old closed']);
+                } finally {
+                    holdBody.release();
+                    holdCleanup.release();
+                }
+            })();
+            await owner;
+        },
+        10_000
+    );
+
+    it(
+        'admits the real successor only after old close and spy restoration',
+        () =>
+            lifetime.track(async () => {
+                events.push('successor body entered');
+                const barrel = spyOnBarrelWrites();
+                try {
+                    await controller;
+                    expect(reason).toContain('timed out');
+                    expect(events).toEqual([
+                        'old held',
+                        'deadline',
+                        'admission entered',
+                        'old closed',
+                        'old restored',
+                        'successor body entered',
+                    ]);
+                    openChatProject();
+                    events.push('successor opened');
+                    const testCase = corpusCase('development', 'AC004-DEV-UNDO-MULTI-TRACK');
+                    const prior = testCase.prior;
+                    if (prior === undefined) {
+                        throw new Error('Missing real prior');
+                    }
+                    const projectBefore = captureProjectTruth();
+                    await sendScriptedChatTurn({
+                        id: testCase.id,
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                    });
+                    const ids = proposedConfirmationIds();
+                    expect(ids).toHaveLength(1);
+                    const state = await settlePriorTurn(
+                        testCase.id,
+                        prior.outcome,
+                        projectBefore,
+                        priorCommitOracleActions(prior)
+                    );
+                    expect(state.commitGroupId).toBeDefined();
+                    events.push('successor confirmed');
+                    expect(events.slice(-2)).toEqual(['successor opened', 'successor confirmed']);
+                } finally {
+                    holdBody.release();
+                    holdCleanup.release();
+                    await owner;
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }),
+        30_000
+    );
 });

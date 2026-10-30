@@ -16,6 +16,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { hasExactAgentCommandBatchAuthority } from '../../validators/hasExactAgentCommandBatchAuthority';
 import { bindMetricGoalsToBatch } from '../bindMetricGoalsToBatch';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 
@@ -324,6 +325,19 @@ async function resolveConfirmationAdmission(input: {
             projectRevision: refreshed.currentRevision,
         });
         if (!rebound) {
+            return {
+                status: 'handled',
+                result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),
+            };
+        }
+        if (
+            !agentRunLifecycle.rebindMetricGoalState({
+                runId: confirmation.runId,
+                expectedMetricGoalState: confirmation.approvalSnapshot.metricGoalState,
+                metricGoalState,
+                revision: refreshed.currentRevision,
+            })
+        ) {
             return {
                 status: 'handled',
                 result: await confirmationTerminalSettlement.invalidateForProjectChange(confirmation),

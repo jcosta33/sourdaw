@@ -132,17 +132,20 @@ function currentPreviewGoal(goal: MetricGoal, context: ProjectContext): goal is 
 }
 
 function scopeMembers(ids: string[], kind: PreviewRequest['scope']['kind'], context: ProjectContext): string[] {
-    return ids.filter((id) =>
-        id === 'master'
-            ? kind === 'master'
-            : context.tracks.some(
-                  (track) =>
-                      track.id === id &&
-                      (kind === 'buses'
-                          ? track.kind === 'bus'
-                          : kind === 'tracks' && (track.kind === 'audio' || track.kind === 'midi'))
-              )
-    );
+    return ids.filter((id) => {
+        if (id === 'master') {
+            return kind === 'master';
+        }
+        return context.tracks.some((track) => {
+            if (track.id !== id) {
+                return false;
+            }
+            if (kind === 'buses') {
+                return track.kind === 'bus';
+            }
+            return kind === 'tracks' && (track.kind === 'audio' || track.kind === 'midi');
+        });
+    });
 }
 
 function appendScopeRequests(
@@ -228,16 +231,19 @@ function measurementCall(
     request: PreviewRequest,
     callId: string
 ): Parameters<typeof executeAnalysisMeasure>[0]['call'] {
+    let range: { startBeat: number; endBeat: number } | { sectionId: string };
+    if (request.range.sectionId === null) {
+        range = { startBeat: request.range.startBeat, endBeat: request.range.endBeat };
+    } else {
+        range = { sectionId: request.range.sectionId };
+    }
     return {
         id: callId,
         name: 'analysis.measure',
         arguments: {
             subject: 'preview',
             scope: request.scope,
-            range:
-                request.range.sectionId === null
-                    ? { startBeat: request.range.startBeat, endBeat: request.range.endBeat }
-                    : { sectionId: request.range.sectionId },
+            range,
             metrics: request.metrics,
             proposal: {
                 schemaVersion: 1,
@@ -402,6 +408,14 @@ export async function prepareMetricGoalPreview(
         };
     } finally {
         release();
-        agentRunWorkLease.settle({ ...claimed.lease, terminalState });
+        agentRunWorkLease.settle({
+            runId: claimed.lease.runId,
+            workId: claimed.lease.workId,
+            leaseId: claimed.lease.leaseId,
+            cancellationGeneration: claimed.lease.cancellationGeneration,
+            idempotencyKey: claimed.lease.idempotencyKey,
+            receiptIdentity: claimed.lease.receiptIdentity,
+            terminalState,
+        });
     }
 }

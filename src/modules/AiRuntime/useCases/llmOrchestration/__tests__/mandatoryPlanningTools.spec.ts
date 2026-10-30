@@ -17,6 +17,7 @@ import { type ModelProviderResult } from '../../../models/ModelProviderProtocol'
 import { type PlanningContextBinding } from '../../../models/PlanningContextBinding';
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { THREAD_CONTEXT_MAX_BYTES, type ThreadContext } from '../../../models/ThreadContext';
+import { type ToolCallResult } from '../../../models/ToolCallResult';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
 import { WORKFLOW_ACTION_TOOL_NAMES, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../../models/WorkflowCapability';
 import { encodeWireToolName } from '../../../repositories/cloudLlm/cloudInference/encodeWireToolName';
@@ -949,24 +950,23 @@ describe('mandatory planning tools', () => {
                                     },
                                 ]);
                             }
-                            return JSON.stringify(
-                                replies === 1
-                                    ? [intake]
-                                    : [
-                                          {
-                                              id: 'phase-proposal',
-                                              name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-                                              arguments: {
-                                                  commands: [
-                                                      {
-                                                          name: 'setTrackGain',
-                                                          arguments: { trackId: 'track-phase', gain: 0.7 },
-                                                      },
-                                                  ],
-                                              },
-                                          },
-                                      ]
-                            );
+                            if (replies === 1) {
+                                return JSON.stringify([intake]);
+                            }
+                            return JSON.stringify([
+                                {
+                                    id: 'phase-proposal',
+                                    name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                                    arguments: {
+                                        commands: [
+                                            {
+                                                name: 'setTrackGain',
+                                                arguments: { trackId: 'track-phase', gain: 0.7 },
+                                            },
+                                        ],
+                                    },
+                                },
+                            ]);
                         });
                     } else {
                         mocks.generateCloudToolCalls.mockImplementation(
@@ -988,34 +988,33 @@ describe('mandatory planning tools', () => {
                                         ],
                                     };
                                 }
+                                const proposal = {
+                                    id: 'phase-proposal',
+                                    name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+                                    arguments: {
+                                        commands: [
+                                            {
+                                                name: 'setTrackGain',
+                                                argumentsJson: '{"trackId":"track-phase","gain":0.7}',
+                                            },
+                                        ],
+                                        list: null,
+                                        plan: null,
+                                        compiledCallIds: null,
+                                    },
+                                };
+                                let assistantItems = [{ type: 'function_call', call_id: 'phase-proposal' }];
+                                let calls: ToolCallResult[] = [proposal];
+                                if (replies === 1) {
+                                    assistantItems = firstAssistantItems;
+                                    calls = [intake];
+                                }
                                 return {
                                     providerRequestId: null,
                                     strictToolSchemas: true,
                                     usage: null,
-                                    assistantItems:
-                                        replies === 1
-                                            ? firstAssistantItems
-                                            : [{ type: 'function_call', call_id: 'phase-proposal' }],
-                                    calls:
-                                        replies === 1
-                                            ? [intake]
-                                            : [
-                                                  {
-                                                      id: 'phase-proposal',
-                                                      name: COMMAND_BATCH_PROPOSAL_TOOL_NAME,
-                                                      arguments: {
-                                                          commands: [
-                                                              {
-                                                                  name: 'setTrackGain',
-                                                                  argumentsJson: '{"trackId":"track-phase","gain":0.7}',
-                                                              },
-                                                          ],
-                                                          list: null,
-                                                          plan: null,
-                                                          compiledCallIds: null,
-                                                      },
-                                                  },
-                                              ],
+                                    assistantItems,
+                                    calls,
                                 };
                             }
                         );

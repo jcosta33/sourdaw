@@ -58,6 +58,7 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
@@ -464,6 +465,7 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
             )
         ),
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id,
         prompt: 'create a Vocal Plate bus, add Reverb, and route Vocals to it',
@@ -471,7 +473,8 @@ function propose(actions: ExecutableRuntimeAction[], id: string): void {
         actions,
         actionLabels: actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         projectRevision,
     });

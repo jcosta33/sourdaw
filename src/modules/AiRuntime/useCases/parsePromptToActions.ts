@@ -21,6 +21,7 @@ import { type IntentResult, type PlannedIntentResult } from '../models/IntentRes
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../models/LlmActionLimits';
 import { type MeasuredPreview } from '../models/MeasuredPreview';
 import { type MeasurementAdmitter } from '../models/MeasurementBudget';
+import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import {
@@ -29,6 +30,7 @@ import {
     READONLY_ANSWER_TERMINAL_NAMES,
 } from '../models/PlanningProfile';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
+import { PRESET_ACTIONS, type PresetContext } from '../models/PresetActions/Registry';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { type RuntimeAction } from '../models/RuntimeAction';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -37,8 +39,10 @@ import {
     isWorkflowCapabilityId,
     WORKFLOW_ACTION_TOOL_NAMES,
     WORKFLOW_CAPABILITY_TOOL_NAME,
+    WORKFLOW_METRIC_CAPABILITY_IDS,
     type WorkflowCapabilityId,
 } from '../models/WorkflowCapability';
+import { getAvailablePresets } from '../services/fuzzySearch';
 import { getPendingActionConfirmation } from '../stores/pendingActionConfirmationStore';
 import { buildPlanningSystemPrompt } from '../transformers/buildPlanningSystemPrompt';
 import { extractAgentPlanProposal, normalizeAgentPlanProposal } from '../transformers/normalizeAgentPlanProposal';
@@ -56,6 +60,7 @@ import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { admitPlanningInterpretation } from './admitPlanningInterpretation';
+import { freezeWorkflowNativeLiteralUses } from './agentReference/bridgeBackingVocalPlatePlan';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -85,6 +90,7 @@ import {
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
+import { resolveRawPresetActions } from './aiRuntimeQueries/resolvePresetActions';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
@@ -118,10 +124,16 @@ import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransfo
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
+import {
+    admitWorkflowMetricIntake,
+    prepareWorkflowMetricScopes,
+    projectWorkflowMetricToolSchemas,
+} from './workflowMetricIntake';
 
 type ParsePromptToActionsInput = {
     prompt: string;
     context: ProjectContext;
+    preset?: { id: string; expectedContext: PresetContext };
     signal?: AbortSignal;
     projectRevision?: string;
     stemImportScope?: StemImportPromptScope;
@@ -539,6 +551,7 @@ const planPromptIntent = inject({ logger })(
         async function planPromptIntent({
             prompt,
             context,
+            preset,
             signal,
             projectRevision,
             stemImportScope,
@@ -554,6 +567,55 @@ const planPromptIntent = inject({ logger })(
             const readonly = profile === 'readonly-answer';
             const normalized = prompt.toLowerCase().trim();
             const trimmedPrompt = prompt.trim();
+
+            if (preset !== undefined) {
+                const currentContext = buildPresetContext(context);
+                const expected = preset?.expectedContext;
+                const selected = PRESET_ACTIONS.find((candidate) => candidate.id === preset?.id);
+                const selectionExists =
+                    (currentContext.selectedTrackId === undefined ||
+                        context.tracks.some((track) => track.id === currentContext.selectedTrackId)) &&
+                    (currentContext.selectedClipId === undefined ||
+                        context.tracks.some((track) =>
+                            track.clips.some((clip) => clip.id === currentContext.selectedClipId)
+                        ));
+                if (
+                    readonly ||
+                    signal?.aborted ||
+                    !selected ||
+                    prompt !== selected.label ||
+                    !expected ||
+                    !selectionExists ||
+                    expected.selectedTrackId !== currentContext.selectedTrackId ||
+                    expected.selectedTrackKind !== currentContext.selectedTrackKind ||
+                    expected.selectedClipId !== currentContext.selectedClipId ||
+                    expected.selectedClipType !== currentContext.selectedClipType ||
+                    expected.trackCount !== currentContext.trackCount ||
+                    !getAvailablePresets(currentContext).includes(selected)
+                ) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason:
+                            'The selected preset no longer matches the complete request and current selection.',
+                    };
+                }
+                const resolved = resolveRawPresetActions({ presetId: selected.id, context: currentContext });
+                if (resolved === null) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        rejectionReason: 'The selected preset is unavailable in the current project.',
+                    };
+                }
+                const result = createFastPathResult({ actions: resolved.actions, context, prompt, projectRevision });
+                return {
+                    ...result,
+                    requiresConfirmation: result.requiresConfirmation || selected.isDestructive === true,
+                };
+            }
 
             if (!readonly) {
                 const deniedActionType = findDeniedPromptIntent(normalized);
@@ -662,9 +724,14 @@ const planPromptIntent = inject({ logger })(
                     : getSyncopatedArpeggioPromptScope(context, projectRevision);
                 const syncopatedArpeggioCapability =
                     syncopatedArpeggioScope?.status === 'request' ? syncopatedArpeggioScope.capability : undefined;
-                const wholeProjectVibeMixCapability = readonly
-                    ? undefined
-                    : getWholeProjectVibeMixScope(context, projectRevision)?.capability;
+                const wholeProjectVibeMixScope = readonly
+                    ? null
+                    : getWholeProjectVibeMixScope(context, projectRevision);
+                const wholeProjectVibeMixCapability = wholeProjectVibeMixScope?.capability;
+                const workflowMetricScopes = prepareWorkflowMetricScopes({
+                    sidechain: sidechainRoutingScope,
+                    wholeProject: wholeProjectVibeMixScope,
+                });
                 const creativeCatalog = readonly
                     ? undefined
                     : prepareCreativeInterpretationCatalog({
@@ -771,6 +838,7 @@ const planPromptIntent = inject({ logger })(
                 // provider turn that echoes receipt text back cannot restate it as its own authority.
                 let creativeAuthority: CreativeRequestAuthority | undefined;
                 let metricAuthority: MetricRequestAuthority | undefined;
+                let admittedWorkflow: (typeof workflowMetricScopes)[number] | undefined;
                 const transformSnapshot =
                     readonly || projectRevision === undefined || projectRevision === ''
                         ? null
@@ -971,7 +1039,40 @@ const planPromptIntent = inject({ logger })(
                             ? undefined
                             : {
                                   toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
+                                  workflowToolName: WORKFLOW_CAPABILITY_TOOL_NAME,
                                   admit: (call, identity) => {
+                                      if (call.name === WORKFLOW_CAPABILITY_TOOL_NAME) {
+                                          const admission = admitWorkflowMetricIntake({
+                                              call,
+                                              turn: identity.turn,
+                                              catalog: metricCatalog,
+                                              scopes: workflowMetricScopes,
+                                          });
+                                          if (admission.status !== 'admitted') {
+                                              return admission;
+                                          }
+                                          metricAuthority = admission.authority;
+                                          admittedWorkflow = admission.scope;
+                                          return {
+                                              status: 'admitted',
+                                              providerProjection: {
+                                                  kind: 'metric-intent',
+                                                  catalogId: metricCatalog.catalogId,
+                                              },
+                                              receipt: {
+                                                  data: {
+                                                      kind: 'metric-intent',
+                                                      origin: 'admitted-workflow',
+                                                      capabilityId: admission.scope.capabilityId,
+                                                      catalogId: metricCatalog.catalogId,
+                                                      intentKind: admission.authority.kind,
+                                                      goals: admission.authority.goals,
+                                                  },
+                                                  summary:
+                                                      'Finite workflow intent admitted; acoustic approval requires actual compatible proof.',
+                                              },
+                                          };
+                                      }
                                       const admission = admitPlanningInterpretation({
                                           creative: creativeCatalog,
                                           answer: answerCatalog,
@@ -1083,9 +1184,15 @@ const planPromptIntent = inject({ logger })(
                             receiptContext === null
                                 ? initialPlanningContext
                                 : buildPlanningContext(receiptContext, phase);
+                        const turnSchemas = projectWorkflowMetricToolSchemas({
+                            schemas: providerToolSchemas,
+                            phase: wholeRequestIntake,
+                            catalog: metricCatalog,
+                            scopes: workflowMetricScopes,
+                        });
                         const phaseSchemas = projectPlanningProviderToolSchemas(
                             [
-                                ...providerToolSchemas.filter(
+                                ...turnSchemas.filter(
                                     (schema) => schema.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME
                                 ),
                                 ...(phase === 'intake' && !readonly
@@ -1166,7 +1273,13 @@ const planPromptIntent = inject({ logger })(
                 // Admission can stage a record before its genuine receipt is bounded. A failed
                 // control never enters the authority carried by a refusal or a correction.
                 const successfulIntakeReceipts = planningOutcome.receipts.filter(
-                    (receipt) => receipt.toolName === CREATIVE_INTERPRETATION_TOOL_NAME && receipt.status === 'success'
+                    (receipt) =>
+                        receipt.status === 'success' &&
+                        (receipt.toolName === CREATIVE_INTERPRETATION_TOOL_NAME ||
+                            (receipt.toolName === WORKFLOW_CAPABILITY_TOOL_NAME &&
+                                isRecord(receipt.data) &&
+                                receipt.data.origin === 'admitted-workflow' &&
+                                receipt.data.capabilityId === admittedWorkflow?.capabilityId))
                 );
                 if (metricAuthority !== undefined) {
                     const staged = metricAuthority;
@@ -1176,6 +1289,7 @@ const planPromptIntent = inject({ logger })(
                         )
                     ) {
                         metricAuthority = undefined;
+                        admittedWorkflow = undefined;
                     }
                 }
                 if (creativeAuthority !== undefined) {
@@ -1321,17 +1435,31 @@ const planPromptIntent = inject({ logger })(
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
                 const inheritedMetricState = metricGoalStateCodec(refinedCard?.approvalSnapshot.metricGoalState);
                 const authorities = [...(inheritedMetricState?.authorities ?? [])];
+                const admittedMetricAuthority = metricAuthority;
                 if (
-                    metricAuthority !== undefined &&
-                    !authorities.some((authority) => authority.authorityId === metricAuthority.authorityId)
+                    admittedMetricAuthority !== undefined &&
+                    !authorities.some((authority) => authority.authorityId === admittedMetricAuthority.authorityId)
                 ) {
-                    authorities.push(metricAuthority);
+                    authorities.push(admittedMetricAuthority);
                 }
                 const metricProofs = collectMetricGoalProof({
                     authorities,
                     compilations: planningOutcome.retainedCompilations,
                     receipts: planningOutcome.receipts,
                 });
+                const serializeMetricGoalState = (
+                    actions: IntentResult['actions'],
+                    steps: MetricGoalState['steps'][number][] = [],
+                    nativeLiteralUses: readonly MetricNativeLiteralUse[] = []
+                ): string =>
+                    serializePromptMetricState({
+                        actions,
+                        steps,
+                        authorities,
+                        metricProofs,
+                        inheritedMetricState,
+                        nativeLiteralUses,
+                    });
 
                 // The adopted compilations and the refined proposal are both read above, so the
                 // compiler sees only the commands the batch states.
@@ -1429,9 +1557,18 @@ const planPromptIntent = inject({ logger })(
                         rejectionReason: 'Provider selected more than one specialized workflow.',
                     };
                 }
-                let workflowCapabilityId: WorkflowCapabilityId | undefined;
+                let workflowCapabilityId: WorkflowCapabilityId | undefined = admittedWorkflow?.capabilityId;
                 const workflowSelectionCall = workflowSelectionCalls[0];
                 if (workflowSelectionCall) {
+                    if (admittedWorkflow !== undefined) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            rejectionReason: 'An admitted workflow cannot be selected again or replaced.',
+                        };
+                    }
                     if (providerToolCalls[0] !== workflowSelectionCall) {
                         return {
                             actions: [],
@@ -1445,7 +1582,12 @@ const planPromptIntent = inject({ logger })(
                     }
                     const keys = Object.keys(workflowSelectionCall.arguments);
                     const capabilityId = workflowSelectionCall.arguments.capabilityId;
-                    if (keys.length !== 1 || keys[0] !== 'capabilityId' || !isWorkflowCapabilityId(capabilityId)) {
+                    if (
+                        keys.length !== 1 ||
+                        keys[0] !== 'capabilityId' ||
+                        !isWorkflowCapabilityId(capabilityId) ||
+                        WORKFLOW_METRIC_CAPABILITY_IDS.some((id) => id === capabilityId)
+                    ) {
                         return {
                             actions: [],
                             rawText: prompt,
@@ -1551,6 +1693,7 @@ const planPromptIntent = inject({ logger })(
                         }
                     }
                     return {
+                        metricGoalState: serializeMetricGoalState([stemImport.action]),
                         actions: [stemImport.action],
                         rawText: prompt,
                         requiresConfirmation: true,
@@ -1706,27 +1849,17 @@ const planPromptIntent = inject({ logger })(
                             recipePrefixHash: digestCommandBatchContent(prefix.envelope),
                         });
                     }
-                    if (
-                        steps.length === 0 &&
-                        grounded.actions.length > 0 &&
-                        authorities.some((authority) => authority.goals.some((goal) => goal.stepId === 'overall'))
-                    ) {
-                        steps.push({
-                            stepId: 'overall',
-                            commandCount: grounded.actions.length,
-                            operationTypes: grounded.actions.map((action) => action.type),
-                            recipePrefixHash: null,
-                        });
-                    }
-                    const metricGoalState: MetricGoalState = {
-                        schemaVersion: 1,
-                        authorities,
-                        steps,
-                        proofs: metricProofs,
-                        binding: null,
-                    };
                     return {
-                        metricGoalState: JSON.stringify(metricGoalState),
+                        metricGoalState: serializeMetricGoalState(
+                            grounded.actions,
+                            steps,
+                            freezeWorkflowNativeLiteralUses({
+                                uses: grounded.nativeLiteralUses,
+                                actions: grounded.actions,
+                                authority: admittedMetricAuthority,
+                                request: prompt,
+                            })
+                        ),
                         actions: grounded.actions,
                         ...(grounded.actionCommandGraph === undefined
                             ? {}
@@ -1817,4 +1950,36 @@ const planPromptIntent = inject({ logger })(
 export async function parsePromptToActions(input: ParsePromptToActionsInput): Promise<PlannedIntentResult> {
     const result = await planPromptIntent(input);
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
+}
+
+function serializePromptMetricState(input: {
+    actions: IntentResult['actions'];
+    steps: MetricGoalState['steps'][number][];
+    authorities: MetricRequestAuthority[];
+    metricProofs: MetricGoalState['proofs'];
+    inheritedMetricState: MetricGoalState | null;
+    nativeLiteralUses: readonly MetricNativeLiteralUse[];
+}): string {
+    const { actions, steps, authorities } = input;
+    if (
+        steps.length === 0 &&
+        actions.length > 0 &&
+        authorities.some((authority) => authority.goals.some((goal) => goal.stepId === 'overall'))
+    ) {
+        steps.push({
+            stepId: 'overall',
+            commandCount: actions.length,
+            operationTypes: actions.map((action) => action.type),
+            recipePrefixHash: null,
+        });
+    }
+    const metricGoalState: MetricGoalState = {
+        schemaVersion: 1,
+        authorities,
+        steps,
+        proofs: input.metricProofs,
+        nativeLiteralUses: [...(input.inheritedMetricState?.nativeLiteralUses ?? []), ...input.nativeLiteralUses],
+        binding: null,
+    };
+    return JSON.stringify(metricGoalState);
 }

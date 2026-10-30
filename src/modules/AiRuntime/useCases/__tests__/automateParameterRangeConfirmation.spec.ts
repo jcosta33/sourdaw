@@ -47,6 +47,7 @@ import {
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
+import { configuredLiteralMetricState, literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -110,6 +111,7 @@ function seedProject(): void {
 /** The hosted model's turns: search the index, discover the range command, propose the dip. */
 function scriptDipProposal(): void {
     scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+        literalMetricIntakeTurn,
         () => searchCalls(['dip a track level across a section']),
         discoverSearchedCalls(['automateParameterRange']),
         proposeDiscoveredCalls(
@@ -164,6 +166,7 @@ async function approve(actions: ExecutableRuntimeAction[], id: string) {
             )
         ),
     });
+    const metricGoalState = configuredLiteralMetricState(commandBatch);
     proposePendingActionConfirmation({
         id,
         prompt: PROMPT,
@@ -171,7 +174,8 @@ async function approve(actions: ExecutableRuntimeAction[], id: string) {
         actions,
         actionLabels: actions.map((action) => action.type),
         commandBatch,
-        agentApproval: compileAgentRiskApproval({ commandBatch }),
+        metricGoalState,
+        agentApproval: compileAgentRiskApproval({ commandBatch, metricGoalState }),
         executionMode: 'atomic',
         projectRevision,
     });

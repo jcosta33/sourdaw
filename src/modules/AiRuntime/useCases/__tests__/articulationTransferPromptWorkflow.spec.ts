@@ -42,6 +42,8 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 
 const PROMPT = 'Copy chorus-one articulation to chorus two without copying pitches or velocities.';
 const PARAPHRASE =
@@ -293,7 +295,7 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -412,10 +414,14 @@ function toolCallsResponse(calls: readonly { name: string; arguments: Record<str
 }
 
 function createWebLlmResponder() {
-    let awaitingReceipt = false;
-    return (_systemPrompt: string, userMessage: string) => {
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
+    let turn = 0;
+    return (systemPrompt: string, userMessage: string) => {
+        if (turn === 0) {
+            turn = 1;
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (turn === 1) {
+            turn = 2;
             return Promise.resolve(
                 JSON.stringify([
                     {
@@ -425,7 +431,7 @@ function createWebLlmResponder() {
                 ])
             );
         }
-        awaitingReceipt = false;
+        turn = 0;
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
         return Promise.resolve(
@@ -437,13 +443,20 @@ function createWebLlmResponder() {
 }
 
 function createHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
-    let awaitingReceipt = false;
+    let turn = 0;
     return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
+        if (turn === 0) {
+            turn = 1;
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(
+                toolCallsResponse(literalMetricIntakeTurn(getHostedUserMessage(init.body), request.tools))
+            );
+        }
+        if (turn === 1) {
+            turn = 2;
             return Promise.resolve(
                 toolCallsResponse([
                     {
@@ -453,7 +466,7 @@ function createHostedResponder(): (...args: Parameters<typeof fetch>) => ReturnT
                 ])
             );
         }
-        awaitingReceipt = false;
+        turn = 0;
         const userMessage = getHostedUserMessage(init.body);
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         const plan = runtimeMocks.transformPlan.value(createProviderPlan(userMessage));
@@ -579,7 +592,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
 
     it('routes a semantic paraphrase to the articulation-transfer capability', async () => {
         await sendChatMessage(PARAPHRASE);
-        expect(getConfirmationId()).not.toBe('');
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
     });
 
     it('copies only exact articulation state through confirmation and one Command write', async () => {
@@ -688,7 +701,7 @@ describe('MF-03 articulation transfer prompt workflow', () => {
                 }),
             }),
         ]);
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
     });
 
     it('normalizes a single-onset articulation-transfer target range', async () => {

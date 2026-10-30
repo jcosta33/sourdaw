@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
+import { admitCreativeInterpretation } from '../admitCreativeInterpretation';
 import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmToolCalls';
+import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 
 const VIBE_MIX_REJECTION_REASON = 'Provider plan does not match the bounded whole-project vibe-mix scope';
 
@@ -65,6 +67,62 @@ const singleChorusContext: ProjectContext = {
 };
 
 describe('whole-project vibe-mix admission scoping (#4697)', () => {
+    it.each([undefined, 'whole-project-vibe-mix'] as const)(
+        'cannot replace frozen generic subjects with selected workflow %s',
+        (workflowCapabilityId) => {
+            const prompt = 'Make Lead Guitar warmer';
+            const catalog = prepareCreativeInterpretationCatalog({
+                prompt,
+                context: vibeShapedContext,
+                projectRevision: 'frozen-revision',
+            });
+            const admitted = admitCreativeInterpretation({
+                catalog,
+                projectRevision: catalog.revision,
+                call: {
+                    name: 'selectCreativeInterpretation',
+                    arguments: {
+                        catalogId: catalog.catalogId,
+                        modeId: 'edit',
+                        targetCandidateIds: catalog.targets.map((target) => target.candidateId),
+                        editDimensionCandidateIds: catalog.dimensions
+                            .filter((dimension) => dimension.dimension === 'processing')
+                            .map((dimension) => dimension.candidateId),
+                        constraintCandidateIds: [],
+                        creationSlotIds: [],
+                        uncertainty: 'artistic',
+                    },
+                },
+            });
+            if (admitted.status !== 'admitted') {
+                throw new Error('Expected actual catalog-bound generic admission.');
+            }
+            const frozen = JSON.stringify(admitted.authority);
+            const result = bridgeGroundedLlmToolCalls({
+                calls: [
+                    {
+                        name: 'automateTrackGainRange',
+                        arguments: { trackIds: ['bus-drums', 'bus-bass'], sectionName: 'Chorus Two', gainDb: 1.5 },
+                    },
+                ],
+                context: vibeShapedContext,
+                prompt,
+                creativeAuthority: admitted.authority,
+                workflowCapabilityId,
+                sectionSignatures: [
+                    { name: 'Chorus Two', sectionId: 'section-chorus-two', startBeat: 56, endBeat: 72 },
+                ],
+            });
+            expect(result.actions).toEqual([]);
+            expect(result.rejections).toEqual([
+                expect.objectContaining({
+                    reason: 'The selected workflow reaches outside the frozen interpretation subjects.',
+                }),
+            ]);
+            expect(JSON.stringify(admitted.authority)).toBe(frozen);
+        }
+    );
+
     it('lets an ordinary device request in a vibe-shaped project reach grounding instead of the vibe-mix gate', () => {
         const result = bridgeGroundedLlmToolCalls({
             calls: [{ name: 'addDevice', arguments: { trackId: 'track-lead-guitar', deviceType: 'Reverb' } }],

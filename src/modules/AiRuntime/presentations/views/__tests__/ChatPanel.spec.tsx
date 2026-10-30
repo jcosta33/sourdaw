@@ -66,8 +66,9 @@ vi.mock('../../../stores/pendingActionConfirmationStore', async () => {
         pendingActionConfirmationStore,
         clearPendingActionConfirmations: () => pendingActionConfirmationStore.set({ confirmations: [] }),
         proposePendingActionConfirmation: (input: { id: string }) => {
+            const confirmations = pendingActionConfirmationStore.value?.confirmations ?? [];
             pendingActionConfirmationStore.set({
-                confirmations: [...(pendingActionConfirmationStore.value?.confirmations ?? []), { id: input.id }],
+                confirmations: [...confirmations, { id: input.id }],
             });
             return { id: input.id };
         },

@@ -48,6 +48,28 @@ import {
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+import { type ToolSchema } from '../../models/ToolDefinitions';
+
+function arpeggioIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
+    const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+    const clip = catalog.targets.find((target) => target.objectIds.includes('clip-chords'));
+    const notesSlot = catalog.creationSlots.find(
+        (slot) => slot.objectType === 'notes' && slot.parentCandidateId === clip?.candidateId
+    );
+    if (clip === undefined || notesSlot === undefined) {
+        throw new TypeError('Expected a published notes slot under the selected clip');
+    }
+    return nonAcousticMetricIntakeTurn({
+        modeId: 'edit',
+        targetObjectIds: ['clip-chords'],
+        dimensions: ['midi-content'],
+    })(userMessage, providerView).map((call) => ({
+        ...call,
+        arguments: { ...call.arguments, creationSlotIds: [notesSlot.candidateId] },
+    }));
+}
 
 const PROMPT = 'Add a syncopated arpeggio while preserving voicing and harmonic rhythm.';
 const PARAPHRASE =
@@ -240,7 +262,7 @@ function assertDiscoveredCommandSchema(receipts: readonly unknown[]): void {
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -334,17 +356,21 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
 }
 
 function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan) {
-    let awaitingReceipt = false;
-    return (_systemPrompt: string, userMessage: string) => {
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
+    let turn = 0;
+    return (systemPrompt: string, userMessage: string) => {
+        if (turn === 0) {
+            turn = 1;
+            return Promise.resolve(JSON.stringify(arpeggioIntake(userMessage, systemPrompt)));
+        }
+        if (turn === 1) {
+            turn = 2;
             return Promise.resolve(
                 JSON.stringify([
                     { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['arpeggiate'] } },
                 ])
             );
         }
-        awaitingReceipt = false;
+        turn = 0;
         assertDiscoveredCommandSchema(getApplicationToolReceipts(userMessage));
         const plan = transformPlan(createProviderPlan(userMessage));
         return Promise.resolve(
@@ -358,20 +384,25 @@ function createWebLlmResponder(transformPlan: (plan: ProviderCall[]) => Provider
 function createHostedResponder(
     transformPlan: (plan: ProviderCall[]) => ProviderCall[] = (plan) => plan
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
-    let awaitingReceipt = false;
+    let turn = 0;
     return (_input, init) => {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
-        if (!awaitingReceipt) {
-            awaitingReceipt = true;
+        if (turn === 0) {
+            turn = 1;
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(arpeggioIntake(getHostedUserMessage(init.body), request.tools)));
+        }
+        if (turn === 1) {
+            turn = 2;
             return Promise.resolve(
                 toolCallsResponse([
                     { name: 'agent.catalog.discover', arguments: { category: 'command', names: ['arpeggiate'] } },
                 ])
             );
         }
-        awaitingReceipt = false;
+        turn = 0;
         const userMessage = getHostedUserMessage(init.body);
         assertDiscoveredCommandSchema(getReplayedToolReceipts(init.body));
         const plan = transformPlan(createProviderPlan(userMessage));
@@ -494,7 +525,7 @@ describe('EX-07 syncopated arpeggio prompt workflow', () => {
 
     it('routes a semantic paraphrase to the syncopated-arpeggio capability', async () => {
         await sendChatMessage(PARAPHRASE);
-        expect(getConfirmationId()).not.toBe('');
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
     });
 
     it.each(['webllm', 'hosted'] as const)(

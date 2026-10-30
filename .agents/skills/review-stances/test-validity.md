@@ -1,5 +1,11 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — prepared-scope fixtures hid missing Prompt Bar budget admission (introduced by PR #2648)
+
+PR #1986 made `prepareStemImport` reject absent local-work admission, then PR #2648 introduced the Prompt Bar submission route without forwarding one. PR #4479 kept that path. The existing recovery fixture supplied raw import actions and mocked `planPromptActions`, so it could test receipt settlement while never reaching the file-preparation gate. Public #2648 review text covers recovery and terminal behavior; exact private prompts and tiers are unknown.
+
+Pair a real planner and real `prepareStemImport` with two selected files and mocked boundary ports. The positive case must reach an approved card and one committed import. The over-budget case must fail before decode or staging with no partial stem reservation. Preserve legacy recovery fixtures as separate historical cases. Removing the Prompt Bar callback must fail the positive case at the original budget refusal.
+
 Lesson library for test and evidence validity. Per the Review section of `AGENTS.md`, this
 directory is a lesson library, not a stance menu: an escape — a defect that reached `main` whose
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
@@ -1567,3 +1573,21 @@ correction-orchestrator counterpart in `metricIntent.spec.ts`, plus the successf
 and hosted controls that restore effectful planning. In a committed isolated probe, mutate only
 the discard/admission edge and require the named behavioral negative to fail without relying on a
 manifest digest failure. A fabricated failed receipt or mocked callback refusal is insufficient.
+
+### Catalog mutation candidates must respect resolved protection polarity (introduced by PR #4128)
+
+PR #4128 (`1d1471216e`) collected positive mutation targets from the entire request and fell back to contextual selection without excluding resolved protection spans; PRs #4132 and #4298 retained that behavior. The observed defect was incorrect published candidates and refusal scope, not a proven unauthorized persisted write. The missed baseline was catalog candidate semantics and source binding; historical private review prompts and tiers are unknown.
+
+Probe the actual catalog through admission and the bridge: request an edit to Drums while leaving Bass alone, protect a selected object's descendants, and combine a Vocal fader-only protection with permitted Vocal processing. Derive positive mutation candidates from completely consumed resolved spans and exact whole-object, control and clip restrictions. Unknown or ambiguous protected objects must clarify without selection fallback. Independently retain protected objects in read and measurement scopes. Reverting the polarity filtering must fail these producer-to-consumer checks.
+
+### Required per-request insertion anchors precede optional-field omission (introduced by PR #1650)
+
+PR #1650 (`a295c8b501e0834f4031934935be26161ad0b132`) admitted omitted optional target fields before checking request-bound device insertion order; PR #2811 retained the skip above its anchor comparison. A compressor requested after EQ could therefore append after a following device when `afterDeviceId` was omitted. The older PR #2712 unanchored negative refused earlier in its historical intake route and did not prove the anchor comparison. Historical private review prompts, models and tiers are unknown.
+
+Probe genuine whole-request intake through local and hosted planning, both eligible target chains, the exact resolved EQ identity and a later non-EQ device. Require missing and wrong anchors to refuse with no confirmation, document/runtime/revision or Undo writes; require the correct EQ to insert immediately after it. Keep the anchorless append control and existing supplied-unrequested-anchor refusal. In an isolated committed probe, restore only the optional-field skip before the mandatory comparison and require the original unanchored integration negative to fail at the anchor obligation, rather than at an earlier intake or schema failure.
+
+### Timed-out test callbacks can outlive shared fixture ownership (PRs #4390 and #5646)
+
+PR #4390 (`14e2e25647`) introduced whole-corpus sealed scoring; PR #5646 (`69d14317c9`) added real shared refinement fixtures and the aggregate deadline. A controlled deadline showed the runner advancing while the callback remained active: its later fixture close removed a successor's real pending confirmation. The historical CI interleaving remains unproved, and private reviewer prompts, stances and tiers are unknown.
+
+Probe a real timed-out callback held inside the shared fixture and separately hold its cleanup and spy restoration. Assert that a following test cannot open the project, reset its provider or lose its card until all old work and cleanup settle, then that its actual confirmation executes. An admission hook that itself times out must still prevent later bodies and stale nested teardown. Require every frozen case and all aggregate thresholds and safety counters even when a case fails, times out or is filtered; a late callback must not publish success. In a committed isolated probe, remove the lifetime barrier and require the ordered real-fixture regression to fail.

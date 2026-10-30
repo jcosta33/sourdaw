@@ -395,6 +395,7 @@ export async function reproposePendingChatActions(
             metricGoalState: JSON.stringify(goalState),
         });
         if (liveRun.plan !== null) {
+            const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
             agentRunLifecycle.recordPlan({
                 runId: liveRun.runId,
                 summary: liveRun.plan.summary,
@@ -407,10 +408,7 @@ export async function reproposePendingChatActions(
                 plan: {
                     ...liveRun.plan,
                     metricGoalState: approval.metricGoalState ?? undefined,
-                    applicationToolReceipts: [
-                        ...(liveRun.plan.applicationToolReceipts ?? []),
-                        ...refreshedProof.receipts,
-                    ],
+                    applicationToolReceipts: [...priorReceipts, ...refreshedProof.receipts],
                 },
             });
         }

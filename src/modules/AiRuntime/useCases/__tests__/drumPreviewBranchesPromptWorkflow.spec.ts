@@ -61,6 +61,21 @@ import {
 } from './aiWorkflowCommandPreflightFixture';
 import { landProjectEdit } from './landProjectEdit';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { type ToolSchema } from '../../models/ToolDefinitions';
+
+function drumIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
+    const catalog = readCreativeInterpretationCatalog(userMessage, providerView);
+    const targetObjectIds = catalog.targets.flatMap((target) =>
+        target.objectIds.filter((id) => id === 'track-snare' || id === 'track-hats')
+    );
+    return nonAcousticMetricIntakeTurn({
+        modeId: 'edit',
+        targetObjectIds,
+        dimensions: ['arrangement', 'midi-content'],
+    })(userMessage, providerView);
+}
 
 const PROMPT =
     'For one eight-bar section, create three drum-arrangement candidates on separate preview branches while preserving the kick pattern and varying only snare and hi-hat programming.';
@@ -365,7 +380,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -400,12 +415,15 @@ function createFinalProviderCalls(userMessage: string): ProviderCall[] {
 
 function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (turn === 1) {
+            return Promise.resolve(JSON.stringify(drumIntake(userMessage, systemPrompt)));
+        }
+        if (turn === 2) {
             const discoveryCalls = withWorkflowCapabilitySelection(
                 'drum-preview-branches',
                 asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
@@ -444,11 +462,15 @@ function useHostedFixture(): void {
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
         const userMessage = getProviderUserMessage(init.body);
         if (turn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(drumIntake(userMessage, request.tools)));
+        }
+        if (turn === 2) {
             const discoveryCalls = withWorkflowCapabilitySelection(
                 'drum-preview-branches',
                 asCommandBatchProposal(userMessage, createProviderPlan(userMessage))
@@ -683,12 +705,12 @@ describe('EX-05 drum preview-branch prompt workflow', () => {
 
         expect(scope).toMatchObject({ status: 'request', hiHat: { trackId: 'track-hats', trackName: 'Hi Hats' } });
         await sendChatMessage(PROMPT);
-        expect(getConfirmationId()).not.toBe('');
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
     });
 
     it('routes a semantic paraphrase to the drum-preview capability', async () => {
         await sendChatMessage(PARAPHRASE);
-        expect(getConfirmationId()).not.toBe('');
+        expect(getConfirmationId(), JSON.stringify(chatStore.value?.messages)).not.toBe('');
     });
 
     it.each(['webllm', 'hosted'] as const)(

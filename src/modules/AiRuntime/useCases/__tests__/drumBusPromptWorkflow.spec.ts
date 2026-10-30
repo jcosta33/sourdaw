@@ -47,6 +47,7 @@ import {
 import { sidechainStore } from '#/modules/Routing/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { generateWebLlmCompletion } from '../../repositories/webLlm/generateWebLlmCompletion';
 import { replacePendingActionConfirmationForTest } from '../../stores/__tests__/pendingActionConfirmationStoreTestSupport';
@@ -64,9 +65,14 @@ import { getDrumRenderComparisonPromptScope } from '../agentReference/getDrumRen
 import { confirmationAdmission } from '../agentRequestOrchestration/resolveConfirmationAdmission';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
+import { advertisedAnswerSchema } from './answerWireFixture';
+import { type ScriptedTurn } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT = 'Create a Drum Bus and route Kick, Snare, and Hats into it, leaving Parallel Compression unchanged.';
@@ -75,6 +81,8 @@ const MF01_PARAPHRASE =
     'Send the complete drum kit to the existing Drum Bus, but leave its parallel compression return routed as it is.';
 const MF06_PROMPT = 'Create a sidechain from the kick to every bass compressor that supports sidechain input.';
 const EX06_PROMPT = 'Reduce kick/bass masking without replacing either basic sound.';
+// The routing/Undo control makes no claim that a sidechain proves reduced masking.
+const EX06_ROUTING_CONTROL_PROMPT = MF06_PROMPT;
 const EX11_PROMPT =
     'Create a Drum Bus for Kick, Snare, and Hats, create a parallel-compression bus fed post-fader from the Drum Bus at -12 dB, keep Drum Room routed directly to Master, lower the parallel-compression bus by 1.5 dB, and render Verse One and Chorus One for comparison.';
 
@@ -649,7 +657,7 @@ function assertDiscoveredCommandSchemas(
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -679,27 +687,28 @@ function assertDiscoveredCommandSchemas(
 }
 
 /**
- * Wraps a WebLLM fixture so the first provider turn discovers the command
- * catalog it needs and only the second turn returns the actual plan, matching
- * the two-turn contract `runApplicationOwnedToolLoop` enforces.
+ * Intake, command discovery, then the proposal use the production tool loop.
  *
  * `planningRounds` sizes the fixture for the bounded correction loop: one
- * correction attempt repeats the two-turn contract, so a case that exercises a
- * rejected-then-retried plan admits `planningRounds: 2` (four provider turns)
+ * correction attempt repeats the intake, so a case that exercises a
+ * rejected-then-retried plan admits `planningRounds: 2` (six provider turns)
  * instead of failing the fixture on the correction round's first turn.
  */
 function createTurnTrackedWebLlmResponder(
     buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>,
-    { planningRounds = 1 }: { planningRounds?: number } = {}
+    { planningRounds = 1, intake = literalMetricIntakeTurn }: { planningRounds?: number; intake?: ScriptedTurn } = {}
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > planningRounds * 2) {
-            throw new Error(`Expected at most ${planningRounds * 2} WebLLM provider turns`);
+        if (turn > planningRounds * 3) {
+            throw new Error(`Expected at most ${planningRounds * 3} WebLLM provider turns`);
+        }
+        if (turn % 3 === 1) {
+            return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
         }
         const finalCalls = buildFinalCalls(userMessage);
-        if (turn % 2 === 1) {
+        if (turn % 3 === 2) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
@@ -728,7 +737,8 @@ function toolCallsResponse(calls: readonly { name: string; arguments: Record<str
 
 /** The hosted-provider equivalent of {@link createTurnTrackedWebLlmResponder}. */
 function createTurnTrackedHostedResponder(
-    buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>
+    buildFinalCalls: (userMessage: string) => Array<{ name: string; arguments: Record<string, unknown> }>,
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
     let turn = 0;
     return (_input, init) => {
@@ -736,11 +746,16 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
-        const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        const finalCalls = buildFinalCalls(userMessage);
+        if (turn === 2) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
@@ -1100,18 +1115,25 @@ function getMf06ProtectedTargetIds(userMessage: string): string[] {
 }
 
 function useMf06WebLlmFixture(
-    transform: (plan: ReturnType<typeof createMf06ProviderPlanFromUserMessage>) => void = () => undefined
+    transform: (plan: ReturnType<typeof createMf06ProviderPlanFromUserMessage>) => void = () => undefined,
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation(
-        createTurnTrackedWebLlmResponder((userMessage) => {
-            const plan = createMf06ProviderPlanFromUserMessage(userMessage);
-            transform(plan);
-            return asCommandBatchProposal(plan, getMf06ProtectedTargetIds(userMessage));
-        })
+        createTurnTrackedWebLlmResponder(
+            (userMessage) => {
+                const plan = createMf06ProviderPlanFromUserMessage(userMessage);
+                transform(plan);
+                return asCommandBatchProposal(plan, getMf06ProtectedTargetIds(userMessage));
+            },
+            { intake }
+        )
     );
 }
 
-function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): void {
+function useMf06HostedFixture({
+    reverse = false,
+    intake = literalMetricIntakeTurn,
+}: { reverse?: boolean; intake?: ScriptedTurn } = {}): void {
     runtimeMocks.fetch.mockImplementation(
         createTurnTrackedHostedResponder((userMessage) => {
             const plan = createMf06ProviderPlanFromUserMessage(userMessage);
@@ -1119,9 +1141,70 @@ function useMf06HostedFixture({ reverse = false }: { reverse?: boolean } = {}): 
                 plan.reverse();
             }
             return asCommandBatchProposal(plan, getMf06ProtectedTargetIds(userMessage));
-        })
+        }, intake)
     );
 }
+
+const maskingMetricIntake: ScriptedTurn = (userMessage, providerView) => {
+    const capability = getProviderContext(userMessage).sidechainRoutingCapability;
+    if (
+        !isRecord(capability) ||
+        !isRecord(capability.allowedAction) ||
+        !Array.isArray(capability.allowedAction.exactRoutes)
+    ) {
+        throw new TypeError('Expected the published sidechain routes for the masking proposal.');
+    }
+    let workflowParameters: unknown;
+    if (typeof providerView === 'string') {
+        const line = providerView.split('\n').find((entry) => entry.startsWith('- selectWorkflowCapability:'));
+        const offset = line?.lastIndexOf(' {"type":"object"') ?? -1;
+        if (line !== undefined && offset >= 0) {
+            workflowParameters = JSON.parse(line.slice(offset + 1));
+        }
+    } else {
+        workflowParameters = providerView?.find((tool) => tool.function.name === 'selectWorkflowCapability')?.function
+            .parameters;
+    }
+    if (
+        !isRecord(workflowParameters) ||
+        !isRecord(workflowParameters.properties) ||
+        !isRecord(workflowParameters.properties.catalogId)
+    ) {
+        throw new TypeError('Expected the actual workflow metric-intake schema.');
+    }
+    const catalogId = workflowParameters.properties.catalogId.const;
+    if (typeof catalogId !== 'string') {
+        throw new TypeError('Expected a published workflow metric catalog identity.');
+    }
+
+    const objective = readMetricPublication({ function: advertisedAnswerSchema(providerView) }).find(
+        (candidate) => candidate.kind === 'unsupported'
+    );
+    if (objective === undefined) {
+        throw new TypeError('Expected the published unsupported masking objective.');
+    }
+    return [
+        {
+            name: 'selectWorkflowCapability',
+            arguments: {
+                capabilityId: 'sidechain-routing',
+                catalogId,
+                metricIntent: {
+                    kind: 'perceptual',
+                    uncertainty: 'none',
+                    objectives: [
+                        {
+                            objectiveId: objective.id,
+                            scopeCandidateId: null,
+                            referenceScopeCandidateId: null,
+                            rangeCandidateId: null,
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+};
 
 describe('drum bus prompt workflow', () => {
     // Set only by the two tests that spy on the real `applyRuntimeGraphDelta` to
@@ -1399,7 +1482,7 @@ describe('drum bus prompt workflow', () => {
 
         await sendChatMessage(EX11_PROMPT);
 
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''
@@ -1590,7 +1673,7 @@ describe('drum bus prompt workflow', () => {
             'Build the close-drum and parallel buses, keep the room direct, trim the parallel return 1.5 dB, then render the first verse and chorus as a comparison.'
         );
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         const hostedMessage = getHostedUserMessage(getHostedRequestBody());
         expect(hostedMessage).toContain('drumRenderComparisonCapability');
         expect(hostedMessage).toContain('track-room');
@@ -4233,15 +4316,69 @@ describe('drum bus prompt workflow', () => {
         );
     });
 
-    it('reduces kick/bass masking without replacing either sound through the complete WebLLM workflow', async () => {
+    it.each(['webllm', 'cloud'] as const)(
+        'keeps the original unmeasured masking proposal visible with Confirm blocked on %s',
+        async (backend) => {
+            setMf06Project();
+            settleFixtureProjectWrites();
+            const before = {
+                tracks: structuredClone(trackStore.value),
+                routes: structuredClone(sidechainStore.value),
+                undo: structuredClone(undoStore.value),
+                revision: captureProjectRevision(),
+            };
+            if (backend === 'cloud') {
+                runtimeMocks.backend.value = 'cloud';
+                useMf06HostedFixture({ intake: maskingMetricIntake });
+            } else {
+                useMf06WebLlmFixture(() => undefined, maskingMetricIntake);
+            }
+
+            await sendChatMessage(EX06_PROMPT);
+
+            const confirmationId =
+                chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
+                    ?.pendingActionConfirmationId ?? '';
+            const confirmation = getPendingActionConfirmation(confirmationId);
+            if (!confirmation) {
+                throw new TypeError('Expected the complete original masking proposal to remain visible.');
+            }
+            const metricState = confirmation.approvalSnapshot.metricGoalState;
+            expect(metricGoalStateCodec(metricState)?.authorities).toMatchObject([
+                { origin: 'admitted-workflow', kind: 'perceptual', goals: [{ relation: 'unsupported' }] },
+            ]);
+            expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(confirmation?.actions.map((action) => action.type)).toEqual([
+                'addSidechainRoute',
+                'addSidechainRoute',
+                'addSidechainRoute',
+            ]);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/metric|objective|measur/u),
+            });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(sidechainStore.value).toEqual(before.routes);
+            expect(undoStore.value).toEqual(before.undo);
+            expect(captureProjectRevision()).toBe(before.revision);
+            expect(runtimeMocks.wireSidechainRoute).not.toHaveBeenCalled();
+        }
+    );
+
+    it('executes, receipts, undoes, and redoes a separate literal sidechain-routing control without replacing either sound', async () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
 
-        await sendChatMessage(EX06_PROMPT);
+        await sendChatMessage(EX06_ROUTING_CONTROL_PROMPT);
 
         const providerRequest = vi.mocked(generateWebLlmCompletion).mock.calls[0]?.[1];
-        expect(providerRequest).toContain(EX06_PROMPT);
+        expect(providerRequest).toContain(EX06_ROUTING_CONTROL_PROMPT);
         if (typeof providerRequest !== 'string') {
             throw new TypeError('Expected one EX-06 provider request message');
         }
@@ -4327,15 +4464,15 @@ describe('drum bus prompt workflow', () => {
         expect(undoStore.value?.past).toHaveLength(3);
     });
 
-    it('normalizes the exact hosted EX-06 masking plan to the WebLLM action order', async () => {
+    it('normalizes the separate literal sidechain control to the WebLLM action order', async () => {
         setMf06Project();
         runtimeMocks.backend.value = 'cloud';
         useMf06HostedFixture({ reverse: true });
 
-        await sendChatMessage(EX06_PROMPT);
+        await sendChatMessage(EX06_ROUTING_CONTROL_PROMPT);
 
         const userMessage = getHostedUserMessage(getHostedRequestBody());
-        expect(userMessage).toContain(EX06_PROMPT);
+        expect(userMessage).toContain(EX06_ROUTING_CONTROL_PROMPT);
         expect(isRecord(getProviderContext(userMessage).sidechainRoutingCapability)).toBe(true);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
@@ -4389,7 +4526,7 @@ describe('drum bus prompt workflow', () => {
                 });
             });
 
-            await sendChatMessage(EX06_PROMPT);
+            await sendChatMessage(EX06_ROUTING_CONTROL_PROMPT);
 
             expect(chatStore.value?.messages.every((message) => !message.pendingActionConfirmationId)).toBe(true);
             expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -4413,7 +4550,7 @@ describe('drum bus prompt workflow', () => {
         setMf06Project();
         const originalTracks = structuredClone(trackStore.value?.tracks);
         useMf06WebLlmFixture();
-        await sendChatMessage(EX06_PROMPT);
+        await sendChatMessage(EX06_ROUTING_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(
             chatStore.value?.messages.find((message) => message.pendingActionConfirmationId)
                 ?.pendingActionConfirmationId ?? ''

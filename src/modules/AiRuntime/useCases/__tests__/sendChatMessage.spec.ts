@@ -708,7 +708,10 @@ describe('sendChatMessage retained-provider selection', () => {
         mocks.getCloudProviderInfo.mockReturnValue(null);
         mocks.isCloudAvailable.mockReturnValue(false);
         mocks.getLlmEngine.mockReturnValue(null);
-        mocks.proposePendingActionConfirmation.mockReturnValue({ id: 'confirmation-fixture' });
+        mocks.proposePendingActionConfirmation.mockImplementation((input) => ({
+            id: 'confirmation-fixture',
+            approvalSnapshot: { metricGoalState: input.metricGoalState },
+        }));
         mocks.resolveBackend.mockReturnValue('webllm');
         llmStatusStore.set({ state: 'idle' });
     });

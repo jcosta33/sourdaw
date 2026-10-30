@@ -50,7 +50,7 @@ export type MetricRequestAuthority<MetricId extends string> = {
     readonly revision: string;
     readonly projectId: string;
     readonly selection: CreativeSelectionSnapshot;
-    readonly kind: 'literal' | 'perceptual' | 'comparative';
+    readonly kind: 'literal' | 'non-acoustic' | 'perceptual' | 'comparative';
     readonly goals: readonly MetricGoal<MetricId>[];
     readonly creativeAuthority: CreativeRequestAuthority | null;
 };
@@ -63,28 +63,47 @@ export type MetricGoalStep = {
     readonly recipePrefixHash: string | null;
 };
 
-/** Only a successful, bounded producer projection can supply these render identities. */
-export type MetricPreviewProvenance = {
-    readonly origin: 'planner' | 'approval-preview';
-    readonly callId: string;
-    readonly turn: number;
-    readonly runId: string;
-    readonly targets: readonly {
-        readonly targetId: string;
-        readonly baseline: {
-            readonly route: 'mixdown' | 'isolated-subgraph';
-            readonly artifact: { readonly contentAddress: string };
-        };
-        readonly preview: {
-            readonly route: 'mixdown' | 'isolated-subgraph';
-            readonly artifact: { readonly contentAddress: string };
-        };
-    }[];
-};
-
 export type MetricGoalProof = {
     readonly preview: MeasuredPreview;
     readonly receiptDigest: string;
+};
+
+/** A native field emitted only by the exact accepted application workflow. It grants no mutation. */
+export type WorkflowNativeLiteralUse = {
+    readonly workflow: 'backing-vocal-plate';
+    readonly field: 'highPassHz';
+    readonly actionIndex: number;
+    readonly ownerActionIndex: number;
+    readonly deviceActionIndex: number;
+    readonly ownerId: string;
+    readonly deviceId: string;
+    readonly deviceType: 'builtin-filter';
+    readonly paramId: 'filter-cutoff';
+    readonly unit: 'Hz';
+    readonly value: number;
+};
+
+/** Literal accounting beside frozen intent, never an acoustic goal or measured proof. */
+export type MetricNativeLiteralUse = WorkflowNativeLiteralUse & {
+    readonly authorityId: string;
+    readonly requestDigest: string;
+    readonly candidateId: string;
+    readonly token: string;
+    readonly start: number;
+    readonly actionHash: string;
+    readonly ownerActionHash: string;
+    readonly deviceActionHash: string;
+    readonly binding: {
+        readonly contentHash: string;
+        readonly projectId: string;
+        readonly revision: string;
+        readonly runId: string;
+        readonly batchId: string;
+        readonly commandId: string;
+        readonly ownerCommandId: string;
+        readonly deviceCommandId: string;
+        readonly schedulePosition: number | null;
+    } | null;
 };
 
 export type MetricGoalState<MetricId extends string> = {
@@ -92,6 +111,7 @@ export type MetricGoalState<MetricId extends string> = {
     readonly authorities: readonly MetricRequestAuthority<MetricId>[];
     readonly steps: readonly MetricGoalStep[];
     readonly proofs: readonly MetricGoalProof[];
+    readonly nativeLiteralUses?: readonly MetricNativeLiteralUse[];
     readonly binding: {
         readonly contentHash: string;
         readonly revision: string;
