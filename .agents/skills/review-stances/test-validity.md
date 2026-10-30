@@ -2129,6 +2129,13 @@ duration, energy, decay and spectral controls and inspect the rebuilt served car
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
 
+A fixture's highest tested rate is not an admission boundary. PR #5858 fixed the named
+192 kHz truncation and retained the broader #5182 obligation; it did not reject higher
+rates. The real public constructor accepts 384 kHz, so require nonzero final-window PCM
+through frame 8915 and silence at 8916 for its 23.2 ms FIR bodies. Keep the 176.4/192 kHz
+oracles and pin the checked-in WASM output so source-only changes cannot satisfy the
+carrier claim. Do not impose the short FIR duration on a separately modeled Spring tail.
+
 ### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
 
 The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
