@@ -216,10 +216,14 @@ contracts, and prints its path. The manifest binds the PR, base, merge-base and 
 matching base and merge-base context. Bundle internals and the risk-plan format:
 [review records](references/review-records.md).
 
-`review:prepare` does not go through the trusted launcher; instead it refuses when any file in its
-executing script closure differs from `origin/main`, with `<path> does not match origin/main;
-refusing to run a mutated copy`. Run it from a checkout whose scripts match `origin/main` (the lane,
-when the primary checkout lags); the bundle still lands under the primary checkout.
+`review:prepare` does not go through the trusted launcher, so run it only from the protected primary
+checkout: it evaluates the executing checkout's script closure before its `origin/main` check and
+then authenticates the reviewer role from the primary's `.env.sourdaw-reviewer`, so launching it
+elsewhere would run that checkout's code with the reviewer credential. When the primary's closure
+differs from `origin/main` it refuses with `<path> does not match origin/main; refusing to run a
+mutated copy` or `<path> has no blob on origin/main; refusing to run an unverifiable copy`. A primary
+checkout lagging `origin/main` is a blocker to report to the owner; never work around it from a lane
+or another checkout. The bundle lands under the primary checkout.
 
 Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
 [review-stances README](../review-stances/README.md#stance-derivation-and-the-lesson-library). The
@@ -258,9 +262,11 @@ stance may take several draws on different permitted models.
 ### h. Write `review.json`
 
 `review.json` in the bundle directory is the round's only caller document. Field names come from
-`scripts/reviewDocumentParser.ts`, which reads only the keys below and silently drops any other
-top-level or comment key; only `draws` and `discarded` entries refuse extra keys. A misspelled field
-therefore has no effect and draws no refusal, so check every key against this table.
+`scripts/reviewDocumentParser.ts`. `authorization` and a comment `body` key are refused, and
+`draws`, `discarded` and `sources` entries refuse any key outside their exact set. A misspelled
+required field (`reviewerModel`, `sources`, `evidence` on `APPROVE`) is refused as missing, but any
+other unknown top-level or comment key is dropped silently, so a misspelled optional field such as
+`modelExhaustion` has no effect; check every key against this table.
 
 | Field             | Rule                                                                                                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
