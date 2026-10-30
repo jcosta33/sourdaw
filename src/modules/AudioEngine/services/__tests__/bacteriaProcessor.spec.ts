@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { createBacteriaRuntimeParameterIds } from '../../models/BacteriaRuntimeControl';
+
 import {
     RealFloat32Array,
     installWorkletGlobals,
@@ -118,7 +120,7 @@ function initializeControl(proc: BacteriaProcessorLike): void {
             trackId: 'track-1',
             deviceId: 'bacteria-1',
             deviceType: 'bacteria',
-            parameterIds: ['oversampling', 'band5_drive', 'bypass'],
+            parameterIds: createBacteriaRuntimeParameterIds(),
         },
         correlation: { workletGeneration: 1 },
     });
@@ -208,6 +210,42 @@ describe('BacteriaProcessor message handling', () => {
             target: { trackId: 'forged', deviceId: 'bacteria-1', deviceType: 'bacteria', parameterId: 'band5_drive' },
         });
         expect(paramCalls).toEqual([{ name: 'band5_drive', value: 0.3 }]);
+    });
+
+    it('delivers every band Body value admitted by the production schema to the engine', async () => {
+        const proc = await loadProcessor();
+        send(proc, { type: 'init', wasmModule: MINIMAL_WASM_MODULE });
+        initializeControl(proc);
+        resetRecording();
+
+        const expected: Array<{ name: string; value: number }> = [];
+        let sequence = 0;
+        for (let band = 0; band < 6; band++) {
+            for (const value of [-1, 0, 1, 2, 3]) {
+                const name = `band${band}_convolutionIr`;
+                sequence++;
+                send(proc, control(name, value, sequence));
+                expected.push({ name, value });
+            }
+        }
+        send(proc, control('synthetic-control', 3, ++sequence));
+        send(proc, control('band6_convolutionIr', 3, ++sequence));
+        send(proc, control('band5_convolutionIr', Number.NaN, ++sequence));
+        send(proc, control('band5_convolutionIr', 0, 1));
+        send(proc, {
+            ...control('band5_convolutionIr', 0, ++sequence),
+            correlation: { workletGeneration: 2, controlSequence: sequence },
+        });
+        send(proc, {
+            ...control('band5_convolutionIr', 0, sequence + 1),
+            target: {
+                trackId: 'forged',
+                deviceId: 'bacteria-1',
+                deviceType: 'bacteria',
+                parameterId: 'band5_convolutionIr',
+            },
+        });
+        expect(paramCalls).toEqual(expected);
     });
 
     it('rejects raw, malformed, expired, and exhausted controls while applying due scheduled commands', async () => {

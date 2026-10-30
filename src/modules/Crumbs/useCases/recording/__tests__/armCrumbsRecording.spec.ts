@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const armRecording = vi.hoisted(() =>
-    vi.fn<typeof import('../../../repositories/crumbsBridge/armRecording').armRecording>(() => Promise.resolve())
+    vi.fn<typeof import('../../../repositories/crumbsBridge/armRecording').armRecording>(() =>
+        Promise.resolve({ take_id: '7' })
+    )
 );
 
 vi.mock('../../../repositories/crumbsBridge/armRecording', () => ({
@@ -10,14 +12,21 @@ vi.mock('../../../repositories/crumbsBridge/armRecording', () => ({
 
 import { padStore, ensurePadInstance } from '../../../stores/padStore';
 import { armCrumbsRecording } from '../armCrumbsRecording';
+import { syncCrumbsRecordingState } from '../syncCrumbsRecordingState';
 
 const INSTANCE = 'inst-A';
 
 describe('armCrumbsRecording parameter validation', () => {
-    beforeEach(() => {
-        armRecording.mockClear();
+    beforeEach(async () => {
+        armRecording.mockReset().mockResolvedValue({ take_id: '7' });
+        await syncCrumbsRecordingState(INSTANCE, 'detach');
+        await syncCrumbsRecordingState(INSTANCE, 'attach');
         padStore.set({});
         ensurePadInstance(INSTANCE);
+    });
+
+    afterEach(async () => {
+        await syncCrumbsRecordingState(INSTANCE, 'detach');
     });
 
     it('clamps a targetPad past the last pad to the highest valid index', async () => {
@@ -59,6 +68,11 @@ describe('armCrumbsRecording parameter validation', () => {
 
         const [, , , maxDuration] = armRecording.mock.calls[0]!;
         expect(maxDuration).toBeGreaterThan(0);
+    });
+
+    it('caps the duration at the native preallocated sixty seconds', async () => {
+        await armCrumbsRecording(INSTANCE, 0.5, 0, 999);
+        expect(armRecording).toHaveBeenCalledWith(INSTANCE, 0.5, 0, 60);
     });
 
     it('does not arm when the instance has no pads', async () => {

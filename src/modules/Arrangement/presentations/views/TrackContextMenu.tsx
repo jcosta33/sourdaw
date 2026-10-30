@@ -5,15 +5,18 @@ import { DawMenuInlineEditor } from '#/components/daw/DawMenuInlineEditor';
 import { DawMenuButton, DawMenuMutedRow, DawMenuSeparator } from '#/components/daw/DawMenuParts';
 import { DawSwatchButton } from '#/components/daw/DawSwatchButton';
 import { Grid } from '#/components/layout';
-import { executeUserAppAction } from '#/modules/Command/useCases';
+import { executeUserAppAction, isAppActionCommittedError } from '#/modules/Command/useCases';
+import { arrangementStore } from '#/modules/Project/stores';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 import { TRACK_COLOR_PRESETS } from '#/utils/UI/colorPresets';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { bounceTrack, type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
+import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
 import { saveTrackAsTemplate } from '../../useCases/saveTrackAsTemplate';
@@ -94,6 +97,70 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
 
     const handleBounceConfirm = (options: BounceOptions) => {
         void bounceTrack(track.id, options);
+    };
+
+    const handleFlatten = () => {
+        close();
+        const projectAuthority = captureProjectTransitionAuthority();
+        const arrangementId = arrangementStore.value?.activeArrangementId;
+        const trackId = track.id;
+        const { frozenBufferId, freezeId, renderedAt } = track.freezeState;
+        if (!frozenBufferId) {
+            notifyUser('This frozen take is unavailable. Freeze the track again before flattening.', 'warning');
+            return;
+        }
+
+        void (async () => {
+            const confirmed = await confirmUser({
+                title: `Flatten "${track.name}"?`,
+                message:
+                    'Flatten replaces the editable clips and devices with one rendered audio clip. Undo before leaving this project if you want the originals back.',
+                confirmLabel: 'Flatten',
+                cancelLabel: 'Cancel',
+                variant: 'danger',
+            });
+            if (!confirmed) {
+                return;
+            }
+
+            const admission = { declined: false };
+            await executeUserAppAction(
+                { type: 'flattenTrack', payload: { trackId } },
+                {
+                    shouldExecute: () => {
+                        const current = getTrackStoreState()?.tracks.find((candidate) => candidate.id === trackId);
+                        const allowed =
+                            projectAuthority.isCurrent() &&
+                            arrangementId !== undefined &&
+                            arrangementStore.value?.activeArrangementId === arrangementId &&
+                            current?.frozen === true &&
+                            current.freezeState.status === 'frozen' &&
+                            current.freezeState.frozenBufferId === frozenBufferId &&
+                            current.freezeState.freezeId === freezeId &&
+                            current.freezeState.renderedAt === renderedAt;
+                        if (!allowed) {
+                            admission.declined = true;
+                        }
+                        return allowed;
+                    },
+                }
+            );
+            if (admission.declined) {
+                notifyUser(
+                    'The frozen track changed. Flatten was cancelled; check the track and try again.',
+                    'warning'
+                );
+            }
+        })().catch((error: unknown) => {
+            if (isAppActionCommittedError(error)) {
+                notifyUser(
+                    'Flatten changed the project, but follow-up processing failed. Check the project before continuing.',
+                    'error'
+                );
+                return;
+            }
+            notifyUser('Flatten could not finish. Check the track before trying again.', 'error');
+        });
     };
 
     let freezeLabel = 'Freeze';
@@ -214,13 +281,7 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
             ? [
                   {
                       label: 'Flatten Track',
-                      action: () => {
-                          void executeUserAppAction({
-                              type: 'flattenTrack',
-                              payload: { trackId: track.id },
-                          });
-                          close();
-                      },
+                      action: handleFlatten,
                       testId: 'track-flatten-item',
                   },
               ]
