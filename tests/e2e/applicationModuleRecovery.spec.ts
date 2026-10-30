@@ -68,9 +68,12 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
         let faulty = true;
         const failures: string[] = [];
         const pageErrors: string[] = [];
+        let markCapabilitiesReady = (): void => undefined;
+        const capabilitiesReady = new Promise<void>((resolve) => (markCapabilitiesReady = resolve));
         page.on('console', (message) => {
             if (message.text().includes('[capabilities] {')) {
                 capabilityEmissions += 1;
+                markCapabilitiesReady();
             }
         });
         page.on('framenavigated', (frame) => {
@@ -130,6 +133,8 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
         );
         try {
             await page.reload({ waitUntil: 'commit' });
+            // App is issued after shared bootstrap imports; observe their producer before admitting the fault.
+            await capabilitiesReady;
             await expect.poll(() => appRequests).toBe(1);
             await expect(page.getByTestId('app-shell')).toBeVisible();
             await expect.poll(() => capabilityEmissions).toBe(1);

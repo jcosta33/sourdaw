@@ -12,6 +12,14 @@ Pair persistent fetch failure with a throwing dependency and count successful/th
 an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
 feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
 
+### 2026-10-30 — fault admission raced the real bootstrap producer (#5874, pre-merge)
+
+The normal CI recovery cases polled for App within five seconds of document commit, before
+bootstrap emitted capabilities; even their successful seed needed 6.8 seconds to issue App.
+Await the existing production signal before checking the held request, within the existing whole-case
+deadline. Retain exact request counts, fault admission, identity and workspace assertions. Do not
+initialize bootstrap from the test or replace producer readiness with a guessed delay.
+
 ### 2026-10-29 — an HMR-disabled server still navigated the browser
 
 The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's
