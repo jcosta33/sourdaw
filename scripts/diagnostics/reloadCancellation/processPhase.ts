@@ -58,6 +58,7 @@ export async function runPhase(
         const stopHeartbeat = observePhaseHeartbeat(record);
         let stopping = false;
         let completed = false;
+        let closeObserved = false;
         let escalation: NodeJS.Timeout | undefined;
         const signalGroup = (signal: NodeJS.Signals): void => {
             if (child.pid === undefined) {
@@ -111,7 +112,7 @@ export async function runPhase(
             writeReceipt(resolve(output, 'exit.json'), {
                 code,
                 stopping,
-                completeClose: child.exitCode !== null,
+                completeClose: closeObserved,
                 time: new Date().toISOString(),
             });
             record('exit-receipt-written', { pid: child.pid, code });
@@ -127,6 +128,7 @@ export async function runPhase(
         });
         child.on('exit', (code, signal) => record('exit', { code, signal }));
         child.on('close', (code, signal) => {
+            closeObserved = true;
             record('close', { code, signal });
             finish(stopping ? 1 : (code ?? 1));
         });

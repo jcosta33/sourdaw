@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
@@ -13,6 +13,8 @@ import {
     preserveNativeTermination,
     TRACE_SYSCALLS,
 } from '../diagnostics/reloadCancellation/nativeTrace';
+import { runPhase } from '../diagnostics/reloadCancellation/processPhase';
+import { qualifyRunnerCompletion } from '../diagnostics/reloadCancellation/qualification';
 import {
     assertRendererIdentity,
     createRendererAssociations,
@@ -40,6 +42,31 @@ const binding: BrowserTraceBinding = {
     tracer: { ...identity, pid: 300, parent: 200, start: '80001' },
     browser: { ...identity, pid: 310, parent: 300, start: '80002' },
 };
+
+function processExists(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return false;
+        }
+        throw error;
+    }
+}
+
+async function stopPipeHolder(pid: number): Promise<void> {
+    if (!processExists(pid)) {
+        return;
+    }
+    process.kill(pid, 'SIGTERM');
+    try {
+        await vi.waitFor(() => expect(processExists(pid)).toBe(false), { timeout: 3000 });
+    } catch {
+        process.kill(pid, 'SIGKILL');
+        await vi.waitFor(() => expect(processExists(pid)).toBe(false), { timeout: 3000 });
+    }
+}
 
 describe('reload diagnostic native evidence negative controls', () => {
     it('validates a thousand same-association Scripts once, including while its CDP query is pending', async () => {
@@ -298,6 +325,75 @@ describe('reload diagnostic native evidence negative controls', () => {
                     readFileSync(resolve(output, 'native-preflight-supervisor/qualification.json'), 'utf8')
                 ) as unknown
             ).toMatchObject({ observed: false, childCode: code });
+        } finally {
+            rmSync(output, { recursive: true, force: true });
+        }
+    });
+
+    it('keeps close incomplete when an exited child leaves its pipe open in an owned descendant', async () => {
+        const output = mkdtempSync(resolve(tmpdir(), 'reload-held-pipe-'));
+        const phase = resolve(output, 'run');
+        const pidFile = resolve(output, 'holder-pid');
+        const holder = 'process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000)';
+        const producer = [
+            'const {spawn}=require("node:child_process");',
+            `const child=spawn(process.execPath,["-e",${JSON.stringify(holder)}],`,
+            '{detached:true,stdio:["ignore",1,2]});',
+            'require("node:fs").writeFileSync(process.argv[1],String(child.pid));child.unref();',
+        ].join('');
+        try {
+            expect(
+                await runPhase(process.cwd(), ['exec', 'node', '-e', producer, pidFile], process.env, phase, 5000)
+            ).toBe(1);
+            const pid = Number(readFileSync(pidFile, 'utf8'));
+            expect(processExists(pid)).toBe(true);
+            const observations = readFileSync(resolve(phase, 'process.jsonl'), 'utf8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line) as { kind: string; data: { code?: number } });
+            expect(observations.some((event) => event.kind === 'exit' && event.data.code === 0)).toBe(true);
+            expect(observations.some((event) => event.kind === 'incomplete-process-close')).toBe(true);
+            expect(JSON.parse(readFileSync(resolve(phase, 'exit.json'), 'utf8'))).toMatchObject({
+                code: 1,
+                stopping: true,
+                completeClose: false,
+            });
+            expect(qualifyRunnerCompletion(output).observed).toBe(false);
+        } finally {
+            try {
+                const pid = Number(readFileSync(pidFile, 'utf8'));
+                await stopPipeHolder(pid);
+            } finally {
+                rmSync(output, { recursive: true, force: true });
+            }
+        }
+    }, 40_000);
+
+    it.each([
+        ['actual complete close', {}, [], true],
+        ['stopped phase', { stopping: true }, [], false],
+        ['incomplete close', { completeClose: false }, [], false],
+        ['deadline despite a receipt', {}, ['deadline'], false],
+        ['incomplete-close journal despite a receipt', {}, ['incomplete-process-close'], false],
+        ['missing actual close event', {}, ['omit-close'], false],
+    ] as const)('qualifies runner completion only with %s', (_label, change, kinds, observed) => {
+        const output = mkdtempSync(resolve(tmpdir(), 'reload-phase-qualification-'));
+        const phase = resolve(output, 'run');
+        mkdirSync(phase);
+        const omitClose = kinds.some((kind) => kind === 'omit-close');
+        const observations = ['runner-heartbeat', ...kinds, 'close', 'exit-receipt-written']
+            .filter((kind) => kind !== 'omit-close' && !(kind === 'close' && omitClose))
+            .map((kind) => ({ kind, data: { code: 1, signal: null } }));
+        try {
+            writeFileSync(
+                resolve(phase, 'process.jsonl'),
+                observations.map((event) => JSON.stringify(event)).join('\n')
+            );
+            writeFileSync(
+                resolve(phase, 'exit.json'),
+                JSON.stringify({ code: 1, stopping: false, completeClose: true, ...change })
+            );
+            expect(qualifyRunnerCompletion(output).observed).toBe(observed);
         } finally {
             rmSync(output, { recursive: true, force: true });
         }

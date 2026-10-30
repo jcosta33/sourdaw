@@ -54,6 +54,35 @@ function observeTargetAdmission(output: string): Check {
     });
 }
 
+export function qualifyRunnerCompletion(output: string): Check {
+    return observe(() => {
+        const observations = readFileSync(resolve(output, 'run/process.jsonl'), 'utf8')
+            .split('\n')
+            .filter(Boolean)
+            .map((line) => recordOf(JSON.parse(line) as unknown, 'process event'));
+        const exit = recordOf(json(resolve(output, 'run/exit.json')), 'runner exit');
+        const closeIndex = observations.findIndex((event) => event.kind === 'close');
+        const receiptIndex = observations.findIndex((event) => event.kind === 'exit-receipt-written');
+        const interrupted = observations.some((event) =>
+            ['deadline', 'incomplete-process-close', 'spawn-error', 'owned-process-group-signal'].includes(
+                String(event.kind)
+            )
+        );
+        if (
+            !observations.some((event) => event.kind === 'runner-heartbeat') ||
+            receiptIndex < 0 ||
+            closeIndex < 0 ||
+            closeIndex >= receiptIndex ||
+            exit.stopping !== false ||
+            exit.completeClose !== true ||
+            interrupted
+        ) {
+            throw new Error('Runner phase stopped, exceeded its deadline or lacks an actual complete child close');
+        }
+        return { observedEvents: observations.length };
+    });
+}
+
 export function qualifyExecution(root: string, output: string, childCode: number): Record<string, Check> {
     const frozen: unknown = JSON.parse(readFileSync(new URL('./original-history.json', import.meta.url), 'utf8'));
     const expected = historicalCases(frozen);
@@ -124,16 +153,7 @@ export function qualifyExecution(root: string, output: string, childCode: number
             }
             return { observedEvents: observations.length };
         }),
-        runnerHeartbeat: observe(() => {
-            const observations = events('process.jsonl');
-            if (
-                !observations.some((event) => event.kind === 'runner-heartbeat') ||
-                !observations.some((event) => event.kind === 'exit-receipt-written')
-            ) {
-                throw new Error('Runner heartbeat or close receipt was not emitted');
-            }
-            return { observedEvents: observations.length };
-        }),
+        runnerHeartbeat: qualifyRunnerCompletion(output),
         targetResults: observe(() => {
             const lines = readFileSync(resolve(output, 'run/test-errors.jsonl'), 'utf8').split('\n');
             const nonEmpty = lines.filter(Boolean);
