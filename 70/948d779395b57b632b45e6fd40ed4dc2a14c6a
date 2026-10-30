@@ -1,0 +1,20 @@
+src/modules/Command/useCases/__tests__/actionHistoryReplay.integration.spec.ts
+  s_7a8e1107313040::t_9c0bf499e3afd2 1,21,43,359-384
+  s_7a8e1107313040::t_bbcacf9a57c5cc 385-388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70948d779395b57b632b45e6fd40ed4dc2a14c6a",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
