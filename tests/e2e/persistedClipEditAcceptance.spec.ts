@@ -571,7 +571,16 @@ test('persisted clip edits replay exact owners and source material through real 
     initialExact.projected.midi = { ...initialExact.projected.midi, noteCoordinateFormat: 'clip-relative' };
     const hydratedSeed = await expectExact(page, canonicalSeed);
     expect(hydratedSeed.mirror.projectId).toBe(seed.projectId);
-    expect(hydratedSeed.mirror.witness).toBe(hydratedSeed.witness);
+    // The first boot's load migrations write after the mirror is tagged, and the mirror re-stamps when autosave persists, so the witness converges rather than matching at once.
+    await expect
+        .poll(
+            async () => {
+                const snapshot = await readSnapshot(page);
+                return snapshot.mirror.projectId === seed.projectId && snapshot.mirror.witness === snapshot.witness;
+            },
+            { timeout: STEP_TIMEOUT }
+        )
+        .toBe(true);
 
     await test.step('Delete Time through the visible loop-region command', async () => {
         await replayTwice(page, info, 'delete-time', MIDI_NAME, ['deleteTime'], capabilities, async () => {
