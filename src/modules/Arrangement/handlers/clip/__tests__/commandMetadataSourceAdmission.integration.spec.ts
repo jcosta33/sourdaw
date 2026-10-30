@@ -301,4 +301,57 @@ describe('completed command metadata and audio source admission', () => {
         }
         expect(sourceOwners()).toEqual(original);
     });
+
+    it('keeps unscoped foreign audio source writes pending while completed metadata settles', async () => {
+        const { secondId } = await deleteMiddle();
+        const original = sourceOwners();
+        const deferredFrame = vi.spyOn(globalThis, 'requestAnimationFrame').mockReturnValue(1);
+        const pendingTakeLanes = {
+            lanes: original.takeLanes.lanes.map((lane) => ({
+                ...lane,
+                takes: lane.takes.map((take) => ({ ...take, sourceOffsetSeconds: 0.5 })),
+            })),
+        };
+        try {
+            // This owner is unscoped: a global flush could publish it.
+            takeLaneStore.set(pendingTakeLanes);
+            expect(countPendingAutomergeStorageWrites()).toBe(1);
+            expect(getCrdtDoc<SourceDocument>('root')?.takeLanes).toEqual(original.takeLanes);
+            const metadata = {
+                id: 'metadata-beside-unscoped-source',
+                label: 'Completed command',
+                actionKind: 'removeClip',
+                source: 'manual' as const,
+                timestamp: 10,
+                reverted: false,
+            };
+            recordActionHistoryEntry(metadata);
+            const rawHistory = getCrdtDoc<{ actionHistory: NonNullable<typeof actionHistoryStore.value> }>(
+                'root'
+            )?.actionHistory;
+            expect(rawHistory?.entries).toContainEqual(metadata);
+            expect(rawHistory).toEqual(actionHistoryStore.value);
+            expect(getCrdtDoc<SourceDocument>('root')?.takeLanes).toEqual(original.takeLanes);
+            expect(takeLaneStore.value).toEqual(pendingTakeLanes);
+            expect(countPendingAutomergeStorageWrites()).toBe(1);
+            expect(hasForeignPendingProjectWrites()).toBe(true);
+            const raw = structuredClone(getCrdtDoc('root'));
+            const heads = getHeads(getCrdtDoc('root')!);
+            const history = structuredClone(undoHistoryStore.value);
+            await expect(
+                executeAppAction({ type: 'splitClip', payload: { clipId: secondId, beat: 4 } })
+            ).rejects.toThrow('Action conflicts with current project state: splitClip');
+            expect(getCrdtDoc('root')).toEqual(raw);
+            expect(getHeads(getCrdtDoc('root')!)).toEqual(heads);
+            expect(undoHistoryStore.value).toEqual(history);
+            expect(takeLaneStore.value).toEqual(pendingTakeLanes);
+            expect(countPendingAutomergeStorageWrites()).toBe(1);
+        } finally {
+            // Restore and settle only this test's deliberately buffered source value.
+            takeLaneStore.set(original.takeLanes);
+            flushAutomergeStorageWrites();
+            deferredFrame.mockRestore();
+        }
+        expect(sourceOwners()).toEqual(original);
+    });
 });
