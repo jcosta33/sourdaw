@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { defaultClipSelectionState, defaultTrackState } from '#/modules/Arrangement/stores';
+
 import { resolveElasticEditorTarget } from '../resolveElasticEditorTarget';
 
 const audio = { id: 'audio', type: 'audio', audioBufferId: 'buffer' };
@@ -20,7 +22,9 @@ describe('resolveElasticEditorTarget', () => {
         (openClipId, selectedClipId, id, clip) => {
             const target = resolveElasticEditorTarget({ openClipId }, { selectedClipId }, arrangement);
             expect(target).toEqual({ clipId: id, trackId: clip ? 'track' : null, clip });
-            if (clip) expect(target.clip).toBe(clip);
+            if (clip) {
+                expect(target.clip).toBe(clip);
+            }
         }
     );
 
@@ -30,5 +34,21 @@ describe('resolveElasticEditorTarget', () => {
         const before = structuredClone(arrangement);
         expect(resolveElasticEditorTarget(editor, selection, arrangement).clip).toBe(audio);
         expect(arrangement).toEqual(before);
+    });
+
+    it.each([null, undefined])('treats %s snapshots like the canonical defaults', (absent) => {
+        for (const editor of [{ openClipId: null }, { openClipId: 'audio' }]) {
+            for (const selection of [absent, { selectedClipId: 'audio' }]) {
+                for (const tracks of [absent, arrangement]) {
+                    expect(resolveElasticEditorTarget(editor, selection, tracks)).toEqual(
+                        resolveElasticEditorTarget(
+                            editor,
+                            selection ?? defaultClipSelectionState,
+                            tracks ?? defaultTrackState
+                        )
+                    );
+                }
+            }
+        }
     });
 });

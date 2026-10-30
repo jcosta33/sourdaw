@@ -1,3 +1,4 @@
+import { toJS } from '@automerge/automerge';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -19,7 +20,13 @@ import { audioBufferCache } from '#/modules/AudioEngine/stores';
 import { getFinalFeatureHandlers } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { clearUndoHistory, executeAppAction } from '#/modules/Command/useCases';
-import { createCrdtDoc, getCrdtDoc, registerCrdtStorageRuntime, removeCrdtDoc } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectRootIdentity,
+    createCrdtDoc,
+    getCrdtDoc,
+    registerCrdtStorageRuntime,
+    removeCrdtDoc,
+} from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { resetPreferences } from '#/modules/Preferences/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
@@ -34,6 +41,7 @@ import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/ela
 import { detectTransientsForClip } from '../../../useCases/elasticAudio/detectTransientsForClip';
 import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
 import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
+import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
 import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';
@@ -111,6 +119,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         configureAutomergeStoragePort(null);
         createCrdtDoc('root');
         registerCrdtStorageRuntime();
+        setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
         clearHandlerRegistry();
         clearUndoHistory();
         clipSelectionStore.set(defaultClipSelectionState);
@@ -196,7 +205,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         }
     );
 
-    it.each(['selection-ABA', 'root-replacement'] as const)(
+    it.each(['selection-ABA', 'root-replacement', 'preference-root-replacement'] as const)(
         'preserves real native rows when the pending %s owner expires',
         async (change) => {
             vi.useFakeTimers();
@@ -211,15 +220,11 @@ describe('locked transient markers through the real Elastic editor', () => {
                 clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
                 render(<ElasticEditorPanel />);
                 expect(screen.getByRole('slider', { name: 'Transient detection sensitivity' })).toBeVisible();
-                const pending = setElasticSensitivity(0.9);
-                if (change === 'selection-ABA') {
-                    act(() => {
-                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
-                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
-                    });
-                } else {
+                const replaceRoot = (): void => {
                     const tracks = trackStore.value;
-                    if (!tracks) throw new Error('Original track fixture missing');
+                    if (!tracks) {
+                        throw new Error('Original track fixture missing');
+                    }
                     const warp = getWarpState(CLIP_ID);
                     createCrdtDoc('root');
                     trackStore.set({
@@ -231,8 +236,24 @@ describe('locked transient markers through the real Elastic editor', () => {
                         markers: [{ ...lockedMarker, id: 'successor-root-locked' }, selectedUserMarker],
                     });
                     flushAutomergeStorageWrites();
+                };
+                const unsubscribe =
+                    change === 'preference-root-replacement' ? preferencesStore.subscribe(replaceRoot) : undefined;
+                const pending = setElasticSensitivity(0.9);
+                unsubscribe?.();
+                if (change === 'selection-ABA') {
+                    act(() => {
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: 'other-clip' });
+                        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipId: CLIP_ID });
+                    });
+                } else if (change === 'root-replacement') {
+                    replaceRoot();
                 }
-                const before = JSON.parse(JSON.stringify(getCrdtDoc('root')));
+                const root = getCrdtDoc('root');
+                if (!root) {
+                    throw new Error('Root fixture missing');
+                }
+                const before = toJS(root);
                 await act(async () => {
                     await vi.advanceTimersByTimeAsync(150);
                     await pending;

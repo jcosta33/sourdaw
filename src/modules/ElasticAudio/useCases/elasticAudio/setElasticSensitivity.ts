@@ -1,12 +1,6 @@
 import { logger } from '#/infra/logger/appLogger';
-import {
-    clipSelectionStore,
-    defaultClipSelectionState,
-    defaultTrackState,
-    trackStore,
-} from '#/modules/Arrangement/stores';
+import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -14,6 +8,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 
 import { detectTransientsForClip } from './detectTransientsForClip';
+import { getElasticSensitivityRootIdentityCapture } from './elasticSensitivityDependencies';
 import { resolveElasticEditorTarget } from './resolveElasticEditorTarget';
 
 const DEBOUNCE_MS = 150;
@@ -27,8 +22,8 @@ let pending: PendingState | undefined;
 function currentTarget() {
     return resolveElasticEditorTarget(
         elasticAudioStore.value ?? defaultElasticAudioState,
-        clipSelectionStore.value ?? defaultClipSelectionState,
-        trackStore.value ?? defaultTrackState
+        clipSelectionStore.value,
+        trackStore.value
     );
 }
 
@@ -37,6 +32,7 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
     if (previous) {
         clearTimeout(previous.timer);
         previous.dispose();
+        pending = undefined;
     }
     const completion = previous?.completion ?? Promise.withResolvers<void>();
     const target = currentTarget();
@@ -55,13 +51,28 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
         buffer.length > 0 &&
         Number.isInteger(buffer.numberOfChannels) &&
         buffer.numberOfChannels > 0;
-    const rootIdentity = captureProjectRootIdentity();
+    let captureRootIdentity: () => string;
+    let rootIdentity: string;
+    try {
+        const capture = getElasticSensitivityRootIdentityCapture();
+        if (!capture) {
+            throw new Error('Elastic sensitivity root identity capture is not configured');
+        }
+        captureRootIdentity = capture;
+        rootIdentity = captureRootIdentity();
+    } catch (error) {
+        updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
+        logger.error(error instanceof Error ? error : new Error('Transient detection failed', { cause: error }));
+        notifyUser('Transient detection failed. Try again.', 'error');
+        completion.resolve();
+        return completion.promise;
+    }
     let invalidated = false;
     const matches = (): boolean => {
         const current = currentTarget();
         const liveBuffer = bufferId ? audioBufferCache.get(bufferId) : undefined;
         return (
-            captureProjectRootIdentity() === rootIdentity &&
+            captureRootIdentity() === rootIdentity &&
             (elasticAudioStore.value?.openClipId ?? null) === openedClipId &&
             current.clipId === target.clipId &&
             current.trackId === target.trackId &&

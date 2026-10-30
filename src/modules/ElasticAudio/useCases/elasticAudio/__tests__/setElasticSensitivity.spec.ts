@@ -4,7 +4,6 @@ import { logger } from '#/infra/logger/appLogger';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
 import { createTrack } from '#/modules/Arrangement/useCases';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
-import * as crdt from '#/modules/CrdtDocument/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, resetPreferences } from '#/modules/Preferences/useCases';
 
@@ -19,6 +18,7 @@ vi.mock('../detectTransientsForClip', () => ({
 }));
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
+import { setElasticSensitivityRootIdentityCapture } from '../elasticSensitivityDependencies';
 import { setElasticSensitivity } from '../setElasticSensitivity';
 
 let rootIdentity = 'root-1';
@@ -48,7 +48,7 @@ describe('setElasticSensitivity', () => {
         mocks.notify.mockClear();
         rootIdentity = 'root-1';
         buffer = makeBuffer();
-        vi.spyOn(crdt, 'captureProjectRootIdentity').mockImplementation(() => rootIdentity);
+        setElasticSensitivityRootIdentityCapture(() => rootIdentity);
         vi.spyOn(audioBufferCache, 'get').mockImplementation((id) => (id.startsWith('buffer-') ? buffer : undefined));
         vi.spyOn(logger, 'error').mockImplementation(() => undefined);
         const track = createTrack({ id: 'track', name: 'Audio', kind: 'audio', withoutDefaultDevice: true });
@@ -195,20 +195,19 @@ describe('setElasticSensitivity', () => {
             elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: opened });
             if (kind !== 'missing') {
                 const state = trackStore.value;
-                if (!state) throw new Error('Track fixture missing');
+                if (!state) {
+                    throw new Error('Track fixture missing');
+                }
                 trackStore.set({
                     ...state,
                     tracks: state.tracks.map((track) => ({
                         ...track,
-                        clips: track.clips.map((clip) =>
-                            clip.id !== opened
-                                ? clip
-                                : {
-                                      ...clip,
-                                      type: kind === 'midi' ? 'midi' : 'audio',
-                                      audioBufferId: undefined,
-                                  }
-                        ),
+                        clips: track.clips.map((clip) => {
+                            if (clip.id !== opened) {
+                                return clip;
+                            }
+                            return { ...clip, type: kind === 'midi' ? 'midi' : 'audio', audioBufferId: undefined };
+                        }),
                     })),
                 });
             }
@@ -229,15 +228,38 @@ describe('setElasticSensitivity', () => {
         expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
     });
 
+    it('retires a selection ABA that occurs during the preference write', async () => {
+        select('clip-1');
+        const unsubscribe = preferencesStore.subscribe(() => {
+            select('clip-2');
+            select('clip-1');
+        });
+        const pending = setElasticSensitivity(0.8);
+        unsubscribe();
+        await vi.advanceTimersByTimeAsync(150);
+        await expect(pending).resolves.toBeUndefined();
+        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        const fresh = setElasticSensitivity(0.4);
+        await vi.advanceTimersByTimeAsync(150);
+        await fresh;
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.4);
+    });
+
     it.each(['selection', 'selection-ABA', 'editor-ABA', 'source', 'source-ABA', 'root'] as const)(
         'retires a pending %s owner and permits a fresh valid gesture',
         async (change) => {
             select('clip-1');
             const pending = setElasticSensitivity(0.8);
             const original = trackStore.value;
-            if (!original) throw new Error('Track fixture missing');
-            if (change === 'selection' || change === 'selection-ABA') select('clip-2');
-            if (change === 'selection-ABA') select('clip-1');
+            if (!original) {
+                throw new Error('Track fixture missing');
+            }
+            if (change === 'selection' || change === 'selection-ABA') {
+                select('clip-2');
+            }
+            if (change === 'selection-ABA') {
+                select('clip-1');
+            }
             if (change === 'editor-ABA') {
                 elasticAudioStore.set({ ...defaultElasticAudioState, openClipId: 'clip-1' });
                 elasticAudioStore.set(defaultElasticAudioState);
@@ -250,9 +272,13 @@ describe('setElasticSensitivity', () => {
                         clips: track.clips.map((clip) => ({ ...clip, audioBufferId: 'replacement' })),
                     })),
                 });
-                if (change === 'source-ABA') trackStore.set(original);
+                if (change === 'source-ABA') {
+                    trackStore.set(original);
+                }
             }
-            if (change === 'root') rootIdentity = 'replacement-root-with-same-project-and-clip-ids';
+            if (change === 'root') {
+                rootIdentity = 'replacement-root-with-same-project-and-clip-ids';
+            }
             await vi.advanceTimersByTimeAsync(150);
             await pending;
             expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
@@ -297,8 +323,46 @@ describe('setElasticSensitivity', () => {
         await vi.advanceTimersByTimeAsync(150);
         await Promise.all([first, second]);
         expect(disposals).toHaveLength(6);
-        for (const dispose of disposals) expect(dispose).toHaveBeenCalledTimes(1);
+        for (const dispose of disposals) {
+            expect(dispose).toHaveBeenCalledTimes(1);
+        }
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('reports an unconfigured root capture and settles without retaining the previous gesture', async () => {
+        select('clip-1');
+        const clearTimer = vi.spyOn(globalThis, 'clearTimeout');
+        const unsubscribe = vi.fn();
+        const originalSubscribe = elasticAudioStore.subscribe.bind(elasticAudioStore);
+        vi.spyOn(elasticAudioStore, 'subscribe').mockImplementation((callback) => {
+            const dispose = originalSubscribe(callback);
+            return () => {
+                unsubscribe();
+                dispose();
+            };
+        });
+        const first = setElasticSensitivity(0.1);
+        setElasticSensitivityRootIdentityCapture(null);
+        const second = setElasticSensitivity(0.9);
+        expect(second).toBe(first);
+        await expect(second).resolves.toBeUndefined();
+        expect(preferencesStore.value?.elasticTransientSensitivity).toBe(0.9);
+        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        expect(logger.error).toHaveBeenCalledWith(
+            new Error('Elastic sensitivity root identity capture is not configured')
+        );
+        expect(mocks.notify).toHaveBeenCalledWith('Transient detection failed. Try again.', 'error');
+        expect(unsubscribe).toHaveBeenCalledTimes(1);
+        expect(clearTimer).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(150);
+        expect(vi.getTimerCount()).toBe(0);
+        expect(mocks.detectTransientsForClip).not.toHaveBeenCalled();
+        setElasticSensitivityRootIdentityCapture(() => rootIdentity);
+        const fresh = setElasticSensitivity(0.4);
+        expect(fresh).not.toBe(first);
+        await vi.advanceTimersByTimeAsync(150);
+        await fresh;
+        expect(mocks.detectTransientsForClip).toHaveBeenCalledExactlyOnceWith('clip-1', 0.4);
     });
 
     it('reports unexpected detection failure and settles without a rejected fire-and-forget promise', async () => {
