@@ -165,6 +165,11 @@ async function installNativeSession() {
 }
 
 const RESTORE_FAILURE = 'The native engine did not apply its audition output gate.';
+/**
+ * Each case resets modules and imports the real AudioEngine barrel again; the first does so cold,
+ * which alone takes about nine seconds, so the default ten-second hook limit fails it under load.
+ */
+const COLD_ENGINE_IMPORT_TIMEOUT_MS = 60_000;
 
 describe('measured audition controller through the actual exclusive source executor', () => {
     let driven: Awaited<ReturnType<typeof engineFixture>>;
@@ -190,7 +195,7 @@ describe('measured audition controller through the actual exclusive source execu
             preview: { buffer: exact, gain: 1, lufs: -16 },
             matchLufs: -16,
         });
-    });
+    }, COLD_ENGINE_IMPORT_TIMEOUT_MS);
     afterEach(async () => {
         try {
             await stopMeasuredPreviewAudition();
