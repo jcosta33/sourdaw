@@ -1,0 +1,186 @@
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 27-40
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 924-938
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 495-508,864-877
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 468-482
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 227-242,573-587
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 44-61
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 449-465,1544-1560,2045-2075
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7,9-12,29-30,32,34-36,42,44-46,53,72-74,121-123,125-136,159-166,171,179,210,282-284,324,326,335,340,342,358,402-403,419-420,438-439,479,481,501-502,523,529,586-587,606,609
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/src/toaster/transient.rs
+  h_beb54bf43b47b7 71-130
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,122-123,153,285-338
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+crates/daw-dsp/tests/device_process_rt.rs
+  h_beb54bf43b47b7 2162-2178
+crates/daw-dsp/tests/transient_shaper_effect.rs
+  h_beb54bf43b47b7 1-143
+crates/daw-engine/src/scheduler.rs
+  h_beb54bf43b47b7 308,329,350,389,416,1149,1189-1191,1405-1420,1434,1466,1497,1535,1561,1614,4524-4558,4620-4622,6611-6617,8360-8370,8476-8478,9601,9617-9618,28306-28495
+crates/sourdaw-native/src/commands/graph.rs
+  h_beb54bf43b47b7 2312-2320,2425-2432,2494-2498,2887-2896,3896-3900,17360-17492
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 223-239
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,623
+package.json
+  h_beb54bf43b47b7 164
+pnpm-lock.yaml
+  h_beb54bf43b47b7 172-173,3519-3520,8850
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 10
+public/legal/ELECTRON-SOURCES.json
+  h_beb54bf43b47b7 4-6,9,12,14,17,19,30-32,37-39,44-46,51-53
+public/legal/THIRD-PARTY-NOTICES.md
+  h_beb54bf43b47b7 5,7-8
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1247,1335-1364,1366-1367,1391-1394
+public/wasm/daw-dsp/daw_dsp.js
+  h_beb54bf43b47b7 2397-2452,2589-2591
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,5-99,187-216,218-219,243-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,15-18,20-21
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,221-223,229,282,358,587,797,1124,1212-1213,1215,1347,1353,1743,1755,1771
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_beb54bf43b47b7 119-123
+scripts/electronRuntimeContract.ts
+  h_beb54bf43b47b7 40-42,45,48,50,53,55,66-68,73-75,80-82,87-89
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  h_beb54bf43b47b7 1-508
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  h_beb54bf43b47b7 5-6,10,16-17,23-26,64-81
+src/app/__tests__/prepareOfflineDeviceSetup.spec.ts
+  h_beb54bf43b47b7 254-255
+src/app/createCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-80
+src/app/initDeviceStateReconciliation.ts
+  h_beb54bf43b47b7 2,6-7,40-41,46-47,65
+src/app/nativeBuiltinParameterNames.ts
+  h_beb54bf43b47b7 50
+src/app/nativeModAssignments.ts
+  h_beb54bf43b47b7 53
+src/app/nativeSampleBanks.ts
+  h_beb54bf43b47b7 55
+src/app/prepareOfflineDeviceSetup.ts
+  h_beb54bf43b47b7 204
+src/app/projectNativeDeviceState.ts
+  h_beb54bf43b47b7 146
+src/modules/Arrangement/models/DeviceParameter.ts
+  h_beb54bf43b47b7 21,186
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptor.ts
+  h_beb54bf43b47b7 1-31
+src/modules/Arrangement/models/PluginDescriptors/TransientShaperDescriptorGuidance.ts
+  h_beb54bf43b47b7 1-42
+src/modules/Arrangement/models/PluginDescriptors/__tests__/authoredParameterGuidance.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/Arrangement/models/PluginDescriptors/__tests__/declaredDefaultConsensus.spec.ts
+  h_beb54bf43b47b7 292-295,523-526,565,574-581
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 184,202,239-243,605-608,701-744,746-748
+src/modules/Arrangement/models/PluginDescriptors/__tests__/transientShaperDescriptor.spec.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  h_beb54bf43b47b7 1-64
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  h_beb54bf43b47b7 405-445
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,88-89,176,184,188
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 1-207
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 1-299
+src/modules/AudioEngine/engine/wasmDeviceRegistry.ts
+  h_beb54bf43b47b7 41,2003-2084,2086
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/repositories/deviceStrategy/nativeDspDeviceFactories.ts
+  h_beb54bf43b47b7 17,337-346
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/offlineAutomationCoverage.spec.ts
+  h_beb54bf43b47b7 10,30-31,49,51-52,60,62-69,113,125,298,348-357
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/services/__tests__/dawDspTransientShaper.spec.ts
+  h_beb54bf43b47b7 1-33
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 1-136
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  h_beb54bf43b47b7 1-118
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  h_beb54bf43b47b7 1135-1163
+src/modules/AudioEngine/useCases/livePlayback/__tests__/transientShaperCarrierAdmission.spec.ts
+  h_beb54bf43b47b7 1-137
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  h_beb54bf43b47b7 630-649
+src/modules/AudioEngine/useCases/offlineRender/__tests__/transientShaperOfflineAdmission.spec.ts
+  h_beb54bf43b47b7 1-70
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1121-1136,1153-1247,1335-1364,1366-1367,1391-1394
+src/modules/AudioEngine/wasm/daw_dsp.js
+  h_beb54bf43b47b7 2574-2629,2766-2768
+src/modules/Crumbs/presentations/components/__tests__/WaveformDisplay.spec.tsx
+  h_beb54bf43b47b7 2,6-45
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  h_beb54bf43b47b7 12-14,17-18,25-83
+src/modules/Crumbs/stores/crumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-4
+src/modules/Crumbs/stores/crumbsStore.ts
+  h_beb54bf43b47b7 8,127-130,136
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  h_beb54bf43b47b7 1,16-33,43-44,66-76
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  h_beb54bf43b47b7 37,136,140,153
+src/modules/Crumbs/useCases/__tests__/sampleWaveformPublication.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/Crumbs/useCases/configureCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-11
+src/modules/Crumbs/useCases/index.ts
+  h_beb54bf43b47b7 5
+src/modules/Crumbs/useCases/loadSample.ts
+  h_beb54bf43b47b7 12-13,16,76-86,92-96,98-105,116,120,136-139,141-143,153-155,167-169,176-178,181-183,187-189,193
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,412-415,430-435
+src/utils/nativeDspDeviceTypes.ts
+  h_beb54bf43b47b7 45,74
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 27
+tests/e2e/transientShaperEffect.spec.ts
+  h_beb54bf43b47b7 1-1044
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3b711f3b06b37bc44db234cdbbb1f1bdfcbc57af",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
