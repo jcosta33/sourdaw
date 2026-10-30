@@ -1,0 +1,33 @@
+src/modules/Transport/useCases/transportControls/__tests__/recordStartSetupFailure.spec.ts
+  s_55244eb93b97d1::t_eec9dfe6a817b6 51
+src/modules/Transport/useCases/transportControls/__tests__/toggleRecordingPreRoll.spec.ts
+  s_55244eb93b97d1::t_eec9dfe6a817b6 101
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_55244eb93b97d1::t_468baffda0821c 316-317
+  s_55244eb93b97d1::t_390ccf5f10e28b 249-250
+  s_55244eb93b97d1::t_c58fb24bb8eb25 141-142
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_55244eb93b97d1::t_75d3cc0f237034 82-83
+  s_55244eb93b97d1::t_ef5d75f29d4911 57-58
+  s_55244eb93b97d1::t_93646682ab6eb3 88-89
+src/modules/Transport/useCases/transportControls/__tests__/punchRecordArming.spec.ts
+  s_55244eb93b97d1::t_eec9dfe6a817b6 100
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/SamplesTab.spec.tsx
+  s_55244eb93b97d1::t_04a7879e2305e6 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e64fce3b8a29dd4c61be7cf5b3b981048d85b8cf",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
