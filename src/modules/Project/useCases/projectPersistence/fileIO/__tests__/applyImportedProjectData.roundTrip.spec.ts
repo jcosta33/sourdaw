@@ -339,6 +339,63 @@ function makeProject(): ProjectData {
     };
 }
 
+function frozenMidiTakeLanes(): NonNullable<ProjectData['takeLanes']> {
+    return {
+        lanes: [
+            {
+                id: 'frozen-lane',
+                trackId: 'track-audio',
+                takes: [
+                    {
+                        id: 'frozen-take',
+                        clipId: 'clip-a',
+                        name: 'Frozen MIDI',
+                        startBeat: 0,
+                        endBeat: 4,
+                        selected: true,
+                        sourceOffsetBeats: 1.25,
+                        recordingPassIndex: 2,
+                        midiSource: {
+                            sourceClipId: 'clip-midi',
+                            sourceEntryBeat: 5,
+                            sourceEndBeat: 8,
+                            phaseHeadBeat: 0.75,
+                            passLengthBeats: 4,
+                            rows: {
+                                notes: {
+                                    present: true,
+                                    value: [
+                                        {
+                                            id: 'n1',
+                                            pitch: 64,
+                                            startBeat: 5.5,
+                                            duration: 1,
+                                            velocity: 91,
+                                            recordingPassIndex: 2,
+                                            pressure: 30,
+                                            expression: { pressure: [{ offsetBeats: 0.25, value: 70 }] },
+                                        },
+                                        { id: 'n2', pitch: 67, startBeat: 6.5, duration: 0.5, velocity: 80 },
+                                    ],
+                                },
+                                controlChanges: {
+                                    present: true,
+                                    value: [{ id: 'cc1', beat: 5.5, controller: 1, value: 55, channel: 0 }],
+                                },
+                                pitchBends: {
+                                    present: true,
+                                    value: [{ id: 'bend1', beat: 6, value: 2048, channel: 0 }],
+                                },
+                            },
+                        },
+                    },
+                ],
+                activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'frozen-take' }],
+            },
+        ],
+    };
+}
+
 describe('applyImportedProjectData round-trip hydration', () => {
     beforeEach(() => {
         setProjectIdentityTransitionDependencies({ leaveCollaborationSession: () => Promise.resolve() });
@@ -890,6 +947,84 @@ describe('applyImportedProjectData round-trip hydration', () => {
             expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledOnce();
         }
     );
+
+    it.each(['top-level', 'saved arrangement'] as const)(
+        'hydrates a frozen selected MIDI source exactly from %s JSON',
+        async (route) => {
+            const project = makeProject();
+            const takeLanes = frozenMidiTakeLanes();
+            if (route === 'top-level') {
+                project.takeLanes = takeLanes;
+            } else {
+                project.arrangements = [
+                    {
+                        id: 'saved',
+                        name: 'Saved',
+                        tracks: { tracks: project.arrangement.tracks, selectedTrackId: 'track-audio' },
+                        takeLanes,
+                    },
+                ];
+                project.activeArrangementId = 'saved';
+            }
+            const serialized: unknown = JSON.parse(JSON.stringify(project));
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(takeLaneStore.value).toEqual(takeLanes);
+            const active = arrangementStore.value?.arrangements.find(
+                (item) => item.id === arrangementStore.value?.activeArrangementId
+            );
+            expect(active?.takeLanes).toEqual(takeLanes);
+        }
+    );
+
+    it.each(
+        ['top-level', 'saved arrangement', 'inactive saved arrangement'].flatMap((route) =>
+            ['source', 'pass identity'].map((defect) => ({ route, defect }))
+        )
+    )('rejects malformed frozen MIDI $defect in $route before replacement', async ({ route, defect }) => {
+        hydrateArrangementStoreFromProjectData({ data: makeProject() });
+        clipSelectionStore.set({ ...defaultClipSelectionState, selectedClipIds: ['clip-a'], selectedClipId: 'clip-a' });
+        const before = {
+            project: structuredClone(projectStore.value),
+            tracks: structuredClone(trackStore.value),
+            arrangements: structuredClone(arrangementStore.value),
+            takes: structuredClone(takeLaneStore.value),
+            selection: structuredClone(clipSelectionStore.value),
+            midi: structuredClone(midiStore.value),
+            epoch: crdtAuthority.epoch,
+        };
+        const project = makeProject();
+        const takeLanes = frozenMidiTakeLanes();
+        const serializedLanes = JSON.parse(JSON.stringify(takeLanes));
+        if (defect === 'source') {
+            serializedLanes.lanes[0].takes[0].midiSource.rows.notes.present = false;
+        } else {
+            serializedLanes.lanes[0].takes[0].recordingPassIndex = -1;
+        }
+        if (route === 'top-level') {
+            project.takeLanes = serializedLanes;
+        } else {
+            project.arrangements = [
+                { id: 'first', name: 'First' },
+                { id: 'saved', name: 'Saved', takeLanes: serializedLanes },
+            ];
+            project.activeArrangementId = route === 'inactive saved arrangement' ? 'first' : 'saved';
+        }
+        const serialized: unknown = JSON.parse(JSON.stringify(project));
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(crdtAuthority.epoch).toBe(before.epoch);
+        expect(projectStore.value).toEqual(before.project);
+        expect(trackStore.value).toEqual(before.tracks);
+        expect(arrangementStore.value).toEqual(before.arrangements);
+        expect(takeLaneStore.value).toEqual(before.takes);
+        expect(clipSelectionStore.value).toEqual(before.selection);
+        expect(midiStore.value).toEqual(before.midi);
+    });
 
     it.each(
         ['top-level', 'saved arrangement', 'inactive saved arrangement'].flatMap((route) =>

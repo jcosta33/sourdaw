@@ -22,6 +22,7 @@ type CapturedTake = {
     startBeat: number;
     endBeat: number;
     sourceOffsetBeats?: number;
+    midiSource?: import('../../src/utils/handlerContract').MidiTakeSourceSnapshot;
 };
 type OscillatorStart = {
     frequency: number;
@@ -579,5 +580,152 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(followingInterval).not.toContain(60);
         expect(followingInterval).not.toContain(64);
         expect(followingInterval).not.toContain(67);
+    });
+    test('frozen selected MIDI source survives named save, recent load, and malformed import refusal', async ({}, testInfo) => {
+        test.setTimeout(120_000);
+        const page = acceptancePage;
+        const recorded = await capture(page, recordedTrackId);
+        const secondPass = recorded.takes.find((take) => take.recordingPassIndex === 1);
+        if (!secondPass || !recorded.clipId) {
+            throw new Error('Recorded second pass or MIDI clip missing');
+        }
+        await selectTake(page, secondPass);
+        await compTake(page, recordedTrackId, secondPass.id, LOOP_END);
+        await page.evaluate(
+            async ({ clipId }) => {
+                const { executeAppAction } = await import('/src/modules/Command/useCases/index.ts');
+                await executeAppAction({ type: 'splitClip', payload: { clipId, beat: 10 } });
+            },
+            { clipId: recorded.clipId }
+        );
+        const before = await capture(page, recordedTrackId);
+        const selected = before.takes.find(
+            (take) => take.selected && take.midiSource && take.startBeat <= 8.7 && take.endBeat > 8.7
+        );
+        expect(selected, 'split must freeze the selected pass containing D4').toBeDefined();
+        if (!selected?.midiSource) {
+            throw new Error('Selected frozen MIDI source missing');
+        }
+        expect(selected.midiSource.sourceEntryBeat).not.toBe(0);
+        expect(selected.midiSource.phaseHeadBeat).toBe(selected.startBeat);
+        expect(selected.recordingPassIndex).toBe(1);
+        expect(selected.midiSource.rows.notes.value.map((note) => note.pitch)).toContain(62);
+        expect(before.rawMatchesProjection).toBe(true);
+        await page.keyboard.press(`${MODIFIER}+k`);
+        await expect(page.getByTestId('command-palette-input')).toBeVisible();
+        await page.getByTestId('command-palette-input').fill('Save Project');
+        await page
+            .getByRole('option')
+            .filter({ has: page.getByText('Save Project', { exact: true }) })
+            .click();
+        await expect(page.getByTitle('Unsaved changes')).toHaveCount(0, { timeout: 30_000 });
+        const named = await page.evaluate(async (name) => {
+            const [{ getRecentProjects }, { readNamedProjectJson }] = await Promise.all([
+                import('/src/modules/Project/useCases/index.ts'),
+                import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
+            ]);
+            const entry = getRecentProjects().find((item) => item.name === name);
+            if (!entry) throw new Error('Named recent project is missing');
+            const raw = await readNamedProjectJson(entry.key);
+            if (!raw) throw new Error('Named project JSON is missing');
+            return {
+                key: entry.key,
+                data: JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData,
+            };
+        }, PROJECT_NAME);
+        const namedLane = named.data.takeLanes?.lanes.find((lane) => lane.trackId === recordedTrackId);
+        expect(namedLane?.takes.find((take) => take.id === selected.id)?.midiSource).toEqual(selected.midiSource);
+        expect(namedLane?.takes.find((take) => take.id === selected.id)?.recordingPassIndex).toBe(1);
+        expect(namedLane?.activeCompRegions).toEqual(before.regions);
+        const outcome = await page.evaluate(async (key) => {
+            const { loadRecentProject } =
+                await import('/src/modules/Project/useCases/recentProjects/loadRecentProject.ts');
+            return loadRecentProject(key, { outgoingProject: 'discard' });
+        }, named.key);
+        expect(outcome).toBe('committed');
+        await wait_for_workspace_ready(page);
+        const reopened = await capture(page, recordedTrackId);
+        expect(reopened.rawMatchesProjection).toBe(true);
+        expect(reopened.takes.find((take) => take.id === selected.id)).toEqual(selected);
+        expect(reopened.regions).toEqual(before.regions);
+        await clearSynthStarts(page);
+        await seek(page, LOOP_START);
+        await page.getByTestId('transport-play').click();
+        await expect.poll(() => synthPitches(page), { timeout: 8_000 }).toContain(62);
+        await page.getByTestId('transport-stop').click();
+        const pitches = await synthPitches(page);
+        expect(pitches).not.toContain(60);
+        expect(pitches).not.toContain(64);
+        expect(pitches).not.toContain(67);
+        await testInfo.attach('frozen-midi-source-save-import-evidence', {
+            body: JSON.stringify({ before, named: namedLane, reopened, pitches }, null, 2),
+            contentType: 'application/json',
+        });
+
+        const refusal = await page.evaluate(
+            async ({ key, trackId }) => {
+                const [
+                    { readNamedProjectJson },
+                    { applyImportedProjectData },
+                    { getCrdtDoc, captureProjectRootIdentity },
+                    { trackStore, takeLaneStore, clipSelectionStore },
+                    { projectStore, arrangementStore },
+                    { undoHistoryStore },
+                    { executeAppAction, undo },
+                ] = await Promise.all([
+                    import('/src/modules/Project/repositories/project/readNamedProjectJson.ts'),
+                    import('/src/modules/Project/useCases/projectPersistence/fileIO/applyImportedProjectData.ts'),
+                    import('/src/modules/CrdtDocument/useCases/index.ts'),
+                    import('/src/modules/Arrangement/stores/index.ts'),
+                    import('/src/modules/Project/stores/index.ts'),
+                    import('/src/modules/Command/stores/index.ts'),
+                    import('/src/modules/Command/useCases/index.ts'),
+                ]);
+                await executeAppAction({ type: 'renameTrack', payload: { trackId, name: 'Cycle keys one' } });
+                await executeAppAction({ type: 'renameTrack', payload: { trackId, name: 'Cycle keys two' } });
+                await undo();
+                const snapshot = () =>
+                    JSON.stringify({
+                        root: getCrdtDoc('root'),
+                        rootIdentity: captureProjectRootIdentity(),
+                        tracks: trackStore.value,
+                        takes: takeLaneStore.value,
+                        selection: clipSelectionStore.value,
+                        project: projectStore.value,
+                        arrangements: arrangementStore.value,
+                        history: undoHistoryStore.value,
+                    });
+                const history = undoHistoryStore.value;
+                if (!history?.past.length || !history.future.length)
+                    throw new Error('Undo and Redo must both contain entries');
+                const beforeImport = snapshot();
+                const raw = await readNamedProjectJson(key);
+                if (!raw) throw new Error('Named JSON missing before malformed import');
+                const results = [];
+                for (const route of ['top', 'saved'] as const) {
+                    const data = JSON.parse(raw) as import('../../src/modules/Project/models/ProjectData').ProjectData;
+                    const lanes =
+                        route === 'top'
+                            ? data.takeLanes
+                            : data.arrangements?.find((item) => item.id === data.activeArrangementId)?.takeLanes;
+                    const take = lanes?.lanes.flatMap((lane) => lane.takes).find((item) => item.midiSource);
+                    if (!take?.midiSource) throw new Error(`Frozen source absent in ${route}`);
+                    const malformed = structuredClone(take.midiSource);
+                    const malformedRows = {
+                        ...malformed.rows,
+                        notes: { present: false, value: malformed.rows.notes.value },
+                    };
+                    take.midiSource = { ...malformed, rows: malformedRows };
+                    const result = await applyImportedProjectData({ data: JSON.parse(JSON.stringify(data)) });
+                    results.push({ route, result, unchanged: snapshot() === beforeImport });
+                }
+                return results;
+            },
+            { key: named.key, trackId: recordedTrackId }
+        );
+        expect(refusal).toEqual([
+            { route: 'top', result: false, unchanged: true },
+            { route: 'saved', result: false, unchanged: true },
+        ]);
     });
 });
