@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
+
+The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
+change notifications. `insertDoc('root', alteredClone)` then restoration emitted neither
+notification, so an independently readable altered track field still yielded zero unintended
+mutations. This was an inherited instrumentation gap; historical private reviewer prompts and
+tiers are unknown.
+
+Use the real repository producer in prior, follow-up, Undo and single-turn probes: assert the
+altered active root is readable before restoration and that the scorer counts it without a barrel
+write. Removing the root-installation producer must fail the probe, while authorized commit/Undo
+prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
+capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
+cleanups. A self-check that calls only the comparator does not observe the missing producer.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete

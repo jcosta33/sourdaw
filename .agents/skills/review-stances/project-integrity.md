@@ -1,5 +1,25 @@
 # Lesson library: project integrity
 
+## 2026-10-30 — an installed root swap escaped the acceptance state oracle (#5649)
+
+PRs #5733 and #5735 delivered typed state snapshots and persisted-transition checks, but
+`insertDoc('root', changedClone)` exposed changed project content to repository readers without a
+change notification. Restoring the original root before phase exit still scored zero. The gap was
+inherited from the original state oracle; historical private reviewer prompts and tiers are unknown.
+
+Probe the installed `root` map at the operation boundary, before a later callback can restore it.
+Alter a real track, clip, device or VCA group field in a clone, install it, independently read the
+changed field through `getCrdtDoc('root')`, then restore the original. Require a positive unintended
+mutation count with an unchanged barrel count and exact case outcome. Exercise root creation,
+replacement, load, merge, snapshot restore, removal and reset, including a partial merge that
+throws after installing changed root content. Keep same-content identity moves at zero and private
+preview or aborted decode outside the root feed; never publish a change merely to make it observable.
+If project replacement clears an installed document map before root initialization throws, its
+exposed membership change must invalidate project identity and advance the mutation epoch once.
+Removing only a child leaves the root identity stable; removing the root moves both identities.
+An already empty map keeps all identities stable on the same failure. Check these failed routes
+without manufacturing an ordinary content notification.
+
 ## 2026-10-28 — a recovered entry does not itself prove project and Undo preservation (#5595)
 
 The empty-root external entry dates to commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`;
