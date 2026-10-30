@@ -62,6 +62,13 @@ function parseRelevantEvent(value: Record<string, unknown>): TraceEvent | string
     if (value.ph !== 'X') {
         return `relevant event ${String(value.name)} is not a complete X event`;
     }
+    const expectedCategory =
+        value.name === OFFLINE_TRACE_EVENT_NAMES.handler
+            ? 'disabled-by-default-webaudio.audionode'
+            : 'disabled-by-default-audio-worklet';
+    if (value.cat !== expectedCategory) {
+        return `relevant event ${String(value.name)} has an unexpected category`;
+    }
     if (
         typeof value.ts !== 'number' ||
         !Number.isFinite(value.ts) ||
