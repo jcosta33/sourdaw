@@ -1,0 +1,34 @@
+src/modules/AudioRendering/models/ExportLoudnessReport.ts
+  h_beb54bf43b47b7 1-25
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  h_beb54bf43b47b7 39-133
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  h_beb54bf43b47b7 64-187,202-206,240-244,299-303,368-372,401-405
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  h_beb54bf43b47b7 22,153-155,165-166,230,234-248,254-256
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  h_beb54bf43b47b7 14,47,50-52,56-58,124,128,131-144,150-156,158
+src/modules/AudioRendering/services/__tests__/createWavLoudnessReportAnalyzer.spec.ts
+  h_beb54bf43b47b7 1-206
+src/modules/AudioRendering/services/createWavLoudnessReportAnalyzer.ts
+  h_beb54bf43b47b7 1-267
+src/modules/AudioRendering/useCases/audioExport/__tests__/writeReportedWav.spec.ts
+  h_beb54bf43b47b7 1-315
+src/modules/AudioRendering/useCases/audioExport/writeReportedWav.ts
+  h_beb54bf43b47b7 1-88
+src/utils/audioMetering/__tests__/measureMaxWindowedLoudness.spec.ts
+  h_beb54bf43b47b7 3,41-66
+src/utils/audioMetering/measureMaxWindowedLoudness.ts
+  h_beb54bf43b47b7 18-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "37f9df78196f04df77169d229f1d1b66179e16d2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
