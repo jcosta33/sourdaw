@@ -2,9 +2,13 @@ import { type ReactElement } from 'react';
 
 type DesktopStartupErrorProps = {
     onReload: () => void;
+    description?: string;
 };
 
-export function DesktopStartupError({ onReload }: DesktopStartupErrorProps): ReactElement {
+export function DesktopStartupError({
+    onReload,
+    description = 'The desktop connection did not load. Reload Sourdaw to try starting it again.',
+}: DesktopStartupErrorProps): ReactElement {
     return (
         <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
             <section
@@ -15,9 +19,7 @@ export function DesktopStartupError({ onReload }: DesktopStartupErrorProps): Rea
                 <h1 id="desktop-startup-error-title" className="text-lg font-semibold">
                     Sourdaw could not start
                 </h1>
-                <p className="mt-2 text-sm text-muted-foreground">
-                    The desktop connection did not load. Reload Sourdaw to try starting it again.
-                </p>
+                <p className="mt-2 text-sm text-muted-foreground">{description}</p>
                 <button
                     className="mt-5 rounded border border-border bg-surface-raised px-4 py-2 text-sm font-medium hover:bg-surface-overlay focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     onClick={onReload}

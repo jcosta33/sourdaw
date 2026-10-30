@@ -587,3 +587,12 @@ evaluation/effect boundary. If App fulfillment owns bootstrap, require effects i
 to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
 quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
 case; preserve the distinct cold-stylesheet lesson in test-validity.
+
+Fault a real App dependency after that boundary, then repeat only the identical App import once.
+Require saved project, tracks, controls, and both history stacks to survive in the same document,
+URL, time origin and event bus, with one bootstrap capability emission and working Redo. Persistent
+transport and sticky evaluation failures must reach a preloaded manual Reload surface; successful
+module effects must run once. Pin the tested browser/runtime coherently: a browser that caches a
+failed module fetch cannot prove identical-URL transport recovery. Removing only the retry must
+fail the named real-App case. This mitigates a rejected import; it does not identify or repair the
+initiator of the recorded socket loss.

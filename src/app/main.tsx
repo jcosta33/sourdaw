@@ -74,9 +74,14 @@ async function renderApplication(): Promise<void> {
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    void import('./App').then(({ App }) => {
-        reactRoot.render(<App />);
-    });
+    // Retry only this identical import. Startup above and successful module
+    // evaluations keep their identities; a second rejection offers manual reload.
+    void import('./App')
+        .catch(() => import('./App'))
+        .then(
+            ({ App }) => reactRoot.render(<App />),
+            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+        );
 }
 
 async function renderDesktopStartupError(): Promise<void> {
