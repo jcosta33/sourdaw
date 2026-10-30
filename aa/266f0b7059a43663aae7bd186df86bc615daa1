@@ -1,0 +1,14 @@
+src/modules/AudioRendering/repositories/audioEncoders/createDeliveryPcmSource.ts
+  h_beb54bf43b47b7 16-55,68-70,79-92,98,165,169-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa266f0b7059a43663aae7bd186df86bc615daa1",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
