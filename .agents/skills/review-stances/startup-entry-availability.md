@@ -51,11 +51,18 @@ marker removal, not rejection. The captured later failure proves App rejection a
 same-frame document, but the initiating transport or navigation cause is unknown; a clean WebSocket
 close or Vite polling branch does not prove a poller-triggered navigation.
 
-Reject the real initial App request after first paint and require an explicit failure path rather
-than a permanently empty shell. When recovery is allowed, require a confirmed fresh retry budget
-and a new document lifetime. Spent, corrupt, unavailable or unwritable budget, desktop startup,
-bootstrap/render issuance and late failure after navigation intent must refuse automatic retry while
-preserving manual Reload. Once retry navigation is requested, delayed App success must not start the
-runtime. Keep transport initiation unknown unless direct lifecycle or network-initiator evidence
-distinguishes it.
+Reject a real App-only transitive module after first paint and require an explicit failure path
+rather than a permanently empty shell. A bounded same-specifier reattempt relies on the actual
+browser's native module map: prove a failed fetch is retriable, successful dependencies retain
+identity and an evaluation failure retains its error without repeating any effects. Chromium 153
+cached fetch failures; Chrome 156's real abort and evaluation probes distinguish those semantics.
+Never repeat bootstrap, root construction or bus registration around that import. Require the same
+document, URL, singleton and one bootstrap capability emission, then the saved workspace and content.
+Permanent fetch or evaluation failure must show an already-loaded manual Reload view. Initial
+first-paint and desktop error defaults remain independent controls. Observe the production bootstrap
+signal before reading identities: importing bootstrap from the test can manufacture the very startup
+whose omission the probe must detect. An existing readiness barrier may be awaited, never initialized.
+The pre-entry navigation controller retains its separate document-reload budget; a same-document
+module reattempt must not spend or emulate it. Keep transport initiation unknown unless direct
+lifecycle or network-initiator evidence distinguishes it.
 Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.

@@ -1,5 +1,17 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
+
+PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
+approval covered a hung import and marker removal rather than this rejection path. Force an actual
+App-only transitive abort after observing the production bootstrap capability signal. A test must
+not import bootstrap itself to arrange readiness. Await the existing configuration barrier, retain
+the real event bus/document handles, and require one capability emission, stable identity and saved
+workspace readiness. Removing only the identical-import reattempt must fail that same browser case.
+Pair persistent fetch failure with a throwing dependency and count successful/throwing effects;
+an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
+feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
+
 ### 2026-10-29 — an HMR-disabled server still navigated the browser
 
 The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's

@@ -2,7 +2,7 @@ import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup }
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
-// Only a failed entry graph before this boundary is safe to retry automatically.
+// Only a failed entry graph before this boundary is safe to reload automatically.
 document.documentElement.setAttribute('data-sourdaw-entry-started', '');
 document.getElementById('entry-startup')?.remove();
 
@@ -74,9 +74,14 @@ async function renderApplication(): Promise<void> {
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    void import('./App').then(({ App }) => {
-        reactRoot.render(<App />);
-    });
+    // The identical specifier preserves evaluated module identities; retry only
+    // this graph's failed fetch, without replaying any startup work above.
+    void import('./App')
+        .catch(() => import('./App'))
+        .then(
+            ({ App }) => reactRoot.render(<App />),
+            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+        );
 }
 
 async function renderDesktopStartupError(): Promise<void> {
