@@ -173,7 +173,7 @@ describe('cleanup installation', () => {
             const program = `
                 import fs from 'node:fs';import cp from 'node:child_process';
                 import {syncBuiltinESMExports} from 'node:module';
-                const path=${JSON.stringify(path)},target=${JSON.stringify(target)},root=${JSON.stringify(f.root)};
+                const {path,target,root,git,commit,directory,module}=JSON.parse(process.env.SOURDAW_SWAP_FIXTURE);
                 const read=fs.readFileSync,open=fs.openSync,close=fs.closeSync;
                 let owned,swapped=false,foreignRead=false;const opened=[],closed=new Set();
                 fs.openSync=(file,...args)=>{const fd=open(file,...args);if(file===path){owned=fd;opened.push(fd);}return fd;};
@@ -184,15 +184,24 @@ describe('cleanup installation', () => {
                     return read(file,...args);
                 };
                 syncBuiltinESMExports();
-                const {refreshCleanupLauncher}=await import(${JSON.stringify(join(import.meta.dirname, '../installCleanupLanes.ts'))});
-                let error;try{refreshCleanupLauncher({primaryRoot:root,git:${JSON.stringify(f.port.git)},capture:(command,args)=>cp.execFileSync(command,['-C',root,...args],{encoding:'utf8'})},${JSON.stringify(f.commit)},${JSON.stringify(directory)});}catch(caught){error=caught.message;}
+                const {refreshCleanupLauncher}=await import(module);
+                let error;try{refreshCleanupLauncher({primaryRoot:root,git,capture:(command,args)=>cp.execFileSync(command,['-C',root,...args],{encoding:'utf8'})},commit,directory);}catch(caught){error=caught.message;}
                 console.log(JSON.stringify({swapped,foreignRead,error,opened:opened.length,closed:opened.every(fd=>closed.has(fd))}));
             `;
+            const swapFixture = {
+                path,
+                target,
+                root: f.root,
+                git: f.port.git,
+                commit: f.commit,
+                directory,
+                module: join(import.meta.dirname, '../installCleanupLanes.ts'),
+            };
             const result = JSON.parse(
                 execFileSync(process.execPath, ['--input-type=module', '-e', program], {
                     cwd: f.root,
                     encoding: 'utf8',
-                    env: githubAuthorizationGitEnv(),
+                    env: { ...githubAuthorizationGitEnv(), SOURDAW_SWAP_FIXTURE: JSON.stringify(swapFixture) },
                 })
             );
             expect(result.swapped).toBe(true);

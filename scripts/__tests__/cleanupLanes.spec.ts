@@ -2,14 +2,16 @@ import { execFileSync, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import {
+    closeSync,
     existsSync,
+    fstatSync,
     mkdirSync,
     mkdtempSync,
+    openSync,
     readdirSync,
     readFileSync,
     realpathSync,
     rmSync,
-    statSync,
     symlinkSync,
     writeFileSync,
 } from 'node:fs';
@@ -160,22 +162,26 @@ describe('automatic lane cleanup', () => {
             writeFileSync(missing, bytes);
             expect(readCleanupFile(missing)?.bytes).toEqual(bytes);
             writeGuardFailureReceipt(f.root, guardReceipt(f.head));
-            const path = guardFailureReceiptPath(f.root, 'author');
-            const stat = statSync(path);
-            expect(
-                ownedGuardReceipt(f.root, {
-                    path: f.lane,
-                    head: f.head,
-                    branch: 'fix/fixture',
-                    detached: false,
-                    directory: { dev: 0, ino: 0, birthtimeMs: 0 },
-                })
-            ).toEqual({
-                hash: createHash('sha256').update(readFileSync(path)).digest('hex'),
-                dev: stat.dev,
-                ino: stat.ino,
-                birthtimeMs: stat.birthtimeMs,
-            });
+            const descriptor = openSync(guardFailureReceiptPath(f.root, 'author'), 'r');
+            try {
+                const stat = fstatSync(descriptor);
+                expect(
+                    ownedGuardReceipt(f.root, {
+                        path: f.lane,
+                        head: f.head,
+                        branch: 'fix/fixture',
+                        detached: false,
+                        directory: { dev: 0, ino: 0, birthtimeMs: 0 },
+                    })
+                ).toEqual({
+                    hash: createHash('sha256').update(readFileSync(descriptor)).digest('hex'),
+                    dev: stat.dev,
+                    ino: stat.ino,
+                    birthtimeMs: stat.birthtimeMs,
+                });
+            } finally {
+                closeSync(descriptor);
+            }
         } finally {
             f.dispose();
         }
