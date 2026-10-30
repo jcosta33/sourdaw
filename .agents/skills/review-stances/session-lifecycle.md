@@ -295,6 +295,16 @@ resolve it and check that no deleted strip or edge is recreated. Abort and commi
 bulk commands separately: the abort must retain every edge and stream, while the commit releases
 only owners whose IDs are absent from committed project truth.
 
+### Paused punch ownership must not outlive its roll (#5272)
+
+PR #305 (`b077ef6d34c`) fenced asynchronous pause teardown, but did not retire the old
+punch owner when Play arrived during recorder flush. Historical review prompts are unknown.
+Drive real Pause and Play with a held recorder terminal and production Command/CRDT: release the
+old flush both before and after the successor punches in. Require the successor flag and clip to
+survive, each completed capture to own its saved take and one history entry, and Undo/Redo to
+preserve its peer. Removing synchronous punch retirement must prevent the second recorder admission;
+clearing the successor flag from the late pause continuation must fail the other ordering.
+
 ### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
 
 PR #5011 added the subscribed Auto owner. Its removal sweep read the visible track store, so an
