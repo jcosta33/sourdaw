@@ -1,0 +1,30 @@
+src/modules/CrdtDocument/useCases/__tests__/clearActionHistory.spec.ts
+  s_29d8df116c5b92::t_1427414b653c7c 7,15,20,28,30,42
+src/modules/Arrangement/handlers/clip/__tests__/commandMetadataSourceAdmission.integration.spec.ts
+  s_29d8df116c5b92::t_1f00bc6b09e1ee 121
+  s_29d8df116c5b92::t_8d391fdf52e54c 1-12,14,21-35,37-47,54,61,63-70,72-120,122-167,177-182,196-207,209-290,294-304
+  s_29d8df116c5b92::t_93e5cf5803e3b8 13,36,62,168-176,291-293
+  s_29d8df116c5b92::t_b35ebd59bbe22a 15-20,48-53,55-60,71,183-195,208
+src/modules/CrdtDocument/stores/actionHistoryStore.ts
+  s_29d8df116c5b92::t_1427414b653c7c 20-22,25,44-45,49-53,91
+src/modules/CrdtDocument/useCases/clearActionHistory.ts
+  s_29d8df116c5b92::t_1427414b653c7c 2,6
+src/modules/CrdtDocument/stores/__tests__/actionHistoryStore.spec.ts
+  s_29d8df116c5b92::t_4765617f232561 3-6,10,14,231-283,318
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "93c45a1c49efeb3b962452ecd696ac7ab458cf91",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
