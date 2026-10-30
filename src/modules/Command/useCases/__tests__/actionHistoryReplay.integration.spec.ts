@@ -24,7 +24,7 @@ import { chordTrackStore } from '#/modules/MIDI/stores';
 import { getChordTrackHandlers } from '#/modules/MIDI/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
-import { hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
+import { hasActionReplayCapability, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearActionHistory } from '../clearActionHistory';
@@ -314,13 +314,31 @@ describe('Command action-history replay integration', () => {
         });
     });
 
-    it('keeps a newly registered capability through an unrelated commit before its metadata flushes', async () => {
-        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
-        const entryId = actionHistoryStore.value?.entries.at(-1)?.id;
-        if (!entryId) {
-            throw new Error('Expected pending replayable metadata');
-        }
+    // This component fixture exercises an unscoped pending write independently of normal command publication.
+    function stagePendingReplayCapability(): Parameters<typeof recordActionHistoryEntry>[0] {
+        const entry: Parameters<typeof recordActionHistoryEntry>[0] = {
+            id: crypto.randomUUID(),
+            label: 'Set snap',
+            actionKind: 'setSnapValue',
+            source: 'manual',
+            timestamp: 1,
+            reverted: false,
+        };
+        recordActionHistoryEntry(entry);
+        registerActionReplayCapability({
+            entryId: entry.id,
+            inverseAction: { type: 'togglePlayback' },
+            metadata: entry,
+        });
+        expect(actionHistoryStore.value?.entries).toEqual([entry]);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
         expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [] });
+        return entry;
+    }
+
+    it('keeps a newly registered capability through an unrelated commit before its metadata flushes', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
+        const { id: entryId } = stagePendingReplayCapability();
 
         mutateCrdtDoc<{ unrelated?: string }>({
             id: 'root',
@@ -333,14 +351,12 @@ describe('Command action-history replay integration', () => {
         flushAutomergeStorageWrites();
         expect(getActionReplayStatus(entryId)).toEqual({ status: 'ready' });
         expect(await revertAction(entryId)).toEqual({ status: 'executed' });
+        expect(executed_actions).toEqual(['setSnapValue:0', 'togglePlayback']);
     });
 
     it('fences an unpublished capability on a same-content empty clear before its ID is re-added', async () => {
-        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
-        const entry = actionHistoryStore.value?.entries.at(-1);
-        if (!entry) {
-            throw new Error('Expected pending replayable metadata');
-        }
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
+        const entry = stagePendingReplayCapability();
         const beforeDurable = JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory);
         expect(beforeDurable).toBe(JSON.stringify({ entries: [] }));
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
@@ -353,6 +369,7 @@ describe('Command action-history replay integration', () => {
         expect(actionHistoryStore.value?.entries).toEqual([entry]);
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
         expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+        expect(executed_actions).toEqual(['setSnapValue:0']);
     });
 
     it.each(['install', 'replace'] as const)('forfeits authority on a same-content root %s', async (route) => {
