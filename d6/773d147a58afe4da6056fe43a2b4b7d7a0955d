@@ -1,0 +1,18 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 623
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d6773d147a58afe4da6056fe43a2b4b7d7a0955d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
