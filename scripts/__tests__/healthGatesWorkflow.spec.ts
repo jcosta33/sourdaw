@@ -62,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -3247,8 +3247,8 @@ describe('health gates workflow contract', () => {
             expect(() => check(workflow)).not.toThrow();
             for (const image of [
                 `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
-                'mcr.microsoft.com/playwright:v1.63.0-noble',
-                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+                'mcr.microsoft.com/playwright:v1.64.1-noble',
+                `mcr.microsoft.com/playwright:v1.64.1-noble@sha256:${'0'.repeat(64)}`,
             ]) {
                 const mismatch = structuredClone(workflow);
                 recordAt(jobAt(mismatch, job), 'container').image = image;

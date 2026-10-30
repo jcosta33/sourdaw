@@ -2,9 +2,8 @@ import { mountBrowserDisplayScaleHost, resetBrowserDisplayScaleForChildStartup }
 import { reloadApplication } from './reloadApplication';
 import { resolveAppComposition } from './resolveAppComposition';
 
-// Only a failed entry graph before this boundary is safe to retry automatically.
+// Only a failed entry graph before this boundary is safe to reload automatically.
 document.documentElement.setAttribute('data-sourdaw-entry-started', '');
-document.getElementById('entry-startup')?.remove();
 
 const root = document.getElementById('root')!;
 
@@ -23,6 +22,10 @@ function paintAppShellMarker(container: HTMLElement): void {
     shell.style.width = '100vw';
     shell.style.height = '100vh';
     shell.style.overflow = 'hidden';
+    const startup = container.querySelector('#entry-startup');
+    if (startup !== null) {
+        shell.append(startup);
+    }
     container.replaceChildren(shell);
 }
 
@@ -65,18 +68,35 @@ async function renderApplication(): Promise<void> {
                 });
             });
     });
-    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = await Promise.all([
+    const renderingModules = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
         import('./ApplicationFirstPaint'),
         import('./registerNotificationEventBus'),
-    ]);
+    ]).catch((error: unknown) => {
+        window.dispatchEvent(new Event('sourdaw:initial-render-failed'));
+        reportError(error);
+    });
+    if (renderingModules === undefined) {
+        return;
+    }
+    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = renderingModules;
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
-    void import('./App').then(({ App }) => {
-        reactRoot.render(<App />);
-    });
+    // The identical specifier preserves evaluated module identities; retry only
+    // this graph's failed fetch, without replaying any startup work above.
+    void import('./App')
+        .catch(async () => {
+            // A rejected graph can still have failing sibling fetches in flight.
+            // Give their module-map entries time to settle before the sole retry.
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+            return import('./App');
+        })
+        .then(
+            ({ App }) => reactRoot.render(<App />),
+            () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)
+        );
 }
 
 async function renderDesktopStartupError(): Promise<void> {
