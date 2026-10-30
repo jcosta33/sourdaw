@@ -17,38 +17,33 @@ describe('PR 5860 Linux capture', () => {
     it('admits only the intended synchronize event and attempt', () => {
         expect(workflow.on).toEqual({ pull_request: { types: ['synchronize'] } });
         expect(workflow.jobs.capture.if.replaceAll(/\s+/g, ' ').trim()).toBe(
-            "github.event.pull_request.number == 5860 && github.event.before == '926e9c05fc6e23e7c6a22a597c21320121aa972e' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'"
+            "github.event.pull_request.number == 5860 && github.event.before == '69dba9d4e33c1269e110a745bf1c40c86b7fa845' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'"
         );
         expect(workflow.permissions).toEqual({ contents: 'read' });
         expect(step('Checkout diagnostic control').with?.['persist-credentials']).toBe(false);
         expect(step('Checkout frozen integration').with).toMatchObject({
-            ref: 'd68a5fb5d2f57e56f2bc9fa9430d25850edaab3d',
+            ref: '5f16d2dd501ac5428fe13aa5f064918d17bc4eb9',
             'persist-credentials': false,
         });
     });
 
     it('requires frozen source and original collection before the unchanged shard command', () => {
-        expect(step('Verify frozen source').run).toContain('bc30ce2f220893808a82f1e966cd789d43f60a63');
+        expect(step('Verify frozen source').run).toContain('2d74e6adfbf53e197d3edb2b34c6f888f03969f7');
         expect(step('Verify frozen source after capture').run).toContain('git status --porcelain --untracked-files=no');
-        expect(steps.indexOf(step('Prepare private debug files'))).toBeLessThan(
+        expect(steps.indexOf(step('Prepare shard selection'))).toBeLessThan(
             steps.indexOf(step('Verify original collection'))
         );
-        expect(step('Prepare private debug files').run).toContain("E2E_SPECS='+JSON.stringify(b.specs)");
+        expect(step('Prepare shard selection').run).toContain("E2E_SPECS='+JSON.stringify(b.specs)");
         expect(steps.indexOf(step('Verify original collection'))).toBeLessThan(
             steps.indexOf(step('Run original shard'))
         );
         expect(step('Run original shard').run).toContain('node scripts/prValidationScope.ts run');
         expect(step('Retain capture').if).toBe('${{ always() }}');
         expect(step('Sample memory after shard').if).toBe('${{ always() }}');
-        expect(step('Prepare private debug files').run).not.toContain('NODE_OPTIONS=');
-        expect(step('Verify original collection').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
-        expect(step('Run original shard').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
-        expect(step('Run original shard').run).toContain('assert.equal(process.env.DEBUG_FILE');
-        expect(step('Run original shard').run).toContain('No per-process debug log was captured');
-        expect(step('Run original shard').run).toContain('Protocol output leaked into shard.log');
-        expect(step('Run original shard').run).toContain('exit "${results[0]}"');
-        expect(step('Retain capture').with?.path).toContain('debug/');
-        expect(readFileSync('.github/diagnostics/5860/debug-preload.mjs', 'utf8')).toContain('`${process.pid}.log`');
+        expect(step('Run original shard').run).toContain('unset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS');
+        expect(step('Verify original collection').run).toContain('unset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS');
+        expect(step('Retain capture').with?.path).toContain('source/blob-report/');
+        expect(step('Retain capture').with?.path).toContain('source/test-results/');
     });
 
     it('rejects reordered, missing, and altered test identities', () => {

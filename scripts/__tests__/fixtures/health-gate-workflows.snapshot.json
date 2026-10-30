@@ -237,7 +237,7 @@
     },
     "jobs": {
       "capture": {
-        "if": "github.event.pull_request.number == 5860 && github.event.before == '926e9c05fc6e23e7c6a22a597c21320121aa972e' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'",
+        "if": "github.event.pull_request.number == 5860 && github.event.before == '69dba9d4e33c1269e110a745bf1c40c86b7fa845' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'",
         "runs-on": "ubuntu-latest",
         "timeout-minutes": 75,
         "container": {
@@ -263,7 +263,7 @@
             "name": "Checkout frozen integration",
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
             "with": {
-              "ref": "d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d",
+              "ref": "5f16d2dd501ac5428fe13aa5f064918d17bc4eb9",
               "path": "source",
               "persist-credentials": false
             }
@@ -285,7 +285,7 @@
           {
             "name": "Verify frozen source",
             "working-directory": "source",
-            "run": "test \"$(git rev-parse HEAD)\" = d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d\ntest \"$(git rev-parse HEAD^{tree})\" = bc30ce2f220893808a82f1e966cd789d43f60a63\n"
+            "run": "test \"$(git rev-parse HEAD)\" = 5f16d2dd501ac5428fe13aa5f064918d17bc4eb9\ntest \"$(git rev-parse HEAD^{tree})\" = 2d74e6adfbf53e197d3edb2b34c6f888f03969f7\n"
           },
           {
             "name": "Record and verify runtime provenance",
@@ -308,8 +308,8 @@
             "run": "set -o pipefail\nnode scripts/verifyPlaywrightRuntime.ts 1.63.0 2>&1 | tee -a ../provenance.txt\nnode -e \"const p=require('@playwright/test'); console.log('playwright=' + require('@playwright/test/package.json').version); console.log('chromium=' + p.chromium.executablePath())\" | tee -a ../provenance.txt\n"
           },
           {
-            "name": "Prepare private debug files",
-            "run": "mkdir -p \"$GITHUB_WORKSPACE/debug\"\nnode -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\necho \"SOURDAW_DEBUG_DIR=$GITHUB_WORKSPACE/debug\" >> \"$GITHUB_ENV\"\n"
+            "name": "Prepare shard selection",
+            "run": "node -e \"const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))\" >> \"$GITHUB_ENV\"\ncp control/.github/diagnostics/5860/baseline.json baseline-provenance.json\n"
           },
           {
             "name": "Verify original collection",
@@ -318,7 +318,7 @@
               "CAPTURE_BASELINE": "../control/.github/diagnostics/5860/baseline.json",
               "LIST_RECEIPT": "../collection-list.txt"
             },
-            "run": "export NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\"\nnode ../control/.github/diagnostics/5860/collection-preflight.mjs\n"
+            "run": "unset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS\nnode ../control/.github/diagnostics/5860/collection-preflight.mjs\n"
           },
           {
             "name": "Sample memory before shard",
@@ -327,12 +327,7 @@
           {
             "name": "Run original shard",
             "working-directory": "source",
-            "env": {
-              "DEBUG": "pw:protocol,pw:api,pw:browser",
-              "DEBUG_COLORS": "0",
-              "MAX_LOG_LENGTH": "1024"
-            },
-            "run": "set -o pipefail\nexport NODE_OPTIONS=\"${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs\"\nnode -e \"const assert=require('node:assert/strict'); const path=require('node:path'); assert.equal(process.env.DEBUG_FILE,path.join(process.env.SOURDAW_DEBUG_DIR,process.pid+'.log'))\"\nset +e\nnode scripts/prValidationScope.ts run 2>&1 | tee shard.log\nresults=(\"${PIPESTATUS[@]}\")\nset -e\ntest \"${results[1]}\" -eq 0\nif [ -z \"$(find \"$GITHUB_WORKSPACE/debug\" -type f -name '*.log' -size +0c -print -quit)\" ]; then\n  echo 'No per-process debug log was captured' >&2\n  exit 1\nfi\nif grep -a -q 'pw:protocol' shard.log; then\n  echo 'Protocol output leaked into shard.log' >&2\n  exit 1\nelse\n  grep_status=$?\n  test \"$grep_status\" -eq 1\nfi\nexit \"${results[0]}\"\n"
+            "run": "set -o pipefail\nunset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS\nnode scripts/prValidationScope.ts run 2>&1 | tee shard.log\n"
           },
           {
             "name": "Sample memory after shard",
@@ -343,7 +338,7 @@
             "name": "Verify frozen source after capture",
             "if": "${{ always() }}",
             "working-directory": "source",
-            "run": "test \"$(git rev-parse HEAD)\" = d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d\ntest \"$(git rev-parse HEAD^{tree})\" = bc30ce2f220893808a82f1e966cd789d43f60a63\ntest -z \"$(git status --porcelain --untracked-files=no)\"\n"
+            "run": "test \"$(git rev-parse HEAD)\" = 5f16d2dd501ac5428fe13aa5f064918d17bc4eb9\ntest \"$(git rev-parse HEAD^{tree})\" = 2d74e6adfbf53e197d3edb2b34c6f888f03969f7\ntest -z \"$(git status --porcelain --untracked-files=no)\"\n"
           },
           {
             "name": "Retain capture",
@@ -351,7 +346,7 @@
             "uses": "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
             "with": {
               "name": "advisory-linux-capture",
-              "path": "source/shard.log\nsource/blob-report/\nsource/test-results/\ncollection-list.txt\nprovenance.txt\nbaseline-provenance.json\nmemory-before.txt\nmemory-after.txt\ndebug/\n",
+              "path": "source/shard.log\nsource/blob-report/\nsource/test-results/\ncollection-list.txt\nprovenance.txt\nbaseline-provenance.json\nmemory-before.txt\nmemory-after.txt\n",
               "retention-days": 7
             }
           }

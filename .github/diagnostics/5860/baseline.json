@@ -1,6 +1,9 @@
 {
     "sourceRun": "40972746984",
     "sourceJob": "123802149123",
+    "captureSource": "5f16d2dd501ac5428fe13aa5f064918d17bc4eb9",
+    "applicationGraphBaseline": "d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d",
+    "sourceDifference": "Persisted case diagnostic observer and hardware admission correction; application graph unchanged.",
     "count": 83,
     "sha256": "1a396e9f31a7f09faba88b84f0b463f7621b7f5d443843aca5604e2c1ad02483",
     "target": {

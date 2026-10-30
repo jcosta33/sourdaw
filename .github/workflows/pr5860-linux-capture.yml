@@ -9,7 +9,7 @@ jobs:
     capture:
         if: >-
             github.event.pull_request.number == 5860 &&
-            github.event.before == '926e9c05fc6e23e7c6a22a597c21320121aa972e' &&
+            github.event.before == '69dba9d4e33c1269e110a745bf1c40c86b7fa845' &&
             github.run_attempt == 1 &&
             github.event.pull_request.head.ref == 'build/pnpm-private-store'
         runs-on: ubuntu-latest
@@ -30,7 +30,7 @@ jobs:
             - name: Checkout frozen integration
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
               with:
-                  ref: d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d
+                  ref: 5f16d2dd501ac5428fe13aa5f064918d17bc4eb9
                   path: source
                   persist-credentials: false
             - name: Set up pnpm
@@ -44,8 +44,8 @@ jobs:
             - name: Verify frozen source
               working-directory: source
               run: |
-                  test "$(git rev-parse HEAD)" = d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d
-                  test "$(git rev-parse HEAD^{tree})" = bc30ce2f220893808a82f1e966cd789d43f60a63
+                  test "$(git rev-parse HEAD)" = 5f16d2dd501ac5428fe13aa5f064918d17bc4eb9
+                  test "$(git rev-parse HEAD^{tree})" = 2d74e6adfbf53e197d3edb2b34c6f888f03969f7
             - name: Record and verify runtime provenance
               working-directory: source
               env:
@@ -71,19 +71,17 @@ jobs:
                   set -o pipefail
                   node scripts/verifyPlaywrightRuntime.ts 1.63.0 2>&1 | tee -a ../provenance.txt
                   node -e "const p=require('@playwright/test'); console.log('playwright=' + require('@playwright/test/package.json').version); console.log('chromium=' + p.chromium.executablePath())" | tee -a ../provenance.txt
-            - name: Prepare private debug files
+            - name: Prepare shard selection
               run: |
-                  mkdir -p "$GITHUB_WORKSPACE/debug"
                   node -e "const b=require('./control/.github/diagnostics/5860/baseline.json'); console.log('E2E_SPECS='+JSON.stringify(b.specs))" >> "$GITHUB_ENV"
                   cp control/.github/diagnostics/5860/baseline.json baseline-provenance.json
-                  echo "SOURDAW_DEBUG_DIR=$GITHUB_WORKSPACE/debug" >> "$GITHUB_ENV"
             - name: Verify original collection
               working-directory: source
               env:
                   CAPTURE_BASELINE: ../control/.github/diagnostics/5860/baseline.json
                   LIST_RECEIPT: ../collection-list.txt
               run: |
-                  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs"
+                  unset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS
                   node ../control/.github/diagnostics/5860/collection-preflight.mjs
             - name: Sample memory before shard
               run: |
@@ -93,31 +91,10 @@ jobs:
                   done > memory-before.txt
             - name: Run original shard
               working-directory: source
-              env:
-                  DEBUG: pw:protocol,pw:api,pw:browser
-                  DEBUG_COLORS: '0'
-                  MAX_LOG_LENGTH: '1024'
               run: |
                   set -o pipefail
-                  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs"
-                  node -e "const assert=require('node:assert/strict'); const path=require('node:path'); assert.equal(process.env.DEBUG_FILE,path.join(process.env.SOURDAW_DEBUG_DIR,process.pid+'.log'))"
-                  set +e
+                  unset DEBUG DEBUG_FILE MAX_LOG_LENGTH NODE_OPTIONS
                   node scripts/prValidationScope.ts run 2>&1 | tee shard.log
-                  results=("${PIPESTATUS[@]}")
-                  set -e
-                  test "${results[1]}" -eq 0
-                  if [ -z "$(find "$GITHUB_WORKSPACE/debug" -type f -name '*.log' -size +0c -print -quit)" ]; then
-                    echo 'No per-process debug log was captured' >&2
-                    exit 1
-                  fi
-                  if grep -a -q 'pw:protocol' shard.log; then
-                    echo 'Protocol output leaked into shard.log' >&2
-                    exit 1
-                  else
-                    grep_status=$?
-                    test "$grep_status" -eq 1
-                  fi
-                  exit "${results[0]}"
             - name: Sample memory after shard
               if: ${{ always() }}
               run: |
@@ -129,8 +106,8 @@ jobs:
               if: ${{ always() }}
               working-directory: source
               run: |
-                  test "$(git rev-parse HEAD)" = d68a5fb5d2f57e56f2bc9fa9430d25850edaab3d
-                  test "$(git rev-parse HEAD^{tree})" = bc30ce2f220893808a82f1e966cd789d43f60a63
+                  test "$(git rev-parse HEAD)" = 5f16d2dd501ac5428fe13aa5f064918d17bc4eb9
+                  test "$(git rev-parse HEAD^{tree})" = 2d74e6adfbf53e197d3edb2b34c6f888f03969f7
                   test -z "$(git status --porcelain --untracked-files=no)"
             - name: Retain capture
               if: ${{ always() }}
@@ -146,5 +123,4 @@ jobs:
                       baseline-provenance.json
                       memory-before.txt
                       memory-after.txt
-                      debug/
                   retention-days: 7

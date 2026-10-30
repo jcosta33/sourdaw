@@ -129,7 +129,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Record and verify runtime provenance',
             'Install dependencies',
             'Verify browser runtime',
-            'Prepare private debug files',
+            'Prepare shard selection',
             'Verify original collection',
             'Sample memory before shard',
             'Run original shard',
