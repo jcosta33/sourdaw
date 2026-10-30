@@ -21,6 +21,7 @@ import {
     removeCrdtDoc,
 } from '#/modules/CrdtDocument/useCases';
 
+import { hasActionReplayCapability, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { undoStore } from '../../stores/undoStore';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
@@ -38,8 +39,39 @@ import { getActionReplayStatus } from '../getActionReplayStatus';
 import { issueCommandApprovalBinding } from '../issueCommandApprovalBinding';
 import { resetActionReplayAuthority } from '../resetActionReplayAuthority';
 import { serializeVersionedCommandEnvelope } from '../serializeVersionedCommandEnvelope';
+import { syncActionReplayMetadata } from '../syncActionReplayMetadata';
 
 const tempo = createAutomergeStorage<{ bpm: number }>('root', 'historyTempo');
+/** The composition root's subscriber: replay authority follows the visible history. */
+function subscribeReplayMetadataSync(): () => void {
+    return actionHistoryStore.subscribe((state) => {
+        syncActionReplayMetadata(state?.entries ?? []);
+    });
+}
+
+/** Fills history to its bound, so the next staged entry evicts the oldest, whose replay authority is live. */
+function seedFullHistoryWithReplayableOldest() {
+    const seeded = Array.from({ length: 200 }, (_, index) => ({
+        id: `seeded-${String(index)}`,
+        label: 'Set tempo',
+        actionKind: 'setTempo',
+        source: 'manual' as const,
+        timestamp: index,
+        reverted: false,
+    }));
+    recordActionHistoryEntries(seeded);
+    const oldest = seeded[0];
+    if (!oldest) {
+        throw new Error('Expected a seeded history entry');
+    }
+    registerActionReplayCapability({
+        entryId: oldest.id,
+        inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+        metadata: oldest,
+    });
+    return { seeded, oldest };
+}
+
 const metadataPort = {
     record: recordActionHistoryEntry,
     recordBatch: recordActionHistoryEntries,
@@ -246,6 +278,136 @@ describe('command-owned durable history publication', () => {
             expect(getCrdtDoc<{ historyTempo: { bpm: number } }>('root')?.historyTempo).toEqual({ bpm: 120 });
         }
     );
+
+    it.each(['single-veto', 'single-refusal', 'atomic-refusal'] as const)(
+        'keeps the replay authority of the entry an uncommitted %s staging would have evicted',
+        async (kind) => {
+            // The composition root revokes replay authority for every id the
+            // visible history no longer lists. A staged history write is visible
+            // before its commit settles, so that subscriber must not treat a
+            // staged eviction as a committed one.
+            const unsubscribe = subscribeReplayMetadataSync();
+            try {
+                const { seeded, oldest } = seedFullHistoryWithReplayableOldest();
+                expect(getActionReplayStatus(oldest.id)).toEqual({ status: 'ready' });
+
+                if (kind === 'single-veto') {
+                    await executeAppAction({ type: 'setTempo', payload: { bpm: 128 } }, { shouldCommit: () => false });
+                } else {
+                    configureAutomergeStoragePort({
+                        getDoc: (id) => getCrdtDoc<Record<string, unknown>>(id),
+                        getSemanticMessage: () => undefined,
+                        hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                        mutateDoc: () => {
+                            throw new Error('storage refused');
+                        },
+                    });
+                    if (kind === 'single-refusal') {
+                        await expect(executeAppAction({ type: 'setTempo', payload: { bpm: 128 } })).rejects.toThrow(
+                            'storage refused'
+                        );
+                    } else {
+                        expect(
+                            await executeAppActionBatch([
+                                { type: 'setTempo', payload: { bpm: 128 } },
+                                { type: 'setTempo', payload: { bpm: 132 } },
+                            ])
+                        ).toMatchObject({ status: 'failed', reason: 'storage refused' });
+                    }
+                }
+
+                expect(actionHistoryStore.value?.entries.map((entry) => entry.id)).toEqual(
+                    seeded.map((entry) => entry.id)
+                );
+                expect(undoStore.value?.past).toEqual([]);
+                expect(getActionReplayStatus(oldest.id)).toEqual({ status: 'ready' });
+            } finally {
+                unsubscribe();
+            }
+        }
+    );
+
+    it.each(['single', 'atomic'] as const)(
+        'applies the eviction a partially committed %s command published with its history document',
+        async (kind) => {
+            const unsubscribe = subscribeReplayMetadataSync();
+            createCrdtDoc('history-child');
+            try {
+                const child = createAutomergeStorage<{ bpm: number }>('history-child', 'historyTempo');
+                const { oldest } = seedFullHistoryWithReplayableOldest();
+                clearHandlerRegistry();
+                registerHandlerMap({
+                    setTempo: {
+                        undoable: true,
+                        requiresAbortCompensation: false,
+                        describe: () => ({
+                            label: 'Set tempo',
+                            inverseAction: { type: 'setTempo', payload: { bpm: 120 } },
+                        }),
+                        execute: (action) => {
+                            tempo.set({ bpm: action.payload.bpm });
+                            child.set({ bpm: action.payload.bpm });
+                        },
+                    },
+                });
+                configureAutomergeStoragePort({
+                    getDoc: (id) => getCrdtDoc<Record<string, unknown>>(id),
+                    getSemanticMessage: () => undefined,
+                    hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                    mutateDoc: ({ docId, changeFn }) => {
+                        if (docId !== 'root') {
+                            throw new Error('child document refused');
+                        }
+                        mutateCrdtDoc<Record<string, unknown>>({ id: docId, changeFn });
+                    },
+                });
+
+                if (kind === 'single') {
+                    await expect(executeAppAction({ type: 'setTempo', payload: { bpm: 128 } })).rejects.toThrow(
+                        'Action committed but post-commit processing failed: setTempo'
+                    );
+                } else {
+                    expect(
+                        await executeAppActionBatch([
+                            { type: 'setTempo', payload: { bpm: 128 } },
+                            { type: 'setTempo', payload: { bpm: 132 } },
+                        ])
+                    ).toMatchObject({ status: 'ambiguous' });
+                }
+
+                // The history slot shares the root document's change, so the
+                // committed root keeps the entry and the eviction it staged.
+                const durable = getCrdtDoc<{ actionHistory: { entries: { id: string }[] } }>('root')?.actionHistory;
+                expect(durable).toEqual(actionHistoryStore.value);
+                expect(durable?.entries).toHaveLength(200);
+                expect(durable?.entries.some((entry) => entry.id === oldest.id)).toBe(false);
+                expect(hasActionReplayCapability(oldest.id)).toBe(false);
+                expect(undoStore.value?.past).toEqual([]);
+                for (const entry of durable?.entries.slice(kind === 'single' ? -1 : -2) ?? []) {
+                    expect(entry.id).not.toMatch(/^seeded-/);
+                    expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+                }
+            } finally {
+                unsubscribe();
+                removeCrdtDoc('history-child');
+            }
+        }
+    );
+
+    it('revokes the replay authority of an entry a committed command evicts', async () => {
+        const unsubscribe = subscribeReplayMetadataSync();
+        try {
+            const { oldest } = seedFullHistoryWithReplayableOldest();
+
+            await executeAppAction({ type: 'setTempo', payload: { bpm: 128 } });
+
+            expect(actionHistoryStore.value?.entries).toHaveLength(200);
+            expect(actionHistoryStore.value?.entries.some((entry) => entry.id === oldest.id)).toBe(false);
+            expect(hasActionReplayCapability(oldest.id)).toBe(false);
+        } finally {
+            unsubscribe();
+        }
+    });
 
     it.each(['single', 'atomic'] as const)(
         'aborts partially staged %s metadata before publishing project or session history',

@@ -22,7 +22,11 @@ import {
 
 import { AppActionConflictError } from '../errors/AppActionExecutionError';
 import { type VersionedCommandEnvelope, type VersionedCommandReceipt } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapabilities, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapabilities,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
@@ -1051,7 +1055,9 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                     // History metadata is durable command state; replay and Undo
                     // capabilities remain unpublished until the commit succeeds.
                     if (historyMetadata.size > 0) {
-                        evictedEntryIds = actionHistoryMetadataPort.recordBatch([...historyMetadata.values()]);
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.recordBatch([...historyMetadata.values()])
+                        );
                     }
                     const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
                         executed.afterCommit ? [getPreparedPendingPostCommitEffect(executed)] : []

@@ -22,7 +22,11 @@ import {
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapability,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
@@ -470,7 +474,9 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 // Undo/replay authority is installed only after this commit succeeds.
                 storage_transaction.scope(() => {
                     if (historyMetadata) {
-                        evictedEntryIds = actionHistoryMetadataPort.record(historyMetadata);
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.record(historyMetadata)
+                        );
                     }
                 });
                 storage_transaction.commit();
