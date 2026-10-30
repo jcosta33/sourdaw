@@ -38,10 +38,10 @@ import {
 } from '#/utils/Notification/notificationEventBus';
 
 import { defaultElasticAudioState, elasticAudioStore } from '../../../stores/elasticAudio';
-import { detectTransientsForClip } from '../../../useCases/elasticAudio/detectTransientsForClip';
 import { detectTransients } from '../../../useCases/elasticAudio/detectTransients';
-import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
+import { detectTransientsForClip } from '../../../useCases/elasticAudio/detectTransientsForClip';
 import { setElasticSensitivityRootIdentityCapture } from '../../../useCases/elasticAudio/elasticSensitivityDependencies';
+import { openElasticEditor } from '../../../useCases/elasticAudio/openElasticEditor';
 import { setElasticSensitivity } from '../../../useCases/elasticAudio/setElasticSensitivity';
 import { toggleMarkerLock } from '../../../useCases/elasticAudio/toggleMarkerLock';
 import { ElasticEditorPanel } from '../ElasticEditorPanel';

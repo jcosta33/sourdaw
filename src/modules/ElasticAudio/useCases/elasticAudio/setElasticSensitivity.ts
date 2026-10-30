@@ -8,7 +8,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { elasticAudioStore, defaultElasticAudioState } from '../../stores/elasticAudio';
 
 import { detectTransientsForClip } from './detectTransientsForClip';
-import { getElasticSensitivityRootIdentityCapture } from './elasticSensitivityDependencies';
+import { elasticSensitivityDependencies } from './elasticSensitivityDependencies';
 import { resolveElasticEditorTarget } from './resolveElasticEditorTarget';
 
 const DEBOUNCE_MS = 150;
@@ -27,6 +27,45 @@ function currentTarget() {
     );
 }
 
+function hasValidSource(buffer: AudioBuffer | undefined): boolean {
+    return (
+        buffer !== undefined &&
+        Number.isFinite(buffer.sampleRate) &&
+        buffer.sampleRate > 0 &&
+        Number.isInteger(buffer.length) &&
+        buffer.length > 0 &&
+        Number.isInteger(buffer.numberOfChannels) &&
+        buffer.numberOfChannels > 0
+    );
+}
+
+function hasSameGeometry(
+    buffer: AudioBuffer | undefined,
+    sampleRate: number | undefined,
+    frames: number | undefined,
+    channels: number | undefined
+): boolean {
+    return buffer?.sampleRate === sampleRate && buffer?.length === frames && buffer?.numberOfChannels === channels;
+}
+
+function subscribeToOwnerChanges(invalidate: () => void): () => void {
+    const subscriptions = [
+        elasticAudioStore.subscribe(invalidate),
+        clipSelectionStore.subscribe(invalidate),
+        trackStore.subscribe(invalidate),
+    ];
+    let disposed = false;
+    return () => {
+        if (disposed) {
+            return;
+        }
+        disposed = true;
+        for (const unsubscribe of subscriptions) {
+            unsubscribe();
+        }
+    };
+}
+
 export function setElasticSensitivity(sensitivity: number): Promise<void> {
     const previous = pending;
     if (previous) {
@@ -43,18 +82,11 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
     const sampleRate = buffer?.sampleRate;
     const frames = buffer?.length;
     const channels = buffer?.numberOfChannels;
-    const validSource =
-        buffer !== undefined &&
-        Number.isFinite(buffer.sampleRate) &&
-        buffer.sampleRate > 0 &&
-        Number.isInteger(buffer.length) &&
-        buffer.length > 0 &&
-        Number.isInteger(buffer.numberOfChannels) &&
-        buffer.numberOfChannels > 0;
+    const validSource = hasValidSource(buffer);
     let captureRootIdentity: () => string;
     let rootIdentity: string;
     try {
-        const capture = getElasticSensitivityRootIdentityCapture();
+        const capture = elasticSensitivityDependencies.captureRootIdentity;
         if (!capture) {
             throw new Error('Elastic sensitivity root identity capture is not configured');
         }
@@ -79,9 +111,7 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
             current.clip?.type === clipType &&
             current.clip?.audioBufferId === bufferId &&
             liveBuffer === buffer &&
-            liveBuffer?.sampleRate === sampleRate &&
-            liveBuffer?.length === frames &&
-            liveBuffer?.numberOfChannels === channels
+            hasSameGeometry(liveBuffer, sampleRate, frames, channels)
         );
     };
     const invalidate = (): void => {
@@ -89,21 +119,7 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
             invalidated = true;
         }
     };
-    const subscriptions = [
-        elasticAudioStore.subscribe(invalidate),
-        clipSelectionStore.subscribe(invalidate),
-        trackStore.subscribe(invalidate),
-    ];
-    let disposed = false;
-    const dispose = (): void => {
-        if (disposed) {
-            return;
-        }
-        disposed = true;
-        for (const unsubscribe of subscriptions) {
-            unsubscribe();
-        }
-    };
+    const dispose = subscribeToOwnerChanges(invalidate);
     updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
     if (validSource) {
         elasticAudioStore.update((state) => (state ? { ...state, detected: false } : state));

@@ -1,9 +1,7 @@
-let captureRootIdentity: (() => string) | null = null;
+export const elasticSensitivityDependencies: { captureRootIdentity: (() => string) | null } = {
+    captureRootIdentity: null,
+};
 
 export function setElasticSensitivityRootIdentityCapture(capture: (() => string) | null): void {
-    captureRootIdentity = capture;
-}
-
-export function getElasticSensitivityRootIdentityCapture(): (() => string) | null {
-    return captureRootIdentity;
+    elasticSensitivityDependencies.captureRootIdentity = capture;
 }
