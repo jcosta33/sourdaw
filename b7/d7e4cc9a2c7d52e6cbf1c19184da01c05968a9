@@ -1,0 +1,21 @@
+scripts/__tests__/adoptedLanePublication.spec.ts
+  s_57fdb7ae7b3ba4::t_27c798520a30d8 64,82,91-102,109
+scripts/__tests__/laneAdoption.spec.ts
+  s_57fdb7ae7b3ba4::t_27c798520a30d8 82,331-337
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7d7e4cc9a2c7d52e6cbf1c19184da01c05968a9",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
