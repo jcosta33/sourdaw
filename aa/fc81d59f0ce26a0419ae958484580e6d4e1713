@@ -1,0 +1,23 @@
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  s_29d8df116c5b92::t_55f37fddcfac22 719-720
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_29d8df116c5b92::t_55f37fddcfac22 969-970,999-1000,1015-1016
+src/modules/Project/models/ProjectData.ts
+  s_29d8df116c5b92::t_55f37fddcfac22 10,818-819
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aafc81d59f0ce26a0419ae958484580e6d4e1713",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
