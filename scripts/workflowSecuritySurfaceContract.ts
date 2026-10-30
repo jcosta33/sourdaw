@@ -54,6 +54,7 @@ export const JOB_ENVIRONMENT_PINS: JobPins<string> = {
 // config, where every later step — including the head's own scripts — can read
 // it. Dropping the key restores the action's default, which persists it.
 export const CREDENTIALLESS_CHECKOUTS: JobPins<readonly string[]> = {
+    'pr5860-linux-capture.yml': { capture: ['Checkout diagnostic control', 'Checkout frozen integration'] },
     'nightly-evidence-report.yml': {
         validate: ['Checkout trusted default-branch reporter'],
         publish: ['Checkout trusted default-branch repository context'],
