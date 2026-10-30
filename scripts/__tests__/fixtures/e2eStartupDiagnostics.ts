@@ -67,6 +67,7 @@ export async function createFixture(mode = 'e2e', gate?: ReturnType<typeof defer
             if (id.split('?')[0] === target && gate) {
                 return gate.promise;
             }
+            return undefined;
         },
     };
     const server = await createServer({

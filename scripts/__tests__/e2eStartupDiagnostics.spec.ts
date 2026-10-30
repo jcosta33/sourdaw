@@ -8,6 +8,7 @@ import {
     STARTUP_DIAGNOSTIC_HEARTBEAT,
     STARTUP_DIAGNOSTIC_TARGET,
 } from '../e2eStartupDiagnostics.ts';
+
 import { createFixture, deferred, event, type Fixture } from './fixtures/e2eStartupDiagnostics.ts';
 
 const fixtures: Fixture[] = [];
