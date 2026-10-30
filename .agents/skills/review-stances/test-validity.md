@@ -1,5 +1,22 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a timed-out integration case kept running under its successor's fixture (#5899)
+
+PR #5899's real project-store partial-merge spec loaded the projection graph inside each test and
+used one mutable cleanup slot with per-case global Worker and module mocks. An independent run
+timed out the worker-prefix case; its later stack reached a Worker constructor from the next case.
+The exact await that crossed the deadline is unproven. A timeout reports failure but does not by
+itself settle the old async body or give its cleanup ownership of the next case's globals.
+
+Preload the cold graph in a bounded suite hook. Keep each case's setup, assertions and captured
+cleanup under one lease until its async body settles, and refuse the next case before it touches
+Worker, module mocks or the storage port while that lease remains active. Revoke late assertions
+when Vitest reports failure. Probe the actual fixture with a real Vitest deadline while holding
+both setup and body in turn: require the actual timeout error before expected-failure inversion,
+the successor to be refused without changing globals, the expired case to make no later assertion,
+and a fresh setup to work only after the first case drains. An arbitrary expected failure is not
+the deadline probe. A helper-only test cannot prove the real integration cases use this boundary.
+
 ### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
 
 The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
