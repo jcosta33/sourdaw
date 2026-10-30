@@ -1,0 +1,234 @@
+.agents/skills/review-stances/test-validity.md
+  s_7a8e1107313040::t_cee4fe550e518d 122-137
+  s_7a8e1107313040::t_fd906174bd14ef 2002-2014,2204-2210
+evidence/agent-campaign/manifest.json
+  s_7a8e1107313040::t_14ca662106a8c1 539,800,804,808,816,882
+release/open-source-inventory.json
+  s_7a8e1107313040::t_24168bd7584458 1214,1347,1353,1771
+.agents/skills/review-stances/README.md
+  s_7a8e1107313040::t_c48b7023313c1a 74-80
+.agents/skills/review-stances/correctness.md
+  s_7a8e1107313040::t_4b681030ea6ebe 60-71,938-944
+.agents/skills/review-stances/security-and-platform.md
+  s_7a8e1107313040::t_91e1e26fc3e5b5 75-87
+crates/daw-dsp/src/bacteria/convolution.rs
+  s_7a8e1107313040::t_f71d4e5557ad3b 8,10,65,322-329,331,338-351,419,500-507,542,564-570,578,587,590,599-630,632-634,641,652-659
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  s_7a8e1107313040::t_222d9f3794e4fc 19,153-154,245-251,253-254,261-262,274,277,283,286,293
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_7a8e1107313040::t_a7b62013b33815 2629-2631,2648-2649
+evidence/agent-campaign/corpora/development.json
+  s_7a8e1107313040::t_2b626adedebcfd 22,2744-3056
+evidence/agent-campaign/corpora/fixture-project.json
+  s_7a8e1107313040::t_4400469d6a423e 360-365,389-394,418-423,447-452,549-554,571-576,593-598
+evidence/agent-campaign/corpora/held-out.json
+  s_7a8e1107313040::t_5029e9d829a951 22,2701-3005
+pnpm-workspace.yaml
+  s_7a8e1107313040::t_c163d0fcfe86e9 4-7
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_7a8e1107313040::t_24b458b7daa063 1,1153-1176,1193-1295,1359-1360,1362-1377,1382
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_7a8e1107313040::t_0759840ec17b4f 1,5-28,45-147,211-212,214-229,234
+public/wasm/manifest.json
+  s_7a8e1107313040::t_8a39e5c1c8f13b 12,16-18,21
+scripts/__tests__/pnpmModulesPreflight.spec.ts
+  s_7a8e1107313040::t_7d0c2230ce63eb 1-14,19,375-492
+src/app/__tests__/bootstrap.spec.ts
+  s_7a8e1107313040::t_bc88f9b69315a1 193-194,294-295,595,790-792,826-832
+src/app/__tests__/initLevainDeviceStateProjectAccess.spec.ts
+  s_7a8e1107313040::t_13df8e53148284 1-122
+src/app/bootstrap.ts
+  s_7a8e1107313040::t_12f676259d22df 239,676
+src/app/initLevainDeviceStateProjectAccess.ts
+  s_7a8e1107313040::t_6f1358fc96f06c 1-24
+src/components/daw/DawEffectDisclosure.tsx
+  s_7a8e1107313040::t_310482f3ca5e4e 3,11-14,17-24,26-27,36,39
+src/components/daw/__tests__/DawEffectDisclosure.spec.tsx
+  s_7a8e1107313040::t_70847b4ad0af54 22-41
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_7a8e1107313040::t_6f43358eea3b0b 51,78,180,411,1585-1612,2393-2407
+src/modules/AiRuntime/__tests__/projectContextLevelUnits.spec.ts
+  s_7a8e1107313040::t_ea274a307b1df5 97-98,117-199
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_7a8e1107313040::t_42f10bf8be646f 1-7,23,71-72,87-88,249
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_7a8e1107313040::t_0fef00e714b05e 277-278,367-368
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_7a8e1107313040::t_82c3c50da00ceb 12-16,18
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_7a8e1107313040::t_f87d198fa465da 3636
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_7a8e1107313040::t_1f1daf6aa18f5d 100
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_7a8e1107313040::t_2f4544c4fbb4de 16
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_7a8e1107313040::t_a816cd049e65ca 1139,1143,1145,1194,1213,1234,1237-1239,1244-1246,1274,1291,1418,1453
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_7a8e1107313040::t_34f6bc1ae95788 1-7,15,130-142,149
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_7a8e1107313040::t_dcebcfa868571e 1-2,7,61-70,266,268-273,276
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_7a8e1107313040::t_0f41d1377a2ee0 714,716,865
+src/modules/AiRuntime/useCases/__tests__/directLevelSchema.spec.ts
+  s_7a8e1107313040::t_1b3dc370f3ea87 1-41
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_7a8e1107313040::t_2d8449a7f2c957 730,739
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_7a8e1107313040::t_81a67891911ac4 4-5,145,194-197,200,306-307,311
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_7a8e1107313040::t_918233fb27f6b4 152-251
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_7a8e1107313040::t_f1ec809178fbe4 212-231,692-752
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_7a8e1107313040::t_b3af6b8597c36e 1839-1876,7098,7105,7110-7111
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/explainRouteTools.spec.ts
+  s_7a8e1107313040::t_bf02fb7dc892a3 8,11-12,52,55,57,268-387
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_7a8e1107313040::t_1141ed316fbce3 394-396,398-415
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_7a8e1107313040::t_cc780ecfa1b433 299-309,318-319,347-348,391-396,399,438-440,653
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_7a8e1107313040::t_6f6fdebd910aee 157,232
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/directLevelContextWindow.spec.ts
+  s_7a8e1107313040::t_26cee55588b7aa 1-98
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/scriptedProviderProtocol.spec.ts
+  s_7a8e1107313040::t_44471fbdd995aa 1-284
+src/modules/AiRuntime/useCases/planPromptActions.ts
+  s_7a8e1107313040::t_e248252e2e50be 386-395
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_7a8e1107313040::t_6d938ba6b00a24 6,258-273
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_7a8e1107313040::t_9ad265525236ff 34,37,514-521,1256,1258-1263
+src/modules/Arrangement/handlers/vca/__tests__/handleSetVcaGain.spec.ts
+  s_7a8e1107313040::t_8c8d5417601461 3,7-8,11,19-20,24,30-39
+src/modules/Arrangement/handlers/vca/handleSetVcaGain.ts
+  s_7a8e1107313040::t_94b26d34de2a71 1,3,11-20,22-36,38,42-55,63-70
+src/modules/Arrangement/models/MixRecipe.ts
+  s_7a8e1107313040::t_6924acef72986e 20,39,67,93
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderFreezeFailure.integration.spec.tsx
+  s_7a8e1107313040::t_fe056162c6a1cb 1-337
+src/modules/Arrangement/repositories/__tests__/controlledRecipes.spec.ts
+  s_7a8e1107313040::t_440bfae1b15cea 1-197
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  s_7a8e1107313040::t_19e3c5ed4cb882 42-44,46,61,63
+src/modules/Arrangement/repositories/mixRecipes/bassMixRecipes.ts
+  s_7a8e1107313040::t_4bbde2768559ba 427-454
+src/modules/Arrangement/repositories/mixRecipes/busMixRecipes.ts
+  s_7a8e1107313040::t_9032fe661bf53d 408-436
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  s_7a8e1107313040::t_d838adc89566fe 405-432
+src/modules/Arrangement/repositories/mixRecipes/guitarMixRecipes.ts
+  s_7a8e1107313040::t_54b1597d4344d7 412-439
+src/modules/Arrangement/repositories/mixRecipes/keysMixRecipes.ts
+  s_7a8e1107313040::t_6cc38a885cfe2c 400-427
+src/modules/Arrangement/repositories/mixRecipes/masterMixRecipes.ts
+  s_7a8e1107313040::t_eb226b619571f2 414-442
+src/modules/Arrangement/repositories/mixRecipes/vocalMixRecipes.ts
+  s_7a8e1107313040::t_773c1140644da6 432-459
+src/modules/Arrangement/useCases/vca/captureLegacyVcaState.ts
+  s_7a8e1107313040::t_55cd37eb52f2d7 180-182
+src/modules/AudioEngine/services/__tests__/dawDspBacteriaBodyDuration.spec.ts
+  s_7a8e1107313040::t_3cf1e961fcfce4 1-74
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_7a8e1107313040::t_4e1487a67e1bcc 1,1153-1176,1193-1295,1359-1360,1362-1377,1382
+src/modules/Command/useCases/__tests__/commandExecutionOutcome.spec.ts
+  s_7a8e1107313040::t_fb9866c317b1b9 51
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_7a8e1107313040::t_7290a1b04ebb6a 5,148,166,172-225
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_7a8e1107313040::t_142acd838a3825 16,19,966-975,999,1002-1004,1006,2481-2487,2490-2498,2561-2571
+src/modules/Command/useCases/__tests__/executeAppActionBatch.spec.ts
+  s_7a8e1107313040::t_31f182a2f941f1 65
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_7a8e1107313040::t_8acaa934cacbd1 7,10,1937-1944,1947-1955,1958-1969,2040,2049-2050,2052-2062,2066-2068,2070
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_7a8e1107313040::t_150fc8da93a4d0 1633-1634,1636,5188-5189,5191
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_7a8e1107313040::t_f5c313ae23e070 30,301-303,1318
+src/modules/CrdtDocument/stores/documentIdentityEpoch.ts
+  s_7a8e1107313040::t_ba3a0fc65f5bf6 1-15
+src/modules/CrdtDocument/stores/index.ts
+  s_7a8e1107313040::t_bc9dc1b3df0215 6
+src/modules/CrdtDocument/useCases/captureProjectIdentity.ts
+  s_7a8e1107313040::t_7027f095b9b4db 1,14
+src/modules/Levain/models/LevainDeviceState.ts
+  s_7a8e1107313040::t_1ad137a21ab5c9 42-43,47,50-54,63,101
+src/modules/Levain/models/__tests__/LevainDeviceState.spec.ts
+  s_7a8e1107313040::t_e6d2e8160f918e 12,24,66-82
+src/modules/Levain/presentations/components/ArticulationList.tsx
+  s_7a8e1107313040::t_a724785b78182d 39,71
+src/modules/Levain/presentations/components/MicBlendSlider.tsx
+  s_7a8e1107313040::t_2348c57f229832 12,24-25,37-38,93-108,121-122,130-131
+src/modules/Levain/presentations/components/__tests__/MicBlendSlider.spec.tsx
+  s_7a8e1107313040::t_e80f35bb96821b 246-268
+src/modules/Levain/presentations/views/LevainPanel.tsx
+  s_7a8e1107313040::t_6a1cc1c72270ef 3,11,21,76-82,103-114,217-228,245,247-254,269-276,278-306,308-319,321-335,337-362,379-401,403-432,434-467
+src/modules/Levain/presentations/views/__tests__/LevainPanel.initialization.integration.spec.tsx
+  s_7a8e1107313040::t_11f870ed8223a0 1-130
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  s_7a8e1107313040::t_9b7ac5ef0be95b 7,70,83,93-94,121-122,454-584
+src/modules/Levain/presentations/views/__tests__/levainPanelReachesTheEngine.spec.tsx
+  s_7a8e1107313040::t_9a2c8acab7d669 83-91,217,252,254-256
+src/modules/Levain/stores/__tests__/levainStore.spec.ts
+  s_7a8e1107313040::t_5a7bc61829aa12 156-159
+src/modules/Levain/stores/levainDeviceStateProjectAccess.ts
+  s_7a8e1107313040::t_dbdc0e122c9155 1-15
+src/modules/Levain/stores/levainStore.ts
+  s_7a8e1107313040::t_83be74734bc6f2 26
+src/modules/Levain/useCases/__tests__/commitLevainDeviceState.spec.ts
+  s_7a8e1107313040::t_25f0ba484fbcbd 1,5-17,19-20,23-25,28-29,31,35-36,38-59,62-78,81-86,90-94
+src/modules/Levain/useCases/__tests__/coordinateLevainDeviceState.spec.ts
+  s_7a8e1107313040::t_dcf9d906d76df9 1-255
+src/modules/Levain/useCases/__tests__/initLevainDeviceStatePersistence.spec.ts
+  s_7a8e1107313040::t_28e6ed45edb7fc 26-29,131-140
+src/modules/Levain/useCases/__tests__/levainInstrumentPersistenceRoundTrip.spec.ts
+  s_7a8e1107313040::t_e003000930b5af 17,28,45-55,114-115,125,127-129,135,139,151,356
+src/modules/Levain/useCases/__tests__/levainMultiInstanceProjectRoundTrip.spec.ts
+  s_7a8e1107313040::t_7ad6388863fd9e 34,54,108,115
+src/modules/Levain/useCases/__tests__/reconcileLevainDeviceStatesFromProject.spec.ts
+  s_7a8e1107313040::t_0b5556f1222ecb 7-8,14,40-54,58,62-63,91-92,103,105-107,169,177-199
+src/modules/Levain/useCases/__tests__/setLevainPanelUiLevel.spec.ts
+  s_7a8e1107313040::t_9e72bfa06db22d 1-884
+src/modules/Levain/useCases/commitLevainDeviceState.ts
+  s_7a8e1107313040::t_dd674a68b0e829 1,4-5,27-35
+src/modules/Levain/useCases/configureLevainDeviceStateProjectAccess.ts
+  s_7a8e1107313040::t_8628aa4334efff 1-9
+src/modules/Levain/useCases/coordinateLevainDeviceState.ts
+  s_7a8e1107313040::t_bcc7b1e00cca57 1-182
+src/modules/Levain/useCases/hydrateLevainStateFromDevice.ts
+  s_7a8e1107313040::t_b883585e0d7f1a 26
+src/modules/Levain/useCases/index.ts
+  s_7a8e1107313040::t_dc42c2b1cb17c2 3
+src/modules/Levain/useCases/reconcileLevainDeviceStateFromProject.ts
+  s_7a8e1107313040::t_38347a1f4ce11c 26-28,36-38,53-58
+src/modules/Levain/useCases/setLevainPanelUiLevel.ts
+  s_7a8e1107313040::t_ceb1935987e5c2 1-37
+src/modules/Transport/handlers/transport/handleSetMetronomeVolume.ts
+  s_7a8e1107313040::t_d57b34593d4694 1,3,8-17,19-23,25-42,46-53,56-57
+src/utils/audioLevelLaw.ts
+  s_7a8e1107313040::t_7b17d5982d6549 491-492
+src/utils/handlerContract.ts
+  s_7a8e1107313040::t_66008915dac716 1539,3045
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_7a8e1107313040::t_eddd3554ee6aa3 1-505
+tests/e2e/devServerOnlySpecs.ts
+  s_7a8e1107313040::t_678259131362f0 19
+tests/e2e/levainArticulationTestId.spec.ts
+  s_7a8e1107313040::t_6171b2ee2e3099 25-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "85b299a7d69e52261f6428835c32fb98d0214fcf",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
