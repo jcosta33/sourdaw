@@ -35,6 +35,12 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Admit every managed-directory component before creating its children or publishing scheduler
+  files. PR #5869's pre-delivery installer probe showed that a symlinked `Library` or `LaunchAgents`
+  could replace an unrelated external plist before launchd inspection. Require an existing canonical
+  home anchor, refuse each parent alias without external child creation or scheduler calls, and
+  preserve an external plist sentinel byte-for-byte. Keep canonical directory creation and
+  reinstallation positive controls. This was caught before delivery, not a main escape.
 - Trace every authoritative field from its native response parser through the final equality
   witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
   child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.
@@ -71,6 +77,30 @@ dispatch.
   not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### Merged lane cleanup must prove release and survive removal refusal (introduced by PR #1802)
+
+PR #1802 introduced lane removal (`4404e50fdc`) and cwd-only activity inspection (`2a13a418e1`).
+A process outside the lane could hold a lane file open without blocking deletion, and a refused
+native removal after unlock lost the original author lock. Historic private stance, prompt and
+model are unestablished. A manual-only exit also left merged worktrees behind when delivery or its
+caller stopped before removal.
+
+Probe native removal with a spawned process whose cwd is elsewhere but whose descriptor holds a
+lane file; incomplete/denied lsof catalogs and omitted live same-user PIDs must retain the lane.
+Inject a native removal refusal after unlock and require the original author lock restored.
+Kill the worker after durable queue publication and require a later process to reclaim only after
+fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
+with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.
+
+Merge state alone does not prove that work reached `main`: an exact PR head merged into an open
+stack parent is still unlanded. Require a live `main` base and valid merge timestamp for author and
+review heads, and for the merged replacement of a closed superseded lane. Missing metadata stays
+unproven; a missing `merged_at` must never map to merged. Probe non-main and unknown bases, missing
+or malformed timestamps, open-state/timestamp contradictions and a base transition between the two
+ownership reads. Preserve valid main merges and closed stack lanes whose truthful replacement landed
+on main. The pre-publication integration probe exposed this eligibility gap before automatic cleanup
+was shipped; historical review dispatch details remain unestablished.
 
 ### 2026-10-29 — private install ownership omitted cross-environment settings (introduced in PR #2)
 

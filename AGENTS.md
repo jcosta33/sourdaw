@@ -259,20 +259,20 @@ locally at other lanes' expense.
 
 ## Checks
 
-| Need                                              | Command or evidence                                  |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
-| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
-| Focused format                                    | `pnpm format <changed-files>`                        |
-| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
-| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
-| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
-| Generate one affected WASM package                | that package's own `wasm:*` script                   |
-| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
-| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
-| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
-| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
-| Restamp a dependency bump                         | `pnpm release:restamp`                               |
+| Need                                                                                     | Command or evidence                          |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Focused tests                                                                            | `pnpm test:run <changed-spec>`               |
+| Focused E2E diagnostic                                                                   | `pnpm test:e2e <spec>`                       |
+| Focused format                                                                           | `pnpm format <changed-files>`                |
+| Focused Rust tests                                                                       | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format                                                                      | `pnpm cargo:fmt --package <crate>`           |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI                              |
+| Generate one affected WASM package                                                       | that package's own `wasm:*` script           |
+| Rewrite WASM manifest after generation                                                   | `pnpm wasm:manifest`                         |
+| Verify generated WASM surface                                                            | `pnpm wasm:verify` after generation          |
+| Restamp the wasm surface                                                                 | `pnpm release:restamp:wasm`                  |
+| Restamp a tracked set                                                                    | `pnpm release:restamp:tracked-set`           |
+| Restamp a dependency bump                                                                | `pnpm release:restamp`                       |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
@@ -396,6 +396,32 @@ Lanes isolate only working trees. Stash, process table, disk, and author lock ar
 global or destructive operations from any lane affect all lanes. Lanes running browser verification
 export `SOURDAW_E2E_PORT` with a lane-unique value (derive it from the lane slug), and the
 warmup and ui-scripts identity assertions refuse a dev server belonging to another checkout.
+
+Successful delivery queues local cleanup after merge, receipt and tracker bookkeeping and after the
+delivery lock is released. A delivered PR stays delivered when its lane is protected or cleanup is
+pending. The deterministic `pnpm lane:cleanup` worker also discovers missed deliveries and merged
+legacy detached lanes under `.agents/review-worktrees/`; it never creates review worktrees.
+It reuses `lane:remove` with fresh exact-head merge or native supersession proof, a directory identity
+fence, clean/untracked/ignored-data checks, no active Git operation, and a complete open-file/process
+inspection. Unknown activity, unavailable GitHub inspection, foreign locks and changed identities
+retain work. Safety refusals recheck on the normal schedule; unavailable inspection uses capped
+backoff. Successful delivery wakes its matching head without bypassing shared inspection backoff.
+An old queued identity never authorizes a replacement
+lane; discovery gives the replacement its own record and fresh proof after a delay.
+
+Install or refresh the macOS user job with `pnpm lane:cleanup:install` from an approved current
+checkout. It runs at login and periodically, using a verified `origin/main` runtime under the primary
+checkout's gitignored `.agents/lane-cleanup/`, independent of removed author lanes and primary
+working-tree drift. Installation may refresh only the protected primary
+`scripts/trustedGithubWriteBootstrap.ts` from approved Git objects when it matches HEAD/index or the
+exact previously installed approved blob; local launcher edits and staged changes refuse. This is
+the sole tracked-primary installation exception; every other primary edit survives. The installed
+job performs no dependency install. The worker preserves common Git `info/exclude` entries while
+excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
+`pnpm lane:cleanup --status` from a current checkout,
+the records and `worker*.log` in that directory, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+where process inspection is available; the scheduler installer explicitly requires macOS.
 
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
 Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
