@@ -192,6 +192,51 @@ describe('cleanup installation', () => {
         }
     });
 
+    it.each(['worker.log', 'worker-error.log'])(
+        'refuses a preexisting hardlinked %s before scheduler activation',
+        (name) => {
+            const f = fixture();
+            const foreign = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-log-alias-')));
+            try {
+                const directory = join(f.root, '.agents/lane-cleanup');
+                mkdirSync(directory, { recursive: true });
+                const target = join(foreign, 'unrelated-data');
+                const bytes = 'unrelated private fixture bytes\n';
+                writeFileSync(target, bytes);
+                linkSync(target, join(directory, name));
+                expect(() => installCleanupLanes(f.port)).toThrow('exclusive regular file');
+                expect(f.events).toHaveLength(0);
+                expect(readFileSync(target, 'utf8')).toBe(bytes);
+                expect(readFileSync(join(directory, name), 'utf8')).toBe(bytes);
+                expect(readFileSync(join(f.root, 'scripts/trustedGithubWriteBootstrap.ts'), 'utf8')).toBe(
+                    'old approved launcher\n'
+                );
+            } finally {
+                f.dispose();
+                rmSync(foreign, { recursive: true });
+            }
+        }
+    );
+
+    it('preserves ordinary existing one-link logs through installation and reinstallation', () => {
+        const f = fixture();
+        try {
+            const directory = join(f.root, '.agents/lane-cleanup');
+            mkdirSync(directory, { recursive: true });
+            for (const name of ['worker.log', 'worker-error.log']) {
+                writeFileSync(join(directory, name), `existing ${name} bytes\n`);
+            }
+            const installed = installCleanupLanes(f.port);
+            installCleanupLanes(f.port);
+            expect(f.events).toContainEqual(['bootstrap', 'gui/501', installed.plist]);
+            for (const name of ['worker.log', 'worker-error.log']) {
+                expect(readFileSync(join(directory, name), 'utf8')).toBe(`existing ${name} bytes\n`);
+            }
+        } finally {
+            f.dispose();
+        }
+    });
+
     it('refuses locally modified or staged launcher bytes without overwriting them', () => {
         const f = fixture();
         try {

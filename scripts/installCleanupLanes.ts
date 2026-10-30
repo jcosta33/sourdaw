@@ -2,16 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import {
-    existsSync,
-    lstatSync,
-    mkdirSync,
-    readFileSync,
-    realpathSync,
-    renameSync,
-    statSync,
-    writeFileSync,
-} from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -242,8 +233,9 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
     }
     for (const name of ['worker.log', 'worker-error.log']) {
         const path = join(directory, name);
-        if (existsSync(path) && (!lstatSync(path).isFile() || lstatSync(path).isSymbolicLink())) {
-            throw new Error('cleanup log path is not a regular file');
+        const stat = lstatSync(path, { throwIfNoEntry: false });
+        if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) {
+            throw new Error('cleanup log path is not an exclusive regular file');
         }
     }
     const runtime = join(runtimes, `${commit}-${randomUUID()}`);
