@@ -85,6 +85,7 @@ async function warmOrigin(baseURL: string): Promise<void> {
     logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
     logWarmupPhase('browser launch: complete');
+    let warmupFailure: { error: unknown } | undefined;
     try {
         logWarmupPhase('page creation: start');
         const page = await browser.newPage({ baseURL });
@@ -126,9 +127,24 @@ async function warmOrigin(baseURL: string): Promise<void> {
             );
             throw error;
         }
+    } catch (error) {
+        warmupFailure = { error };
+        throw error;
     } finally {
         logWarmupPhase('browser close: start');
-        await browser.close();
+        try {
+            await browser.close();
+        } catch (closeError) {
+            if (warmupFailure !== undefined) {
+                const closeMessage =
+                    closeError instanceof Error ? `${closeError.name}: ${closeError.message}` : String(closeError);
+                console.error(
+                    `[first-paint warmup] browser close failed while preserving the original warmup failure: ${closeMessage}`
+                );
+                throw warmupFailure.error;
+            }
+            throw closeError;
+        }
         logWarmupPhase('browser close: complete');
     }
 }

@@ -203,6 +203,7 @@ describe('cold first-paint warmup', () => {
             goto: warmupMocks.goto,
             getByLabel: warmupMocks.getByLabel,
         });
+        warmupMocks.addInitScript.mockResolvedValue(undefined);
         // A healthy boot logs the [capabilities] marker right after the warmup
         // subscribes to the console; deliver it so the readiness gate passes.
         warmupMocks.on.mockImplementation((_event: string, handler: (message: { text: () => string }) => void) => {
@@ -394,6 +395,70 @@ describe('cold first-paint warmup', () => {
         close.resolve(undefined);
         expect(await failure).toBe(overlayError);
         expect(settled).toBe(true);
+    });
+
+    it('preserves the readiness error when browser close also fails', async () => {
+        const readinessError = new Error('overlay timed out');
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.waitFor.mockRejectedValue(readinessError);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(readinessError);
+
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(2);
+        expect(emitted[0]).toContain('overlay timed out');
+        expect(emitted[1]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[1]).toContain('browser close failed');
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('rejects with a close-only error after readiness succeeds', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        const warmupLog = vi.spyOn(console, 'log').mockImplementation(() => {});
+        const warmupError = vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        await expect(warmFirstPaint(config)).rejects.toBe(closeError);
+
+        expect(warmupMocks.goto).toHaveBeenCalledOnce();
+        expect(warmupMocks.waitFor).toHaveBeenCalledOnce();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toEqual([]);
+        expect(warmupError).not.toHaveBeenCalled();
+        expect(warmupLog).toHaveBeenCalledWith(expect.stringMatching(/browser close: start$/));
+        expect(warmupLog).not.toHaveBeenCalledWith(expect.stringMatching(/browser close: complete$/));
+    });
+
+    it('preserves an undefined init-script rejection when browser close also fails', async () => {
+        const closeError = new Error('browser close failed');
+        const emitted: string[] = [];
+        vi.spyOn(console, 'error').mockImplementation((message: string) => emitted.push(message));
+        warmupMocks.addInitScript.mockRejectedValue(undefined);
+        warmupMocks.close.mockRejectedValue(closeError);
+
+        const outcome = await warmFirstPaint(config).then(
+            () => ({ fulfilled: true as const }),
+            (error: unknown) => ({ fulfilled: false as const, error })
+        );
+
+        expect(outcome.fulfilled).toBe(false);
+        if (outcome.fulfilled) {
+            throw new TypeError('Expected init-script failure');
+        }
+        expect(outcome.error).toBeUndefined();
+        expect(warmupMocks.newPage).toHaveBeenCalledOnce();
+        expect(warmupMocks.addInitScript).toHaveBeenCalledOnce();
+        expect(warmupMocks.goto).not.toHaveBeenCalled();
+        expect(warmupMocks.close).toHaveBeenCalledOnce();
+        expect(emitted).toHaveLength(1);
+        expect(emitted[0]).toContain('browser close failed while preserving the original warmup failure');
+        expect(emitted[0]).toContain('browser close failed');
     });
 
     it('reports navigation failure evidence without labeling it a timeout', async () => {
