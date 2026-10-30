@@ -1,0 +1,26 @@
+src/modules/Command/useCases/__tests__/commandHistoryOwnership.integration.spec.ts
+  s_7a8e1107313040::t_e394ed9663cd5b 141-150,188
+  s_7a8e1107313040::t_bccda13e99327b 442-444
+evidence/agent-campaign/manifest.json
+  s_7a8e1107313040::t_e1aa8f15f031ad 262
+src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts
+  s_7a8e1107313040::t_e394ed9663cd5b 98-99
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_7a8e1107313040::t_e394ed9663cd5b 967-968
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4e25e49c576cd52e820630ea8ab5b9e724d44721",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
