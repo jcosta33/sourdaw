@@ -339,6 +339,9 @@ describe('app main composition', () => {
         Reflect.set(window, 'sourdaw', {});
         mocks.resolveAppComposition.mockReturnValue('application');
         const resetGate = deferredGate();
+        const appImportGate = deferredGate();
+        releaseAppImport = appImportGate.release;
+        mocks.loadApp.mockReturnValueOnce(appImportGate.promise);
         const finishReset = resetGate.release;
         releaseDesktopReset = resetGate.release;
         mocks.resetDisplayScaleForStartup.mockReturnValueOnce(resetGate.promise);
@@ -356,8 +359,10 @@ describe('app main composition', () => {
         finishReset();
         await mainImport;
         await rendered;
+        await vi.waitFor(() => expect(mocks.loadApp).toHaveBeenCalledOnce());
 
-        expect(mocks.bootstrap).toHaveBeenCalledOnce();
+        expect(mocks.bootstrap).not.toHaveBeenCalled();
+        expect(appRenderObserved).toBe(false);
         expect(mocks.render).toHaveBeenCalled();
         expectFirstPaintRendered();
         const resetCallOrder = mocks.resetDisplayScaleForStartup.mock.invocationCallOrder[0];
@@ -377,6 +382,11 @@ describe('app main composition', () => {
         expect(mocks.resetBrowserDisplayScaleForChildStartup).not.toHaveBeenCalled();
         expect(mocks.mountBrowserDisplayScaleHost).not.toHaveBeenCalled();
         expectFirstPaintBusesRegisteredBeforeRender();
+
+        appImportGate.release();
+        await pendingStartupCompletion;
+        await vi.waitFor(() => expect(mocks.bootstrap).toHaveBeenCalledOnce());
+        expect(appRenderObserved).toBe(true);
     });
 
     it('settles delayed desktop startup before resetting the next test case', async () => {
