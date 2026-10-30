@@ -158,7 +158,9 @@ describe('registered failed Freeze projected into the subscribed track header', 
             'ui.confirm': ConfirmPayload;
             'ui.prompt': PromptPayload;
         }>();
-        bus.on('ui.notify', (notice) => notices.push(notice));
+        bus.on('ui.notify', (notice) => {
+            notices.push(notice);
+        });
         setNotificationEventBus(bus);
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('Connected Freeze header acceptance');
