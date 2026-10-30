@@ -145,7 +145,12 @@ function plan(original: Doc<Document>, unchanged = false) {
     }
     return candidate;
 }
-function publish(candidate: ReturnType<ReturnType<typeof plan>['materialize']>, validateDocument = vi.fn()) {
+type CandidateValidator = NonNullable<Parameters<typeof repository.changeDoc<Document>>[5]>['validateDocument'];
+
+function publish(
+    candidate: ReturnType<ReturnType<typeof plan>['materialize']>,
+    validateDocument: CandidateValidator = vi.fn()
+) {
     const onPublished = vi.fn();
     repository.changeDoc<Document>(
         'root',

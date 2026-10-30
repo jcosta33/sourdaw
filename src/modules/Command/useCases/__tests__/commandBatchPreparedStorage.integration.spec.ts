@@ -352,6 +352,21 @@ describe('prepared storage through command batch commits', () => {
                                 runtimeGain = 0.8;
                                 runtimeEffectCount++;
                             },
+                            afterAmbiguousCommit: () => {
+                                const gain = projectDocument.trackGain;
+                                if (
+                                    typeof gain !== 'object' ||
+                                    gain === null ||
+                                    !('value' in gain) ||
+                                    typeof gain.value !== 'number'
+                                ) {
+                                    throw new TypeError('Expected committed track gain');
+                                }
+                                if (runtimeGain !== gain.value) {
+                                    runtimeGain = gain.value;
+                                    runtimeEffectCount++;
+                                }
+                            },
                         };
                     },
                 }),
