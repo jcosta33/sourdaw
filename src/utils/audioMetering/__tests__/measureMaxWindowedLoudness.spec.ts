@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { measureMaxWindowedLoudness } from '../measureMaxWindowedLoudness';
+import { createMaxWindowedLoudnessAccumulator, measureMaxWindowedLoudness } from '../measureMaxWindowedLoudness';
 
 const SAMPLE_RATE = 48_000;
 
@@ -38,6 +38,32 @@ function writeTone(
 }
 
 describe('measureMaxWindowedLoudness', () => {
+    it('keeps bounded streaming hop and end-aligned maxima equal to the batch reference', () => {
+        const length = SAMPLE_RATE * 4 + 137;
+        const tone = new Float32Array(length);
+        writeTone(tone, { dbfs: -28, hz: 1000 });
+        writeTone(tone, { dbfs: -5, hz: 1000, startFrame: length - 18000 });
+        const meter = createMaxWindowedLoudnessAccumulator({ numberOfChannels: 2, sampleRate: SAMPLE_RATE });
+        for (let offset = 0; offset < length; offset += 173) {
+            meter.push([tone.subarray(offset, offset + 173), tone.subarray(offset, offset + 173)]);
+        }
+        const readings = meter.finish();
+        expect(readings).toHaveLength(2);
+        const [momentary, shortTerm] = readings;
+        expect(momentary).toBeCloseTo(
+            measureMaxWindowedLoudness({
+                channels: [tone, tone],
+                length,
+                sampleRate: SAMPLE_RATE,
+                windowSeconds: 0.4,
+            })!,
+            5
+        );
+        expect(shortTerm).toBeCloseTo(
+            measureMaxWindowedLoudness({ channels: [tone, tone], length, sampleRate: SAMPLE_RATE, windowSeconds: 3 })!,
+            5
+        );
+    });
     it('reads a steady -23 dBFS stereo sine as -23 LUFS over a 400 ms window', () => {
         const length = SAMPLE_RATE * 2;
         const tone = sineAtDbfs(-23, length);
