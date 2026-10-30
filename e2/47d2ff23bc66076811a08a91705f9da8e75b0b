@@ -1,0 +1,20 @@
+scripts/__tests__/laneAdoption.spec.ts
+  s_57fdb7ae7b3ba4::t_aacc8f7a2bc04a 371
+  s_57fdb7ae7b3ba4::t_e3caa4d3b566c9 414
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e247d2ff23bc66076811a08a91705f9da8e75b0b",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
