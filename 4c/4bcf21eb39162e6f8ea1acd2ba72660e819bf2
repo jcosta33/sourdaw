@@ -1,0 +1,20 @@
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_567a084d0540c4::t_70e8842581eb97 59-60,175,207-209,228-229
+  s_567a084d0540c4::t_88975ffcf01f08 92-98,100-130,176-194,201-202,204-205
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4c4bcf21eb39162e6f8ea1acd2ba72660e819bf2",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
