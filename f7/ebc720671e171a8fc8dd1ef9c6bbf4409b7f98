@@ -1,0 +1,18 @@
+crates/daw-engine/src/lib.rs
+  h_beb54bf43b47b7 1646,2094-2225
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  h_beb54bf43b47b7 87-88,206-216,383-427,446-448
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 623
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7ebc720671e171a8fc8dd1ef9c6bbf4409b7f98",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
