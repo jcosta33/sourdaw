@@ -1,0 +1,80 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 924-938
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 884-897
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 468-482
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 559-573
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 28-45
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 432-448,2028-2058
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7,9-12,29-30,32,34-36,42,44-46,53,72-74,121-123,125-136,159-166,171,179,210,282-284,324,326,335,340,342,358,402-403,419-420,438-439,479,481,501-502,523,529,586-587,606,609
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,122-123,153,285-338
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 223-239
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1292-1366,1368-1394
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,144-218,220-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_beb54bf43b47b7 8-9,12,19,102-165,284
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 1-3,6-33,35,37,40-41,44,54-55,65-72,85-86,154-169,178,416-436,438-456,458-608,1119-1514
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,176,184,188
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1292-1366,1368-1394
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 1,3-7,126-128,130-190
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  h_beb54bf43b47b7 14,22-24,26
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  h_beb54bf43b47b7 8-9,14-22
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  h_beb54bf43b47b7 13-21,26-29,31-32,39-47,72-73,111-113,115-122,124-186
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  h_beb54bf43b47b7 1-709
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,412-415,430-435
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e0be31efef21e9600dbc65fe20fc6c6e03441fa3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
