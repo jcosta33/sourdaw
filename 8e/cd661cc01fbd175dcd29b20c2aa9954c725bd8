@@ -1,0 +1,16 @@
+scripts/__tests__/compiledPersistenceServer.spec.ts
+  h_beb54bf43b47b7 88,110
+scripts/compiledPersistenceServer.ts
+  h_beb54bf43b47b7 34
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ecd661cc01fbd175dcd29b20c2aa9954c725bd8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
