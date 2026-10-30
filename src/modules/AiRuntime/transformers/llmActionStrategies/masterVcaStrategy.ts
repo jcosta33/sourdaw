@@ -1,4 +1,10 @@
-import { FADER_MAX_GAIN, type LevelArgument, TRACK_FADER_LAW, VCA_MAX_GAIN } from '#/utils/audioLevelLaw';
+import {
+    FADER_MAX_GAIN,
+    type LevelArgument,
+    TRACK_FADER_LAW,
+    VCA_LEVEL_LAW,
+    VCA_MAX_GAIN,
+} from '#/utils/audioLevelLaw';
 
 import { type ProjectContext } from '../../models/ProjectContext';
 import { type RuntimeAction, type RuntimeActionType } from '../../models/RuntimeAction';
@@ -6,7 +12,7 @@ import { normalizeSafeProjectName } from '../../validators/normalizeSafeProjectN
 import { type LlmActionRejection } from '../llmActionBridgeContracts';
 import { type ToolCallResult } from '../toolCallParser';
 
-import { hasExactKeys, isFiniteNumber, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
+import { hasExactKeys, readResolvedLevelArgument, rejection } from './bridgeArgumentGuards';
 import { createLlmActionStrategyRegistry } from './createLlmActionStrategyRegistry';
 
 /** The master level in the form the request stated, for the handler to resolve. */
@@ -121,21 +127,26 @@ const masterVcaStrategyDefinitions = [
         transform: ({ call, context, index }) => {
             const args = call.arguments;
             const group = findVcaGroup(context, args.vcaGroupId);
-            if (
-                !hasExactKeys(args, ['vcaGroupId', 'gain']) ||
-                !group ||
-                !isFiniteNumber(args.gain) ||
-                args.gain < 0 ||
-                args.gain > VCA_MAX_GAIN ||
-                args.gain === group.gain
-            ) {
+            if (!group) {
                 return rejection(
                     index,
                     call.name,
                     `Expected an existing VCA group and a changed finite gain from 0 through ${VCA_MAX_GAIN}`
                 );
             }
-            return { type: 'setVcaGain', payload: { vcaGroupId: group.id, gain: args.gain } };
+            const level = readResolvedLevelArgument(
+                args,
+                { linear: 'gain', absolute: 'gainDb', relative: 'deltaDb' },
+                { current: group.gain, law: VCA_LEVEL_LAW, linearBounds: { min: 0, max: VCA_MAX_GAIN } }
+            );
+            if (!level || !hasExactKeys(args, ['vcaGroupId', level.statedKey]) || level.linear === group.gain) {
+                return rejection(
+                    index,
+                    call.name,
+                    `Expected an existing VCA group and a changed finite gain from 0 through ${VCA_MAX_GAIN}`
+                );
+            }
+            return { type: 'setVcaGain', payload: { vcaGroupId: group.id, ...toMasterGainPayload(level.argument) } };
         },
     },
     {

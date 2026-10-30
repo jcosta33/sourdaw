@@ -1,5 +1,21 @@
 # Lesson library: security and platform boundaries
 
+### 2026-10-29 — diagnostic words inside a Darwin pathname rejected usable storage evidence (introduced by PR #5274)
+
+PR #5274 (`40baa0716b`) matched inspection-error words anywhere in an `lsof` name. A pure
+`tREG` fixture named `/tmp/no info.txt` therefore rejected a complete catalog. The public final
+review covered startup routing, borrower retention, interrupted reclamation, account admission and
+failure reporting; a pathname-versus-diagnostic admission probe was missing. Historical private
+prompts and tiers are unestablished. This counterexample does not identify the cause of a later
+uninstrumented census failure.
+
+Probe absolute REG/DIR paths containing diagnostic words without opening those filenames on the
+shared host. Require the parsed path to veto storage reclamation. Keep unrooted errors and ambiguous
+stat/readlink suffixes fail-closed, preserve whole/scoped replacement proof and the five-second bound,
+and retain only bounded PID, descriptor, type and matched-category context, never unrelated catalog
+names or environment text. Reverting the pathname distinction must fail the parser assertion;
+dropping the retained context must fail the whole/scoped diagnostic assertions.
+
 Lesson library for defects in native authority, renderer trust, platform capabilities, IPC
 exposure, filesystem access, secrets, or operating-system integration. Per the Review section of
 `AGENTS.md`, this directory is a lesson library, not a stance menu: an escape — a defect that
@@ -55,6 +71,32 @@ dispatch.
   not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### 2026-10-29 — private install ownership omitted cross-environment settings (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6; CI defaults an unset virtual-store setting to false, but
+local freshness comparison still sees unset. Existing ownership checks could accept the install
+while an ordinary local package command refused it. Historical private prompts and tiers are
+unestablished; this refusal does not establish a security exposure.
+
+Probe the real pinned runner with a private offline install under CI followed by local and CI
+package commands using repository workspace policy. Require unchanged lock/ownership metadata and
+a checkout-private virtual tree while retaining shared download-cache policy and freshness checks.
+Removing the explicit false pin must expose the same setting mismatch; a precheck bypass, metadata
+rewrite or different CI environment cannot carry that proof.
+
+### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
+
+PR #5746's original commit `cc52a482abc4b62519a79e1984e683893c31cbc0` quoted the RFC 6455
+section 1.2 WebSocket nonce. Replacement #5748 composed it at runtime and excluded the original
+commit from its PR range, but Nightly's `--all` scan still reached the retained original branch.
+The missed proof route was retained history after replacement; private reviewer prompts and tiers
+are unestablished. The value is a published protocol example, not an issued credential.
+
+Read the exact historical finding and its public source. Prove detection with the pinned scanner,
+then admit only that commit/path/rule/line fingerprint. A wrong fingerprint and independent synthetic
+credentials, including `gitleaks:allow`, must remain detected under the same trusted configuration
+and flags. A clean replacement diff does not establish a clean full-history scan.
 
 ### 2026-10-28 — PR security scan lacked its main comparison configurations (PRs #3170 and #4854)
 
@@ -454,3 +496,37 @@ proposal, preserving the correlated failure. Keep genuine in-budget local and ho
 restore the full effectful contracts. In a committed isolated probe, remove only the responsible
 discard/admission edge and require `does not let the actual parser carry failed control authority
 into a following proposal` in `metricIntent.spec.ts` to fail independently of manifest pins.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Pair positive admission of all six declared Body keys and indices -1/0/1/2/3 through
+the real factory and production processor target with refusal of synthetic keys, band 6,
+nonfinite values, forged identity, wrong generation and replay. Caller project parameter
+maps must not widen the finite runtime schema. Remove only the declared Body key to
+make the positive factory probe fail; a hand-built permissive target cannot establish
+that valid controls cross the production trust boundary.
+
+### Package-manager trust reaches the final caller
+
+PR #4222 (`120c9e2b418`) introduced the setup action whose bootstrap could block the selected
+JavaScript pnpm on unused native-engine signature metadata (#5806). PR #5464 (`eded998aebf`)
+introduced the Corepack-producer and later Node/cache-consumer arrangement in push checks.
+When that selected Node directory contains a Corepack shim, its later PATH prepend can override
+an already verified target. These revisions identify the escaped contracts; historical private
+reviewer prompts and tiers remain unknown, and public approval prose does not prove which
+unrecorded probes ran.
+
+The needed stance follows the executing tool through acquisition, activation and its final
+consumer. Distinguish a reviewed bootstrap byte pin from runtime signature verification. Bind the
+selected engine's name, version and installed integrity to a trusted signature before activation;
+verify any platform package it actually executes. Then prepend the later runtime's directory and
+prove the cache caller still resolves the authenticated target. Before disabling Corepack aliases,
+validate the whole affected set of leaf symlinks and real targets against that selected Node's
+official distribution. Refuse unrecognized launchers without deleting recognized peers, and
+preserve Node, npm, npx, Yarn and unrelated files.

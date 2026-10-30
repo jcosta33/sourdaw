@@ -692,6 +692,7 @@ impl BandChain {
     /// all-pass network holds a ~5500-sample memory, so a frozen one flushes a
     /// full-scale burst on re-entry. See [`HilbertShifter::bypass`].
     fn skip_sample(&mut self) {
+        self.convolution.suspend_spring();
         self.alignment.process(0.0, 0.0);
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
@@ -714,6 +715,7 @@ impl BandChain {
     /// spectral window would have shortened the chain by that window while the
     /// report stood still.
     fn pass_through_sample(&mut self, left: f32, right: f32) -> (f32, f32) {
+        self.convolution.suspend_spring();
         self.hilbert_l.bypass();
         self.hilbert_r.bypass();
         self.decay_meter();
@@ -744,6 +746,7 @@ impl BandChain {
     /// otherwise sit frozen on real audio and flush it the moment the count
     /// grows back over this index.
     fn clear_alignment(&mut self) {
+        self.convolution.suspend_spring();
         self.alignment.reset();
         self.hilbert_l.reset();
         self.hilbert_r.reset();
@@ -883,6 +886,8 @@ impl BandChain {
             let (cl, cr) = self.convolution.process_stereo(l, r);
             l = cl;
             r = cr;
+        } else {
+            self.convolution.suspend_spring();
         }
 
         // Apply band gain — `offsets.gain` (linear) arrives from the modulation matrix
@@ -1099,7 +1104,7 @@ impl BacteriaEngine {
             output_gain: SmoothedParam::new(1.0, 5.0, sample_rate),
             mix: SmoothedParam::new(1.0, 5.0, sample_rate),
             bypassed: false,
-            routing: RoutingMode::Parallel,
+            routing: RoutingMode::Serial,
             lfo1: Lfo::new(sample_rate),
             lfo2: Lfo::new(sample_rate),
             env_follower: EnvelopeFollower::new(sample_rate),
@@ -1985,6 +1990,7 @@ mod tests {
     #[test]
     fn band_count_param_engages_multiband_split() {
         let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("crossoverFreq1", 1000.0);
         engine.set_param("bandCount", 2.0);
 
@@ -2019,6 +2025,7 @@ mod tests {
 
         // Engine B: two bands, high band muted -> highs must disappear.
         let mut engine_b = BacteriaEngine::new(48_000.0);
+        engine_b.set_param("globalRouting", ROUTING_PARALLEL);
         engine_b.set_param("crossoverFreq1", 1000.0);
         engine_b.set_param("bandCount", 2.0);
         engine_b.set_param("band1_mute", 1.0);
@@ -2064,6 +2071,7 @@ mod tests {
     #[test]
     fn reported_latency_follows_the_longest_active_band() {
         let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("bandCount", 2.0);
         engine.set_param("band0_oversampling", 2.0);
         engine.set_param("band1_oversampling", 8.0);
@@ -2128,6 +2136,7 @@ mod tests {
         const AMPLITUDE: f32 = 0.1;
 
         let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("crossoverFreq1", freq);
         engine.set_param("bandCount", 2.0);
         engine.set_param("drive", 0.0);
@@ -2265,6 +2274,7 @@ mod tests {
         // Returns (frames the ring advanced, loudest sample left in it).
         let advance = |configure: &dyn Fn(&mut BacteriaEngine), band: usize| -> (usize, f32) {
             let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+            engine.set_param("globalRouting", ROUTING_PARALLEL);
             engine.set_param("bandCount", 3.0);
             engine.set_param("distortionEnabled", 1.0);
             engine.set_param("oversampling", 8.0);
@@ -2325,6 +2335,7 @@ mod tests {
     #[test]
     fn a_band_dropped_by_band_count_does_not_replay_stale_audio() {
         let mut engine = BacteriaEngine::new(SAMPLE_RATE);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("bandCount", 4.0);
         engine.set_param("distortionEnabled", 1.0);
         engine.set_param("oversampling", 8.0);
@@ -2735,12 +2746,13 @@ mod tests {
     /// Probed where chaining is the whole difference: band 0 clips hard and
     /// band 1 low-passes. Summed, the filter never sees the clipper's
     /// harmonics because they are in another band's slice. Chained, it removes
-    /// them, and the two outputs cannot agree.
+    /// them, and the two outputs cannot agree. A fresh engine must render the
+    /// same chain as the panel's Serial default without a routing write.
     #[test]
-    fn serial_routing_chains_the_bands_instead_of_summing_them() {
+    fn default_routing_is_serial_and_explicit_parallel_remains_distinct() {
         const BLOCK: usize = 8_192;
 
-        let render = |routing: f32| -> Vec<f32> {
+        let render = |routing: Option<f32>| -> (Vec<f32>, Vec<f32>) {
             let mut engine = BacteriaEngine::new(SAMPLE_RATE);
             engine.set_param("bandCount", 2.0);
             engine.set_param("crossoverFreq1", 1_000.0);
@@ -2754,26 +2766,34 @@ mod tests {
             engine.set_param("band1_filterMode", 0.0); // low pass
             engine.set_param("band1_filterCutoff", 300.0);
 
-            engine.set_param("globalRouting", routing);
+            if let Some(routing) = routing {
+                engine.set_param("globalRouting", routing);
+            }
 
             let mut seed = 23u32;
             let mut left = noise_block(BLOCK, &mut seed);
             let mut right = noise_block(BLOCK, &mut seed);
             engine.process_block(&mut left, &mut right);
-            left
+            (left, right)
         };
 
-        let serial = render(ROUTING_SERIAL);
-        let parallel = render(ROUTING_PARALLEL);
+        let default = render(None);
+        let serial = render(Some(ROUTING_SERIAL));
+        let parallel = render(Some(ROUTING_PARALLEL));
 
         let tail = 2_048..BLOCK;
-        let difference: Vec<f32> = serial[tail.clone()]
+        let difference: Vec<f32> = serial.0[tail.clone()]
             .iter()
-            .zip(parallel[tail.clone()].iter())
+            .zip(parallel.0[tail.clone()].iter())
             .map(|(s, p)| s - p)
             .collect();
 
-        let parallel_rms = rms(&parallel[tail]);
+        let serial_rms = rms(&serial.0[tail.clone()]);
+        assert!(
+            serial_rms > 1.0e-3,
+            "the serial reference is silent ({serial_rms}) — nothing to compare against"
+        );
+        let parallel_rms = rms(&parallel.0[tail]);
         assert!(
             parallel_rms > 1.0e-3,
             "the parallel reference is silent ({parallel_rms}) — nothing to compare against"
@@ -2784,6 +2804,14 @@ mod tests {
             "serial and parallel routing produced the same audio \
              (difference {difference_rms:.5} against {parallel_rms:.5}) — the bands are \
              still being summed rather than chained"
+        );
+        assert!(
+            default == serial,
+            "a new engine without a routing write must render exactly like explicit Serial on both channels"
+        );
+        assert!(
+            default != parallel,
+            "the default still renders like explicit Parallel instead of the panel's Serial default"
         );
     }
 
@@ -3286,7 +3314,7 @@ mod tests {
         mid_engine.set_param("globalRouting", 2.0);
         assert!(
             mid_engine.routing == RoutingMode::MidSide,
-            "fixture: mid engine did not select Mid/Side routing"
+            "fixture: mid_engine did not select Mid/Side routing"
         );
         mid_engine.set_param("bandCount", 1.0);
         mid_engine.set_param("mix", 1.0);
@@ -3441,6 +3469,7 @@ mod tests {
     /// figure is the crossover's own response.
     fn low_band_rms_at_two_khz(slope: f32) -> f32 {
         let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("bandCount", 2.0);
         engine.set_param("crossoverFreq1", 1000.0);
         engine.set_param("band1_mute", 1.0);
@@ -3498,6 +3527,7 @@ mod tests {
     #[test]
     fn linear_phase_mode_reports_and_delivers_its_latency() {
         let mut engine = BacteriaEngine::new(48_000.0);
+        engine.set_param("globalRouting", ROUTING_PARALLEL);
         engine.set_param("bandCount", 2.0);
         engine.set_param("crossoverFreq1", 1000.0);
         assert_eq!(engine.latency_samples(), 0, "minimum phase reports none");

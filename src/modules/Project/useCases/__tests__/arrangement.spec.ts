@@ -136,6 +136,7 @@ vi.mock('#/modules/Command/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     return {
         commitRedoInverseCapture: vi.fn(),
+        readUndoEntryForInverse: vi.fn<typeof actual.readUndoEntryForInverse>(() => null),
 
         clearUndoHistory: vi.fn(),
         resetActionReplayAuthority: actual.resetActionReplayAuthority,

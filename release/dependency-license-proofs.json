@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b",
+        "cargoLockSha256": "7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -53,7 +53,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "d090b4243f74f2e775b0c3130b30eada50396344d1dab63868761969e1c4712c"
+                "sha256": "d3127997fa7640f2e294598d63835e12eb736a13f8a6b3a0b0d3fef1f195b0ad"
             },
             {
                 "path": "electron-builder.yml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "1fc6bf310a4ac510b3c7604bcf88cd82d27c40145bcff6e6f90afa70beeeb93f"
+                "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
             },
             {
                 "path": "rust-toolchain.toml",
@@ -4371,7 +4371,7 @@
             },
             {
                 "name": "rustls",
-                "version": "0.23.45",
+                "version": "0.23.46",
                 "source": "registry+https://github.com/rust-lang/crates.io-index",
                 "license": "Apache-2.0 OR ISC OR MIT",
                 "legalFiles": [

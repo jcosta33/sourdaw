@@ -62,7 +62,7 @@ const SMOKE_COMMAND = 'pnpm test:e2e tests/e2e/smoke.spec.ts --retries=0';
 const INSTALL_DRAIN_SECONDS = 15;
 // Every remaining root apt route must retain the signed-source filter.
 const APT_FEED_FILTER = 'bash scripts/aptWithoutMicrosoftFeed.sh';
-const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27';
+const PLAYWRIGHT_IMAGE_DIGEST = 'sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea';
 const BROWSER_RUNTIME_STEP = 'Verify preinstalled browser runtime';
 // The ALSA headers are one small apt install, but `apt-get update` is the slow
 // part on a slow mirror, so the single transaction carries the same 8 minute
@@ -152,7 +152,7 @@ const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./
 const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
 const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
-const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_RUNNER = 'macos-15';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
@@ -510,7 +510,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const pnpm = stepNamed(scope, 'Set up pnpm');
     if (
         typeof pnpm.uses !== 'string' ||
-        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        pnpm.uses !== './.github/actions/setup-pnpm' ||
         recordAt(pnpm, 'with').package_json_file !== 'package.json'
     ) {
         throw new Error('required scope must install the repository package manager');
@@ -894,6 +894,51 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
         throw new Error(`${label} must keep the ALSA step limit below its job limit`);
     }
+}
+
+function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): number {
+    let callers = 0;
+    const jobs = recordAt(candidate, 'jobs');
+    for (const [jobName, value] of Object.entries(jobs)) {
+        const job = asRecord(value, 'pnpm caller job');
+        if (!Array.isArray(job.steps)) {
+            continue;
+        }
+        const steps = job.steps.map((step) => asRecord(step, 'pnpm caller step'));
+        for (const [index, setup] of steps.entries()) {
+            if (typeof setup.uses === 'string' && setup.uses.startsWith('pnpm/action-setup@')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            if (setup.name !== PNPM_SETUP_STEP) {
+                continue;
+            }
+            callers += 1;
+            if (setup.uses !== (control ? './control/.github/actions/setup-pnpm' : './.github/actions/setup-pnpm')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            const manifest = setup.with === undefined ? undefined : recordAt(setup, 'with').package_json_file;
+            if (control ? manifest !== 'source/package.json' : manifest !== undefined && manifest !== 'package.json') {
+                throw new Error(`${jobName} must select the source pnpm manifest`);
+            }
+            const node = steps[index + 1];
+            if (node?.name !== NODE_SETUP_STEP || node.if !== setup.if) {
+                throw new Error(`${jobName} must retain the later Node caller and its admission`);
+            }
+            const nodeVersion = recordAt(node, 'with')['node-version'];
+            const selectedVersion =
+                nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
+            if (selectedVersion !== '24.19.0') {
+                throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
+            }
+            const checkout = steps
+                .slice(0, index)
+                .find((step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'));
+            if (!checkout) {
+                throw new Error(`${jobName} must acquire its local setup action before execution`);
+            }
+        }
+    }
+    return callers;
 }
 
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
@@ -2155,7 +2200,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its selected hardware condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
         throw new Error(
@@ -2213,7 +2258,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -2628,6 +2673,14 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
+        const sourceBootstrap = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceBootstrap, 'build-artifacts'), 'Set up pnpm').uses =
+            './source/.github/actions/setup-pnpm';
+        expect(() => assertHostedWasmWorkflow(sourceBootstrap)).toThrow('pnpm setup from workflow control');
+        const controlTarget = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(controlTarget, 'build-artifacts'), 'Set up pnpm'), 'with').package_json_file =
+            'control/package.json';
+        expect(() => assertHostedWasmWorkflow(controlTarget)).toThrow('pnpm target from the source manifest');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
@@ -3247,8 +3300,8 @@ describe('health gates workflow contract', () => {
             expect(() => check(workflow)).not.toThrow();
             for (const image of [
                 `mcr.microsoft.com/playwright:v1.62.0-noble@${PLAYWRIGHT_IMAGE_DIGEST}`,
-                'mcr.microsoft.com/playwright:v1.63.0-noble',
-                `mcr.microsoft.com/playwright:v1.63.0-noble@sha256:${'0'.repeat(64)}`,
+                'mcr.microsoft.com/playwright:v1.64.1-noble',
+                `mcr.microsoft.com/playwright:v1.64.1-noble@sha256:${'0'.repeat(64)}`,
             ]) {
                 const mismatch = structuredClone(workflow);
                 recordAt(jobAt(mismatch, job), 'container').image = image;
@@ -4155,6 +4208,33 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('keeps every pnpm acquisition on the verified action and the same later Node runtime', () => {
+        let callers = 0;
+        for (const file of readdirSync(join(repositoryRoot, '.github/workflows')).filter((file) =>
+            /\.ya?ml$/.test(file)
+        )) {
+            const candidate = loadWorkflow(file).parsed;
+            callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
+        }
+        expect(callers).toBe(26);
+
+        const oldBootstrap = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
+            'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+        expect(() => assertVerifiedPnpmCallers(oldBootstrap, false)).toThrow('verified pnpm acquisition');
+        const mismatchedRuntime = structuredClone(nightly);
+        recordAt(stepNamed(jobAt(mismatchedRuntime, 'build'), NODE_SETUP_STEP), 'with')['node-version'] = '22';
+        expect(() => assertVerifiedPnpmCallers(mismatchedRuntime, false)).toThrow(
+            'match the verified bootstrap runtime'
+        );
+        const unguardedDeploy = structuredClone(nightly);
+        delete stepNamed(jobAt(unguardedDeploy, DEPLOY_WEB_JOB), PNPM_SETUP_STEP).if;
+        expect(() => assertVerifiedPnpmCallers(unguardedDeploy, false)).toThrow('later Node caller and its admission');
+        const sourceAction = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceAction, 'build-artifacts'), PNPM_SETUP_STEP).uses = './source/.github/actions/setup-pnpm';
+        expect(() => assertVerifiedPnpmCallers(sourceAction, true)).toThrow('verified pnpm acquisition');
+    });
+
     it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {
         expect(() => assertPnpmBeforeNodeOrder(nightly)).not.toThrow();
         expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
@@ -4518,11 +4598,11 @@ describe('health gates workflow contract', () => {
             }
         }
 
-        for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
+        for (const runner of ['self-hosted', 'macos-14', 'macos-15-large', 'macos-15-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
             jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
             expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
-                'Browser AI WebGPU job must use the standard macos-14 runner'
+                'Browser AI WebGPU job must use the standard macos-15 runner'
             );
         }
 

@@ -213,6 +213,26 @@ describe('recipe.discover', () => {
         }
     });
 
+    it.each([
+        ['vocal', 'vocal-controlled'],
+        ['drums', 'drums-controlled-gate'],
+        ['bass', 'bass-controlled'],
+        ['guitar', 'guitar-controlled'],
+        ['keys', 'keys-controlled'],
+        ['bus', 'bus-controlled'],
+        ['master', 'master-controlled'],
+    ])('discovers the source-backed controlled recipe for %s', async (role, id) => {
+        const receipt = await runRecipeDiscovery(`loop-controlled-${role}`, { descriptors: ['controlled'], role });
+
+        expect(receipt.status).toBe('success');
+        expect(receipt.data).toMatchObject({
+            terms: [{ term: 'controlled', descriptor: 'controlled', effect: 'produces' }],
+            role: { recipeRole: role, source: 'argument' },
+            candidates: [expect.objectContaining({ id, descriptor: 'controlled', roles: [role] })],
+        });
+        expect(receipt.warnings).toEqual([]);
+    });
+
     it('resolves an untagged "Kick" track to the drums recipe role and returns only punchy/drums candidates', async () => {
         trackStore.set({
             tracks: [createTrack({ id: 'kick-1', name: 'Kick' })],
@@ -672,6 +692,67 @@ describe('recipe.expand', () => {
         setTracks([]);
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
+
+    it.each([
+        ['vocal', 'vocal-controlled', 'builtin-compressor', [-20, 4, 8.5, 90]],
+        ['drums', 'drums-controlled-gate', 'faust-noise-gate', [-42.5, 0.0051, 0.06, 0.15]],
+        ['bass', 'bass-controlled', 'builtin-compressor', [-20, 5, 14, 120]],
+        ['guitar', 'guitar-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
+        ['keys', 'keys-controlled', 'builtin-compressor', [-18, 4, 10, 90]],
+        ['bus', 'bus-controlled', 'builtin-compressor', [-14, 2.5, 25, 200, 8]],
+        ['master', 'master-controlled', 'builtin-compressor', [-10, 2.5, 27.5, 200, 8]],
+    ] as const)(
+        'expands %s controlled into ordinary commands with exact midpoints and revision provenance',
+        async (role, recipeId, deviceType, midpoints) => {
+            setTracks([
+                createTrack({ id: 'controlled-target', name: 'Controlled Target' }),
+                createTrack({ id: 'unrelated-target', name: 'Unrelated Target' }),
+            ]);
+            const tracksBefore = structuredClone(trackStore.value?.tracks);
+            const receipt = await runRecipeExpansion(`loop-controlled-expand-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+            });
+            const data = readExpansion(receipt);
+
+            expect(receipt.revision).toBe(EXPANSION_REVISION);
+            expect(data).toMatchObject({ recipeId, targetId: 'controlled-target' });
+            expect(data.commands[0]).toEqual({
+                name: 'addDevice',
+                arguments: { trackId: 'controlled-target', deviceType, binding: 'recipe-1-0' },
+            });
+            expect(data.commands.slice(1).map((command) => command.name)).toEqual(
+                midpoints.map(() => 'setDeviceParameter')
+            );
+            expect(data.commands.slice(1).map((command) => command.arguments.value)).toEqual(midpoints);
+            expect(data.values.map((entry) => entry.value)).toEqual(midpoints);
+            expect(data.values.every((entry) => entry.source === 'midpoint')).toBe(true);
+            expect(data.values.every((entry) => entry.value >= entry.minimum && entry.value <= entry.maximum)).toBe(
+                true
+            );
+
+            const supplied = await runRecipeExpansion(`loop-controlled-supplied-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+                values: [{ step: 0, paramId: data.values[0]!.paramId, value: data.values[0]!.minimum }],
+            });
+            const suppliedData = readExpansion(supplied);
+            expect(suppliedData.values[0]).toMatchObject({ value: data.values[0]!.minimum, source: 'supplied' });
+            expect(suppliedData.commands[1]?.arguments.value).toBe(data.values[0]!.minimum);
+
+            const refused = await runRecipeExpansion(`loop-controlled-refusal-${role}`, {
+                recipeId,
+                targetId: 'controlled-target',
+                role,
+                values: [{ step: 0, paramId: data.values[0]!.paramId, value: data.values[0]!.minimum - 1 }],
+            });
+            expect(refused.status).toBe('failure');
+            expect(refused.error?.safeMessage).toContain('outside its window');
+            expect(trackStore.value?.tracks).toEqual(tracksBefore);
+        }
+    );
 
     // Red when the second insert stops chaining after the first binding, the first insert stops following
     // the chain's last device, or an omitted value stops taking the middle of its window.

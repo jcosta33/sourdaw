@@ -511,6 +511,120 @@ describe('AC002 measured answers use actual successful audio reductions', () => 
         ]);
         expect(result.status).toBe('rejected');
     });
+    it.each([false, true])('rejects an omitted selected track when silence is %s', async (silent) => {
+        const context = createPlanningProject(getProjectContext(), 2);
+        context.tracks = context.tracks.map((track, index) => ({
+            ...track,
+            name: index === 0 ? 'AudibleA' : 'TrackB',
+        }));
+        const ids = context.tracks.map((track) => track.id);
+        const catalog = prepareAnswerInterpretationCatalog({
+            prompt: 'Which of AudibleA and TrackB is louder over Chorus?',
+            context,
+            projectRevision: 'revision',
+        });
+        const scopeCandidateIds = ids.map((id) => {
+            const scope = catalog.scopes.find((entry) => entry.kind === 'tracks' && entry.objectIds[0] === id);
+            if (scope === undefined) {
+                throw new Error('Missing track scope');
+            }
+            return scope.candidateId;
+        });
+        const chorus = catalog.ranges.find((range) => range.label === 'Chorus');
+        if (chorus === undefined) {
+            throw new Error('Missing Chorus');
+        }
+        const intake: ToolCallResult = {
+            id: 'intake',
+            name: 'selectAnswerInterpretation',
+            arguments: {
+                catalogId: catalog.catalogId,
+                kind: 'measured-audio',
+                topicIds: ['level'],
+                scopeCandidateIds,
+                rangeCandidateId: chorus.candidateId,
+                uncertainty: 'none',
+            },
+        };
+        expect(admitAnswerInterpretation({ catalog, call: intake, projectRevision: 'revision' })).toMatchObject({
+            status: 'admitted',
+            authority: { scopes: [{ kind: 'tracks', objectIds: ids }], range: { startBeat: 48, endBeat: 80 } },
+        });
+        const measure: ToolCallResult = {
+            id: 'measure',
+            name: 'analysis.measure',
+            arguments: { scope: { kind: 'tracks', ids }, range: { sectionId: chorus.sectionId } },
+        };
+        vi.mocked(renderAgentMeasurementScope).mockImplementation(async ({ scope }) => ({
+            status: 'rendered',
+            soloActive: false,
+            warnings: [],
+            targets: (scope.kind === 'master' ? ['master'] : scope.ids).map((targetId) => {
+                const frames = 768_000;
+                const buffer = MockAudioBuffer.create(2, frames, 48_000);
+                const amplitude = silent && targetId === ids[1] ? 0 : 0.1;
+                const channel = Float32Array.from(
+                    { length: frames },
+                    (_, index) => amplitude * Math.sin((2 * Math.PI * 1000 * index) / 48_000)
+                );
+                buffer.copyToChannel(channel, 0);
+                buffer.copyToChannel(channel, 1);
+                return {
+                    targetId,
+                    targetKind: 'track',
+                    route: 'isolated-subgraph',
+                    liveAudibility: 'audible',
+                    buffer,
+                    artifact: {
+                        contentAddress: `sha256:${targetId}`,
+                        sampleRate: 48_000,
+                        frameCount: frames,
+                        channelCount: 2,
+                        durationSeconds: 16,
+                    },
+                };
+            }),
+        }));
+        const requestTurn = vi.fn();
+        for (const calls of [
+            [intake],
+            [measure],
+            [terminal([{ kind: 'metric', reference: { ...reference, targetId: ids[0]! } }])],
+        ]) {
+            requestTurn.mockResolvedValueOnce(resultTurn(calls));
+        }
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'incomplete-selected-scope',
+            terminalToolNames,
+            requestTurn,
+            answerInterpretation: {
+                admit: (call) => admitAnswerInterpretation({ catalog, call, projectRevision: 'revision' }),
+            },
+            measurement: {
+                toolName: 'analysis.measure',
+                revision: 'revision',
+                execute: async (call, { callId, turn }) => {
+                    const read = await executeAnalysisMeasure({
+                        call,
+                        callId,
+                        turn,
+                        projectRevision: 'revision',
+                        sections: context.sections ?? [],
+                        admit: () => ({ status: 'admitted', settle: () => {} }),
+                    });
+                    expect(read.answerMeasurement?.targets[0]?.measurements.integratedLoudness?.status).toBe(
+                        'measured'
+                    );
+                    expect(read.answerMeasurement?.targets[1]?.measurements.integratedLoudness).toMatchObject(
+                        silent ? { status: 'unavailable', reason: 'silent' } : { status: 'measured' }
+                    );
+                    return read;
+                },
+            },
+        });
+        expect(result.status).toBe('rejected');
+        expect(result.receipts.find((receipt) => receipt.callId === 'measure')?.status).toBe('success');
+    });
     it('a semantic structural misclassification cannot smuggle metric prose', async () => {
         const { intake, run } = setup('project-facts');
         const result = await run([

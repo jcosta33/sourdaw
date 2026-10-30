@@ -146,6 +146,9 @@ class ProofChamberProcessor extends AudioWorkletProcessor {
                 schedule.segmentIndex++;
             }
             const segment = schedule.segments[schedule.segmentIndex]!;
+            if (frame < segment.startFrame) {
+                continue;
+            }
             let value = segment.startValue;
             if (segment.endFrame <= segment.startFrame || frame >= segment.endFrame) {
                 value = segment.endValue;

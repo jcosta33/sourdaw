@@ -5,6 +5,23 @@ import { loadExportSettings, saveExportSettings } from '../exportSettings';
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 describe('exportSettings', () => {
+    it('retains browser codec selections without changing the PCM preference', () => {
+        saveExportSettings({
+            formats: ['ogg', 'opus'],
+            sampleRate: 96000,
+            bitDepth: 32,
+            mp3BitRate: 128,
+            dither: 'seeded',
+            normalization: 'off',
+        });
+        expect(loadExportSettings()).toMatchObject({
+            formats: ['ogg', 'opus'],
+            sampleRate: 96000,
+            bitDepth: 32,
+            dither: 'seeded',
+        });
+    });
+
     beforeEach(() => {
         window.localStorage.clear();
     });

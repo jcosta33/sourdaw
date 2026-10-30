@@ -8,6 +8,7 @@ import { clampDeviceParameterValue } from '#/modules/Arrangement/useCases';
 
 import { setFermenterParam } from '../../../stores/fermenterStore';
 import { setFermenterDependencies } from '../../fermenterDependencies';
+import { cancelPendingFermenterParam } from '../cancelPendingFermenterParam';
 import { setFermenterParamWithAudio } from '../setFermenterParamWithAudio';
 
 describe('setFermenterParamWithAudio', () => {
@@ -33,8 +34,8 @@ describe('setFermenterParamWithAudio', () => {
         );
         setFermenterDependencies({
             clampDeviceParameterValue,
-            getAllTracks: () => [{ id: 't1', devices: [{ id: 'd1' }] }] as never,
-            resolveEligibleDeviceWriteTarget: () => ({ status: 'eligible', trackId: 't1', deviceId: 'd1' }),
+            getAllTracks: () => [],
+            resolveEligibleDeviceWriteTarget: (deviceId) => ({ status: 'eligible', trackId: 't1', deviceId }),
             updateDeviceParam,
             persistDeviceParam,
             updateDevicePatch,
@@ -54,6 +55,22 @@ describe('setFermenterParamWithAudio', () => {
         expect(setFermenterParam).toHaveBeenCalledWith('d1', 'filterCutoff', 777);
         expect(updateDeviceParam).toHaveBeenCalledWith('t1', 'd1', 'cutoff', 777);
         expect(persistDeviceParam).toHaveBeenCalledWith('d1', 'filterCutoff', 777);
+    });
+
+    it('cancels only the selected device and parameter while unrelated frames still flush', () => {
+        setFermenterParamWithAudio('d1', 'filterModel', 4);
+        setFermenterParamWithAudio('d1', 'filterMode', 2);
+        setFermenterParamWithAudio('d2', 'filterModel', 3);
+        cancelPendingFermenterParam('d1', 'filterModel');
+        vi.advanceTimersByTime(16);
+        expect(persistDeviceParam.mock.calls).toEqual([
+            ['d1', 'filterMode', 2],
+            ['d2', 'filterModel', 3],
+        ]);
+        expect(updateDeviceParam.mock.calls.map((call) => [call[2], call[3]])).toEqual([
+            ['filter_mode', 2],
+            ['filter_model', 3],
+        ]);
     });
 
     it('resolves the declared range once on the store key and sends that same value under the DSP key', () => {

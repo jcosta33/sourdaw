@@ -9,6 +9,7 @@
 
 pub mod grant_registry;
 
+use crate::host::runtime_scope::{RuntimeScope, SCOPE_NAMESPACE};
 use grant_registry::{FileGrant, GrantMode};
 use hound::{WavSpec, WavWriter};
 use serde::{Deserialize, Serialize};
@@ -399,6 +400,9 @@ pub(crate) fn ensure_file_ipc_size(size: u64, command: &str) -> Result<(), Strin
 }
 
 pub(crate) fn ipc_temp_dir() -> PathBuf {
+    if let Some(path) = RuntimeScope::path("native/ipc") {
+        return path;
+    }
     std::env::temp_dir().join(IPC_TEMP_DIR_NAME)
 }
 
@@ -521,7 +525,9 @@ fn built_in_roots() -> Vec<PathBuf> {
     if let Some(data_dir) = application_data_directory() {
         roots.push(data_dir);
     }
-    if let Some(cache_dir) = dirs::cache_dir() {
+    if let Some(cache_dir) = RuntimeScope::path("native/cache") {
+        roots.push(cache_dir);
+    } else if let Some(cache_dir) = dirs::cache_dir() {
         roots.push(cache_dir.join(APP_DIR_NAME));
     }
     if let Some(project_dir) = project_directory() {
@@ -548,19 +554,87 @@ fn built_in_roots() -> Vec<PathBuf> {
 /// applied once the directory was there would leave exactly one launch during
 /// which the document could be planted.
 fn is_private_state_path(resolved_path: &Path) -> bool {
+    let in_namespace = resolved_path.components().any(|component| {
+        component
+            .as_os_str()
+            .to_string_lossy()
+            .trim_end_matches(['.', ' '])
+            .to_uppercase()
+            == SCOPE_NAMESPACE.to_uppercase()
+    });
+    if in_namespace {
+        // Only the selected scope's public native roots may escape the namespace
+        // refusal. Chromium state, sibling scopes and private native state never do.
+        let in_public_root = RuntimeScope::root().is_some()
+            && built_in_roots().iter().any(|root| {
+                canonicalize_through_missing_tail(root)
+                    .is_ok_and(|root| resolved_path.starts_with(root))
+            });
+        if !in_public_root {
+            return true;
+        }
+    }
+    if let Some(legacy_data) = dirs::data_dir().map(|root| root.join(APP_DIR_NAME)) {
+        if RuntimeScope::root().is_some()
+            && canonicalize_through_missing_tail(&legacy_data)
+                .is_ok_and(|root| path_is_below_private_root(resolved_path, &root))
+        {
+            return true;
+        }
+        if private_path_below(resolved_path, &legacy_data) {
+            return true;
+        }
+    }
+    if RuntimeScope::root().is_some() {
+        let legacy_roots = [
+            Some(std::env::temp_dir().join(IPC_TEMP_DIR_NAME)),
+            dirs::cache_dir().map(|root| root.join(APP_DIR_NAME)),
+            dirs::document_dir().map(|root| root.join(PROJECT_DIR_NAME)),
+        ];
+        if legacy_roots.into_iter().flatten().any(|root| {
+            canonicalize_through_missing_tail(&root)
+                .is_ok_and(|root| path_is_below_private_root(resolved_path, &root))
+        }) {
+            return true;
+        }
+    }
     let Some(application_data) = application_data_directory() else {
         return false;
     };
-    let Ok(resolved_root) = canonicalize_through_missing_tail(&application_data) else {
+    private_path_below(resolved_path, &application_data)
+}
+
+fn private_path_below(resolved_path: &Path, application_data: &Path) -> bool {
+    let Ok(resolved_root) = canonicalize_through_missing_tail(application_data) else {
         return false;
     };
-    let Ok(below_root) = resolved_path.strip_prefix(&resolved_root) else {
+    if !path_is_below_private_root(resolved_path, &resolved_root) {
         return false;
-    };
-    below_root
+    }
+    resolved_path
         .components()
-        .next()
+        .nth(resolved_root.components().count())
         .is_some_and(|component| names_private_directory(&component.as_os_str().to_string_lossy()))
+}
+
+// Canonicalization retains caller spelling in a missing tail. Refusal must still
+// cover names Windows/macOS can later deliver to the same private state root.
+fn path_is_below_private_root(path: &Path, root: &Path) -> bool {
+    let mut components = path.components();
+    root.components().all(|expected| {
+        components.next().is_some_and(|actual| {
+            actual
+                .as_os_str()
+                .to_string_lossy()
+                .trim_end_matches(['.', ' '])
+                .to_uppercase()
+                == expected
+                    .as_os_str()
+                    .to_string_lossy()
+                    .trim_end_matches(['.', ' '])
+                    .to_uppercase()
+        })
+    })
 }
 
 /// Whether `component` is a name the filesystem may deliver to the private
@@ -609,6 +683,9 @@ fn create_private_state_directory(directory: &Path) -> std::io::Result<()> {
 }
 
 fn application_data_directory() -> Option<PathBuf> {
+    if let Some(path) = RuntimeScope::path("native/data") {
+        return Some(path);
+    }
     Some(dirs::data_dir()?.join(APP_DIR_NAME))
 }
 
@@ -624,6 +701,9 @@ pub(crate) fn private_state_directory() -> Option<PathBuf> {
 
 /// Where Sourdaw keeps its own projects.
 fn project_directory() -> Option<PathBuf> {
+    if let Some(path) = RuntimeScope::path("native/projects") {
+        return Some(path);
+    }
     Some(dirs::document_dir()?.join(PROJECT_DIR_NAME))
 }
 
@@ -1221,6 +1301,153 @@ impl Drop for ExportFileRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_mode_denies_reserved_scope_namespace() {
+        let fixture = RuntimeScope::test_root();
+        grant_registry::with_grants_for_test(
+            vec![grant_of(
+                fixture
+                    .root
+                    .parent()
+                    .unwrap()
+                    .parent()
+                    .unwrap()
+                    .to_path_buf(),
+                GrantMode::ReadWrite,
+                true,
+            )],
+            || {
+                assert!(writable(&fixture.root.join("native/data/document")).is_err());
+                assert!(writable(&fixture.root.join("chromium/userData/Cookies")).is_err());
+            },
+        );
+    }
+
+    #[test]
+    fn scoped_native_private_paths_outrank_recursive_grants() {
+        RuntimeScope::test_in_process(
+            concat!(
+                module_path!(),
+                "::scoped_native_private_paths_outrank_recursive_grants"
+            ),
+            |root| {
+                grant_registry::with_grants_for_test(
+                    vec![grant_of(root.to_path_buf(), GrantMode::ReadWrite, true)],
+                    || {
+                        for relative in [
+                            "native/data/private/grants.json",
+                            "native/data/PRIVATE./forged",
+                            "chromium/userData/Cookies",
+                            "chromium/sessionData/Cache",
+                            "logs/main.log",
+                        ] {
+                            assert!(writable(&root.join(relative)).is_err(), "{relative}");
+                        }
+                        for relative in [
+                            "native/data/document",
+                            "native/cache/entry",
+                            "native/ipc/audio.wav",
+                            "native/projects/project.sourdaw",
+                        ] {
+                            assert!(writable(&root.join(relative)).is_ok(), "{relative}");
+                        }
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn foreign_scope_paths_outrank_recursive_grants() {
+        RuntimeScope::test_in_process(
+            concat!(
+                module_path!(),
+                "::foreign_scope_paths_outrank_recursive_grants"
+            ),
+            |root| {
+                let parent = root.parent().unwrap();
+                let home = parent.parent().unwrap();
+                grant_registry::with_grants_for_test(
+                    vec![grant_of(home.to_path_buf(), GrantMode::ReadWrite, true)],
+                    || {
+                        assert!(writable(
+                            &parent
+                                .join(uuid::Uuid::new_v4().to_string())
+                                .join("native/data/document")
+                        )
+                        .is_err());
+                        assert!(writable(&parent.join("chromium/private")).is_err());
+                        assert!(writable(
+                            &home
+                                .join(".SOURDAW-NATıVE-RUNTIME-SCOPES-V1. ")
+                                .join(uuid::Uuid::new_v4().to_string())
+                                .join("native/data/forged")
+                        )
+                        .is_err());
+                    },
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn legacy_private_paths_stay_denied_in_scoped_mode() {
+        RuntimeScope::test_in_process(
+            concat!(
+                module_path!(),
+                "::legacy_private_paths_stay_denied_in_scoped_mode"
+            ),
+            |_| {
+                let roots = [
+                    dirs::data_dir().map(|root| root.join(APP_DIR_NAME)),
+                    dirs::cache_dir().map(|root| root.join(APP_DIR_NAME)),
+                    Some(std::env::temp_dir().join(IPC_TEMP_DIR_NAME)),
+                    dirs::document_dir().map(|root| root.join(PROJECT_DIR_NAME)),
+                ];
+                for root in roots.into_iter().flatten() {
+                    let root = canonicalize_through_missing_tail(&root).unwrap();
+                    grant_registry::with_grants_for_test(
+                        vec![grant_of(
+                            root.parent().unwrap().to_path_buf(),
+                            GrantMode::ReadWrite,
+                            true,
+                        )],
+                        || {
+                            assert!(writable(&root.join("private/grants.json")).is_err());
+                            assert!(writable(&root.join("legacy-document")).is_err());
+                            let alias = root.with_file_name(format!(
+                                "{}. ",
+                                root.file_name().unwrap().to_string_lossy().to_uppercase()
+                            ));
+                            assert!(writable(&alias.join("prıvate/forged")).is_err());
+                        },
+                    );
+                }
+            },
+        );
+    }
+
+    #[test]
+    fn scoped_relative_paths_use_scoped_ipc_root() {
+        RuntimeScope::test_in_process(
+            concat!(
+                module_path!(),
+                "::scoped_relative_paths_use_scoped_ipc_root"
+            ),
+            |root| {
+                assert_eq!(
+                    resolve_renderer_path("audio.wav").unwrap(),
+                    root.join("native/ipc/audio.wav")
+                );
+                assert_eq!(
+                    writable(Path::new("audio.wav")).unwrap(),
+                    root.join("native/ipc/audio.wav")
+                );
+                assert!(resolve_renderer_path("../escape.wav").is_err());
+            },
+        );
+    }
 
     #[test]
     fn native_application_data_paths_share_one_directory_identity() {
@@ -2399,7 +2626,9 @@ mod tests {
     fn export_transactions_forged_manifest_is_refused_without_deleting_or_overwriting_it() {
         let dir = TempExportDir::create("forged");
         let private = dir.path("private");
-        drop(ExportFileRegistry::open(&private).unwrap());
+        create_private_state_directory(&private).unwrap();
+        let key: Vec<u8> = (0..32).collect();
+        std::fs::write(private.join("export-files.key"), key).unwrap();
         let victim = dir.path("user.wav");
         std::fs::write(&victim, b"user file").unwrap();
         let record = ExportTempRecord {
@@ -2416,10 +2645,8 @@ mod tests {
         .unwrap();
         let manifest = private.join("export-files.json");
         std::fs::write(&manifest, &forged).unwrap();
-        assert!(ExportFileRegistry::open(&private)
-            .err()
-            .unwrap()
-            .contains("Unauthenticated"));
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("Unauthenticated"), "{error}");
         assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
         assert_eq!(std::fs::read(&manifest).unwrap(), forged);
     }

@@ -1209,15 +1209,21 @@ function scopedDarwinFileState(
         return { kind: 'unavailable', reason: 'lsof-scoped-command-unavailable' };
     }
     let parseReason = 'unclassified';
+    let parseDetail: string | undefined;
     const census =
         result.stdout === ''
             ? { pids: new Set<number>(), paths: [] }
-            : parseLsofCensus(result.stdout, (reason) => {
+            : parseLsofCensus(result.stdout, (reason, detail) => {
                   parseReason = reason;
+                  parseDetail = detail;
               });
     if (census === undefined) {
         if (parseReason === 'file-inspection-diagnostic') {
-            return { kind: 'uncovered', pids, reason: `lsof-scoped-fields-unusable:${parseReason}` };
+            return {
+                kind: 'uncovered',
+                pids,
+                reason: `lsof-scoped-fields-unusable:${parseReason}${parseDetail === undefined ? '' : `:${parseDetail}`}`,
+            };
         }
         return parseReason === 'descriptor-type-missing'
             ? { kind: 'uncovered', pids }
@@ -1726,14 +1732,16 @@ export function storageFileState(
                     return unknown('lsof-command-unavailable');
                 }
                 let parseReason = 'unclassified';
-                const census = parseLsofCensus(result.stdout, (reason) => {
+                let parseDetail: string | undefined;
+                const census = parseLsofCensus(result.stdout, (reason, detail) => {
                     parseReason = reason;
+                    parseDetail = detail;
                 });
                 if (census === undefined) {
                     // A descriptor can close or become uninspectable between lsof's field reads. Discard
                     // that catalog; only a wholly valid fresh observation can prove safety.
                     if (parseReason === 'file-inspection-diagnostic') {
-                        inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}`;
+                        inspectionDiagnostic ??= `lsof-fields-unusable:${parseReason}${parseDetail === undefined ? '' : `:${parseDetail}`}`;
                         continue;
                     }
                     if (parseReason === 'descriptor-type-missing') {
