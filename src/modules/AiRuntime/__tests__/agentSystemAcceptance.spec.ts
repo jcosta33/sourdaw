@@ -15,7 +15,7 @@ import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrang
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
-import { automergeRepository } from '#/modules/CrdtDocument/repositories/automergeRepository';
+import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     createCrdtDoc,
     createCommandPreviewWorkspace,
@@ -27,8 +27,6 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
-    subscribeToActiveRootInstallations,
-    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -531,7 +529,7 @@ async function observeProjectChanges<T>(
     const transitions: ProjectTruth[] = [];
     const rootTransitions: ProjectTruth[] = [];
     let failure: Error | undefined;
-    const unsubscribeChanges = subscribeToCrdtChanges(() => {
+    const unsubscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges(() => {
         try {
             transitions.push(materialize());
         } catch (error) {
@@ -540,7 +538,7 @@ async function observeProjectChanges<T>(
     });
     let unsubscribeRoot: () => void;
     try {
-        unsubscribeRoot = subscribeToActiveRootInstallations((installation) => {
+        unsubscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations((installation) => {
             if (installation.kind === 'reset') {
                 failure ??= new Error('Acceptance project reset during observation.');
                 return;
@@ -589,7 +587,7 @@ function observedDifferences(
     observations: { transitions: readonly ProjectTruth[]; rootTransitions: readonly ProjectTruth[] },
     allowed: readonly ProjectTruth[]
 ): number {
-    const allowedRoots = allowed.map((state) => (state.root === undefined ? {} : { root: state.root }));
+    const allowedRoots = allowed.map<ProjectTruth>((state) => (state.root === undefined ? {} : { root: state.root }));
     return Math.max(
         transitionDifferences(observations.transitions, allowed),
         transitionDifferences(observations.rootTransitions, allowedRoots)
@@ -1975,20 +1973,20 @@ describe('agent acceptance corpora', () => {
                 await expect(
                     observeProjectChanges(
                         async () => {
-                            automergeRepository.insertDoc('root', clone(original));
+                            createCrdtDoc('root', clone(original));
                         },
                         materializeProjectTruth,
                         captureRoot
                     )
                 ).rejects.toBe(captureFailure);
                 const afterCapture = captures;
-                automergeRepository.insertDoc('root', original);
+                createCrdtDoc('root', original);
                 expect(captures).toBe(afterCapture);
                 const runFailure = new Error('run failure');
                 await expect(
                     observeProjectChanges(
                         async () => {
-                            automergeRepository.insertDoc('root', clone(original));
+                            createCrdtDoc('root', clone(original));
                             throw runFailure;
                         },
                         materializeProjectTruth,
@@ -1997,25 +1995,58 @@ describe('agent acceptance corpora', () => {
                 ).rejects.toBe(runFailure);
                 const afterRun = captures;
                 expect(afterRun).toBeGreaterThan(afterCapture);
-                automergeRepository.insertDoc('root', original);
+                createCrdtDoc('root', original);
                 expect(captures).toBe(afterRun);
             } finally {
                 closeChatProject();
             }
         });
 
-        it('fails closed on reset and leaves no observer in the next project session', async () => {
+        it('fails closed on a terminal root event and leaves no observer in the next project session', async () => {
             openChatProject();
+            const original = getCrdtDoc('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
             let captures = 0;
             const capture = () => {
                 captures++;
                 return materializeProjectTruth();
             };
+            const subscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations;
+            const subscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges;
+            const rootUnsubscribe = vi.fn();
+            const changesUnsubscribe = vi.fn();
+            let rootListener: Parameters<typeof subscribeRoot>[0] | undefined;
+            const rootSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToActiveRootInstallations')
+                .mockImplementation((listener) => {
+                    rootListener = listener;
+                    const unsubscribe = subscribeRoot(listener);
+                    return () => {
+                        rootUnsubscribe();
+                        unsubscribe();
+                    };
+                });
+            const changesSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToCrdtChanges')
+                .mockImplementation((listener) => {
+                    const unsubscribe = subscribeChanges(listener);
+                    return () => {
+                        changesUnsubscribe();
+                        unsubscribe();
+                    };
+                });
             try {
                 await expect(
                     observeProjectChanges(
                         async () => {
-                            automergeRepository.reset();
+                            if (rootListener === undefined) {
+                                throw new Error('Missing active root installation listener');
+                            }
+                            createCrdtDoc('root', clone(original));
+                            expect(captures).toBe(1);
+                            rootListener({ kind: 'reset' });
                         },
                         capture,
                         (document) => {
@@ -2025,12 +2056,22 @@ describe('agent acceptance corpora', () => {
                     )
                 ).rejects.toThrow('Acceptance project reset during observation.');
                 const afterReset = captures;
-                automergeRepository.createProject('next session');
-                automergeRepository.changeDoc('root', (document: Record<string, unknown>) => {
-                    document.nextSession = true;
+                expect(rootSubscription).toHaveBeenCalledTimes(1);
+                expect(changesSubscription).toHaveBeenCalledTimes(1);
+                expect(rootUnsubscribe).toHaveBeenCalledTimes(1);
+                expect(changesUnsubscribe).toHaveBeenCalledTimes(1);
+                resetCrdtProjectAuthority('next session');
+                createCrdtDoc('root');
+                mutateCrdtDoc({
+                    id: 'root',
+                    changeFn: (document: Record<string, unknown>) => {
+                        document.nextSession = true;
+                    },
                 });
                 expect(captures).toBe(afterReset);
             } finally {
+                rootSubscription.mockRestore();
+                changesSubscription.mockRestore();
                 closeChatProject();
             }
         });
@@ -2252,13 +2293,13 @@ describe('agent acceptance corpora', () => {
                 }
                 kick.pan = 0.27;
             });
-            automergeRepository.insertDoc('root', altered);
+            createCrdtDoc('root', altered);
             expect(
                 getCrdtDoc<{ tracks: { tracks: { id: string; pan: number }[] } }>('root')?.tracks.tracks.find(
                     (track) => track.id === 'track-kick'
                 )?.pan
             ).toBe(0.27);
-            automergeRepository.insertDoc('root', original);
+            createCrdtDoc('root', original);
         }
 
         it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
@@ -2387,9 +2428,9 @@ describe('agent acceptance corpora', () => {
                             }
                         });
                         const before = captureProjectTruth();
-                        automergeRepository.insertDoc('root', altered);
+                        createCrdtDoc('root', altered);
                         expect(projectDifferences(before.root, materializeProjectTruth().root)).toBeGreaterThan(0);
-                        automergeRepository.insertDoc('root', original);
+                        createCrdtDoc('root', original);
                     });
                     expect(run.result.exactMatch).toBe(true);
                     expect(barrel.log.count()).toBe(0);
@@ -2415,9 +2456,9 @@ describe('agent acceptance corpora', () => {
                         throw new Error('Missing active root');
                     }
                     const identical = clone(original);
-                    automergeRepository.insertDoc('root', identical);
+                    createCrdtDoc('root', identical);
                     expect(getCrdtDoc('root')).toBe(identical);
-                    automergeRepository.insertDoc('root', original);
+                    createCrdtDoc('root', original);
                 });
                 expect(run.result.exactMatch).toBe(true);
                 expect(run.unintendedMutations).toBe(0);

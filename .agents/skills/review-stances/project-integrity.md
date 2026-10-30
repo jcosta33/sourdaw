@@ -14,6 +14,11 @@ mutation count with an unchanged barrel count and exact case outcome. Exercise r
 replacement, load, merge, snapshot restore, removal and reset, including a partial merge that
 throws after installing changed root content. Keep same-content identity moves at zero and private
 preview or aborted decode outside the root feed; never publish a change merely to make it observable.
+If project replacement clears an installed document map before root initialization throws, its
+exposed membership change must invalidate project identity and advance the mutation epoch once.
+Removing only a child leaves the root identity stable; removing the root moves both identities.
+An already empty map keeps all identities stable on the same failure. Check these failed routes
+without manufacturing an ordinary content notification.
 
 ## 2026-10-28 — a recovered entry does not itself prove project and Undo preservation (#5595)
 
