@@ -3017,6 +3017,8 @@ function answerMatchesOracle(input: {
         if (
             matches.length !== 1 ||
             receipt === undefined ||
+            receipt.schema !== 'sourdaw.application-tool-receipt' ||
+            receipt.schemaVersion !== 1 ||
             receipt.status !== 'success' ||
             receipt.error !== null ||
             receipt.toolName !== evidence.toolName ||
@@ -3024,21 +3026,28 @@ function answerMatchesOracle(input: {
         ) {
             return false;
         }
-        if (receipt.toolName !== 'project.query' || !isRecord(receipt.data)) {
+        if (receipt.toolName !== 'project.query') {
             continue;
+        }
+        if (!isRecord(receipt.data)) {
+            return false;
         }
         const data = receipt.data;
         if (
             data.schema !== 'sourdaw.semantic-project-query' ||
             data.schemaVersion !== 1 ||
-            data.queryType !== input.oracle.query.type ||
+            parseSemanticProjectQueryInput({ type: data.queryType }).status !== 'valid' ||
             data.projectId !== input.projectId ||
             typeof data.revisionToken !== 'string' ||
             data.revisionToken.length === 0 ||
             receipt.revision !== data.revisionToken ||
             !isDeepStrictEqual(data.revision, revision) ||
-            !Array.isArray(data.items)
+            !Array.isArray(data.items) ||
+            !data.items.every((item: unknown) => isRecord(item))
         ) {
+            return false;
+        }
+        if (data.queryType !== input.oracle.query.type) {
             continue;
         }
         matchedQuery ||= data.items.some(
@@ -3158,6 +3167,76 @@ describe('answer acceptance oracle', () => {
                 input.actions = [{ type: 'setTempo' }];
                 break;
         }
+        expect(answerMatchesOracle(input)).toBe(false);
+    });
+    it.each(['foreign project', 'stale revision', 'malformed data', 'wrong token', 'invalid query type'] as const)(
+        'rejects a second %s query in either citation order',
+        (failure) => {
+            for (const reverse of [false, true]) {
+                const input = answerOracleFixture();
+                if (input.outcome.kind !== 'answer') {
+                    throw new Error('Expected answer');
+                }
+                const first = input.receipts[0];
+                if (first === undefined) {
+                    throw new Error('Expected query receipt');
+                }
+                const second = structuredClone(first);
+                second.callId = 'second';
+                if (!isRecord(second.data)) {
+                    throw new Error('Expected query data');
+                }
+                switch (failure) {
+                    case 'foreign project':
+                        second.data.projectId = 'other';
+                        break;
+                    case 'stale revision':
+                        second.data.revision = { documentIdentityEpoch: 1, mutationEpoch: 3, documents: [] };
+                        break;
+                    case 'malformed data':
+                        second.data.items = [null];
+                        break;
+                    case 'wrong token':
+                        second.revision = 'wrong';
+                        break;
+                    case 'invalid query type':
+                        second.data.queryType = 'invented';
+                        break;
+                }
+                input.receipts = [first, second];
+                const firstEvidence = input.outcome.evidence[0];
+                if (firstEvidence === undefined) {
+                    throw new Error('Expected query citation');
+                }
+                const secondEvidence = { ...firstEvidence, callId: second.callId };
+                input.outcome.evidence = reverse ? [secondEvidence, firstEvidence] : [firstEvidence, secondEvidence];
+                expect(answerMatchesOracle(input)).toBe(false);
+            }
+        }
+    );
+
+    it('allows another current query type as context but not as the matching query', () => {
+        const input = answerOracleFixture();
+        if (input.outcome.kind !== 'answer') {
+            throw new Error('Expected answer');
+        }
+        const first = input.receipts[0];
+        const citation = input.outcome.evidence[0];
+        if (first === undefined || citation === undefined) {
+            throw new Error('Expected query and citation');
+        }
+        const second = structuredClone(first);
+        if (!isRecord(second.data)) {
+            throw new Error('Expected query data');
+        }
+        second.callId = 'second';
+        second.data.queryType = 'tempo';
+        second.summary = 'tempo: 1 of 1 item(s)';
+        input.receipts = [first, second];
+        const secondCitation = { ...citation, callId: second.callId, summary: second.summary };
+        input.outcome.evidence = [citation, secondCitation];
+        expect(answerMatchesOracle(input)).toBe(true);
+        input.outcome.evidence = [secondCitation];
         expect(answerMatchesOracle(input)).toBe(false);
     });
     it.each([
