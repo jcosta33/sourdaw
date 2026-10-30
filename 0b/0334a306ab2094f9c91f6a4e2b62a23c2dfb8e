@@ -1,0 +1,19 @@
+.agents/skills/review-stances/security-and-platform.md
+  s_b6d960d6f9ffc4::t_7a7d3543d72c40 105-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b0334a306ab2094f9c91f6a4e2b62a23c2dfb8e",
+  "prompts": {},
+  "sessions": {
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
