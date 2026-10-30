@@ -1,0 +1,52 @@
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 483-501
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 2188-2206
+.github/actions/setup-pnpm/action.yml
+  h_beb54bf43b47b7 1-4,5,6-30
+.github/actions/setup-pnpm/bootstrap/package-lock.json
+  h_beb54bf43b47b7 1-28
+.github/actions/setup-pnpm/bootstrap/package.json
+  h_beb54bf43b47b7 1-7
+.github/workflows/health-gates.yml
+  h_beb54bf43b47b7 85
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 44,103,164
+.github/workflows/nightly.yml
+  h_beb54bf43b47b7 71,155,191,240,291,470,594,652,690,962
+.github/workflows/pr-checks.yml
+  h_beb54bf43b47b7 39
+.github/workflows/quantum-measurements.yml
+  h_beb54bf43b47b7 75
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 322-324,326,424-426,429,464-466,468,511-513,515,568,609-611,613,647-649,651,677-679,681,944-946,948
+.github/workflows/wasm-artifacts.yml
+  h_beb54bf43b47b7 78
+release/open-source-inventory.json
+  h_beb54bf43b47b7 2263-2267
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 107,272,373,441,502,705,818,861,917,973,1018,1059,1095,1308,1515,1611,1655,1711,1771,1927,2041,2105,2150,2326,2637,2790
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 513,899-943,2676-2683,4211-4237
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  h_beb54bf43b47b7 365-368
+scripts/__tests__/setupPnpm.spec.ts
+  h_beb54bf43b47b7 1-379,380-424,425-686
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  h_beb54bf43b47b7 209
+scripts/hostedWasmWorkflowContract.ts
+  h_beb54bf43b47b7 75-101,146
+scripts/setupPnpm.ts
+  h_beb54bf43b47b7 1-86,87-89,90-346
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8b65fd1ccad56a08a7ad4b33ef68a71e3d6206f",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
