@@ -1,0 +1,27 @@
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_3168504f6ce387::t_db67610b2c033f 45,87-100,243-246,255-256,266,1098-1101,1126
+  s_3168504f6ce387::t_40a91ec8391a3c 1117-1121
+  s_3168504f6ce387::t_9b3ab7a56f86ff 35,233-234,1095-1097,1108,1122-1125
+  s_3168504f6ce387::t_6d9c2da6774515 101
+  s_3168504f6ce387::t_b63fb165527ec1 235-236
+  s_3168504f6ce387::t_8f870a70526341 267-268
+  s_3168504f6ce387::t_9f6d7258974153 1102-1103
+  s_3168504f6ce387::t_7ad9e0a7f5f3b8 1107
+  s_3168504f6ce387::t_3df55592a710a8 1127-1128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf97dd38ffd1fc9e0af8cc0d2a254501f2dbe87e",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
