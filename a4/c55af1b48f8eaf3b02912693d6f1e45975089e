@@ -1,0 +1,23 @@
+scripts/__tests__/laneAdoption.spec.ts
+  s_57fdb7ae7b3ba4::t_a873fabd0237e9 556-559,569-571,574-578
+  s_57fdb7ae7b3ba4::t_322cb615e1e398 664
+  s_57fdb7ae7b3ba4::t_73e5a259e0bfb8 448,473,490-494,497-509
+  s_57fdb7ae7b3ba4::t_f7f4a9cda792d0 1,10,14,24,41-42,154,166,359-368,372-375,377-384,386-392,394-399,404,406-447,449,451-453,459-462,464-472,474-489,495-496,510-522,527-528,531-532,534,536-539,541-555,572-573,579,583-600,602-603,607-618,620,625-627,629,631-651,653-654,657-659,673-747
+  s_57fdb7ae7b3ba4::t_36ff00833469ba 560-568,660-661,663,665-666,669-670,672
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a4c55af1b48f8eaf3b02912693d6f1e45975089e",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
