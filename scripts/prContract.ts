@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import {
     constants,
     fstatSync,
@@ -11,7 +12,6 @@ import {
     linkSync,
     unlinkSync,
 } from 'node:fs';
-import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 /**
