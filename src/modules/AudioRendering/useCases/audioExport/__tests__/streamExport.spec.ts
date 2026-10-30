@@ -110,7 +110,9 @@ describe('global staged browser codecs', () => {
             let frames = 0;
             const opusWorker = OggCodecTestWorker.instances[0]!;
             for (const request of opusWorker.requests) {
-                if (request.kind !== 'encode') continue;
+                if (request.kind !== 'encode') {
+                    continue;
+                }
                 expect(request.channels).toEqual(
                     readExportPcmBlock({ source: direct, start: frames, length: request.channels[0]!.length })
                 );
@@ -146,8 +148,9 @@ describe('global staged browser codecs', () => {
         await output.writeAudio({ source, name: 'mix', onProgress: () => {}, onLimited: () => {} });
         await output.commit(() => {});
         for (const request of OggCodecTestWorker.instances[0]!.requests) {
-            if (request.kind === 'encode')
+            if (request.kind === 'encode') {
                 expect(request.channels).toEqual(pcm.read(request.channels[0]!.length).channels);
+            }
         }
         expect(unzipSync(joinBytes(sink.chunks))['mix.opus']).toBeDefined();
     });
@@ -164,7 +167,9 @@ describe('global staged browser codecs', () => {
         });
         const controller = new AbortController();
         const checkCancelled = () => {
-            if (controller.signal.aborted) throw new Error('Export cancelled');
+            if (controller.signal.aborted) {
+                throw new Error('Export cancelled');
+            }
         };
         const output = await streamExport({ ...settings(['opus', 'ogg']), signal: controller.signal, checkCancelled });
         // Let ZIP entry headers drain; hold the actual encoded output write.

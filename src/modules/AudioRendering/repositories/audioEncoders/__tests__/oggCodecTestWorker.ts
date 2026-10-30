@@ -56,11 +56,11 @@ export function useRealOggWorkerTransport() {
 }
 
 export function deferred() {
-    let resolve!: () => void;
-    const promise = new Promise<void>((done) => {
-        resolve = done;
+    let resolvePromise!: () => void;
+    const promise = new Promise<void>((resolve) => {
+        resolvePromise = resolve;
     });
-    return { promise, resolve };
+    return { promise, resolve: resolvePromise };
 }
 
 export function toneSource(rate = 48000, channels: 1 | 2 = 2, length = rate + 137) {

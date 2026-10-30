@@ -122,7 +122,7 @@ describe('codec Worker sink acknowledgement and terminal ownership', () => {
             {
                 write: async () => {
                     const worker = OggCodecTestWorker.instances[0]!;
-                    if (worker.requests.filter((request) => request.kind !== 'ack').at(-1)?.kind === 'flush') {
+                    if (worker.requests.findLast((request) => request.kind !== 'ack')?.kind === 'flush') {
                         entered.resolve();
                         await release.promise;
                     }

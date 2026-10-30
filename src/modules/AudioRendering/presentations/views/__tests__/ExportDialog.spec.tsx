@@ -9,8 +9,6 @@ import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegrat
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
 import { type ExportByteWriter } from '../../../models/ExportAudioSource';
-import { audioBufferToOpus } from '../../../repositories/audioEncoders/opusEncoder';
-import { audioBufferToVorbis } from '../../../repositories/audioEncoders/vorbisEncoder';
 import * as normalizationUseCase from '../../../useCases/normalizeExportBuffer';
 import { renderToClip } from '../../../useCases/renderToClip';
 import { ExportDialog } from '../ExportDialog';
@@ -88,6 +86,12 @@ type ExportStems = (typeof import('#/modules/AudioEngine/useCases'))['exportStem
 type EncodeWav = (...args: Parameters<WavEncoder>) => Promise<Uint8Array>;
 type EncodeMp3 = (...args: Parameters<Mp3Encoder>) => Promise<Uint8Array>;
 type EncodeFlac = (...args: Parameters<FlacEncoder>) => Promise<Uint8Array>;
+type EncodeOgg = (
+    source: Parameters<WavEncoder>[0],
+    progress: Parameters<WavEncoder>[2],
+    writer: ExportByteWriter,
+    signal?: AbortSignal
+) => Promise<void>;
 type Commit = () => Promise<void>;
 
 type ExportDialogMocks = {
@@ -95,6 +99,8 @@ type ExportDialogMocks = {
     encodeWav: ReturnType<typeof vi.fn<EncodeWav>>;
     encodeMp3: ReturnType<typeof vi.fn<EncodeMp3>>;
     encodeFlac: ReturnType<typeof vi.fn<EncodeFlac>>;
+    encodeVorbis: ReturnType<typeof vi.fn<EncodeOgg>>;
+    encodeOpus: ReturnType<typeof vi.fn<EncodeOgg>>;
     commit: ReturnType<typeof vi.fn<Commit>>;
     getAudioContext: ReturnType<typeof vi.fn<() => BaseAudioContext | null>>;
     getAutoDetectedTailSeconds: ReturnType<typeof vi.fn>;
@@ -145,6 +151,12 @@ const mocks = vi.hoisted((): ExportDialogMocks => {
         encodeWav: vi.fn<EncodeWav>(),
         encodeMp3: vi.fn<EncodeMp3>(),
         encodeFlac: vi.fn<EncodeFlac>(),
+        encodeVorbis: vi.fn<EncodeOgg>(async (_source, _progress, writer) => {
+            await writer.write(new Uint8Array([10]));
+        }),
+        encodeOpus: vi.fn<EncodeOgg>(async (_source, _progress, writer) => {
+            await writer.write(new Uint8Array([11]));
+        }),
         commit: vi.fn<Commit>(async () => {}),
         getAudioContext: vi.fn<() => BaseAudioContext | null>(() => null),
         getAutoDetectedTailSeconds: vi.fn(() => ({ seconds: 2, uncappedSeconds: 2, clamped: false })),
@@ -402,18 +414,8 @@ vi.mock('../../../repositories/audioEncoders/flacEncoder', () => ({
         return bytes;
     },
 }));
-vi.mock('../../../repositories/audioEncoders/vorbisEncoder', () => ({
-    audioBufferToVorbis: vi.fn(
-        async (_source: Parameters<typeof audioBufferToVorbis>[0], _progress: unknown, writer: ExportByteWriter) =>
-            writer.write(new Uint8Array([10]))
-    ),
-}));
-vi.mock('../../../repositories/audioEncoders/opusEncoder', () => ({
-    audioBufferToOpus: vi.fn(
-        async (_source: Parameters<typeof audioBufferToOpus>[0], _progress: unknown, writer: ExportByteWriter) =>
-            writer.write(new Uint8Array([11]))
-    ),
-}));
+vi.mock('../../../repositories/audioEncoders/vorbisEncoder', () => ({ audioBufferToVorbis: mocks.encodeVorbis }));
+vi.mock('../../../repositories/audioEncoders/opusEncoder', () => ({ audioBufferToOpus: mocks.encodeOpus }));
 vi.mock('../../../repositories/audioExport/streamExportToNative', () => ({
     streamExportToNative: async (input: {
         directoryPath?: string;
@@ -742,11 +744,11 @@ describe('ExportDialog', () => {
         expect(screen.getByTestId('export-format-ogg')).toHaveAttribute('aria-checked', 'true');
         expect(screen.getByTestId('export-format-opus')).toHaveAttribute('aria-checked', 'true');
         expect(screen.getByText(/Opus is always 48 kHz/)).toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: '32-bit', exact: true })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Repeatable', exact: true })).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: 'As mixed', exact: true })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^32-bit$/ })).not.toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Repeatable$/ })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^As mixed$/ })).toBeInTheDocument();
         fireEvent.click(screen.getByTestId('export-format-wav'));
-        expect(screen.getByRole('button', { name: '32-bit', exact: true })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /^32-bit$/ })).toBeInTheDocument();
         expect(vi.mocked(saveExportSettings).mock.calls.at(-1)![0]).toMatchObject({ bitDepth: 32, dither: 'seeded' });
     });
     it.each(['mixdown', 'stems'] as const)(
@@ -774,19 +776,21 @@ describe('ExportDialog', () => {
                 });
             }
             render(<ExportDialog open onClose={vi.fn()} />);
-            if (mode === 'stems') fireEvent.click(screen.getByTestId('export-mode-stems'));
+            if (mode === 'stems') {
+                fireEvent.click(screen.getByTestId('export-mode-stems'));
+            }
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
             await waitFor(() => expect(mocks.commit).toHaveBeenCalledTimes(1));
             expect(mode === 'stems' ? mocks.exportStems : mocks.renderOffline).toHaveBeenCalledWith(
                 expect.objectContaining({ sampleRate: 44100 })
             );
-            expect(audioBufferToVorbis).toHaveBeenCalledWith(
+            expect(mocks.encodeVorbis).toHaveBeenCalledWith(
                 expect.objectContaining({ sampleRate: 44100, length: 137 }),
                 expect.any(Function),
                 expect.any(Object),
                 expect.any(AbortSignal)
             );
-            expect(audioBufferToOpus).toHaveBeenCalledWith(
+            expect(mocks.encodeOpus).toHaveBeenCalledWith(
                 expect.objectContaining({ sampleRate: 48000, length: Math.round((137 * 48000) / 44100) }),
                 expect.any(Function),
                 expect.any(Object),
