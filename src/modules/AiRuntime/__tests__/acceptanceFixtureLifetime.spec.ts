@@ -161,8 +161,9 @@ describe('late result publication', () => {
                 { once: true }
             );
             context.onTestFinished(() => {
-                if (context.task.result?.state === 'pass' && !context.signal.aborted && result !== undefined)
+                if (context.task.result?.state === 'pass' && !context.signal.aborted && result !== undefined) {
                     published.set('case', result);
+                }
             });
             completion = (async () => {
                 await hold.promise;

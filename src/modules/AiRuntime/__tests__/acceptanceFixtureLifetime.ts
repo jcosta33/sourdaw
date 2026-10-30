@@ -4,15 +4,21 @@ export function createAcceptanceFixtureLifetime() {
     let active = false;
 
     function track<T>(work: () => Promise<T>): Promise<T> {
-        if (active) throw new Error('A shared acceptance fixture is still active.');
+        if (active) {
+            throw new Error('A shared acceptance fixture is still active.');
+        }
         active = true;
         const result = Promise.resolve().then(work);
         const settled = result.then(
             () => {
-                if (pending === settled) active = false;
+                if (pending === settled) {
+                    active = false;
+                }
             },
             () => {
-                if (pending === settled) active = false;
+                if (pending === settled) {
+                    active = false;
+                }
             }
         );
         pending = settled;
@@ -24,7 +30,9 @@ export function createAcceptanceFixtureLifetime() {
         active = true;
         const settled = result.then(
             () => {
-                if (pending === settled) active = false;
+                if (pending === settled) {
+                    active = false;
+                }
             },
             (error: unknown) => {
                 active = true;
@@ -50,7 +58,9 @@ export function completeAcceptanceResults<T>(expected: readonly string[], result
     }
     return expected.map((id) => {
         const result = results.get(id);
-        if (result === undefined) throw new Error(`Acceptance case ${id} has no result.`);
+        if (result === undefined) {
+            throw new Error(`Acceptance case ${id} has no result.`);
+        }
         return result;
     });
 }
