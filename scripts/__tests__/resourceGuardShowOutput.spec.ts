@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, resolve as resolvePath } from 'node:path';
 
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
@@ -42,36 +42,24 @@ for (let line = 1; line <= ${oversizedStdoutLineCount}; line += 1) {
 async function runPipedGuard(stream: 'stdout' | 'stderr', childExitCode: number, showOutput = true) {
     const root = fixtureRoot('cli-pipe');
     const payload = `BEGIN:${'x'.repeat(262_144)}:END`;
-    const env = { ...process.env, [RESOURCE_ROOT_ENV]: root };
+    const env: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
     delete env[RESOURCE_SESSION_ENV];
     const program = `process.${stream}.write('BEGIN:' + 'x'.repeat(262144) + ':END'); process.exitCode = ${childExitCode};`;
     try {
-        const child = spawn(
-            process.execPath,
-            [
-                resolve('scripts/resourceGuard.ts'),
-                '--profile',
-                'focused',
-                '--max-rss-mib',
-                '512',
-                ...(showOutput ? ['--show-output'] : []),
-                '--',
-                process.execPath,
-                '-e',
-                program,
-            ],
-            { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] }
-        );
+        const args = [resolvePath('scripts/resourceGuard.ts'), '--profile', 'focused', '--max-rss-mib', '512'];
+        if (showOutput) {
+            args.push('--show-output');
+        }
+        args.push('--', process.execPath, '-e', program);
+        const child = spawn(process.execPath, args, { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'] });
         const stdout: Buffer[] = [];
         const stderr: Buffer[] = [];
         child.stdout.on('data', (chunk: Buffer) => stdout.push(chunk));
         child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
-        const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-            (resolveResult, reject) => {
-                child.once('error', reject);
-                child.once('close', (code, signal) => resolveResult({ code, signal }));
-            }
-        );
+        const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+            child.once('error', reject);
+            child.once('close', (code, signal) => resolve({ code, signal }));
+        });
         return {
             ...result,
             stdout: Buffer.concat(stdout).toString(),
@@ -130,13 +118,13 @@ describe('resource guard --show-output', () => {
         async (signal, expectedCode) => {
             const root = fixtureRoot('cli-signal');
             const ready = join(root, 'ready');
-            const env = { ...process.env, [RESOURCE_ROOT_ENV]: root };
+            const env: NodeJS.ProcessEnv = { ...process.env, [RESOURCE_ROOT_ENV]: root };
             delete env[RESOURCE_SESSION_ENV];
             const program = `require('node:fs').writeFileSync(${JSON.stringify(ready)}, String(process.pid)); setInterval(() => {}, 1000);`;
             const child = spawn(
                 process.execPath,
                 [
-                    resolve('scripts/resourceGuard.ts'),
+                    resolvePath('scripts/resourceGuard.ts'),
                     '--profile',
                     'focused',
                     '--max-rss-mib',
@@ -156,9 +144,9 @@ describe('resource guard --show-output', () => {
             child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk));
             child.stdout.resume();
             const completion = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
-                (resolveResult, reject) => {
+                (resolve, reject) => {
                     child.once('error', reject);
-                    child.once('close', (code, childSignal) => resolveResult({ code, signal: childSignal }));
+                    child.once('close', (code, childSignal) => resolve({ code, signal: childSignal }));
                 }
             );
             try {
