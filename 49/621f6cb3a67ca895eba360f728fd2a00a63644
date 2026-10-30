@@ -1,0 +1,16 @@
+public/legal/THIRD-PARTY-NOTICES.md
+  h_beb54bf43b47b7 14834-14836
+release/open-source-inventory.json
+  h_beb54bf43b47b7 356,585,795,1122,1760-1761,1769-1770,1775,1781-1786,1805-1806
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49621f6cb3a67ca895eba360f728fd2a00a63644",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
