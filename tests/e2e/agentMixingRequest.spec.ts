@@ -9,8 +9,12 @@ const PROMPT = 'Match Drums loudness to Bass over Chorus';
 
 type FixtureSubjects = { drumsId: string; bassId: string; deviceId: string; trimId: string; sectionId: string };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 function record(value: unknown): Record<string, unknown> {
-    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    if (!isRecord(value)) {
         throw new TypeError('Expected a published planning object.');
     }
     return value;
@@ -166,6 +170,7 @@ async function fixtureState(page: Page, subjects: FixtureSubjects) {
                 return {
                     id: track.id,
                     name: track.name,
+                    gain: track.gain,
                     clips: track.clips.map((clip) => ({ id: clip.id, audioBufferId: clip.audioBufferId })),
                     devices: track.devices.map((device) => ({ id: device.id, type: device.type })),
                 };
@@ -452,7 +457,22 @@ test('auditions one genuine retained measured request before Confirm without pro
             [drumsId, 'Drums', 0.8],
             [bassId, 'Bass', 0.4],
         ] as const) {
-            await command.executeAppAction({ type: 'addTrack', payload: { id, name, kind: 'audio', gain } });
+            await command.executeAppAction({ type: 'addTrack', payload: { id, name, kind: 'audio' } });
+            const arrangement: typeof import('../../src/modules/Arrangement/stores') =
+                await import('/src/modules/Arrangement/stores/index.ts');
+            const currentTrack = arrangement.trackStore.value?.tracks.find((track) => track.id === id);
+            if (currentTrack === undefined) {
+                throw new Error('Missing the genuine seeded track.');
+            }
+            const expectedGain = currentTrack.gain;
+            await command.executeAppAction({
+                type: 'setTrackGain',
+                payload: { trackId: id, gain, expectedGain },
+            });
+            const updatedTrack = arrangement.trackStore.value?.tracks.find((track) => track.id === id);
+            if (updatedTrack?.gain !== gain) {
+                throw new Error('The typed gain action did not update the genuine track.');
+            }
             const rate = 48_000;
             const buffer = new AudioBuffer({ numberOfChannels: 2, sampleRate: rate, length: rate * 2 });
             for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
@@ -497,6 +517,7 @@ test('auditions one genuine retained measured request before Confirm without pro
     const initialFixture = await fixtureState(page, subjects);
     const initialPcm = (await projectTruth(page)).pcm;
     expect(initialFixture.levels).toEqual([0, 0]);
+    expect(initialFixture.tracks.map((track) => track.gain)).toEqual([0.8, 0.4]);
     // New-project clear deliberately leaves session Undo unowned. Open the
     // actual saved project before measured work, through normal reconciliation.
     expect(
