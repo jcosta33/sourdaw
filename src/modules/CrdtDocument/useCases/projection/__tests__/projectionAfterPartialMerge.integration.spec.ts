@@ -293,6 +293,10 @@ describe('project projection after a partial bundle merge', () => {
                 let gateReached = false;
                 let workerUnchangedAtRelease = false;
                 let expiredAssertionAdmitted = false;
+                let callsAtGate: number[] = [];
+                let callsAfterDrain: number[] = [];
+                let observeCalls: () => number[] = () => [];
+                let restoreSpies = () => {};
 
                 it.fails(
                     'expires while its real fixture is active',
@@ -300,7 +304,18 @@ describe('project projection after a partial bundle merge', () => {
                         try {
                             await projectCase(async ({ open, assertActive }) => {
                                 const firstWorker = globalThis.Worker;
+                                const { automergeRepository } =
+                                    await import('../../../repositories/automergeRepository');
+                                const { projectStore } = await import('#/modules/Project/stores');
+                                const createProject = vi.spyOn(automergeRepository, 'createProject');
+                                const setProject = vi.spyOn(projectStore, 'set');
+                                observeCalls = () => [createProject.mock.calls.length, setProject.mock.calls.length];
+                                restoreSpies = () => {
+                                    createProject.mockRestore();
+                                    setProject.mockRestore();
+                                };
                                 const hold = async () => {
+                                    callsAtGate = observeCalls();
                                     gateReached = true;
                                     await gate;
                                     workerUnchangedAtRelease = globalThis.Worker === firstWorker;
@@ -353,7 +368,16 @@ describe('project projection after a partial bundle merge', () => {
                     } finally {
                         release();
                         await firstFinished;
+                        callsAfterDrain = observeCalls();
+                        restoreSpies();
                     }
+                    if (blockedPhase === 'setup') {
+                        expect(callsAtGate).toEqual([0, 0]);
+                    } else {
+                        expect(callsAtGate[0]).toBeGreaterThan(0);
+                        expect(callsAtGate[1]).toBeGreaterThan(0);
+                    }
+                    expect(callsAfterDrain).toEqual(callsAtGate);
                     expect(workerUnchangedAtRelease).toBe(true);
                     expect(expiredAssertionAdmitted).toBe(false);
                     expect(activeCase).toBeUndefined();

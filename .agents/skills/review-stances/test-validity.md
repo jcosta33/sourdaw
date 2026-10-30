@@ -14,8 +14,12 @@ Worker, module mocks or the storage port while that lease remains active. Revoke
 when Vitest reports failure. Probe the actual fixture with a real Vitest deadline while holding
 both setup and body in turn: require the actual timeout error before expected-failure inversion,
 the successor to be refused without changing globals, the expired case to make no later assertion,
-and a fresh setup to work only after the first case drains. An arbitrary expected failure is not
-the deadline probe. A helper-only test cannot prove the real integration cases use this boundary.
+and a fresh setup to work only after the first case drains. Observe real repository project creation
+and project-store writes across the held await, with call counts captured at the gate and after the
+old body drains. The body control must first prove
+setup occurred; the setup control must prove none occurs after the deadline. Removing only the
+post-await guard must fail this oracle. An arbitrary expected failure is not the deadline probe.
+A helper-only test cannot prove the real integration cases use this boundary.
 
 ### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
 
