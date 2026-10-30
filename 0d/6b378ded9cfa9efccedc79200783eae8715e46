@@ -1,0 +1,22 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 89-94,102-103,154-159,417-418,747-749,751,779-781,787,793
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createOggCodecWorker.spec.ts
+  h_beb54bf43b47b7 125
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/oggCodecTestWorker.ts
+  h_beb54bf43b47b7 59-61,63
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  h_beb54bf43b47b7 113-115,151,153,170-172
+src/utils/audioMetering/__tests__/mainMeteringReference.ts
+  h_beb54bf43b47b7 13-15,17-22,26-41,43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d6b378ded9cfa9efccedc79200783eae8715e46",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
