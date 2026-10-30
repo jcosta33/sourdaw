@@ -1,5 +1,44 @@
 # Lesson library: project integrity
 
+## 2026-10-30 — a rejected bundle merge still owns its installed prefix (#5887)
+
+The synchronous merge loop in `0a6c596db4b9bddafab3e63a79b9e3845077d2e4` and the worker
+installation loop added by `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` notified projections
+only after the whole loop succeeded. The GitHub commit/pulls lookup returned no associated PR for
+either commit; historical review prompts, stances and tiers are not established. PR #5880 exposed
+partial installation through root observers while preserving the existing omission from ordinary
+change listeners. A root observer proving the installed value does not prove the project stores
+received it.
+
+Fail a later decode after an earlier root is actually installed, on both the worker-result and
+synchronous fallback routes. At the caller's rejection boundary, require raw durable fields and
+the real owning stores behind `setupProjectionBridge` to agree, with one bulk notification after
+root-installation bookkeeping and the original error preserved. Cover a branch-only prefix and
+failure before any installation; only the former publishes. Keep stale and cancelled results
+uninstalled, private preview edits isolated, and a later successful merge coherent. Removing
+either failure-path publication must fail its real-store case; checking only repository values
+or root-observer calls misses the split.
+
+## 2026-10-30 — an installed root swap escaped the acceptance state oracle (#5649)
+
+PRs #5733 and #5735 delivered typed state snapshots and persisted-transition checks, but
+`insertDoc('root', changedClone)` exposed changed project content to repository readers without a
+change notification. Restoring the original root before phase exit still scored zero. The gap was
+inherited from the original state oracle; historical private reviewer prompts and tiers are unknown.
+
+Probe the installed `root` map at the operation boundary, before a later callback can restore it.
+Alter a real track, clip, device or VCA group field in a clone, install it, independently read the
+changed field through `getCrdtDoc('root')`, then restore the original. Require a positive unintended
+mutation count with an unchanged barrel count and exact case outcome. Exercise root creation,
+replacement, load, merge, snapshot restore, removal and reset, including a partial merge that
+throws after installing changed root content. Keep same-content identity moves at zero and private
+preview or aborted decode outside the root feed; never publish a change merely to make it observable.
+If project replacement clears an installed document map before root initialization throws, its
+exposed membership change must invalidate project identity and advance the mutation epoch once.
+Removing only a child leaves the root identity stable; removing the root moves both identities.
+An already empty map keeps all identities stable on the same failure. Check these failed routes
+without manufacturing an ordinary content notification.
+
 ## 2026-10-28 — a recovered entry does not itself prove project and Undo preservation (#5595)
 
 The empty-root external entry dates to commit `33158adccb2b0ed6a461fee10dde79c83c2b2fcf`;
@@ -216,6 +255,21 @@ PR #4111 introduced Yeast processor undo guards without exercising the codec's d
 
 Review every serialized inverse guard through its real prepare, write, fresh durable projection, undo, and redo route. Reorder nested object keys and pass absent, explicitly undefined, empty, and populated optional fields through their owning codec. Unchanged JSON values must restore, while changed values, array order, placement, and malformed fingerprints must still refuse before a write. A direct fixture that preserves the producer's object identity or field order does not exercise the guard.
 
+## Lesson from the PR #2597 failed-Freeze transaction escape
+
+PR #2597 returned no-write after staging Freeze's error in the render transaction inherited
+from #2387. Aborting the failed render correctly suppressed successful history but also erased
+its diagnostic. Settle that reason through a separate typed, non-undoable action while retaining
+the prior freeze aggregate; do not commit the refused render to keep its error.
+
+Probe the actual registered action against raw CRDT, store projection, material and history.
+Withdraw task, cancellation, root, revision or expected-aggregate authority both before admission
+and after settlement stages its replacement but before commit. A late attempt must preserve its
+successor. Keep genuine rollback, cleanup and storage failures observable, and preserve the
+committed classification when storage publishes before throwing. Compose any caller fence with
+handler and production-brief validation, and retain Redo capture discard on refusal and proven
+publication/settlement on durable or ambiguous commits.
+
 ## Lesson from the PR #806 transaction-scope escape
 
 PR #806 added a supplied transaction scope while the older terminal logic from PR #576 kept that scope open until
@@ -226,6 +280,12 @@ Treat transaction lifecycle as one owner-wide authority. Use an atomic test port
 synchronously invokes a listener: both supplied and captured scopes must refuse before entering their callbacks while
 A commits, and document B, its cache, and the pending-write count must remain unchanged after a later flush. Also enter
 a scope before calling commit or abort, then attempt both `set` and `clear`; neither may mutate cache or durable truth.
+
+## Fermenter discrete filter choices bypassed Command
+
+Filter Type entered through `c40d444ff96520cb2f718dd2a397173d72dc1b50`; Filter Model followed in `66b0569af54525fc983a0632ce0c12d92f83fe90`. Both panel callbacks used the direct parameter bridge, so changing the highlighted chip and engine state created no Command inverse. Neither origin has an evidenced public PR association; historical reviewer prompts and tiers are unknown. The missed stance is a discrete UI choice bypassing undoable project truth.
+
+Trace the rendered chip through the registered Command, raw document, fresh projection, session display, Undo and Redo. A first selection must restore an absent leaf rather than materialize its default; a present default must remain present. Hydration must restore the visible default on absence while preserving unrelated patch fields and live macros. Model and Type each own pending authority by device and parameter; a hidden non-SVF Type stays stored. Hold a snapshot and vary project identity, revision, owner, chain, frozen state and peer value independently, including same-ID replacement and exact-state ABA. An old queued direct parameter frame must not overwrite the newer admitted choice.
 
 ## Lesson from the PR #576 storage-terminal escape
 
@@ -492,6 +552,20 @@ last-owner case, the old input must stop. Neither case may recreate `a`'s strip 
 permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
 and capture. Testing deletion and selector changes separately misses this authority crossing.
 
+## Crumbs waveform ownership must survive its own project mirror
+
+The unfenced sampler continuation in `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+survived PR #5041's decode-only sequence check (#5780). No public PR is associated with the
+origin, and private historical review prompts and tiers are unknown.
+
+Trace the accepted sample through the real session store, persistence subscriber, registered
+Command, raw CRDT device and reconciliation. Its own metadata commit and ordinary knob/track
+edits must preserve authority; a whole-root revision or projected row identity cancels valid
+work. A replaced root/device and a fresh accepted sample leaf must revoke older publications.
+Distinguish same-effective metadata replay, which preserves usable cached peaks, from the
+leaf witness that owns a pending result. Retain nested paired holds, withdrawal convergence
+and user-pick replay controls. A fake injected token cannot prove the app's authority producer.
+
 ## Lesson from direct commit 61adb8: redetection dropped locked automatic markers
 
 Commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised to preserve locked markers, but its predicate retained only markers whose origin was not `transient-auto`, dropping locked automatic rows too. The original preservation fixture covered a user row and an unlocked automatic row, so it could not expose that loss. Current main retains `locked === true` rows and suppresses detections within `1e-3` of a retained original beat (PR #5515).
@@ -744,6 +818,8 @@ The scheduler audio terminal originated in `4f410257b212` (no associated PR), ga
 
 Capture the opening root for every audio terminal. With the real commit and command executor, hold an active snapshot transaction without reserving root, observe the real unresolved action wait, publicly replace/project a clone carrying the same provisional clip ID, then release. Neither raw/projected clips, takes, durable action history, undo stacks/tree nor the actual session mirror may change; the notice must report refusal. Pair real same-root completed takes and remove only the post-wait guard to require failure. Separately replace before queued invocation with nontrivial staged passes: no pre-dispatch placement may reach the successor. A false execution guard must have a caller-visible refusal rather than silently resolving as success.
 
+For the PR #4564 manual-terminal escape (#5289; fenced by PR #5373), preserve the current branch contract in the test: switch awaits Stop before replacing the root, while fork snapshots and replaces it before the old recorder terminal settles. Use the actual branch use cases, real Command/CRDT projection and branch-state commit. Observe outgoing commit at the switch's real replacement and read its actual backing snapshot; after a real fork, compare raw root, projected clips/takes, durable action history, Undo stacks/tree and the actual session mirror before and after stale success and stale failure. The fork's legitimate copied provisional clip is part of its baseline, not a ghost to delete. A same-owner PCM/Undo/Redo control and an always-true captured-root mutation must distinguish retained ownership from a disconnected callback fixture. Immediate Stop mocks or direct root replacement do not prove these branch routes.
+
 ## Legacy inverse refusal must reach the history consumer
 
 The pre-#5578 trim handler records inverses without an offset capture. The current handler
@@ -803,3 +879,113 @@ placement with a negative anchor: the selected takes and their comp regions
 must survive real hydration unchanged, including an active saved arrangement's
 top-level fallback. Reverting placement admission must fail the rejection cases;
 a sanitizer-only assertion cannot establish safe file admission.
+
+## 2026-10-29 — an AI group revert committed a newer inverse before an older conflict (#5565)
+
+The history caller introduced by `22a84b216658f593391e7e141d90f7c84d13648b` replayed
+members separately; `78ccb2d361ffc61f97048ec3a4fa4b51e2cf6637` moved that loop into
+Command without making it atomic. GitHub reports no associated PR for either commit;
+historical private reviewer prompts, models and tiers are unknown. The missing failure
+mode was a later inverse refusing after a newer member had already changed the project.
+
+Apply Keys gain and Bass mute in one real group, remove Keys, then invoke the public AI
+history revert. Require unchanged raw project, projections, both Undo stacks, tree and AI
+metadata, plus a visible refusal and no Bass engine write. Pair an intact multi-member
+group with a later unrelated musician edit and real Redo. Hold the actual snapshot wait,
+replace the root with identical content or discard same-lineage history, then require
+zero-write refusal. Capture existing mutation-owner authorization before the first await;
+permit the replay's own writes and settle already-visible queued writes synchronously.
+
+## 2026-10-29 — deferred replay effects could finalize history into a restored project (PR #5556, caught in #5849)
+
+PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) finalized atomic group history only
+after awaiting replay and its deferred effects. Review of #5849 caught a committed inverse
+whose held effect allowed project replacement and Undo clear before old entries entered the
+replacement's Redo. Historical private reviewer prompts, models and tiers are unknown.
+
+Hold a real post-commit effect after proving the inverse's raw writes committed. Replace or
+restore the captured project, clear history and release the effect; require the replacement's
+past, future and tree unchanged. Repeat through actual ambiguous publication reconciliation,
+including restoreUndoHistory with the original captured entry objects, not only cloned IDs.
+Object identity is not history ownership: capture and compensation preserve those objects.
+Finalize once at the normal or distinct ambiguous publication boundary before effects can
+re-enter; a committed inverse stays committed truth even if later effects warn. A later musician
+edit must retain its entry and invalidate Redo normally. Keep normal onCommitted silent for
+no-op, cancelled, rejected and ambiguous outcomes, and retain the original ambiguity if its
+separate observer throws.
+
+The same late-finalization route also admitted stale no-op history: replay can skip every
+inverse yet still yield before history settlement. In #5849, a real legacy clamped-gain
+inverse proved no project or track write occurred while replacement and clear installed a
+different history; old entries still entered its future and AI metadata claimed a revert.
+Keep the unchanged no-op control, but require caller project mutation authority and the
+untouched Undo snapshot again before consuming a no-publication result. Exercise both panel
+and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
+discard, original-reference restoration and request cancellation. This fence applies only
+before publication: a real committed inverse remains committed truth.
+
+## 2026-10-30 — startup retry must preserve the initialized project and its history
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a second App render after first paint.
+The later initial-App rejection occurred before that App rendered, while bootstrap activity was
+already visible. The App rejection defect reached main; exact private review prompts and tier are
+unknown. A retry that only proves a new page or restored controls does not prove project integrity.
+
+Begin with a canonical same-project new-document reload of a genuinely initialized project, live
+witness-bound history and an operative Undo/Redo entry. Inject the actual initial App rejection,
+then require unchanged project identity, exact raw and projected owners, full-channel PCM digests,
+durable witness-bound history, and successful Undo/Redo after recovery. Confirm a changed
+`performance.timeOrigin`; a same-URL fragment navigation is not a new document. Playback controls
+and mirror existence alone are insufficient.
+
+### 2026-10-30 — a timeline reader retained the pre-insert meter basis (#5247)
+
+The meter carry fixed by #5440 and the clip moved by Insert Time can be correct in both
+the CRDT and projections while the stopped top ruler remains on its old basis. Capture
+complete raw and projected map/track figures before and after the real registered
+Command, then run its recorded Undo and Redo with the same mounted ruler. Require each
+history transition to restore the captured owner figures and emit a fresh drawing at the
+corresponding bar positions; a previously matching frame is not a fresh read. Keep the
+owner validators and saved restore plans real. Do not manufacture history or substitute
+a new forward insert for Redo.
+
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; its
+introducing PR, review prompts and tiers are unverified. The earlier missing-carry
+introducer is also unestablished; #5440's repaired pre-merge intermediate is not a main
+escape. The missed stance is connected owner-state restoration through the live reader.
+A probe replacing only the map subscription with an imperative read must fail stopped
+map-change and history fresh-paint checks. This is a prescribed probe, not completed
+mutation evidence.
+
+### 2026-10-30 — checkpoint descendants lost the captured sibling frontier (#5681)
+
+The root checkpoint-equivalence helper originated in PR #3175. Its first form compared each
+descendant's single-head projection with the captured merged projection. After approval captured
+two concurrent root heads, either branch therefore appeared changed when it advanced only
+`commandBatchIdempotency`, because its isolated view omitted the sibling's project truth. This
+pre-existing rejection was recorded while reviewing PR #5677; PR #5716 fixed it by comparing
+each new change with the projection at that change's own dependency frontier. The historical
+review prompt, stance and tier for this specific failure are not established.
+
+Capture two fixed-actor branches with distinct real project edits, merge them, and retain both
+branch documents. Add checkpoint-only records independently to each retained branch, merge the
+descendants, and require the root frontier to remain two-headed and equal to the captured project
+truth after excluding only `commandBatchIdempotency`. This helper case does not require or assert
+that the whole checkpoint map is conflict-free; the matcher compares project truth outside that
+bookkeeping slot. Keep a real project edit, edit-then-restore, and discarded history as helper
+refusal controls. For the public confirmation positive path, use non-conflicting checkpoint record
+inserts; the proposal must execute once, store its receipt and one Undo entry, and Undo must
+restore the previous value. Separately retain refusal at actual confirmation for an unresolved
+whole-map checkpoint conflict. Reverting the dependency-frontier comparison to compare each
+singleton descendant with the merged capture must fail the focused regression in
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts`.
+
+## 2026-10-30 — compiled inspection exports can inspect a different project singleton
+
+The persisted acceptance from #5812 reads raw CRDT truth, projections, session history and
+source PCM through eight module namespaces. Moving acquisition to compiled ESM must not
+create an independent bundle or initialize replacement stores. Build the inspection entry
+and real App together, trace each owning module's emitted identity, and retain every
+project-ID, witness, exact material, commit callback and two-cycle Undo/Redo assertion.
+A served inspection entry exporting a separate Project store must fail the same oracle;
+an export census or configured inspection port alone does not prove all live identities.

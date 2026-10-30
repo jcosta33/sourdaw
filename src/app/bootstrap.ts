@@ -115,6 +115,7 @@ import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
     initBranchState,
+    captureProjectRootIdentity,
     captureProjectRevision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint,
     inspectAgentProjectDivergence,
@@ -134,6 +135,7 @@ import {
     syncCrumbsNativeInstances,
 } from '#/modules/Crumbs/useCases';
 import { updateCrustMeters, deleteCrustMeters } from '#/modules/Crust/stores';
+import { setElasticSensitivityRootIdentityCapture } from '#/modules/ElasticAudio/useCases';
 import { setFermenterTelemetry } from '#/modules/Fermenter/stores';
 import { setFermenterMappedParam, setFermenterDependencies } from '#/modules/Fermenter/useCases';
 import { updateGlutenMeters, deleteGlutenMeters } from '#/modules/Gluten/stores';
@@ -234,6 +236,7 @@ import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMa
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
+import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -253,6 +256,7 @@ logCapabilities();
 initBranchState();
 
 registerCrdtStorageRuntime();
+setElasticSensitivityRootIdentityCapture(captureProjectRootIdentity);
 configureCommandBatchIdempotency({ canExecute: canExecuteCommandBatch });
 setActionHistoryMetadataPort({
     record: recordActionHistoryEntry,
@@ -669,6 +673,7 @@ initToasterKitPersistence();
 // neither Levain's instrument id nor Crumbs' sample reference is one. Registered
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStateProjectAccess();
 initLevainDeviceStatePersistence();
 initBacteriaSubscribers({ eventBus, logger });
 // Same shape and the same reason, subscriber first so the device's first

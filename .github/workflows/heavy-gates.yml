@@ -27,7 +27,7 @@ jobs:
     if: fromJSON(inputs.matrix).include[0] != null
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
       options: --init --ipc=host
     defaults:
       run:
@@ -41,7 +41,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -58,7 +58,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
+        run: node scripts/verifyPlaywrightRuntime.ts 1.64.1
 
       - name: Run shard
         id: run_shard
@@ -100,7 +100,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -138,7 +138,7 @@ jobs:
     # proof and therefore fails, rather than skips, when macOS cannot provide a
     # core non-fallback adapter.
     if: inputs.browser-ai
-    runs-on: macos-14
+    runs-on: macos-15
     # Every step carries its own cap, and the caps leave the job two minutes of
     # runner overhead. Checkout took 44s at most in 88 successful admissions
     # from 2026-10-11 to 2026-10-21, but a slow merge-ref fetch hit a 1-minute
@@ -161,7 +161,7 @@ jobs:
 
       - name: Set up pnpm
         timeout-minutes: 7
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 

@@ -90,6 +90,9 @@ const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
     if (primaryExt === 'flac') {
         return 'audio/flac';
     }
+    if (primaryExt === 'ogg' || primaryExt === 'opus') {
+        return 'audio/ogg';
+    }
     return 'audio/mpeg';
 };
 
@@ -856,9 +859,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         { value: 'wav', label: 'WAV', desc: 'Crisp, lossless' },
         { value: 'mp3', label: 'MP3', desc: 'Lossy crust' },
         { value: 'flac', label: 'FLAC', desc: 'Gluten-free lossless' },
+        { value: 'ogg', label: 'Ogg Vorbis', desc: 'Variable quality 4' },
+        { value: 'opus', label: 'Opus', desc: '128 kbps VBR · 48 kHz' },
     ];
 
     const sampleRates = EXPORT_SAMPLE_RATES;
+    const hasPcmControls = formats.has('wav') || formats.has('flac') || formats.has('mp3');
     // Only depths the selected formats can actually deliver are offered (OE-8).
     const { availableBitDepths, bitDepth: effectiveBitDepth } = resolveExportBitDepths({
         formats,
@@ -1282,6 +1288,12 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
+                                    {formats.has('opus') ? (
+                                        <p className="mt-1.5 text-dense text-muted-foreground/70">
+                                            Opus is always 48 kHz, prepared directly from the rendered source. Other
+                                            formats use the selected rate.
+                                        </p>
+                                    ) : null}
                                 </div>
 
                                 <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
@@ -1289,10 +1301,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         size="sm"
                                         className="mb-2 block font-bold tracking-widest text-muted-foreground/70"
                                     >
-                                        Bit Depth
+                                        {hasPcmControls ? 'Bit Depth' : 'Lossy audio'}
                                     </DawEyebrowLabel>
                                     <Row align="stretch" wrap gap={1}>
-                                        {availableBitDepths.map((bd) => (
+                                        {(hasPcmControls ? availableBitDepths : []).map((bd) => (
                                             <Button
                                                 key={bd}
                                                 variant="ghost"
@@ -1309,6 +1321,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                             </Button>
                                         ))}
                                     </Row>
+                                    {!hasPcmControls ? (
+                                        <p>Vorbis and Opus do not encode a PCM bit depth or dither.</p>
+                                    ) : null}
                                 </div>
 
                                 <div className="rounded-lg border border-border-hairline bg-surface-well/50 p-3">
@@ -1367,12 +1382,13 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         Dither
                                     </DawEyebrowLabel>
                                     <Row align="stretch" wrap gap={1}>
-                                        {(
-                                            [
-                                                { value: 'random', label: 'Random' },
-                                                { value: 'seeded', label: 'Repeatable' },
-                                                { value: 'none', label: 'Off' },
-                                            ] as const
+                                        {(hasPcmControls
+                                            ? ([
+                                                  { value: 'random', label: 'Random' },
+                                                  { value: 'seeded', label: 'Repeatable' },
+                                                  { value: 'none', label: 'Off' },
+                                              ] as const)
+                                            : []
                                         ).map((option) => (
                                             <Button
                                                 key={option.value}
@@ -1391,8 +1407,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         ))}
                                     </Row>
                                     <p className="mt-1.5 text-dense text-muted-foreground/70">
-                                        Repeatable re-exports the same project to identical bytes. Off skips dither
-                                        entirely for a bit-exact bounce.
+                                        {hasPcmControls
+                                            ? 'Repeatable re-exports the same project to identical bytes. Off skips dither entirely for a bit-exact bounce.'
+                                            : 'Dither applies to PCM formats; Vorbis and Opus use float input.'}
                                     </p>
                                 </div>
 

@@ -6,7 +6,12 @@ import { assertServingCheckoutIdentity } from '../../scripts/e2eServerIdentity';
 import { DIRECT_E2E_VIEWPORT_NAME } from '../../src/app/resolveAppComposition';
 
 import { LAUNCH_SCREEN_NAME } from './e2eUtils';
-import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
+import {
+    attach_first_paint_console,
+    CAPABILITIES_MARKER,
+    format_first_paint_failure_diagnosis,
+    wait_for_console_marker,
+} from './firstPaintDiagnostics';
 
 /**
  * One-time bound for the dev server's cold module transform. Playwright's
@@ -80,6 +85,7 @@ async function warmOrigin(baseURL: string): Promise<void> {
     logWarmupPhase('browser launch: start');
     const browser = await chromium.launch();
     logWarmupPhase('browser launch: complete');
+    let warmupFailure: { error: unknown } | undefined;
     try {
         logWarmupPhase('page creation: start');
         const page = await browser.newPage({ baseURL });
@@ -95,21 +101,50 @@ async function warmOrigin(baseURL: string): Promise<void> {
         const startedAtMs = performance.now();
         const deadline = performance.now() + COLD_FIRST_PAINT_TIMEOUT_MS;
         logWarmupPhase('readiness: start');
-        await page.goto('/', { timeout: remainingWarmupTime(deadline) });
-        await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({ state: 'visible', timeout: remainingWarmupTime(deadline) });
-        const overlayPaidMs = performance.now() - startedAtMs;
-        await wait_for_console_marker(timeline, CAPABILITIES_MARKER, remainingWarmupTime(deadline));
-        const bootPaidMs = performance.now() - startedAtMs;
-        logWarmupPhase('readiness: complete');
-        console.log(
-            `[first-paint warmup] launch overlay after ${formatWarmupSeconds(overlayPaidMs)}, ` +
-                `boot capabilities after ${formatWarmupSeconds(bootPaidMs)}; ` +
-                `${formatWarmupSeconds(Math.max(COLD_FIRST_PAINT_TIMEOUT_MS - bootPaidMs, 0))} of the ` +
-                `${COLD_FIRST_PAINT_TIMEOUT_MS / 1000}s cold allowance remains for the tests' own waits`
-        );
+        try {
+            await page.goto('/', { timeout: remainingWarmupTime(deadline) });
+            await page.getByLabel(LAUNCH_SCREEN_NAME).waitFor({
+                state: 'visible',
+                timeout: remainingWarmupTime(deadline),
+            });
+            const overlayPaidMs = performance.now() - startedAtMs;
+            await wait_for_console_marker(timeline, CAPABILITIES_MARKER, remainingWarmupTime(deadline));
+            const bootPaidMs = performance.now() - startedAtMs;
+            logWarmupPhase('readiness: complete');
+            console.log(
+                `[first-paint warmup] launch overlay after ${formatWarmupSeconds(overlayPaidMs)}, ` +
+                    `boot capabilities after ${formatWarmupSeconds(bootPaidMs)}; ` +
+                    `${formatWarmupSeconds(Math.max(COLD_FIRST_PAINT_TIMEOUT_MS - bootPaidMs, 0))} of the ` +
+                    `${COLD_FIRST_PAINT_TIMEOUT_MS / 1000}s cold allowance remains for the tests' own waits`
+            );
+        } catch (error) {
+            console.error(
+                format_first_paint_failure_diagnosis({
+                    timeline,
+                    elapsedMs: performance.now() - startedAtMs,
+                    underlyingMessage: error instanceof Error ? error.message : String(error),
+                })
+            );
+            throw error;
+        }
+    } catch (error) {
+        warmupFailure = { error };
+        throw error;
     } finally {
         logWarmupPhase('browser close: start');
-        await browser.close();
+        try {
+            await browser.close();
+        } catch (closeError) {
+            if (warmupFailure !== undefined) {
+                const closeMessage =
+                    closeError instanceof Error ? `${closeError.name}: ${closeError.message}` : String(closeError);
+                console.error(
+                    `[first-paint warmup] browser close failed while preserving the original warmup failure: ${closeMessage}`
+                );
+                throw warmupFailure.error;
+            }
+            throw closeError;
+        }
         logWarmupPhase('browser close: complete');
     }
 }

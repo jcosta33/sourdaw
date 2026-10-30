@@ -60,6 +60,7 @@ export { registerCrdtStorageRuntime } from './registerCrdtStorageRuntime';
 export { transactSnapshot } from './transactSnapshot';
 export { startCrdtAutoSave } from './startCrdtAutoSave';
 export { subscribeToCrdtChanges } from './subscribeToCrdtChanges';
+export { subscribeToActiveRootInstallations } from './subscribeToActiveRootInstallations';
 export { commitCheckpointCatalog } from './commitCheckpointCatalog';
 export { readCheckpointArtifact } from './readCheckpointArtifact';
 export { readCheckpointCatalog } from './readCheckpointCatalog';

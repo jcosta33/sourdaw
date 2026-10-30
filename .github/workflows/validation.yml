@@ -319,13 +319,11 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.sha }}
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -423,14 +421,12 @@ jobs:
         timeout-minutes: 10
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
         timeout-minutes: 5
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -465,13 +461,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -514,13 +508,11 @@ jobs:
           mkdir -m 755 "$tool_root"
           printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
@@ -573,7 +565,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -604,7 +596,7 @@ jobs:
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
     container:
-      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      image: mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
       options: --init --ipc=host
     defaults:
       run:
@@ -614,13 +606,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -637,7 +627,7 @@ jobs:
       # resolved package can launch them without per-job apt or binary downloads.
       - name: Verify preinstalled browser runtime
         timeout-minutes: 2
-        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
+        run: node scripts/verifyPlaywrightRuntime.ts 1.64.1
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -654,13 +644,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -686,13 +674,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -955,13 +941,11 @@ jobs:
           restore-keys: |
             cargo-index-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-
 
-      # Provisions the exact pnpm declared in package.json's `packageManager`
-      # field, replacing the Corepack shim this setup used to rely on: a
-      # truncated registry stream inside that hot-path fetch crashed Node's
-      # undici and red the job before any check ran (#3851). Must precede
-      # `Set up Node` so `cache: pnpm` resolves the store path.
+      # Verify the selected JavaScript pnpm before exposing its executable.
+      # Keep setup ahead of Node's pnpm store cache; use npm/pnpm acquisition
+      # rather than the Corepack download path that failed in #3851.
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 

@@ -296,6 +296,17 @@ function buildProjectData(context: ProjectContext) {
         levelLaw: PROJECT_CONTEXT_LEVEL_LAW,
         masterGain: context.masterGain,
         masterGainDb: context.masterGainDb ?? toLevelDb(context.masterGain),
+        metronomeVolume: context.metronomeVolume,
+        metronomeVolumeDb: toLevelDb(context.metronomeVolume),
+        vcaGroups: (context.vcaGroups ?? []).slice(0, MAX_CONTEXT_TARGETS).map((group) => ({
+            id: group.id,
+            name: { trust: 'untrusted_imported_string' as const, ...boundedString(group.name) },
+            gain: group.gain,
+            gainDb: toLevelDb(group.gain),
+            muted: group.muted,
+            trackIds: group.trackIds.slice(0, MAX_CONTEXT_TARGETS),
+            omittedTrackCount: Math.max(0, group.trackIds.length - MAX_CONTEXT_TARGETS),
+        })),
         selectedTrack,
         selectableTargets,
         automationLanes,
@@ -304,6 +315,8 @@ function buildProjectData(context: ProjectContext) {
         targetCount: context.tracks.length,
         truncated:
             context.tracks.length > selectableTargets.length ||
+            (context.vcaGroups?.length ?? 0) > MAX_CONTEXT_TARGETS ||
+            (context.vcaGroups ?? []).some((group) => group.trackIds.length > MAX_CONTEXT_TARGETS) ||
             (context.sections?.length ?? 0) > sections.length ||
             (context.automationLanes?.length ?? 0) > automationLanes.length ||
             selectableTargets.some((target) => target.omittedClipCount > 0 || target.omittedSendCount > 0) ||
@@ -331,6 +344,8 @@ function snapshotProjectData(projectData: ReturnType<typeof buildProjectData>) {
             levelLaw: projectData.levelLaw,
             masterGain: projectData.masterGain,
             masterGainDb: projectData.masterGainDb,
+            metronomeVolume: projectData.metronomeVolume,
+            vcaGroups: projectData.vcaGroups,
             selectedTrack,
             selectableTargets,
             automationLanes,
@@ -373,9 +388,15 @@ function buildRevisionPayload(input: {
         !priorSnapshot.truncated &&
         !input.snapshot.truncated;
     if (!compatiblePrior) {
+        const {
+            metronomeVolume: _metronomeVolume,
+            metronomeVolumeDb: _metronomeVolumeDb,
+            vcaGroups: _vcaGroups,
+            ...fullProjectData
+        } = input.projectData;
         return {
             delta: { mode: 'full' as const, baseRevision: null, currentRevision: input.revision },
-            projectPayload: { ...input.projectData, sections: input.projectData.sections.map(toProviderBoundSection) },
+            projectPayload: { ...fullProjectData, sections: input.projectData.sections.map(toProviderBoundSection) },
         };
     }
     const priorTargets = new Map(priorSnapshot.selectableTargets.map((target) => [target.id, target.digest]));
@@ -414,6 +435,9 @@ function buildRevisionPayload(input: {
             levelLaw: input.projectData.levelLaw,
             masterGain: input.projectData.masterGain,
             masterGainDb: input.projectData.masterGainDb,
+            metronomeVolume: input.projectData.metronomeVolume,
+            metronomeVolumeDb: input.projectData.metronomeVolumeDb,
+            vcaGroups: input.projectData.vcaGroups,
             ...(priorSnapshot.tempo === input.snapshot.tempo ? {} : { tempo: input.projectData.tempo }),
             ...(stableJson(priorSnapshot.timeSignature) === stableJson(input.snapshot.timeSignature)
                 ? {}
@@ -626,6 +650,7 @@ export function buildAgentContext(input: BuildAgentContextInput): {
                   context: input.context,
                   projectRevision: input.projectRevision,
                   profile,
+                  includeRequest: profile !== 'local' || input.prompt.length > MAX_IMPORTED_STRING_LENGTH,
                   ...input.capabilityData,
               })}`;
 

@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:e5a7c5a0137267352328395ef11886d91ce77451ea8a8332d4004d3c4bdc898e:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:ff466c6d7175276a2464cca86b055073254e6554c088bd26129fae8b4cda609d:release/dependency-license-proofs.json"
+                "sha256:13a2ec7a8e56d685f18e90aca15d6fc0b3ff6486e9e8bfebe05ba5435035ec98:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:0bfc4866b5c17c7c36bef8a01dce6295da8174a9c301c4282faf41c28704df4c:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -218,15 +218,15 @@
                 "release/desktop-runtime-material.json"
             ],
             "revisions": [
-                "electron 44.4.5 694f45852a0f1726cd23bfd379854de489cccb65",
-                "Chromium 152.0.7977.130 2c592105bbcd9490a9894df48d0fe59b2c512651",
-                "Node v24.21.0 955266bfdd854cd280dffd47548673914484e4c0",
+                "electron 44.9.1 e02265be96c5e13ae43644ef482b718e1e800499",
+                "Chromium 152.0.7977.167 dd78960ccd8a03a2fe1f629543d27783885b78e9",
+                "Node v24.22.0 f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93",
                 "FFmpeg 2b68d2babae73714846961fb0ee47e3b3d2e39a9",
                 "pnpm-lock.yaml",
                 "release-proof:exact-candidate-revision"
             ],
             "digests": [
-                "npm-integrity:sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==",
+                "npm-integrity:sha512-x/tECFFDa2OFNjMObFH0EGKWrCnFZPOR1wP2iMIVt0STecGl8FmDXdaiaryY0kf8mtw9kSLP2yK8dfdaWkfDmw==",
                 "sha256:5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
                 "public/legal/ELECTRON-SOURCES.json",
                 "release-proof:desktop-mac-arm64-artifact"
@@ -264,20 +264,22 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml"
+                "pnpm-workspace.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294",
+                "sha256:98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -289,7 +291,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -353,7 +355,7 @@
                 "sha256:bf221c27635dc00ee3f1bc6c9797fe660f68869520fdf36aa18392cc4ad2220c:public/legal/Magenta.js-NOTICE.txt",
                 "sha256:f287e3fb4298afb4cef22ba892eb1b26a199f5752fce597a3f37d75615f0627c:public/legal/TensorFlow.js-NOTICE.txt",
                 "sha256:f712cedc36337b85cba55f34746f24a51cb713f6a69fdc352bfffda17a277982:public/legal/seedrandom-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "Apache-2.0:TensorFlow.js",
@@ -400,7 +402,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b",
+                "sha256:7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -582,7 +584,7 @@
                 "sha256:d412ab9d5ac17e6931705aac01e5a0d323da5acd2e89a2c19aa8fc05becc59ad:@mlc-ai/web-llm-0.2.84-LICENSE",
                 "sha256:84a271fd53a9c884c0bf6672ab87add1b06adb9302f898ba23b966d2ce6971a1:public/legal/Apache-2.0.txt",
                 "sha256:b9adf0d5d38c111db457713cb7d8684ec9a255c848f75671fed5dd632805f431:public/legal/Qwen-NOTICE.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "admission-evidence:Apache-2.0-Qwen3-1.7B-4B-8B-licensed-candidates-with-unproven-conversion-mapping",
@@ -792,7 +794,7 @@
                 "sha256:f77d905d3e620445e1016fa0d8021f5490c9ae3a5daf681ee030464a9fbec5c0:.agents/decisions/0035-admit-direct-magenta-ddsp-checkpoint-downloads.md",
                 "sha256:f09ba74cf3d2213f7d69c8370aaeedf6414c57d7c00578c8a2ca94261a5c8ac5:electron/protocol.ts",
                 "sha256:6f39f28c5ad181ce246a368bb4764d5faf5c48c433150482b4429832eb3424ec:src/modules/BrowserAi/models/DdspArtifactManifest.ts",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c05c0f10685919a7045fa160a6df7fbea08c7d71af7b5110ebbabdb09084c8c0:src/modules/BrowserAi/repositories/modelDownloadManager.ts",
                 "sha256:f764dafcb6a2fc5f328d023726c09d17aa5e39ca48bc5740f08aa10d4d01d496:src/modules/BrowserAi/useCases/downloadDdspInstrument.ts",
                 "sha256:93020ca3edba6d1712fa3d68779fc0e1ade24b9c12cd9919e24c780ee43386f7:src/modules/BrowserAi/repositories/stageDdspInstrumentGeneration.ts",
@@ -1119,7 +1121,7 @@
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:git:github.com/pichenettes/eurorack@99432f2bf443219b3eb77e65e1a18583faad422e:plaits/dsp/drums/analog_bass_drum.h",
                 "sha256:46e03e356685b20e7444b6979ad61579d962f4a4a08a748142fdc497ecaa23ea:release/upstream-proofs/mutable-instruments-analog_bass_drum.h",
                 "sha256:22f658d32f65c7c535005368d589dc056c0f8417f3f15190d151233de60957a0:public/legal/MUTABLE-INSTRUMENTS-PLAITS-MIT.txt",
-                "sha256:95b1b5ce4222c32efbaeddb042249282bbd2ee0475ebad2a2be22266506ecb53:public/legal/THIRD-PARTY-NOTICES.md"
+                "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md"
             ],
             "licenses": [
                 "MIT"
@@ -1207,10 +1209,10 @@
                 "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
                 "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
-                "tracked-set-sha256:30337272c2637b5a5e56052488dab7eb0079b4cf492fb6d0d8387338bdf2b46b:grand-boule-factory-admission",
-                "tracked-set-sha256:289686b414ccdbe7f94460885c05e7962d8b0648e1e2e24742ad279baa3eb1ff:grand-boule-live-runtime",
-                "tracked-set-sha256:3f4f7ef7d2a6ca4a1f518d2e7a6675387c783395d13a12e03448861ab4f913fc:grand-boule-project-state",
-                "tracked-set-sha256:9dfc4486bfff344cbf90042c46ea3d598121bb595ec1d2244221afe6589d5a2b:grand-boule-offline-composition",
+                "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
+                "tracked-set-sha256:9add2037c2766126e9d3f40d23500167897ae0e2407b680b15cf8818b5078edc:grand-boule-live-runtime",
+                "tracked-set-sha256:f6451f79ee426d51a8b06bb43dfc208fdb006bae7f62ffb8f4bdeeb1704f7c06:grand-boule-project-state",
+                "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
                 "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
             ],
             "licenses": [
@@ -1342,13 +1344,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:94307aec5b6cbb1b182456dc1ddeb160e12b8090955bd27f13beecf36f10165f",
+                "daw-dsp sha256:5754cc83138f63d75533a1a0fd35a0fd2bc7e768bc9bbbf1fec697909e0ae73f",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
-                "proof-chamber sha256:1c3a4e4ed1ac200437a1f99ac185f1ccaf465c903afc864fa204968ff6e866b2",
+                "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
                 "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
             ],
             "digests": [
-                "sha256:634e64357fa49b5b6963187a1b0d1bd8625a48357e9b86f9c515d96b0ee33399:public/wasm/manifest.json"
+                "sha256:3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1385,7 +1387,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:49cfd1ddc956b6b08931d1ebaf2e9b41d15eacf3eadc0f1d4e9ec6fdc0ff83dc:public/entryLoadRecovery.js"
+                "sha256:c0537f9e862db90028295659eb03c694f645a2c8d795f82d9ed19ded0bae5bda:public/entryLoadRecovery.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1543,6 +1545,7 @@
                 "docs/manual/devices/11-grinder.md",
                 "docs/manual/devices/17-fermenter.md",
                 "public/faust/libfaust-wasm.js",
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "public/legal/TRADEMARKS.md",
                 "src/modules/AiRuntime/models/PresetActions/Presets/Midi.ts",
                 "src/modules/AiRuntime/useCases/agentReference/getBackingVocalPlatePromptScope.ts",
@@ -1733,12 +1736,90 @@
             "obligations": [
                 "Preserve useful intent without presenting archived plans as current behavior."
             ]
+        },
+        {
+            "id": "audio-export-codecs",
+            "kind": "runtime-library",
+            "owner": "AudioRendering",
+            "retention": "keep-with-obligations",
+            "releaseModes": [
+                "source",
+                "web",
+                "desktop"
+            ],
+            "paths": [
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.js",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.d.ts",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/vorbis.wasm.js",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.js",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.d.ts",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.js",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.d.ts",
+                "src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/src/opus.wasm.js",
+                "release/upstream-proofs/audio-export-codecs/BUILD.md",
+                "release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
+                "release/upstream-proofs/audio-export-codecs/provenance.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
+                "release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
+            ],
+            "sources": [
+                "audiojs encode-ogg1.3.1 / encode-opus1.3.0 source archives; exact hashes and immutable source URLs in release/upstream-proofs/audio-export-codecs/provenance.json",
+                "wasm-media-encoders and Xiph codec C sources; official Emscripten6.0.13 macOS arm64 SDK archive pinned by SHA256"
+            ],
+            "revisions": [
+                "wasm-media4a45333baadbab312d1cc0911151dfad23157c51; ogg bada45718453ac27b56773ae663f7e65112f6a6e; vorbis0657aee69dec8508a0011f47f3b69d7538e9d262; opus212d66c20944d0a0db91132f826a27dd0d5edd5d",
+                "SDK archive3d8ced05935fbef5b3edda4252dce260004860bf8d579617f13d417338aa4cac; actual reported backend differs from release DEPS; compiler-source build equivalence unproved",
+                "libvorbis modified by addressed virtual-leading-context patch49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789; original programme/granule/EOF/muxer retained"
+            ],
+            "digests": [
+                "sha256:4457f17a42a69337b6f223f3d99a08e6f608f90cf008d2e053de93160d5a4f68:src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.js",
+                "sha256:f63cec41be682a78f744cd8afab19b2256c79d9dda50c7aba310b427e0101932:src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/ogg-encode.d.ts",
+                "sha256:2a8c5e5e759a19d2c61dab70b938ae6b62564250eeb2a9dbc3db01fda439a4e6:src/modules/AudioRendering/repositories/audioEncoders/vendor/vorbis/vorbis.wasm.js",
+                "sha256:4dc036a5b17b697d5a1ab217cfb448dda8482ab3c911dd0a41b3f6f451ebac33:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.js",
+                "sha256:b25ba98ad0f64f8452ffd1ad3296af87194c490158c845dc3fac496c9bfd80a1:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/opus-encode.d.ts",
+                "sha256:5b1b10c259028d19a0bcbaedb1e72039c6100ee41e246a856959a63c3c97a11f:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.js",
+                "sha256:2effd9577d9fd64751c0ce26d4c31baa1d827a62b1c47ca18d0c3d4cd84fa43c:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.d.ts",
+                "sha256:017b31edb879542d41c7e0d29980385f2d2e5c7f019fd8f78e8997df6f3601af:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/src/opus.wasm.js",
+                "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
+                "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
+                "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
+                "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md",
+                "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
+                "sha256:49ddc53f865c69d4ec9e6cb4d4594afe22ffc805a5920d828d8009cc68c09789:release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
+            ],
+            "licenses": [
+                "MIT",
+                "BSD-2-Clause",
+                "BSD-3-Clause",
+                "Apache-2.0",
+                "Apache-2.0 WITH LLVM-exception",
+                "NCSA alternative and original compatible musl/file notices retained in THIRD-PARTY-NOTICES.md",
+                "CC0-1.0"
+            ],
+            "productSurfaces": [
+                "Ogg Vorbis and Opus audio export through a bounded module-owned Worker"
+            ],
+            "evidence": [
+                "release/upstream-proofs/audio-export-codecs/BUILD.md",
+                "release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
+                "release/upstream-proofs/audio-export-codecs/provenance.json",
+                "public/legal/THIRD-PARTY-NOTICES.md",
+                "release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
+                "release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch"
+            ],
+            "obligations": [
+                "Retain original wrapper/helper/codec/runtime copyright, license, notice and disclaimer text in source/web/desktop releases.",
+                "Preserve modification notices and exact paired factory/WASM assets; do not substitute npm wrapper MIT for embedded-code notices.",
+                "Keep actual SDK identity discrepancy explicit; do not claim unproved backend compiler-source equivalence.",
+                "Verify the existing required legal file and addressed runtime/provenance files in actual release artifacts."
+            ]
         }
     ],
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "1fc6bf310a4ac510b3c7604bcf88cd82d27c40145bcff6e6f90afa70beeeb93f"
+            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1831,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "bb437d4c516a2928e8c2450f56a24be9fb2dbbd6a44f43ee44e3de31fffe2294"
+            "sha256": "98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321"
         },
         {
             "path": "Cargo.toml",
@@ -1758,7 +1839,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "6e2c501ca409dda781c033bcc44d593eb84d4aae9fa9923f33cfd7f7a708a46b"
+            "sha256": "7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1766,7 +1847,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "634e64357fa49b5b6963187a1b0d1bd8625a48357e9b86f9c515d96b0ee33399"
+            "sha256": "3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c"
         }
     ],
     "externalReferences": [
@@ -2260,6 +2341,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/setupPnpm.ts",
+            "value": "https://registry.npmjs.org/"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/supersedePullRequestGh.ts",
             "value": "https://api.github.com/${slot}",
             "templateSha256": "725407b8838cd002370ac4e364fd714c7be6ff0c379600b259f1b8e43cc3505b"
@@ -2421,6 +2507,7 @@
         {
             "value": "Hammond",
             "paths": [
+                "public/legal/THIRD-PARTY-NOTICES.md",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
                 "src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx"

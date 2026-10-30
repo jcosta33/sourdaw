@@ -5,6 +5,10 @@ import { DOC_BRANCHES } from '../../models/CrdtDocumentTypes';
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectIdentity } from '../captureProjectIdentity';
 import { captureProjectRootIdentity } from '../captureProjectRootIdentity';
+import { createCrdtDoc } from '../createCrdtDoc';
+import { getCrdtDoc } from '../getCrdtDoc';
+import { subscribeToActiveRootInstallations } from '../subscribeToActiveRootInstallations';
+import { subscribeToCrdtChanges } from '../subscribeToCrdtChanges';
 
 const automergeInitFault = vi.hoisted(() => ({ throwNext: false }));
 
@@ -64,6 +68,37 @@ describe('captureProjectRootIdentity', () => {
 
     afterEach(() => {
         automergeRepository.reset();
+    });
+
+    it('installs empty and prepared roots through the public document use case without publishing changes', () => {
+        const installations: { document: ReturnType<typeof getCrdtDoc>; value: unknown }[] = [];
+        const changes = vi.fn();
+        const unsubscribeRoot = subscribeToActiveRootInstallations((installation) => {
+            if (installation.kind === 'installed') {
+                installations.push({ document: installation.document, value: installation.document?.installed });
+            }
+        });
+        const unsubscribeChanges = subscribeToCrdtChanges(changes);
+        try {
+            const initialIdentity = captureProjectRootIdentity();
+            createCrdtDoc('root');
+            const empty = getCrdtDoc('root');
+            expect(empty).toBeDefined();
+            expect(installations).toEqual([{ document: empty, value: undefined }]);
+            expect(captureProjectRootIdentity()).not.toBe(initialIdentity);
+            expect(changes).not.toHaveBeenCalled();
+
+            const emptyIdentity = captureProjectRootIdentity();
+            const prepared = createDocument('6666666666666666', { installed: 'prepared' });
+            createCrdtDoc('root', prepared);
+            expect(getCrdtDoc('root')).toBe(prepared);
+            expect(installations[1]).toEqual({ document: prepared, value: 'prepared' });
+            expect(captureProjectRootIdentity()).not.toBe(emptyIdentity);
+            expect(changes).not.toHaveBeenCalled();
+        } finally {
+            unsubscribeRoot();
+            unsubscribeChanges();
+        }
     });
 
     it('survives ancillary document membership changes while the project-wide identity moves', () => {
@@ -127,7 +162,7 @@ describe('captureProjectRootIdentity', () => {
         expectMonotonicMove();
     });
 
-    it('invalidates root identity when replacement initialization fails after clearing the installed root', () => {
+    it('invalidates project authority when replacement initialization fails after clearing the installed root', () => {
         const rootIdentity = captureProjectRootIdentity();
         const projectIdentity = captureProjectIdentity();
         const mutationEpoch = automergeRepository.getMutationEpoch();
@@ -138,8 +173,25 @@ describe('captureProjectRootIdentity', () => {
 
         expect(automergeRepository.hasDoc('root')).toBe(false);
         expect(captureProjectRootIdentity()).not.toBe(rootIdentity);
-        expect(captureProjectIdentity()).toBe(projectIdentity);
-        expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch);
+        expect(captureProjectIdentity()).not.toBe(projectIdentity);
+        expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch + 1);
+    });
+
+    it('invalidates project authority but not root identity when failed replacement clears only a child', () => {
+        automergeRepository.removeDoc('root');
+        automergeRepository.createChildDoc('branch_only');
+        const rootIdentity = captureProjectRootIdentity();
+        const projectIdentity = captureProjectIdentity();
+        const mutationEpoch = automergeRepository.getMutationEpoch();
+        automergeInitFault.throwNext = true;
+
+        expect(() => automergeRepository.createProject('replacement')).toThrow('forced Automerge init failure');
+
+        expect(automergeRepository.hasDoc('root')).toBe(false);
+        expect(automergeRepository.hasDoc('branch_only')).toBe(false);
+        expect(captureProjectRootIdentity()).toBe(rootIdentity);
+        expect(captureProjectIdentity()).not.toBe(projectIdentity);
+        expect(automergeRepository.getMutationEpoch()).toBe(mutationEpoch + 1);
     });
 
     it('preserves every identity when initialization fails without an installed root to remove', () => {
