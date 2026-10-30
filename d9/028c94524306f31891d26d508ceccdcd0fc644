@@ -1,0 +1,34 @@
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  h_beb54bf43b47b7 122,133,137-251
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  h_beb54bf43b47b7 20-22,28,37,42,46-47,230-232,235,272-418
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  h_beb54bf43b47b7 3,113-114,144-145,148-149,151-169,236-241,247-262
+src/modules/Transport/stores/__tests__/captureGestureBeat.spec.ts
+  h_beb54bf43b47b7 3,41,49-92
+src/modules/Transport/stores/captureGestureBeat.ts
+  h_beb54bf43b47b7 32-33,50-61,66,72,75,82,90,96-115
+src/modules/Transport/stores/index.ts
+  h_beb54bf43b47b7 9
+src/modules/Transport/stores/playheadClockRef.ts
+  h_beb54bf43b47b7 1-2,23-35,41
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  h_beb54bf43b47b7 7,67,372-398,474-483
+src/modules/Transport/useCases/playheadScheduler/disposePlayheadScheduler.ts
+  h_beb54bf43b47b7 46
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 379,381,386,587,614,780,879,933,964-977
+src/modules/Transport/useCases/playheadScheduler/stopPlayheadScheduler.ts
+  h_beb54bf43b47b7 52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9028c94524306f31891d26d508ceccdcd0fc644",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
