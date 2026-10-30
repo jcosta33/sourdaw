@@ -1,0 +1,25 @@
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  s_59e31a5c6f3e31::t_73db895969e7a5 11,30-45
+  s_59e31a5c6f3e31::t_37900a93c1b1b7 46-63
+  s_59e31a5c6f3e31::t_74c0798b7a35dd 64-66
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_73db895969e7a5 42,44
+src/modules/ElasticAudio/useCases/elasticAudio/elasticSensitivityDependencies.ts
+  s_59e31a5c6f3e31::t_73db895969e7a5 1-3,6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f593c507e3fc3bc1ee912bed4b0c65b212e1a6d2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
