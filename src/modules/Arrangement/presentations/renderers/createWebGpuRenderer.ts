@@ -4,7 +4,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
-import { computeAudioWaveformDrawSpan } from './audioWaveformSpan';
+import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
 import { createClipLabelTextureCache } from './createClipLabelTextureCache';
 
@@ -588,62 +588,40 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                         if (w >= 4) {
                             const buffer = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
                             if (buffer) {
-                                // Same law as the Canvas renderer
-                                // (`audioWaveformSpan.ts`): the sample window is
-                                // what the scheduler plays, and a negative
-                                // offset reserves its pre-roll as leading
-                                // silence inside the clip.
-                                const offsetBeats = clip.audioOffsetBeats ?? 0;
-                                const stretchRatio = clip.stretchRatio ?? 1;
-                                const clipBeats = clip.endBeat - clip.startBeat;
-                                const secondsPerBeat = 60 / (clip.clipStartTempo ?? model.tempo);
-                                const sampleRate = buffer.sampleRate;
-                                const span = computeAudioWaveformDrawSpan({
-                                    offsetBeats,
-                                    stretchRatio,
-                                    clipBeats,
-                                    secondsPerBeat,
-                                    sampleRate,
-                                });
-                                const leadingSilencePx = span.leadingSilenceBeats * pixelsPerBeat * dpr;
-                                const waveformWidth = w - leadingSilencePx;
-
-                                // At least 1 rect per pixel, up to max ~2000 bins to balance perf
-                                const numBins = Math.min(Math.floor(waveformWidth * dpr), 2000);
-
-                                // The pre-roll swallowed the clip: the scheduler
-                                // starts no source, so no bins to draw.
-                                const peaks =
-                                    span.audibleTimelineBeats <= 0
-                                        ? new Float32Array(0)
-                                        : getCachedAudioBufferWaveformPeaks({
-                                              bufferId: clip.audioBufferId,
-                                              numBins,
-                                              startSample: span.startSample,
-                                              endSample: span.endSample,
-                                          });
-
                                 const midY = clipTop + (clipBottom - clipTop) / 2;
                                 const padding = 2 * dpr;
                                 const amplitude = (clipBottom - clipTop - padding * 2) * 0.35;
-
-                                // White with transparency — matches MIDI note style
                                 const wfColor = '#ffffff';
-
-                                const binsToDraw = peaks.length;
-                                if (binsToDraw > 0) {
-                                    const drawBinWidth = waveformWidth / binsToDraw;
-                                    const waveStartX = cx1 + leadingSilencePx;
-
-                                    for (let index = 0; index < binsToDraw; index++) {
+                                const occurrences = getAudioWaveformOccurrences({
+                                    clip,
+                                    model,
+                                    sampleRate: buffer.sampleRate,
+                                    bufferLength: buffer.length,
+                                    maxBins: 2000,
+                                });
+                                for (const occurrence of occurrences) {
+                                    const peaks = getCachedAudioBufferWaveformPeaks({
+                                        bufferId: clip.audioBufferId,
+                                        numBins: occurrence.numBins,
+                                        startSample: occurrence.span.startSample,
+                                        endSample: occurrence.span.endSample,
+                                    });
+                                    if (peaks.length === 0) {
+                                        continue;
+                                    }
+                                    const positions = getAudioWaveformPeakPositions({
+                                        clip,
+                                        model,
+                                        occurrence,
+                                        binCount: peaks.length,
+                                    });
+                                    for (let index = 0; index < peaks.length; index++) {
                                         const peakHeight = (peaks[index] ?? 0) * amplitude;
                                         if (peakHeight > 0.5) {
-                                            const bx1 = waveStartX + index * drawBinWidth;
-                                            const bx2 = bx1 + drawBinWidth;
                                             addRect(
-                                                bx1,
+                                                positions[index]! * dpr,
                                                 midY - peakHeight,
-                                                bx2,
+                                                positions[index + 1]! * dpr,
                                                 midY + peakHeight,
                                                 wfColor,
                                                 alpha * 0.18

@@ -44,6 +44,30 @@ function project(input: { loopOriginBeat: number | undefined }): ReturnType<type
 }
 
 describe('projectOfflineAudioClipPlaybacks with a loop anchor', () => {
+    it.each([0, 1])('reads canonical source second %s after placement crosses a tempo change', (sourceSeconds) => {
+        const clip = {
+            ...CLIP_BASE,
+            startBeat: 8,
+            endBeat: 12,
+            loopEnabled: false,
+            audioOffsetBeats: 2,
+            audioOffsetSeconds: sourceSeconds,
+        };
+        const playbacks = projectOfflineAudioClipPlaybacks({
+            clip,
+            bufferDurationSeconds: 100,
+            regionStartBeat: 0,
+            regionStartSec: 0,
+            durationSeconds: 40,
+            compensationDelay: 0,
+            projectBeatToSeconds: (beat) => (beat <= 4 ? beat * 0.5 : 2 + beat - 4),
+            resolveTempoAtBeat: (beat) => (beat < 4 ? 120 : 60),
+        });
+
+        expect(playbacks).toHaveLength(1);
+        expect(playbacks[0]).toMatchObject({ startSec: 6, bufferOffsetSec: sourceSeconds, playDuration: 4 });
+    });
+
     it('reads the anchored region cyclically: region tail, then wrapped head', () => {
         // Trimmed one beat past the anchor at 0: the pass entering at source
         // beat 1 plays the region tail [1, 4) and then its wrapped head [0, 1).

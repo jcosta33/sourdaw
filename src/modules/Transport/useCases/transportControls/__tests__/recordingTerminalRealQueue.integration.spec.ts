@@ -11,6 +11,7 @@ import {
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { activeRecordingRef, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { stageRecordingTake } from '#/modules/Arrangement/useCases';
+import { type startAudioRecording } from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, undoHistoryStore, undoTreeStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -41,7 +42,13 @@ import { toggleRecording } from '../toggleRecording';
 
 const TRACK_ID = 'track-recording';
 const SESSION_KEY = 'sourdaw-undo-session';
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' }) => void;
+type TerminalFixture = { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' };
+type RecordingTerminal = (
+    result:
+        | { kind: 'completed'; buffer: { duration: number }; sampleZeroContextFrame: number; sampleRate: number }
+        | { kind: 'failed' }
+) => void;
+type CaptureRegistrar = NonNullable<Parameters<typeof startAudioRecording>[3]>;
 const mocks = vi.hoisted(() => {
     const audioClock = { currentTime: 0, baseLatency: 0.125, outputLatency: 0 };
     let terminal: RecordingTerminal | null = null;
@@ -50,26 +57,35 @@ const mocks = vi.hoisted(() => {
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         cacheAudioBuffer: vi.fn(),
+        readCaptureStart: vi.fn(() => ({ status: 'captured' as const, contextSeconds: 0 })),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
         startPlayback: vi.fn<(onRoll?: (contextSeconds: number, beat: number) => void) => Promise<void>>(
             async (onRoll) => {
                 onRoll?.(audioClock.currentTime, 4);
             }
         ),
-        startAudioRecording: vi.fn<(trackId: string, callback: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, callback) => {
-                terminal = callback;
-                return Promise.resolve(true);
-            }
-        ),
+        startAudioRecording: vi.fn<
+            (
+                trackId: string,
+                callback: RecordingTerminal,
+                inputId: string | null | undefined,
+                register: CaptureRegistrar
+            ) => Promise<boolean>
+        >((_trackId, callback, _inputId, register) => {
+            terminal = callback;
+            register(() => mocks.readCaptureStart());
+            return Promise.resolve(true);
+        }),
         stopAudioRecording: vi.fn<() => Promise<void>>(() => Promise.resolve()),
-        releaseTerminal(result: Parameters<RecordingTerminal>[0]): void {
+        releaseTerminal(result: TerminalFixture): void {
             if (!terminal) {
                 throw new Error('No actual production callback was registered');
             }
             const callback = terminal;
             terminal = null;
-            callback(result);
+            callback(
+                result.kind === 'completed' ? { ...result, sampleZeroContextFrame: 0, sampleRate: 48000 } : result
+            );
         },
     };
 });
@@ -173,7 +189,13 @@ async function startGesture() {
     toggleRecording();
     await vi.waitFor(() => {
         expect(trackStore.value?.tracks[0]?.clips).toHaveLength(1);
-        expect(mocks.startAudioRecording).toHaveBeenCalledExactlyOnceWith(TRACK_ID, expect.any(Function), null);
+        expect(mocks.startAudioRecording).toHaveBeenCalledExactlyOnceWith(
+            TRACK_ID,
+            expect.any(Function),
+            null,
+            expect.any(Function)
+        );
+        expect(mocks.readCaptureStart).toHaveBeenCalled();
     });
     await settle();
 }
@@ -242,8 +264,8 @@ async function heldCapture(replaceRoot: boolean) {
         await snapshotTransaction;
         await vi.waitFor(() => {
             expect(recordingLifecycle.isClosingRecording()).toBe(false);
-            expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1);
         });
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + (replaceRoot ? 0 : 1));
         await settle();
         const after = state();
         return { beforeRelease, after };
@@ -376,12 +398,14 @@ describe('recording terminal through the real snapshot queue', () => {
         await settle();
         const settledBefore = recordingLifecycle.settledCommitCount;
         mocks.releaseTerminal({ kind: 'completed', buffer: { duration: 2 } });
+        expect(recordingLifecycle.isClosingRecording()).toBe(true);
         // The terminal queued a continuation but it has not invoked the real
         // commit, whose capture placement would otherwise write these passes.
         replaceRoot();
         const before = state();
         expect(before.takes?.lanes[0]?.takes).toHaveLength(2);
-        await vi.waitFor(() => expect(recordingLifecycle.settledCommitCount).toBe(settledBefore + 1));
+        await vi.waitFor(() => expect(recordingLifecycle.isClosingRecording()).toBe(false));
+        expect(recordingLifecycle.settledCommitCount).toBe(settledBefore);
         await settle();
         expectSuccessorUnchanged(before);
         expect(state().cacheCalls).toBe(1);

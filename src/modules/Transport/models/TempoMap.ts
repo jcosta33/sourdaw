@@ -223,27 +223,33 @@ function secondsAcrossSortedTempoRange(
     }
     boundaries.push(toBeat);
     let seconds = 0;
+    let compensation = 0;
     for (let index = 0; index < boundaries.length - 1; index++) {
         const segmentStart = boundaries[index]!;
         const segmentEnd = boundaries[index + 1]!;
         const startTempo = getTempoAtBeatFromSorted(sortedChanges, segmentStart, defaultTempo);
         const { active, target } = getSegmentRamp(sortedChanges, segmentStart);
+        let segmentSeconds: number;
         if (!active || active.curve === 'instant' || !target) {
-            seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
-            continue;
-        }
-
-        const rampProgress = (segmentEnd - active.beat) / (target.beat - active.beat);
-        const endTempo = active.tempo + (target.tempo - active.tempo) * rampProgress;
-        const tempoDelta = endTempo - startTempo;
-        if (tempoDelta === 0) {
-            seconds += ((segmentEnd - segmentStart) * 60) / startTempo;
+            segmentSeconds = (segmentEnd - segmentStart) * (60 / startTempo);
         } else {
-            const relativeTempoDelta = tempoDelta / startTempo;
-            seconds +=
-                (((segmentEnd - segmentStart) * 60) / startTempo) *
-                (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
+            const rampProgress = (segmentEnd - active.beat) / (target.beat - active.beat);
+            const endTempo = active.tempo + (target.tempo - active.tempo) * rampProgress;
+            const tempoDelta = endTempo - startTempo;
+            if (tempoDelta === 0) {
+                segmentSeconds = (segmentEnd - segmentStart) * (60 / startTempo);
+            } else {
+                const relativeTempoDelta = tempoDelta / startTempo;
+                segmentSeconds =
+                    (((segmentEnd - segmentStart) * 60) / startTempo) *
+                    (Math.log1p(relativeTempoDelta) / relativeTempoDelta);
+            }
         }
+        // Keep the low-order contribution of short tempo segments in the shared clock.
+        const adjustedSeconds = segmentSeconds - compensation;
+        const nextSeconds = seconds + adjustedSeconds;
+        compensation = Number.isFinite(nextSeconds) ? nextSeconds - seconds - adjustedSeconds : 0;
+        seconds = nextSeconds;
     }
     return seconds;
 }

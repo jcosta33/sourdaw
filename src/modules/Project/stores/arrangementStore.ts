@@ -1,6 +1,7 @@
 import { createStore } from '#/infra/store/createStore';
 import { createAutomergeStorage } from '#/infra/store/storage/createAutomergeStorage';
 import { isValidMidiNoteExpression, isValidMidiProbabilitySeed, sanitizeMidiStoreState } from '#/modules/MIDI/stores';
+import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
 
 const DOC_PREFIX_ROOT = 'root';
 
@@ -42,6 +43,11 @@ export type ProjectClip = {
     fileId?: string;
     assetHash?: string;
     audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
     midiOffsetBeats?: number;
     fadeInBeats: number;
     fadeOutBeats: number;
@@ -228,19 +234,29 @@ export type ProjectTake = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
+    passSourceEndSeconds?: number;
+    passOriginBeat?: number;
+    passOriginSourceSeconds?: number;
 };
 
 export type ProjectCompRegion = {
     startBeat: number;
     endBeat: number;
     takeId: string;
+    audioSource?: AudioSourceSnapshot;
 };
 
 export type ProjectTakeLane = {
     id: string;
     trackId: string;
+    automationLaneId?: string;
     takes: ProjectTake[];
     activeCompRegions: ProjectCompRegion[];
+    baseGapAudioSources?: AudioSourceTile[];
 };
 
 export type ProjectTakeLaneStoreState = {

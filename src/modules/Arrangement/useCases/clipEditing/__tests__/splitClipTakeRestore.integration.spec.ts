@@ -5,7 +5,7 @@ import {
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
-import { clearHandlerRegistry, macroStore, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     executeAppAction,
@@ -81,6 +81,7 @@ describe('splitClipWithUndo take restore', () => {
         const clip = ClipDummy.create({ id: 'clip-1', startBeat: 0, endBeat: 8 });
         const track = TrackDummy.create({ id: 'track-1', clips: [clip] });
         trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
     });
 
     afterEach(() => {
@@ -96,6 +97,7 @@ describe('splitClipWithUndo take restore', () => {
 
     it('restores a take recorded on the right half when the split is redone', async () => {
         splitClipWithUndo('clip-1', 4);
+        await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
         const splitRightClipId = rightClipId();
 
         // A take lands on the right half without a local undo entry.
@@ -121,6 +123,7 @@ describe('splitClipWithUndo take restore', () => {
         const originalLane = arrangeCompedTake();
 
         splitClipWithUndo('clip-1', 4);
+        await vi.waitFor(() => expect(undoHistoryStore.value?.past).toHaveLength(1));
         const splitRightClipId = rightClipId();
 
         // The forward split re-keyed the lane: the left fragment keeps the take

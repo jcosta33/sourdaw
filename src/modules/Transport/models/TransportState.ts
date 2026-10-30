@@ -1,3 +1,5 @@
+import { DEFAULT_TEMPO_BPM } from '#/utils/tempoDefaults';
+
 export type TransportState = {
     isPlaying: boolean;
     isRecording: boolean;
@@ -29,7 +31,7 @@ export const defaultTransportState: TransportState = {
     overdubEnabled: false,
     metronomeEnabled: false,
     metronomeVolume: 0.5,
-    tempo: 120,
+    tempo: DEFAULT_TEMPO_BPM,
     timeSignatureNumerator: 4,
     timeSignatureDenominator: 4,
     playheadPosition: 0,
