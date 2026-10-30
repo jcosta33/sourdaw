@@ -42,6 +42,7 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 
+import * as transportStateReader from '../../../repositories/transport/getTransportState';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { pausePlayback } from '../../transportControls/pausePlayback';
@@ -396,6 +397,121 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(captured()).toEqual(full);
         expectPcm(old, oldBuffer, 0.25);
         expectPcm(successor, successorBuffer, 0.5);
+    });
+    it('keeps the third punch through two older pending flushes and their pause continuations', async () => {
+        const firstBuffer = pcm(0.125);
+        const secondBuffer = pcm(0.25);
+        const thirdBuffer = pcm(0.5);
+        const first = await openFirst();
+        const firstGeneration = schedulerSession.generation;
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+
+        await startPlayback();
+        await tick(2);
+        const second = activeRecordingRef.current[0];
+        const secondGeneration = schedulerSession.generation;
+        expect(secondGeneration).toBeGreaterThan(firstGeneration);
+        expect(second).toBeTruthy();
+        expect(second).not.toBe(first);
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(2);
+
+        await startPlayback();
+        await tick(3);
+        const third = activeRecordingRef.current[0];
+        const thirdGeneration = schedulerSession.generation;
+        expect(thirdGeneration).toBeGreaterThan(secondGeneration);
+        expect(third).toBeTruthy();
+        expect(new Set([first, second, third]).size).toBe(3);
+        const thirdRow = structuredClone(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === third));
+        expect(thirdRow).toBeDefined();
+        // After the third punch opens, these two reads can only be the two pause continuations.
+        const continuationReads = vi.spyOn(transportStateReader, 'getTransportState');
+        const expectThirdOwner = () => {
+            expect(schedulerSession.generation).toBe(thirdGeneration);
+            expect(schedulerSession.punchRecordingActive).toBe(true);
+            expect(activeRecordingRef.current).toEqual([third]);
+            expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === third)).toEqual(thirdRow);
+            flushAutomergeStorageWrites();
+            const root = getCrdtDoc(DOC_PREFIX_ROOT);
+            if (!root) {
+                throw new Error('Expected the owning project root');
+            }
+            expect(toJS(root).tracks).toEqual({ tracks: trackStore.value?.tracks });
+        };
+
+        mocks.release(firstBuffer);
+        await vi.waitFor(() => expect(commits()).toBe(1));
+        expect(mocks.pendingCount()).toBe(1);
+        expectPcm(first, firstBuffer, 0.125);
+        expectThirdOwner();
+
+        mocks.release(secondBuffer);
+        await vi.waitFor(() => expect(commits()).toBe(2));
+        await recordingLifecycle.waitForClosing();
+        await vi.waitFor(() => expect(continuationReads).toHaveBeenCalledTimes(2));
+        expectPcm(first, firstBuffer, 0.125);
+        expectPcm(second, secondBuffer, 0.25);
+        expectThirdOwner();
+        continuationReads.mockRestore();
+
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+        mocks.release(thirdBuffer);
+        await vi.waitFor(() => expect(commits()).toBe(3));
+        await recordingLifecycle.waitForClosing();
+        flushAutomergeStorageWrites();
+        const full = captured();
+        const clips = full.tracks?.tracks[0]?.clips ?? [];
+        expect(clips.map((clip) => clip.id)).toEqual([first, second, third]);
+        expect(new Set(clips.map((clip) => clip.audioBufferId)).size).toBe(3);
+        expect(full.takes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
+            first,
+            second,
+            third,
+        ]);
+        expect(actionHistoryStore.value?.entries).toHaveLength(3);
+        const root = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!root) {
+            throw new Error('Expected committed project root');
+        }
+        expect(toJS(root).tracks).toEqual({ tracks: full.tracks?.tracks });
+        expect(toJS(root).takeLanes).toEqual(full.takes);
+        expectPcm(first, firstBuffer, 0.125);
+        expectPcm(second, secondBuffer, 0.25);
+        expectPcm(third, thirdBuffer, 0.5);
+
+        await undo();
+        expectPcm(first, firstBuffer, 0.125);
+        expectPcm(second, secondBuffer, 0.25);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([first, second]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
+            first,
+            second,
+        ]);
+        await undo();
+        expectPcm(first, firstBuffer, 0.125);
+        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([first]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([first]);
+        await undo();
+        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        await redo();
+        expectPcm(first, firstBuffer, 0.125);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([first]);
+        await redo();
+        expectPcm(first, firstBuffer, 0.125);
+        expectPcm(second, secondBuffer, 0.25);
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
+            first,
+            second,
+        ]);
+        await redo();
+        expect(captured()).toEqual(full);
+        expectPcm(first, firstBuffer, 0.125);
+        expectPcm(second, secondBuffer, 0.25);
+        expectPcm(third, thirdBuffer, 0.5);
     });
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
