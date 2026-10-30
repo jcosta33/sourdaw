@@ -1,6 +1,8 @@
 import { expandMidiTransform } from '#/modules/Command/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 
+import { type AgentPlanProposal } from '../../models/AgentRun';
+
 /** A MIDI store holding nothing. The store barrel publishes the seed, not the whole default state. */
 export function emptyMidiState(): MidiStoreState {
     return {
@@ -140,7 +142,7 @@ export function assertDiscoveredCommandSchemas(userMessage: string, names: reado
     }
 }
 
-function bluesPlan() {
+function bluesPlan(): AgentPlanProposal {
     return {
         semantic: { classification: 'complex', uncertainty: [] },
         objective: 'Lay out a blues chord progression on a MIDI track this batch creates.',
@@ -189,10 +191,13 @@ export function bluesProposalItems(): Array<Record<string, unknown>> {
     ];
 }
 
-export function proposeCall(items: ReadonlyArray<Record<string, unknown>>): ProviderCall {
+export function proposeCall(
+    items: ReadonlyArray<Record<string, unknown>>,
+    plan: AgentPlanProposal = bluesPlan()
+): ProviderCall {
     return {
         name: 'command.batch.propose',
-        arguments: { plan: bluesPlan(), list: { schemaVersion: 1, items: [...items] } },
+        arguments: { plan, list: { schemaVersion: 1, items: [...items] } },
     };
 }
 
@@ -298,11 +303,12 @@ export function discoverSearchedCalls(names: readonly string[] = PROPOSED_COMMAN
 
 export function proposeDiscoveredCalls(
     items: ReadonlyArray<Record<string, unknown>>,
-    names: readonly string[] = PROPOSED_COMMAND_NAMES
+    names: readonly string[] = PROPOSED_COMMAND_NAMES,
+    plan?: AgentPlanProposal
 ): ScriptedTurn {
     return (userMessage) => {
         assertDiscoveredCommandSchemas(userMessage, names);
-        return [proposeCall(items)];
+        return [proposeCall(items, plan)];
     };
 }
 

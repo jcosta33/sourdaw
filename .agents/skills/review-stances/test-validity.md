@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a forced-GC ownership bound counted the JIT's references (#5924, introduced by #5829)
+
+PR #5829's stem-export ownership case samples every observed buffer still live after `gc()` and
+bounds it at two renders. On a starved CI runner it failed with the previous stem's PCM and encoder
+state still live at the next stem's first WAV write. An in-flight background Maglev/Turbofan job
+holds its closure, and so that closure's context, as a strong root `gc()` does not drain; the
+retained objects were exactly what finished encoder and PCM-reader closures captured. The
+measurement child now runs with `--no-concurrent-recompilation` and refuses to measure without it.
+Synchronous tiering removes background-compile roots. It does not limit `gc()` to program
+references: concurrent Sparkplug and other engine roots remain. The flag also moves compile work
+onto the measuring thread, so the case's deadline must be budgeted from CI timing. Probe it
+under engine delay: `--concurrent-recompilation-delay=300` must fail the case without the flag
+and pass with it, and keeping the previous render's channels reachable must still fail the bound.
+A local green run proves nothing about a measurement whose roots depend on background thread speed.
+
 ### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
 
 PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
@@ -118,6 +133,22 @@ directory is a lesson library, not a stance menu: an escape — a defect that re
 defect class matches this file — is recorded here as a lesson, and every dispatch whose derived
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
+
+### 2026-10-29 — an owned CI install was not fresh under local defaults (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6 and moved build policy into the workspace. CI records an
+unset `enableGlobalVirtualStore` as false, while a local unset value disagrees during freshness
+checking. Ownership-only fixtures could not observe that environment transition. Historical private
+prompts and tiers are unestablished.
+
+Read the real repository's `enableGlobalVirtualStore` setting without a fallback and project only
+that setting into a minimal workspace with `packages: ['.']` and an offline file dependency. Keep
+an omitted setting omitted so the removal probe remains meaningful; exclude unrelated workspace
+patch and build policy that the fixture does not own. Install under CI, then run error-mode and
+normal package probes under explicit CI=false and CI=true with inherited configuration isolated.
+Require the pinned runtime, original lock and install metadata, private owner/store paths and no
+installation output. Removing only the workspace pin must fail the same case with the exact
+setting-changed error; restoring it passes.
 
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
@@ -1951,6 +1982,19 @@ mutable document as well as the immutable root: proxy identity is not an ownersh
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
 
+### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+
+A forged export manifest test created its key by opening and dropping a registry before opening it
+again for authentication. A deliberately retained duplicate of that setup lock made the required
+`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
+reached authentication on the same manifest and victim bytes. The original CI error was not printed,
+so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+
+Build the private key and directory directly when the obligation is manifest authentication; call the
+production registry once and include the actual error in the assertion. Preserve the victim and
+manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
+bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
@@ -2129,6 +2173,13 @@ duration, energy, decay and spectral controls and inspect the rebuilt served car
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
 
+A fixture's highest tested rate is not an admission boundary. PR #5858 fixed the named
+192 kHz truncation and retained the broader #5182 obligation; it did not reject higher
+rates. The real public constructor accepts 384 kHz, so require nonzero final-window PCM
+through frame 8915 and silence at 8916 for its 23.2 ms FIR bodies. Keep the 176.4/192 kHz
+oracles and pin the checked-in WASM output so source-only changes cannot satisfy the
+carrier claim. Do not impose the short FIR duration on a separately modeled Spring tail.
+
 ### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
 
 The frame cap (`bf14e0d6c1`) and requested-end consumer (`e7d4f0b69b`) met in the
@@ -2190,6 +2241,47 @@ confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing th
 dependency-frontier comparison with the old singleton-versus-merged comparison must make
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
 
+### 2026-10-30 — meter properties did not observe the ruler consumer (#5247)
+
+The retained #5440 property and forward-Command checks establish carried map/clip
+semantics; their historical carry-removal red does not establish a mounted reader or
+its subscription. The top ruler still used a flat numerator grid, and the new mounted
+original-case red confirmed the committed raw/projected carry before failing because
+no stopped repaint occurred. Its Undo/Redo assertions were not reached in that red run.
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; no
+introducing PR association, historical prompt or model tier is verified. The original
+missing-carry introducer remains unestablished. Do not attribute #5440's corrected
+pre-merge intermediate to a main escape.
+
+Mount the required Beat ruler surface unconditionally with a valid canvas platform
+fixture. Observe the real painter's gradient background `fillRect` boundary, emitted
+labels and stroked bar lines. Save a draw cursor before each actual Command or map write
+and require a new drawing after it; canvas presence, mocked query results, counters or
+an older matching frame prove less. Keep Command, CRDT projection, owner validators and
+Undo/Redo real. Independently pass an empty map at the real query call and replace only
+the map hook with an imperative read. The mapped geometry cases and stopped fresh-paint
+cases respectively must fail. These ruler probes are prescribed and have not yet run;
+they must not inherit the older carry mutation's credit.
+
+### 2026-10-30 — wide meter windows concealed a fractional seam stopping defect
+
+PR #2078 introduced the metrical-beat walk in `f626b84b9aed3b715780e20d3b9976c3f88fedd1`.
+Whole-span tests, integer change origins and fractional pulse lengths did not isolate a
+fractional change whose outgoing next tick lies outside the queried window. A change at
+5 with later ticks at 5.5 is not that input. The private historical review prompt and
+tier are unknown; the missed input/window stance is established by the unchanged walk.
+
+For 4/4 at 0 and 3/4 at 5.5, require exactly `[4, 5, 5.5]` in 4..5.7 and `[5.5]` in
+5.4..5.6. Follow the real model into `scheduleClick`: assert the seam's absolute time,
+accent and volume with both the audio clock and supplied initial anchor, then the next
+nonaccent tick and adjacent-window absence of a duplicate. Require the real ruler query's
+two physical pieces and an unconditionally mounted, freshly published map's full-height
+x120 stroke in the 136-pixel viewport at 80 pixels per beat, scrolled to beat 4. A list
+assertion alone cannot prove either consumer. These valid-input regressions failed on
+the old gate at their list, event, query and mounted-paint assertions. After a clean
+repair commit, restoring only that gate must make them fail again. Add invalid-unit and
+non-advancing arithmetic controls after the repair; do not baseline a known hanging walk.
+
 ### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
 
 An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
@@ -2220,3 +2312,26 @@ specifically on unused-engine signature verification, not missing fixture depend
 generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
 Remove launcher-ownership admission, composite preparation and the target-version gate separately;
 the original focused checks must reject each mutation while their baseline controls pass.
+
+### 2026-10-30 — persistence acceptance inherited the development loader's transport
+
+PR #5812 introduced the persisted clip acceptance with runtime source-module acquisitions.
+Its saved-data, PCM and Undo contract does not depend on Vite's development transport.
+Required CI still rejected the App graph twice after the bounded startup retry; the physical
+cancelling actor is not established. Moving an oracle to compiled code must preserve every
+existing operation and assertion, rather than declaring a source-loader failure recovered.
+Use one e2e build containing both index.html and the eight direct namespace exports. Require
+its live project identity, configured inspection provider, PCM cache and registered commit
+callbacks, with no runtime source graph. Substitute a separate Project store only in the
+served inspection entry on committed test source: the same acceptance oracle must fail.
+A second build, cloned stores, browser bridge or merely finding export names cannot prove
+that inspection observes the actual App.
+
+### 2026-10-30 — click times alone could not show which pass owned the loop seam (introduced by PR #4897)
+
+PR #4897 (`16773be5f4`) introduced the two-pass seam with a [0, 4) metronome case that counted
+click times only. There loopEnd and loopStart are both bar lines, so the dying pass's inclusive
+loopEnd click and the incoming loopStart click are indistinguishable. Pin incoming-phase ownership
+with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
+incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
+the real scheduler, for the seam and a later pass.

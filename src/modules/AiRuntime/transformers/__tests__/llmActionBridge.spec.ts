@@ -3633,7 +3633,7 @@ describe('bridgeLlmToolCalls', () => {
         expect(userMessage).toContain('"revision":3');
         expect(userMessage).toContain('"vision":"Intimate verses, explosive choruses"');
         expect(userMessage).toContain(
-            '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"muted":false,"trackIds":["track-vocals"]}]'
+            '"vcaGroups":[{"id":"vca-drums","name":"Drum VCA","gain":0.75,"gainDb":-2.4987747321659985,"muted":false,"trackIds":["track-vocals"]}]'
         );
         expect(userMessage).toContain('"soloSafe":false');
         expect(userMessage).toContain('"automationLanes"');

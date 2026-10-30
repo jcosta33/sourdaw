@@ -22,6 +22,12 @@ test.describe('Levain articulation rail', () => {
     test('Staccato takes the Long latch exclusively, then Close Levain unmounts the panel', async ({ page }) => {
         await expect(page.getByRole('status', { name: 'Engine ready' })).toBeVisible({ timeout: 30_000 });
 
+        const expert = page
+            .getByRole('group', { name: 'Levain control detail' })
+            .getByRole('button', { name: 'Expert' });
+        await expert.click();
+        await expect(expert).toHaveAttribute('aria-pressed', 'true');
+
         const rail = page.locator('section').filter({ hasText: 'Articulation rail' });
         const long = rail.getByRole('button', { name: 'Long C1' });
         const staccato = rail.getByRole('button', { name: 'Staccato F1' });

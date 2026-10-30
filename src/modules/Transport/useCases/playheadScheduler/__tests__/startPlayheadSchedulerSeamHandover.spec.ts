@@ -107,8 +107,16 @@ vi.mock('../../../stores/tempoMapStore', () => ({
         },
     },
 }));
+type MeterChangeFixture = { id: string; beat: number; numerator: number; denominator: number };
+const timeSignatureMapStoreState = vi.hoisted((): { value: { changes: MeterChangeFixture[] } } => ({
+    value: { changes: [] },
+}));
 vi.mock('../../../stores/timeSignatureMapStore', () => ({
-    timeSignatureMapStore: { value: { changes: [] } },
+    timeSignatureMapStore: {
+        get value() {
+            return timeSignatureMapStoreState.value;
+        },
+    },
 }));
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
 vi.mock('#/modules/Automation/stores', () => ({
@@ -336,6 +344,7 @@ describe('startPlayheadScheduler seam handover', () => {
         recordedSourceStops.length = 0;
         evaluateFollowActionsMock.mockImplementation(() => ({ jumpToPosition: null, shouldStop: false }));
         tempoMapStoreState.value = { changes: [] };
+        timeSignatureMapStoreState.value = { changes: [] };
         midiStoreState.value = { notesByClipId: {}, probabilitySeed: 1 };
         trackStoreState.value = { tracks: [] };
         // Module-global metronome dedup state; carried between tests otherwise.
@@ -362,13 +371,13 @@ describe('startPlayheadScheduler seam handover', () => {
     });
 
     it('clicks every metrical beat of both loop passes across the seam', async () => {
-        // The dying pass's window walks beats inclusive of loopEnd and lifts
-        // `lastBeat` to loopEnd; the incoming window's clicks are gated on
-        // `lastBeat` BEFORE the time-keyed dedup is consulted, so one window
-        // inheriting the other's high-water mark silences the metronome for
-        // good. After the seam, every half-second grid instant must carry
-        // exactly one click — the pair AT the seam merged to one by the
-        // time-keyed dedup, never zero.
+        // The dying pass's window lifts `lastBeat` to its last beat before
+        // loopEnd; the incoming window's clicks are gated on `lastBeat`, so one
+        // window inheriting the other's high-water mark silences the metronome
+        // for good. After the seam, every half-second grid instant must carry
+        // exactly one click. The seam instant's click is the incoming pass's
+        // loopStart beat, not the dying pass's loopEnd beat: here both are bar
+        // lines, so this case cannot tell them apart — the cases below can.
         transportStoreState.value = playingState({
             playheadPosition: 0,
             isLooping: true,
@@ -497,5 +506,125 @@ describe('startPlayheadScheduler seam handover', () => {
         expect(recordedSourceStops).toHaveLength(2);
         expect(recordedSourceStops[0]!.at).toBeCloseTo(LOOP_SECONDS, 3);
         expect(recordedSourceStops[1]!.at).toBeCloseTo(2 * LOOP_SECONDS, 3);
+    });
+
+    type ExpectedClick = { time: number; accent: boolean };
+
+    /**
+     * Every click a looping session schedules up to (and including) the
+     * instant two passes after it starts, sorted by time.
+     */
+    async function clicksOverTwoPasses(loopStart: number, loopEnd: number): Promise<ExpectedClick[]> {
+        transportStoreState.value = playingState({
+            playheadPosition: loopStart,
+            isLooping: true,
+            loopStart,
+            loopEnd,
+            metronomeEnabled: true,
+            metronomeVolume: 0.37,
+        });
+
+        startPlayheadScheduler();
+        await runUntilWraps(schedulerWorker(), 2);
+
+        const twoPassesSeconds = (2 * (loopEnd - loopStart)) / BEATS_PER_SECOND;
+        for (const [, , volume] of scheduleClickSpy.mock.calls) {
+            expect(volume).toBe(0.37);
+        }
+        const clicks = scheduleClickSpy.mock.calls.map(([time, accent]) => ({ time, accent }));
+        const twoPassClicks = clicks.filter(({ time }) => time <= twoPassesSeconds + 1e-3);
+        return twoPassClicks.sort((left, right) => left.time - right.time);
+    }
+
+    /** The clicks each pass of `[loopStart, loopEnd)` owes, for passes 0, 1 and the opening of 2. */
+    function expectedClicks(
+        loopStart: number,
+        loopEnd: number,
+        passBeats: readonly { beat: number; accent: boolean }[]
+    ): ExpectedClick[] {
+        const passSeconds = (loopEnd - loopStart) / BEATS_PER_SECOND;
+        const clicks: ExpectedClick[] = [];
+        for (let pass = 0; pass <= 2; pass++) {
+            for (const { beat, accent } of passBeats) {
+                const time = pass * passSeconds + (beat - loopStart) / BEATS_PER_SECOND;
+                if (time <= 2 * passSeconds + 1e-3) {
+                    clicks.push({ time, accent });
+                }
+            }
+        }
+        return clicks;
+    }
+
+    function expectClicks(actual: ExpectedClick[], expected: ExpectedClick[]): void {
+        expect(actual.map(({ accent }) => accent)).toEqual(expected.map(({ accent }) => accent));
+        for (const [index, { time }] of actual.entries()) {
+            expect(time, `click ${index}`).toBeCloseTo(expected[index]!.time, 6);
+        }
+    }
+
+    // 4/4 from the origin, 3/4 from beat 5.5: bar lines at 0, 4 and 5.5.
+    const meterChangeAtFiveAndAHalf: MeterChangeFixture = { id: 'three-four', beat: 5.5, numerator: 3, denominator: 4 };
+    const beatsOneToFive = [
+        { beat: 1, accent: false },
+        { beat: 2, accent: false },
+        { beat: 3, accent: false },
+        { beat: 4, accent: true },
+        { beat: 5, accent: false },
+    ];
+
+    it('leaves the seam silent when an off-grid loopStart follows a meter-change loopEnd', async () => {
+        // Loop [0.5, 5.5): loopEnd is the 3/4 bar line, but the incoming pass
+        // opens at 0.5, which is no beat at all. The dying pass used to click
+        // its accented 5.5 at the seam instant on every wrap.
+        timeSignatureMapStoreState.value = { changes: [meterChangeAtFiveAndAHalf] };
+
+        const clicks = await clicksOverTwoPasses(0.5, 5.5);
+
+        expectClicks(clicks, expectedClicks(0.5, 5.5, beatsOneToFive));
+        for (const seamSeconds of [2.5, 5]) {
+            expect(clicks.filter(({ time }) => Math.abs(time - seamSeconds) <= 1e-3)).toHaveLength(0);
+        }
+    });
+
+    it('gives the seam click the incoming beat when a meter-change loopEnd meets an on-grid loopStart', async () => {
+        // Loop [1, 5.5): the seam instant is both the dying pass's accented 5.5
+        // and the incoming pass's unaccented beat 1. It must click once, as
+        // beat 1.
+        timeSignatureMapStoreState.value = { changes: [meterChangeAtFiveAndAHalf] };
+
+        const clicks = await clicksOverTwoPasses(1, 5.5);
+
+        expectClicks(clicks, expectedClicks(1, 5.5, beatsOneToFive));
+        for (const seamSeconds of [2.25, 4.5]) {
+            expect(clicks.filter(({ time }) => Math.abs(time - seamSeconds) <= 1e-3)).toEqual([
+                { time: expect.closeTo(seamSeconds, 6), accent: false },
+            ]);
+        }
+    });
+
+    const beatsOneToThree = [
+        { beat: 1, accent: false },
+        { beat: 2, accent: false },
+        { beat: 3, accent: false },
+    ];
+
+    it('leaves the seam silent when an off-grid loopStart follows a bar-line loopEnd', async () => {
+        const clicks = await clicksOverTwoPasses(0.5, 4);
+
+        expectClicks(clicks, expectedClicks(0.5, 4, beatsOneToThree));
+        for (const seamSeconds of [1.75, 3.5]) {
+            expect(clicks.filter(({ time }) => Math.abs(time - seamSeconds) <= 1e-3)).toHaveLength(0);
+        }
+    });
+
+    it('gives the seam click the incoming beat when a bar-line loopEnd meets an on-grid loopStart', async () => {
+        const clicks = await clicksOverTwoPasses(1, 4);
+
+        expectClicks(clicks, expectedClicks(1, 4, beatsOneToThree));
+        for (const seamSeconds of [1.5, 3]) {
+            expect(clicks.filter(({ time }) => Math.abs(time - seamSeconds) <= 1e-3)).toEqual([
+                { time: expect.closeTo(seamSeconds, 6), accent: false },
+            ]);
+        }
     });
 });
