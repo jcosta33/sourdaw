@@ -2220,3 +2220,17 @@ specifically on unused-engine signature verification, not missing fixture depend
 generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
 Remove launcher-ownership admission, composite preparation and the target-version gate separately;
 the original focused checks must reject each mutation while their baseline controls pass.
+
+### 2026-10-30 — persistence acceptance inherited the development loader's transport
+
+PR #5812 introduced the persisted clip acceptance with runtime source-module acquisitions.
+Its saved-data, PCM and Undo contract does not depend on Vite's development transport.
+Required CI still rejected the App graph twice after the bounded startup retry; the physical
+cancelling actor is not established. Moving an oracle to compiled code must preserve every
+existing operation and assertion, rather than declaring a source-loader failure recovered.
+Use one e2e build containing both index.html and the eight direct namespace exports. Require
+its live project identity, configured inspection provider, PCM cache and registered commit
+callbacks, with no runtime source graph. Substitute a separate Project store only in the
+served inspection entry on committed test source: the same acceptance oracle must fail.
+A second build, cloned stores, browser bridge or merely finding export names cannot prove
+that inspection observes the actual App.
