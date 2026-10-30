@@ -452,6 +452,27 @@ function hasCompleteMeasurement(intake: AdmittedAnswerIntake, reads: ReadonlyMap
     return interpretedTargetIds(intake.authority).every((id) => covered.has(id));
 }
 
+function coversInterpretedTargets(statements: AnswerStatement[], authority: AnswerRequestAuthority): boolean {
+    const targets = new Set<string>();
+    for (const statement of statements) {
+        switch (statement.kind) {
+            case 'metric':
+                targets.add(statement.reference.targetId);
+                break;
+            case 'difference':
+                targets.add(statement.left.targetId);
+                targets.add(statement.right.targetId);
+                break;
+            case 'ranking':
+                for (const reference of statement.references) {
+                    targets.add(reference.targetId);
+                }
+                break;
+        }
+    }
+    return interpretedTargetIds(authority).every((id) => targets.has(id));
+}
+
 /** Every factual clause and calculation is application-owned; provider input selects finite references only. */
 export function composeMeasuredAnswer(input: {
     document: AnswerRespondArguments;
@@ -474,6 +495,14 @@ export function composeMeasuredAnswer(input: {
         ['metric', 'difference', 'ranking'].includes(entry.kind)
     );
     if (authority.kind === 'measured-audio' && completeMeasurement && !unsupportedTiming && !hasMetricStatement) {
+        return rejection;
+    }
+    if (
+        authority.kind === 'measured-audio' &&
+        completeMeasurement &&
+        !unsupportedTiming &&
+        !coversInterpretedTargets(document.statements, authority)
+    ) {
         return rejection;
     }
     const missingMeasurement = authority.kind === 'measured-audio' && !completeMeasurement;
