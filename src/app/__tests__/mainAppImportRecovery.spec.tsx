@@ -47,8 +47,11 @@ vi.mock('react-dom/client', async (importOriginal) => {
             return {
                 render: (element: Parameters<typeof root.render>[0]) => {
                     mocks.render(element);
-                    if (mocks.renderWithoutAct) root.render(element);
-                    else act(() => root.render(element));
+                    if (mocks.renderWithoutAct) {
+                        root.render(element);
+                    } else {
+                        act(() => root.render(element));
+                    }
                 },
             };
         },
@@ -67,22 +70,28 @@ function gateApp() {
 function installRuntimeMocks(): void {
     vi.doMock('../bootstrap', () => {
         mocks.bootstrap();
-        if (mocks.bootstrapFailure !== null) throw mocks.bootstrapFailure;
+        if (mocks.bootstrapFailure !== null) {
+            throw mocks.bootstrapFailure;
+        }
         return mocks.bootstrapPending ? new Promise<Record<string, never>>(() => undefined) : {};
     });
     vi.doMock('../App', () => ({
         __esModule: true,
         then(onFulfilled: (value: { App: () => null }) => unknown, onRejected?: (reason: unknown) => unknown) {
             mocks.appRequested();
-            if (mocks.appPromise === null) throw new Error('App import was not gated');
-            return mocks.appPromise.then(onFulfilled, (reason: unknown) => {
-                if (onRejected === undefined) throw reason;
+            if (mocks.appPromise === null) {
+                throw new Error('App import was not gated');
+            }
+            return mocks.appPromise.then(onFulfilled, (error: unknown) => {
+                if (onRejected === undefined) {
+                    throw error;
+                }
                 try {
-                    return onRejected(reason);
-                } catch (importRejection) {
+                    return onRejected(error);
+                } catch (error) {
                     // Vitest wraps rejected mock factories before the actual import rejects.
-                    mocks.importRejections.push(importRejection);
-                    throw importRejection;
+                    mocks.importRejections.push(error);
+                    throw error;
                 }
             });
         },
@@ -108,7 +117,9 @@ function expectTerminalReport(firstReason: unknown, secondReason: unknown): void
     expect(mocks.reportError).toHaveBeenCalledOnce();
     const reported: unknown = mocks.reportError.mock.calls[0]?.[0];
     expect(reported).toBeInstanceOf(AggregateError);
-    if (!(reported instanceof AggregateError)) throw new Error('Terminal App causes were not reported');
+    if (!(reported instanceof AggregateError)) {
+        throw new Error('Terminal App causes were not reported');
+    }
     expect(reported.message).toBe('Sourdaw App import failed after its single retry');
     expect(reported.errors).toHaveLength(2);
     expect(mocks.importRejections).toHaveLength(2);
@@ -142,7 +153,9 @@ describe('initial App import recovery through main', () => {
         mocks.render.mockReset();
         mocks.renderWithoutAct = false;
         installRuntimeMocks();
-        if (storageDescriptor === undefined) throw new Error('The browser storage descriptor is absent');
+        if (storageDescriptor === undefined) {
+            throw new Error('The browser storage descriptor is absent');
+        }
         Object.defineProperty(window, 'sessionStorage', storageDescriptor);
         window.sessionStorage.clear();
         mocks.bootstrapFailure = null;
@@ -157,8 +170,12 @@ describe('initial App import recovery through main', () => {
         vi.stubGlobal('reportError', mocks.reportError);
     });
     afterEach(() => {
-        for (const root of mocks.roots) act(() => root.unmount());
-        if (storageDescriptor !== undefined) Object.defineProperty(window, 'sessionStorage', storageDescriptor);
+        for (const root of mocks.roots) {
+            act(() => root.unmount());
+        }
+        if (storageDescriptor !== undefined) {
+            Object.defineProperty(window, 'sessionStorage', storageDescriptor);
+        }
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
@@ -208,7 +225,9 @@ describe('initial App import recovery through main', () => {
             'The application did not finish loading. Reload Sourdaw to try again.'
         );
         const button = document.querySelector('button');
-        if (button === null) throw new Error('The startup failure has no reload button');
+        if (button === null) {
+            throw new Error('The startup failure has no reload button');
+        }
         expect(button.textContent).toBe('Reload Sourdaw');
         act(() => button.click());
         expect(mocks.reload).toHaveBeenCalledOnce();
@@ -221,22 +240,24 @@ describe('initial App import recovery through main', () => {
     it.each(['unavailable', 'unwritable', 'unconfirmed', 'unreadable'])(
         'keeps manual recovery independent of %s session storage',
         async (failure) => {
-            if (failure === 'unavailable')
+            if (failure === 'unavailable') {
                 Object.defineProperty(window, 'sessionStorage', {
                     configurable: true,
                     get: () => {
                         throw new Error('unavailable');
                     },
                 });
-            else if (failure === 'unwritable')
+            } else if (failure === 'unwritable') {
                 vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
                     throw new Error('unwritable');
                 });
-            else if (failure === 'unconfirmed') vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
-            else
+            } else if (failure === 'unconfirmed') {
+                vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(null);
+            } else {
                 vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
                     throw new Error('unreadable');
                 });
+            }
             await rejectAppTwice(new Error('initial fetch failed'), new Error('retry fetch failed'));
             expect(document.querySelector('button')?.textContent).toBe('Reload Sourdaw');
             expect(mocks.reload).not.toHaveBeenCalled();
@@ -253,7 +274,9 @@ describe('initial App import recovery through main', () => {
         await vi.waitFor(() => expect(appWasIssued()).toBe(true));
         const rejected: unknown = mocks.rejectBootstrap.mock.calls[0]?.[0];
         expect(rejected).toBeInstanceOf(Error);
-        if (!(rejected instanceof Error)) throw new Error('Bootstrap failure identity is absent');
+        if (!(rejected instanceof Error)) {
+            throw new Error('Bootstrap failure identity is absent');
+        }
         expect(rejected.cause).toBe(failure);
         expect(mocks.reportError).not.toHaveBeenCalled();
         expect(mocks.reload).not.toHaveBeenCalled();

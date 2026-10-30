@@ -87,15 +87,16 @@ async function renderApplication(): Promise<void> {
     // The identical specifier preserves evaluated module identities; retry only
     // this graph's failed fetch, without replaying any startup work above.
     void import('./App')
-        .catch(async (firstReason: unknown) => {
+        .catch(async (error: unknown) => {
+            const firstImportError = error;
             // A rejected graph can still have failing sibling fetches in flight.
             // Give their module-map entries time to settle before the sole retry.
             await new Promise<void>((resolve) => setTimeout(resolve, 100));
-            return import('./App').catch((secondReason: unknown) => {
+            return import('./App').catch((error: unknown) => {
                 reportError(
-                    new AggregateError([firstReason, secondReason], 'Sourdaw App import failed after its single retry')
+                    new AggregateError([firstImportError, error], 'Sourdaw App import failed after its single retry')
                 );
-                throw secondReason;
+                throw error;
             });
         })
         .then(

@@ -294,13 +294,13 @@ describe('app main composition', () => {
             then(onFulfilled: (value: { App: typeof mocks.App }) => unknown, onRejected: (error: unknown) => unknown) {
                 return mocks.loadApp().then(
                     () => onFulfilled({ App: mocks.App }),
-                    (reason: unknown) => {
+                    (error: unknown) => {
                         try {
-                            return onRejected(reason);
-                        } catch (importRejection) {
+                            return onRejected(error);
+                        } catch (error) {
                             // Retain the actual import rejection after Vitest adds its mock-factory wrapper.
-                            mocks.importRejections.push(importRejection);
-                            throw importRejection;
+                            mocks.importRejections.push(error);
+                            throw error;
                         }
                     }
                 );
@@ -480,7 +480,9 @@ describe('app main composition', () => {
     it.each([false, true])(
         'renders terminal failure without navigation after the bounded App attempts (desktop=%s)',
         async (desktop) => {
-            if (desktop) Reflect.set(window, 'sourdaw', {});
+            if (desktop) {
+                Reflect.set(window, 'sourdaw', {});
+            }
             mocks.resolveAppComposition.mockReturnValue('application');
             const originalDocument = document;
             const originalLocation = window.location.href;
