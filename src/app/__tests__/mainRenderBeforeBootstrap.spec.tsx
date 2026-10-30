@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 import { act, isValidElement } from 'react';
 
@@ -342,7 +343,12 @@ describe('app main first paint', () => {
 
     it('retains manual entry recovery when critical rendering imports reject without starting React or App', async () => {
         const addedListeners = vi.spyOn(window, 'addEventListener');
-        window.eval(readFileSync(resolve(process.cwd(), 'public/entryLoadRecovery.js'), 'utf8'));
+        runInNewContext(readFileSync(resolve(process.cwd(), 'public/entryLoadRecovery.js'), 'utf8'), {
+            window,
+            document,
+            navigator,
+            HTMLScriptElement,
+        });
         const listeners = [...addedListeners.mock.calls];
         addedListeners.mockRestore();
         const failure = new TypeError('critical rendering dependency failed');
