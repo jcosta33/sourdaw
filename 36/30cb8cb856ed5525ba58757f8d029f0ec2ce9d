@@ -1,0 +1,24 @@
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_beb54bf43b47b7 46,48,547-548,553-556,559
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 7,41,92-97,185-190,577,591,710,800-823,1012-1075,1188-1206,1317,1322,1337-1342,1686,1695-1697,1699-1700,1716-1723,1731-1738,1747-1754,2045,2047-2057
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  h_beb54bf43b47b7 4,578-799
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/createDeliveryPcmSource.spec.ts
+  h_beb54bf43b47b7 15-59,61-163
+src/modules/AudioRendering/repositories/audioEncoders/__tests__/exportFormatParity.spec.ts
+  h_beb54bf43b47b7 6,9,26-36,221-288,312,315,335-372,374-376,421,437,447-448
+src/modules/AudioRendering/repositories/audioEncoders/createDeliveryPcmSource.ts
+  h_beb54bf43b47b7 16-55,68-70,79-92,98,165,169-171
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3630cb8cb856ed5525ba58757f8d029f0ec2ce9d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
