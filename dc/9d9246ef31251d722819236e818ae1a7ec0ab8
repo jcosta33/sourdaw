@@ -1,0 +1,24 @@
+src/modules/Transport/useCases/transportQueries/__tests__/getTimelineRulerGrid.spec.ts
+  s_59e31a5c6f3e31::t_936d1d88de62bc 108-138,144
+  s_59e31a5c6f3e31::t_dd4995f1a46b87 139-143
+  s_59e31a5c6f3e31::t_46f9c43b06849b 145
+src/modules/Transport/useCases/transportQueries/getTimelineRulerGrid.ts
+  s_59e31a5c6f3e31::t_fef54b5461c1e1 43-45
+  s_59e31a5c6f3e31::t_4bffbc68366cef 51-52,56-66,73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc9d9246ef31251d722819236e818ae1a7ec0ab8",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
