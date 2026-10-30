@@ -1630,8 +1630,10 @@ const schemaDefinitions = [
         type: 'object',
         properties: {
             volume: 1,
+            volumeDb: 1,
+            deltaDb: 1,
         },
-        required: ['volume'],
+        required: [],
         additionalProperties: false,
     },
     {
@@ -5183,8 +5185,10 @@ const schemaDefinitions = [
         properties: {
             vcaGroupId: 0,
             gain: 1,
+            gainDb: 1,
+            deltaDb: 1,
         },
-        required: ['vcaGroupId', 'gain'],
+        required: ['vcaGroupId'],
         additionalProperties: false,
     },
     {

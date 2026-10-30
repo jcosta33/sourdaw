@@ -1536,7 +1536,7 @@ export type AppAction =
       }
     | { type: 'toggleLoop'; payload?: undefined }
     | { type: 'toggleMetronome'; payload?: undefined }
-    | { type: 'setMetronomeVolume'; payload: { volume: number } }
+    | { type: 'setMetronomeVolume'; payload: { volume?: number; volumeDb?: number; deltaDb?: number } }
     | { type: 'setLoopRegion'; payload: { startBeat: number; endBeat: number } }
     | { type: 'setLoopEnabled'; payload: { enabled: boolean } }
     | { type: 'setMetronomeEnabled'; payload: { enabled: boolean } }
@@ -3042,7 +3042,7 @@ export type AppAction =
       }
     | { type: 'assignToVca'; payload: { trackId: string; vcaGroupId: string } }
     | { type: 'removeFromVca'; payload: { trackId: string } }
-    | { type: 'setVcaGain'; payload: { vcaGroupId: string; gain: number } }
+    | { type: 'setVcaGain'; payload: { vcaGroupId: string; gain?: number; gainDb?: number; deltaDb?: number } }
     | {
           /** Internal inverse only: conditionally restores the fields touched by one
            *  legacy VCA action. This is not a canonical/user/AI VCA action and is absent

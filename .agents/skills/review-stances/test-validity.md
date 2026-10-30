@@ -119,6 +119,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — an owned CI install was not fresh under local defaults (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6 and moved build policy into the workspace. CI records an
+unset `enableGlobalVirtualStore` as false, while a local unset value disagrees during freshness
+checking. Ownership-only fixtures could not observe that environment transition. Historical private
+prompts and tiers are unestablished.
+
+Read the real repository's `enableGlobalVirtualStore` setting without a fallback and project only
+that setting into a minimal workspace with `packages: ['.']` and an offline file dependency. Keep
+an omitted setting omitted so the removal probe remains meaningful; exclude unrelated workspace
+patch and build policy that the fixture does not own. Install under CI, then run error-mode and
+normal package probes under explicit CI=false and CI=true with inherited configuration isolated.
+Require the pinned runtime, original lock and install metadata, private owner/store paths and no
+installation output. Removing only the workspace pin must fail the same case with the exact
+setting-changed error; restoring it passes.
+
 ### 2026-10-30 — fixture transactions consumed the receipt test's deadline (PR #5191)
 
 PR #5191 (`c3ad77924b10613195d1aec01059a19ff4dbb344`) introduced the newest-receipt case with 26
@@ -1983,6 +1999,19 @@ mutable document as well as the immutable root: proxy identity is not an ownersh
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
 
+### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+
+A forged export manifest test created its key by opening and dropping a registry before opening it
+again for authentication. A deliberately retained duplicate of that setup lock made the required
+`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
+reached authentication on the same manifest and victim bytes. The original CI error was not printed,
+so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+
+Build the private key and directory directly when the obligation is manifest authentication; call the
+production registry once and include the actual error in the assertion. Preserve the victim and
+manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
+bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
@@ -2171,6 +2200,13 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+A fixture's highest tested rate is not an admission boundary. PR #5858 fixed the named
+192 kHz truncation and retained the broader #5182 obligation; it did not reject higher
+rates. The real public constructor accepts 384 kHz, so require nonzero final-window PCM
+through frame 8915 and silence at 8916 for its 23.2 ms FIR bodies. Keep the 176.4/192 kHz
+oracles and pin the checked-in WASM output so source-only changes cannot satisfy the
+carrier claim. Do not impose the short FIR duration on a separately modeled Spring tail.
 
 ### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
 

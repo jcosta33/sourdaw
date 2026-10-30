@@ -57,6 +57,18 @@ never combine them into wider permission. Inspect the recorded basis and actual 
 Any compatibility mask must prove full consumption of the original clause; a known control beside
 an unknown clip or unread suffix must not discharge the residual restriction.
 
+### Direct-level intent escaped the enumerated command list (#4366)
+
+PR #1046 introduced the linear-only VCA gain action without a public review; #4435 covered an
+explicit list of level command families, leaving VCA and metronome outside that inventory. The
+historical reviewer model and prompt are unknown. The missing posture was a catalog-wide direct-level
+inventory, including its owning bounds.
+
+Enumerate every planner-emittable direct-level command and trace its advertised schema, prompt
+binding, strategy, handler, stored value, undo and full/delta provider context. Test absolute and
+relative decibels, the owning ceiling, silence and legacy linear values at actual execution. A
+passing sample of the original enumerated families cannot prove the remaining catalog.
+
 ## Standing probes
 
 - Read the full unit the diff touches at head — the function, its callers, its callee contracts —
@@ -922,6 +934,13 @@ Require nonzero late PCM beyond the old cap, the final response window, exact si
 after the physical duration, and preserved lower-rate decay, energy and spectral shape.
 Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
 served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
+
+Trace the actual rate producers and admission before calling a tested rate the maximum.
+PR #5858 repaired the named 192 kHz case with a 4458-frame cap and left #5182's broader
+rate obligation open. The public Bacteria constructor also admits 384 kHz, where that
+cap halves the physical response. Preserve duration at that admitted input too, through
+the actual served carrier, without inferring a product limit from a comment or another
+device's clamp. Keep lower-rate PCM and allocation-free body selection unchanged.
 
 ### 2026-10-29 — capped render placement trusted the requested end (#5013)
 

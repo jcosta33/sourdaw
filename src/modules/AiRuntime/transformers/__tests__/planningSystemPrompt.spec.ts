@@ -97,7 +97,7 @@ describe('buildPlanningSystemPrompt mixing method', () => {
 
     it('states the decibel forms', () => {
         expect(prompt).toContain(
-            'A level takes exactly one of its linear field (gain, level, value), its absolute decibel field (gainDb, levelDb, valueDb) or relative deltaDb.'
+            'A level takes exactly one of its linear field (gain, level, value, volume), its absolute decibel field (gainDb, levelDb, valueDb, volumeDb) or relative deltaDb.'
         );
     });
 
