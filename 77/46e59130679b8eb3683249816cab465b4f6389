@@ -1,0 +1,16 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 15-22
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 71-72,76,136-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7746e59130679b8eb3683249816cab465b4f6389",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
