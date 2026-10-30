@@ -567,7 +567,7 @@ historical private reviewer prompt and tier are unknown. The separate legacy des
 failure during #5876 repair was caught before merge.
 
 Hold the actual initial App import after first paint. Before release, observe the real bootstrap
-evaluation/effect boundary and require startup effects to remain absent if App fulfillment owns
-bootstrap. After release, require actual App render issuance and bootstrap observation. Do not infer
+evaluation/effect boundary. If App fulfillment owns bootstrap, require effects initiated by bootstrap
+to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
 quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
 case; preserve the distinct cold-stylesheet lesson in test-validity.
