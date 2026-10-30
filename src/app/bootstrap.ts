@@ -108,10 +108,10 @@ import {
     commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
+    resetActionReplayAuthority,
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
-import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
     initBranchState,
@@ -124,6 +124,7 @@ import {
     markActionHistoryEntryReverted,
     recordActionHistoryEntries,
     recordActionHistoryEntry,
+    subscribeToPublishedActionHistory,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
@@ -289,9 +290,9 @@ commandDeviceVersionsPort.setResolver(
         getDeviceContractVersionForCommand(deviceType) ?? getExternalPluginContractVersionForCommand(deviceType)
 );
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
-syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
-actionHistoryStore.subscribe((state) => {
-    syncActionReplayMetadata(state?.entries ?? []);
+subscribeToPublishedActionHistory({
+    onHistory: syncActionReplayMetadata,
+    onRootReplaced: resetActionReplayAuthority,
 });
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({

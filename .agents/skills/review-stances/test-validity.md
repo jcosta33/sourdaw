@@ -1,5 +1,22 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — metadata restoration did not prove retained replay authority
+
+The #229 observer (`490b39269a`), #576 abort path (`ecd24df665`) and later #4082 projection
+settlement (`dcb995a672`) compose a boundary absent from the original observer and transaction
+fixtures. This is a qualified static history trace; historical versions were not executed and
+private review prompts and tiers are unknown. A current-main production-observer fixture restores
+every metadata row on abort while both replay status and actual inverse execution remain unavailable.
+
+Use the actual bootstrap publication subscriber, real metadata producers, a full history and a
+live oldest inverse. Observe the pending trim with unchanged durable truth, then require exact
+restoration plus successful `revertAction` after abort and pre-publication failure. A metadata-only
+assertion cannot catch lost authority. Separately require successful publication to evict, a new
+unflushed capability to survive unrelated commits, and an equal-content empty clear to fence ID
+re-add. Replacing publication observation with the visible-store subscriber must fail the rollback
+cases; removing map/list identity from dedupe must fail the same-empty-clear case. Run such probes
+only on committed work and keep root replacement, consumed and claimed capability controls strict.
+
 ### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
 
 The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
