@@ -1,0 +1,27 @@
+src/modules/AudioRendering/repositories/audioEncoders/createOggCodecWorker.ts
+  s_59e31a5c6f3e31::t_a1d50201dd7ef7 19,25-49,94,104
+release/open-source-inventory.json
+  s_59e31a5c6f3e31::t_f9c758c0a11578 1546,2503
+src/modules/AudioRendering/repositories/audioEncoders/oggCodecWorker.ts
+  s_59e31a5c6f3e31::t_a1d50201dd7ef7 8,14,17-52
+  s_59e31a5c6f3e31::t_f31da21fbdcbc9 53-55
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_a1d50201dd7ef7 40,52-53,61-62
+  s_59e31a5c6f3e31::t_45375b8a91864d 54-60,81
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "173a42f1a28ebbb55e1518f2b8096ee09b4ae054",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
