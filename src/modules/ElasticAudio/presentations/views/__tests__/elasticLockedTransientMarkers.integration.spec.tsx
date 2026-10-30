@@ -531,6 +531,9 @@ describe('locked transient markers through the real Elastic editor', () => {
             expect(elasticAudioStore.value?.detected).toBe(true);
             const before = toJS(getCrdtDoc('root')!);
             const actualHandler = getArrangementHandlers().detectTransients;
+            if (actualHandler.previewExecution !== 'unsupported-external') {
+                throw new Error('Expected the real transient handler to reject isolated-project preview');
+            }
             const refuse = async (): Promise<{ status: 'no-write' } | { status: 'conflict'; reason: string }> => {
                 if (outcome === 'failure') {
                     throw new Error('registered detector refused');
