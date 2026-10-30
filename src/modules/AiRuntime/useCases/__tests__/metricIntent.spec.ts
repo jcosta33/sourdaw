@@ -572,7 +572,7 @@ describe('bounded metric control admission', () => {
                     }
                     expect(outgoing).toContain('metric-intent');
                     expect(outgoing).not.toContain(range.sectionId);
-                    for (const goal of admission.metricAuthority!.goals) {
+                    for (const goal of admission.metricAuthority.goals) {
                         if (goal.source.kind === 'recipe') {
                             expect(outgoing).not.toContain(goal.source.recipeDigest);
                         }

@@ -1,9 +1,9 @@
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
-
 import { type MetricNativeLiteralUse } from '../models/MetricGoalAdmission';
 
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { getExactAgentActionHash } from './getExactAgentActionHash';
+
+import type { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 type Envelope = Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
 
