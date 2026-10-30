@@ -587,7 +587,12 @@ function observedDifferences(
     observations: { transitions: readonly ProjectTruth[]; rootTransitions: readonly ProjectTruth[] },
     allowed: readonly ProjectTruth[]
 ): number {
-    const allowedRoots = allowed.map<ProjectTruth>((state) => (state.root === undefined ? {} : { root: state.root }));
+    const allowedRoots = allowed.map((state): ProjectTruth => {
+        if (state.root === undefined) {
+            return {};
+        }
+        return { root: state.root };
+    });
     return Math.max(
         transitionDifferences(observations.transitions, allowed),
         transitionDifferences(observations.rootTransitions, allowedRoots)
