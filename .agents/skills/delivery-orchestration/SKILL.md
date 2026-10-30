@@ -36,7 +36,7 @@ it dispatches. Every step below runs on every delivery; the references hold the 
 | Squash-merge                                                | `pnpm deliver <pr>`                                                                                                                                                                                                              |
 | Recover a crashed delivery                                  | `pnpm deliver --recover-lock <pr> --owner <oid>`                                                                                                                                                                                 |
 | Recover a wedged review post                                | `pnpm review:publish:recover <pr> --owner <oid> [--attest-absent]`                                                                                                                                                               |
-| Edit or supersede a tracker issue                           | `pnpm issue:reconcile <issue> --expected-body-sha256 <64-hex> (--edits-file <json> \| --superseded-by <issue>)`                                                                                                                  |
+| Reconcile a tracker issue at delivery                       | `pnpm issue:reconcile <issue> --expected-body-sha256 <64-hex> (--edits-file <json> \| --superseded-by <issue>)`                                                                                                                  |
 | Close a superseded PR                                       | `pnpm pr:supersede <old> --head <old-sha> --replacement <merged> [--superseded-parent <closed-unmerged-parent> [--parent-replacement <merged-parent-replacement>]] --lineage <path-to-json>`                                     |
 | Retire an obsolete PR with confirmed repairs                | `pnpm pr:retire <pr> --head <head-sha> --record <path-to-json>`                                                                                                                                                                  |
 | Prune spent remote branches                                 | `pnpm branch:prune [--apply] [--limit <n>]`                                                                                                                                                                                      |
@@ -55,11 +55,12 @@ never call it.
 
 `deliver` already closes the issue the pull request's body closes (not one a `--relates` PR only
 references) as completed after the merge.
-`issue:reconcile` is the standalone tracker write for the other two cases: replacing exact text in an
-open issue's body (an `--edits-file` JSON array of 1–64 `{ "from", "to" }` entries, each `from`
-matching exactly once), or closing an issue as not planned with one `Superseded by #<n>.` comment
-naming an open replacement issue. Both refuse unless `--expected-body-sha256` equals the SHA-256 of
-the issue's current body.
+`issue:reconcile` performs the delivery-time reconciliation `deliver` does not perform itself, in two
+modes: replacing exact text in an open issue's body (an `--edits-file` JSON array of 1–64
+`{ "from", "to" }` entries, each `from` matching exactly once), or closing an issue as not planned
+with one `Superseded by #<n>.` comment naming an open replacement issue. Both refuse unless
+`--expected-body-sha256` equals the SHA-256 of the issue's current body. Later corrections to an
+issue use manual `gh` under AGENTS.md [Artifacts](../../../AGENTS.md#artifacts).
 
 ### Protected primary package route
 
@@ -215,6 +216,11 @@ contracts, and prints its path. The manifest binds the PR, base, merge-base and 
 matching base and merge-base context. Bundle internals and the risk-plan format:
 [review records](references/review-records.md).
 
+`review:prepare` does not go through the trusted launcher; instead it refuses when any file in its
+executing script closure differs from `origin/main`, with `<path> does not match origin/main;
+refusing to run a mutated copy`. Run it from a checkout whose scripts match `origin/main` (the lane,
+when the primary checkout lags); the bundle still lands under the primary checkout.
+
 Derive the stances under AGENTS.md [Review](../../../AGENTS.md#review) and the
 [review-stances README](../review-stances/README.md#stance-derivation-and-the-lesson-library). The
 plan's classes name risk surfaces the stance enumeration must weigh and set the draw floor; they
@@ -252,7 +258,9 @@ stance may take several draws on different permitted models.
 ### h. Write `review.json`
 
 `review.json` in the bundle directory is the round's only caller document. Field names come from
-`scripts/reviewDocumentParser.ts`; `review:publish` refuses anything else before any remote write.
+`scripts/reviewDocumentParser.ts`, which reads only the keys below and silently drops any other
+top-level or comment key; only `draws` and `discarded` entries refuse extra keys. A misspelled field
+therefore has no effect and draws no refusal, so check every key against this table.
 
 | Field             | Rule                                                                                                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -437,9 +445,9 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 
 ### l. Gate and deliver
 
-Wait for the approval-triggered `Gate`. Then the orchestrator runs `pnpm deliver <pr>` from the
-protected primary checkout; the script itself squash-merges as the immutable author App after the
-reviewer APPROVE and a green `Gate`.
+Wait for the approval-triggered `Gate`. Then `pnpm deliver <pr>` runs from the protected primary
+checkout and squash-merges as the immutable author App after the reviewer APPROVE and a green
+`Gate`.
 
 #### Validation order
 
@@ -561,7 +569,8 @@ without a posture and a probe duty returns a pass that proves nothing.
   broader one in addition, or none when no file matches.
 - **Baseline probe**: establish what must break for each existing check to fail and whether it
   observes what its name claims; name a mechanical probe (revert the behavioral hunk or apply one
-  targeted mutation, then run the named spec through `pnpm test:run`). Remaining green fails the
+  targeted mutation, then run the named spec through
+  `pnpm guard --profile focused -- pnpm test:run <spec>`). Remaining green fails the
   round.
 - **Isolation**: read the fixed commit with `git show <sha>:<path>` and the bundle; never create a
   worktree or clone or install dependencies. Probes run only through an explicit exclusive handoff

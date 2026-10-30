@@ -208,8 +208,7 @@ one motion: the public record must retain the reviewer identity's findings again
 head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
-delivery authorization, and the orchestrator then runs `deliver`, which merges as the immutable
-author App.
+delivery authorization, and `deliver` then merges as the immutable author App.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
