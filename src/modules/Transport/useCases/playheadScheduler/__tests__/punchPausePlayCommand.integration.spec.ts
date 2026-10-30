@@ -1,13 +1,22 @@
 import { clone as cloneAutomergeDoc, toJS } from '@automerge/automerge';
+import { IDBFactory } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getProductionCommandHandlerMaps } from '#/app/getProductionCommandHandlerMaps';
+import { MockAudioBuffer } from '#/helpers/__tests__/audioContext.mock';
+import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioStorageLock';
 import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { createControlledLockManager } from '#/infra/testing/createControlledLockManager';
 import { activeRecordingRef, takeLaneStore, trackStore, type Track } from '#/modules/Arrangement/stores';
+import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import {
+    configureDurableAudioBufferOwnership,
+    getCachedAudioBuffer,
+    releasePreviewAudioBuffer,
+} from '#/modules/AudioEngine/useCases';
 import { clearHandlerRegistry, undoHistoryStore, undoTreeStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -41,7 +50,8 @@ import { startPlayback } from '../../transportControls/startPlayback';
 
 const TRACK_ID = 'track-recording';
 const SESSION_KEY = 'sourdaw-undo-session';
-type RecordingTerminal = (result: { kind: 'completed'; buffer: { duration: number } } | { kind: 'failed' }) => void;
+const testAudioDatabase = new IDBFactory();
+type RecordingTerminal = Parameters<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>[1];
 const mocks = vi.hoisted(() => {
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
     let terminals: RecordingTerminal[] = [];
@@ -50,7 +60,6 @@ const mocks = vi.hoisted(() => {
         audioClock,
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
-        cacheAudioBuffer: vi.fn(),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
         startAudioRecording: vi.fn<(trackId: string, callback: RecordingTerminal) => Promise<boolean>>(
             (_trackId, callback) => {
@@ -72,12 +81,12 @@ const mocks = vi.hoisted(() => {
         pendingCount(): number {
             return pending.length;
         },
-        release(): void {
+        release(buffer: AudioBuffer): void {
             const capture = pending.shift();
             if (!capture) {
                 throw new Error('Expected a held recorder flush');
             }
-            capture.callback({ kind: 'completed', buffer: { duration: 2 } });
+            capture.callback({ kind: 'completed', buffer, sampleZeroContextFrame: 0, sampleRate: buffer.sampleRate });
             capture.resolve();
         },
     };
@@ -88,7 +97,6 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     resumeEngine: vi.fn(() => Promise.resolve()),
     nativeLiveGraphSessionOffered: () => false,
     getCompensationDelay: mocks.getCompensationDelay,
-    cacheAudioBuffer: mocks.cacheAudioBuffer,
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     readNativeEnginePlayheadSeconds: () => null,
@@ -180,6 +188,32 @@ function commits(): number {
         (entry) => entry.kind === 'action' && entry.action.type === 'commitRecording'
     ).length;
 }
+function pcm(value: number): AudioBuffer {
+    const buffer = MockAudioBuffer.create(2, 96_000, 48_000);
+    buffer.getChannelData(0).set([value, -value]);
+    buffer.getChannelData(1).set([-value, value]);
+    return buffer;
+}
+
+function expectPcm(clipId: string | undefined, expected: AudioBuffer, value: number): void {
+    const clip = trackStore.value?.tracks[0]?.clips.find((item) => item.id === clipId);
+    if (!clip?.audioBufferId) {
+        throw new Error('Expected committed capture buffer reference');
+    }
+    const cached = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
+    expect(cached).toBe(expected);
+    if (!cached) {
+        throw new Error('Expected captured PCM in the audio buffer cache');
+    }
+    expect({ channels: cached.numberOfChannels, rate: cached.sampleRate, length: cached.length }).toEqual({
+        channels: 2,
+        rate: 48_000,
+        length: 96_000,
+    });
+    expect(Array.from(cached.getChannelData(0).slice(0, 2))).toEqual([value, -value]);
+    expect(Array.from(cached.getChannelData(1).slice(0, 2))).toEqual([-value, value]);
+}
+
 function captured() {
     return structuredClone({ tracks: trackStore.value, takes: takeLaneStore.value });
 }
@@ -211,6 +245,9 @@ describe('automatic punch Pause and Play with real recording commits', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.reset();
+        vi.spyOn(audioBufferCache, 'set');
+        vi.stubGlobal('indexedDB', testAudioDatabase);
+        configureDurableAudioBufferOwnership(() => Promise.resolve([]));
         disposePlayheadScheduler();
         vi.stubGlobal(
             'Worker',
@@ -263,6 +300,21 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         mocks.audioClock.currentTime = 0;
     });
     afterEach(async () => {
+        await recordingLifecycle.waitForCommits();
+        await recordingLifecycle.waitForClosing();
+        const bufferIds = vi.mocked(audioBufferCache.set).mock.calls.map(([bufferId]) => bufferId);
+        const receipt = await audioBufferCache.ensureDurable(bufferIds);
+        expect(receipt.status).toBe('durable');
+        if (receipt.status === 'durable') {
+            receipt.release();
+        }
+        for (const bufferId of bufferIds) {
+            releasePreviewAudioBuffer(bufferId);
+            expect(getCachedAudioBuffer({ bufferId })).toBeNull();
+        }
+        // Removal runs under the same exclusive lock as the durability writes.
+        await withProjectAudioStorageLock(() => Promise.resolve());
+        configureDurableAudioBufferOwnership(null);
         disposePlayheadScheduler();
         clearHandlerRegistry();
         clearUndoHistory();
@@ -278,6 +330,8 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         vi.unstubAllGlobals();
     });
     it.each(['old-first', 'successor-first'] as const)('retains both captures when %s', async (order) => {
+        const oldBuffer = pcm(0.25);
+        const successorBuffer = pcm(0.5);
         const old = await openFirst();
         const oldGeneration = schedulerSession.generation;
         pausePlayback();
@@ -286,7 +340,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         const successorGeneration = schedulerSession.generation;
         expect(successorGeneration).toBeGreaterThan(oldGeneration);
         if (order === 'old-first') {
-            mocks.release();
+            mocks.release(oldBuffer);
             await vi.waitFor(() => expect(commits()).toBe(1));
         }
         await tick(2);
@@ -296,7 +350,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(schedulerSession.punchRecordingActive).toBe(true);
         const beforeOldCompletion = captured();
         if (order === 'successor-first') {
-            mocks.release();
+            mocks.release(oldBuffer);
             await vi.waitFor(() => expect(commits()).toBe(1));
             expect(activeRecordingRef.current).toEqual([successor]);
             expect(schedulerSession.punchRecordingActive).toBe(true);
@@ -307,7 +361,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         }
         pausePlayback();
         expect(mocks.pendingCount()).toBe(1);
-        mocks.release();
+        mocks.release(successorBuffer);
         await vi.waitFor(() => expect(commits()).toBe(2));
         await recordingLifecycle.waitForCommits();
         flushAutomergeStorageWrites();
@@ -318,6 +372,8 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(new Set(clips.map((clip) => clip.audioBufferId)).size).toBe(2);
         expect(full.takes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old, successor]);
         expect(actionHistoryStore.value?.entries).toHaveLength(2);
+        expectPcm(old, oldBuffer, 0.25);
+        expectPcm(successor, successorBuffer, 0.5);
         const root = getCrdtDoc(DOC_PREFIX_ROOT);
         if (!root) {
             throw new Error('Expected committed project root');
@@ -326,28 +382,32 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(raw.tracks).toEqual({ tracks: full.tracks?.tracks });
         expect(raw.takeLanes).toEqual(full.takes);
         await undo();
+        expectPcm(old, oldBuffer, 0.25);
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old]);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old]);
         await undo();
         expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
         await redo();
+        expectPcm(old, oldBuffer, 0.25);
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old]);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old]);
         await redo();
         expect(captured()).toEqual(full);
+        expectPcm(old, oldBuffer, 0.25);
+        expectPcm(successor, successorBuffer, 0.5);
     });
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
         pausePlayback();
-        mocks.release();
+        mocks.release(pcm(0.125));
         await vi.waitFor(() => expect(commits()).toBe(1));
         await vi.waitFor(() => expect(schedulerSession.worker).toBeNull());
         await startPlayback();
         await tick(2);
         expect(activeRecordingRef.current[0]).not.toBe(old);
         pausePlayback();
-        mocks.release();
+        mocks.release(pcm(0.125));
         await vi.waitFor(() => expect(commits()).toBe(2));
     });
 
@@ -368,7 +428,7 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         }
         const before = structuredClone(toJS(successorRoot));
         const beforeProjection = captured();
-        mocks.release();
+        mocks.release(pcm(0.125));
         await vi.waitFor(() =>
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('not kept'), 'warning')
         );
