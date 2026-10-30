@@ -939,3 +939,13 @@ restore the previous value. Separately retain refusal at actual confirmation for
 whole-map checkpoint conflict. Reverting the dependency-frontier comparison to compare each
 singleton descendant with the merged capture must fail the focused regression in
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts`.
+
+## 2026-10-30 — compiled inspection exports can inspect a different project singleton
+
+The persisted acceptance from #5812 reads raw CRDT truth, projections, session history and
+source PCM through eight module namespaces. Moving acquisition to compiled ESM must not
+create an independent bundle or initialize replacement stores. Build the inspection entry
+and real App together, trace each owning module's emitted identity, and retain every
+project-ID, witness, exact material, commit callback and two-cycle Undo/Redo assertion.
+A served inspection entry exporting a separate Project store must fail the same oracle;
+an export census or configured inspection port alone does not prove all live identities.
