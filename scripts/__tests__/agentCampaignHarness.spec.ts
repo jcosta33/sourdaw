@@ -84,7 +84,15 @@ describe('agent release thresholds document', () => {
     const document = readFileSync(resolve(REPOSITORY_ROOT, THRESHOLDS_DOC_PATH), 'utf8');
 
     it('declares the schema version the corpora and the scorer are written against', () => {
-        expect(document).toContain('Schema version 2.');
+        expect(document).toContain('Schema version 3.');
+        expect(document).toContain('Schema version 2 carries, per corpus file:');
+        expect(document).toContain('Schema version 1 carries:');
+    });
+
+    it('names both version-2 execute floors it supersedes', () => {
+        const supersession = sectionsOf(document).get('Supersession');
+        expect(supersession).toContain('per-prompt-class execute recall (each sealed class of twelve) 1.00');
+        expect(supersession).toContain('per-prompt-class execute precision (each sealed class of twelve) 1.00');
     });
 
     it('names every superseded version-1 value in its supersession section', () => {

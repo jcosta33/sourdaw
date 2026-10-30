@@ -59,6 +59,7 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // handlers reach both of these, and neither is exercised by these cases.
     markerStore: { value: null, subscribe: vi.fn() },
     resolveEligibleDeviceWriteTarget: vi.fn(() => null),
+    clipSelectionStore: { value: null, subscribe: vi.fn(() => () => {}) },
 }));
 
 vi.mock('#/modules/AudioEngine/stores', () => ({

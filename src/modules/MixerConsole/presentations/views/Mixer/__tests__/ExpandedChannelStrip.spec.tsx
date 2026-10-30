@@ -189,6 +189,10 @@ describe('ExpandedChannelStrip', () => {
             <ExpandedChannelStrip track={{ ...mockTrack, gain: 1 }} isSelected={false} widthClass="w-40" />
         );
         expect(screen.getByText('0.0 dB')).toBeInTheDocument();
+        const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
+        const cap = fader.querySelector('[data-role="fader-cap"]') as HTMLElement;
+        expect(fader).toHaveAttribute('aria-valuetext', '0.0 dB');
+        expect(cap.style.bottom).toBe('calc(70% - 20px)');
     });
 
     it('renders the -∞ form at zero gain', () => {
@@ -202,6 +206,8 @@ describe('ExpandedChannelStrip', () => {
         renderWithTooltip(<ExpandedChannelStrip track={mockTrack} isSelected={false} widthClass="w-40" />);
         const fader = screen.getByRole('slider', { name: 'Track 1 gain' });
         expect(Number(fader.getAttribute('aria-valuemax'))).toBeCloseTo(FADER_MAX_GAIN, 5);
+        expect(fader).toHaveAttribute('aria-valuenow', '0.8');
+        expect(fader).toHaveAttribute('aria-valuetext', '-1.9 dB');
     });
 
     /**

@@ -1,13 +1,18 @@
 import { measureIntegratedLoudness } from '#/utils/audioMetering/measureIntegratedLoudness';
 import { measureTruePeak } from '#/utils/audioMetering/measureTruePeak';
 
+import { type ExportAudioSource } from '../../models/ExportAudioSource';
+
 import { resolveNormalizationGain } from './resolveNormalizationGain';
 
 export type ApplyExportNormalizationInput = {
     /** Freshly rendered export buffer. Its channel data is scaled in place. */
-    buffer: AudioBuffer;
+    buffer: ExportAudioSource;
+    apply?: boolean;
     targetLufs: number;
     ceilingDbTp: number;
+    /** Actual measurements of replayed target PCM, including any input gain. */
+    measurements?: { integratedLufs: number | null; truePeak: number };
 };
 
 export type ApplyExportNormalizationOutput = {
@@ -22,33 +27,38 @@ export type ApplyExportNormalizationOutput = {
 };
 
 /**
- * Measure a rendered export and scale it to the requested loudness without
- * breaching the true-peak ceiling.
- *
- * Applied once, before the format loop, so every requested format is encoded
- * from identical audio — a mix normalized for WAV but not for MP3 would ship
- * two different masters under one name.
- *
- * Scaling is in place. The buffer is rendered for this export and is not the
- * project's audio, so there is nothing else holding a reference to the
- * un-normalized samples.
+ * The shared ceiling-first gain law for owned legacy buffers and measured delivery PCM.
+ * Legacy callers scale in place by default. Streaming callers supply actual target
+ * measurements with apply:false and apply the returned gain only during quantization.
  */
 export function applyExportNormalization({
     buffer,
     targetLufs,
     ceilingDbTp,
+    apply = true,
+    measurements,
 }: ApplyExportNormalizationInput): ApplyExportNormalizationOutput {
+    if (buffer.readChannels && (apply || !measurements)) {
+        throw new Error('Replayable borrowed PCM requires measurements and apply:false.');
+    }
     const channels: Float32Array[] = [];
-    for (let index = 0; index < buffer.numberOfChannels; index++) {
-        channels.push(buffer.getChannelData(index));
+    if (buffer.getChannelData && (!measurements || apply)) {
+        for (let index = 0; index < buffer.numberOfChannels; index++) {
+            channels.push(buffer.getChannelData(index));
+        }
     }
 
-    const measuredLufs = measureIntegratedLoudness({
-        channels,
-        length: buffer.length,
-        sampleRate: buffer.sampleRate,
-    });
-    const truePeak = measureTruePeak({ channels, length: buffer.length });
+    let measuredLufs: number | null;
+    if (measurements) {
+        measuredLufs = measurements.integratedLufs;
+    } else {
+        measuredLufs = measureIntegratedLoudness({
+            channels,
+            length: buffer.length,
+            sampleRate: buffer.sampleRate,
+        });
+    }
+    const truePeak = measurements ? measurements.truePeak : measureTruePeak({ channels, length: buffer.length });
 
     const { gain, limitedByCeiling } = resolveNormalizationGain({
         integratedLufs: measuredLufs,
@@ -57,7 +67,7 @@ export function applyExportNormalization({
         ceilingDbTp,
     });
 
-    if (gain !== 1) {
+    if (apply && gain !== 1) {
         for (const channel of channels) {
             for (let index = 0; index < channel.length; index++) {
                 channel[index] = channel[index]! * gain;

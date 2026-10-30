@@ -1,4 +1,4 @@
-import { createDefaultKit, type ToasterKit } from './ToasterKit';
+import { createDefaultKit, getValidMorphState, type ToasterKit } from './ToasterKit';
 
 /**
  * Wire version of the Toaster kit chunk. **Never renamed, never reused.** Bump this
@@ -258,6 +258,15 @@ export function fromToasterKitState(chunk: unknown): ToasterKit {
     } else {
         kit.activePatternId = kit.patterns[0]?.id ?? fallback.activePatternId;
     }
+
+    if (isRecord(stored.morph)) {
+        kit.morph = {
+            enabled: stored.morph.enabled === true,
+            targetPatternId: typeof stored.morph.targetPatternId === 'string' ? stored.morph.targetPatternId : null,
+            position: isFiniteNumber(stored.morph.position) ? stored.morph.position : 0,
+        };
+    }
+    kit.morph = getValidMorphState(kit);
 
     return kit;
 }

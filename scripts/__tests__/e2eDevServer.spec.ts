@@ -16,13 +16,15 @@ async function withFixture(
         waitForReady: () => Promise<void>;
         terminate: () => void;
     }) => Promise<void>,
-    command = process.execPath
+    command = process.execPath,
+    env: NodeJS.ProcessEnv = {}
 ): Promise<void> {
     const guardedProgram = `setTimeout(() => process.exit(99), 7000).unref(); ${program}`;
     const runner = `import { runE2eDevServer } from ${JSON.stringify(launcher)}; runE2eDevServer(${JSON.stringify(root)}, 6123, ${JSON.stringify(command)}, ['-e', ${JSON.stringify(guardedProgram)}]);`;
     const child = spawn(process.execPath, ['--input-type=module', '-e', runner], {
         cwd: root,
         stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, ...env },
     });
     let stdout = '';
     let stderr = '';
@@ -85,6 +87,18 @@ function records(stderr: string): Record<string, unknown>[] {
 }
 
 describe('observed e2e dev server', () => {
+    it('disables editor HMR for its child while preserving inherited environment', async () => {
+        await withFixture(
+            'console.log(JSON.stringify({ noHmr: process.env.NO_HMR, inherited: process.env.SOURDAW_HMR_FIXTURE }));',
+            async ({ closed, output }) => {
+                expect(await closed).toEqual({ code: 0, signal: null });
+                expect(JSON.parse(output().stdout.trim())).toEqual({ noHmr: '1', inherited: 'preserved' });
+            },
+            process.execPath,
+            { NO_HMR: '0', SOURDAW_HMR_FIXTURE: 'preserved' }
+        );
+    }, 15_000);
+
     it('records the child identity and failure after retaining both output streams', async () => {
         await withFixture(
             "console.log('fixture-stdout'); console.log('fixture-pid=' + process.pid); console.error('fixture-stderr'); process.exitCode = 7;",

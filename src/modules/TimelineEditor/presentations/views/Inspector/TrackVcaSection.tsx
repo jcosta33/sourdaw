@@ -9,7 +9,8 @@ import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
 import { defaultVcaGroupState, vcaGroupStore } from '#/modules/Arrangement/stores';
-import { assignToVca, removeFromVca, createVcaGroup } from '#/modules/Arrangement/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
 import { SurfaceCard } from '../../components/Inspector/SurfaceCard';
@@ -37,8 +38,17 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                                 variant="ghost"
                                 size="icon-xs"
                                 onClick={() => {
+                                    const projectIdentity = captureProjectIdentity();
                                     const name = `VCA ${groups.length + 1}`;
-                                    createVcaGroup(name, [track.id]);
+                                    void executeUserAppAction(
+                                        {
+                                            type: 'createVcaGroup',
+                                            payload: { name, trackIds: [track.id] },
+                                        },
+                                        {
+                                            shouldExecute: () => captureProjectIdentity() === projectIdentity,
+                                        }
+                                    );
                                 }}
                                 aria-label="Create VCA group"
                             >
@@ -56,11 +66,28 @@ export const TrackVcaSection = ({ track }: TrackVcaSectionProps): ReactElement =
                             className="flex-1 border-border"
                             value={track.vcaGroupId ?? ''}
                             onChange={(event) => {
+                                const projectIdentity = captureProjectIdentity();
                                 const val = event.target.value;
                                 if (val) {
-                                    assignToVca(track.id, val);
+                                    void executeUserAppAction(
+                                        {
+                                            type: 'assignToVca',
+                                            payload: { trackId: track.id, vcaGroupId: val },
+                                        },
+                                        {
+                                            shouldExecute: () => captureProjectIdentity() === projectIdentity,
+                                        }
+                                    );
                                 } else {
-                                    removeFromVca(track.id);
+                                    void executeUserAppAction(
+                                        {
+                                            type: 'removeFromVca',
+                                            payload: { trackId: track.id },
+                                        },
+                                        {
+                                            shouldExecute: () => captureProjectIdentity() === projectIdentity,
+                                        }
+                                    );
                                 }
                             }}
                             aria-label="VCA group"

@@ -2,7 +2,7 @@ import { createStore } from '#/infra/store/createStore';
 
 import { type UndoEntry } from '../models/UndoEntry';
 
-import { hydrateSessionMirror, type SessionActionContract, writeSessionMirror } from './undoSessionMirror';
+import { captureSessionMirror, type SessionActionContract, writeSessionMirror } from './undoSessionMirror';
 
 export type UndoStoreState = {
     past: UndoEntry[];
@@ -30,14 +30,33 @@ type UndoStoreOwner = {
  * project id alone.
  */
 let owner: UndoStoreOwner | undefined;
+let pendingSessionRestore: ReturnType<typeof captureSessionMirror> | undefined;
+let sessionRestoreSettled = false;
 
 /**
  * Hydrates persisted undo history only after production handler registration
  * has established the current executable action set. Unknown, retired, and
- * re-shaped actions never enter the live undo/redo stacks.
+ * re-shaped actions never enter the live undo/redo stacks. Boot defers even
+ * entry validation until reconciliation installs and authenticates the root;
+ * current-document registrations keep their existing immediate path.
  */
-export function hydrateUndoStoreFromSession(actionContracts: Iterable<SessionActionContract>): void {
-    const { past, future, projectId, witness } = hydrateSessionMirror(actionContracts);
+export function hydrateUndoStoreFromSession(
+    actionContracts: Iterable<SessionActionContract>,
+    deferSessionRestore = false
+): void {
+    const captured = captureSessionMirror(actionContracts);
+    if (deferSessionRestore) {
+        if (pendingSessionRestore || sessionRestoreSettled) {
+            return;
+        }
+        pendingSessionRestore = captured;
+        owner = undefined;
+        undoStore.set({ past: [], future: [] });
+        return;
+    }
+    pendingSessionRestore = undefined;
+    sessionRestoreSettled = false;
+    const { past, future, projectId, witness } = captured.hydrate();
     // A mirror missing either half of its recorded identity hydrates to no
     // owner, so the reconciliation below always clears rather than matching
     // on a partial identity.
@@ -56,6 +75,25 @@ export function hydrateUndoStoreFromSession(actionContracts: Iterable<SessionAct
  * owner, and its current document witness, going forward.
  */
 export function reconcileUndoStoreForProject(projectId: string | undefined, captureWitness: () => string): void {
+    if (pendingSessionRestore) {
+        const pending = pendingSessionRestore;
+        pendingSessionRestore = undefined;
+        sessionRestoreSettled = true;
+        const restoredOwner = projectId === undefined ? undefined : { projectId, captureWitness };
+        owner = restoredOwner;
+        const matches =
+            projectId !== undefined &&
+            projectId === pending.projectId &&
+            pending.witness !== undefined &&
+            captureWitness() === pending.witness;
+        const restored = matches ? pending.hydrate() : { past: [], future: [] };
+        if (owner !== restoredOwner) {
+            return;
+        }
+        const stillMatches = !matches || captureWitness() === pending.witness;
+        undoStore.set(stillMatches ? { past: restored.past, future: restored.future } : { past: [], future: [] });
+        return;
+    }
     const matchesOwner =
         projectId !== undefined &&
         owner !== undefined &&
@@ -77,6 +115,8 @@ export function reconcileUndoStoreForProject(projectId: string | undefined, capt
  * left, because nothing re-tags it.
  */
 export function clearUndoStoreOwner(): void {
+    pendingSessionRestore = undefined;
+    sessionRestoreSettled = true;
     owner = undefined;
 }
 
@@ -115,6 +155,9 @@ undoStore.subscribe((value) => {
  * an explicit stamp, so an unset store means there is nothing to mirror.
  */
 function writeCurrentSessionMirror(nextOwner: UndoStoreOwner | undefined): void {
+    if (pendingSessionRestore) {
+        return;
+    }
     const current = undoStore.value;
     if (!current) {
         return;
@@ -147,6 +190,10 @@ export function pushUndo(entry: UndoEntry): void {
 }
 
 export function pushUndoEntries(entries: readonly UndoEntry[]): void {
+    if (pendingSessionRestore) {
+        pendingSessionRestore = undefined;
+        sessionRestoreSettled = true;
+    }
     const state = undoStore.value;
     if (!state) {
         return;

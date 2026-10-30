@@ -20,14 +20,23 @@ import {
 } from '@automerge/automerge';
 
 import { logger } from '#/infra/logger/appLogger';
-import { getCurrentAutomergeStorageMutationOwner } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    getCurrentAutomergeStorageMutationOwner,
+    runOutsideAutomergeStoragePublisherScope,
+} from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
 type AnyDoc = Record<string, unknown>;
+
+type OwnedDocumentPublication = {
+    readonly docId: DocId;
+    readonly heads: readonly string[];
+};
 
 type DecodedBundle = {
     documents: Map<DocId, Doc<AnyDoc>>;
@@ -255,6 +264,12 @@ export type CrdtChangeHint = {
 
 type ChangeListener = (docId?: DocId, hint?: CrdtChangeHint) => void;
 
+export type ActiveRootInstallation =
+    | { readonly kind: 'installed'; readonly document: Doc<Record<string, unknown>> | undefined }
+    | { readonly kind: 'reset' };
+
+type RootInstallationListener = (installation: ActiveRootInstallation) => void;
+
 /**
  * Active snapshot transaction state. A mutation participates only when it
  * carries this transaction's exact handle; concurrent unowned mutations are
@@ -283,11 +298,15 @@ class AutomergeRepository {
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
     private lastHistoryDiscardEpoch = 0;
-    private documentIdentityEpoch = 0;
+    private get documentIdentityEpoch(): number {
+        return readDocumentIdentityEpoch();
+    }
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
+    private documentPublicationsByOwner = new WeakMap<object, readonly OwnedDocumentPublication[]>();
     private changeListeners = new Set<ChangeListener>();
+    private rootInstallationListeners = new Set<RootInstallationListener>();
     /** Used only to validate explicit transaction-handle identity. */
     private activeTransaction: SnapshotTransaction | null = null;
     /**
@@ -374,6 +393,11 @@ class AutomergeRepository {
         return this.mutationEpochByOwner.get(owner) ?? 0;
     }
 
+    /** Exact immutable publications, captured before listeners can replace installed truth. */
+    readOwnedDocumentPublications(owner: object): readonly OwnedDocumentPublication[] {
+        return this.documentPublicationsByOwner.get(owner) ?? [];
+    }
+
     /** Subscribe to document changes (for the projection bridge). */
     onChange(listener: ChangeListener): () => void {
         this.changeListeners.add(listener);
@@ -382,8 +406,17 @@ class AutomergeRepository {
         };
     }
 
+    /** Observe root membership and identity installations independently of publication. */
+    onRootInstallation(listener: RootInstallationListener): () => void {
+        this.rootInstallationListeners.add(listener);
+        return () => {
+            this.rootInstallationListeners.delete(listener);
+        };
+    }
+
     /** Create a new empty project with a root document. */
     createProject(_name: string): DocId {
+        const hadDocuments = this.docs.size > 0;
         const removedInstalledRoot = this.docs.has(this.rootId);
         this.docs.clear();
         if (removedInstalledRoot) {
@@ -394,11 +427,21 @@ class AutomergeRepository {
         // save off-thread; nulling would force it back onto the main thread at
         // exactly the moment compaction is most likely to run.
         this.rootId = DOC_PREFIX_ROOT;
-        this.docs.set(this.rootId, init<AnyDoc>());
+        try {
+            this.docs.set(this.rootId, init<AnyDoc>());
+        } catch (error) {
+            crdtWorkerState.shadowHeads = null;
+            if (hadDocuments) {
+                this.markDocumentIdentityMutation();
+            }
+            this.notifyRootInstallation();
+            throw error;
+        }
         if (!removedInstalledRoot) {
             this.markRootIdentityMutation();
         }
         this.markDocumentIdentityMutation();
+        this.notifyRootInstallation();
 
         return this.rootId;
     }
@@ -415,6 +458,9 @@ class AutomergeRepository {
             this.markRootIdentityMutation();
         }
         this.markDocumentIdentityMutation();
+        if (docId === this.rootId) {
+            this.notifyRootInstallation();
+        }
         return docId;
     }
 
@@ -426,6 +472,9 @@ class AutomergeRepository {
             this.markRootIdentityMutation();
         }
         this.markDocumentIdentityMutation();
+        if (docId === this.rootId) {
+            this.notifyRootInstallation();
+        }
     }
 
     /** Publish already-committed document identities/content to projections and peer sync. */
@@ -461,9 +510,19 @@ class AutomergeRepository {
         }
 
         this.captureBeforeMutation(id, snapshotTransaction);
+        const previousHeads = getHeads(doc);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);
         this.docs.set(id, updated);
         this.markMutation();
+        const owner = getCurrentAutomergeStorageMutationOwner();
+        const heads = getHeads(updated);
+        if (owner && (heads.length !== previousHeads.length || heads.some((head) => !previousHeads.includes(head)))) {
+            const publications = this.documentPublicationsByOwner.get(owner) ?? [];
+            this.documentPublicationsByOwner.set(
+                owner,
+                Object.freeze([...publications, Object.freeze({ docId: id, heads: Object.freeze(heads) })])
+            );
+        }
         this.notifyListeners(id, localSlots ? { localSlots } : undefined);
     }
 
@@ -478,6 +537,9 @@ class AutomergeRepository {
             this.markRootIdentityMutation();
         }
         this.markDocumentIdentityMutation();
+        if (id === this.rootId) {
+            this.notifyRootInstallation();
+        }
         this.notifyListeners(id);
     }
 
@@ -540,6 +602,9 @@ class AutomergeRepository {
             this.markDocumentIdentityMutation();
         } else {
             this.markMutation();
+        }
+        if (isNewDocument && id === this.rootId) {
+            this.notifyRootInstallation();
         }
         this.notifyListeners(id);
     }
@@ -845,6 +910,9 @@ class AutomergeRepository {
             if (discardsHistory) {
                 this.lastHistoryDiscardEpoch = this.mutationEpoch;
             }
+            if (changesRootIdentity) {
+                this.notifyRootInstallation();
+            }
             this.notifyListeners();
         }
     }
@@ -914,6 +982,7 @@ class AutomergeRepository {
             this.captureWorkerShadowHeads();
         }
         this.markDocumentIdentityMutation();
+        this.notifyRootInstallation();
         this.notifyListeners();
         return true;
     }
@@ -1084,24 +1153,7 @@ class AutomergeRepository {
             if (this.mutationEpoch !== capturedMutationEpoch) {
                 continue;
             }
-            const installsRoot = newDocIds.includes(this.rootId);
-            let installedRoot = false;
-            for (const [id, bytes] of compacted) {
-                this.docs.set(id, load<AnyDoc>(bytes));
-                if (!installedRoot && installsRoot && id === this.rootId) {
-                    this.markRootIdentityMutation();
-                    installedRoot = true;
-                }
-            }
-            // The worker's `mergeBundle` kept the merged documents as its
-            // replica, and those are exactly the documents just installed.
-            this.captureWorkerShadowHeads();
-
-            if (newDocIds.length > 0) {
-                this.markDocumentIdentityMutation();
-            } else {
-                this.markMutation();
-            }
+            this.installWorkerMerge(compacted, newDocIds);
             this.notifyListeners();
             return { mergedDocIds, newDocIds };
         }
@@ -1109,31 +1161,98 @@ class AutomergeRepository {
         return { mergedDocIds: [], newDocIds: [] };
     }
 
+    private installWorkerMerge(compacted: readonly [string, Uint8Array][], newDocIds: readonly string[]): void {
+        const newIds = new Set(newDocIds);
+        let installedAny = false;
+        let installedNew = false;
+        let installedRoot = false;
+        let touchedRoot = false;
+        try {
+            for (const [id, bytes] of compacted) {
+                this.docs.set(id, load<AnyDoc>(bytes));
+                installedAny = true;
+                installedNew ||= newIds.has(id);
+                if (id === this.rootId) {
+                    touchedRoot = true;
+                    if (!installedRoot && newIds.has(id)) {
+                        this.markRootIdentityMutation();
+                        installedRoot = true;
+                    }
+                }
+            }
+        } catch (error) {
+            if (installedAny) {
+                crdtWorkerState.shadowHeads = null;
+                if (installedNew) {
+                    this.markDocumentIdentityMutation();
+                } else {
+                    this.markMutation();
+                }
+            }
+            if (touchedRoot) {
+                this.notifyRootInstallation();
+            }
+            if (installedAny) {
+                this.notifyListeners();
+            }
+            throw error;
+        }
+        // The worker's `mergeBundle` kept the merged documents as its
+        // replica, and those are exactly the documents just installed.
+        this.captureWorkerShadowHeads();
+        if (newDocIds.length > 0) {
+            this.markDocumentIdentityMutation();
+        } else {
+            this.markMutation();
+        }
+        if (touchedRoot) {
+            this.notifyRootInstallation();
+        }
+    }
+
     /** Synchronous fallback for mergeBundle (used when worker is unavailable). */
     private _mergeBundleSync(bundle: DocumentBundle): MergeResult {
         const result: MergeResult = { mergedDocIds: [], newDocIds: [] };
+        let touchedRoot = false;
 
-        for (const [id, bytes] of bundle) {
-            const incoming = load<AnyDoc>(bytes);
-            const local = this.docs.get(id);
-            if (local) {
-                // Bare merge() is deliberate — no load(save()) round-trip.
-                // Automerge v3 merge() already returns a canonical doc: the
-                // "fix 4: misdiagnosed" block in
-                // __tests__/automergeRepository.transact.spec.ts pins that
-                // save(merge(...)) is byte-identical to the worker path's
-                // compacted output (the worker's save→load exists only because
-                // a live WASM Doc cannot cross postMessage). mergeRemoteDoc
-                // relies on the same property.
-                this.docs.set(id, merge(local, incoming));
-                result.mergedDocIds.push(id);
-            } else {
-                this.docs.set(id, incoming);
-                result.newDocIds.push(id);
-                if (id === this.rootId) {
-                    this.markRootIdentityMutation();
+        try {
+            for (const [id, bytes] of bundle) {
+                const incoming = load<AnyDoc>(bytes);
+                const local = this.docs.get(id);
+                if (local) {
+                    // Bare merge() is deliberate — no load(save()) round-trip.
+                    // Automerge v3 merge() already returns a canonical doc: the
+                    // "fix 4: misdiagnosed" block in
+                    // __tests__/automergeRepository.transact.spec.ts pins that
+                    // save(merge(...)) is byte-identical to the worker path's
+                    // compacted output (the worker's save→load exists only because
+                    // a live WASM Doc cannot cross postMessage). mergeRemoteDoc
+                    // relies on the same property.
+                    this.docs.set(id, merge(local, incoming));
+                    result.mergedDocIds.push(id);
+                } else {
+                    this.docs.set(id, incoming);
+                    result.newDocIds.push(id);
+                    if (id === this.rootId) {
+                        this.markRootIdentityMutation();
+                    }
                 }
+                touchedRoot ||= id === this.rootId;
             }
+        } catch (error) {
+            crdtWorkerState.shadowHeads = null;
+            if (result.newDocIds.length > 0) {
+                this.markDocumentIdentityMutation();
+            } else if (result.mergedDocIds.length > 0) {
+                this.markMutation();
+            }
+            if (touchedRoot) {
+                this.notifyRootInstallation();
+            }
+            if (result.mergedDocIds.length > 0 || result.newDocIds.length > 0) {
+                this.notifyListeners();
+            }
+            throw error;
         }
 
         if (bundle.size > 0) {
@@ -1142,6 +1261,9 @@ class AutomergeRepository {
             } else {
                 this.markMutation();
             }
+        }
+        if (touchedRoot) {
+            this.notifyRootInstallation();
         }
         this.notifyListeners();
         return result;
@@ -1158,6 +1280,9 @@ class AutomergeRepository {
             this.markRootIdentityMutation();
         }
         this.markDocumentIdentityMutation();
+        if (id === this.rootId) {
+            this.notifyRootInstallation();
+        }
     }
 
     /** Clear all documents and listeners. */
@@ -1170,9 +1295,11 @@ class AutomergeRepository {
         this.rootId = DOC_PREFIX_ROOT;
         this.markRootIdentityMutation();
         this.markDocumentIdentityMutation();
+        this.notifyRootInstallation({ kind: 'reset' });
         // Drop change listeners too: otherwise projection-bridge subscriptions
         // from a previous session keep firing on the next session's edits.
         this.changeListeners.clear();
+        this.rootInstallationListeners.clear();
     }
 
     private markMutation(): void {
@@ -1186,7 +1313,7 @@ class AutomergeRepository {
     }
 
     private markDocumentIdentityMutation(): void {
-        this.documentIdentityEpoch += 1;
+        advanceDocumentIdentityEpoch();
         this.markMutation();
     }
 
@@ -1215,9 +1342,21 @@ class AutomergeRepository {
     private notifyListeners(docId?: DocId, hint?: CrdtChangeHint): void {
         for (const listener of this.changeListeners) {
             try {
-                listener(docId, hint);
+                runOutsideAutomergeStoragePublisherScope(() => listener(docId, hint));
             } catch (error) {
                 logger.warn('[AutomergeRepository] Listener error:', error);
+            }
+        }
+    }
+
+    private notifyRootInstallation(
+        installation: ActiveRootInstallation = { kind: 'installed', document: this.docs.get(this.rootId) }
+    ): void {
+        for (const listener of this.rootInstallationListeners) {
+            try {
+                runOutsideAutomergeStoragePublisherScope(() => listener(installation));
+            } catch (error) {
+                logger.warn('[AutomergeRepository] Root installation listener error:', error);
             }
         }
     }

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
 import { cacheAudioBuffer, getCompensationDelay } from '#/modules/AudioEngine/useCases';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { projectStore } from '#/modules/Project/stores';
 import { FREEZE_BAKE_VERSION } from '#/utils/frozenBufferTail';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -13,6 +15,13 @@ import { renderTrackOffline } from '../renderOffline';
 
 vi.mock('../../../repositories/track/updateTrack', () => ({
     updateTrack: vi.fn(),
+}));
+
+// The unit subject owns preparation of the typed failure settlement. The
+// connected handler spec exercises its real dispatch, storage and history.
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
+    executeAppAction: vi.fn(async () => undefined),
 }));
 
 vi.mock('../../../services/computeTrackHash', () => ({
@@ -49,6 +58,15 @@ vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
 describe('freezeTrack', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.mocked(updateTrack).mockImplementation((trackId, updater) => {
+            const state = trackStore.value;
+            if (state) {
+                trackStore.set({
+                    ...state,
+                    tracks: state.tracks.map((track) => (track.id === trackId ? updater(track) : track)),
+                });
+            }
+        });
         trackStore.set({ tracks: [], selectedTrackId: null });
         transportMock.value = null;
         activeFreezeTasks.clear();
@@ -428,22 +446,79 @@ describe('freezeTrack', () => {
 
         const didWrite = await freezeTrack('t1');
 
-        expect(updateTrack).toHaveBeenCalledTimes(2);
-
-        const errorCall = vi.mocked(updateTrack).mock.calls[1];
-        if (!errorCall) {
-            throw new Error('expected second updateTrack call');
-        }
-        const storedTrack = trackStore.value!.tracks[0];
-        if (!storedTrack) {
-            throw new Error('expected track in store');
-        }
-        const errorTrack = errorCall[1](storedTrack);
-
-        expect(errorTrack.freezeState.status).toBe('error');
-        expect(errorTrack.freezeState.errorMessage).toBe('Render crashed');
+        expect(updateTrack).toHaveBeenCalledTimes(1);
+        expect(executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'restoreFreezeState',
+                payload: expect.objectContaining({
+                    trackId: 't1',
+                    replacement: expect.objectContaining({
+                        freezeState: expect.objectContaining({ status: 'error', errorMessage: 'Render crashed' }),
+                    }),
+                }),
+            }),
+            expect.objectContaining({ skipMacroRecording: true, shouldExecute: expect.any(Function) })
+        );
         expect(notifyUser).toHaveBeenCalledWith('Render crashed', 'error');
         expect(didWrite).toBe(false);
+    });
+
+    it('awaits and handles a failed diagnostic save with the exact render and settlement errors', async () => {
+        trackStore.set({ tracks: [createTrack({ id: 't1', kind: 'audio', name: 'Track' })], selectedTrackId: null });
+        const renderFailure = new Error('Render refused');
+        const settlementFailure = new Error('Diagnostic save refused');
+        const entered = Promise.withResolvers<void>();
+        const settlement = Promise.withResolvers<void>();
+        vi.mocked(renderTrackOffline).mockRejectedValue(renderFailure);
+        vi.mocked(executeAppAction).mockImplementationOnce(() => {
+            entered.resolve();
+            return settlement.promise;
+        });
+        const log = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        try {
+            const pending = freezeTrack('t1');
+            await entered.promise;
+            expect(activeFreezeTasks.has('t1')).toBe(true);
+            settlement.reject(settlementFailure);
+            await expect(pending).resolves.toBe(false);
+            expect(notifyUser).toHaveBeenCalledWith('Render refused', 'error');
+            expect(notifyUser).toHaveBeenCalledWith(
+                'Freeze failed: Render refused. Could not save the failure diagnostic: Diagnostic save refused',
+                'error'
+            );
+            expect(log).toHaveBeenCalledTimes(1);
+            const aggregate = log.mock.calls[0]?.[0];
+            expect(aggregate).toBeInstanceOf(AggregateError);
+            if (!(aggregate instanceof AggregateError)) {
+                throw new Error('Expected the combined Freeze failure');
+            }
+            expect(aggregate.errors).toEqual([renderFailure, settlementFailure]);
+            expect(aggregate.errors[0]).toBe(renderFailure);
+            expect(aggregate.errors[1]).toBe(settlementFailure);
+            expect(activeFreezeTasks.has('t1')).toBe(false);
+        } finally {
+            log.mockRestore();
+        }
+    });
+
+    it('keeps failure admission when only freeze metadata key order changes', async () => {
+        trackStore.set({ tracks: [createTrack({ id: 't1', kind: 'audio', name: 'Track' })], selectedTrackId: null });
+        vi.mocked(renderTrackOffline).mockRejectedValue(new Error('Render refused'));
+        vi.mocked(executeAppAction).mockImplementationOnce(async (_action, options) => {
+            const state = trackStore.value;
+            if (!state) {
+                throw new Error('Expected the pending Freeze state');
+            }
+            trackStore.set({
+                ...state,
+                tracks: state.tracks.map((track) => ({
+                    ...track,
+                    freezeState: { renderProgress: 0, status: 'freezing' },
+                })),
+            });
+            expect(options?.shouldExecute?.()).toBe(true);
+        });
+        await expect(freezeTrack('t1')).resolves.toBe(false);
     });
 
     it('uses defaults 0 and 1 if track has no clips', async () => {
@@ -551,7 +626,7 @@ describe('freezeTrack', () => {
         );
     });
 
-    it('throws and marks an error when the offline render returns no buffer', async () => {
+    it('prepares a typed error settlement when the offline render returns no buffer', async () => {
         trackStore.set({
             tracks: [
                 {
@@ -569,17 +644,18 @@ describe('freezeTrack', () => {
 
         await freezeTrack('t1');
 
-        const errorCall = vi.mocked(updateTrack).mock.calls[1];
-        if (!errorCall) {
-            throw new Error('expected second updateTrack call');
-        }
-        const storedTrack = trackStore.value!.tracks[0];
-        if (!storedTrack) {
-            throw new Error('expected track in store');
-        }
-        const errorTrack = errorCall[1](storedTrack);
-        expect(errorTrack.freezeState.status).toBe('error');
-        expect(errorTrack.freezeState.errorMessage).toBe('Render failed');
+        expect(updateTrack).toHaveBeenCalledTimes(1);
+        expect(executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'restoreFreezeState',
+                payload: expect.objectContaining({
+                    replacement: expect.objectContaining({
+                        freezeState: expect.objectContaining({ status: 'error', errorMessage: 'Render failed' }),
+                    }),
+                }),
+            }),
+            expect.objectContaining({ skipMacroRecording: true })
+        );
     });
 
     it('restores the unfrozen state when the render is aborted by the user', async () => {
@@ -638,17 +714,18 @@ describe('freezeTrack', () => {
 
         const didWrite = await freezeTrack('t1');
 
-        const errorCall = vi.mocked(updateTrack).mock.calls[1];
-        if (!errorCall) {
-            throw new Error('expected second updateTrack call');
-        }
-        const storedTrack = trackStore.value!.tracks[0];
-        if (!storedTrack) {
-            throw new Error('expected track in store');
-        }
-        const errorTrack = errorCall[1](storedTrack);
-        expect(errorTrack.freezeState.status).toBe('error');
-        expect(errorTrack.freezeState.errorMessage).toBe('a string failure');
+        expect(updateTrack).toHaveBeenCalledTimes(1);
+        expect(executeAppAction).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'restoreFreezeState',
+                payload: expect.objectContaining({
+                    replacement: expect.objectContaining({
+                        freezeState: expect.objectContaining({ status: 'error', errorMessage: 'a string failure' }),
+                    }),
+                }),
+            }),
+            expect.objectContaining({ skipMacroRecording: true })
+        );
         expect(notifyUser).toHaveBeenCalledWith('a string failure', 'error');
         expect(didWrite).toBe(false);
     });

@@ -402,4 +402,73 @@ export const drumsMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'Older kit sounds come mostly from soft transient rounding plus reduced high-frequency bandwidth, so modest drive is paired with a top-end roll rather than with obvious distortion. The negative output trim keeps the added harmonics from flattering the comparison through level alone.',
     },
+    {
+        id: 'drums-controlled-gate',
+        descriptor: 'controlled',
+        roles: ['drums'],
+        title: 'Reduce close-drum bleed between distinct strikes',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'faust-noise-gate',
+                parameters: [
+                    { paramId: 'threshold', minimum: -55, maximum: -30 },
+                    { paramId: 'attack', minimum: 0.0002, maximum: 0.01 },
+                    { paramId: 'hold', minimum: 0.02, maximum: 0.1 },
+                    { paramId: 'release', minimum: 0.05, maximum: 0.25 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'Distinct wanted close-mic strikes exceed threshold and bleed between them falls below it.',
+            'Fit hold and release in seconds to the wanted decay and space between hits.',
+        ],
+        contraindications: [
+            'Skip ghost notes or wanted tails close to threshold, brushed playing, and sustained room or overhead material.',
+            'Skip a continuously keyed dense loop or a chain whose earlier gate already chops the tail.',
+        ],
+        metrics: [{ metric: 'rms', direction: 'decrease' }],
+        source: 'The existing linked stereo Noise Gate shares the louder-channel detector across both channels. Its authored threshold, attack, hold, and release windows attenuate quiet bleed after strikes while leaving wanted loud passages open; it does not compress peaks or promise higher loudness.',
+    },
+    {
+        id: 'drums-tight-transient',
+        descriptor: 'tight',
+        roles: ['drums'],
+        title: 'Shorter drum tails with the strike unchanged',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'transient-shaper',
+                parameters: [{ paramId: 'sustainGain', minimum: 0.5, maximum: 0.75 }],
+            },
+        ],
+        prerequisites: ['Distinct close-mic strikes and tails reach the fixed level-dependent detector.'],
+        contraindications: [
+            'Skip already-gated tails and stereo room or overhead material whose independent image changes are unwanted.',
+        ],
+        metrics: [
+            { metric: 'rms', direction: 'decrease' },
+            { metric: 'crestFactor', direction: 'increase' },
+        ],
+        source: 'Tail-classified samples are multiplied by 0.5 to 0.75 while Attack remains at unity. RMS falls and crest factor rises when the peak belongs to a transient; these are bounded gain consequences, not a source-independent optimum.',
+    },
+    {
+        id: 'drums-punchy-transient',
+        descriptor: 'punchy',
+        roles: ['drums'],
+        title: 'Stronger drum strikes with the tail unchanged',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'transient-shaper',
+                parameters: [{ paramId: 'attackGain', minimum: 1.25, maximum: 1.5 }],
+            },
+        ],
+        prerequisites: ['Unsquashed close-mic onsets and at least 3.52 dB headroom for the maximum boost.'],
+        contraindications: [
+            'Skip clipped or heavily limited drums and stereo room or overhead material whose independent image changes are unwanted.',
+        ],
+        metrics: [{ metric: 'crestFactor', direction: 'increase' }],
+        source: 'Transient-classified samples rise by 1.94 to 3.52 dB while Sustain remains at unity. Crest factor increases only when the source has useful detected onsets; no makeup gain or limiting is added.',
+    },
 ];

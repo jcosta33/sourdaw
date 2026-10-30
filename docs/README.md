@@ -18,6 +18,8 @@ Use this page as the route map.
 - **Engineering practice:** [testing](./06-testing.md),
   [conventions](./07-conventions.md), [events](./04-events.md), and
   [dependency injection](./01-dependency-injection.md).
+- **Controls and surfaces:** the [design-system recipes](./design-system.md)
+  and development-only control gallery.
 
 The architecture pages describe current implementation boundaries. They do not
 turn an unfinished feature into a supported release feature. That would be a

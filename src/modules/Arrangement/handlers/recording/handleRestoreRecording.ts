@@ -1,17 +1,11 @@
 import { restoreMidiClipData } from '#/modules/MIDI/useCases';
 import { createHandler } from '#/utils/createHandler';
-import { type AppAction } from '#/utils/handlerContract';
 
+import { type Clip } from '../../models/Track';
 import { restoreTakesForClip } from '../../useCases/comping/restoreTakesForClip';
-import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { updateTrack } from '../../useCases/updateTrack';
 
-type RestoreRecordingAction = Extract<AppAction, { type: 'restoreRecording' }>;
-
-function restorationTargetIsClear(action: RestoreRecordingAction): boolean {
-    const track = getTrackStoreState()?.tracks.find((candidate) => candidate.id === action.payload.clip.trackId);
-    return track !== undefined && !track.clips.some((clip) => clip.id === action.payload.clip.id);
-}
+import { recordingRestoreTargetIsClear } from './recordingReplayOwnership';
 
 /**
  * Explicit redo of `commitRecording`. Replays the clip, the take-lane state the
@@ -22,13 +16,21 @@ function restorationTargetIsClear(action: RestoreRecordingAction): boolean {
  * track holds now, so a later edit to that lane survives.
  */
 export const handleRestoreRecording = createHandler<'restoreRecording'>({
-    validate: restorationTargetIsClear,
-    execute: (action) => {
-        const { clip, retiredTakeLanes, midiNotesSnapshot, midiCcSnapshot, midiPitchBendSnapshot } = action.payload;
-        if (restorationTargetIsClear(action)) {
-            const recorded = structuredClone(clip) as never;
-            updateTrack(clip.trackId, (time) => ({ ...time, clips: [...time.clips, recorded] }));
+    validate: recordingRestoreTargetIsClear,
+    execute: (action, context) => {
+        if (!recordingRestoreTargetIsClear(action, context)) {
+            return { status: 'conflict' };
         }
+        const { clip, retiredTakeLanes, midiNotesSnapshot, midiCcSnapshot, midiPitchBendSnapshot } = action.payload;
+        const { kneadState, ...snapshot } = structuredClone(clip);
+        const recorded: Clip = snapshot;
+        if (kneadState) {
+            recorded.kneadState = {
+                ...kneadState,
+                blobs: kneadState.blobs.map((blob) => ({ ...blob, pitchCurveCents: [...blob.pitchCurveCents] })),
+            };
+        }
+        updateTrack(clip.trackId, (time) => ({ ...time, clips: [...time.clips, recorded] }));
         restoreTakesForClip(retiredTakeLanes);
         restoreMidiClipData({
             clipId: clip.id,
@@ -36,6 +38,7 @@ export const handleRestoreRecording = createHandler<'restoreRecording'>({
             controlChangeSnapshot: midiCcSnapshot,
             pitchBendSnapshot: midiPitchBendSnapshot,
         });
+        return undefined;
     },
     describe: () => ({ label: 'Restore recording' }),
     undoable: false,

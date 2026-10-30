@@ -1,5 +1,14 @@
-import { type ReactElement, type ChangeEvent, useLayoutEffect, useRef, useState } from 'react';
+import {
+    type ReactElement,
+    type ChangeEvent,
+    type DragEvent,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+} from 'react';
 
+import { TRACK_COLOR_PRESETS } from '#/components/daw/colorPresets';
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { Row, Stack } from '#/components/layout';
 import { BipolarSlider } from '#/components/ui/bipolar-slider';
@@ -8,19 +17,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip
 import { useStore } from '#/infra/store/useStore';
 import { useStoreSelector } from '#/infra/store/useStoreSelector';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { quantiseDeviceParameterValue, setDeviceParameter } from '#/modules/Arrangement/useCases';
-import { captureDeviceParameterRuntimeWriteAuthority } from '#/modules/AudioEngine/useCases';
+import { quantiseDeviceParameterValue } from '#/modules/Arrangement/useCases';
 import {
     automationStore,
     modulationStore,
     modulationRuntimeStore,
+    modulationDragPreviewStore,
     type ModulationStoreState,
 } from '#/modules/Automation/stores';
-import {
-    addAutomationLane,
-    captureTouchAutomationRecordingAuthority,
-    removeAutomationLane,
-} from '#/modules/Automation/useCases';
+import { addAutomationLane, removeAutomationLane } from '#/modules/Automation/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { MidiLearnButton, MidiLearnRotaryKnob as RotaryKnob } from '#/modules/ControlSurface/presentations/views';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -31,82 +36,13 @@ import { cn } from '#/utils/Styles/cn';
 import { type DeviceParameterView as DeviceParameter } from '../../../models/PluginDescriptorViewTypes';
 import { type Device } from '../../../models/TrackViewTypes';
 import { findEquivalentAutomationLane } from '../../helpers/automationViewHelpers';
+import { useDeviceParameterGesture } from '../../hooks/useDeviceParameterGesture';
 
 type DeviceParameterControlProps = {
     param: DeviceParameter;
     device: Device;
     trackId: string;
 };
-
-type ParameterGesture = {
-    id: number;
-    trackId: string;
-    deviceId: string;
-    deviceType: string;
-    deviceIds: string[];
-    paramId: string;
-    frozen: boolean | undefined;
-    valuePresent: boolean;
-    value: number | undefined;
-    defaultValue: number;
-    authority: ReturnType<typeof captureProjectTransitionAuthority>;
-    runtimeAuthority: ReturnType<typeof captureDeviceParameterRuntimeWriteAuthority>;
-    recordingAuthority: ReturnType<typeof captureTouchAutomationRecordingAuthority>;
-    previewValue?: number;
-    invalidated: boolean;
-    settling: boolean;
-    committed: boolean;
-};
-
-function readGestureDevice(gesture: ParameterGesture, requireStartingValue: boolean) {
-    if (!gesture.authority.isCurrent()) {
-        return undefined;
-    }
-    const tracks = trackStore.value?.tracks ?? [];
-    const owners = tracks.filter((track) => track.devices.some((candidate) => candidate.id === gesture.deviceId));
-    const owner = owners.length === 1 ? owners[0] : undefined;
-    if (
-        !owner ||
-        owner.id !== gesture.trackId ||
-        tracks.filter((track) => track.id === owner.id).length !== 1 ||
-        owner.devices.length !== gesture.deviceIds.length ||
-        owner.devices.some((candidate, index) => candidate.id !== gesture.deviceIds[index])
-    ) {
-        return undefined;
-    }
-    const matches = owner.devices.filter((candidate) => candidate.id === gesture.deviceId);
-    const device = matches.length === 1 ? matches[0] : undefined;
-    if (!device || device.type !== gesture.deviceType) {
-        return undefined;
-    }
-    if (
-        requireStartingValue &&
-        (owner.frozen !== gesture.frozen ||
-            Object.hasOwn(device.parameterValues, gesture.paramId) !== gesture.valuePresent ||
-            (gesture.valuePresent && device.parameterValues[gesture.paramId] !== gesture.value))
-    ) {
-        return undefined;
-    }
-    return device;
-}
-
-function restoreGesturePreview(gesture: ParameterGesture): void {
-    if (!gesture.runtimeAuthority.isCurrent() || !gesture.runtimeAuthority.canCommit()) {
-        return;
-    }
-    const device = readGestureDevice(gesture, false);
-    const value = device?.parameterValues[gesture.paramId] ?? gesture.defaultValue;
-    if (device && gesture.previewValue !== undefined && gesture.previewValue !== value) {
-        setDeviceParameter(gesture.deviceId, gesture.paramId, value, {
-            transient: true,
-            automationRecordingPolicy: 'suppressed',
-        });
-    }
-}
-
-function releaseGestureTouchAutomation(gesture: ParameterGesture): void {
-    gesture.recordingAuthority.release();
-}
 
 type DeviceAutomationState = {
     lanes: Array<{
@@ -135,8 +71,63 @@ function buildLaneLookup(lanes: DeviceAutomationState['lanes']): Map<string, Dev
 }
 
 type ParameterMapping = { modulatorId: string; amount: number };
+type ParameterHalo = { id: string; amount: number; color: string; activity: number; preview?: boolean };
+type EnteredModulationTarget = {
+    modulatorId: string;
+    trackId: string;
+    deviceId: string;
+    paramId: string;
+    isCurrentProject: () => boolean;
+    sourceProjectAuthority: { isCurrent: () => boolean };
+};
 
 const NO_PARAMETER_MAPPINGS: ParameterMapping[] = [];
+const NO_ACTIVITIES: number[] = [];
+const NO_SOURCE_IDS: string[] = [];
+
+function sourceHash(id: string): number {
+    let hash = 2166136261;
+    for (const character of id) {
+        hash = Math.imul(hash ^ character.charCodeAt(0), 16777619);
+    }
+    return hash >>> 0;
+}
+
+function colorForSource(id: string, usedColors: Set<string>): string {
+    const first = sourceHash(id) % TRACK_COLOR_PRESETS.length;
+    for (let offset = 0; offset < TRACK_COLOR_PRESETS.length; offset += 1) {
+        const color = `color-mix(in oklch, ${TRACK_COLOR_PRESETS[(first + offset) % TRACK_COLOR_PRESETS.length]!} 55%, white)`;
+        if (!usedColors.has(color)) {
+            usedColors.add(color);
+            return color;
+        }
+    }
+    // Probe no more candidates than the number already taken. Fractional hues
+    // keep distinct fallback colors when the integer hue circle wraps.
+    const firstHue = (sourceHash(id) + usedColors.size * 137) % 360;
+    for (let offset = 0; offset <= usedColors.size; offset += 1) {
+        const hue = (firstHue + offset * 137.507764) % 360;
+        const color = `oklch(0.72 0.13 ${hue.toFixed(6)})`;
+        if (!usedColors.has(color)) {
+            usedColors.add(color);
+            return color;
+        }
+    }
+    throw new Error('No unused modulation color');
+}
+
+function sourceIdsEqual(left: string[], right: string[]): boolean {
+    return left.length === right.length && left.every((id, index) => id === right[index]);
+}
+
+function colorsForSources(sourceIds: string[]): Map<string, string> {
+    const colors = new Map<string, string>();
+    const usedColors = new Set<string>();
+    for (const id of sourceIds) {
+        colors.set(id, colorForSource(id, usedColors));
+    }
+    return colors;
+}
 
 /**
  * Pull the mappings that target this exact (trackId, deviceId, paramId) triple out of
@@ -169,7 +160,7 @@ function selectParameterMappings(
             }
         }
     }
-    return mappings ?? NO_PARAMETER_MAPPINGS;
+    return mappings?.sort((left, right) => left.modulatorId.localeCompare(right.modulatorId)) ?? NO_PARAMETER_MAPPINGS;
 }
 
 function parameterMappingsEqual(a: ParameterMapping[], b: ParameterMapping[]): boolean {
@@ -184,36 +175,44 @@ function parameterMappingsEqual(a: ParameterMapping[], b: ParameterMapping[]): b
     );
 }
 
-function selectModulationTotal(
+function selectModulationActivities(
     runtimeState: { runtimeValues: Record<string, number> } | null,
     mappings: ParameterMapping[]
-): number {
-    let total = 0;
-    for (const mapping of mappings) {
-        total += (runtimeState?.runtimeValues[mapping.modulatorId] ?? 0) * mapping.amount;
+): number[] {
+    if (mappings.length === 0) {
+        return NO_ACTIVITIES;
     }
-    return Math.max(-1, Math.min(1, total));
+    return mappings.map((mapping) => runtimeState?.runtimeValues[mapping.modulatorId] ?? 0);
 }
 
-/**
- * Narrow subscription for one device parameter's aggregated modulation amount (audit
- * m5/M5). `useStore(modulationRuntimeStore, ...)` re-renders every control in the
- * inspector on every runtime tick, whether or not a modulator targets it. This hook selects
- * down to just this parameter's mappings and their runtime total, so `useSyncExternalStore`'s
- * `Object.is` check on the *returned scalar* absorbs runtime ticks for every parameter an idle
- * control isn't wired to — a tick only triggers a re-render when this parameter's total
- * actually changes. The mapping lookup above still re-runs on each render (its selector
- * closure isn't reference-stable across renders); `parameterMappingsEqual` is what keeps that
- * recompute from itself causing a spurious total re-derivation for an idle parameter.
- */
-function useDeviceParameterModulation(trackId: string, deviceId: string, paramId: string): number {
+function activitiesEqual(left: number[], right: number[]): boolean {
+    return left.length === right.length && left.every((activity, index) => Object.is(activity, right[index]));
+}
+
+/** Runtime ticks for unrelated sources keep the returned selection unchanged. */
+function useDeviceParameterModulation(
+    trackId: string,
+    deviceId: string,
+    paramId: string,
+    sourceColors: Map<string, string>
+): ParameterHalo[] {
     const mappings = useStoreSelector(
         modulationStore,
         (state) => selectParameterMappings(state, trackId, deviceId, paramId),
         parameterMappingsEqual
     );
 
-    return useStoreSelector(modulationRuntimeStore, (state) => selectModulationTotal(state, mappings), Object.is);
+    const activities = useStoreSelector(
+        modulationRuntimeStore,
+        (state) => selectModulationActivities(state, mappings),
+        activitiesEqual
+    );
+    return mappings.map((mapping, index) => ({
+        id: mapping.modulatorId,
+        amount: mapping.amount,
+        color: sourceColors.get(mapping.modulatorId)!,
+        activity: activities[index] ?? 0,
+    }));
 }
 
 /** Compute a sensible step from the parameter range and type. */
@@ -256,10 +255,46 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const autoState = useStore<DeviceAutomationState>(automationStore, { lanes: [] });
     const trackState = useStore(trackStore, { tracks: [], selectedTrackId: null });
 
-    // Aggregated modulation amount for this parameter — narrow subscription (audit M5) so
-    // a runtime tick that doesn't move this parameter's mapped modulators does not re-render
-    // this control. See useDeviceParameterModulation above.
-    const modulation = useDeviceParameterModulation(trackId, device.id, param.id);
+    // Allocate across the full source set so each target and hover sees the same color.
+    const sourceIds = useStoreSelector(
+        modulationStore,
+        (state) => state?.modulators.map((modulator) => modulator.id).sort() ?? NO_SOURCE_IDS,
+        sourceIdsEqual
+    );
+    const sourceColors = colorsForSources(sourceIds);
+    const modulations = useDeviceParameterModulation(trackId, device.id, param.id, sourceColors);
+    const draggedModulatorId = useStoreSelector(modulationDragPreviewStore, (state) => state?.modulatorId ?? null);
+    const draggedSourceAuthority = useStoreSelector(
+        modulationDragPreviewStore,
+        (state) => state?.projectAuthority ?? null
+    );
+    const draggedSourceEnabled = useStoreSelector(
+        modulationStore,
+        (state) =>
+            state?.modulators.some((modulator) => modulator.id === draggedModulatorId && modulator.enabled) ?? false
+    );
+    const [enteredTarget, setEnteredTarget] = useState<EnteredModulationTarget | null>(null);
+    const dropCommittedRef = useRef(false);
+    const mountedRef = useRef(true);
+    const currentTargetRef = useRef({ trackId, deviceId: device.id, paramId: param.id });
+    const targetGenerationRef = useRef(0);
+
+    useLayoutEffect(() => {
+        targetGenerationRef.current += 1;
+        currentTargetRef.current = { trackId, deviceId: device.id, paramId: param.id };
+        setEnteredTarget(null);
+    }, [trackId, device.id, param.id]);
+
+    useEffect(() => {
+        setEnteredTarget(null);
+    }, [draggedModulatorId, draggedSourceEnabled, draggedSourceAuthority]);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+        };
+    }, []);
 
     const laneLookup = buildLaneLookup(autoState.lanes);
     const targetId = createDeviceAutomationTargetId(device.id, param.id);
@@ -274,240 +309,16 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         );
     const hasAutomation = !!activeLane;
 
-    const gestureRef = useRef<ParameterGesture | null>(null);
-    const gestureSequence = useRef(0);
-    const [gestureOwner, setGestureOwner] = useState<number | undefined>(undefined);
-    const mounted = useRef(true);
-    const cancelOnUnmount = useRef<() => void>(() => undefined);
-    const [draft, setDraft] = useState<{
-        trackId: string;
-        deviceId: string;
-        paramId: string;
-        value: number;
-        valuePresent: boolean;
-        startingValue: number | undefined;
-        authority: ParameterGesture['authority'];
-    } | null>(null);
-    const storedValue = device.parameterValues[param.id] ?? param.value;
-    const draftCurrent =
-        draft &&
-        draft.trackId === trackId &&
-        draft.deviceId === device.id &&
-        draft.paramId === param.id &&
-        draft.authority.isCurrent() &&
-        Object.hasOwn(device.parameterValues, param.id) === draft.valuePresent &&
-        device.parameterValues[param.id] === draft.startingValue;
-    const value = draftCurrent ? draft.value : storedValue;
+    const {
+        value,
+        gestureOwner,
+        startGesture,
+        isGestureCurrent,
+        change: handleKnobChange,
+    } = useDeviceParameterGesture({ param, device, trackId });
     const step = deriveStep(param);
     const fineStep = step / 10;
     const displayValue = formatDisplayValue(value, param);
-
-    const cancelGesture = (gesture: ParameterGesture): void => {
-        if (gesture.invalidated || gesture.settling) {
-            return;
-        }
-        gesture.invalidated = true;
-        releaseGestureTouchAutomation(gesture);
-        try {
-            restoreGesturePreview(gesture);
-        } catch (error) {
-            notifyUser(error instanceof Error ? error.message : 'Device parameter preview restoration failed', 'error');
-        }
-        gesture.runtimeAuthority.release();
-        if (mounted.current) {
-            if (gestureRef.current === gesture) {
-                setGestureOwner(undefined);
-            }
-            setDraft(null);
-        }
-    };
-
-    useLayoutEffect(() => {
-        const gesture = gestureRef.current;
-        if (
-            gesture &&
-            !gesture.invalidated &&
-            !gesture.settling &&
-            (gesture.trackId !== trackId ||
-                gesture.deviceId !== device.id ||
-                gesture.paramId !== param.id ||
-                !readGestureDevice(gesture, true))
-        ) {
-            cancelGesture(gesture);
-            if (gesture.previewValue !== undefined) {
-                notifyUser('Device parameter target changed; edit was not applied', 'warning');
-            }
-        }
-        cancelOnUnmount.current = () => {
-            const current = gestureRef.current;
-            if (current) {
-                cancelGesture(current);
-            }
-        };
-    });
-    useLayoutEffect(() => {
-        mounted.current = true;
-        return () => {
-            mounted.current = false;
-            cancelOnUnmount.current();
-        };
-    }, []);
-
-    const startGesture = (): number => {
-        const previous = gestureRef.current;
-        if (previous?.settling) {
-            notifyUser('Previous device parameter edit is still applying', 'warning');
-            return -1;
-        }
-        if (previous) {
-            cancelGesture(previous);
-        }
-        const liveOwner = trackStore.value?.tracks.find((track) => track.id === trackId);
-        const gesture: ParameterGesture = {
-            id: ++gestureSequence.current,
-            trackId,
-            deviceId: device.id,
-            deviceType: device.type,
-            deviceIds: liveOwner?.devices.map((candidate) => candidate.id) ?? [],
-            paramId: param.id,
-            frozen: liveOwner?.frozen,
-            valuePresent: Object.hasOwn(device.parameterValues, param.id),
-            value: device.parameterValues[param.id],
-            defaultValue: param.defaultValue ?? param.value,
-            authority: captureProjectTransitionAuthority(),
-            runtimeAuthority: captureDeviceParameterRuntimeWriteAuthority(trackId, device.id, param.id),
-            recordingAuthority: captureTouchAutomationRecordingAuthority(trackId, targetId),
-            invalidated: false,
-            settling: false,
-            committed: false,
-        };
-        gestureRef.current = gesture;
-        setGestureOwner(gesture.id);
-        if (!readGestureDevice(gesture, true)) {
-            gesture.invalidated = true;
-            notifyUser('Device parameter target changed; edit was not applied', 'warning');
-        }
-        return gesture.id;
-    };
-
-    const finishGesture = (gesture: ParameterGesture): void => {
-        if (!gesture.committed) {
-            try {
-                restoreGesturePreview(gesture);
-            } catch (error) {
-                notifyUser(
-                    error instanceof Error ? error.message : 'Device parameter preview restoration failed',
-                    'error'
-                );
-            }
-        }
-        gesture.runtimeAuthority.release();
-        if (gestureRef.current === gesture) {
-            gestureRef.current = null;
-            if (mounted.current) {
-                setGestureOwner(undefined);
-                setDraft(null);
-            }
-        }
-    };
-
-    const handleKnobChange = (nextValue: number, isTransient = false, recordingSample = true): void => {
-        if (!mounted.current) {
-            return;
-        }
-        if (!gestureRef.current) {
-            startGesture();
-        }
-        const gesture = gestureRef.current;
-        if (!gesture || gesture.settling) {
-            return;
-        }
-        if (gesture.invalidated || !readGestureDevice(gesture, true)) {
-            cancelGesture(gesture);
-            if (!isTransient) {
-                gestureRef.current = null;
-            }
-            notifyUser('Device parameter target changed; edit was not applied', 'warning');
-            return;
-        }
-        if (!Number.isFinite(nextValue)) {
-            cancelGesture(gesture);
-            return;
-        }
-        // Knob release is a physical recording sample; slider settlement is not.
-        // Capture event time before the canonical action can wait on a snapshot.
-        const previewOptions: NonNullable<Parameters<typeof setDeviceParameter>[3]> = {
-            transient: true,
-            runtimeOwner: gesture.runtimeAuthority.owner,
-            automationRecordingOwner: gesture.recordingAuthority.owner,
-        };
-        if (!recordingSample) {
-            previewOptions.automationRecordingPolicy = 'suppressed';
-        }
-        gesture.previewValue = nextValue;
-        try {
-            if (!setDeviceParameter(gesture.deviceId, gesture.paramId, nextValue, previewOptions)) {
-                cancelGesture(gesture);
-                return;
-            }
-            setDraft({
-                trackId: gesture.trackId,
-                deviceId: gesture.deviceId,
-                paramId: gesture.paramId,
-                value: nextValue,
-                valuePresent: gesture.valuePresent,
-                startingValue: gesture.value,
-                authority: gesture.authority,
-            });
-        } catch (error) {
-            cancelGesture(gesture);
-            notifyUser(error instanceof Error ? error.message : 'Device parameter preview failed', 'error');
-            return;
-        }
-        if (isTransient) {
-            return;
-        }
-        releaseGestureTouchAutomation(gesture);
-        gesture.settling = true;
-        void executeUserAppAction(
-            {
-                type: 'setDeviceParameter',
-                payload: {
-                    deviceId: gesture.deviceId,
-                    paramId: gesture.paramId,
-                    value: nextValue,
-                    // The event already reached the recording owner above.
-                    // Commit and replay must not record a delayed duplicate.
-                    automationRecordingPolicy: 'suppressed',
-                    expectedTrackId: gesture.trackId,
-                    expectedDeviceType: gesture.deviceType,
-                    expectedDeviceIds: gesture.deviceIds,
-                    expectedValuePresent: gesture.valuePresent,
-                    expectedValue: gesture.value,
-                    expectedTrackFrozen: gesture.frozen,
-                },
-            },
-            {
-                shouldExecute: gesture.authority.isCurrent,
-                deviceParameterRuntimeAuthority: {
-                    trackId: gesture.trackId,
-                    deviceId: gesture.deviceId,
-                    paramId: gesture.paramId,
-                    owner: gesture.runtimeAuthority.owner,
-                    isCurrent: gesture.runtimeAuthority.canCommit,
-                },
-                onCommitted: () => {
-                    gesture.committed = true;
-                },
-            }
-        ).then(
-            () => finishGesture(gesture),
-            (error: unknown) => {
-                finishGesture(gesture);
-                notifyUser(error instanceof Error ? error.message : 'Device parameter change failed', 'error');
-            }
-        );
-    };
 
     // Shared by both select branches, which put different numbers in `value`:
     // a `choice` option carries its index, a legal-set option carries the
@@ -553,6 +364,127 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const isSlider = param.unit === 'dB';
     const isLog = param.scaling === 'log';
+    const canPreview =
+        draggedModulatorId !== null &&
+        draggedSourceAuthority !== null &&
+        draggedSourceAuthority.isCurrent() &&
+        draggedSourceEnabled &&
+        param.automatable &&
+        !isDiscrete &&
+        !isSlider &&
+        !modulations.some((modulation) => modulation.id === draggedModulatorId);
+    const isPreviewing =
+        canPreview &&
+        enteredTarget?.modulatorId === draggedModulatorId &&
+        enteredTarget.trackId === trackId &&
+        enteredTarget.deviceId === device.id &&
+        enteredTarget.paramId === param.id &&
+        enteredTarget.isCurrentProject() &&
+        enteredTarget.sourceProjectAuthority === draggedSourceAuthority &&
+        enteredTarget.sourceProjectAuthority.isCurrent();
+    const previewColor = isPreviewing && draggedModulatorId ? sourceColors.get(draggedModulatorId) : null;
+    let displayedModulations = param.automatable ? modulations : [];
+    if (isPreviewing && draggedModulatorId && previewColor) {
+        displayedModulations = [
+            ...modulations,
+            {
+                id: draggedModulatorId,
+                amount: 0.5,
+                activity: 0,
+                color: previewColor,
+                preview: true,
+            },
+        ];
+    }
+
+    const handleDragEnter = (event: DragEvent<HTMLDivElement>): void => {
+        if (!canPreview) {
+            return;
+        }
+        event.preventDefault();
+        dropCommittedRef.current = false;
+        const sourceProjectAuthority = draggedSourceAuthority;
+        if (!sourceProjectAuthority || !sourceProjectAuthority.isCurrent()) {
+            return;
+        }
+        const authority = captureProjectTransitionAuthority();
+        if (!authority.isCurrent()) {
+            return;
+        }
+        setEnteredTarget({
+            modulatorId: draggedModulatorId,
+            trackId,
+            deviceId: device.id,
+            paramId: param.id,
+            isCurrentProject: authority.isCurrent,
+            sourceProjectAuthority,
+        });
+    };
+
+    const handleDragOver = (event: DragEvent<HTMLDivElement>): void => {
+        if (!canPreview) {
+            return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    };
+
+    const handleDragLeave = (event: DragEvent<HTMLDivElement>): void => {
+        if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            return;
+        }
+        setEnteredTarget(null);
+    };
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>): void => {
+        if (
+            enteredTarget === null ||
+            !isPreviewing ||
+            !enteredTarget.isCurrentProject() ||
+            !enteredTarget.sourceProjectAuthority.isCurrent() ||
+            modulationDragPreviewStore.value?.modulatorId !== enteredTarget.modulatorId ||
+            modulationDragPreviewStore.value?.projectAuthority !== enteredTarget.sourceProjectAuthority ||
+            !modulationStore.value?.modulators.some(
+                (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
+            ) ||
+            dropCommittedRef.current
+        ) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        dropCommittedRef.current = true;
+        setEnteredTarget(null);
+        const targetGeneration = targetGenerationRef.current;
+        void executeUserAppAction(
+            {
+                type: 'addMapping',
+                payload: {
+                    modulatorId: enteredTarget.modulatorId,
+                    mapping: {
+                        targetTrackId: enteredTarget.trackId,
+                        targetDeviceId: enteredTarget.deviceId,
+                        targetParamId: enteredTarget.paramId,
+                        amount: 0.5,
+                    },
+                },
+            },
+            {
+                shouldExecute: () =>
+                    mountedRef.current &&
+                    enteredTarget.isCurrentProject() &&
+                    enteredTarget.sourceProjectAuthority.isCurrent() &&
+                    targetGenerationRef.current === targetGeneration &&
+                    currentTargetRef.current.trackId === enteredTarget.trackId &&
+                    currentTargetRef.current.deviceId === enteredTarget.deviceId &&
+                    currentTargetRef.current.paramId === enteredTarget.paramId &&
+                    (modulationStore.value?.modulators.some(
+                        (modulator) => modulator.id === enteredTarget.modulatorId && modulator.enabled
+                    ) ??
+                        false),
+            }
+        );
+    };
 
     const renderSliderOrKnob = () => {
         if (isLegalSet) {
@@ -659,43 +591,45 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         }
 
         return (
-            <RotaryKnob
-                paramId={param.id}
-                targetType="deviceParam"
-                trackId={trackId}
-                deviceId={device.id}
-                value={mappedValue}
-                onChange={onChange}
-                gestureOwner={gestureOwner}
-                gestureAuthority={{
-                    acquire: startGesture,
-                    isCurrent: (token) => {
-                        const gesture = gestureRef.current;
-                        return gesture?.id === token && !gesture.invalidated && !!readGestureDevice(gesture, true);
-                    },
-                }}
-                min={min}
-                max={max}
-                step={mappedStep}
-                fineStep={mappedFineStep}
-                defaultValue={mappedDefaultValue}
-                aria-label={param.name}
-                bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
-                modulations={
-                    modulation !== 0
-                        ? [{ id: param.name, amount: modulation, color: 'var(--color-accent-cyan)' }]
-                        : undefined
-                }
-                size={
-                    param.name.toLowerCase().includes('mix') ||
-                    param.name.toLowerCase().includes('dry/wet') ||
-                    param.name.toLowerCase().includes('threshold') ||
-                    param.name.toLowerCase().includes('time') ||
-                    param.name.toLowerCase().includes('rate')
-                        ? 'xl'
-                        : 'lg'
-                }
-            />
+            <div
+                role={param.automatable ? 'region' : undefined}
+                aria-label={param.automatable ? `Modulation target for ${param.name}` : undefined}
+                onDragEnter={param.automatable ? handleDragEnter : undefined}
+                onDragOver={param.automatable ? handleDragOver : undefined}
+                onDragLeave={param.automatable ? handleDragLeave : undefined}
+                onDrop={param.automatable ? handleDrop : undefined}
+            >
+                <RotaryKnob
+                    paramId={param.id}
+                    targetType="deviceParam"
+                    trackId={trackId}
+                    deviceId={device.id}
+                    value={mappedValue}
+                    onChange={onChange}
+                    gestureOwner={gestureOwner}
+                    gestureAuthority={{
+                        acquire: startGesture,
+                        isCurrent: isGestureCurrent,
+                    }}
+                    min={min}
+                    max={max}
+                    step={mappedStep}
+                    fineStep={mappedFineStep}
+                    defaultValue={mappedDefaultValue}
+                    aria-label={param.name}
+                    bipolar={!isLog && param.minValue < 0 && param.maxValue > 0}
+                    modulations={displayedModulations.length > 0 ? displayedModulations : undefined}
+                    size={
+                        param.name.toLowerCase().includes('mix') ||
+                        param.name.toLowerCase().includes('dry/wet') ||
+                        param.name.toLowerCase().includes('threshold') ||
+                        param.name.toLowerCase().includes('time') ||
+                        param.name.toLowerCase().includes('rate')
+                            ? 'xl'
+                            : 'lg'
+                    }
+                />
+            </div>
         );
     };
 

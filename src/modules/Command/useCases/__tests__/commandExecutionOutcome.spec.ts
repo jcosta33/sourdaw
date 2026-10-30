@@ -48,6 +48,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('#/modules/CrdtDocument/stores', () => ({
     agentProjectRepairStateStore: { value: null },
+    captureProjectIdentity: vi.fn(() => 'command-outcome-project'),
     setSemanticContext: mocks.setSemanticContext,
     clearSemanticContext: mocks.clearSemanticContext,
     branchStore: mocks.branchStore,

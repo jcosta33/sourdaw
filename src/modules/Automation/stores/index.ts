@@ -3,3 +3,4 @@ export type { AutomationStoreState, AutomationLane, AutomationCurveType } from '
 
 export { modulationStore, modulationRuntimeStore } from './modulationStore';
 export type { ModulationStoreState } from './modulationStore';
+export { modulationDragPreviewStore } from './modulationDragPreviewStore';

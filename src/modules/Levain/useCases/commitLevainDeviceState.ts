@@ -1,7 +1,7 @@
-import { executeAppAction } from '#/modules/Command/useCases';
-
-import { toLevainDeviceState } from '../models/LevainDeviceState';
+import { fromLevainDeviceState, toLevainDeviceState } from '../models/LevainDeviceState';
 import { levainStore } from '../stores/levainStore';
+
+import { coordinateLevainDeviceState } from './coordinateLevainDeviceState';
 
 /**
  * Mirror a device's selected instrument into project truth.
@@ -24,9 +24,13 @@ export function commitLevainDeviceState(deviceId: string): void {
     if (!patch) {
         return;
     }
-
-    void executeAppAction(
-        { type: 'setDeviceState', payload: { deviceId, state: toLevainDeviceState(patch) } },
-        { skipMacroRecording: true }
-    );
+    void coordinateLevainDeviceState(deviceId, 'identity', (current) => {
+        const prior = fromLevainDeviceState(current);
+        if (prior?.instrumentId === patch.instrumentId && prior.currentArticulation === patch.currentArticulation) {
+            return undefined;
+        }
+        const tier = current?.data.disclosureTier === 'expert' ? 'expert' : 'basic';
+        const encoded = toLevainDeviceState(patch, tier);
+        return { ...encoded, data: { ...current?.data, ...encoded.data } };
+    });
 }

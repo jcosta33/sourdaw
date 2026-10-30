@@ -5,21 +5,26 @@ import { setTrackState } from '../../repositories/track/setTrackState';
 import { type Clip } from '../../stores/trackStore';
 
 import { clipSplitStateRestorable, type ClipSplitStateRestorableInput } from './clipSplitStateRestorable';
+import { resolveClipSplitInsertionIndex } from './resolveClipSplitInsertionIndex';
 
 function cloneClip(snapshot: ClipStateSnapshot): Clip {
-    return {
-        ...structuredClone(snapshot),
-        overrides: snapshot.overrides ? { ...snapshot.overrides } : undefined,
-        kneadState: snapshot.kneadState
+    const { overrides, kneadState, ...snapshotClip } = structuredClone(snapshot);
+    const clip: Clip = snapshotClip;
+    if (Object.hasOwn(snapshot, 'overrides')) {
+        clip.overrides = overrides ? { ...overrides } : undefined;
+    }
+    if (Object.hasOwn(snapshot, 'kneadState')) {
+        clip.kneadState = kneadState
             ? {
-                  ...snapshot.kneadState,
-                  blobs: snapshot.kneadState.blobs.map((blob) => ({
+                  ...kneadState,
+                  blobs: kneadState.blobs.map((blob) => ({
                       ...blob,
                       pitchCurveCents: [...blob.pitchCurveCents],
                   })),
               }
-            : undefined,
-    };
+            : undefined;
+    }
+    return clip;
 }
 
 export function replaceClipSplitTrackState(input: ClipSplitStateRestorableInput): boolean {
@@ -37,7 +42,11 @@ export function replaceClipSplitTrackState(input: ClipSplitStateRestorableInput)
         .filter((clip) => clip.id !== rightClipId)
         .map((clip) => (clip.id === clipId ? cloneClip(replacement.leftClip) : clip));
     if (replacement.rightClip) {
-        clips.splice(replacement.rightClipIndex, 0, cloneClip(replacement.rightClip));
+        const index = resolveClipSplitInsertionIndex(track.clips, clipId, rightClipId, input.expected, replacement);
+        if (index === null) {
+            return false;
+        }
+        clips.splice(index, 0, cloneClip(replacement.rightClip));
     }
     setTrackState({
         ...state,

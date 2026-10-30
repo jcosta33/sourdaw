@@ -44,6 +44,7 @@ function idlePreparation() {
 /** Automation, MIDI and the clip stores run for real; Transport stays idle. */
 function installDependencies(): void {
     setTimeOperationDependencies({
+        savedRestorePlanValidators: { automation: () => false, midi: () => false, timelineMap: () => false },
         prepareAutomationTimeOperation,
         prepareAutomationTimeStateRestore,
         prepareMidiGlobalTimeTransaction,

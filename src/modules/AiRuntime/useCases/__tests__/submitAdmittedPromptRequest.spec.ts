@@ -51,6 +51,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    commandSourcePublicationMatches: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
+    >(() => false),
+    stageCommandSourcePublication: vi.fn<
+        typeof import('#/modules/CrdtDocument/useCases').stageCommandSourcePublication
+    >(() => () => undefined),
     captureActiveBranchReference: vi.fn(),
     captureDurableDocumentWitness: vi.fn(),
     captureProjectMutationAuthorization: vi.fn(() => () => true),
@@ -58,6 +64,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRevision: vi.fn(() => 'revision-1'),
     captureProjectRootIdentity: vi.fn(() => 'root-identity'),
     compactProject: vi.fn(),
+    hasForeignPendingProjectWrites: vi.fn(() => false),
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingProjectWritesAndCaptureRevision,
     createCrdtDoc: vi.fn(),
     DOC_BRANCHES: '__branches__',
@@ -74,6 +81,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: vi.fn(() => true),
     removeCrdtDoc: vi.fn(),
     projectBranchSession: vi.fn(),
+    readOwnedProjectPublications: vi.fn(() => []),
     replaceCrdtDoc: vi.fn(),
     replaceCrdtDocInLineage: vi.fn(),
     resetCrdtProject: vi.fn(),
