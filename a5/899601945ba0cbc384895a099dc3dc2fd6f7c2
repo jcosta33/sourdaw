@@ -1,0 +1,402 @@
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_3168504f6ce387::t_d2c1bb0de8de9d 1243
+  s_3168504f6ce387::t_2d8d32fc4411cc 415,433,1156-1170,1173-1179,1183-1190,1198-1209,1298,1352-1354,1362
+  s_3168504f6ce387::t_d0822b76d57be2 267-272,309,409-413,430-432,437-439,444,461-463,475-477,540-542,606-608,913-915,985,1180,1192-1194,1216,1218-1222,1231-1238,1240,1242,1244-1251,1255,1265-1267,1283-1285,1302,1351,1355-1361
+  s_3168504f6ce387::t_ea13e1900a06fc 419,434-436,1223-1230
+  s_3168504f6ce387::t_1caaf2542cf79b 414
+  s_3168504f6ce387::t_1d064dbcae2beb 416
+  s_55244eb93b97d1::t_488623b97ea8d7 1195-1197,1252-1254
+.agents/skills/review-stances/test-validity.md
+  s_3168504f6ce387::t_36ca9ba8f22702 85-98,101
+  h_beb54bf43b47b7 548-564,2169-2199
+  s_55244eb93b97d1::t_488623b97ea8d7 3-84,99-100,520-535,678-691,2200-2259
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_3168504f6ce387::t_be5cacc3f21971 1339-1340,2062-2063,2065-2068,2075-2076,2078-2082,2130-2131,2138-2144,2385-2389,2415,2451-2478,2516-2524,2555-2563
+  s_3168504f6ce387::t_351dd6c6b0c7de 529-540,559-560,562-566,568-575,581-582,606,608-609,628-629,1086,1271,1412
+  s_3168504f6ce387::t_81b6975129192c 2498-2515,2525-2554,2564-2568,2570,2572-2596,2598,2600-2650
+  s_3168504f6ce387::t_5a13964f648b99 544-545
+  s_3168504f6ce387::t_1d753d65cc3322 6,2372-2383,2391-2392,2479-2496
+  s_3168504f6ce387::t_7aa855b6c429ed 2408-2414
+  s_3168504f6ce387::t_93d29201da1d05 2048-2061,2069-2070,2072-2074,2083-2085,2087-2092,2094,2099-2103,2128-2129,2145-2146,2158-2160,2163-2166
+  s_3168504f6ce387::t_c371b6fba969fd 21-22
+  s_3168504f6ce387::t_2472342a4dea3a 2497
+  s_3168504f6ce387::t_2490adcbc8b0d5 2095-2098,2119-2121,2127,2135-2136,2147-2148
+  s_3168504f6ce387::t_221161c5c23d2e 2064,2071,2077,2086,2384,2390,2569,2571,2597,2599
+  s_3168504f6ce387::t_7b16ad7c31bf04 2093,2104-2118,2122-2126,2132-2134,2137,2149-2157,2161-2162
+  s_3168504f6ce387::t_ee516ed15592a3 18,550,561
+  s_3168504f6ce387::t_5be469d494945b 501,546,548,552-554,567,587,607,616-627,1077,1160,1859
+  s_3168504f6ce387::t_2b2b58922b6941 2413-2414,2416-2444
+  s_3168504f6ce387::t_0a2acaa53600e6 2415
+  s_3168504f6ce387::t_58744390b076d6 2445-2447
+  s_55244eb93b97d1::t_488623b97ea8d7 31-32,52,182-183,215,426-434,478,863-868,870-871,889,893,920-929,1501,1505,1507-1508,1521-1522,1535-1536,1671-1678,2987-3297,3318-3373
+.agents/skills/review-stances/project-integrity.md
+  s_3168504f6ce387::t_36ca9ba8f22702 22-35,41
+  s_3168504f6ce387::t_a0ff0a680983a4 36-40
+  h_beb54bf43b47b7 920-933
+  s_55244eb93b97d1::t_488623b97ea8d7 3-21,252-266,815-816,934-966
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  s_3168504f6ce387::t_aa464c9b4674b5 66-124,203-208,210,232-280,282-287,289-294
+  s_3168504f6ce387::t_5e4c90c0a75e76 1-3,11-30,34-65,125-171,173,175-180,182-196,198,451-461,463-468,470-472
+  s_3168504f6ce387::t_54d22a1e19dd8f 31-33,199-200,202,211-215,219-231,295-301,446-450
+  s_3168504f6ce387::t_d2c1bb0de8de9d 172,197,209,216-218
+  s_3168504f6ce387::t_024473188a8210 462,469
+  s_3168504f6ce387::t_0d62a36d7dc54f 473-475
+  s_55244eb93b97d1::t_488623b97ea8d7 4-10,174,181,201,281,288,302-445
+src/modules/CrdtDocument/useCases/subscribeToActiveRootInstallations.ts
+  s_3168504f6ce387::t_4bb485fbfed403 1-6
+  s_3168504f6ce387::t_d0cb2dd9a9519d 7-8
+src/modules/CrdtDocument/useCases/index.ts
+  s_3168504f6ce387::t_4bb485fbfed403 63
+src/modules/CrdtDocument/useCases/createCrdtDoc.ts
+  s_3168504f6ce387::t_735ad54cf457fc 1-2,8,14-18
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  s_3168504f6ce387::t_8790105a5c0c13 102,165,176-194
+  s_3168504f6ce387::t_0f6414a8dc53e9 8-11,73-101
+  s_3168504f6ce387::t_5040867a5d7542 103
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/scriptedProviderProtocol.spec.ts
+  s_3168504f6ce387::t_6c906e9ebfe070 227-228
+  s_3168504f6ce387::t_98f3831189a34b 243-249
+  s_3168504f6ce387::t_2486d30f810e7c 1-44,46-62,79-126,128,131-132,145-157,159-160,162-168,170-171,173-199,203-214,217-226,229-231,240-242,250-254,256,259,262-268,277-283
+  s_3168504f6ce387::t_8c6aaf5764383d 63-78,158,161,169,172,239,276
+  s_3168504f6ce387::t_27fb93f3c214ec 45,127,129-130,133-144,200-202,215-216,232-238,255,257-258,260-261,269-275,284
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 948-962
+  s_55244eb93b97d1::t_488623b97ea8d7 282-294,963-980
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 481-495
+  s_55244eb93b97d1::t_488623b97ea8d7 496-514
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 604-618
+  s_55244eb93b97d1::t_488623b97ea8d7 3-16,119-131,357-368,527
+  s_55244eb93b97d1::t_4da07f87d9d17a 528
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 44-53,68
+  s_55244eb93b97d1::t_488623b97ea8d7 3-18,54-67,69-100
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7,9,11-12,25-26,28,30-32,38,40-42,49,67-69,116-118,120-131,154-161,166,174,205,277-279,319,321,335,337,355,399-400,416-417,435-436,476,478,498-499,527,533,597-598,651,661
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,122-123,290-292,294-343
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 223-239
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+  s_55244eb93b97d1::t_488623b97ea8d7 6,623
+  s_55244eb93b97d1::t_e41f1fbfe67605 816
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1361,1378-1381,1383-1390,1391-1394
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 213,230-233,235-242,243-246
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_488623b97ea8d7 169-170,267-268,274-275,282,294,405,1390,1743,1755,1763,2263-2266
+  s_55244eb93b97d1::t_aa903c80c78685 2267
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_beb54bf43b47b7 8-9,12,19,102-165,284
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 1-3,6-33,35,37,40-41,44,54-55,65-72,85-86,154-169,178,416-436,438-456,458-608,1119-1514
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,176,184,188
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1361,1378-1381,1383-1390,1391-1394
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 1,3-7,126-128,130-190
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  h_beb54bf43b47b7 14,22-24,26
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  h_beb54bf43b47b7 8-9,14-22
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  h_beb54bf43b47b7 13-21,26-29,31-32,39-47,72-73,111-113,115-122,124-186
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  h_beb54bf43b47b7 1-709
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 384-395,417-420,435-440
+scripts/compiledPersistenceServer.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-39
+src/modules/Crumbs/useCases/recording/stopCrumbsRecording.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 2-9,12-71
+src/modules/Gluten/presentations/views/__tests__/glutenDiodeRecoveryHint.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 252
+.github/workflows/quantum-measurements.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 75
+src/modules/Gluten/models/GlutenDisclosure.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-17
+scripts/hostedWasmWorkflowContract.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 75-101,146
+src/modules/Crumbs/repositories/crumbsBridge/__tests__/recordingLifecycle.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-89
+src/modules/Command/useCases/executeAppAction.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 53-59,391-398,457,461,485-493
+  s_55244eb93b97d1::t_79f1ab777b5781 494
+tests/e2e/firstPaintDiagnostics.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 113-149,173,175
+.agents/skills/review-stances/e2e-server-provenance.md
+  s_55244eb93b97d1::t_488623b97ea8d7 21-32
+scripts/__tests__/hostedQuantumMeasurementWorkflowContract.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 365-368
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 87-88,206-216,383-427,446-448
+src/modules/Crumbs/useCases/recording/syncCrumbsRecordingState.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-169
+src/modules/Arrangement/handlers/track/__tests__/freezeTrackFailure.integration.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 1-638
+src/modules/Gluten/presentations/views/__tests__/GlutenDisclosure.integration.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 1-242
+electron/commands.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 95
+src/modules/Crumbs/useCases/crumbsLifecycle/__tests__/syncCrumbsNativeInstances.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 248,253
+src/modules/Gluten/presentations/views/__tests__/glutenProjectHydration.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 16-25
+tests/e2e/applicationModuleRecovery.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-503
+scripts/__tests__/setupPnpm.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-686
+.github/actions/setup-pnpm/action.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 1-30
+scripts/setupPnpm.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-346
+scripts/__tests__/verifyPlaywrightRuntime.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 8,13,19-20,28,35,43
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 216,226-228,231-233,428-435,513-522,525,542-549
+src/modules/Gluten/useCases/setGlutenPanelUiLevel.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-82
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 5,23-27,51-52,438,447-454,460-464,698,706-712,741-777,779-782,960-1015,1048-1103,1106,1108-1109,1111,1115-1116,1120-1121,1123-1124,1126,1130-1131,1135-1136,1138-1139,1141,1145-1146,1150-1151,1153-1154,1156,1160-1161,1165-1166,1169-1285,1287-1298,1300-1311,1313-1324,1326,1328-1329,1331-1332,1334-1335,1337,1339-1341,1344-1345,1347-1348,1350-1351,1353,1355-1357,1362-1364,1366-1367,1369-1381,1386-1387,1389-1455,1457-1458,1460,1462-1466,1469-1615
+src/app/ApplicationFirstPaint.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 3-4,10-18
+tests/e2e/smoke.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 411-561
+tests/e2e/persistedHydrationEntry.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-10
+src/modules/Crumbs/useCases/recording/armCrumbsRecording.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-2,4-13,23-39,46-53,58-88
+tests/e2e/devServerOnlySpecs.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 11
+docs/architecture/agent-release-gates.md
+  s_55244eb93b97d1::t_488623b97ea8d7 3,9-10,17,51,68,85,119-122,130
+  s_55244eb93b97d1::t_875640dae559ae 131
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 349,428
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 1,14-15,194-274
+  s_55244eb93b97d1::t_417c77863f9c77 275
+src/modules/Crumbs/useCases/recording/__tests__/armCrumbsRecording.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1,4-6,15,20-23,28-31,73-76
+  s_55244eb93b97d1::t_ab5676672283dc 77
+src/modules/Crumbs/useCases/recording/__tests__/stopCrumbsRecording.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-14,18,21-26,29,31,34,37
+src/modules/Gluten/useCases/hydrateGlutenDisclosureFromProject.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-18
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 206,228,252,351-482
+  s_55244eb93b97d1::t_fce0bf8ecd4dde 483
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1,5-6,10,21-22,30,34-38,41-46,57-58,88,95-101,107-108,199,252,270-297,299-321,323-324
+playwright.config.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 6,19
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 7,24,35,94-106,119,250,253,262,264-265,267-268,278,288-292
+tests/e2e/glutenPresetSearchTestId.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 10-13,43-65
+  s_55244eb93b97d1::t_f59f9275a4ef04 66-67
+.github/workflows/nightly.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 71,155,191,240,291,470,575,594,611,652,690,962
+src/app/main.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 5,25-28,71,76-83,87-99
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 1-2,7-16
+crates/sourdaw-native/src/commands/crumbs.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 12-21,35,51-52,87,93,99-102,108,111-112,123-124,127,130-133,139-140,158-174,176-187,194-197,202-206,208,230,257-264,470-474,492-493,495,500-503,544,627,639-640,731-739,741-745,748-768,770,773-862,1041-1043,1468-1567,1574-1585,1589,1593-1669,1672-1680,1684,1688-1703,1705-1991,2004-2731,2733-2791,2794-2802,2811,2816,2823,2826-2829,2835,2986,3026-3027,3029-3032,3035,3216-3217,3230-3243,3256-3259,3508-3509,3558-3559,3665,3668-3669,3677,3680-3687,3689-3705,3707-3718,3720-3737,3742,3744-3749,3751-3752,3754,3756-3765,3767-3771,3816-3818,3820,3880,3898-3901,3909,3922-3923,3925,3927-3928,3930-3931,3935-3942,3944-3949,3951-3954,3956-3975,3977-3978,4073-4082,4171,4241-4242,4244,4246-4251,4253-4254,4256-4259,4262-4263,4265-4266,4330-4341,4358
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_55244eb93b97d1::t_488623b97ea8d7 107,272,353,373,393,441,502,705,818,861,917,973,1002,1018,1038,1059,1095,1308,1515,1611,1655,1711,1771,1927,2006,2041,2061,2105,2150,2326,2637,2790
+.github/workflows/heavy-gates.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 30,44,61,103,164
+src/utils/sourdawCommandArguments.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 70,104
+src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 12,144-318
+  s_55244eb93b97d1::t_5312d7f741eedd 319
+scripts/__tests__/e2eDevServer.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 19-20,27,90-101
+src/modules/Gluten/presentations/views/__tests__/glutenTopologyControlGating.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 59
+src/modules/Crumbs/useCases/recording/__tests__/recordingLifecycle.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-193
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 8-9,14,24-25,43,58,81,102-127,186-192,238-252
+src/modules/Crumbs/stores/crumbsRecordingStore.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-151
+tests/e2e/fixtures/hmrDisconnect/style.css
+  s_55244eb93b97d1::t_488623b97ea8d7 1-3
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 14,19,49-53,55-58,60-64,73,78-102,131,149-157,163-166,348,352-356,359,363-367,370,373-381,383-385,387-392,394-414,416,419,421-425,427-429,431-434,436-438,440-445
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-535
+src/modules/Crumbs/useCases/crumbsLifecycle/syncCrumbsNativeInstances.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 57,107,124-125,147,172,177-183,192,211-218
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 1-4,7,40,48,54,154-170,176,285-287,304-307,313,328,341-392
+src/modules/Gluten/models/__tests__/GlutenDisclosure.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-30
+src/modules/Crumbs/repositories/crumbsBridge/getCrumbsRecordingState.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-10
+vite.config.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 38,49-82,113
+crates/daw-engine/src/audio_thread.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 58-182,289,300,304-324,365,384,492,633-684,752,797-800,822-823,846-854,873,1067-1069,1074-1079,1103-1105,1262-1266,1505,1519-1520,1532-1539,1565-1567,1588-1593,1596-1599,1606-1610,1613-1615,1640-1642,1663,1675,1742-1751,1773-1774,1807-1809,1846-1848,1859-2085,2118-2600,2891-2892,3044,3413
+scripts/hostedQuantumMeasurementWorkflowContract.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 209
+scripts/e2eDevServer.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 19-25
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 3,5,20-26,61-69,449-464,466-500,502,504-521,629,647-658,717-728
+src/modules/Gluten/useCases/__tests__/setGlutenPanelUiLevel.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-447
+scripts/__tests__/compiledPersistenceServer.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-114
+.github/workflows/wasm-artifacts.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 78
+release/dependency-license-proofs.json
+  s_55244eb93b97d1::t_488623b97ea8d7 4,56,64
+tests/e2e/fixtures/hmrDisconnect/entry.js
+  s_55244eb93b97d1::t_488623b97ea8d7 1-14
+package.json
+  s_55244eb93b97d1::t_488623b97ea8d7 144,180
+crates/sourdaw-native/src/host/native_bridge.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 1,3,21,28-29,2166,2176-2177,2179,2182-2183,2185-2186,2221-2266,2504,2522,3304-3494,3497,3500-3504,3512-3646,3675,3712,3769-3772,3774-3798,3800-3808,3821,3839-3848
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 8-9,14,27,35-36,42,49,75,83-84,98,106-107,121,129-130,145,153-154,169,177-178,210-215,227-237,263-272,315-348,636
+src/modules/Arrangement/handlers/track/restoreFreezeState.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 11-13
+tests/e2e/compiledPersistenceTest.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-42
+pnpm-workspace.yaml
+  s_55244eb93b97d1::t_488623b97ea8d7 38-43
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 65,513,899-943,2676-2683,3303-3304,4211-4235
+  s_55244eb93b97d1::t_da0bc142ae8391 4236-4237
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 2,14-15,18,56,90-92,108-110,129-130,151-152,165-166
+.github/actions/setup-pnpm/bootstrap/package.json
+  s_55244eb93b97d1::t_488623b97ea8d7 1-7
+public/entryLoadRecovery.js
+  s_55244eb93b97d1::t_488623b97ea8d7 52-53
+src/modules/Crumbs/repositories/crumbsBridge/armRecording.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 3-5,11,13-24,26
+scripts/__tests__/agentCampaignHarness.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 87-95
+src/modules/Gluten/presentations/views/__tests__/GlutenPanel.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 4,17-18,23
+src/modules/Crumbs/repositories/crumbsBridge/stopRecording.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 3,7-10
+.github/workflows/validation.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 322-324,326,424-426,429,464-466,468,511-513,515,568,599,609-611,613,630,647-649,651,677-679,681,944-946,948
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 4,9,161,163-170,261-264,386-389,427-432,580-583,648-651,712-715
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 49-51
+scripts/offlineAudioWorkletTrace.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 65-74
+tests/e2e/fixtures/hmrDisconnect/App.js
+  s_55244eb93b97d1::t_488623b97ea8d7 1-3
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-205
+crates/sourdaw-native/src/addon/mod.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 1540-1541,1548-1549,1552-1558,1563-1567
+tests/e2e/firstPaintWarmup.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 9-14,88,104-132,135-147
+src/modules/Crumbs/repositories/crumbsBridge/onCrumbsRecordingState.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-23
+crates/daw-engine/src/lib.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 3-8,164,323,410,418,967-1006,1504-1523,1629,1693-1746,1770,2218-2348
+  s_55244eb93b97d1::t_1e927d6b64e435 2349
+.github/workflows/pr-checks.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 39
+tests/e2e/fixtures/hmrDisconnect/index.html
+  s_55244eb93b97d1::t_488623b97ea8d7 1-12
+.github/workflows/health-gates.yml
+  s_55244eb93b97d1::t_488623b97ea8d7 85
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 66-86,135-140,162-164
+electron/__tests__/commands.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 387,421
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-394
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  s_55244eb93b97d1::t_488623b97ea8d7 157-167,169,174,192,226,232,863-864,885-887,896
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 7-8,70-81
+crates/sourdaw-native/Cargo.toml
+  s_55244eb93b97d1::t_488623b97ea8d7 76
+patches/vite@8.3.5.patch
+  s_55244eb93b97d1::t_488623b97ea8d7 1-61
+src/app/DesktopStartupError.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 5,8-11,22
+src/modules/Arrangement/useCases/freezeBounce/__tests__/silentBakeGuard.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1,5,8,116-117,122-123
+  s_55244eb93b97d1::t_3a5b13285e9212 124
+scripts/e2eServerIdentity.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 154-158
+scripts/__tests__/viteE2ePersistenceEntry.spec.ts
+  s_55244eb93b97d1::t_488623b97ea8d7 1-55
+src/app/__tests__/main.spec.tsx
+  s_55244eb93b97d1::t_488623b97ea8d7 245,284-286,288-293,436-473
+  s_55244eb93b97d1::t_e07a4c5e7b1816 474
+.github/actions/setup-pnpm/bootstrap/package-lock.json
+  s_55244eb93b97d1::t_55d45d63a7f12a 1-28
+Cargo.lock
+  s_55244eb93b97d1::t_413bea14f32855 2538
+pnpm-lock.yaml
+  s_55244eb93b97d1::t_f490d43fa335ef 7-9,112-113,116,122,128,158,220-221,242,245,1280-1281,4848-4849,4853-4854,6669,6671,7485,7492,7674,7679,7735,7744,7748,7888,8247,8250,8252,8265,8273,8280,10480,10482,10484,11220,11229,11309,11324,11327,11338
+public/legal/DEPENDENCY-LICENSES.txt
+  s_55244eb93b97d1::t_dda241f31edc17 9-10
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a5899601945ba0cbc384895a099dc3dc2fd6f7c2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
