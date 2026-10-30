@@ -5,7 +5,7 @@ import {
     type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecoveryCapsule,
 } from '../../models/AgentRun';
-import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
+import { APPLICATION_TOOL_RECEIPT_MAX_BYTES, type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
@@ -137,6 +137,25 @@ describe('agentRunStore', () => {
             { label: 'negative turn', turn: -1, origin: 'application-verification' },
         ])('rejects $label before it can persist', ({ label: _label, ...overrides }) => {
             expect(sanitizeAgentRunState(recorded(overrides)).runs).toHaveLength(0);
+        });
+        it.each([
+            { value: undefined, expected: undefined },
+            { value: '{"schemaVersion":1}', expected: '{"schemaVersion":1}' },
+            { value: 'x'.repeat(APPLICATION_TOOL_RECEIPT_MAX_BYTES + 1), expected: undefined },
+        ])('bounds optional settlement storage without rewriting the receipts: $expected', ({ value, expected }) => {
+            const state = recorded({});
+            const run = state.runs[0];
+            if (run?.plan === null || run?.plan === undefined) {
+                throw new TypeError('Expected the recorded plan.');
+            }
+            const hydrated = sanitizeAgentRunState({
+                ...state,
+                runs: [{ ...run, plan: { ...run.plan, terminalMeasurementSettlement: value } }],
+            });
+            expect(hydrated.runs[0]?.plan?.terminalMeasurementSettlement).toBe(expected);
+            expect(hydrated.runs[0]?.plan?.applicationToolReceipts).toEqual([receipt]);
+            persistAgentRunState(hydrated);
+            expect(readAgentRunState().runs[0]?.plan?.terminalMeasurementSettlement).toBe(expected);
         });
     });
 

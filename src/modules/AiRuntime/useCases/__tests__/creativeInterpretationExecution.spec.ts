@@ -53,6 +53,7 @@ import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommand
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
 import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
@@ -420,6 +421,17 @@ function creativeMetricIntakeTurn(selection: InterpretationSelection): ScriptedT
     };
 }
 
+const failedMeasurementTurn: ScriptedTurn = () => [
+    { name: 'analysis.measure', arguments: { scope: { kind: 'master' }, range: { sectionId: 'missing-section' } } },
+];
+
+function withFailedMeasurement(turns: ScriptedTurn[], required: boolean): ScriptedTurn[] {
+    if (required) {
+        return [...turns, failedMeasurementTurn];
+    }
+    return turns;
+}
+
 const EDIT_THE_SELECTED_TRACK: InterpretationSelection = {
     modeId: 'edit',
     targetObjectIds: [GUITAR_TRACK_ID],
@@ -456,13 +468,16 @@ function radioProviderTurns(input: {
         // script only stays aligned with the run when it holds the turns the run actually spends.
         return turns;
     }
-    return [
-        ...turns,
-        (userMessage) => {
-            assertDiscoveredCommandSchemas(userMessage, [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME]);
-            return [proposeAddDeviceCall(proposeTrackId)];
-        },
-    ];
+    return withFailedMeasurement(
+        [
+            ...turns,
+            (userMessage) => {
+                assertDiscoveredCommandSchemas(userMessage, [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME]);
+                return [proposeAddDeviceCall(proposeTrackId)];
+            },
+        ],
+        input.literal !== true
+    );
 }
 
 /**
@@ -502,56 +517,60 @@ function beatAndRadioProviderTurns(literal = false): ScriptedTurn[] {
     if (literal) {
         intake = literalMetricIntakeTurn;
     }
-    return [
-        intake,
-        () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
-        (userMessage) => {
-            assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
-            return [
-                {
-                    name: 'command.batch.propose',
-                    arguments: {
-                        plan: {
-                            ...radioBatchPlan(GUITAR_TRACK_ID),
-                            objective: 'Create a beat on a new MIDI track and apply the proposed Guitar EQ settings.',
-                        },
-                        list: {
-                            schemaVersion: 1,
-                            items: [
-                                {
-                                    id: 'make-beat-track',
-                                    name: 'addTrack',
-                                    arguments: { name: 'Beat Track', kind: 'midi', binding: 'beat-track' },
-                                },
-                                {
-                                    id: 'make-beat-clip',
-                                    name: 'addClip',
-                                    arguments: {
-                                        trackId: '$beat-track',
-                                        startBeat: 0,
-                                        endBeat: 4,
-                                        name: 'Beat',
-                                        binding: 'beat-clip',
+    return withFailedMeasurement(
+        [
+            intake,
+            () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
+            (userMessage) => {
+                assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
+                return [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: {
+                            plan: {
+                                ...radioBatchPlan(GUITAR_TRACK_ID),
+                                objective:
+                                    'Create a beat on a new MIDI track and apply the proposed Guitar EQ settings.',
+                            },
+                            list: {
+                                schemaVersion: 1,
+                                items: [
+                                    {
+                                        id: 'make-beat-track',
+                                        name: 'addTrack',
+                                        arguments: { name: 'Beat Track', kind: 'midi', binding: 'beat-track' },
                                     },
-                                    dependsOn: ['make-beat-track'],
-                                },
-                                {
-                                    id: 'write-beat',
-                                    name: 'addNotes',
-                                    arguments: {
-                                        clipId: '$beat-clip',
-                                        notes: [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }],
+                                    {
+                                        id: 'make-beat-clip',
+                                        name: 'addClip',
+                                        arguments: {
+                                            trackId: '$beat-track',
+                                            startBeat: 0,
+                                            endBeat: 4,
+                                            name: 'Beat',
+                                            binding: 'beat-clip',
+                                        },
+                                        dependsOn: ['make-beat-track'],
                                     },
-                                    dependsOn: ['make-beat-clip'],
-                                },
-                                ...radioDeviceItems('Guitar'),
-                            ],
+                                    {
+                                        id: 'write-beat',
+                                        name: 'addNotes',
+                                        arguments: {
+                                            clipId: '$beat-clip',
+                                            notes: [{ pitch: 36, startBeat: 0, duration: 1, velocity: 100 }],
+                                        },
+                                        dependsOn: ['make-beat-clip'],
+                                    },
+                                    ...radioDeviceItems('Guitar'),
+                                ],
+                            },
                         },
                     },
-                },
-            ];
-        },
-    ];
+                ];
+            },
+        ],
+        !literal
+    );
 }
 
 const COMBINED_COMMAND_NAMES = [...PROPOSED_COMMAND_NAMES, PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
@@ -601,14 +620,17 @@ function combinedProviderTurns(input: {
     deviceTrackName: string;
     literal?: boolean;
 }): ScriptedTurn[] {
-    return [
-        () => [catalogDiscoveryCall(COMBINED_COMMAND_NAMES)],
-        input.literal === true ? literalMetricIntakeTurn : creativeMetricIntakeTurn(input.interpretation),
-        (userMessage) => {
-            assertDiscoveredCommandSchemas(userMessage, COMBINED_COMMAND_NAMES);
-            return [proposeCall([...bluesProposalItems(), ...radioDeviceItems(input.deviceTrackName)])];
-        },
-    ];
+    return withFailedMeasurement(
+        [
+            () => [catalogDiscoveryCall(COMBINED_COMMAND_NAMES)],
+            input.literal === true ? literalMetricIntakeTurn : creativeMetricIntakeTurn(input.interpretation),
+            (userMessage) => {
+                assertDiscoveredCommandSchemas(userMessage, COMBINED_COMMAND_NAMES);
+                return [proposeCall([...bluesProposalItems(), ...radioDeviceItems(input.deviceTrackName)])];
+            },
+        ],
+        input.literal !== true
+    );
 }
 
 /** A request for one track and for processing inside it. Nothing in it names an object that exists. */
@@ -676,19 +698,22 @@ function synthProposalItems(): Record<string, unknown>[] {
 }
 
 function synthProviderTurns(literal = false): ScriptedTurn[] {
-    return [
-        () => [catalogDiscoveryCall(SYNTH_COMMAND_NAMES)],
-        literal ? literalMetricIntakeTurn : creativeMetricIntakeTurn(CREATE_A_TRACK_AND_TREAT_IT),
-        (userMessage) => {
-            assertDiscoveredCommandSchemas(userMessage, SYNTH_COMMAND_NAMES);
-            return [
-                {
-                    name: 'command.batch.propose',
-                    arguments: { plan: synthPlan(), list: { schemaVersion: 1, items: synthProposalItems() } },
-                },
-            ];
-        },
-    ];
+    return withFailedMeasurement(
+        [
+            () => [catalogDiscoveryCall(SYNTH_COMMAND_NAMES)],
+            literal ? literalMetricIntakeTurn : creativeMetricIntakeTurn(CREATE_A_TRACK_AND_TREAT_IT),
+            (userMessage) => {
+                assertDiscoveredCommandSchemas(userMessage, SYNTH_COMMAND_NAMES);
+                return [
+                    {
+                        name: 'command.batch.propose',
+                        arguments: { plan: synthPlan(), list: { schemaVersion: 1, items: synthProposalItems() } },
+                    },
+                ];
+            },
+        ],
+        !literal
+    );
 }
 
 function requireCreatedTrack(name: string): Track {
@@ -922,7 +947,25 @@ describe('creative interpretation execution', () => {
         const parsed = await parsePromptToActions({ prompt: RADIO_PROMPT, context, projectRevision: revision });
 
         expect(parsed.rejectionReason).toBeUndefined();
-        expect(turnIndex).toBe(3);
+        expect(turnIndex).toBe(4);
+        expect(parsed.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'hosted-3-0',
+                toolName: 'command.batch.propose',
+                turn: 3,
+                error: expect.objectContaining({ code: 'measurement-required' }),
+            })
+        );
+        expect(parsed.applicationToolReceipts).toContainEqual(
+            expect.objectContaining({
+                callId: 'hosted-4-0',
+                toolName: 'analysis.measure',
+                turn: 4,
+                status: 'failure',
+                error: expect.objectContaining({ code: 'unknown-section' }),
+            })
+        );
+
         expect(parsed.requiresConfirmation).toBe(true);
         expect(parsed.actions.map((action) => action.type)).toEqual([PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME]);
         expectNoDevicesAnywhere();
@@ -1063,6 +1106,14 @@ describe('creative interpretation execution', () => {
             await sendChatMessage(prompt);
             const confirmation = requireConfirmation();
             expect(confirmation.actions.length).toBeGreaterThan(0);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.applicationToolReceipts).toContainEqual(
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    error: expect.objectContaining({ code: 'unknown-section' }),
+                })
+            );
+            expect(metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState)?.proofs).toEqual([]);
             const view = getAgentApprovalView({ confirmationId: confirmation.id });
             expect(view?.canConfirm).toBe(false);
             expect(view?.metricGoals.status).toBe('blocked');
