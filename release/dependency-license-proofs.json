@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "f5a6251aa96c4b3beb1ed937583dea6c3defcc1925cd279c4c872ed10f29fae6",
+        "cargoLockSha256": "38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -53,7 +53,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "d090b4243f74f2e775b0c3130b30eada50396344d1dab63868761969e1c4712c"
+                "sha256": "d3127997fa7640f2e294598d63835e12eb736a13f8a6b3a0b0d3fef1f195b0ad"
             },
             {
                 "path": "electron-builder.yml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
+                "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
             },
             {
                 "path": "rust-toolchain.toml",

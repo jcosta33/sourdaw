@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:d4d1d1bce5006c215192e05905ecab8e145e72a25b3e938408212943544a5243:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:afa2aa0bfab10b673797bcfed615eceb1faf9ddc33f224bbb66da1a47c5a714e:release/dependency-license-proofs.json"
+                "sha256:35f6ee9b035de32be91c18949d200abcdf1b9930100e42ed12eee0b8494eacf2:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:de06224555112805567f4f5964cec18d6327ea3fb42ee0c163c9a1e7cd1a6121:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -264,20 +264,22 @@
                 "server/package.json",
                 "server/package-lock.json",
                 "pnpm-lock.yaml",
-                "pnpm-workspace.yaml"
+                "pnpm-workspace.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "sources": [
                 "package.json",
                 "server/package.json",
                 "server/package-lock.json",
-                "pnpm-lock.yaml"
+                "pnpm-lock.yaml",
+                "patches/vite@8.3.5.patch"
             ],
             "revisions": [
                 "exact pnpm lock graph",
                 "exact collaboration-server npm lock graph"
             ],
             "digests": [
-                "sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6",
+                "sha256:98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321",
                 "sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef"
             ],
             "licenses": [
@@ -289,7 +291,7 @@
                 "collaboration server"
             ],
             "evidence": [
-                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs."
+                "pnpm-lock.yaml and server/package-lock.json freeze both resolved JavaScript dependency graphs; pnpm applies the pinned Vite patch as part of dependency source."
             ],
             "obligations": [
                 "Reconcile every distributed dependency license and notice before release."
@@ -400,7 +402,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:f5a6251aa96c4b3beb1ed937583dea6c3defcc1925cd279c4c872ed10f29fae6",
+                "sha256:38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1385,7 +1387,7 @@
                 "not-applicable:direct-project-source"
             ],
             "digests": [
-                "sha256:49cfd1ddc956b6b08931d1ebaf2e9b41d15eacf3eadc0f1d4e9ec6fdc0ff83dc:public/entryLoadRecovery.js"
+                "sha256:c0537f9e862db90028295659eb03c694f645a2c8d795f82d9ed19ded0bae5bda:public/entryLoadRecovery.js"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1738,7 +1740,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
+            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
         },
         {
             "path": "server/package.json",
@@ -1750,7 +1752,7 @@
         },
         {
             "path": "pnpm-lock.yaml",
-            "sha256": "91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6"
+            "sha256": "98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321"
         },
         {
             "path": "Cargo.toml",
@@ -1758,7 +1760,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "f5a6251aa96c4b3beb1ed937583dea6c3defcc1925cd279c4c872ed10f29fae6"
+            "sha256": "38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
