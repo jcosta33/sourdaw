@@ -646,6 +646,19 @@ describe('isHydratableProjectData', () => {
 });
 
 describe.each(['top-level', 'saved arrangement'])('project take placement admission: %s', (route) => {
+    const midiSource = {
+        sourceClipId: validClip.id,
+        rows: {
+            notes: { present: true, value: [] },
+            controlChanges: { present: true, value: [] },
+            pitchBends: { present: true, value: [] },
+        },
+        sourceEntryBeat: 0,
+        sourceEndBeat: 4,
+        phaseHeadBeat: 0,
+        passLengthBeats: 4,
+    };
+
     function withPlacement(placement: Record<string, unknown>): unknown {
         const takeLanes = {
             lanes: [
@@ -698,6 +711,29 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         },
     ])('accepts legacy or complete placement %j', (placement) => {
         expect(isHydratableProjectData(withPlacement(placement))).toBe(true);
+    });
+
+    it('accepts a valid frozen MIDI source beside a complete audio placement', () => {
+        expect(
+            isHydratableProjectData(
+                withPlacement({
+                    sourceOffsetBeats: 4,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                    midiSource,
+                    recordingPassIndex: 1,
+                })
+            )
+        ).toBe(true);
+    });
+
+    it.each([
+        { midiSource: { ...midiSource, sourceEndBeat: 0 } },
+        { midiSource: undefined },
+        { recordingPassIndex: -1 },
+        { recordingPassIndex: undefined },
+    ])('rejects a malformed present MIDI source or pass identity before hydration %j', (midiFields) => {
+        expect(isHydratableProjectData(withPlacement(midiFields))).toBe(false);
     });
 
     it.each([

@@ -147,6 +147,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    snapshotMidiClipData: vi.fn<typeof import('#/modules/MIDI/useCases').snapshotMidiClipData>(),
+    sealHeldRecordedMidiNotes: vi.fn<typeof import('#/modules/MIDI/useCases').sealHeldRecordedMidiNotes>(),
+    replaceFrozenMidiTakeRow: vi.fn<typeof import('#/modules/MIDI/useCases').replaceFrozenMidiTakeRow>(),
+    captureEventPositionAt: vi.fn<typeof import('#/modules/MIDI/useCases').captureEventPositionAt>(),
     isExactMidiClipDataActionSnapshot: mocks.isExactMidiClipDataActionSnapshot,
     decodeMidiClipDataSnapshots: vi.fn(() => null),
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,

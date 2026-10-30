@@ -122,6 +122,7 @@ describe('startRecording', () => {
             name: 'Take 1',
             startBeat: 4,
             endBeat: 4,
+            recordingPassIndex: 0,
         });
     });
 
@@ -218,6 +219,7 @@ describe('startRecording', () => {
             name: expect.any(String),
             startBeat: 9.8,
             endBeat: 9.8,
+            recordingPassIndex: 0,
         });
     });
 

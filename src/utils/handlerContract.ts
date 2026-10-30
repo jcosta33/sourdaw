@@ -383,6 +383,8 @@ export type MidiClipNoteSnapshot = {
     readonly channel?: number;
     readonly articulation?: string;
     readonly expression?: MidiNoteExpressionSnapshot;
+    /** Original recording pass, absent on legacy and manually edited notes. */
+    readonly recordingPassIndex?: number;
 };
 export type MidiExpressionPointSnapshot = { readonly offsetBeats: number; readonly value: number };
 export type MidiNoteExpressionSnapshot = {
@@ -549,6 +551,40 @@ export type MidiClipDataActionSnapshot = {
     readonly controlChanges: { readonly present: boolean; readonly value: readonly MidiClipCcSnapshot[] };
     readonly pitchBends: { readonly present: boolean; readonly value: readonly MidiClipPitchBendSnapshot[] };
 };
+/** One frozen original row, addressed through its selected take and immutable capture owner. */
+export type OriginalMidiTakeRowReplacementPayload = {
+    readonly laneId: string;
+    readonly takeId: string;
+    readonly sourceClipId: string;
+    readonly rowId: string;
+    readonly expectedSlotPresent: boolean;
+    readonly replacementSlotPresent: boolean;
+} & (
+    | {
+          readonly rowKind: 'note';
+          readonly expected: MidiClipNoteSnapshot | null;
+          readonly replacement: MidiClipNoteSnapshot | null;
+      }
+    | {
+          readonly rowKind: 'cc';
+          readonly expected: MidiClipCcSnapshot | null;
+          readonly replacement: MidiClipCcSnapshot | null;
+      }
+    | {
+          readonly rowKind: 'bend';
+          readonly expected: MidiClipPitchBendSnapshot | null;
+          readonly replacement: MidiClipPitchBendSnapshot | null;
+      }
+);
+/** One original base-clip note, with the notes bucket's exact presence. */
+export type OriginalMidiBaseRowReplacementPayload = {
+    readonly clipId: string;
+    readonly rowId: string;
+    readonly expected: MidiClipNoteSnapshot | null;
+    readonly replacement: MidiClipNoteSnapshot | null;
+    readonly expectedSlotPresent: boolean;
+    readonly replacementSlotPresent: boolean;
+};
 export type MidiClipGlueActionSnapshot = {
     readonly clips: readonly {
         readonly clipId: string;
@@ -644,6 +680,18 @@ export type TakeSnapshot = {
     passSourceEndSeconds?: number;
     passOriginBeat?: number;
     passOriginSourceSeconds?: number;
+    /** Original recording pass, absent on legacy and manually made takes. */
+    recordingPassIndex?: number;
+    midiSource?: MidiTakeSourceSnapshot;
+};
+/** Plain wire value: MIDI owns validation and all row projection. */
+export type MidiTakeSourceSnapshot = {
+    readonly sourceClipId: string;
+    readonly rows: MidiClipDataActionSnapshot;
+    readonly sourceEntryBeat: number;
+    readonly sourceEndBeat: number;
+    readonly phaseHeadBeat: number;
+    readonly passLengthBeats: number;
 };
 /** A comp region naming a take — structural mirror of Arrangement's `CompRegion`. */
 export type CompRegionSnapshot = {
@@ -1392,6 +1440,8 @@ export type AppAction =
               expectedSelectedTakeId?: string | null;
           };
       }
+    | { type: 'replaceOriginalMidiTakeRow'; payload: OriginalMidiTakeRowReplacementPayload }
+    | { type: 'replaceOriginalMidiBaseRow'; payload: OriginalMidiBaseRowReplacementPayload }
     | { type: 'toggleSoloSafe'; payload: { trackId: string } }
     | { type: 'setSoloSafe'; payload: { trackId: string; soloSafe: boolean } }
     | {

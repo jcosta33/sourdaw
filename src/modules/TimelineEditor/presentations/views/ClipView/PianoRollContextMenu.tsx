@@ -24,11 +24,21 @@ import {
     getGrooveTemplate,
     getStraightGrooveTemplateId,
 } from '#/modules/MIDI/useCases';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { generateSeed } from '#/utils/SeededRandom/SeededRandom';
 import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type MidiNote } from '../../../models/MidiNoteViewTypes';
+import {
+    copyPianoRollTakeNotes,
+    cutPianoRollTakeNotes,
+    deletePianoRollTakeNotes,
+    duplicatePianoRollTakeNotes,
+    pastePianoRollTakeNotes,
+    transformPianoRollTakeNotes,
+} from '../../helpers/applyPianoRollTakeMenuAction';
 import { type PianoRollMenu } from '../../helpers/pianoRollConstants';
+import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 
 const pillBtnClass = 'rounded bg-accent/50 px-1.5 py-0.5 text-[9px] hover:bg-accent';
 
@@ -49,6 +59,7 @@ type PianoRollContextMenuProps = {
     onClose: () => void;
     onSelectAll: () => void;
     onClearSelection: () => void;
+    takeProjection?: PianoRollTakeNotes;
 };
 
 export const PianoRollContextMenu = ({
@@ -59,6 +70,7 @@ export const PianoRollContextMenu = ({
     onClose,
     onSelectAll,
     onClearSelection,
+    takeProjection,
 }: PianoRollContextMenuProps): ReactElement => {
     const ref = useRef<HTMLDivElement>(null);
     useContextMenuDismiss(ref, onClose);
@@ -97,6 +109,38 @@ export const PianoRollContextMenu = ({
         });
     };
 
+    const hasFrozenSelection = [...selectedNoteIds].some((id) => takeProjection?.ownersByViewId.has(id));
+    const usesFrozenRows = Boolean(
+        takeProjection &&
+        (hasFrozenSelection || (selectedNoteIds.size === 0 && takeProjection.insertOwnerAtBeat(menu.beat) !== null))
+    );
+    const runFrozen = (work: Promise<boolean>, label: string): void => {
+        void work
+            .then((completed) => {
+                if (!completed) {
+                    logger.warn(`${label} conflicts with selected MIDI take source`);
+                    notifyUser(`${label} could not be applied because the selected take changed.`, 'warning');
+                }
+            })
+            .catch((error) => logger.warn(`Could not ${label.toLowerCase()} selected MIDI take notes`, error));
+    };
+    const transformFrozen = (transform: Parameters<typeof transformPianoRollTakeNotes>[3], label: string): void => {
+        if (usesFrozenRows && takeProjection) {
+            runFrozen(transformPianoRollTakeNotes(takeProjection, clipId, selectedNoteIds, transform, label), label);
+        }
+    };
+    const deleteFrozenSelection = async (label: string): Promise<boolean> => {
+        if (!takeProjection) {
+            return false;
+        }
+        const deleted = await deletePianoRollTakeNotes(takeProjection, clipId, selectedNoteIds, label);
+        if (!deleted) {
+            return false;
+        }
+        onClearSelection();
+        return true;
+    };
+
     return (
         <DawContextMenuSurface onClose={onClose} ref={ref} x={menu.x} y={menu.y} className="min-w-[170px]" role="menu">
             {/* Select/Clipboard */}
@@ -108,7 +152,13 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 shortcut="⌘C"
                 disabled={selectedNoteIds.size === 0}
-                onClick={act(() => copySelectedNotes(clipId, [...selectedNoteIds]))}
+                onClick={act(() => {
+                    if (usesFrozenRows && takeProjection) {
+                        copyPianoRollTakeNotes(takeProjection, selectedNoteIds);
+                    } else {
+                        copySelectedNotes(clipId, [...selectedNoteIds]);
+                    }
+                })}
             >
                 Copy
             </DawMenuButton>
@@ -117,6 +167,18 @@ export const PianoRollContextMenu = ({
                 shortcut="⌘X"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
+                    if (usesFrozenRows && takeProjection) {
+                        runFrozen(
+                            cutPianoRollTakeNotes(takeProjection, clipId, selectedNoteIds).then((completed) => {
+                                if (completed) {
+                                    onClearSelection();
+                                }
+                                return completed;
+                            }),
+                            'Cut'
+                        );
+                        return;
+                    }
                     const cutNotes = notes.filter((node) => selectedNoteIds.has(node.id)).map((node) => ({ ...node }));
                     const notesBefore = snapshotClipNotes(clipId);
                     copySelectedNotes(clipId, [...selectedNoteIds]);
@@ -136,9 +198,30 @@ export const PianoRollContextMenu = ({
             >
                 Cut
             </DawMenuButton>
-            <DawMenuButton role="menuitem" shortcut="⌘V" onClick={act(() => pasteNotes(clipId, menu.beat))}>
+            <DawMenuButton
+                role="menuitem"
+                shortcut="⌘V"
+                onClick={act(() => {
+                    if (usesFrozenRows && takeProjection) {
+                        runFrozen(pastePianoRollTakeNotes(takeProjection, clipId, menu.beat), 'Paste');
+                    } else {
+                        pasteNotes(clipId, menu.beat);
+                    }
+                })}
+            >
                 Paste
             </DawMenuButton>
+            {usesFrozenRows && takeProjection && selectedNoteIds.size > 0 && (
+                <DawMenuButton
+                    role="menuitem"
+                    shortcut="⌘D"
+                    onClick={act(() => {
+                        runFrozen(duplicatePianoRollTakeNotes(takeProjection, clipId, selectedNoteIds), 'Duplicate');
+                    })}
+                >
+                    Duplicate
+                </DawMenuButton>
+            )}
             {/* Quantize */}
             <DawMenuSeparator className="border-border/50" />
             {/* gridSize is beats while labels are note values in 4/4: the
@@ -155,6 +238,10 @@ export const PianoRollContextMenu = ({
                         key={g}
                         className={pillBtnClass}
                         onClick={act(() => {
+                            if (usesFrozenRows) {
+                                transformFrozen({ kind: 'quantize', gridSize: g }, 'Quantize MIDI take notes');
+                                return;
+                            }
                             void executeUserAppAction({
                                 type: 'quantizeNotes',
                                 payload: {
@@ -181,6 +268,10 @@ export const PianoRollContextMenu = ({
                         key={`len-${g}`}
                         className={pillBtnClass}
                         onClick={act(() => {
+                            if (usesFrozenRows) {
+                                transformFrozen({ kind: 'quantize-length', gridSize: g }, 'Quantize MIDI take lengths');
+                                return;
+                            }
                             void executeUserAppAction({
                                 type: 'quantizeNoteLengths',
                                 payload: {
@@ -209,6 +300,10 @@ export const PianoRollContextMenu = ({
                         key={semi}
                         className={pillBtnClass}
                         onClick={act(() => {
+                            if (usesFrozenRows) {
+                                transformFrozen({ kind: 'transpose', semitones: semi }, 'Transpose MIDI take notes');
+                                return;
+                            }
                             void executeUserAppAction({
                                 type: 'transposeNotes',
                                 payload: {
@@ -231,6 +326,10 @@ export const PianoRollContextMenu = ({
             <DawMenuButton
                 role="menuitem"
                 onClick={act(() => {
+                    if (usesFrozenRows) {
+                        transformFrozen({ kind: 'snap-scale' }, 'Snap MIDI take notes to scale');
+                        return;
+                    }
                     const before = getNotesForClip(clipId).map((node) => ({ ...node }));
                     snapClipToScale(clipId);
                     const after = getNotesForClip(clipId).map((node) => ({ ...node }));
@@ -260,6 +359,10 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
+                    if (usesFrozenRows) {
+                        transformFrozen({ kind: 'invert' }, 'Invert MIDI take notes');
+                        return;
+                    }
                     void executeUserAppAction({
                         type: 'invertNotes',
                         payload: { clipId },
@@ -272,6 +375,10 @@ export const PianoRollContextMenu = ({
                 role="menuitem"
                 disabled={notes.length === 0}
                 onClick={act(() => {
+                    if (usesFrozenRows) {
+                        transformFrozen({ kind: 'retrograde' }, 'Reverse MIDI take notes');
+                        return;
+                    }
                     void executeUserAppAction({
                         type: 'retrogradeNotes',
                         payload: { clipId },
@@ -293,6 +400,10 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
+                        if (usesFrozenRows) {
+                            transformFrozen({ kind: 'scale-velocity', factor: 0.8 }, 'Scale MIDI take velocities');
+                            return;
+                        }
                         void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 0.8 },
@@ -308,6 +419,10 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
+                        if (usesFrozenRows) {
+                            transformFrozen({ kind: 'scale-velocity', factor: 1.2 }, 'Scale MIDI take velocities');
+                            return;
+                        }
                         void executeUserAppAction({
                             type: 'scaleAllVelocities',
                             payload: { clipId, factor: 1.2 },
@@ -323,6 +438,10 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
+                        if (usesFrozenRows) {
+                            transformFrozen({ kind: 'set-velocity', velocity: 100 }, 'Set MIDI take velocities');
+                            return;
+                        }
                         void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 100 },
@@ -338,6 +457,10 @@ export const PianoRollContextMenu = ({
                     disabled={notes.length === 0}
                     className={pillBtnClass}
                     onClick={act(() => {
+                        if (usesFrozenRows) {
+                            transformFrozen({ kind: 'set-velocity', velocity: 64 }, 'Set MIDI take velocities');
+                            return;
+                        }
                         void executeUserAppAction({
                             type: 'setAllVelocities',
                             payload: { clipId, velocity: 64 },
@@ -359,6 +482,13 @@ export const PianoRollContextMenu = ({
                     key={label}
                     role="menuitem"
                     onClick={act(() => {
+                        if (usesFrozenRows) {
+                            transformFrozen(
+                                { kind: 'humanize', timingAmount: amount, seed: generateSeed() },
+                                `Humanize MIDI take notes (${label})`
+                            );
+                            return;
+                        }
                         const before = getNotesForClip(clipId).map((node) => ({
                             id: node.id,
                             startBeat: node.startBeat,
@@ -415,6 +545,13 @@ export const PianoRollContextMenu = ({
                         className={`${pillBtnClass} disabled:opacity-40`}
                         disabled={selectedNoteIds.size < 2}
                         onClick={act(() => {
+                            if (usesFrozenRows) {
+                                transformFrozen(
+                                    { kind: 'strum', direction: dir, amount: 0.04 },
+                                    `Strum MIDI take notes ${dir}`
+                                );
+                                return;
+                            }
                             const ids = [...selectedNoteIds];
                             // Redo replays the transform by re-invoking it, so
                             // the seed is captured once here and handed to both
@@ -478,6 +615,10 @@ export const PianoRollContextMenu = ({
                 shortcut="⌫"
                 disabled={selectedNoteIds.size === 0}
                 onClick={act(() => {
+                    if (usesFrozenRows && takeProjection) {
+                        runFrozen(deleteFrozenSelection('Delete MIDI take notes'), 'Delete');
+                        return;
+                    }
                     const deletedNotes = notes
                         .filter((node) => selectedNoteIds.has(node.id))
                         .map((node) => ({ ...node }));

@@ -4,7 +4,7 @@ import {
     type TempoAudioSourcePresenceSnapshot,
 } from '#/utils/handlerContract';
 
-import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
+import { type CompRegion, type MidiTakeSource, type Take, type TakeLane } from '../models/TakeLane';
 
 import { type OptionalAudioSourceTiles } from './baseGapAudioSourceDelta';
 import { type CompAudioSourceAuthorization } from './compAudioSourcePromotions';
@@ -28,6 +28,8 @@ export type TakeLaneCompRegionPatch = {
 export type OptionalStringValue = { readonly present: false } | { readonly present: true; readonly value: string };
 
 export type OptionalNumberValue = { readonly present: false } | { readonly present: true; readonly value: number };
+export type OptionalMidiSourceValue =
+    { readonly present: false } | { readonly present: true; readonly value: MidiTakeSource };
 
 export type OptionalTakeNumberField =
     | 'sourceOffsetBeats'
@@ -36,7 +38,8 @@ export type OptionalTakeNumberField =
     | 'passDepthSeconds'
     | 'passSourceEndSeconds'
     | 'passOriginBeat'
-    | 'passOriginSourceSeconds';
+    | 'passOriginSourceSeconds'
+    | 'recordingPassIndex';
 
 export type TakeFieldOperation =
     | {
@@ -69,6 +72,47 @@ export type TakeFieldOperation =
           readonly field: OptionalTakeNumberField;
           readonly expected: OptionalNumberValue;
           readonly replacement: OptionalNumberValue;
+      }
+    | {
+          readonly kind: 'take-midi-source-field';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: OptionalMidiSourceValue;
+          readonly replacement: OptionalMidiSourceValue;
+      }
+    | {
+          readonly kind: 'take-midi-source-phase';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: number;
+          readonly replacement: number;
+      }
+    | {
+          readonly kind: 'take-midi-source-note-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['notes']['value'][number] | null;
+          readonly replacement: MidiTakeSource['rows']['notes']['value'][number] | null;
+          readonly expectedSlotPresent: boolean;
+          readonly replacementSlotPresent: boolean;
+      }
+    | {
+          readonly kind: 'take-midi-source-cc-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['controlChanges']['value'][number] | null;
+          readonly replacement: MidiTakeSource['rows']['controlChanges']['value'][number] | null;
+          readonly expectedSlotPresent: boolean;
+          readonly replacementSlotPresent: boolean;
+      }
+    | {
+          readonly kind: 'take-midi-source-bend-row';
+          readonly laneId: string;
+          readonly takeId: string;
+          readonly expected: MidiTakeSource['rows']['pitchBends']['value'][number] | null;
+          readonly replacement: MidiTakeSource['rows']['pitchBends']['value'][number] | null;
+          readonly expectedSlotPresent: boolean;
+          readonly replacementSlotPresent: boolean;
       };
 
 export type TakeLaneWriteOperation =

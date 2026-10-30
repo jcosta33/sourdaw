@@ -131,21 +131,22 @@ function ridesRollGeometry(beatNow: number, loopStart: number, loopEnd: number, 
  * instead of the direct one, and the same physical event answers the same
  * beat on both sides of the arrival grain.
  */
-export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number {
+export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { beat: number; passIndex: number } {
     const transport = transportStore.value;
     if (!transport) {
-        return 0;
+        return { beat: 0, passIndex: 0 };
     }
     if (!transport.isPlaying) {
-        return transport.playheadPosition;
+        return { beat: transport.playheadPosition, passIndex: 0 };
     }
 
     const beatNow = captureGestureBeat();
     // The registered clock source reads this same AudioContext instant for the
     // sanctioned capture, so it pairs with the beat without a second seam.
     const elapsedSeconds = audioEngine.context.currentTime - audioTime;
+    const wrapsSinceEpoch = playheadWrapCountRef.current;
     if (!Number.isFinite(beatNow) || !Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) {
-        return beatNow;
+        return { beat: beatNow, passIndex: wrapsSinceEpoch };
     }
 
     const loopLengthBeats = transport.loopEnd - transport.loopStart;
@@ -167,7 +168,6 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
     // How many of the loop's seams this roll has crossed since that origin was
     // written — published by the scheduler beside the very cursor above, so
     // the pair answers which pass the epoch and the cursor each sit on.
-    const wrapsSinceEpoch = playheadWrapCountRef.current;
     // Travel the event's age back from the cursor, bounded at `floor` (#4668):
     // a stamp older than the span from the floor to the cursor predates that
     // span and answers the floor, exactly as the stop case answers the store.
@@ -227,7 +227,7 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
             // Younger than the seam: the event sits on the incoming pass
             // within a grain of its origin, which is the seam instant on
             // that pass.
-            return transport.loopStart;
+            return { beat: transport.loopStart, passIndex: wrapsSinceEpoch + 1 };
         }
         // The dying pass closing here is the roll's `wrapsSinceEpoch + 1`th,
         // so the traversal is the epoch-to-seam span plus every pass the
@@ -238,13 +238,18 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
             wrapsSinceEpoch * travelSeconds(transport.loopStart, transport.loopEnd) +
             incomingSeconds;
         if (elapsedSeconds > traversalSeconds) {
-            return epochStartBeat;
+            return { beat: epochStartBeat, passIndex: 0 };
         }
-        return invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd);
+        const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
+        const passesBack = Math.ceil((elapsedSeconds - incomingSeconds) / passSeconds);
+        return {
+            beat: invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd),
+            passIndex: Math.max(0, wrapsSinceEpoch + 1 - passesBack),
+        };
     }
 
     if (!ridesRegionGeometry) {
-        return travelBackBounded(elapsedSeconds, epochStartBeat);
+        return { beat: travelBackBounded(elapsedSeconds, epochStartBeat), passIndex: wrapsSinceEpoch };
     }
 
     const secondsFromSeam = travelSeconds(transport.loopStart, beatNow);
@@ -256,11 +261,11 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
         // A stamp older than it predates the roll and answers the epoch.
         const traversedSeconds = travelSeconds(epochStartBeat, beatNow);
         if (elapsedSeconds > traversedSeconds) {
-            return epochStartBeat;
+            return { beat: epochStartBeat, passIndex: 0 };
         }
         // Same pass when the epoch sits inside the region; a roll started
         // before it inverts through the run-up — both are this one line.
-        return invertTravelBackward(beatNow, elapsedSeconds, epochStartBeat);
+        return { beat: invertTravelBackward(beatNow, elapsedSeconds, epochStartBeat), passIndex: 0 };
     }
 
     if (elapsedSeconds <= secondsFromSeam) {
@@ -268,7 +273,7 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
         // pass — it belongs to the pass `wrapsSinceEpoch` wraps ago — so the
         // pass's own start is the only floor; comparing the epoch's BEAT to
         // the cursor's would re-admit it here and clamp young events (#4668).
-        return travelBackBounded(elapsedSeconds, transport.loopStart);
+        return { beat: travelBackBounded(elapsedSeconds, transport.loopStart), passIndex: wrapsSinceEpoch };
     }
 
     // The event predates the cursor's pass: it sits on one of the earlier
@@ -282,7 +287,12 @@ export function captureEventBeatAt({ audioTime }: CaptureEventBeatInput): number
         (wrapsSinceEpoch - 1) * travelSeconds(transport.loopStart, transport.loopEnd) +
         secondsFromSeam;
     if (elapsedSeconds > traversalSeconds) {
-        return epochStartBeat;
+        return { beat: epochStartBeat, passIndex: 0 };
     }
-    return invertTravelToSeam(elapsedSeconds - secondsFromSeam, transport.loopStart, transport.loopEnd);
+    const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
+    const passesBack = Math.ceil((elapsedSeconds - secondsFromSeam) / passSeconds);
+    return {
+        beat: invertTravelToSeam(elapsedSeconds - secondsFromSeam, transport.loopStart, transport.loopEnd),
+        passIndex: Math.max(0, wrapsSinceEpoch - passesBack),
+    };
 }

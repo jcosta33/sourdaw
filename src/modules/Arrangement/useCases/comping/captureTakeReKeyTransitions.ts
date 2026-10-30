@@ -1,5 +1,8 @@
+import { isFrozenMidiTakeSource } from '#/modules/MIDI/stores';
+import { getMidiStoreState, snapshotMidiClipData } from '#/modules/MIDI/useCases';
 import { captureAudioSourceSnapshot, type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
 import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
+import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 import { valuesEqual } from '#/utils/structuralEquality';
 
 import { type CompRegion, type Take, type TakeLane } from '../../models/TakeLane';
@@ -9,6 +12,8 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
 import { captureTakeSource } from './captureTakeSource';
+import { prepareMidiTakeSourceCapture } from './prepareMidiTakeSourceCapture';
+import { relocateMidiTakeSource } from './relocateMidiTakeSource';
 import { resolveCompingProgramme } from './resolveCompingProgramme';
 import { type TakeReKeyClipWindow, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
@@ -17,6 +22,8 @@ type CaptureTakeReKeyTransitionsInput = {
     windowsByTrackId: ReadonlyMap<string, readonly TakeReKeyClipWindow[]>;
     /** Exact source clips captured before the clip producer publishes. */
     sourceClips?: readonly Clip[];
+    /** Exact pre-partition rows from the same clip plan, when the caller already prepared them. */
+    sourceMidiByClipId?: ReadonlyMap<string, MidiClipDataActionSnapshot>;
     lanes?: readonly TakeLane[];
     timeline?: TempoTimeline;
     /** Clip ids the same operation removes outright — their takes retire separately (#4520), never re-key. */
@@ -139,6 +146,37 @@ function groupWindowsByClipId(windows: readonly TakeReKeyClipWindow[]): Map<stri
  * divergence on state no route produces.
  */
 
+function captureMidiTakeSource(
+    take: Take,
+    siblingTakes: readonly Take[],
+    clip: Clip,
+    input: CaptureTakeReKeyTransitionsInput
+): Take {
+    if (take.midiSource !== undefined) {
+        if (!isFrozenMidiTakeSource(take.midiSource)) {
+            throw new Error('MIDI take source is malformed');
+        }
+        return take;
+    }
+    const rows = input.sourceMidiByClipId?.get(clip.id);
+    const state = rows === undefined ? getMidiStoreState() : null;
+    const sourceRows = rows ?? (state ? snapshotMidiClipData(state, clip.id) : null);
+    if (!sourceRows) {
+        throw new Error('MIDI take source is unavailable');
+    }
+    const midiSource = prepareMidiTakeSourceCapture({
+        clip,
+        take,
+        siblingTakes,
+        rows: sourceRows,
+        timeline: input.timeline ?? liveTempoTimeline,
+    });
+    if (!midiSource) {
+        throw new Error('MIDI take source cannot be captured');
+    }
+    return { ...take, midiSource };
+}
+
 function buildTakeFragments(
     take: Take,
     pieces: readonly MappedPiece[],
@@ -165,6 +203,13 @@ function buildTakeFragments(
         };
         if (take.passOriginBeat !== undefined) {
             fragmentTake.passOriginBeat = take.passOriginBeat + piece.startBeat - piece.preImageStartBeat;
+        }
+        if (take.midiSource !== undefined) {
+            const moved = relocateMidiTakeSource(take.midiSource, piece.preImageStartBeat, piece.startBeat);
+            if (!moved) {
+                throw new Error('MIDI take source cannot be re-keyed');
+            }
+            fragmentTake.midiSource = moved;
         }
         fragmentTakes.push(fragmentTake);
         fragments.push({
@@ -200,11 +245,11 @@ function mapLaneTakes(
             mapping.takesAfter.push(take);
             continue;
         }
-        const capturedTake = captureTakeSource(
-            take,
-            input.sourceClips?.find((clip) => clip.id === take.clipId),
-            input.timeline ?? liveTempoTimeline
-        );
+        const sourceClip = input.sourceClips?.find((clip) => clip.id === take.clipId);
+        const capturedTake =
+            sourceClip?.type === 'midi'
+                ? captureMidiTakeSource(take, lane.takes, sourceClip, input)
+                : captureTakeSource(take, sourceClip, input.timeline ?? liveTempoTimeline);
         const pieces = mapRangeThroughWindows(take.startBeat, take.endBeat, takeWindows);
         if (pieces.length === 1 && areSameTakeGeometry(take, pieces[0]!)) {
             mapping.takesAfter.push(capturedTake);
