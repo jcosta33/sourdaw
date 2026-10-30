@@ -1,0 +1,20 @@
+tests/e2e/exportOggCodecs.spec.ts
+  s_59e31a5c6f3e31::t_2684769c0799f2 1,13-49,287,324,327-337,342,345-349,360-365
+  s_59e31a5c6f3e31::t_ed7b06e86cf53a 382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5311d4ec976f4e2cabf6e4f04a3229161abfac63",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
