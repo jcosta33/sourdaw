@@ -324,6 +324,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(recorded.notes.find((note) => note.pitch === 64)?.duration).toBeGreaterThan(0);
         expect(await synthPitches(page), 'the browser Web Audio observer must see the live D4 voice').toContain(62);
         expect(recorded.takes.map((take) => take.recordingPassIndex).sort()).toEqual([0, 1, 2]);
+        expect(recorded.takes.filter((take) => take.selected).map((take) => take.recordingPassIndex)).toEqual([2]);
         expect(recorded.takes.find((take) => take.recordingPassIndex === 2)?.endBeat).toBeLessThan(LOOP_END);
         await testInfo.attach('recorded-pass-owners', {
             body: JSON.stringify(
@@ -552,6 +553,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         expect(persisted.takes).toEqual(saved.takes);
         expect(persisted.regions).toEqual(saved.regions);
         expect(persisted.takes.find((take) => take.selected)?.recordingPassIndex).toBe(2);
+        expect(persisted.takes.find((take) => take.recordingPassIndex === 2)).not.toHaveProperty('midiSource');
         acceptancePage = page;
         await installPlaybackClockObserver(page, recordedTrackId);
         await clearSynthStarts(page);
