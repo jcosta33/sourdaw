@@ -1,0 +1,25 @@
+scripts/diagnostics/reloadCancellation/nativePreflight.ts
+  s_26f70b851e8f7a::t_0f73386f8781f2 91,138
+scripts/diagnostics/reloadCancellation/nativeEvidence.ts
+  s_26f70b851e8f7a::t_0f73386f8781f2 22
+scripts/diagnostics/reloadCancellation/traceBinding.ts
+  s_26f70b851e8f7a::t_0f73386f8781f2 38
+scripts/diagnostics/reloadCancellation/rendererIdentity.ts
+  s_26f70b851e8f7a::t_0f73386f8781f2 119
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71edf27e327e6ab328e6679c32bce9f46bbabc16",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
