@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_57fdb7ae7b3ba4::t_432a7c6134d2f8 401,404,414-419
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_57fdb7ae7b3ba4::t_e7847c826aab28 265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "214a3090b1eb0002022e1f6771e51fa11a8943cc",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
