@@ -1,0 +1,29 @@
+scripts/offlineAudioWorkletTrace.ts
+  s_567a084d0540c4::t_1a42f1c971c814 65-74
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  s_567a084d0540c4::t_47bf1995cc9693 315,317,321,330,332,346
+  s_567a084d0540c4::t_c67de2171f7939 8-9,14,27,35-36,42,49,75,83-84,98,106-107,121,129-130,145,153-154,169,177-178,210-214,316,318-320,322-325,331
+  s_567a084d0540c4::t_d8d60fe25376d1 215
+  s_567a084d0540c4::t_0b006d486bfd1f 326-329
+  s_567a084d0540c4::t_a36b6f0f9d23fc 333-335,343-345
+  s_567a084d0540c4::t_b58549a9986c87 347-348
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  s_567a084d0540c4::t_1a42f1c971c814 428
+  s_567a084d0540c4::t_c67de2171f7939 349
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a2b6fef66d8a58987399399fba0a5cf32474638e",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
