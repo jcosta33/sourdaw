@@ -95,7 +95,8 @@ function stageHistoryInRootDocument(): ReturnType<typeof createAutomergeStorage<
     const history = createAutomergeStorage<HistoryValue>('root', 'actionHistory');
     history.hydrate?.();
     mocks.recordActionHistoryMetadata.mockImplementation((entry) => {
-        history.set({ entries: [...(history.get()?.entries ?? []), entry] });
+        const stagedEntries = history.get()?.entries ?? [];
+        history.set({ entries: [...stagedEntries, entry] });
         return [EVICTED_ENTRY.id];
     });
     registerActionReplayCapability({

@@ -964,7 +964,8 @@ describe('verified batch receipt', () => {
         // stages, the second refuses, and the whole transaction must abort.
         mocks.recordActionHistoryMetadata
             .mockImplementationOnce((entry) => {
-                history.set({ entries: [...(history.get()?.entries ?? []), entry] });
+                const stagedEntries = history.get()?.entries ?? [];
+                history.set({ entries: [...stagedEntries, entry] });
                 return [];
             })
             .mockImplementationOnce(() => {

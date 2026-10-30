@@ -138,6 +138,16 @@ describe('command-owned durable history publication', () => {
         vi.restoreAllMocks();
     });
 
+    function writeForeignHistorySlot(): void {
+        mutateCrdtDoc<{ actionHistory?: { foreign?: boolean } }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.actionHistory ??= {};
+                doc.actionHistory.foreign = true;
+            },
+        });
+    }
+
     async function confirmedBatch(foreignWrite = false) {
         const revision = captureProjectRevision();
         const batch = compileVersionedCommandBatchEnvelope({
@@ -175,16 +185,7 @@ describe('command-owned durable history publication', () => {
                 shouldFinalizeProjectCommit: ownsCommand,
                 onProjectCommitFinalized: finalized,
                 onProjectCommitFinalizationUnavailable: unavailable,
-                onCommitted: foreignWrite
-                    ? () =>
-                          mutateCrdtDoc<{ actionHistory?: { foreign?: boolean } }>({
-                              id: 'root',
-                              changeFn: (doc) => {
-                                  doc.actionHistory ??= {};
-                                  doc.actionHistory.foreign = true;
-                              },
-                          })
-                    : undefined,
+                onCommitted: foreignWrite ? writeForeignHistorySlot : undefined,
             },
         });
         return { result, finalized, unavailable };
@@ -438,7 +439,9 @@ describe('command-owned durable history publication', () => {
             expect(getCrdtDoc<{ historyTempo: { bpm: number } }>('root')?.historyTempo).toEqual({ bpm: 120 });
             expect(actionHistoryStore.value?.entries).toEqual([]);
             expect(undoStore.value?.past).toEqual([]);
-            for (const id of entryIds) expect(getActionReplayStatus(id)).toEqual({ status: 'unavailable' });
+            for (const id of entryIds) {
+                expect(getActionReplayStatus(id)).toEqual({ status: 'unavailable' });
+            }
         }
     );
 });
