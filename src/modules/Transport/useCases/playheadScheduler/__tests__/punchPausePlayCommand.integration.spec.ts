@@ -201,7 +201,7 @@ function expectPcm(clipId: string | undefined, expected: AudioBuffer, value: num
         throw new Error('Expected committed capture buffer reference');
     }
     const cached = getCachedAudioBuffer({ bufferId: clip.audioBufferId });
-    expect(cached).toBe(expected);
+    expect(cached === expected, 'committed capture resolves to its original PCM buffer').toBe(true);
     if (!cached) {
         throw new Error('Expected captured PCM in the audio buffer cache');
     }
