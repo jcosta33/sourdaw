@@ -26,6 +26,15 @@ beforeEach(() => {
     vite.preview.mockResolvedValue({ httpServer: { address: () => ({ port: 43210 }) }, close: vite.close });
 });
 
+function recordedBuild(): { config: import('vite').InlineConfig; outDir: string } {
+    const config = vite.build.mock.calls[0]?.[0];
+    const outDir = config?.build?.outDir;
+    if (config === undefined || typeof outDir !== 'string') {
+        throw new Error('Expected one real build configuration with its output directory');
+    }
+    return { config, outDir };
+}
+
 describe('selected persistence acceptance server', () => {
     it('reuses only the existing built-shard profile, including an empty selected cohort', () => {
         expect(isBuiltE2eShardRun({ CI: 'true', E2E_SPECS: '[]' })).toBe(true);
@@ -37,19 +46,24 @@ describe('selected persistence acceptance server', () => {
     it('builds one e2e graph, previews that same directory on an exclusive OS-assigned port, and removes it after close', async () => {
         const root = resolve(import.meta.dirname, '../..');
         const server = await startCompiledPersistenceServer(root);
-        const [buildConfig] = vite.build.mock.calls[0];
+        const { config: buildConfig, outDir } = recordedBuild();
         expect(vite.build).toHaveBeenCalledOnce();
         expect(buildConfig).toMatchObject({ root, configFile: resolve(root, 'vite.config.ts'), mode: 'e2e' });
-        expect(existsSync(buildConfig.build!.outDir!)).toBe(true);
+        expect(existsSync(outDir)).toBe(true);
         expect(vite.preview).toHaveBeenCalledExactlyOnceWith({
             ...buildConfig,
             preview: { host: '127.0.0.1', port: 0, strictPort: true },
         });
-        expect(vite.build.mock.invocationCallOrder[0]).toBeLessThan(vite.preview.mock.invocationCallOrder[0]);
+        const buildOrder = vite.build.mock.invocationCallOrder[0];
+        const previewOrder = vite.preview.mock.invocationCallOrder[0];
+        if (typeof buildOrder !== 'number' || typeof previewOrder !== 'number') {
+            throw new Error('Build and preview must both be observed');
+        }
+        expect(buildOrder).toBeLessThan(previewOrder);
         expect(server.origin).toBe('http://127.0.0.1:43210');
         await server.close();
         expect(vite.close).toHaveBeenCalledOnce();
-        expect(existsSync(buildConfig.build!.outDir!)).toBe(false);
+        expect(existsSync(outDir)).toBe(false);
     });
 
     it('never starts preview after a failed build and preserves the build failure', async () => {
@@ -57,8 +71,8 @@ describe('selected persistence acceptance server', () => {
         vite.build.mockRejectedValue(error);
         await expect(startCompiledPersistenceServer(resolve(import.meta.dirname, '../..'))).rejects.toBe(error);
         expect(vite.preview).not.toHaveBeenCalled();
-        const [buildConfig] = vite.build.mock.calls[0];
-        expect(existsSync(buildConfig.build!.outDir!)).toBe(false);
+        const { outDir } = recordedBuild();
+        expect(existsSync(outDir)).toBe(false);
     });
 
     it('closes an invalid listener and removes its output before refusing admission', async () => {
@@ -67,7 +81,7 @@ describe('selected persistence acceptance server', () => {
             'Compiled persistence preview has no TCP listener'
         );
         expect(vite.close).toHaveBeenCalledOnce();
-        const [buildConfig] = vite.build.mock.calls[0];
-        expect(existsSync(buildConfig.build!.outDir!)).toBe(false);
+        const { outDir } = recordedBuild();
+        expect(existsSync(outDir)).toBe(false);
     });
 });
