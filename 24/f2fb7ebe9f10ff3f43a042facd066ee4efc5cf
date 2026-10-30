@@ -1,0 +1,19 @@
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  s_59e31a5c6f3e31::t_a451e90d05015b 77-79,88-90,92-94,104-106,108-110
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "24f2fb7ebe9f10ff3f43a042facd066ee4efc5cf",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
