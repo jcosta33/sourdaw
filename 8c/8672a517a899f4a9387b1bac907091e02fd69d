@@ -1,0 +1,24 @@
+.oxlintrc.json
+  h_beb54bf43b47b7 37-46
+.prettierignore
+  h_beb54bf43b47b7 46-56
+eslint.config.mjs
+  h_beb54bf43b47b7 2359-2368
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1781
+release/upstream-proofs/audio-export-codecs/BUILD.md
+  h_beb54bf43b47b7 72-74
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 614-622,1040,1175,2648-2656,2660,2723,2795,2801-2809,2930,3353,3773-3781,5288,5297,5567,5594,7286,7484,8186,8462-8470,9158,9401,9635,9995,10706,10712-10720,11093,13610-13618,13874,14234,14423,14504,14531,15251,15575,16124,16259,16589-16597,17978,18086,18545,19103,19517,20048,20480,20612-20620,20831,21389,21488,21641,21974,22370,23648,24143,24365-24373,24503,24833-24841,24881
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8c8672a517a899f4a9387b1bac907091e02fd69d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
