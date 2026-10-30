@@ -2335,3 +2335,14 @@ loopEnd click and the incoming loopStart click are indistinguishable. Pin incomi
 with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
 incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
 the real scheduler, for the seam and a later pass.
+
+### 2026-10-31 — a spec read a remote ref the shallow tooling job never fetches (introduced by PR #5917)
+
+PR #5917 introduced `laneAdoption.spec.ts`, whose fixture ran `git show origin/main:...`.
+The review-tooling unit job checks out only the shallow merge ref, so `origin/main` does not
+exist there. The full-history unit shards passed, #5917's own runs skipped the tooling job, and
+the failure surfaced on the next tooling-profile PR (#5935). The value equalled the working-tree
+file once #5917 merged. A spec must not read refs, history or remotes that a CI job collecting it
+does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
+the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
+`tooling-unit` uses the default shallow checkout.
