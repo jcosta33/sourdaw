@@ -995,7 +995,8 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         const stop = stopClockEvent(captureWitness);
         expect(stop.output?.wrapCount).toBe(2);
         const expectedEndBeat = capturedThirdPassFrontier(captureWitness, stop.output!.gestureBeat, originalPcm.frames);
-        expect(Math.abs(passes[2].endBeat - expectedEndBeat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].endBeat).toBeGreaterThanOrEqual(expectedEndBeat - CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].endBeat).toBeLessThanOrEqual(expectedEndBeat + CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].passSourceEndSeconds).toBeCloseTo(captured.durationSeconds, 6);
         const envelope = await recordedEnvelope(page, captured.bufferId);
         expect(envelope.length).toBeGreaterThan(30);
@@ -1030,11 +1031,14 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
             { take: passes[2], start: 8.25, end: 9 },
             { take: passes[1], start: 9.25, end: 10 },
             { take: passes[0], start: 10.25, end: 11 },
-        ].map((region) => ({
-            ...region,
-            start: Math.max(region.start, region.take.startBeat + 0.1),
-            end: Math.min(region.end, region.take.endBeat - 0.1),
-        }));
+        ].map((region) => {
+            const start = Math.max(region.start, region.take.startBeat + 0.1);
+            return {
+                ...region,
+                start,
+                end: Math.min(start + region.end - region.start, region.take.endBeat - 0.1),
+            };
+        });
         expect(new Set(compPlan.map((region) => region.take.id)).size).toBe(3);
         for (const region of compPlan) {
             expect(
@@ -1378,9 +1382,11 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         expect(pauseClick?.output?.wrapCount).toBe(2);
         expect(pauseClick?.output?.isRecording).toBe(true);
         const stop = stopClockEvent(captureWitness);
-        expect(Math.abs(stop.output!.gestureBeat - pause.beat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(stop.output!.gestureBeat).toBeGreaterThanOrEqual(pause.beat - CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(stop.output!.gestureBeat).toBeLessThanOrEqual(pause.beat + CAPTURE_FRONTIER_BOUND_BEATS);
         const expectedEndBeat = capturedThirdPassFrontier(captureWitness, pause.beat, originalPcm.frames);
-        expect(Math.abs(passes[2].endBeat - expectedEndBeat)).toBeLessThanOrEqual(CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].endBeat).toBeGreaterThanOrEqual(expectedEndBeat - CAPTURE_FRONTIER_BOUND_BEATS);
+        expect(passes[2].endBeat).toBeLessThanOrEqual(expectedEndBeat + CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].passSourceEndSeconds).toBeCloseTo(closing.durationSeconds, 6);
         const envelope = await recordedEnvelope(page, null);
         expect(originalPcm.sampleRate).toBe(MIC_SAMPLE_RATE);
