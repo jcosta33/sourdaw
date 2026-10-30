@@ -14,7 +14,8 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notify }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeAppAction: mocks.execute,
     executeUserAppAction: vi.fn(),
 }));
