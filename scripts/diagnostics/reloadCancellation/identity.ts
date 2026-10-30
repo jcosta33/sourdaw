@@ -9,7 +9,7 @@ export const WRAPPER = 'tests/e2e/test-results/reloadCancellation/zzPersistedCli
 export const PRIVATE_DIRECTORY = 'test-results/reloadCancellation/harness';
 // Set to the verified published preparation head only in the single enable commit.
 // Its successor (including the freeze commit) cannot satisfy the same event.before.
-export const NATIVE_EXECUTION_PARENT: string | undefined = undefined;
+export const NATIVE_EXECUTION_PARENT: string | undefined = 'c1deb856de3d68ceb19f5a5be9c37aa351dd575c';
 
 // Frozen selectors from run40908733061 attempt1, rather than a fresh affected-plan calculation.
 export const ORIGINAL_SELECTORS = [
