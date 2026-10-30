@@ -1,0 +1,24 @@
+src/modules/AudioRendering/useCases/audioExport/writeReportedWav.ts
+  s_57fdb7ae7b3ba4::t_1e1c7d37d84460 1-16,18-88
+  s_57fdb7ae7b3ba4::t_b155a7af7c706d 17
+src/modules/AudioRendering/useCases/audioExport/__tests__/writeReportedWav.spec.ts
+  s_57fdb7ae7b3ba4::t_b155a7af7c706d 1-29,39,41,43-213,219-226,248-249
+  s_57fdb7ae7b3ba4::t_321670e4429dbd 30-38,40,42,214-218,227-247
+  s_57fdb7ae7b3ba4::t_bc8d109ec9b4cd 250-252
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d7bccf54ffd7d7bbe33c5957bab977efe8ca2913",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
