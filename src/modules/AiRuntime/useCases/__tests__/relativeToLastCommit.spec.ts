@@ -32,6 +32,7 @@ import { aiActionHistoryStore, clearAiHistory } from '../../stores/aiActionHisto
 import { chatStore, stopGenerating } from '../../stores/chatStore';
 import {
     clearPendingActionConfirmations,
+    getPendingActionConfirmation,
     pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { readLastCommitRequest } from '../../transformers/readLastCommitRequest';
@@ -41,6 +42,7 @@ import { agentRunCancellation } from '../cancelAgentRun';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { type planPromptActions } from '../planPromptActions';
 import { planLastCommitContinuation } from '../planLastCommitContinuation';
 import { readChatThreadContext } from '../readChatThreadContext';
 import { sendChatMessage as sendChatMessageWithoutDocumentFlush } from '../sendChatMessage';
@@ -82,6 +84,21 @@ const runtimeMocks = vi.hoisted(() => ({
 }));
 
 const scriptState = { requestTurn: 0, planningTurn: 0 };
+const chatPlanning = vi.hoisted(() => ({
+    last: null as Awaited<ReturnType<typeof planPromptActions>>['result'] | null,
+}));
+
+vi.mock('../planPromptActions', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../planPromptActions')>();
+    return {
+        ...actual,
+        planPromptActions: async (input: Parameters<typeof actual.planPromptActions>[0]) => {
+            const planned = await actual.planPromptActions(input);
+            chatPlanning.last = planned.result;
+            return planned;
+        },
+    };
+});
 
 type GroupRevert = Awaited<ReturnType<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>>;
 type GroupRevertOptions = Parameters<typeof import('#/modules/Command/useCases').revertActionGroupAtomically>[1];
@@ -182,8 +199,8 @@ function decibelsOf(trackId: string): number {
     return Math.round(20 * Math.log10(getTrack(trackId).gain) * 1000) / 1000;
 }
 
-function asCommandBatchProposal(calls: readonly ProviderCall[]): ProviderCall {
-    return {
+function asCommandBatchProposal(calls: readonly ProviderCall[], refines?: string): ProviderCall {
+    const proposal: ProviderCall = {
         name: 'command.batch.propose',
         arguments: {
             commands: calls.map((call) => ({ name: call.name, arguments: call.arguments })),
@@ -213,13 +230,20 @@ function asCommandBatchProposal(calls: readonly ProviderCall[]): ProviderCall {
             },
         },
     };
+    if (refines !== undefined) {
+        proposal.arguments.refines = refines;
+    }
+    return proposal;
 }
 
 /**
  * The first provider turn admits the whole request; subsequent planning attempts discover command
  * schemas and propose. The attempts take the plans in order, and later attempts repeat the last plan.
  */
-function scriptProvider(plans: ReadonlyArray<readonly ProviderCall[]>): void {
+function scriptProvider(
+    plans: ReadonlyArray<readonly ProviderCall[]>,
+    refinement?: { planIndex: number; id: () => string }
+): void {
     scriptState.requestTurn = 0;
     scriptState.planningTurn = 0;
     runtimeMocks.generateWebLlmCompletion.mockImplementation(async (systemPrompt: string, userMessage: string) => {
@@ -228,7 +252,8 @@ function scriptProvider(plans: ReadonlyArray<readonly ProviderCall[]>): void {
             return JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt));
         }
         scriptState.requestTurn += 1;
-        const plan = plans[Math.min(Math.floor(scriptState.planningTurn / 2), plans.length - 1)];
+        const planIndex = Math.min(Math.floor(scriptState.planningTurn / 2), plans.length - 1);
+        const plan = plans[planIndex];
         if (plan === undefined) {
             throw new Error('Expected a scripted planning run.');
         }
@@ -238,7 +263,9 @@ function scriptProvider(plans: ReadonlyArray<readonly ProviderCall[]>): void {
             return JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }]);
         }
         scriptState.planningTurn += 1;
-        return JSON.stringify([asCommandBatchProposal(plan)]);
+        return JSON.stringify([
+            asCommandBatchProposal(plan, refinement?.planIndex === planIndex ? refinement.id() : undefined),
+        ]);
     });
 }
 
@@ -246,6 +273,7 @@ async function sendChatMessage(prompt: string, options?: Parameters<typeof sendC
     flushAutomergeStorageWrites();
     // Each chat request has its own required first-turn intake; planning corrections stay scripted in sequence.
     scriptState.requestTurn = 0;
+    chatPlanning.last = null;
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
 
@@ -1064,16 +1092,40 @@ describe('relative to the last commit', () => {
         });
 
         it('leaves a pending card to its own refinement, never continuing the commit beneath it', async () => {
-            scriptProvider([[VOCALS_DOWN_3_DB], [VOCALS_DOWN_3_DB, MUTE_BASS], [REDERIVED_VOCALS_LEVEL]]);
+            let pendingId = '';
+            const refinedVocals: ProviderCall = {
+                name: 'setTrackGain',
+                arguments: { trackId: 'track-vocals', deltaDb: -5 },
+            };
+            scriptProvider([[VOCALS_DOWN_3_DB], [VOCALS_DOWN_3_DB, MUTE_BASS], [refinedVocals, MUTE_BASS]], {
+                planIndex: 2,
+                id: () => pendingId,
+            });
             await commitVocalsDown3Db();
             await sendChatMessage('Turn Vocals down 3 dB and mute Bass');
             expect(proposedIds()).toHaveLength(1);
+            pendingId = proposedIds()[0]!;
+            const pendingCard = structuredClone(getPendingActionConfirmation(pendingId));
             const calls = providerCallCount();
+            const revision = settlePendingProjectWritesAndCaptureRevision();
+            const entries = undoHistoryStore.value?.past.length ?? 0;
 
             await sendChatMessage('another 2 dB');
 
             expect(providerCallCount()).toBeGreaterThan(calls);
             expect(decibelsOf('track-vocals')).toBe(-3);
+            expect(chatPlanning.last?.planningOutcome).toEqual({
+                kind: 'clarify',
+                reason: 'The refinement leaves part of the change it asks for open.',
+                questions: [
+                    'What should the value be? "another" beside 2 dB does not say; state the new value alone, as in "make it 2 dB".',
+                ],
+            });
+            expect(getTrack('track-bass').muted).toBe(false);
+            expect(settlePendingProjectWritesAndCaptureRevision()).toBe(revision);
+            expect(undoHistoryStore.value?.past ?? []).toHaveLength(entries);
+            expect(proposedIds()).toHaveLength(1);
+            expect(getPendingActionConfirmation(pendingId)).toEqual(pendingCard);
         });
     });
 
