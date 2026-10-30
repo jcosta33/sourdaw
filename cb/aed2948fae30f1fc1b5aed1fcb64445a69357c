@@ -1,0 +1,19 @@
+src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts
+  s_72b46a3962ba06::t_61f525726b16da 936-937,949-950,960-998
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cbaed2948fae30f1fc1b5aed1fcb64445a69357c",
+  "prompts": {},
+  "sessions": {
+    "s_72b46a3962ba06": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_72b46a3962ba06",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
