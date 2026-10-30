@@ -15,31 +15,41 @@ function cleanDetachedControls(root: number, record: ReturnType<typeof createJou
     const queue = [root];
     const seen = new Set<number>();
     const groups = new Set<number>();
-    while (queue.length && seen.size < 2048) {
+    while (queue.length > 0 && seen.size < 2048) {
         const pid = queue.shift();
-        if (pid === undefined || seen.has(pid)) continue;
+        if (pid === undefined || seen.has(pid)) {
+            continue;
+        }
         seen.add(pid);
         try {
             const identity = linuxIdentity(pid, root);
-            if (!identity.owned || identity.namespace !== identity.observerNamespace)
+            if (!identity.owned || identity.namespace !== identity.observerNamespace) {
                 throw new Error('Cleanup ownership unproved');
+            }
             const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
             const group = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[2]);
-            if (group === pid && pid !== root) groups.add(pid);
+            if (group === pid && pid !== root) {
+                groups.add(pid);
+            }
             for (const task of readdirSync(`/proc/${pid}/task`)) {
                 const children = readFileSync(`/proc/${pid}/task/${task}/children`, 'utf8');
-                for (const child of children.trim().split(/\s+/).filter(Boolean)) queue.push(Number(child));
+                for (const child of children.trim().split(/\s+/).filter(Boolean)) {
+                    queue.push(Number(child));
+                }
             }
         } catch (error) {
             record('native-cleanup-census-unknown', { pid, reason: String(error) });
         }
     }
-    if (queue.length) record('native-cleanup-census-unknown', 'Control subtree exceeded2048 entries');
+    if (queue.length > 0) {
+        record('native-cleanup-census-unknown', 'Control subtree exceeded2048 entries');
+    }
     for (const group of groups) {
         try {
             const identity = linuxIdentity(group, root);
-            if (!identity.owned || identity.namespace !== identity.observerNamespace)
+            if (!identity.owned || identity.namespace !== identity.observerNamespace) {
                 throw new Error('Detached control group no longer owned');
+            }
             process.kill(-group, 'SIGKILL');
             record('native-detached-control-group-killed', { identity, signal: 'SIGKILL' });
         } catch (error) {
@@ -69,13 +79,16 @@ export async function superviseNativeControl(
         'native control exit'
     );
     try {
-        if (code !== 0) throw new Error(`Synthetic control exited with ${code}`);
+        if (code !== 0) {
+            throw new Error(`Synthetic control exited with ${code}`);
+        }
         const qualified = recordOf(
             JSON.parse(readFileSync(resolve(output, 'native-preflight/qualified.json'), 'utf8')) as unknown,
             'native preflight'
         );
-        if (qualified.actualLinuxControls !== true || qualified.pinnedBrowserScriptMapping !== true)
+        if (qualified.actualLinuxControls !== true || qualified.pinnedBrowserScriptMapping !== true) {
             throw new Error('Actual native control proof missing');
+        }
         const wrapper = requiredText(qualified.wrapper, 'qualified native browser wrapper');
         writeReceipt(resolve(phase, 'qualification.json'), {
             observed: true,

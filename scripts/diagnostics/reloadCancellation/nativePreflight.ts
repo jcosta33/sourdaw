@@ -35,7 +35,9 @@ export async function qualifyNativeTracing(root: string, output: string, runtime
 }
 
 async function runNativeControls(root: string, output: string, runtime: string): Promise<string> {
-    if (process.platform !== 'linux') throw new Error('Native trace qualification requires actual Linux');
+    if (process.platform !== 'linux') {
+        throw new Error('Native trace qualification requires actual Linux');
+    }
     const directory = resolve(output, 'native-preflight');
     mkdirSync(directory, { recursive: true });
     const record = createJournal(resolve(directory, 'browser-identity.jsonl'));
@@ -58,13 +60,13 @@ async function runNativeControls(root: string, output: string, runtime: string):
             code: number | null;
             signal: string | null;
         };
-        if (
-            result.code !== 0 ||
-            result.signal !== null ||
-            (mode === 'exit37'
-                ? wait.code !== 37 || wait.signal !== null
-                : wait.code !== null || wait.signal !== 'SIGTRAP')
-        ) {
+        let parentWaitMatched: boolean;
+        if (mode === 'exit37') {
+            parentWaitMatched = wait.code === 37 && wait.signal === null;
+        } else {
+            parentWaitMatched = wait.code === null && wait.signal === 'SIGTRAP';
+        }
+        if (result.code !== 0 || result.signal !== null || !parentWaitMatched) {
             throw new Error(`Native ${mode} control did not produce the required actual parent wait result`);
         }
         const capture = JSON.parse(readFileSync(resolve(trace, 'capture.json'), 'utf8')) as {
@@ -80,17 +82,24 @@ async function runNativeControls(root: string, output: string, runtime: string):
     const original = await chromium.launch();
     let executable: string;
     try {
-        if (original.version() !== ORIGINAL_BROWSER) throw new Error('Native preflight browser version differs');
+        if (original.version() !== ORIGINAL_BROWSER) {
+            throw new Error('Native preflight browser version differs');
+        }
         const session = await original.newBrowserCDPSession();
         const processes = recordOf(await session.send('SystemInfo.getProcessInfo'), 'browser processes');
-        if (!Array.isArray(processes.processInfo)) throw new Error('Browser process identity missing');
+        if (!Array.isArray(processes.processInfo)) {
+            throw new Error('Browser process identity missing');
+        }
         const browser = processes.processInfo
             .map((value: unknown) => recordOf(value, 'process'))
             .filter((entry) => entry.type === 'browser');
-        if (browser.length !== 1 || typeof browser[0]?.id !== 'number') throw new Error('Browser PID is ambiguous');
+        if (browser.length !== 1 || typeof browser[0]?.id !== 'number') {
+            throw new Error('Browser PID is ambiguous');
+        }
         const identity = linuxIdentity(browser[0].id, process.pid);
-        if (!identity.owned || identity.namespace !== identity.observerNamespace)
+        if (!identity.owned || identity.namespace !== identity.observerNamespace) {
             throw new Error('Browser namespace/ownership is unproved');
+        }
         executable = readlinkSync(`/proc/${identity.pid}/exe`);
         record('original-default-browser', {
             identity,
@@ -116,28 +125,37 @@ async function runNativeControls(root: string, output: string, runtime: string):
     });
     const tracedPids = new Set<number>();
     const bindings: BrowserTraceBinding[] = [];
-    await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     try {
         const browser = await chromium.launch({ executablePath: wrapper });
         try {
-            if (browser.version() !== ORIGINAL_BROWSER) throw new Error('Traced browser runtime differs');
+            if (browser.version() !== ORIGINAL_BROWSER) {
+                throw new Error('Traced browser runtime differs');
+            }
             const browserSession = await browser.newBrowserCDPSession();
             const processes = recordOf(await browserSession.send('SystemInfo.getProcessInfo'), 'traced processes');
-            if (!Array.isArray(processes.processInfo)) throw new Error('Traced browser processes missing');
+            if (!Array.isArray(processes.processInfo)) {
+                throw new Error('Traced browser processes missing');
+            }
             for (const value of processes.processInfo) {
                 const entry = recordOf(value, 'traced process');
-                if (entry.type !== 'browser' || typeof entry.id !== 'number') continue;
+                if (entry.type !== 'browser' || typeof entry.id !== 'number') {
+                    continue;
+                }
                 const identity = linuxIdentity(entry.id, process.pid);
                 if (
                     !identity.owned ||
                     identity.namespace !== identity.observerNamespace ||
                     readlinkSync(`/proc/${entry.id}/exe`) !== executable
-                )
+                ) {
                     throw new Error('Traced browser native identity differs');
+                }
                 tracedPids.add(entry.id);
                 record('traced-browser-identity', identity);
             }
-            if (tracedPids.size !== 1) throw new Error('Exactly one native browser identity required');
+            if (tracedPids.size !== 1) {
+                throw new Error('Exactly one native browser identity required');
+            }
             const context = await browser.newContext();
             const page = await context.newPage();
             const session = await context.newCDPSession(page);
@@ -149,7 +167,9 @@ async function runNativeControls(root: string, output: string, runtime: string):
                     record(kind, data);
                     if (kind === 'page-renderer-identity') {
                         const identity = recordOf(recordOf(data, 'renderer mapping').identity, 'renderer identity');
-                        if (typeof identity.pid === 'number') tracedPids.add(identity.pid);
+                        if (typeof identity.pid === 'number') {
+                            tracedPids.add(identity.pid);
+                        }
                         bindings.push(recordOf(data, 'renderer mapping').traceBinding as BrowserTraceBinding);
                     }
                 },
@@ -157,7 +177,7 @@ async function runNativeControls(root: string, output: string, runtime: string):
             );
             await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`, { timeout: 15_000 });
             if (
-                (await page.evaluate(() => Reflect.get(globalThis, 'nativeTraceScriptLoaded'))) !== true ||
+                (await page.evaluate(() => Reflect.get(globalThis, 'nativeTraceScriptLoaded') === true)) !== true ||
                 (await settled()) < 1
             ) {
                 throw new Error('Actual traced browser Script/frame/loader/PID/namespace mapping did not qualify');
@@ -166,24 +186,40 @@ async function runNativeControls(root: string, output: string, runtime: string):
             await browser.close();
         }
     } finally {
-        await new Promise<void>((done, reject) => server.close((error) => (error ? reject(error) : done())));
+        await new Promise<void>((resolve, reject) => {
+            server.close((error) => {
+                if (error) {
+                    reject(error);
+                    return;
+                }
+                resolve();
+            });
+        });
     }
     const traces = resolve(output, 'run/native-traces');
     const names = readdirSync(traces);
-    if (names.length !== 1) throw new Error('Native browser control trace is missing or ambiguous');
+    if (names.length !== 1) {
+        throw new Error('Native browser control trace is missing or ambiguous');
+    }
     const trace = resolve(traces, names[0]!);
     const capture = recordOf(
         JSON.parse(readFileSync(resolve(trace, 'capture.json'), 'utf8')) as unknown,
         'browser capture'
     );
-    if (capture.complete !== true || capture.partialLine !== false || capture.droppedEvents !== 0)
+    if (capture.complete !== true || capture.partialLine !== false || capture.droppedEvents !== 0) {
         throw new Error('Native browser control tail is incomplete');
-    if (!bindings.length) throw new Error('Native browser control trace instance was not bound');
-    for (const binding of bindings) assertTraceBinding(binding, capture.traceInstance as TraceInstance);
+    }
+    if (bindings.length === 0) {
+        throw new Error('Native browser control trace instance was not bound');
+    }
+    for (const binding of bindings) {
+        assertTraceBinding(binding, capture.traceInstance as TraceInstance);
+    }
     const nativeEvents = readNativeEvents(trace);
     for (const pid of tracedPids) {
-        if (!nativeEvents.some((event) => event.pid === pid && event.kind === 'exit' && event.code === 0))
+        if (!nativeEvents.some((event) => event.pid === pid && event.kind === 'exit' && event.code === 0)) {
             throw new Error(`Native browser control normal exit missing for PID ${pid}`);
+        }
     }
     writeReceipt(resolve(directory, 'qualified.json'), {
         actualLinuxControls: true,
@@ -204,12 +240,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
             requiredText(runtime, 'materialized runtime')
         );
     } catch (error) {
-        if (output)
+        if (output) {
             writeReceipt(resolve(output, 'native-preflight/control-failure.json'), {
                 observed: false,
                 appExecutionAdmitted: false,
                 unknown: String(error),
             });
+        }
         process.stderr.write(`${String(error)}\n`);
         process.exitCode = 1;
     }

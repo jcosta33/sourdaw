@@ -14,19 +14,26 @@ export function joinNativeMapping(
     const data = recordOf(event.data, 'mapping');
     const identity = recordOf(data.identity, 'identity');
     const since = Date.parse(String(event.time)) / 1000;
-    let candidates: NativeEvent[] = [];
+    let candidates: NativeEvent[];
     let traceName: string | undefined;
     let unknown: string | undefined;
     try {
-        if (!Number.isFinite(since)) throw new Error('Live registration time unavailable');
+        if (!Number.isFinite(since)) {
+            throw new Error('Live registration time unavailable');
+        }
         const binding = data.traceBinding as BrowserTraceBinding | undefined;
-        if (!binding) throw new Error('Actual browser/tracer instance binding was not observed');
+        if (!binding) {
+            throw new Error('Actual browser/tracer instance binding was not observed');
+        }
         const matches = traces.filter((trace) => trace.name === binding.traceName);
-        if (matches.length !== 1) throw new Error('Bound native trace is missing or ambiguous');
+        if (matches.length !== 1) {
+            throw new Error('Bound native trace is missing or ambiguous');
+        }
         const trace = matches[0]!;
         assertTraceBinding(binding, trace.capture.traceInstance as TraceInstance);
-        if (identity.namespace !== binding.browser.namespace)
+        if (identity.namespace !== binding.browser.namespace) {
             throw new Error('Renderer namespace differs from bound browser');
+        }
         traceName = trace.name;
         candidates = trace.events
             .filter((native) => native.pid === identity.pid && native.timestamp >= since)
@@ -76,22 +83,26 @@ export function qualifyNativeEvidence(output: string): Record<string, unknown> {
         JSON.parse(readFileSync(resolve(output, 'native-preflight/qualified.json'), 'utf8')) as unknown,
         'native preflight'
     );
-    if (preflight.actualLinuxControls !== true || preflight.pinnedBrowserScriptMapping !== true)
+    if (preflight.actualLinuxControls !== true || preflight.pinnedBrowserScriptMapping !== true) {
         throw new Error('Actual Linux native trace preflight did not qualify');
+    }
     const root = resolve(output, 'run');
     const mappingHealth = recordOf(
         JSON.parse(readFileSync(resolve(root, 'renderer-mapping-health.json'), 'utf8')) as unknown,
         'mapping health'
     );
-    if (mappingHealth.observed !== true) throw new Error('Target renderer native mapping was not observed');
+    if (mappingHealth.observed !== true) {
+        throw new Error('Target renderer native mapping was not observed');
+    }
     const traces = readdirSync(resolve(root, 'native-traces')).map((name) => {
         const directory = resolve(root, 'native-traces', name);
         const capture = recordOf(
             JSON.parse(readFileSync(resolve(directory, 'capture.json'), 'utf8')) as unknown,
             'native capture'
         );
-        if (capture.complete !== true || capture.partialLine !== false || capture.droppedEvents !== 0)
+        if (capture.complete !== true || capture.partialLine !== false || capture.droppedEvents !== 0) {
             throw new Error(`Native trace incomplete: ${name}`);
+        }
         return { name, capture, events: readNativeEvents(directory) };
     });
     const observations = readFileSync(resolve(root, 'browser-observations.jsonl'), 'utf8')
@@ -100,14 +111,18 @@ export function qualifyNativeEvidence(output: string): Record<string, unknown> {
         .map((line) => recordOf(JSON.parse(line) as unknown, 'observation'));
     const firstRegistrations = new Map<string, Record<string, unknown>>();
     for (const event of observations) {
-        if (!['page-renderer-identity', 'browser-native-identity'].includes(String(event.kind))) continue;
+        if (!['page-renderer-identity', 'browser-native-identity'].includes(String(event.kind))) {
+            continue;
+        }
         const identity = recordOf(recordOf(event.data, 'mapping').identity, 'identity');
         const data = recordOf(event.data, 'mapping');
         const binding = data.traceBinding as BrowserTraceBinding | undefined;
         const key = `${String(identity.pid)}:${String(identity.start)}:${String(identity.namespace)}:${binding?.traceName ?? 'unbound'}:${binding?.tracer.start ?? 'unknown'}`;
-        if (!firstRegistrations.has(key)) firstRegistrations.set(key, event);
+        if (!firstRegistrations.has(key)) {
+            firstRegistrations.set(key, event);
+        }
     }
-    const mappings = [...firstRegistrations.values()].map((event) => joinNativeMapping(event, traces));
+    const mappings = Array.from(firstRegistrations.values(), (event) => joinNativeMapping(event, traces));
     return {
         preflight,
         captures: traces.map(({ name, capture }) => ({ name, capture })),

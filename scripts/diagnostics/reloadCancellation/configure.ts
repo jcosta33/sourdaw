@@ -53,20 +53,22 @@ export function configureDiagnostic(
     if (companions !== 1) {
         throw new Error('Expected exactly one original dev-companion command');
     }
+    let use = original.use;
+    if (observing) {
+        use = {
+            ...original.use,
+            launchOptions: {
+                ...original.use?.launchOptions,
+                executablePath: requiredText(
+                    process.env.RELOAD_DIAGNOSTIC_BROWSER_WRAPPER,
+                    'qualified browser wrapper'
+                ),
+            },
+        };
+    }
     return {
         ...original,
-        use: observing
-            ? {
-                  ...original.use,
-                  launchOptions: {
-                      ...original.use?.launchOptions,
-                      executablePath: requiredText(
-                          process.env.RELOAD_DIAGNOSTIC_BROWSER_WRAPPER,
-                          'qualified browser wrapper'
-                      ),
-                  },
-              }
-            : original.use,
+        use,
         testDir: resolve(root, 'tests/e2e'),
         globalSetup: resolve(root, 'tests/e2e/firstPaintWarmup.ts'),
         projects,

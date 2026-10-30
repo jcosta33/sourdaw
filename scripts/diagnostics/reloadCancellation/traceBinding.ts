@@ -34,27 +34,35 @@ export function assertTraceBinding(binding: BrowserTraceBinding, instance: Trace
 
 export function browserTraceBinding(processes: unknown, owner: number, traceRoot: string): BrowserTraceBinding {
     const entries = recordOf(processes, 'process info').processInfo;
-    if (!Array.isArray(entries)) throw new Error('Browser process info missing');
+    if (!Array.isArray(entries)) {
+        throw new Error('Browser process info missing');
+    }
     const browsers = entries
         .map((entry: unknown) => recordOf(entry, 'process'))
         .filter((entry) => entry.type === 'browser');
-    if (browsers.length !== 1 || typeof browsers[0]?.id !== 'number') throw new Error('Actual browser PID ambiguous');
+    if (browsers.length !== 1 || typeof browsers[0]?.id !== 'number') {
+        throw new Error('Actual browser PID ambiguous');
+    }
     const browser = linuxIdentity(browsers[0].id, owner);
     const tracer = linuxIdentity(browser.parent, owner);
     const wrapper = linuxIdentity(tracer.parent, owner);
-    if (readlinkSync(`/proc/${tracer.pid}/exe`) !== '/usr/bin/strace')
+    if (readlinkSync(`/proc/${tracer.pid}/exe`) !== '/usr/bin/strace') {
         throw new Error('Actual browser parent is not the pinned strace binary');
+    }
     const binding = { browser, tracer, wrapper, traceName: `browser-${wrapper.pid}` };
     const capture = recordOf(
         JSON.parse(readFileSync(resolve(traceRoot, binding.traceName, 'capture.json'), 'utf8')) as unknown,
         'active trace capture'
     );
     const instance = capture.traceInstance as TraceInstance;
-    if (!instance) throw new Error('Trace instance identity was not captured');
+    if (!instance) {
+        throw new Error('Trace instance identity was not captured');
+    }
     assertTraceBinding(binding, instance);
     for (const identity of [browser, tracer, wrapper]) {
-        if (!sameProcess(identity, linuxIdentity(identity.pid, owner)))
+        if (!sameProcess(identity, linuxIdentity(identity.pid, owner))) {
             throw new Error('Native identity changed during trace binding');
+        }
     }
     return binding;
 }

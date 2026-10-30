@@ -46,8 +46,8 @@ describe('reload diagnostic native evidence negative controls', () => {
         let finish!: (value: unknown) => void;
         const processes = vi.fn(
             () =>
-                new Promise<unknown>((done) => {
-                    finish = done;
+                new Promise<unknown>((resolve) => {
+                    finish = resolve;
                 })
         );
         let start = identity.start;
@@ -59,7 +59,9 @@ describe('reload diagnostic native evidence negative controls', () => {
             binding: bind,
         });
         observer.frame({ id: script.frameId, loaderId: script.loaderId });
-        for (let index = 0; index < 1000; index++) observer.request({ ...script, requestId: `320.${index}` });
+        for (let index = 0; index < 1000; index++) {
+            observer.request({ ...script, requestId: `320.${index}` });
+        }
         expect(processes).toHaveBeenCalledTimes(1);
         expect(readIdentity).toHaveBeenCalledTimes(1);
         finish({ processInfo: [{ id: 320, type: 'renderer' }] });
@@ -70,15 +72,17 @@ describe('reload diagnostic native evidence negative controls', () => {
         processes.mockImplementation(async () => ({ processInfo: [{ id: 320, type: 'renderer' }] }));
         start = '92816';
         observer.frame({ id: script.frameId, loaderId: 'next-loader' });
-        for (let index = 0; index < 1000; index++)
+        for (let index = 0; index < 1000; index++) {
             observer.request({ ...script, loaderId: 'next-loader', requestId: `320.${index}` });
+        }
         expect(await observer.settle()).toBe(2);
         expect(processes).toHaveBeenCalledTimes(2);
         expect(readIdentity).toHaveBeenCalledTimes(4);
         expect(records.filter((record) => record.kind === 'renderer-pid-reuse')).toHaveLength(1);
         processes.mockImplementation(async () => ({ processInfo: [{ id: 321, type: 'renderer' }] }));
-        for (let index = 0; index < 1000; index++)
+        for (let index = 0; index < 1000; index++) {
             observer.request({ ...script, loaderId: 'next-loader', requestId: `321.${index}` });
+        }
         expect(await observer.settle()).toBe(3);
         expect(processes).toHaveBeenCalledTimes(3);
         expect(readIdentity).toHaveBeenCalledTimes(6);
@@ -96,12 +100,15 @@ describe('reload diagnostic native evidence negative controls', () => {
             binding: () => binding,
         });
         observer.frame({ id: script.frameId, loaderId: script.loaderId });
-        for (let index = 0; index < 1000; index++) observer.request({ ...script, requestId: `320.${index}` });
+        for (let index = 0; index < 1000; index++) {
+            observer.request({ ...script, requestId: `320.${index}` });
+        }
         expect(await observer.settle()).toBe(0);
         expect(processes).toHaveBeenCalledTimes(1);
         expect(record).toHaveBeenCalledTimes(1);
-        for (let index = 0; index < 1000; index++)
+        for (let index = 0; index < 1000; index++) {
             observer.request({ ...script, loaderId: 'missed-loader', requestId: `320.${index}` });
+        }
         expect(await observer.settle()).toBe(0);
         expect(processes).toHaveBeenCalledTimes(1);
         expect(record).toHaveBeenCalledTimes(2);
@@ -303,7 +310,9 @@ describe('reload diagnostic native evidence negative controls', () => {
     it('requires the actual producer PID and parent wait code or signal', () => {
         const exited = parseNativeLine('320 1793350000.123456 +++ exited with 37 +++');
         const trapped = parseNativeLine('320 1793350001.123456 +++ killed by SIGTRAP (core dumped) +++');
-        if (!exited || !trapped) throw new Error('Native fixture did not parse');
+        if (!exited || !trapped) {
+            throw new Error('Native fixture did not parse');
+        }
         expect(() => assertTraceControl([exited], { pid: 320, code: 37, signal: null }, capture)).not.toThrow();
         expect(() => assertTraceControl([trapped], { pid: 320, code: null, signal: 'SIGTRAP' }, capture)).not.toThrow();
         expect(() => assertTraceControl([exited], { pid: 321, code: 37, signal: null }, capture)).toThrow(
@@ -324,7 +333,9 @@ describe('reload diagnostic native evidence negative controls', () => {
         'refuses truncated or incomplete trace %j',
         (change) => {
             const event = parseNativeLine('320 1793350000.123456 +++ exited with 37 +++');
-            if (!event) throw new Error('Missing fixture');
+            if (!event) {
+                throw new Error('Missing fixture');
+            }
             expect(() =>
                 assertTraceControl([event], { pid: 320, code: 37, signal: null }, { ...capture, ...change })
             ).toThrow('incomplete or truncated');

@@ -37,16 +37,26 @@ export type NativeEvent = {
 
 export function parseNativeLine(line: string): NativeEvent | undefined {
     const match = /^(\d+)\s+(\d+\.\d+)\s+(.*)$/.exec(line);
-    if (!match) return undefined;
+    if (!match) {
+        return undefined;
+    }
     const [, pid, timestamp, detail = ''] = match;
     const base = { pid: Number(pid), timestamp: Number(timestamp), detail };
     const exited = /^\+\+\+ exited with (\d+) \+\+\+$/.exec(detail);
-    if (exited) return { ...base, kind: 'exit', code: Number(exited[1]) };
+    if (exited) {
+        return { ...base, kind: 'exit', code: Number(exited[1]) };
+    }
     const killed = /^\+\+\+ killed by (SIG[A-Z0-9]+)(?: \(core dumped\))? \+\+\+$/.exec(detail);
-    if (killed) return { ...base, kind: 'signal-exit', signal: killed[1] };
+    if (killed) {
+        return { ...base, kind: 'signal-exit', signal: killed[1] };
+    }
     if (/^(?:clone|clone3|fork|vfork)\(|^<\.\.\. (?:clone|clone3|fork|vfork) resumed>/.test(detail)) {
         const child = / = ([1-9][0-9]*)$/.exec(detail);
-        return { ...base, kind: 'process-creation', ...(child ? { childPid: Number(child[1]) } : {}) };
+        const creation: NativeEvent = { ...base, kind: 'process-creation' };
+        if (child) {
+            creation.childPid = Number(child[1]);
+        }
+        return creation;
     }
     if (/^(?:mmap|mprotect|munmap|mremap|brk|madvise|pkey_mprotect)\(/.test(detail) && / = -1 [A-Z0-9]+/.test(detail)) {
         return { ...base, kind: 'memory-syscall-failure' };
@@ -124,8 +134,8 @@ export async function traceCommand(
     // its output. Closing it after child close exposes the real final FIFO EOF.
     const anchor = openSync(fifo, constants.O_RDWR | constants.O_NONBLOCK);
     const stream = createReadStream(fifo);
-    await new Promise<void>((done, reject) => {
-        stream.once('open', () => done());
+    await new Promise<void>((resolve, reject) => {
+        stream.once('open', () => resolve());
         stream.once('error', reject);
     });
     // strace(1): -qq suppresses the very terminal statuses this control must retain.
@@ -138,7 +148,9 @@ export async function traceCommand(
             detached: false,
         }
     );
-    if (!child.pid) throw new Error('Native tracer PID unavailable');
+    if (!child.pid) {
+        throw new Error('Native tracer PID unavailable');
+    }
     const traceInstance = {
         wrapper: linuxIdentity(process.pid, process.pid),
         tracer: linuxIdentity(child.pid, process.pid),
@@ -157,13 +169,15 @@ export async function traceCommand(
     let streamEnded = false;
     let streamError: string | undefined;
     let spawnError: string | undefined;
-    const drained = new Promise<void>((done) => {
-        stream.once('end', done);
-        stream.once('error', () => done());
+    const drained = new Promise<void>((resolve) => {
+        stream.once('end', resolve);
+        stream.once('error', () => resolve());
     });
     const record = (line: string): void => {
         const event = parseNativeLine(line);
-        if (!event) return;
+        if (!event) {
+            return;
+        }
         if (emitted >= EVENT_LIMIT) {
             droppedEvents++;
             return;
@@ -174,12 +188,16 @@ export async function traceCommand(
     stream.on('data', (chunk: Buffer) => {
         total += chunk.length;
         const prefix = chunk.subarray(0, Math.max(0, RAW_LIMIT - retained));
-        if (prefix.length) appendFileSync(raw, prefix);
+        if (prefix.length > 0) {
+            appendFileSync(raw, prefix);
+        }
         retained += prefix.length;
         tail = Buffer.concat([tail, chunk]).subarray(-TAIL_LIMIT);
         const lines = (partial + chunk.toString('utf8')).split('\n');
         partial = lines.pop() ?? '';
-        for (const line of lines) record(line);
+        for (const line of lines) {
+            record(line);
+        }
         if (partial.length > 64 * 1024) {
             droppedEvents++;
             partial = '';
@@ -191,11 +209,11 @@ export async function traceCommand(
     stream.on('error', (error: Error) => {
         streamError = String(error);
     });
-    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((done) => {
+    const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
         child.once('error', (error) => {
             spawnError = String(error);
         });
-        child.once('close', (code, signal) => done({ code, signal }));
+        child.once('close', (code, signal) => resolve({ code, signal }));
     });
     closeSync(anchor);
     await drained;
@@ -207,7 +225,7 @@ export async function traceCommand(
         traceInstance,
         tracerResult: result,
         complete: streamEnded && !streamError && !spawnError,
-        partialLine: partial.length !== 0,
+        partialLine: partial.length > 0,
         streamError,
         spawnError,
         totalBytes: total,

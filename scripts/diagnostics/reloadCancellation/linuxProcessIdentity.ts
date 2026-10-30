@@ -14,7 +14,9 @@ function stat(pid: number): { parent: number; start: string } {
     const fields = text.slice(text.lastIndexOf(')') + 2).split(' ');
     const parent = Number(fields[1]);
     const start = fields[19];
-    if (!Number.isSafeInteger(parent) || !start || !/^\d+$/.test(start)) throw new Error('Invalid proc start identity');
+    if (!Number.isSafeInteger(parent) || !start || !/^\d+$/.test(start)) {
+        throw new Error('Invalid proc start identity');
+    }
     return { parent, start };
 }
 
@@ -28,6 +30,8 @@ export function linuxIdentity(pid: number, owner: number): ProcessIdentity {
     }
     const namespace = readlinkSync(`/proc/${pid}/ns/pid`);
     const observerNamespace = readlinkSync('/proc/self/ns/pid');
-    if (stat(pid).start !== first.start) throw new Error('PID reused during proc observation');
+    if (stat(pid).start !== first.start) {
+        throw new Error('PID reused during proc observation');
+    }
     return { pid, ...first, namespace, observerNamespace, owned: ancestor === owner };
 }

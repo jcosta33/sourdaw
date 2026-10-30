@@ -20,7 +20,9 @@ export function rendererPid(event: Record<string, unknown>): number {
         throw new Error('Renderer identity requires a page Script with actual frame/loader');
     }
     const match = typeof event.requestId === 'string' ? /^([1-9][0-9]*)\.[0-9]+$/.exec(event.requestId) : null;
-    if (!match || !Number.isSafeInteger(Number(match[1]))) throw new Error('Script request lacks renderer PID prefix');
+    if (!match || !Number.isSafeInteger(Number(match[1]))) {
+        throw new Error('Script request lacks renderer PID prefix');
+    }
     return Number(match[1]);
 }
 
@@ -40,7 +42,9 @@ export function assertRendererIdentity(
     ) {
         throw new Error('Script PID namespace differs from observer namespace');
     }
-    if (before.start !== after.start) throw new Error('Renderer PID was reused during registration');
+    if (before.start !== after.start) {
+        throw new Error('Renderer PID was reused during registration');
+    }
 }
 
 export function createRendererAssociations(
@@ -64,49 +68,70 @@ export function createRendererAssociations(
     let capacityReported = false;
     return {
         frame(frame) {
-            if (typeof frame.id === 'string' && typeof frame.loaderId === 'string')
+            if (typeof frame.id === 'string' && typeof frame.loaderId === 'string') {
                 frames.set(frame.id, frame.loaderId);
+            }
         },
         request(event) {
-            if (event.type !== 'Script') return;
+            if (event.type !== 'Script') {
+                return;
+            }
             let pid: number | undefined;
-            let invalid: unknown;
+            let invalid: Error | undefined;
             try {
                 pid = rendererPid(event);
             } catch (error) {
-                invalid = error;
+                if (error instanceof Error) {
+                    invalid = error;
+                } else {
+                    invalid = new Error(String(error), { cause: error });
+                }
             }
             const key = `${pid ?? 'unknown'}:${String(event.frameId)}:${String(event.loaderId)}`;
             // Claim synchronously, before proc I/O or the first CDP await. Failed
             // associations are also final so a script burst cannot retry them.
-            if (attempted.has(key)) return;
+            if (attempted.has(key)) {
+                return;
+            }
             if (attempted.size >= 2048) {
-                if (!capacityReported) record('renderer-association-capacity-unknown', { limit: 2048 });
+                if (!capacityReported) {
+                    record('renderer-association-capacity-unknown', { limit: 2048 });
+                }
                 capacityReported = true;
                 return;
             }
             attempted.add(key);
             const operation = (async (): Promise<void> => {
                 try {
-                    if (invalid || pid === undefined) throw invalid ?? new Error('Renderer PID unavailable');
-                    if (frames.get(String(event.frameId)) !== event.loaderId)
+                    if (invalid) {
+                        throw invalid;
+                    }
+                    if (pid === undefined) {
+                        throw new Error('Renderer PID unavailable');
+                    }
+                    if (frames.get(String(event.frameId)) !== event.loaderId) {
                         throw new Error('Script frame/loader registration missed');
+                    }
                     const before = ports.identity(pid, owner);
                     const processes = await ports.processes();
                     const entries = recordOf(processes, 'process info').processInfo;
-                    if (!Array.isArray(entries)) throw new Error('SystemInfo processes missing');
+                    if (!Array.isArray(entries)) {
+                        throw new Error('SystemInfo processes missing');
+                    }
                     const types = new Map<number, string>();
                     for (const value of entries) {
                         const entry = recordOf(value, 'process');
-                        if (typeof entry.id === 'number' && typeof entry.type === 'string')
+                        if (typeof entry.id === 'number' && typeof entry.type === 'string') {
                             types.set(entry.id, entry.type);
+                        }
                     }
                     const after = ports.identity(pid, owner);
                     assertRendererIdentity(pid, types, before, after);
                     const binding = ports.binding(processes);
                     const prior = seen.get(pid);
-                    if (prior !== undefined && prior !== after.start)
+                    if (prior !== undefined && prior !== after.start) {
                         record('renderer-pid-reuse', { pid, priorStart: prior, currentStart: after.start });
+                    }
                     seen.set(pid, after.start);
                     record('page-renderer-identity', {
                         requestId: event.requestId,
@@ -153,7 +178,11 @@ export async function observeRendererIdentities(
     const visit = (value: unknown): void => {
         const tree = recordOf(value, 'frame tree');
         associations.frame(recordOf(tree.frame, 'frame'));
-        if (Array.isArray(tree.childFrames)) for (const child of tree.childFrames) visit(child);
+        if (Array.isArray(tree.childFrames)) {
+            for (const child of tree.childFrames) {
+                visit(child);
+            }
+        }
     };
     session.on('Page.frameNavigated', (payload: unknown) =>
         associations.frame(recordOf(recordOf(payload, 'navigation').frame, 'frame'))

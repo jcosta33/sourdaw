@@ -149,7 +149,9 @@ async function sampleBrowserProcesses(
             if (Array.isArray(entries)) {
                 for (const value of entries) {
                     const entry = recordOf(value, 'native browser process');
-                    if (entry.type !== 'browser' || typeof entry.id !== 'number') continue;
+                    if (entry.type !== 'browser' || typeof entry.id !== 'number') {
+                        continue;
+                    }
                     try {
                         const traceBinding = browserTraceBinding(
                             processes,
