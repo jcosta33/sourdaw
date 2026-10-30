@@ -1,0 +1,72 @@
+.github/workflows/reload-cancellation-diagnostic.yml
+  s_26f70b851e8f7a::t_212ab8fed437fd 75-78,80-87
+  s_26f70b851e8f7a::t_290d56f8c91118 79
+scripts/diagnostics/reloadCancellation/nativeEvidence.ts
+  s_26f70b851e8f7a::t_d596e72122ac88 20-28,32
+  s_26f70b851e8f7a::t_212ab8fed437fd 1-19,29-31,33-42
+  s_26f70b851e8f7a::t_32ef8aa35efded 43-45
+scripts/diagnostics/reloadCancellation/nativeTrace.ts
+  s_26f70b851e8f7a::t_3a58ace8dfa73d 15,21-22,27-34,48-51,54-58,73-77,97-99,111-118,129-132,135,143-146,159-168,178,181-182,184-186,188-199,205-208
+  s_26f70b851e8f7a::t_f896b940b48f55 2-14,93-96,101-103,127,133-134,170-171,175,183,187
+  s_26f70b851e8f7a::t_af67eec46f4865 105-110
+  s_26f70b851e8f7a::t_f6ef7199051e7d 1,100,104,128,136-139,174,176
+  s_26f70b851e8f7a::t_fc0945335a23c8 16-20,23-26,35-47,52-53,59-72,78-92,119-126,140-142,147-158,169,172-173,179-180,200-204,209
+  s_26f70b851e8f7a::t_69a66ba2ed563c 177
+  s_26f70b851e8f7a::t_9952e25dc43d95 210-212
+scripts/diagnostics/reloadCancellation/rendererIdentity.ts
+  s_26f70b851e8f7a::t_4d9803424ddeed 1-101
+  s_26f70b851e8f7a::t_e0061733887ff3 102-104
+scripts/diagnostics/reloadCancellation/materialize.ts
+  s_26f70b851e8f7a::t_c544eb6b5e86a8 22-25
+scripts/diagnostics/reloadCancellation/identity.ts
+  s_26f70b851e8f7a::t_060f7b0d17d462 10-12
+scripts/diagnostics/reloadCancellation/run.ts
+  s_26f70b851e8f7a::t_1e8d17693b9f89 9,45-53,61
+  s_26f70b851e8f7a::t_c544eb6b5e86a8 44
+  s_26f70b851e8f7a::t_060f7b0d17d462 6,14,21,54-60
+scripts/diagnostics/reloadCancellation/nativeBrowserWrapper.ts
+  s_26f70b851e8f7a::t_fc0945335a23c8 1-9
+  s_26f70b851e8f7a::t_da7c1bda5bab29 10-12
+scripts/diagnostics/reloadCancellation/configure.ts
+  s_26f70b851e8f7a::t_69a66ba2ed563c 4,58
+  s_26f70b851e8f7a::t_619870ee87021b 59-61
+scripts/diagnostics/reloadCancellation/trigger.ts
+  s_26f70b851e8f7a::t_060f7b0d17d462 5-14
+  s_26f70b851e8f7a::t_66cae4a494b721 15-17
+scripts/__tests__/reloadCancellationNativeExit.spec.ts
+  s_26f70b851e8f7a::t_1e8d17693b9f89 3,5,39-40,44-50,54-57,135
+  s_26f70b851e8f7a::t_69a66ba2ed563c 1-2,4,6,13-14,23-26,58-63,76-77,88-89,108-117,127-131,136-138,140-144
+  s_26f70b851e8f7a::t_290d56f8c91118 8-12,15-22,64-75,78-87,90-107,118-126,139
+  s_26f70b851e8f7a::t_060f7b0d17d462 7,27-38,41-43,51-53,132-134
+  s_26f70b851e8f7a::t_c6f77156757f57 145-147
+scripts/diagnostics/reloadCancellation/nativeControl.ts
+  s_26f70b851e8f7a::t_fc0945335a23c8 1-13
+  s_26f70b851e8f7a::t_7689ea17ba3df9 14-15
+scripts/diagnostics/reloadCancellation/nativePreflight.ts
+  s_26f70b851e8f7a::t_afe46f18a5e4a8 1,3-7,9-13,17,26-31,36-38,57-58,64-75,79-80,83,92,98-99,105,107-111,129-131,139,144-145,149,166,174-175
+  s_26f70b851e8f7a::t_c544eb6b5e86a8 2,106,112-118,125-128,132-138,151-155,162-163
+  s_26f70b851e8f7a::t_1e8d17693b9f89 8,14-16,18-25,32-35,39-56,59-63,76-78,81-82,84-91,93-97,100-104,119-124,140-143,146-148,150,156-161,164-165,167-173
+scripts/diagnostics/reloadCancellation/pageCollector.ts
+  s_26f70b851e8f7a::t_69a66ba2ed563c 7,143-154,233
+  s_26f70b851e8f7a::t_5878ad77535016 155-157
+  s_26f70b851e8f7a::t_f56d568be8ae2f 230-232
+  s_26f70b851e8f7a::t_5e4209ac094cc5 234-235
+scripts/diagnostics/reloadCancellation/qualification.ts
+  s_26f70b851e8f7a::t_212ab8fed437fd 6,68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "52197e16aeefc9f5530d39ffb3f4678d8b4610fe",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
