@@ -1,0 +1,37 @@
+.agents/skills/review-stances/correctness.md
+  s_59e31a5c6f3e31::t_bf2f30a5590856 964-983
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_bf2f30a5590856 2199-2217
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_59e31a5c6f3e31::t_679ffe1416623c 205-207,216
+  s_59e31a5c6f3e31::t_17335ef4161e08 217-266,273-282,287,292-296
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 208-215,267-272,283-286,288-291
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_59e31a5c6f3e31::t_e7ab626df1cf84 146-148,159-161,166-167,169-171,174-178,184-186,188-191
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 151,162-165,187,192-193
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.meterMap.integration.spec.tsx
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 228-231
+  s_59e31a5c6f3e31::t_679ffe1416623c 209-227
+  s_59e31a5c6f3e31::t_3f493076c1d70e 232-233
+src/modules/Transport/useCases/transportQueries/__tests__/getTimelineRulerGrid.spec.ts
+  s_59e31a5c6f3e31::t_679ffe1416623c 16-26
+  s_59e31a5c6f3e31::t_8912013f3d81e9 27-28
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_59e31a5c6f3e31::t_679ffe1416623c 56-74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ab115637a2e4dd957b8f7e73b17610f82de8a521",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
