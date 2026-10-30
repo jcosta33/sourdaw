@@ -40,25 +40,37 @@ export function getTimelineRulerGrid({
         })
     );
     const starts = points.filter(({ position }) => position.beat === 1 && position.tick === 0).map(({ beat }) => beat);
-    const atLeftEdge = getBarBeatAtPosition(changes, fromBeat, defaultNumerator, defaultDenominator);
-    if (atLeftEdge.beat !== 1 || atLeftEdge.tick !== 0) {
+    const beginsAtPhysicalDownbeat =
+        points[0]?.beat === fromBeat && points[0].position.beat === 1 && points[0].position.tick === 0;
+    if (!beginsAtPhysicalDownbeat) {
         const preceding = getPrecedingBars(changes, fromBeat, 1, defaultNumerator, defaultDenominator)[0];
         if (preceding && !starts.includes(preceding.startBeat)) {
             starts.unshift(preceding.startBeat);
         }
     }
+
+    let pointIndex = 0;
     return starts.map((startBeat, index) => {
         const meter = getTimeSignatureSegmentAtBeat(changes, startBeat, defaultNumerator, defaultDenominator);
         const endBeat = starts[index + 1] ?? toBeat;
+        while (points[pointIndex] && points[pointIndex].beat < startBeat) {
+            pointIndex += 1;
+        }
+        const ticks = [];
+        while (points[pointIndex] && points[pointIndex].beat < endBeat) {
+            const point = points[pointIndex];
+            if (point.position.beat > 1) {
+                ticks.push({ beat: point.beat, index: point.position.beat - 1 });
+            }
+            pointIndex += 1;
+        }
         return {
             startBeat,
             endBeat,
             bar: getBarBeatAtPosition(changes, startBeat, defaultNumerator, defaultDenominator).bar,
             nominalBeats: meter.numerator * meter.beatUnit,
             numerator: meter.numerator,
-            ticks: points
-                .filter(({ beat, position }) => beat >= startBeat && beat < endBeat && position.beat > 1)
-                .map(({ beat, position }) => ({ beat, index: position.beat - 1 })),
+            ticks,
         };
     });
 }

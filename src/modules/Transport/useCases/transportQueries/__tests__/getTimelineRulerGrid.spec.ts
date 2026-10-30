@@ -105,6 +105,44 @@ describe('the canonical timeline ruler grid', () => {
         expect(grid([meter(0), meter(6)], 6, 7).map(({ startBeat }) => startBeat)).toEqual([6]);
     });
 
+    it.each([
+        { changes: [] as Meter[], fromBeat: 4.001, toBeat: 7, startBeat: 4, bar: 2 },
+        { changes: [meter(0), meter(6)], fromBeat: 6.001, toBeat: 9, startBeat: 6, bar: 2 },
+    ])(
+        'keeps the physical clipped origin for viewport $fromBeat..$toBeat',
+        ({ changes, fromBeat, toBeat, startBeat, bar }) => {
+            const result = grid(changes, fromBeat, toBeat);
+            expect(result.map(({ startBeat, endBeat, bar }) => [startBeat, endBeat, bar])).toEqual([
+                [startBeat, toBeat, bar],
+            ]);
+            expect(result[0]?.ticks.map(({ beat }) => beat)).toEqual(changes.length === 0 ? [5, 6] : [7, 8]);
+        }
+    );
+
+    it('returns finite bounded pieces for a dense valid meter grid', () => {
+        const result = getTimelineRulerGrid({
+            changes: [meter(0, 1, 32)],
+            fromBeat: 0,
+            toBeat: 1920,
+            defaultNumerator: 4,
+            defaultDenominator: 4,
+        });
+
+        expect(result).toHaveLength(15_361);
+        expect(result[0]).toMatchObject({ startBeat: 0, endBeat: 0.125 });
+        expect(result.at(-1)).toMatchObject({ startBeat: 1920, endBeat: 1920 });
+        expect(
+            result.every(
+                ({ startBeat, endBeat, nominalBeats, ticks }) =>
+                    Number.isFinite(startBeat) &&
+                    Number.isFinite(endBeat) &&
+                    Number.isFinite(nominalBeats) &&
+                    startBeat <= endBeat &&
+                    ticks.every(({ beat, index }) => Number.isFinite(beat) && Number.isFinite(index))
+            )
+        ).toBe(true);
+    });
+
     it('reads a distant viewport without enumerating all preceding bars', () => {
         const result = grid([], 1_000_001, 1_000_006);
         expect(result.map(({ startBeat, bar }) => [startBeat, bar])).toEqual([
