@@ -1,0 +1,20 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_cab2f8888a9b06::t_1251759f189469 265-269
+  s_cab2f8888a9b06::t_de0dbfcc86f34d 219-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7429e60233beed2dd7fbe91092a86ab0662d79c8",
+  "prompts": {},
+  "sessions": {
+    "s_cab2f8888a9b06": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "71e928fb-f7ce-445e-a28e-2bd39983a19f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
