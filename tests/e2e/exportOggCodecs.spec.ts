@@ -467,7 +467,7 @@ for (const codec of ['ogg', 'opus']) {
                 private observation: (typeof proof.workers)[number] | undefined;
                 constructor(url: string | URL, options?: WorkerOptions) {
                     super(url, options);
-                    if (String(url).includes('/AudioRendering/workers/oggCodecWorker')) {
+                    if (String(url).includes('oggCodecWorker')) {
                         const observation = {
                             requests: 0,
                             pending: 0,
