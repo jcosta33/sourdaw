@@ -378,7 +378,9 @@ let fixtureControl: {
 
 async function holdFixtureControl(phase: FixtureControlPhase): Promise<void> {
     const control = fixtureControl;
-    if (control?.phase !== phase) return;
+    if (control?.phase !== phase) {
+        return;
+    }
     control.snapshot = { tracks: trackStore.value, document: getCrdtDoc('root'), calls: providerCallCount() };
     control.events.push(`${phase} held`);
     await control.gate;
@@ -454,10 +456,12 @@ describe('relative to the last commit', () => {
                     }
                 });
             }
-            return;
+            return undefined;
         }
         return fixtureLifetime.cleanup(async () => {
-            if (context.task.name === 'held owner') await holdFixtureControl('cleanup');
+            if (context.task.name === 'held owner') {
+                await holdFixtureControl('cleanup');
+            }
             revertMocks.outcome = null;
             vi.restoreAllMocks();
             setNotificationEventBus({ emit: () => Promise.resolve(), on: () => () => undefined });
@@ -473,7 +477,9 @@ describe('relative to the last commit', () => {
             configureAutomergeStoragePort(null);
             removeCrdtDoc('root');
             admittedFixtures.delete(context.task.id);
-            if (control && context.task.name === 'held owner') control.events.push('owner cleanup settled');
+            if (control && context.task.name === 'held owner') {
+                control.events.push('owner cleanup settled');
+            }
         });
     });
 
@@ -1794,7 +1800,9 @@ describe('relative to the last commit', () => {
             fixtureControl = null;
         });
         beforeEach((context) => {
-            if (context.task.name !== 'held owner' || phase !== 'setup') return;
+            if (context.task.name !== 'held owner' || phase !== 'setup') {
+                return undefined;
+            }
             return fixtureLifetime.track(async () => {
                 scriptProvider([[VOCALS_DOWN_3_DB]]);
                 await commitVocalsDown3Db();
@@ -1804,7 +1812,9 @@ describe('relative to the last commit', () => {
         it.fails(
             'held owner',
             async () => {
-                if (phase === 'setup') return;
+                if (phase === 'setup') {
+                    return;
+                }
                 await fixtureLifetime.track(async () => {
                     scriptProvider([[VOCALS_DOWN_3_DB]]);
                     await commitVocalsDown3Db();
@@ -1817,7 +1827,9 @@ describe('relative to the last commit', () => {
         it('keeps the successor out until the owner and cleanup settle', async () => {
             const control = fixtureControl;
             expect(control).not.toBeNull();
-            if (!control) throw new Error('Missing fixture control');
+            if (!control) {
+                throw new Error('Missing fixture control');
+            }
             expect(control.observed).toEqual({
                 sameTracks: true,
                 sameDocument: true,
