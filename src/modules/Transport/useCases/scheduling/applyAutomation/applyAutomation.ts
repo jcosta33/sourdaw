@@ -3,6 +3,7 @@ import {
     acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
     clampExternalPluginAutomationValue,
+    getAutomationDeviceDescriptor,
     isDeviceParameterAutomatable,
     quantiseDeviceParameterValue,
 } from '#/modules/Arrangement/useCases';
@@ -72,7 +73,11 @@ function deviceAcceptsAutomationParameter(
         return false;
     }
 
-    return isDeviceParameterAutomatable({ deviceType: device.type, paramId: parameterId });
+    if (!isDeviceParameterAutomatable({ deviceType: device.type, paramId: parameterId })) {
+        return false;
+    }
+    const descriptor = getAutomationDeviceDescriptor(device.type);
+    return descriptor === undefined || descriptor.parameters.some((parameter) => parameter.id === parameterId && parameter.automatable);
 }
 
 /**

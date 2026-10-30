@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import * as Arrangement from '#/modules/Arrangement/useCases';
 import { deriveVcaMultiplier, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
 import {
     getCompensationDelay,
@@ -227,6 +228,17 @@ describe('applyAutomation', () => {
         // next case's compensated reads (#4784).
         transportStore.set(null);
         schedulerSession.lastLoopSeamAudioTime = null;
+    });
+
+    it('keeps the existing internal-key law conjunctive with descriptor membership', () => {
+        seedDeviceLane({ devices: [EQ_A], laneParameterId: `${EQ_A.id}:eq-low-gain` });
+        const law = vi.spyOn(Arrangement, 'isDeviceParameterAutomatable').mockReturnValue(false);
+        try {
+            applyAutomation(0);
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        } finally {
+            law.mockRestore();
+        }
     });
 
     it('should export applyAutomation', () => {
