@@ -1,83 +1,90 @@
-# Present custody of an existing pull request
+# Present custody through the pinned publisher
 
-An explicitly released stale pull request can acquire a **new present-day author
-checkout**, without reconstructing its original worktree or branch birth:
+An explicitly released pull request can acquire a new present-day author
+checkout without reconstructing its original worktree or branch birth:
 
 ```bash
-pnpm lane:open --adopt-pr <pr> --expected-head <full-lowercase-sha> --model <public-model>
+pnpm lane:publish --adopt-pr <pr> --expected-head <full-lowercase-sha> --model <public-model>
 ```
 
-Run this opt-in from the protected primary checkout after the capability has
-landed. Normal `lane:open` retains its existing behavior: after its main fetch,
-it performs local setup without calling GitHub or minting a credential. Only the
-explicit adoption mode reads GitHub. It reads the installed reader's credential
-through `gh`, mints no App token, and performs no GitHub write. It never executes
-code from the adopted checkout.
+Run this adoption-only alternative from the protected primary checkout after
+the capability has actually landed. The existing package route loads the
+publisher and its complete verified dependency closure from one pinned
+`origin/main` snapshot. Physical primary publisher/common files can remain
+older; no primary fast-forward, file copy or installer is required. The stable
+primary launcher itself must still match its selected source pin, as every
+existing publication requires. An unavailable fetch warns and may use the
+existing cached pin; this is not a guarantee of fresh remote main.
 
-Adoption verifies a defined, single `origin/main` source pin before observing
-public PR state or changing custody. It requires one open, same-repository PR
-by the immutable author App, exactly one complete all-state head-branch candidate,
-and independent matching source and base refs. The expected head is mandatory.
-Missing, ambiguous, changed or foreign evidence refuses.
+The local alternative accepts only the three shown flags. Combining them with
+an ordinary issue, lane selector, title, body or metadata option refuses. It
+reads public PR state using the frozen reader executable and its existing
+reader credential, then creates local custody. It does not initialize an App
+session, read App role credentials, mint a new App token, push source or notes,
+or create/edit/label/review/close a PR. Normal publication remains a separate
+operation. Ordinary `lane:open` retains its original offline/no-GitHub contract.
+
+The snapshot entry verifies its defined executing source pin, primary cwd,
+common repository and frozen tool paths before any adoption observation or
+mutation. The custody receipt records that actual executed pin, even if a
+concurrent fetch later moves the local `origin/main` ref. Only one open,
+same-repository PR by the immutable author App qualifies, with exactly one
+complete all-state head-branch candidate and independent matching head/base
+refs. Missing, ambiguous, changed or foreign evidence refuses.
 
 The local branch, destination and worktree must be absent. A non-force,
-create-if-absent ref operation reserves the exact remote head; Git owns the
-worktree branch reservation. The resulting checkout is clean, author-locked and
-stamped with the author App's commit identity and the adopting model. Dependencies
-are not installed by adoption; install them into this checkout's own
-`node_modules` when needed. Redirected installs, retained stack evidence, Git
-grafts/replacements, and unresolved guard failures for this branch refuse.
-The command never edits a pre-existing or parent worktree.
+create-if-absent ref update reserves the exact remote head, an atomic directory
+creation reserves the destination, and Git admits its worktree branch. Checkout
+materializes data with hooks, fsmonitor and configured content filters disabled;
+no adopted package, hook or filter code executes. The final checkout must be
+clean, author-locked and stamped with the App commit identity and current model.
+Dependencies are not installed; use the new checkout's own install when needed.
+Redirected installs, retained stack evidence, Git grafts/replacements and
+unresolved guard failures for the branch refuse. Foreign and parent worktrees
+remain untouched.
 
-The immutable `.agents/lane-adoptions/` receipt records present custody, the
-original PR identity and live base, head, source pin and nonce. Its native reflog
-message explicitly describes present adoption. Neither is original birth or
-historical stack evidence. No stack descriptor, fork marker or historical
-admission receipt is created. A current adoption time cannot satisfy the
-historical reader's requirement that branch birth precede the existing child PR.
-
-A matching interruption retains its record and local state. Repeat the exact
-adoption command to continue only when the branch birth, worktree identity and
-clean head still match. A completed replay makes no local changes. A dirty or
-partially extracted checkout, contradictory record, foreign branch or moved PR
-refuses and retains evidence; the command never repairs it destructively. A
-failure after local setup may leave an owned branch or worktree, so inspect the
-retained record and reported failure before proceeding.
+The immutable `.agents/lane-adoptions/` receipt and native reflog explicitly
+record present custody, not original birth or historical stack association.
+No stack descriptor, fork marker or historical admission receipt is created.
+A matching interrupted operation can continue only while its native birth,
+worktree identity and clean head still match. A completed replay changes no
+custody record/config/ref; the ordinary launcher still performs its main fetch.
+Concurrent matching callers can replay the same custody or lose an atomic
+reservation and refuse; they never overwrite another claim. A dirty or partially
+materialized checkout refuses and retains evidence instead of destroying edits.
 
 ## Publish one additive successor
 
-Make ordinary additive commits/merges in the newly owned checkout. Preserve the
-original head; do not rebase, reset, amend published history or force push. Then
-publish through the protected primary route:
+Preserve the original source head with ordinary additive commits/merges in the
+newly owned checkout. Then use the existing protected primary route:
 
 ```bash
 pnpm lane:publish --lane <absolute-adopted-lane>
 ```
 
-Before pushing, the publisher writes an immutable one-successor intent. It
-binds the custody nonce, old source head and exact intended successor. Publication
-continues to require clean work, canonical author identity, real source ancestry,
-resolved real bases and guard evidence. Adoption grants no new base exclusions.
+Before pushing, publication binds an immutable intent to the custody nonce,
+frozen old head and exact successor. All normal clean-work, real ancestry,
+canonical author and guard checks remain; custody grants no author-exclusion
+base. The publisher may update only the original immutable PR and recorded base.
+Disappearance, closure, reuse, retargeting, moved base target, unexpected remote
+head or a second successor refuses. It cannot create a replacement PR.
 
-The publisher may update only the adopted immutable PR and its recorded base.
-Disappearance, closure, reuse, retargeting, changed base target, unexpected remote
-head or a second intended successor refuses. It cannot create a replacement PR
-or retarget the original. The source ref must still hold the frozen old head,
-or the exact intended head from an already pushed attempt. A matching pushed-head
-replay skips the source push and can finish remaining ordinary metadata updates.
-An arbitrary descendant does not qualify. Further source publications require a
-future native continuation capability; this bounded mode admits one successor.
+The source ref must hold the frozen old head or the exact intended head from an
+already pushed attempt. An exact pushed-head replay skips the source push and
+can finish ordinary idempotent metadata operations. An arbitrary descendant
+cannot inherit the intent. Further source publication requires a future native
+continuation capability; this bounded mode admits one successor.
 
-Public PR/ref identity and local custody are checked before each remote write
-and afterward. A failed or raced write reports that publication may be partial;
-preserve its intent and replay only the identical head. These client observations
-cannot exclude a change arriving after the final read. Non-force Git push remains
-the remote history boundary.
+Public identity and local custody are checked before and after remote writes.
+A failed or raced write reports a possibly partial publication; preserve the
+intent and replay only the identical head. Client reads cannot exclude changes
+after their last observation. This route inherits no delivery process-owner
+fence: its local concurrency controls are the immutable journal, atomic
+reservations and Git worktree admission. Non-force push remains the source
+history boundary for ordinary publication.
 
-Adoption supplies no review, Gate, delivery, historical lineage, finding closure
-or product acceptance. For supersession of a child whose parent was closed
-unmerged, keep the original base, add actual final-parent ancestry when necessary,
-and deliver the real main-based replacement through the existing native gates.
-Only then can unchanged `pr:supersede` validate parent completion, immutable
-ancestry and the total finding lineage. A publication alone proves none of those
-completion obligations.
+Custody grants no historical evidence, approval, Gate, delivery, finding closure
+or product acceptance. For cross-base supersession, retain the original base,
+add actual final-parent ancestry when necessary, and deliver the real main-based
+replacement through existing review and Gate controls before unchanged
+`pr:supersede` validates native completion, ancestry and total finding lineage.

@@ -1414,24 +1414,6 @@ export function adoptPresentPullRequest(pr: number, expectedHead: string, model:
     return lanePath;
 }
 
-/** Verify one defined source pin before any public observation or custody mutation. */
-export function verifyAdoptionSources(
-    paths: string[],
-    sourceCommit: string,
-    read: (path: string, pin: string) => string | undefined,
-    actual: (path: string) => string
-): void {
-    if (!/^[0-9a-f]{40}$/.test(sourceCommit)) {
-        fail('adoption requires a defined origin/main source pin');
-    }
-    for (const path of paths) {
-        const expected = read(path, sourceCommit);
-        if (expected === undefined || expected !== actual(path)) {
-            fail(`adoption source unavailable or changed: ${path}`);
-        }
-    }
-}
-
 export function adoptionPathExists(path: string): boolean {
     try {
         lstatSync(path);

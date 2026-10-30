@@ -1,6 +1,5 @@
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import {
-    cpSync,
     existsSync,
     mkdirSync,
     mkdtempSync,
@@ -8,10 +7,11 @@ import {
     readdirSync,
     rmSync,
     symlinkSync,
+    unlinkSync,
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, dirname, join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -21,11 +21,11 @@ import {
     AUTHOR_BOT_NODE_ID,
     AUTHOR_LOCK_REASON,
     REQUIRED_REPOSITORY,
+    githubAuthorizationGitEnv,
 } from '../githubAppIdentity.ts';
 import { parseOpenLaneArgs } from '../openLane.ts';
 import {
     adoptPresentPullRequest,
-    verifyAdoptionSources,
     type AdoptionPort,
     type AdoptionWorktree,
     assertAdoptedPullRequest,
@@ -38,6 +38,8 @@ import {
     type AdoptedPullRequest,
     type LaneAdoption,
 } from '../prContract.ts';
+import { parsePublishLaneArgs } from '../publishLane.ts';
+import { resolveTrustedExecutable, trustedDependencyGraphs } from '../trustedGithubWriteBootstrap.ts';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -149,7 +151,7 @@ function publicReader(overrides: Record<string, unknown> = {}) {
 
 describe('explicit present PR custody', () => {
     it('requires the paired immutable selectors and preserves ordinary parsing', () => {
-        expect(parseOpenLaneArgs(['--adopt-pr', '12', '--expected-head', HEAD, '--model', MODEL])).toMatchObject({
+        expect(parsePublishLaneArgs(['--adopt-pr', '12', '--expected-head', HEAD, '--model', MODEL])).toMatchObject({
             adoptPr: 12,
             expectedHead: HEAD,
             model: MODEL,
@@ -161,53 +163,13 @@ describe('explicit present PR custody', () => {
             ['--adopt-pr', '12', '--expected-head', HEAD, '--model', MODEL, '--stack-on', '/parent'],
             ['--adopt-pr', '12', '--expected-head', HEAD, '--model', MODEL, '--adopt-pr', '12'],
         ]) {
-            expect(() => parseOpenLaneArgs(args)).toThrow();
+            expect(() => parsePublishLaneArgs(args)).toThrow();
         }
         expect(parseOpenLaneArgs(['example', '--type', 'feat', '--model', MODEL])).toMatchObject({
             slug: 'example',
             type: 'feat',
             model: MODEL,
         });
-    });
-    it('refuses undefined or mixed source pins before any custody/public read callback', () => {
-        const reads: string[] = [];
-        expect(() =>
-            verifyAdoptionSources(
-                ['script'],
-                '',
-                () => {
-                    reads.push('source');
-                    return 'code';
-                },
-                () => 'code'
-            )
-        ).toThrow('defined');
-        expect(reads).toEqual([]);
-        expect(() =>
-            verifyAdoptionSources(
-                ['script'],
-                BASE,
-                () => undefined,
-                () => 'code'
-            )
-        ).toThrow('unavailable');
-        expect(() =>
-            verifyAdoptionSources(
-                ['script'],
-                BASE,
-                () => 'old',
-                () => 'new'
-            )
-        ).toThrow('changed');
-        verifyAdoptionSources(
-            ['one', 'two'],
-            BASE,
-            (_path, pin) => {
-                expect(pin).toBe(BASE);
-                return 'code';
-            },
-            () => 'code'
-        );
     });
     it('records only present custody and completed replay has no local effects', () => {
         const f = fakeAdoption();
@@ -394,120 +356,393 @@ function nativeFixture() {
     const primary = join(root, 'primary');
     const remote = join(root, 'remote.git');
     const bin = join(root, 'bin');
+    const gitPath = resolveTrustedExecutable('git');
+    const env: NodeJS.ProcessEnv = {
+        ...githubAuthorizationGitEnv(),
+        PATH: [bin, dirname(gitPath), dirname(process.execPath)].join(delimiter),
+    };
+    for (const key of Object.keys(env)) {
+        if (key.startsWith('SOURDAW_TRUSTED_')) {
+            delete env[key];
+        }
+    }
     mkdirSync(primary);
     mkdirSync(bin);
     mkdirSync(join(primary, 'scripts'));
-    mkdirSync(join(primary, '.agents'));
-    const sources = [
-        'openLane.ts',
-        'prContract.ts',
-        'githubAppIdentity.ts',
-        'stackedLanes.ts',
-        'laneStackForkMarkers.ts',
-        'pnpmModulesPreflight.ts',
-    ];
-    for (const file of sources) {
-        cpSync(join(process.cwd(), 'scripts', file), join(primary, 'scripts', file));
+    const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
+    for (const path of trustedDependencyGraphs['lane:publish']) {
+        mkdirSync(dirname(join(primary, path)), { recursive: true });
+        writeFileSync(join(primary, path), source(path));
     }
-    writeFileSync(join(primary, 'package.json'), '{"type":"module"}');
+    const publisher = source('scripts/publishLane.ts');
+    const contract = source('scripts/prContract.ts');
+    const identity = source('scripts/githubAppIdentity.ts');
+    const manifest: { scripts: Record<string, string> } = JSON.parse(source('package.json'));
+    writeFileSync(
+        join(primary, 'package.json'),
+        JSON.stringify({ type: 'module', scripts: { 'lane:publish': manifest.scripts['lane:publish'] } })
+    );
     writeFileSync(join(primary, '.gitignore'), '.agents/\n');
+    writeFileSync(join(primary, 'foreign.txt'), 'original');
+    writeFileSync(join(primary, 'scripts', 'publishLane.ts'), "throw new Error('stale-primary-publisher-executed');\n");
+    const oldContract = execFileSync(gitPath, ['show', 'origin/main:scripts/prContract.ts'], {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+    });
+    writeFileSync(join(primary, 'scripts', 'prContract.ts'), oldContract);
     const git = (...args: string[]) =>
-        execFileSync('git', args, { cwd: primary, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        execFileSync(gitPath, ['-c', 'core.hooksPath=/dev/null', ...args], {
+            cwd: primary,
+            env,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }).trim();
     git('init', '-b', 'main');
     git('config', 'user.name', AUTHOR_BOT_COMMIT_NAME);
     git('config', 'user.email', AUTHOR_BOT_COMMIT_EMAIL);
     git('add', '.');
-    git('commit', '-m', 'feat: baseline');
+    git('commit', '-m', 'feat: old physical primary');
     const base = git('rev-parse', 'HEAD');
-    git('checkout', '-b', PR.branch);
-    writeFileSync(join(primary, 'child.txt'), 'child');
-    git('add', 'child.txt');
-    git('commit', '-m', 'feat: child');
+    git('checkout', '-b', 'tooling-main');
+    writeFileSync(join(primary, 'scripts', 'publishLane.ts'), publisher);
+    writeFileSync(join(primary, 'scripts', 'prContract.ts'), contract);
+    const declaration = 'export async function authenticatePublishingAuthor(';
+    expect(identity).toContain(declaration);
+    writeFileSync(
+        join(primary, 'scripts', 'githubAppIdentity.ts'),
+        identity.replace(declaration, 'export async function unusedFixtureAuthenticatePublishingAuthor(') +
+            `
+export async function authenticatePublishingAuthor(input) {
+    writeFileSync(join(input.primaryRoot, 'auth-attempted'), 'ordinary author gate');
+    throw new Error('controlled ordinary author authentication');
+}
+`
+    );
+    git('add', 'scripts');
+    git('commit', '-m', 'feat: pinned native adoption');
+    const pin = git('rev-parse', 'HEAD');
+    const nextPin = git(
+        'commit-tree',
+        git('rev-parse', `${pin}^{tree}`),
+        '-p',
+        pin,
+        '-m',
+        'feat: concurrent same-tree main'
+    );
+    git('checkout', '-b', PR.branch, base);
+    const hookMarker = join(root, 'hook-executed');
+    const filterMarker = join(root, 'filter-executed');
+    mkdirSync(join(primary, '.githooks'));
+    writeFileSync(
+        join(primary, '.githooks', 'post-checkout'),
+        `#!${process.execPath}\nimport('node:fs').then(fs=>fs.writeFileSync(${JSON.stringify(hookMarker)},'hook ran'));\n`,
+        { mode: 0o755 }
+    );
+    writeFileSync(
+        join(primary, '.githooks', 'filter.cjs'),
+        `require('node:fs').writeFileSync(${JSON.stringify(filterMarker)},'filter ran');process.stdin.pipe(process.stdout);\n`
+    );
+    writeFileSync(join(primary, '.gitattributes'), 'child.txt filter=adopted\n');
+    writeFileSync(join(primary, 'child.txt'), 'unexecuted child data');
+    git('add', '.');
+    git('update-index', '--chmod=+x', '.githooks/post-checkout');
+    git('commit', '-m', 'feat: existing child');
     const head = git('rev-parse', 'HEAD');
-    execFileSync('git', ['clone', '--bare', primary, remote], { stdio: 'pipe' });
+    git('update-ref', 'refs/heads/main', pin, base);
+    execFileSync(gitPath, ['clone', '--bare', primary, remote], { env, stdio: 'pipe' });
+    git('update-ref', 'refs/heads/main', base, pin);
     git('checkout', 'main');
     git('update-ref', '-d', `refs/heads/${PR.branch}`, head);
     git('remote', 'add', 'origin', remote);
     git('fetch', 'origin', 'main');
     git('config', `url.${remote}.insteadOf`, 'https://github.com/jcosta33/sourdaw.git');
+    git('config', 'core.hooksPath', '.githooks');
+    git('config', 'filter.adopted.smudge', `"${process.execPath}" .githooks/filter.cjs`);
+    git('config', 'filter.adopted.clean', `"${process.execPath}" .githooks/filter.cjs`);
+    writeFileSync(join(primary, 'foreign.txt'), 'foreign work stays untouched');
     const data = join(root, 'public.json');
-    writeFileSync(data, JSON.stringify({ ...PR, head, baseHead: base }));
-    const gh = `#!${process.execPath}\nconst fs=require('node:fs');const p=JSON.parse(fs.readFileSync(${JSON.stringify(data)},'utf8'));const a=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(join(root, 'gh-calls'))},JSON.stringify(a)+'\\n');if(a[0]!=='api'){process.exit(81)}const u=a.at(-1);const c={number:p.number,node_id:p.id,state:'open',merged_at:null,user:{node_id:p.authorId,type:'Bot'},head:{ref:p.branch,sha:p.head,repo:{full_name:p.repository}},base:{ref:p.base,repo:{full_name:p.repository}}};let out=c;if(u.includes('?state=all'))out=[[c]];if(u.includes('/git/ref/heads/')){const ref=u.split('/git/ref/heads/')[1];out={ref:'refs/heads/'+ref,object:{type:'commit',sha:ref===p.branch?p.head:p.baseHead}}}process.stdout.write(JSON.stringify(out));`;
-    writeFileSync(join(bin, 'gh'), gh, { mode: 0o755 });
-    const run = () =>
-        spawnSync(
-            process.execPath,
-            ['scripts/openLane.ts', '--adopt-pr', '12', '--expected-head', head, '--model', MODEL],
-            { cwd: primary, env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ''}` }, encoding: 'utf8' }
-        );
+    const control = join(root, 'control.json');
+    const calls = join(root, 'gh-calls');
+    writeFileSync(data, JSON.stringify({ ...PR, head, baseHead: pin }));
+    writeFileSync(control, '{}');
+    writeFileSync(
+        join(bin, 'git'),
+        `#!${process.execPath}
+const fs=require('node:fs');const cp=require('node:child_process');const args=process.argv.slice(2);fs.appendFileSync(${JSON.stringify(join(root, 'git-calls'))},JSON.stringify(args)+'\\n');const control=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8'));
+if(control.failFetch&&args[0]==='fetch'&&args[1]==='origin'&&args[2]==='main'){process.stderr.write('controlled origin fetch failure');process.exit(86)}
+const result=cp.spawnSync(${JSON.stringify(gitPath)},args,{env:process.env,encoding:'utf8'});process.stdout.write(result.stdout??'');process.stderr.write(result.stderr??'');process.exitCode=result.status??87;
+`,
+        { mode: 0o755 }
+    );
+    writeFileSync(
+        join(bin, 'gh'),
+        `#!${process.execPath}
+const fs=require('node:fs');const cp=require('node:child_process');const p=JSON.parse(fs.readFileSync(${JSON.stringify(data)},'utf8'));const control=JSON.parse(fs.readFileSync(${JSON.stringify(control)},'utf8'));const a=process.argv.slice(2);
+fs.appendFileSync(${JSON.stringify(calls)},JSON.stringify(a)+'\\n');if(a[0]!=='api'||a.some(x=>['--method','-X','-f','-F'].includes(x))){process.exit(81)}
+if(control.movePin&&!control.moved){cp.execFileSync(${JSON.stringify(gitPath)},['update-ref','refs/remotes/origin/main',control.movePin],{cwd:${JSON.stringify(primary)}});control.moved=true;fs.writeFileSync(${JSON.stringify(control)},JSON.stringify(control))}
+const u=a.at(-1);const c={number:p.number,node_id:p.id,state:'open',merged_at:null,user:{node_id:p.authorId,type:'Bot'},head:{ref:p.branch,sha:p.head,repo:{full_name:p.repository}},base:{ref:p.base,repo:{full_name:p.repository}}};let out;
+if(u.includes('?state=all')){out=[[c]]}else if(u.includes('/git/ref/heads/')){const ref=u.split('/git/ref/heads/')[1];out={ref:'refs/heads/'+ref,object:{type:'commit',sha:ref===p.branch?p.head:p.baseHead}}}else if(u.endsWith('/pulls/'+p.number)){out=c}else{process.exit(82)}process.stdout.write(JSON.stringify(out));
+`,
+        { mode: 0o755 }
+    );
+    const args = ['--run', 'lane:publish', '--', '--adopt-pr', '12', '--expected-head', head, '--model', MODEL];
+    const run = (extraEnv: NodeJS.ProcessEnv = {}) => {
+        const result = spawnSync(process.execPath, args, {
+            cwd: primary,
+            env: { ...env, ...extraEnv },
+            encoding: 'utf8',
+        });
+        if (result.stderr.includes('launcher does not match')) {
+            const physical = readFileSync(join(primary, 'scripts', 'trustedGithubWriteBootstrap.ts'), 'utf8');
+            const pinned = execFileSync(gitPath, ['show', `${pin}:scripts/trustedGithubWriteBootstrap.ts`], {
+                cwd: primary,
+                env,
+                encoding: 'utf8',
+            });
+            result.stderr += JSON.stringify({
+                pin,
+                actualPin: git('rev-parse', 'origin/main'),
+                physicalLength: physical.length,
+                pinnedLength: pinned.length,
+                equal: physical === pinned,
+                calls: readFileSync(join(root, 'git-calls'), 'utf8').split('\n').slice(-10),
+            });
+        }
+        return result;
+    };
+    const concurrent = () =>
+        new Promise<{ code: number | null; stderr: string }>((resolve, reject) => {
+            const child = spawn(process.execPath, args, { cwd: primary, env, stdio: ['ignore', 'pipe', 'pipe'] });
+            let stderr = '';
+            child.stderr.on('data', (chunk: Buffer) => {
+                stderr += chunk.toString();
+            });
+            child.on('error', reject);
+            child.on('close', (code) => resolve({ code, stderr }));
+        });
     return {
         root,
         primary,
         git,
+        gitPath,
+        env,
         head,
         base,
+        pin,
+        nextPin,
         run,
+        concurrent,
         data,
+        control,
+        calls,
+        hookMarker,
+        filterMarker,
         lane: join(primary, '.agents', 'worktrees', `adopt-12-${head.slice(0, 12)}`),
+        readonlyCalls: () => {
+            if (!existsSync(calls)) {
+                return [];
+            }
+            return readFileSync(calls, 'utf8')
+                .trim()
+                .split('\n')
+                .map((line) => JSON.parse(line));
+        },
+        remoteHead: () =>
+            execFileSync(gitPath, ['--git-dir', remote, 'rev-parse', `refs/heads/${PR.branch}`], {
+                env,
+                encoding: 'utf8',
+            }).trim(),
+        calibrate: () => {
+            const probe = join(root, 'callback-calibration');
+            const filter = `"${process.execPath}" "${join(probe, '.githooks', 'filter.cjs')}"`;
+            git('config', 'filter.adopted.smudge', filter);
+            git('config', 'filter.adopted.clean', filter);
+            const calibration = spawnSync(
+                gitPath,
+                ['-c', `core.hooksPath=${join(probe, '.githooks')}`, 'worktree', 'add', '--detach', probe, head],
+                {
+                    cwd: primary,
+                    env,
+                    encoding: 'utf8',
+                }
+            );
+            expect(calibration.status, calibration.stderr).toBe(0);
+            expect(existsSync(hookMarker), calibration.stderr).toBe(true);
+            expect(existsSync(filterMarker), calibration.stderr).toBe(true);
+            unlinkSync(hookMarker);
+            unlinkSync(filterMarker);
+            const adopted = join(primary, '.agents', 'worktrees', `adopt-12-${head.slice(0, 12)}`);
+            git('config', 'core.hooksPath', join(adopted, '.githooks'));
+            const adoptedFilter = `"${process.execPath}" "${join(adopted, '.githooks', 'filter.cjs')}"`;
+            git('config', 'filter.adopted.smudge', adoptedFilter);
+            git('config', 'filter.adopted.clean', adoptedFilter);
+        },
     };
 }
 
-describe('real native custody with fake public reads and a disposable remote', () => {
-    it('creates the exact locked checkout, truthfully logs present birth and replays without touching records', () => {
+function expectNoRemoteOrAdoptedExecution(f: ReturnType<typeof nativeFixture>): void {
+    expect(f.remoteHead()).toBe(f.head);
+    expect(existsSync(join(f.primary, 'auth-attempted'))).toBe(false);
+    expect(existsSync(f.hookMarker)).toBe(false);
+    expect(existsSync(f.filterMarker)).toBe(false);
+    expect(readFileSync(join(f.primary, 'foreign.txt'), 'utf8')).toBe('foreign work stays untouched');
+    expect(
+        f
+            .readonlyCalls()
+            .every(
+                (args: string[]) =>
+                    args[0] === 'api' && !args.some((arg) => ['--method', '-X', '-f', '-F'].includes(arg))
+            )
+    ).toBe(true);
+}
+
+describe('real pinned publisher package with a stale physical primary', () => {
+    it('acquires and replays truthful custody without author auth, PR writes or adopted callbacks', () => {
         const f = nativeFixture();
-        const first = f.run();
+        f.calibrate();
+        const first = f.run({ SOURDAW_TRUSTED_PRIMARY_ROOT: '/forged/root', SOURDAW_TRUSTED_GIT_PATH: '/forged/git' });
         expect(first.status, first.stderr).toBe(0);
         expect(f.git('rev-parse', `refs/heads/${PR.branch}`)).toBe(f.head);
         expect(f.git('worktree', 'list', '--porcelain')).toContain(`locked ${AUTHOR_LOCK_REASON}`);
-        const log = readFileSync(join(f.primary, '.git', 'logs', 'refs', 'heads', PR.branch), 'utf8');
-        expect(log).toContain('sourdaw: present PR adoption PR_example');
-        expect(log).not.toContain('branch: Created from');
-        expect(
-            execFileSync('git', ['config', '--worktree', '--get', 'user.email'], {
-                cwd: f.lane,
-                encoding: 'utf8',
-            }).trim()
-        ).toBe(AUTHOR_BOT_COMMIT_EMAIL);
+        expect(readFileSync(join(f.primary, 'scripts', 'publishLane.ts'), 'utf8')).toContain(
+            'stale-primary-publisher-executed'
+        );
+        expect(readFileSync(join(f.lane, 'scripts', 'publishLane.ts'), 'utf8')).toContain(
+            'stale-primary-publisher-executed'
+        );
+        expect(readFileSync(join(f.primary, '.git', 'logs', 'refs', 'heads', PR.branch), 'utf8')).toContain(
+            'sourdaw: present PR adoption PR_example'
+        );
+        expect(f.git('-C', f.lane, 'config', '--worktree', '--get', 'user.email')).toBe(AUTHOR_BOT_COMMIT_EMAIL);
+        expect(f.git('config', '--get', `branch.${PR.branch}.sourdaw-author-model`)).toBe(MODEL);
+        expect(readLaneAdoptionRecord(f.primary, PR.branch)?.sourceCommit).toBe(f.pin);
         expect(existsSync(join(f.primary, '.agents', 'lane-stacks'))).toBe(false);
+        expectNoRemoteOrAdoptedExecution(f);
         const receipt = readFileSync(laneAdoptionPath(f.primary, PR.branch), 'utf8');
         const second = f.run();
         expect(second.status, second.stderr).toBe(0);
         expect(readFileSync(laneAdoptionPath(f.primary, PR.branch), 'utf8')).toBe(receipt);
-        expect(
-            readFileSync(join(f.root, 'gh-calls'), 'utf8')
-                .trim()
-                .split('\n')
-                .every((line) => JSON.parse(line)[0] === 'api')
-        ).toBe(true);
-    });
-    it('fails before fake GitHub when a required pinned source is missing or changed', () => {
+        expectNoRemoteOrAdoptedExecution(f);
+    }, 30_000);
+    it('binds the executed snapshot pin despite a later origin/main ref movement', () => {
         const f = nativeFixture();
-        writeFileSync(
-            join(f.primary, 'scripts', 'prContract.ts'),
-            `${readFileSync(join(f.primary, 'scripts', 'prContract.ts'), 'utf8')}\n// changed\n`
-        );
+        writeFileSync(f.control, JSON.stringify({ movePin: f.nextPin }));
+        const result = f.run();
+        expect(result.status, result.stderr).toBe(0);
+        expect(f.git('rev-parse', 'origin/main')).toBe(f.nextPin);
+        expect(readLaneAdoptionRecord(f.primary, PR.branch)?.sourceCommit).toBe(f.pin);
+        expectNoRemoteOrAdoptedExecution(f);
+    }, 30_000);
+    it('retains the existing explicit cached-pin fallback and refuses an absent cached pin', () => {
+        const cached = nativeFixture();
+        writeFileSync(cached.control, JSON.stringify({ failFetch: true }));
+        const pass = cached.run();
+        expect(pass.status, pass.stderr).toBe(0);
+        expect(pass.stderr).toContain('trusted snapshot may be stale');
+        expect(readLaneAdoptionRecord(cached.primary, PR.branch)?.sourceCommit).toBe(cached.pin);
+        const absent = nativeFixture();
+        absent.git('update-ref', '-d', 'refs/remotes/origin/main', absent.pin);
+        writeFileSync(absent.control, JSON.stringify({ failFetch: true }));
+        const fail = absent.run();
+        expect(fail.status).toBe(1);
+        expect(absent.readonlyCalls()).toEqual([]);
+        expect(absent.git('for-each-ref', '--format=%(objectname)', `refs/heads/${PR.branch}`)).toBe('');
+    }, 30_000);
+    it('refuses a mutated primary loader before any public or custody effect', () => {
+        const f = nativeFixture();
+        const path = join(f.primary, 'scripts', 'trustedGithubWriteBootstrap.ts');
+        writeFileSync(path, `${readFileSync(path, 'utf8')}\n// different loader\n`);
         const result = f.run();
         expect(result.status).toBe(1);
-        expect(result.stderr).toContain('source unavailable or changed');
-        expect(existsSync(join(f.root, 'gh-calls'))).toBe(false);
-        expect(f.git('for-each-ref', '--format=%(objectname)', `refs/heads/${PR.branch}`)).toBe('');
-    });
-    it('refuses an existing empty destination instead of letting Git adopt it', () => {
-        const f = nativeFixture();
-        mkdirSync(f.lane, { recursive: true });
-        const result = f.run();
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain('absent local branch, path and worktree');
-        expect(readdirSync(f.lane)).toEqual([]);
-        expect(f.git('for-each-ref', '--format=%(objectname)', `refs/heads/${PR.branch}`)).toBe('');
-    });
-    it('refuses a pre-existing branch and preserves the exact foreign tip', () => {
-        const f = nativeFixture();
-        f.git('branch', PR.branch, f.base);
-        const result = f.run();
-        expect(result.status).toBe(1);
-        expect(result.stderr).toContain('absent local branch');
-        expect(f.git('rev-parse', `refs/heads/${PR.branch}`)).toBe(f.base);
+        expect(result.stderr).toContain('protected primary launcher does not match');
+        expect(f.readonlyCalls()).toEqual([]);
         expect(existsSync(laneAdoptionPath(f.primary, PR.branch))).toBe(false);
-    });
+    }, 30_000);
+    it('refuses a missing required publisher blob before public or custody effects', () => {
+        const f = nativeFixture();
+        f.git('read-tree', f.pin);
+        f.git('update-index', '--force-remove', 'scripts/publishLane.ts');
+        const incomplete = f.git('commit-tree', f.git('write-tree'), '-p', f.pin, '-m', 'test: missing publisher');
+        f.git('push', 'origin', `${incomplete}:refs/heads/main`);
+        const result = f.run();
+        expect(result.status).toBe(1);
+        expect(f.readonlyCalls()).toEqual([]);
+        expect(f.git('for-each-ref', '--format=%(objectname)', `refs/heads/${PR.branch}`)).toBe('');
+        expect(existsSync(laneAdoptionPath(f.primary, PR.branch))).toBe(false);
+        expectNoRemoteOrAdoptedExecution(f);
+    }, 30_000);
+    it('refuses foreign cwd through the real primary launcher before local custody', () => {
+        const f = nativeFixture();
+        const foreign = join(f.root, 'foreign-worktree');
+        f.git('worktree', 'add', '--detach', foreign, f.base);
+        const result = spawnSync(
+            process.execPath,
+            [
+                join(f.primary, 'scripts', 'trustedGithubWriteBootstrap.ts'),
+                'lane:publish',
+                '--adopt-pr',
+                '12',
+                '--expected-head',
+                f.head,
+                '--model',
+                MODEL,
+            ],
+            { cwd: foreign, env: f.env, encoding: 'utf8' }
+        );
+        expect(f.git('for-each-ref', '--format=%(objectname)', `refs/heads/${PR.branch}`)).toBe('');
+        expect(f.readonlyCalls()).toEqual([]);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('protected primary checkout');
+    }, 30_000);
+    it('preserves the ordinary author gate on the same real pinned package route', () => {
+        const f = nativeFixture();
+        const adopted = f.run();
+        expect(adopted.status, adopted.stderr).toBe(0);
+        const result = spawnSync(process.execPath, ['--run', 'lane:publish', '--', '--lane', f.lane], {
+            cwd: f.primary,
+            env: f.env,
+            encoding: 'utf8',
+        });
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('controlled ordinary author authentication');
+        expect(readFileSync(join(f.primary, 'auth-attempted'), 'utf8')).toBe('ordinary author gate');
+        expect(f.remoteHead()).toBe(f.head);
+    }, 30_000);
+    it('admits at most one custody record under concurrent matching calls', async () => {
+        const f = nativeFixture();
+        const results = await Promise.all([f.concurrent(), f.concurrent()]);
+        expect(
+            results.some((result) => result.code === 0),
+            JSON.stringify(results)
+        ).toBe(true);
+        expect(results.every((result) => result.code === 0 || result.code === 1)).toBe(true);
+        expect(f.git('rev-parse', `refs/heads/${PR.branch}`)).toBe(f.head);
+        expect(f.git('worktree', 'list', '--porcelain').split(`branch refs/heads/${PR.branch}`).length - 1).toBe(1);
+        expect(
+            readdirSync(join(f.primary, '.agents', 'lane-adoptions')).filter((file) => file.endsWith('.json'))
+        ).toHaveLength(1);
+        expectNoRemoteOrAdoptedExecution(f);
+    }, 30_000);
+    it.each(['branch', 'empty destination'])(
+        'preserves a foreign %s collision through the native route',
+        (kind) => {
+            const f = nativeFixture();
+            if (kind === 'branch') {
+                f.git('branch', PR.branch, f.base);
+            } else {
+                mkdirSync(f.lane, { recursive: true });
+            }
+            const result = f.run();
+            expect(result.status).toBe(1);
+            expect(result.stderr).toContain('absent local branch, path and worktree');
+            if (kind === 'branch') {
+                expect(f.git('rev-parse', `refs/heads/${PR.branch}`)).toBe(f.base);
+            } else {
+                expect(readdirSync(f.lane)).toEqual([]);
+            }
+            expect(existsSync(laneAdoptionPath(f.primary, PR.branch))).toBe(false);
+            expectNoRemoteOrAdoptedExecution(f);
+        },
+        30_000
+    );
 });
