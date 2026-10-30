@@ -101,7 +101,7 @@ describe('setPlayback', () => {
             events.push('transport-read');
             return { ...defaultTransportState, isPlaying: false };
         });
-        vi.mocked(startPlayback).mockImplementation(() => {
+        vi.mocked(startPlayback).mockImplementation(async () => {
             events.push('play-dispatched');
         });
 

@@ -114,13 +114,10 @@ import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
+import { invalidateNativeAuditionMonitoring } from './invalidateNativeAuditionMonitoring';
 import { isHostedPluginDevice } from './isHostedPluginDevice';
 import { latchedPedalCommands } from './latchedPedalCommands';
-import {
-    invalidateNativeAuditionMonitoring,
-    nativeLiveGraphSession,
-    queueOnNativeLiveGraphSession,
-} from './nativeLiveGraphSessionState';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { type LiveGraphProgramme } from './projectLiveGraphProgramme';
 import {
     projectLiveGraphTopology,

@@ -62,11 +62,8 @@ import { forgetRetiredPluginInstances } from '#/modules/PluginHost/useCases';
 import { retireNativeEngine } from '../../repositories/engineLifecycle/retireNativeEngine';
 import { defaultNativeEngineRearmState, nativeEngineRearmStore } from '../../stores/nativeEngineRearmStore';
 
-import {
-    invalidateNativeAuditionMonitoring,
-    nativeLiveGraphSession,
-    queueOnNativeLiveGraphSession,
-} from './nativeLiveGraphSessionState';
+import { invalidateNativeAuditionMonitoring } from './invalidateNativeAuditionMonitoring';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 
 import type { AudioGraphBackend } from '../../models/AudioGraphBackend';
 

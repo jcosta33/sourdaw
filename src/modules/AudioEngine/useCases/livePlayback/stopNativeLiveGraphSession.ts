@@ -27,11 +27,8 @@ import { describeEngineNotRenderingRefusal } from './describeEngineNotRenderingR
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
 import { isEngineNotRenderingRefusal } from './engineNotRenderingRefusal';
-import {
-    invalidateNativeAuditionMonitoring,
-    nativeLiveGraphSession,
-    queueOnNativeLiveGraphSession,
-} from './nativeLiveGraphSessionState';
+import { invalidateNativeAuditionMonitoring } from './invalidateNativeAuditionMonitoring';
+import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 

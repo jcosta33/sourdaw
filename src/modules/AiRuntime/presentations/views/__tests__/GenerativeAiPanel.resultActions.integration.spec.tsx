@@ -1,9 +1,8 @@
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { audioEngine } from '#/modules/AudioEngine/useCases';
-
 import { aiStore, type AiTaskResult } from '#/modules/AiGeneration/stores';
+import { audioEngine } from '#/modules/AudioEngine/useCases';
 
 import { GenerativeAiPanel } from '../GenerativeAiPanel';
 

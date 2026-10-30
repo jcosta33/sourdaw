@@ -1,5 +1,5 @@
-import { trackStore } from '#/modules/Arrangement/stores';
 import { logger } from '#/infra/logger/appLogger';
+import { trackStore } from '#/modules/Arrangement/stores';
 import {
     scheduleNote,
     getDrumKitDefByIndex,
@@ -9,8 +9,8 @@ import {
 } from '#/modules/Synth/useCases';
 import { isBypassedNoteReceiver, readDrumKitOutputGain } from '#/utils/deviceTypeMatching';
 
-import { audioEngine } from '../repositories/createWebAudioEngine';
 import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
+import { audioEngine } from '../repositories/createWebAudioEngine';
 
 import { getDrumKitByIndex } from './audioEngineQueries/getDrumKitByIndex';
 import { startFaustNote } from './faustScheduler/startFaustNote';

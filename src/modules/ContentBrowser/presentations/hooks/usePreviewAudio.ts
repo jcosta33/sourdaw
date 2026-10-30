@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { type RefObject, useState, useRef, useEffect } from 'react';
 
 import { logger } from '#/infra/logger/appLogger';
 import { audioEngine, getAudioContext, playAudioBufferPreview } from '#/modules/AudioEngine/useCases';
@@ -16,19 +16,58 @@ type Owner = {
     stop: () => void;
 };
 
+function releaseOwner(ownerRef: RefObject<Owner | null>): void {
+    const owner = ownerRef.current;
+    ownerRef.current = null;
+    try {
+        owner?.stop();
+    } finally {
+        owner?.intent.release();
+    }
+}
+
+type BufferPreviewState = {
+    ownerRef: RefObject<Owner | null>;
+    isCurrent: (owner: Owner) => boolean;
+    report: (owner: Owner, error: unknown) => void;
+    setPlayingId: (id: string | null) => void;
+};
+
+function startPreviewBuffer(
+    { ownerRef, isCurrent, report, setPlayingId }: BufferPreviewState,
+    owner: Owner,
+    id: string,
+    buffer: AudioBuffer
+): void {
+    if (!isCurrent(owner)) {
+        return;
+    }
+    const playback = playAudioBufferPreview({
+        buffer,
+        gain: 0.7,
+        intent: owner.intent,
+        onEnded: () => {
+            if (ownerRef.current === owner) {
+                ownerRef.current = null;
+                setPlayingId(null);
+            }
+        },
+    });
+    if (playback === null) {
+        return;
+    }
+    owner.stop = playback.stop;
+    if (isCurrent(owner)) {
+        setPlayingId(id);
+    }
+    void playback.ready.catch((error: unknown) => report(owner, error));
+}
+
 export const usePreviewAudio = (): PreviewHandle => {
     const ownerRef = useRef<Owner | null>(null);
     const [playingId, setPlayingId] = useState<string | null>(null);
 
-    const release = () => {
-        const owner = ownerRef.current;
-        ownerRef.current = null;
-        try {
-            owner?.stop();
-        } finally {
-            owner?.intent.release();
-        }
-    };
+    const release = () => releaseOwner(ownerRef);
     const stop = () => {
         release();
         setPlayingId(null);
@@ -68,28 +107,7 @@ export const usePreviewAudio = (): PreviewHandle => {
         return resuming;
     };
     const startBuffer = (owner: Owner, id: string, buffer: AudioBuffer) => {
-        if (!isCurrent(owner)) {
-            return;
-        }
-        const playback = playAudioBufferPreview({
-            buffer,
-            gain: 0.7,
-            intent: owner.intent,
-            onEnded: () => {
-                if (ownerRef.current === owner) {
-                    ownerRef.current = null;
-                    setPlayingId(null);
-                }
-            },
-        });
-        if (playback === null) {
-            return;
-        }
-        owner.stop = playback.stop;
-        if (isCurrent(owner)) {
-            setPlayingId(id);
-        }
-        void playback.ready.catch((error: unknown) => report(owner, error));
+        startPreviewBuffer({ ownerRef, isCurrent, report, setPlayingId }, owner, id, buffer);
     };
     const play = (id: string, buffer: AudioBuffer) => {
         const owner = begin();
@@ -142,17 +160,6 @@ export const usePreviewAudio = (): PreviewHandle => {
             }
         }
     };
-    useEffect(
-        () => () => {
-            const owner = ownerRef.current;
-            ownerRef.current = null;
-            try {
-                owner?.stop();
-            } finally {
-                owner?.intent.release();
-            }
-        },
-        []
-    );
+    useEffect(() => () => releaseOwner(ownerRef), []);
     return { playingId, play, playTone, playFile, stop };
 };

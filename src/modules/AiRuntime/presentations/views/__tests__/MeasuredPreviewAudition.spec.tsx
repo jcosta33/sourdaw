@@ -53,14 +53,14 @@ describe('connected measured audition controls', () => {
             'data-confirmation-id',
             'pending'
         );
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Baseline', exact: true })));
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Baseline' })));
         expect(mocks.start).toHaveBeenLastCalledWith({
             confirmationId: 'pending',
             targetId: 'drums',
             side: 'baseline',
             selectedIntentGroupIds: ['gain', 'trim'],
         });
-        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Proposal', exact: true })));
+        await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Proposal' })));
         expect(mocks.start).toHaveBeenLastCalledWith({
             confirmationId: 'pending',
             targetId: 'drums',
@@ -71,11 +71,11 @@ describe('connected measured audition controls', () => {
 
     it('disables stale full-batch PCM after its caller selects only a subset', () => {
         const view = render(<MeasuredPreviewAudition {...input} />);
-        expect(screen.getByRole('button', { name: 'Baseline', exact: true })).toBeEnabled();
+        expect(screen.getByRole('button', { name: 'Baseline' })).toBeEnabled();
         view.rerender(<MeasuredPreviewAudition {...input} selectedIntentGroupIds={['gain']} />);
         expect(mocks.selections.at(-1)).toEqual(['gain']);
-        expect(screen.getByRole('button', { name: 'Baseline', exact: true })).toBeDisabled();
-        expect(screen.getByRole('button', { name: 'Proposal', exact: true })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Baseline' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Proposal' })).toBeDisabled();
         expect(mocks.start).not.toHaveBeenCalled();
     });
 

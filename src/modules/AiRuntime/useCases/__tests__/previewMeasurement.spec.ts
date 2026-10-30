@@ -622,14 +622,19 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
             if (run?.plan === null || run?.plan === undefined) {
                 throw new Error('The actual admitted caller must persist a plan.');
             }
+            const applicationToolReceipts = run.plan.applicationToolReceipts;
+            expect(applicationToolReceipts).toBeDefined();
+            if (applicationToolReceipts === undefined) {
+                throw new Error('The admitted measurement must persist its application tool receipts.');
+            }
             expect(
-                run.plan.applicationToolReceipts.some(
+                applicationToolReceipts.some(
                     (receipt) => receipt.callId === 'measure-1' && receipt.status === 'success'
                 )
             ).toBe(true);
             for (const receipts of [
                 [],
-                run.plan.applicationToolReceipts.map((receipt) => ({ ...receipt, callId: 'foreign-measurement' })),
+                applicationToolReceipts.map((receipt) => ({ ...receipt, callId: 'foreign-measurement' })),
             ]) {
                 agentRunStore.update((state) => {
                     if (!state) {

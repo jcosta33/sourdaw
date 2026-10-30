@@ -7,54 +7,49 @@ let measuredPreviewAuditionStore: typeof import('../../stores/measuredPreviewAud
 let startMeasuredPreviewAudition: typeof import('../startMeasuredPreviewAudition').startMeasuredPreviewAudition;
 let stopMeasuredPreviewAudition: typeof import('../stopMeasuredPreviewAudition').stopMeasuredPreviewAudition;
 const wire = vi.hoisted(() => ({
-    native: false,
     fence: 0,
     apply: vi.fn<(_: unknown) => Promise<unknown>>(),
     resolve: vi.fn<typeof import('../resolveMeasuredPreviewAudition').resolveMeasuredPreviewAudition>(),
 }));
 vi.mock('../resolveMeasuredPreviewAudition', () => ({ resolveMeasuredPreviewAudition: wire.resolve }));
-vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
-    isDesktopRuntime: () => wire.native,
-    desktopInvoke: async (command: string, args?: unknown) => {
-        if (command === 'apply_graph_commands') {
-            return wire.apply(args);
-        }
-        if (command === 'map_graph_batch') {
-            return {};
-        }
-        if (command === 'engine_transport_position') {
-            return { engineIncarnation: ID, running: true, playing: false, batchesApplied: wire.fence };
-        }
-        if (command === 'engine_transport_set_maps') {
-            return {
-                sampleRate: 48_000,
-                tempoSegments: 1,
-                timeSignatureSegments: 1,
-                loopEnabled: false,
-                admittedBatch: wire.fence,
-            };
-        }
-        if (command === 'timeline_sample_lifecycle' && typeof args === 'object' && args !== null && 'request' in args) {
-            const request = args.request;
-            if (typeof request === 'object' && request !== null && 'action' in request) {
-                if (request.action === 'open') {
-                    return { owner: 'measured-audition-owner' };
-                }
-                if (request.action === 'prepare') {
-                    return { lease: 'measured-audition-lease', missing: [] };
-                }
-                if (request.action === 'release') {
-                    return { released: true };
-                }
-                if (request.action === 'retire') {
-                    return { complete: true, remainingReaders: 0, pendingFence: false };
-                }
+const invokeNative: SourdawDesktopBridge['invoke'] = async (command, args) => {
+    if (command === 'apply_graph_commands') {
+        return wire.apply(args);
+    }
+    if (command === 'map_graph_batch') {
+        return {};
+    }
+    if (command === 'engine_transport_position') {
+        return { engineIncarnation: ID, running: true, playing: false, batchesApplied: wire.fence };
+    }
+    if (command === 'engine_transport_set_maps') {
+        return {
+            sampleRate: 48_000,
+            tempoSegments: 1,
+            timeSignatureSegments: 1,
+            loopEnabled: false,
+            admittedBatch: wire.fence,
+        };
+    }
+    if (command === 'timeline_sample_lifecycle') {
+        const request = args?.[0];
+        if (typeof request === 'object' && request !== null && 'action' in request) {
+            if (request.action === 'open') {
+                return { owner: 'measured-audition-owner' };
+            }
+            if (request.action === 'prepare') {
+                return { lease: 'measured-audition-lease', missing: [] };
+            }
+            if (request.action === 'release') {
+                return { released: true };
+            }
+            if (request.action === 'retire') {
+                return { complete: true, remainingReaders: 0, pendingFence: false };
             }
         }
-        throw new Error(`Unexpected native fixture command: ${command}`);
-    },
-}));
+    }
+    throw new Error(`Unexpected native fixture command: ${command}`);
+};
 
 function parameter() {
     const gain = {
@@ -139,7 +134,10 @@ const exact = {
 } as unknown as AudioBuffer;
 
 async function installNativeSession() {
-    wire.native = true;
+    Object.defineProperty(window, 'sourdaw', {
+        configurable: true,
+        value: { invoke: invokeNative } satisfies Pick<SourdawDesktopBridge, 'invoke'>,
+    });
     wire.apply.mockImplementation(async () => applied(++wire.fence));
     const result = await audio.startNativeLiveGraphSession({
         positionSeconds: 0,
@@ -152,6 +150,17 @@ async function installNativeSession() {
         sampleRate: 48_000,
     });
     expect(result.outcome).toBe('started');
+    expect(wire.apply).toHaveBeenCalledWith([
+        expect.objectContaining({
+            schemaVersion: 1,
+            replaceTopology: true,
+            timelineLease: 'measured-audition-lease',
+            commands: expect.arrayContaining([
+                { kind: 'set-monitor-shadow', shadowed: false },
+                { kind: 'set-transport', playing: false, positionSeconds: 0 },
+            ]),
+        }),
+    ]);
     wire.apply.mockClear();
 }
 
@@ -159,9 +168,11 @@ const RESTORE_FAILURE = 'The native engine did not apply its audition output gat
 
 describe('measured audition controller through the actual exclusive source executor', () => {
     let driven: Awaited<ReturnType<typeof engineFixture>>;
+    let bridgeDescriptor: PropertyDescriptor | undefined;
     beforeEach(async () => {
+        bridgeDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
+        Reflect.deleteProperty(window, 'sourdaw');
         vi.resetModules();
-        wire.native = false;
         wire.fence = 0;
         wire.apply.mockReset();
         wire.resolve.mockReset();
@@ -181,10 +192,18 @@ describe('measured audition controller through the actual exclusive source execu
         });
     });
     afterEach(async () => {
-        await stopMeasuredPreviewAudition();
-        await audio.stopNativeLiveGraphSession({ positionSeconds: 0 });
-        await driven.engine.dispose();
-        vi.unstubAllGlobals();
+        try {
+            await stopMeasuredPreviewAudition();
+            await audio.stopNativeLiveGraphSession({ positionSeconds: 0 });
+            await driven.engine.dispose();
+        } finally {
+            if (bridgeDescriptor === undefined) {
+                Reflect.deleteProperty(window, 'sourdaw');
+            } else {
+                Object.defineProperty(window, 'sourdaw', bridgeDescriptor);
+            }
+            vi.unstubAllGlobals();
+        }
     });
 
     it('keeps explicit-stop/onEnded releasing until the actual native restore rejects', async () => {

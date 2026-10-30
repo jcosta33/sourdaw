@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { logger } from '#/infra/logger/appLogger';
 import { getTrackStoreState } from '#/modules/Arrangement/useCases';
 import { audioEngine, playAuditionNote } from '#/modules/AudioEngine/useCases';
-import { logger } from '#/infra/logger/appLogger';
-import { runAllEffects } from '#/utils/runEffects';
 import { getNotesForClip } from '#/modules/MIDI/useCases';
 import { DEFAULT_TEMPO_BPM } from '#/modules/Transport/stores';
 import { getTransportState } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { runAllEffects } from '#/utils/runEffects';
 
 export type ClipAuditionTarget = {
     clipId: string;

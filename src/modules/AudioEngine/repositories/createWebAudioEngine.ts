@@ -21,6 +21,7 @@ import {
     TrackNode,
     type TrackNodeRuntimeGraphMutation,
 } from '../engine/TrackNode';
+import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import {
     type RuntimeGraphDelta,
     type RuntimeGraphDeviceChainDelta,
@@ -31,7 +32,6 @@ import {
     type RuntimeGraphTopologyValidator,
 } from '../models/RuntimeGraphDelta';
 import { createAudioPreviewIntents } from '../services/audioPreview/createAudioPreviewIntents';
-import { type AudioPreviewIntent } from '../models/AudioPreviewIntent';
 import bitcrusherRateProcessorUrl from '../services/bitcrusherRateProcessor.ts?worker&url';
 import { compileRuntimeGraphDelta } from '../services/compileRuntimeGraphDelta';
 import { matchesRuntimeDeviceChainTopology } from '../services/matchesRuntimeDeviceChainTopology';

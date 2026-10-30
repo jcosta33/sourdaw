@@ -37,7 +37,8 @@ import { claimCarriedStrips } from './claimCarriedStrips';
 import { clearNativeChains } from './clearNativeChains';
 import { disarmNativeLiveAutomationWriter } from './disarmNativeLiveAutomationWriter';
 import { disarmNativeLiveMidiWriter } from './disarmNativeLiveMidiWriter';
-import { invalidateNativeAuditionMonitoring, nativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { invalidateNativeAuditionMonitoring } from './invalidateNativeAuditionMonitoring';
+import { nativeLiveGraphSession } from './nativeLiveGraphSessionState';
 import { stopNativeEnginePlayheadFeed } from './stopNativeEnginePlayheadFeed';
 
 export function abandonNativeLiveGraphSession(reason: string): void {

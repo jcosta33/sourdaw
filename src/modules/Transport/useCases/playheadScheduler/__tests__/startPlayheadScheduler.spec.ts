@@ -4,7 +4,6 @@ import { type Store } from '#/infra/store/types';
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 const nativeWire = vi.hoisted(() => ({
-    enabled: false,
     fence: 0,
     position: 1.9,
     wraps: 0,
@@ -19,55 +18,51 @@ const nativeRuntime = vi.hoisted(
         tracks: null,
     })
 );
-vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
-    isDesktopRuntime: () => nativeWire.enabled,
-    desktopInvoke: async (command: string, args?: unknown) => {
-        if (command === 'apply_graph_commands') {
-            return nativeWire.apply(args);
-        }
-        if (command === 'map_graph_batch') {
-            return {};
-        }
-        if (command === 'engine_transport_position') {
-            return {
-                engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0',
-                running: true,
-                playing: true,
-                positionSeconds: nativeWire.position,
-                loopWraps: nativeWire.wraps,
-                batchesApplied: nativeWire.fence,
-            };
-        }
-        if (command === 'engine_transport_set_maps') {
-            return {
-                sampleRate: 48_000,
-                tempoSegments: 1,
-                timeSignatureSegments: 1,
-                loopEnabled: false,
-                admittedBatch: nativeWire.fence,
-            };
-        }
-        if (command === 'timeline_sample_lifecycle' && typeof args === 'object' && args !== null && 'request' in args) {
-            const request = args.request;
-            if (typeof request === 'object' && request !== null && 'action' in request) {
-                if (request.action === 'open') {
-                    return { owner: 'scheduler-native-owner' };
-                }
-                if (request.action === 'prepare') {
-                    return { lease: 'scheduler-native-lease', missing: [] };
-                }
-                if (request.action === 'release') {
-                    return { released: true };
-                }
-                if (request.action === 'retire') {
-                    return { complete: true, remainingReaders: 0, pendingFence: false };
-                }
+const invokeNative: SourdawDesktopBridge['invoke'] = async (command, args) => {
+    if (command === 'apply_graph_commands') {
+        return nativeWire.apply(args);
+    }
+    if (command === 'map_graph_batch') {
+        return {};
+    }
+    if (command === 'engine_transport_position') {
+        return {
+            engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0',
+            running: true,
+            playing: true,
+            positionSeconds: nativeWire.position,
+            loopWraps: nativeWire.wraps,
+            batchesApplied: nativeWire.fence,
+        };
+    }
+    if (command === 'engine_transport_set_maps') {
+        return {
+            sampleRate: 48_000,
+            tempoSegments: 1,
+            timeSignatureSegments: 1,
+            loopEnabled: false,
+            admittedBatch: nativeWire.fence,
+        };
+    }
+    if (command === 'timeline_sample_lifecycle') {
+        const request = args?.[0];
+        if (typeof request === 'object' && request !== null && 'action' in request) {
+            if (request.action === 'open') {
+                return { owner: 'scheduler-native-owner' };
+            }
+            if (request.action === 'prepare') {
+                return { lease: 'scheduler-native-lease', missing: [] };
+            }
+            if (request.action === 'release') {
+                return { released: true };
+            }
+            if (request.action === 'retire') {
+                return { complete: true, remainingReaders: 0, pendingFence: false };
             }
         }
-        throw new Error(`Unexpected scheduler native command: ${command}`);
-    },
-}));
+    }
+    throw new Error(`Unexpected scheduler native command: ${command}`);
+};
 
 import { secondsBetweenBeats } from '../../../models/TempoMap';
 import { defaultTransportState } from '../../../models/TransportState';
@@ -542,7 +537,11 @@ describe('startPlayheadScheduler', () => {
             engineIncarnation: 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0',
             admittedBatch: ++nativeWire.fence,
         });
-        nativeWire.enabled = true;
+        const bridgeDescriptor = Object.getOwnPropertyDescriptor(window, 'sourdaw');
+        Object.defineProperty(window, 'sourdaw', {
+            configurable: true,
+            value: { invoke: invokeNative } satisfies Pick<SourdawDesktopBridge, 'invoke'>,
+        });
         nativeWire.fence = 0;
         nativeWire.position = 1.9;
         nativeWire.wraps = 0;
@@ -571,6 +570,22 @@ describe('startPlayheadScheduler', () => {
                 sampleRate: 48_000,
             });
             expect(session.outcome).toBe('started');
+            expect(nativeWire.apply).toHaveBeenCalledWith([
+                expect.objectContaining({
+                    schemaVersion: 1,
+                    replaceTopology: true,
+                    timelineLease: 'scheduler-native-lease',
+                    commands: expect.arrayContaining([
+                        { kind: 'set-monitor-shadow', shadowed: false },
+                        { kind: 'set-transport', playing: false, positionSeconds: 0 },
+                        expect.objectContaining({
+                            kind: 'create-track-strip',
+                            trackId: 'native-programme',
+                            contributesAudio: true,
+                        }),
+                    ]),
+                }),
+            ]);
             const poll = () => {
                 for (const frame of frames.values()) {
                     frame(performance.now(), 0);
@@ -616,7 +631,11 @@ describe('startPlayheadScheduler', () => {
                 await audio.stopNativeLiveGraphSession({ positionSeconds: 0 });
             } finally {
                 retained.restore();
-                nativeWire.enabled = false;
+                if (bridgeDescriptor === undefined) {
+                    Reflect.deleteProperty(window, 'sourdaw');
+                } else {
+                    Object.defineProperty(window, 'sourdaw', bridgeDescriptor);
+                }
                 register.mockRestore();
                 unregister.mockRestore();
             }
