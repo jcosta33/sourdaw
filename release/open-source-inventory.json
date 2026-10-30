@@ -1782,7 +1782,7 @@
                 "sha256:2effd9577d9fd64751c0ce26d4c31baa1d827a62b1c47ca18d0c3d4cd84fa43c:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/core.d.ts",
                 "sha256:017b31edb879542d41c7e0d29980385f2d2e5c7f019fd8f78e8997df6f3601af:src/modules/AudioRendering/repositories/audioEncoders/vendor/opus/src/opus.wasm.js",
                 "sha256:4e3ab01320777977abfccaedaf0166a2b1ea49e8adf12831996c570b7461bbe2:release/upstream-proofs/audio-export-codecs/BUILD.md",
-                "sha256:8f7b3ae0ed6eb30831c264aad8eb76b546425af777e6de19df9eba8350fe59cb:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
+                "sha256:95c070480aa027041f59caa2b7b4b989f8c0fbf85195cfd681716de5c2ce7a96:release/upstream-proofs/audio-export-codecs/reproduction-commands.json",
                 "sha256:dff24941db687b3a453063d7647cf4ea67c78a4c651eaceba481615ccb0c1133:release/upstream-proofs/audio-export-codecs/provenance.json",
                 "sha256:f48b3a24ecd3504371633aa117dc312b87fe0874fa5eb31e7ff67bf9633561b4:public/legal/THIRD-PARTY-NOTICES.md",
                 "sha256:c4bd7e21a0acd609df3f850f98a6eb006626a41cea907a0af0232b69e8ee3d6c:release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch",
