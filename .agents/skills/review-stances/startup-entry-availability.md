@@ -66,3 +66,19 @@ The pre-entry navigation controller retains its separate document-reload budget;
 module reattempt must not spend or emulate it. Keep transport initiation unknown unless direct
 lifecycle or network-initiator evidence distinguishes it.
 Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.
+
+### 2026-10-30 — the rendering imports could discard recovery before React existed
+
+PR #5804 (`53af306a8aef69e3e9a91b2d7cde823bfdafa157`) added the independent HTML startup
+surface but removed it as soon as the entry body began. The earlier app-shell marker from
+PR #3408 replaced the root before CSS, React, first paint and notification-bus imports settled.
+A rejected critical import could therefore leave only an empty marker, before App was requested.
+Entry-only and App-only failure probes missed this intermediate loading phase.
+
+Hold a real initial rendering dependency after entry starts, require both the early app-shell
+marker and readable HTML status, then abort it. Require the existing dependency-free manual Reload
+surface, the original error through platform reporting, no React root or App issuance and no
+repeated bootstrap or bus registration. Keep document, URL and retry budget unchanged until the
+user explicitly reloads. The HTML surface remains owned by startup until rendering takes over;
+an entry-start marker or capability emission alone never proves that a usable view replaced it.
+Do not retry the whole rendering phase or import a new failure view from the already failing graph.

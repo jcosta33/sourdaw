@@ -49,6 +49,125 @@ async function seedSavedProject(page: Page): Promise<string> {
     });
 }
 
+test('critical rendering dependency failure retains manual entry recovery in the same document', async ({
+    page,
+}, info) => {
+    await enable_direct_e2e_viewport(page);
+    let releaseCritical = (): void => undefined;
+    const criticalAllowed = new Promise<void>((resolve) => (releaseCritical = resolve));
+    let markCriticalRequested = (): void => undefined;
+    const criticalRequested = new Promise<void>((resolve) => (markCriticalRequested = resolve));
+    const requests = { entry: 0, bootstrap: 0, critical: 0, app: 0 };
+    let navigations = 0;
+    const pageErrors: string[] = [];
+    const requestFailures: string[] = [];
+    page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) {
+            navigations += 1;
+        }
+    });
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('request', (request) => {
+        const path = new URL(request.url()).pathname;
+        if (path === '/src/app/main.tsx') {
+            requests.entry += 1;
+        }
+        if (path === '/src/app/bootstrap.ts') {
+            requests.bootstrap += 1;
+        }
+        if (path === '/src/app/App.tsx') {
+            requests.app += 1;
+        }
+    });
+    page.on('requestfailed', (request) => {
+        if (new URL(request.url()).pathname === '/src/app/registerNotificationEventBus.ts') {
+            requestFailures.push(request.failure()?.errorText ?? 'missing failure reason');
+        }
+    });
+    await page.route(
+        (url) => url.pathname === '/src/app/registerNotificationEventBus.ts',
+        async (route) => {
+            requests.critical += 1;
+            markCriticalRequested();
+            await criticalAllowed;
+            await route.abort('aborted');
+        }
+    );
+    try {
+        const response = await page.goto('/?critical-startup=manual#preserved', { waitUntil: 'commit' });
+        expect(decodeURIComponent(response?.headers()['x-sourdaw-root'] ?? '')).toBe(ROOT);
+        await criticalRequested;
+        expect(requests.critical).toBe(1);
+        await expect(page.getByRole('status', { name: 'Starting Sourdaw' })).toBeVisible();
+        await expect(page.getByTestId('app-shell')).toBeVisible();
+        const identity = await page.evaluateHandle(() => ({
+            document,
+            timeOrigin: performance.timeOrigin,
+            url: location.href,
+        }));
+        releaseCritical();
+
+        const failure = page.getByRole('alert', { name: 'Sourdaw could not start' });
+        await expect(failure).toBeVisible();
+        await expect(
+            failure.getByText('The application did not load. Reload Sourdaw to try starting it again.')
+        ).toBeVisible();
+        await expect(failure.getByRole('button', { name: 'Reload Sourdaw' })).toBeVisible();
+        await expect
+            .poll(() => pageErrors)
+            .toEqual([expect.stringContaining('Failed to fetch dynamically imported module:')]);
+        expect(pageErrors[0]).toContain('/src/app/registerNotificationEventBus.ts');
+        expect(requestFailures).toEqual(['net::ERR_ABORTED']);
+        expect(requests).toEqual({ entry: 1, bootstrap: 1, critical: 1, app: 0 });
+        expect(navigations).toBe(1);
+        const preservation = await identity.evaluate((before) => {
+            const root = document.getElementById('root');
+            if (root === null) {
+                throw new Error('Startup root is absent');
+            }
+            return {
+                document: before.document === document,
+                timeOrigin: before.timeOrigin === performance.timeOrigin,
+                url: before.url === location.href,
+                entryStarted: document.documentElement.hasAttribute('data-sourdaw-entry-started'),
+                // React marks its container when createRoot runs, before the first render.
+                reactRootStarted: Object.getOwnPropertyNames(root).some((key) => key.startsWith('__reactContainer$')),
+                retryBudget: sessionStorage.getItem('sourdaw:entry-load-retry-v1'),
+            };
+        });
+        expect(preservation).toEqual({
+            document: true,
+            timeOrigin: true,
+            url: true,
+            entryStarted: true,
+            reactRootStarted: false,
+            retryBudget: null,
+        });
+        await info.attach('critical-rendering-failure', {
+            body: JSON.stringify({
+                browser: page.context().browser()?.version(),
+                requests,
+                navigations,
+                pageErrors,
+                requestFailures,
+                preservation,
+            }),
+            contentType: 'application/json',
+        });
+
+        const timeOrigin = await page.evaluate(() => performance.timeOrigin);
+        const url = page.url();
+        await failure.getByRole('button', { name: 'Reload Sourdaw' }).click();
+        await expect.poll(() => page.evaluate(() => performance.timeOrigin)).not.toBe(timeOrigin);
+        await expect(failure).toBeVisible();
+        expect(page.url()).toBe(url);
+        expect(navigations).toBe(2);
+        expect(requests).toEqual({ entry: 2, bootstrap: 2, critical: 2, app: 0 });
+    } finally {
+        releaseCritical();
+    }
+});
+
 for (const fault of ['transient', 'permanent', 'evaluation']) {
     test(`${fault} App dependency failure preserves the startup document`, async ({ page }, info) => {
         test.setTimeout(180_000);

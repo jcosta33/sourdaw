@@ -4,7 +4,6 @@ import { resolveAppComposition } from './resolveAppComposition';
 
 // Only a failed entry graph before this boundary is safe to reload automatically.
 document.documentElement.setAttribute('data-sourdaw-entry-started', '');
-document.getElementById('entry-startup')?.remove();
 
 const root = document.getElementById('root')!;
 
@@ -23,6 +22,10 @@ function paintAppShellMarker(container: HTMLElement): void {
     shell.style.width = '100vw';
     shell.style.height = '100vh';
     shell.style.overflow = 'hidden';
+    const startup = container.querySelector('#entry-startup');
+    if (startup !== null) {
+        shell.append(startup);
+    }
     container.replaceChildren(shell);
 }
 
@@ -65,12 +68,19 @@ async function renderApplication(): Promise<void> {
                 });
             });
     });
-    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = await Promise.all([
+    const renderingModules = await Promise.all([
         import('#/styles/main.css'),
         import('react-dom/client'),
         import('./ApplicationFirstPaint'),
         import('./registerNotificationEventBus'),
-    ]);
+    ]).catch((error: unknown) => {
+        window.dispatchEvent(new Event('sourdaw:initial-render-failed'));
+        reportError(error);
+    });
+    if (renderingModules === undefined) {
+        return;
+    }
+    const [, { createRoot }, { ApplicationFirstPaint }, { registerNotificationEventBus }] = renderingModules;
     registerNotificationEventBus();
     const reactRoot = createRoot(root);
     reactRoot.render(<ApplicationFirstPaint />);
