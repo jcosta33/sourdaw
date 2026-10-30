@@ -1,0 +1,122 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 820
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 1757
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  h_beb54bf43b47b7 275-278,280,286,289,292-293
+src/modules/AiRuntime/services/applicationToolReceiptBudget.ts
+  h_beb54bf43b47b7 1-280
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 26,46
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  h_beb54bf43b47b7 64
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  h_beb54bf43b47b7 86
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  h_beb54bf43b47b7 1908
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 146-161,365
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 87,99-100,114-115,167-170,255,391,552-555,707,1011,1492-1495
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  h_beb54bf43b47b7 50
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  h_beb54bf43b47b7 69
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  h_beb54bf43b47b7 474-477
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 33
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 43,64,66
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  h_beb54bf43b47b7 52
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  h_beb54bf43b47b7 12,14-19,39,41,59-69,236,448,541,575,628-631,1155
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  h_beb54bf43b47b7 23-33,179
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 39,58
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 203-218,397
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  h_beb54bf43b47b7 257
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  h_beb54bf43b47b7 12
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  h_beb54bf43b47b7 161-164
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  h_beb54bf43b47b7 204-207,450,624
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  h_beb54bf43b47b7 850
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  h_beb54bf43b47b7 57-67,256
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  h_beb54bf43b47b7 1364-1367
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  h_beb54bf43b47b7 46
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 34,52-53
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  h_beb54bf43b47b7 711-713
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  h_beb54bf43b47b7 39
+src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts
+  h_beb54bf43b47b7 9
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  h_beb54bf43b47b7 9-10
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  h_beb54bf43b47b7 3
+src/modules/AiRuntime/useCases/agentReference/freezeWorkflowNativeLiteralUses.ts
+  h_beb54bf43b47b7 1-71
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  h_beb54bf43b47b7 94-117,175
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  h_beb54bf43b47b7 19
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolvePresetActions.ts
+  h_beb54bf43b47b7 3,7-8
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolveRawPresetActions.ts
+  h_beb54bf43b47b7 1-21
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  h_beb54bf43b47b7 62-69
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  h_beb54bf43b47b7 5
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  h_beb54bf43b47b7 24-73,134
+src/modules/AiRuntime/useCases/createMetricIntentSelectionSchema.ts
+  h_beb54bf43b47b7 1-49
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  h_beb54bf43b47b7 9
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  h_beb54bf43b47b7 11
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  h_beb54bf43b47b7 378,440-489,491
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  h_beb54bf43b47b7 63,65,94,124,127
+src/modules/AiRuntime/useCases/planningProviderSchema.ts
+  h_beb54bf43b47b7 9
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  h_beb54bf43b47b7 14,20
+src/modules/AiRuntime/useCases/prepareWorkflowMetricScopes.ts
+  h_beb54bf43b47b7 1-28
+src/modules/AiRuntime/useCases/projectWorkflowMetricToolSchemas.ts
+  h_beb54bf43b47b7 1-32
+src/modules/AiRuntime/useCases/readNativeLiteralCommandBinding.ts
+  h_beb54bf43b47b7 1-98
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  h_beb54bf43b47b7 298,301,309,312,316,342,353-443,500
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  h_beb54bf43b47b7 3,5-8,28-52,54-67,90-95,97-99,101
+tests/e2e/metricGoalAdmission.spec.ts
+  h_beb54bf43b47b7 12,17-19,150-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "770bf7da09f042d55c0e1bb151372ec85aabd0a7",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
