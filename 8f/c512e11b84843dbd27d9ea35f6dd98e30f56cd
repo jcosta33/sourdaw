@@ -1,0 +1,27 @@
+scripts/openLane.ts
+  s_57fdb7ae7b3ba4::t_1bb7fac52df90c 40-42,463,489-509,513-516,520-521,524,540,547,550,566-581,587,596,611,625-632
+  s_57fdb7ae7b3ba4::t_b111217a964e86 2-3,11-13,34-39,44,46-52,55,149-150,152-155,409,430-432,442-446,464-488,510-512,517-519,522-523,525-539,541-546,548-549,551-565,582-586,588-595,597-610,612-624,633-667
+  s_57fdb7ae7b3ba4::t_d1f7a7a0135ba4 43
+  s_57fdb7ae7b3ba4::t_7a704e53c1ef4d 447-448
+  s_57fdb7ae7b3ba4::t_d46d32723e108c 668
+scripts/__tests__/laneAdoption.spec.ts
+  s_57fdb7ae7b3ba4::t_b111217a964e86 1-507,509-510
+  s_57fdb7ae7b3ba4::t_f85a9e8cde8011 508
+  s_57fdb7ae7b3ba4::t_346346829888c5 511
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fc512e11b84843dbd27d9ea35f6dd98e30f56cd",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
