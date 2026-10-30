@@ -531,10 +531,9 @@ describe('startPlayheadScheduler seam handover', () => {
         for (const [, , volume] of scheduleClickSpy.mock.calls) {
             expect(volume).toBe(0.37);
         }
-        return scheduleClickSpy.mock.calls
-            .map(([time, accent]) => ({ time, accent }))
-            .filter(({ time }) => time <= twoPassesSeconds + 1e-3)
-            .sort((left, right) => left.time - right.time);
+        const clicks = scheduleClickSpy.mock.calls.map(([time, accent]) => ({ time, accent }));
+        const twoPassClicks = clicks.filter(({ time }) => time <= twoPassesSeconds + 1e-3);
+        return twoPassClicks.sort((left, right) => left.time - right.time);
     }
 
     /** The clicks each pass of `[loopStart, loopEnd)` owes, for passes 0, 1 and the opening of 2. */
@@ -558,9 +557,9 @@ describe('startPlayheadScheduler seam handover', () => {
 
     function expectClicks(actual: ExpectedClick[], expected: ExpectedClick[]): void {
         expect(actual.map(({ accent }) => accent)).toEqual(expected.map(({ accent }) => accent));
-        actual.forEach(({ time }, index) => {
+        for (const [index, { time }] of actual.entries()) {
             expect(time, `click ${index}`).toBeCloseTo(expected[index]!.time, 6);
-        });
+        }
     }
 
     // 4/4 from the origin, 3/4 from beat 5.5: bar lines at 0, 4 and 5.5.
