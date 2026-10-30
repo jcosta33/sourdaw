@@ -1385,7 +1385,7 @@ describe('real caller sequential measurement opportunity', () => {
             toolNames: expect.arrayContaining(['command.batch.propose', 'command.batch.decline']),
         });
         expect(final?.[8]).not.toHaveProperty('parallelToolCalls');
-        expect(final?.[9]?.history.flatMap((turn) => turn.receipts)).toContainEqual(
+        expect(final?.[9]?.history.flatMap((turn: HostedTurnHistory[number]) => turn.receipts)).toContainEqual(
             expect.objectContaining({
                 callId: 'measure-recipe',
                 toolName: 'analysis.measure',

@@ -180,6 +180,7 @@ describe('caller-bound measurement receipt sequence', () => {
     function executeResult(call: { name: string }, identity: { callId: string; turn: number }) {
         return {
             commands: null,
+            measuredPreview: null,
             receipt: {
                 schema: 'sourdaw.application-tool-receipt' as const,
                 schemaVersion: 1 as const,
@@ -193,7 +194,7 @@ describe('caller-bound measurement receipt sequence', () => {
                 warnings: [],
                 error: null,
             },
-        };
+        } satisfies Awaited<ReturnType<MeasurementExecutor>>;
     }
 
     function runSequence(
