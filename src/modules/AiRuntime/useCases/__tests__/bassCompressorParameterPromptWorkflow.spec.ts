@@ -143,6 +143,22 @@ async function sendChatMessage(prompt: string): Promise<void> {
     await sendChatMessageWithoutDocumentFlush(prompt);
 }
 
+function assertAdvertisedToolSchema(
+    schema: ReturnType<typeof advertisedAnswerSchema>
+): asserts schema is ReturnType<typeof advertisedAnswerSchema> &
+    import('../../models/ToolDefinitions').ToolSchema['function'] {
+    const parameters = schema.parameters;
+    if (
+        parameters.type !== 'object' ||
+        !isRecord(parameters.properties) ||
+        !Array.isArray(parameters.required) ||
+        !parameters.required.every((entry: unknown) => typeof entry === 'string') ||
+        (parameters.additionalProperties !== undefined && typeof parameters.additionalProperties !== 'boolean')
+    ) {
+        throw new TypeError('Expected the actual advertised object tool schema.');
+    }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -346,6 +362,7 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
         if (phase === 0) {
             const request: unknown = JSON.parse(init.body);
             const schema = advertisedAnswerSchema(request);
+            assertAdvertisedToolSchema(schema);
             const userMessage = getHostedUserMessage(init.body);
             return Promise.resolve(
                 toolCallsResponse(literalMetricIntakeTurn(userMessage, [{ type: 'function', function: schema }]))

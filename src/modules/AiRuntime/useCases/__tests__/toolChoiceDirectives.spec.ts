@@ -708,7 +708,9 @@ describe('caller-bound measurement receipt sequence', () => {
                 const receipt = { ...result.receipt };
                 if (field === 'turn') {
                     receipt.turn = 1;
-                } else receipt[field] = 'foreign';
+                } else {
+                    receipt[field] = 'foreign';
+                }
                 return { ...result, receipt };
             });
             const run = runSequence([[intake], [terminal], [measure]], { execute });

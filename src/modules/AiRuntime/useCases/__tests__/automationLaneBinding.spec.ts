@@ -69,7 +69,6 @@ import { bridgeGroundedLlmToolCalls } from '../agentReference/bridgeGroundedLlmT
 import { materializeBatchLocalActionIdentities } from '../agentReference/materializeBatchLocalActionIdentities';
 import { beginConfirmedCommandExecution } from '../agentRequestOrchestration/beginConfirmedCommandExecution';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
@@ -84,6 +83,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({
     updateDeviceParam: vi.fn(),

@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { logger } from '#/infra/logger/appLogger';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
-import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import {
     commandBatchPreflightPort,
     compileVersionedCommandBatchEnvelope,
     migrateLegacyAppActionToVersionedCommandEnvelope,
     serializeVersionedCommandEnvelope,
 } from '#/modules/Command/useCases';
+import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 
 import {
     clearPendingActionConfirmations,

@@ -58,7 +58,6 @@ import {
 } from '../../stores/pendingActionConfirmationStore';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
@@ -67,6 +66,7 @@ import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 

@@ -272,21 +272,25 @@ function usePendingChatState(state: {
             projectRevision: 'chat-presentation-revision',
         });
     }
-    useStoreMock.mockImplementation((store: unknown) => {
+    function usePendingFixtureStore(store: unknown) {
+        const confirmations = useRealStore(pendingActionConfirmationStore);
+        const capability = useRealStore(capabilityStore);
+        const artifacts = useRealStore(agentSectionRenderArtifactStore);
         if (store === pendingActionConfirmationStore) {
-            return useRealStore(pendingActionConfirmationStore);
+            return confirmations;
         }
         if (store === agentRunStore) {
             return { schemaVersion: 1, runs: [] };
         }
         if (store === capabilityStore) {
-            return useRealStore(capabilityStore);
+            return capability;
         }
         if (store === agentSectionRenderArtifactStore) {
-            return useRealStore(agentSectionRenderArtifactStore);
+            return artifacts;
         }
         return state;
-    });
+    }
+    useStoreMock.mockImplementation(usePendingFixtureStore);
 }
 
 describe('ChatPanel', () => {

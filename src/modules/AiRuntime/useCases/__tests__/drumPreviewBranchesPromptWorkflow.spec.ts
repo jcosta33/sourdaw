@@ -40,6 +40,7 @@ import { defaultTransportState, transportStore } from '#/modules/Transport/store
 import { type AppAction } from '#/utils/handlerContract';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -59,11 +60,10 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
-import { landProjectEdit } from './landProjectEdit';
-import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+import { landProjectEdit } from './landProjectEdit';
 import { nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
-import { type ToolSchema } from '../../models/ToolDefinitions';
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 function drumIntake(userMessage: string, providerView: string | readonly ToolSchema[]) {
     const catalog = readCreativeInterpretationCatalog(userMessage, providerView);

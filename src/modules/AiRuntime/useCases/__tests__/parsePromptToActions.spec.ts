@@ -254,7 +254,7 @@ function createDrumRoutingContext(): ProjectContext {
 
 type CompletePlanOutcome = {
     status: 'complete';
-    toolCalls: Array<{ name: string; arguments: Record<string, unknown> }>;
+    toolCalls: Array<{ id?: string; name: string; arguments: Record<string, unknown> }>;
 };
 
 function scriptedPlan(

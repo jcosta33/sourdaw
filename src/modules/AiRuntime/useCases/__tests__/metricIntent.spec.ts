@@ -7,16 +7,16 @@ import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { createWorkflowCapabilityToolSchema, WORKFLOW_CAPABILITY_IDS } from '../../models/WorkflowCapability';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
+import {
+    admitTurnReadReceipts,
+    boundReceipt,
+    serializeReceiptContext,
+} from '../../services/applicationToolReceiptBudget';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
+import { admitWorkflowMetricIntake } from '../admitWorkflowMetricIntake';
 import { getSidechainRoutingPromptScope } from '../agentReference/getSidechainRoutingPromptScope';
-import {
-    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    runApplicationOwnedToolLoop,
-    boundReceipt,
-    admitTurnReadReceipts,
-    serializeReceiptContext,
-} from '../applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { buildAgentContext } from '../buildAgentContext';
 import { collectMetricGoalProof } from '../collectMetricGoalProof';
 import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
@@ -36,12 +36,9 @@ import { planPromptActions } from '../planPromptActions';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
+import { prepareWorkflowMetricScopes } from '../prepareWorkflowMetricScopes';
 import { projectPlanningProviderToolSchemas } from '../projectPlanningProviderToolSchemas';
-import {
-    admitWorkflowMetricIntake,
-    prepareWorkflowMetricScopes,
-    projectWorkflowMetricToolSchemas,
-} from '../workflowMetricIntake';
+import { projectWorkflowMetricToolSchemas } from '../projectWorkflowMetricToolSchemas';
 
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
@@ -58,6 +55,17 @@ afterEach(() => {
     vi.mocked(generateToolPlanningOutcome).mockReset();
     vi.restoreAllMocks();
 });
+
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
 
 function fixture(prompt = 'Set Lead Vocal gain to 70%', options: { writableLeadVocal?: boolean } = {}) {
     const context = createPlanningProject(getProjectContext(), 3);
@@ -225,12 +233,7 @@ describe('positive whole-request metric intent', () => {
             },
         };
         const admitted = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admitted.status !== 'admitted' ||
-            admitted.kind !== 'creative' ||
-            !('metricAuthority' in admitted) ||
-            admitted.metricAuthority === undefined
-        ) {
+        if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
             throw new Error('Expected admitted bounded metric intent.');
         }
         expect(admitted.metricAuthority.goals).toHaveLength(objective.goals.length);
@@ -442,11 +445,7 @@ describe('bounded metric control admission', () => {
         });
         const call = control(value, 24);
         const admission = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admission.status !== 'admitted' ||
-            admission.kind !== 'creative' ||
-            admission.metricAuthority === undefined
-        ) {
+        if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
             throw new Error('Expected genuine authored metric admission.');
         }
         const data = {
@@ -539,11 +538,7 @@ describe('bounded metric control admission', () => {
                 projectRevision: 'metric-revision',
                 turn: 1,
             });
-            if (
-                admission.status !== 'admitted' ||
-                admission.kind !== 'creative' ||
-                admission.metricAuthority === undefined
-            ) {
+            if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
                 throw new Error('Expected real in-budget admission.');
             }
             const data = {
@@ -577,7 +572,7 @@ describe('bounded metric control admission', () => {
                     }
                     expect(outgoing).toContain('metric-intent');
                     expect(outgoing).not.toContain(range.sectionId);
-                    for (const goal of admission.metricAuthority!.goals) {
+                    for (const goal of admission.metricAuthority.goals) {
                         if (goal.source.kind === 'recipe') {
                             expect(outgoing).not.toContain(goal.source.recipeDigest);
                         }
@@ -630,7 +625,10 @@ describe('bounded metric control admission', () => {
                         toolCalls: [{ name: 'setTrackGain', arguments: { trackId: targetId, gain: 0.7 } }],
                     };
                 }
-                const schema = schemas.find((candidate) => candidate.function.name === 'selectCreativeInterpretation');
+                const schema = schemas.find(
+                    (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        candidate.function.name === 'selectCreativeInterpretation'
+                );
                 if (schema === undefined) {
                     throw new Error('Expected actual published joint intake.');
                 }
@@ -1154,7 +1152,7 @@ describe('workflow selection dispatch preserves the first whole-request intake',
             projectRevision: 'metric-revision',
             turn: 1,
         });
-        if (result.status !== 'admitted' || !('metricAuthority' in result) || result.metricAuthority === undefined) {
+        if (result.status !== 'admitted' || !hasMetricAuthority(result)) {
             throw new Error('Expected actual positive intake.');
         }
         return result.metricAuthority;

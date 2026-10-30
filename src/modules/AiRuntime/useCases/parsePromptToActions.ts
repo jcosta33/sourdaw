@@ -60,8 +60,9 @@ import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 import { admitAnswerInterpretation } from './admitAnswerInterpretation';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
 import { admitPlanningInterpretation } from './admitPlanningInterpretation';
-import { freezeWorkflowNativeLiteralUses } from './agentReference/bridgeBackingVocalPlatePlan';
+import { admitWorkflowMetricIntake } from './admitWorkflowMetricIntake';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
+import { freezeWorkflowNativeLiteralUses } from './agentReference/freezeWorkflowNativeLiteralUses';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
 import { getBassProcessingCopyPromptScope } from './agentReference/getBassProcessingCopyPromptScope';
@@ -90,7 +91,7 @@ import {
     RENDER_REQUEST_TOOL_NAME,
     TRANSFORM_COMPILE_TOOL_NAME,
 } from './agentToolCatalog';
-import { resolveRawPresetActions } from './aiRuntimeQueries/resolvePresetActions';
+import { resolveRawPresetActions } from './aiRuntimeQueries/resolveRawPresetActions';
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { collectMetricGoalProof } from './collectMetricGoalProof';
@@ -120,15 +121,12 @@ import { planLastCommitContinuation } from './planLastCommitContinuation';
 import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from './prepareMetricIntentCatalog';
+import { prepareWorkflowMetricScopes } from './prepareWorkflowMetricScopes';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
 import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
+import { projectWorkflowMetricToolSchemas } from './projectWorkflowMetricToolSchemas';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
-import {
-    admitWorkflowMetricIntake,
-    prepareWorkflowMetricScopes,
-    projectWorkflowMetricToolSchemas,
-} from './workflowMetricIntake';
 
 type ParsePromptToActionsInput = {
     prompt: string;

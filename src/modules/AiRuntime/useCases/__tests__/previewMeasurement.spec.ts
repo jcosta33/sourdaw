@@ -847,7 +847,7 @@ describe('a measured preview through proposal and approval', () => {
     });
 
     // Red when the query branch the planning prompt states (the context cannot resolve the target: the
-    // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
+    // interpretation, project.query plus baseline, discovery, expansion, then a propose adopting the expansion)
     // stops fitting the loop's turns or completing without a rejection.
     it('completes the prompt-stated query branch in the loop turns: query and baseline, discover, expand, then adopt the expansion', async () => {
         projectStore.set({

@@ -47,7 +47,6 @@ import {
     proposePendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { compileAgentRiskApproval } from '../compileAgentRiskApproval';
-import { configuredLiteralMetricState, literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
@@ -62,6 +61,7 @@ import {
     scriptProviderTurns,
     searchCalls,
 } from './highLevelIntentWorkflowFixture';
+import { configuredLiteralMetricState, literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const runtimeMocks = vi.hoisted(() => ({ generateWebLlmCompletion: vi.fn(), updateDeviceParam: vi.fn() }));
 

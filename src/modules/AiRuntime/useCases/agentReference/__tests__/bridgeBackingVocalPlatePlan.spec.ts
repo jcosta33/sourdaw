@@ -6,7 +6,8 @@ import { type ProjectContext } from '../../../models/ProjectContext';
 import { configureMetricGoalProject, resetMetricGoalProject } from '../../__tests__/metricGoalWorkflowFixture';
 import { getProjectContext } from '../../getProjectContext';
 import { materializeActionStateGuards } from '../../materializeActionStateGuards';
-import { bridgeBackingVocalPlatePlan, freezeWorkflowNativeLiteralUses } from '../bridgeBackingVocalPlatePlan';
+import { bridgeBackingVocalPlatePlan } from '../bridgeBackingVocalPlatePlan';
+import { freezeWorkflowNativeLiteralUses } from '../freezeWorkflowNativeLiteralUses';
 import { getBackingVocalPlatePromptScope } from '../getBackingVocalPlatePromptScope';
 import { materializeBatchLocalActionIdentities } from '../materializeBatchLocalActionIdentities';
 

@@ -11,17 +11,13 @@ import { type ProjectContext } from '../models/ProjectContext';
 import { type RetainedCompilation } from '../models/RetainedCompilation';
 import { getCloudProviderRuntime } from '../repositories/cloudLlm/getCloudProviderRuntime';
 import { getLlmEngine } from '../repositories/webLlm/getLlmEngine';
+import { admitTurnReadReceipts, boundReceipt, serializeReceiptContext } from '../services/applicationToolReceiptBudget';
 import { aiBackendPreferenceStore } from '../stores/aiBackendPreferenceStore';
 
 import { agentRunLifecycle } from './agentRunLifecycle';
 import { agentRunWorkLease } from './agentRunWorkLease';
 import { agentWorkBudget } from './agentWorkBudget';
-import {
-    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    admitTurnReadReceipts,
-    boundReceipt,
-    serializeReceiptContext,
-} from './applicationOwnedToolLoop';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS } from './applicationOwnedToolLoop';
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { agentRunCancellation } from './cancelAgentRun';
 import { collectMetricGoalProof } from './collectMetricGoalProof';

@@ -84,7 +84,7 @@ beforeEach(() => {
         tracks: [
             createTrack({ id: 'master', name: 'Master', kind: 'master' }),
             {
-                ...createTrack({ id: 'drums', name: 'Drums', kind: 'audio', gain: 0.8 }),
+                ...createTrack({ id: 'drums', name: 'Drums', kind: 'audio' }),
                 devices: [
                     {
                         id: 'drums-trim',
@@ -96,7 +96,8 @@ beforeEach(() => {
                 ],
             },
             {
-                ...createTrack({ id: 'bass', name: 'Bass', kind: 'audio', gain: 0.4 }),
+                ...createTrack({ id: 'bass', name: 'Bass', kind: 'audio' }),
+                gain: 0.4,
                 devices: [
                     {
                         id: 'bass-trim',
@@ -110,6 +111,8 @@ beforeEach(() => {
         ],
         sections: [{ id: SECTION_ID, name: 'Chorus', startBeat: 0, endBeat: 4, color: '#ffffff' }],
     });
+    expect(trackStore.value?.tracks.find((track) => track.id === 'drums')?.gain).toBe(0.8);
+    expect(trackStore.value?.tracks.find((track) => track.id === 'bass')?.gain).toBe(0.4);
     vi.mocked(generateToolPlanningOutcome).mockReset();
     audio.updateDeviceParam.mockReset();
     audio.renderTrackSubgraphOffline.mockReset();
@@ -161,7 +164,10 @@ describe('actual current-preview comparison approval', () => {
                     targetObjectIds: ['vocals', 'guitar'],
                     dimensions: ['processing'],
                 });
-                const schema = schemas.find((entry) => entry.function.name === base.name);
+                const schema = schemas.find(
+                    (entry: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        entry.function.name === base.name
+                );
                 if (schema === undefined) {
                     throw new TypeError('Expected the actual published joint selector.');
                 }
@@ -246,6 +252,7 @@ describe('actual current-preview comparison approval', () => {
             runId,
             assistantMessageId: runId,
             interactionMode: 'apply',
+            trustCeiling: undefined,
             resume: undefined,
             onResumedPlanAccepted: undefined,
             projectRevision: revision,
@@ -381,6 +388,7 @@ describe('actual current-preview comparison approval', () => {
             runId,
             assistantMessageId: 'literal-numeric-assistant',
             interactionMode: 'apply',
+            trustCeiling: undefined,
             resume: undefined,
             onResumedPlanAccepted: undefined,
             projectRevision: revision,
@@ -541,7 +549,10 @@ describe('actual current-preview comparison approval', () => {
                     targetObjectIds: mode === 'reference-changed' ? ['drums', 'bass'] : ['drums'],
                     dimensions: ['processing'],
                 });
-                const schema = schemas.find((candidate) => candidate.function.name === base.name);
+                const schema = schemas.find(
+                    (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        candidate.function.name === base.name
+                );
                 if (schema === undefined) {
                     throw new Error('Expected actual joint selector.');
                 }
@@ -693,6 +704,7 @@ describe('actual current-preview comparison approval', () => {
             runId: RUN_ID,
             assistantMessageId: 'comparison-assistant',
             interactionMode: 'apply',
+            trustCeiling: undefined,
             resume: undefined,
             onResumedPlanAccepted: undefined,
             projectRevision: revision,
@@ -996,6 +1008,7 @@ describe('actual current-preview comparison approval', () => {
                 runId: refinedRun,
                 assistantMessageId: 'refinement-assistant',
                 interactionMode: 'apply',
+                trustCeiling: undefined,
                 resume: undefined,
                 onResumedPlanAccepted: undefined,
                 projectRevision: revision,
@@ -1476,7 +1489,10 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
                         targetObjectIds: ['drums'],
                         dimensions: ['processing'],
                     });
-                    const schema = schemas.find((candidate) => candidate.function.name === base.name);
+                    const schema = schemas.find(
+                        (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                            candidate.function.name === base.name
+                    );
                     if (schema === undefined) {
                         throw new Error('Missing published joint intake.');
                     }
