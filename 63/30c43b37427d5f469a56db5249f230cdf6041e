@@ -1,0 +1,240 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 400-403,943-960
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-41,800-801,905-941
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 3-16,344-355,514-515,520-523,591-605
+.agents/skills/review-stances/startup-entry-availability.md
+  h_beb54bf43b47b7 3-18,44-100
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-101,516-532,646-659,684-687,2145-2187
+.github/workflows/heavy-gates.yml
+  h_beb54bf43b47b7 30,61
+.github/workflows/nightly.yml
+  h_beb54bf43b47b7 575,611
+.github/workflows/validation.yml
+  h_beb54bf43b47b7 607,640
+AGENTS.md
+  h_beb54bf43b47b7 258-271
+Cargo.lock
+  h_beb54bf43b47b7 2538
+crates/daw-engine/src/audio_thread.rs
+  h_beb54bf43b47b7 58-182,289,300,304-324,365,384,492,633-684,752,797-800,822-823,846-854,873,1067-1069,1074-1079,1103-1105,1262-1266,1505,1519-1520,1532-1539,1565-1567,1588-1593,1596-1599,1606-1610,1613-1615,1640-1642,1663,1675,1742-1751,1773-1774,1807-1809,1846-1848,1859-2085,2118-2600,2891-2892,3044,3413
+crates/daw-engine/src/lib.rs
+  h_beb54bf43b47b7 3-8,164,323,410,418,967-1006,1504-1523,1629,1693-1746,1770,2218-2349
+crates/sourdaw-native/Cargo.toml
+  h_beb54bf43b47b7 76
+crates/sourdaw-native/src/addon/mod.rs
+  h_beb54bf43b47b7 1540-1541,1548-1549,1552-1558,1563-1567
+crates/sourdaw-native/src/commands/crumbs.rs
+  h_beb54bf43b47b7 12-21,35,51-52,87,93,99-102,108,111-112,123-124,127,130-133,139-140,158-174,176-187,194-197,202-206,208,230,257-264,470-474,492-493,495,500-503,544,627,639-640,731-739,741-745,748-768,770,773-862,1041-1043,1468-1567,1574-1585,1589,1593-1669,1672-1680,1684,1688-1703,1705-1991,2004-2731,2733-2791,2794-2802,2811,2816,2823,2826-2829,2835,2986,3026-3027,3029-3032,3035,3216-3217,3230-3243,3256-3259,3508-3509,3558-3559,3665,3668-3669,3677,3680-3687,3689-3705,3707-3718,3720-3737,3742,3744-3749,3751-3752,3754,3756-3765,3767-3771,3816-3818,3820,3880,3898-3901,3909,3922-3923,3925,3927-3928,3930-3931,3935-3942,3944-3949,3951-3954,3956-3975,3977-3978,4073-4082,4171,4241-4242,4244,4246-4251,4253-4254,4256-4259,4262-4263,4265-4266,4330-4341,4358
+crates/sourdaw-native/src/commands/engine_lifecycle.rs
+  h_beb54bf43b47b7 157-167,169,174,192,226,232,863-864,885-887,896
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  h_beb54bf43b47b7 87-88,206-216,383-427,446-448
+crates/sourdaw-native/src/host/native_bridge.rs
+  h_beb54bf43b47b7 1,3,21,28-29,2166,2176-2177,2179,2182-2183,2185-2186,2221-2266,2504,2522,3304-3494,3497,3500-3504,3512-3646,3675,3712,3769-3772,3774-3798,3800-3808,3821,3839-3848
+docs/architecture/agent-release-gates.md
+  h_beb54bf43b47b7 3,9-10,17,51,68,85,119-122,130-131
+electron/__tests__/commands.spec.ts
+  h_beb54bf43b47b7 387,421
+electron/commands.ts
+  h_beb54bf43b47b7 95
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 6,623,816
+package.json
+  h_beb54bf43b47b7 146,182
+patches/vite@8.3.5.patch
+  h_beb54bf43b47b7 1-61
+pnpm-lock.yaml
+  h_beb54bf43b47b7 7-9,112-113,116,122,128,158,220-221,242,245,1280-1281,4848-4849,4853-4854,6669,6671,7485,7492,7674,7679,7735,7744,7748,7888,8247,8250,8252,8265,8273,8280,10480,10482,10484,11220,11229,11309,11324,11327,11338
+pnpm-workspace.yaml
+  h_beb54bf43b47b7 34-39
+public/entryLoadRecovery.js
+  h_beb54bf43b47b7 52-53
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9-10
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,56,64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 169-170,267-268,274-275,282,294,405,1390,1743,1755,1763
+scripts/__tests__/agentCampaignHarness.spec.ts
+  h_beb54bf43b47b7 87-95
+scripts/__tests__/browserAiWebGpuAdmission.spec.ts
+  h_beb54bf43b47b7 7-8,70-81
+scripts/__tests__/e2eDevServer.spec.ts
+  h_beb54bf43b47b7 19-20,27,90-101
+scripts/__tests__/e2eServerIdentityWiring.spec.ts
+  h_beb54bf43b47b7 206,228,252,351-483
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 353,393,1002,1038,2006,2061
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  h_beb54bf43b47b7 65,3250-3251
+scripts/__tests__/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 8-9,14,27,35-36,42,49,75,83-84,98,106-107,121,129-130,145,153-154,169,177-178,210-215,227-237,263-272,315-348,636
+scripts/__tests__/verifyPlaywrightRuntime.spec.ts
+  h_beb54bf43b47b7 8,13,19-20,28,35,43
+scripts/e2eDevServer.ts
+  h_beb54bf43b47b7 19-25
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 186-192,242
+scripts/offlineAudioWorkletTrace.ts
+  h_beb54bf43b47b7 65-74
+scripts/ui-restatement-census.json
+  h_beb54bf43b47b7 18239
+src/app/ApplicationFirstPaint.tsx
+  h_beb54bf43b47b7 3-4,10-18
+src/app/DesktopStartupError.tsx
+  h_beb54bf43b47b7 5,8-11,22
+src/app/__tests__/ApplicationFirstPaint.spec.tsx
+  h_beb54bf43b47b7 1-2,7-16
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 159-160,294-295,523,545-548,808-815
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 62
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 245,284-286,288-293,436-474
+src/app/__tests__/mainRenderBeforeBootstrap.spec.tsx
+  h_beb54bf43b47b7 1-4,7,40,48,54,154-170,176,285-287,304-307,313,328,341-392
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 118,138,258
+src/app/main.tsx
+  h_beb54bf43b47b7 5,25-28,71,76-83,87-99
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 6,18,21-22,31-32,51,180-181,213,424-432,476,499,527-538,542-544,546,548,550-552,557-573,579-580,585,604-627,861-866,868-869,887,891,918-927,1075,1084,1158,1269,1337-1338,1410,1499,1503,1505-1506,1519-1520,1533-1534,1641-1648,1829,2018-2136,2342-2605,2942-3252,3273-3328
+src/modules/AiRuntime/models/AgentAcceptanceOutcome.ts
+  h_beb54bf43b47b7 2,14-15,18,56,90-92,108-110,129-130,151-152,165-166
+src/modules/AiRuntime/services/agentAcceptanceScorer.ts
+  h_beb54bf43b47b7 8-9,14,24-25,43,58,81,102-127,186-192,238-252
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_beb54bf43b47b7 8-9,12,19,102-165,284
+src/modules/Arrangement/presentations/views/TrackHeader.tsx
+  h_beb54bf43b47b7 66-86,135-140,162-164
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 1-3,6-33,35,37,40-41,44,54-55,65-72,85-86,154-169,178,416-436,438-456,458-608,1119-1514
+src/modules/Arrangement/presentations/views/__tests__/TrackHeader.spec.tsx
+  h_beb54bf43b47b7 1,14-15,194-275
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  h_beb54bf43b47b7 216,226-228,231-233,428-435,513-522,525,542-549
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 1,3-7,126-128,130-190
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  h_beb54bf43b47b7 14,22-24,26
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  h_beb54bf43b47b7 8-9,14-22
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  h_beb54bf43b47b7 13-21,26-29,31-32,39-47,72-73,111-113,115-122,124-186
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  h_beb54bf43b47b7 1-709
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 1-479
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 266-271,306,406-413,416,427-436,441,458-460,472-474,537-539,603-605,910-912,982,1153-1167,1170-1177,1180-1187,1189-1206,1213,1215-1235,1237-1244,1246-1252,1262-1264,1280-1282,1295,1299,1348-1359
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  h_beb54bf43b47b7 8-11,73-103,165,176-194
+src/modules/CrdtDocument/useCases/crdtBranching/__tests__/recordingTerminalRealBranches.integration.spec.ts
+  h_beb54bf43b47b7 1-535
+src/modules/CrdtDocument/useCases/createCrdtDoc.ts
+  h_beb54bf43b47b7 1-2,8,14-18
+src/modules/CrdtDocument/useCases/index.ts
+  h_beb54bf43b47b7 63
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/CrdtDocument/useCases/subscribeToActiveRootInstallations.ts
+  h_beb54bf43b47b7 1-8
+src/modules/Crumbs/presentations/views/CrumbsPanel.tsx
+  h_beb54bf43b47b7 7,24,35,94-106,119,250,253,262,264-265,267-268,278,288-292
+src/modules/Crumbs/presentations/views/__tests__/CrumbsPanel.spec.tsx
+  h_beb54bf43b47b7 14,19,49-53,55-58,60-64,73,78-102,131,149-157,163-166,348,352-356,359,363-367,370,373-381,383-385,387-392,394-414,416,419,421-425,427-429,431-434,436-438,440-445
+src/modules/Crumbs/repositories/crumbsBridge/__tests__/recordingLifecycle.spec.ts
+  h_beb54bf43b47b7 1-89
+src/modules/Crumbs/repositories/crumbsBridge/armRecording.ts
+  h_beb54bf43b47b7 3-5,11,13-24,26
+src/modules/Crumbs/repositories/crumbsBridge/getCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Crumbs/repositories/crumbsBridge/onCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-23
+src/modules/Crumbs/repositories/crumbsBridge/stopRecording.ts
+  h_beb54bf43b47b7 3,7-10
+src/modules/Crumbs/stores/crumbsRecordingStore.ts
+  h_beb54bf43b47b7 1-151
+src/modules/Crumbs/useCases/crumbsLifecycle/__tests__/syncCrumbsNativeInstances.spec.ts
+  h_beb54bf43b47b7 248,253
+src/modules/Crumbs/useCases/crumbsLifecycle/syncCrumbsNativeInstances.ts
+  h_beb54bf43b47b7 57,107,124-125,147,172,177-183,192,211-218
+src/modules/Crumbs/useCases/recording/__tests__/armCrumbsRecording.spec.ts
+  h_beb54bf43b47b7 1,4-6,15,20-23,28-31,73-77
+src/modules/Crumbs/useCases/recording/__tests__/recordingLifecycle.spec.ts
+  h_beb54bf43b47b7 1-193
+src/modules/Crumbs/useCases/recording/__tests__/stopCrumbsRecording.spec.ts
+  h_beb54bf43b47b7 1-14,18,21-26,29,31,34,37
+src/modules/Crumbs/useCases/recording/armCrumbsRecording.ts
+  h_beb54bf43b47b7 1-2,4-13,23-39,46-53,58-88
+src/modules/Crumbs/useCases/recording/stopCrumbsRecording.ts
+  h_beb54bf43b47b7 2-9,12-71
+src/modules/Crumbs/useCases/recording/syncCrumbsRecordingState.ts
+  h_beb54bf43b47b7 1-169
+src/modules/ElasticAudio/AGENTS.md
+  h_beb54bf43b47b7 28
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 39,109
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 27-31,65,116-118,134,268,288-307,511,535
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 1,10-17,23-29,41,43,45,62-68,122,125,170,178-280
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/resolveElasticEditorTarget.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  h_beb54bf43b47b7 3-6,12,14,21,24-43,47-78,83-84,86,169-395
+src/modules/ElasticAudio/useCases/elasticAudio/elasticSensitivityDependencies.ts
+  h_beb54bf43b47b7 1-7
+src/modules/ElasticAudio/useCases/elasticAudio/resolveElasticEditorTarget.ts
+  h_beb54bf43b47b7 1-17
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 1-3,6,11-12,16-18,20,22-28,30-40,42-49,51-60,62-64,66-67,69-161
+src/modules/ElasticAudio/useCases/index.ts
+  h_beb54bf43b47b7 13
+src/modules/Levain/presentations/views/__tests__/LevainPanel.spec.tsx
+  h_beb54bf43b47b7 379-390,412-415,430-435
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 89
+src/utils/sourdawCommandArguments.ts
+  h_beb54bf43b47b7 70,104
+tests/e2e/applicationModuleRecovery.spec.ts
+  h_beb54bf43b47b7 1-503
+tests/e2e/browserAiWebGpuAdmission.playwright.config.ts
+  h_beb54bf43b47b7 49-51
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 11
+tests/e2e/e2eHmrDisconnectBoundary.spec.ts
+  h_beb54bf43b47b7 1-205
+tests/e2e/firstPaintDiagnostics.ts
+  h_beb54bf43b47b7 113-149,173,175
+tests/e2e/firstPaintWarmup.ts
+  h_beb54bf43b47b7 9-14,88,104-132,135-147
+tests/e2e/fixtures/hmrDisconnect/App.js
+  h_beb54bf43b47b7 1-3
+tests/e2e/fixtures/hmrDisconnect/entry.js
+  h_beb54bf43b47b7 1-14
+tests/e2e/fixtures/hmrDisconnect/index.html
+  h_beb54bf43b47b7 1-12
+tests/e2e/fixtures/hmrDisconnect/style.css
+  h_beb54bf43b47b7 1-3
+tests/e2e/offlineAudioWorkletTrace.spec.ts
+  h_beb54bf43b47b7 349,428
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6330c43b37427d5f469a56db5249f230cdf6041e",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
