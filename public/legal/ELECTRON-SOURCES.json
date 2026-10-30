@@ -1,22 +1,22 @@
 {
     "schemaVersion": 1,
     "package": "electron",
-    "version": "44.4.5",
-    "specifier": "44.4.5",
-    "integrity": "sha512-SjgoaeYsSWZfJzubgQU7juvuXMTvn6/e1gAHdGFA/yuMbpF+I+skYqIJ6DdXBXHeWbkbpNpmwZCTpiivtlWZSw==",
+    "version": "44.9.1",
+    "specifier": "44.9.1",
+    "integrity": "sha512-x/tECFFDa2OFNjMObFH0EGKWrCnFZPOR1wP2iMIVt0STecGl8FmDXdaiaryY0kf8mtw9kSLP2yK8dfdaWkfDmw==",
     "license": "MIT",
     "repository": "https://github.com/electron/electron",
-    "revision": "694f45852a0f1726cd23bfd379854de489cccb65",
+    "revision": "e02265be96c5e13ae43644ef482b718e1e800499",
     "licenseSha256": "5154e165bd6c2cc0cfbcd8916498c7abab0497923bafcd5cb07673fe8480087d",
     "chromium": {
-        "version": "152.0.7977.130",
+        "version": "152.0.7977.167",
         "repository": "https://chromium.googlesource.com/chromium/src",
-        "revision": "2c592105bbcd9490a9894df48d0fe59b2c512651"
+        "revision": "dd78960ccd8a03a2fe1f629543d27783885b78e9"
     },
     "node": {
-        "version": "v24.21.0",
+        "version": "v24.22.0",
         "repository": "https://github.com/nodejs/node",
-        "revision": "955266bfdd854cd280dffd47548673914484e4c0"
+        "revision": "f14cd3aa7bf9ca8df2cc5b8bb14beb0f335b1d93"
     },
     "ffmpeg": {
         "repository": "https://chromium.googlesource.com/chromium/third_party/ffmpeg",
@@ -27,30 +27,30 @@
         {
             "platform": "darwin",
             "arch": "arm64",
-            "archive": "electron-v44.4.5-darwin-arm64.zip",
-            "sha256": "a212eee63ba2f45fd83bd28f77a3e3313a336ad17a4c25adf617942eef5e0e2c",
-            "noticesSha256": "a62dabd1c6ef1327365b2a3fdffb806222684a746dcb8f4afd1c1f690eba5535"
+            "archive": "electron-v44.9.1-darwin-arm64.zip",
+            "sha256": "ff597552c9c7b0b16c39a7fb93a346ee7148afbd372ebcf0c18415482c49fbea",
+            "noticesSha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
         },
         {
             "platform": "linux",
             "arch": "arm64",
-            "archive": "electron-v44.4.5-linux-arm64.zip",
-            "sha256": "3bf0acab49c4ea3c9283cdb86bf3dd7204bd52a6fba6c8ae51101bdba2adae0e",
-            "noticesSha256": "a62dabd1c6ef1327365b2a3fdffb806222684a746dcb8f4afd1c1f690eba5535"
+            "archive": "electron-v44.9.1-linux-arm64.zip",
+            "sha256": "16e1f8f7993ca45bc3c2594d75da9d0f3bbd66d691f8cc408747e135c49cb1ad",
+            "noticesSha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
         },
         {
             "platform": "linux",
             "arch": "x64",
-            "archive": "electron-v44.4.5-linux-x64.zip",
-            "sha256": "04586a0ec46c3283fbdaef85530f561f71f0b5e136ad0cb9ef63683615609780",
-            "noticesSha256": "a62dabd1c6ef1327365b2a3fdffb806222684a746dcb8f4afd1c1f690eba5535"
+            "archive": "electron-v44.9.1-linux-x64.zip",
+            "sha256": "994bc3664cc3ac55b50c21a58d345cf8322003d37f5439a81801e3267e6145e2",
+            "noticesSha256": "3375e2a9bd7bc631738fde10be6548a76efe8cf5e4b8826b8140ba8b0c4d6353"
         },
         {
             "platform": "win32",
             "arch": "x64",
-            "archive": "electron-v44.4.5-win32-x64.zip",
-            "sha256": "11c395820a5aaa8ebcc0686b476d0ac98a730274ebfbdc8cf5538a7c2815cb5d",
-            "noticesSha256": "7b328b8c7463ac9bfc7dc648c751533517c8441a0b5b21047d6c0b2620e60d70"
+            "archive": "electron-v44.9.1-win32-x64.zip",
+            "sha256": "41bd7900bd42d0f49110a81617876137041fbbf473466920248ddb076349ef91",
+            "noticesSha256": "e6e6b1f9cb0f32235412be113de7716333e88121f9159a0ea0ff3be652021af7"
         }
     ]
 }
