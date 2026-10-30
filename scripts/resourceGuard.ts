@@ -3337,5 +3337,5 @@ export async function main(
 
 const invokedPath = process.argv[1] === undefined ? '' : resolve(process.argv[1]);
 if (invokedPath === fileURLToPath(import.meta.url)) {
-    process.exit(await main());
+    process.exitCode = await main();
 }

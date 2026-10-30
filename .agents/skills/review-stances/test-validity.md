@@ -2025,3 +2025,16 @@ production schema at the processor. Require all six bands and indices -1/0/1/2/3
 unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
 `forwards every band Body choice` must fail. Document/action spies do not prove worklet
 admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — buffered guard output was lost after its emitter returned
+
+Commit `0e20269791debd63c9565aba3ef42de548209d81` introduced the guard CLI's forced exit.
+PR #3057's output checks proved collection and mocked emission, but did not observe delivery to
+an actual pipe after the CLI exited. On POSIX, a large asynchronous write can be cut short by
+`process.exit()` even when the entire child output was buffered.
+
+Probe the real CLI through pipes with output larger than pipe capacity. Require byte-exact first
+and last markers and the complete body for both success and failure, correct output channels and
+exit codes, and prompt exit. Also check the default bounded failure tail and signal cleanup. The
+same cases must lose output if the forced exit returns. Private historical reviewer prompts and
+model tiers are unknown.
