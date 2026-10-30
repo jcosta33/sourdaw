@@ -2081,10 +2081,13 @@ A single-head fixture cannot expose the lost sibling context. A simple no-op che
 a merge created only after both writes cannot expose it either. Build distinct project edits
 on two fixed actors, capture after their merge, retain the individual branches, add a distinct
 checkpoint record to each, and merge those descendants. Compare full project truth excluding only
-`commandBatchIdempotency`, prove no conflicts, and require the matcher to accept; retain project
-edit, edit-then-restore, discarded-history and unresolved-checkpoint-conflict refusals. The public
-confirmation regression must also observe exactly one action, receipt and Undo entry. Replacing
-the dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`commandBatchIdempotency`, and require the matcher to accept; retain project
+edit, edit-then-restore and discarded-history refusals. Do not require the helper fixture's whole
+checkpoint map to be conflict-free: it checks project truth outside that slot, not confirmation's
+conflict admission. In the public confirmation positive case, use non-conflicting checkpoint
+record inserts and observe exactly one action, receipt and Undo entry; separately require actual
+confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing the
+dependency-frontier comparison with the old singleton-versus-merged comparison must make
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
 
 ### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
