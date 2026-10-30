@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFailed } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
@@ -128,24 +128,37 @@ describe('Gluten cumulative disclosure through the real project action', () => {
     });
 
     it('admits five named levels and retains every lower-level control cumulatively', async () => {
+        let tier = 'initial';
+        let phase = 'render';
+        const completedTiers: string[] = [];
+        onTestFailed(() => console.error('Gluten disclosure progress:', { tier, phase, completedTiers }));
         render(<GlutenPanel deviceId="a" />);
+        phase = 'selector';
         const selector = screen.getByRole('group', { name: 'Effect control detail' });
         expect(
             within(selector)
                 .getAllByRole('button')
                 .map((button) => button.textContent)
         ).toEqual(['play', 'shape', 'build', 'route', 'lab']);
-        for (const [level, tier] of ['play', 'shape', 'build', 'route', 'lab'].entries()) {
+        for (const [level, nextTier] of ['play', 'shape', 'build', 'route', 'lab'].entries()) {
+            tier = nextTier;
+            phase = 'select';
             await selectTier(tier);
+            phase = 'knobs';
             expectKnobsThrough(level);
+            phase = 'buttons';
             expectButtonsThrough(level);
+            phase = 'topology';
             if (level >= 1) {
                 expect(screen.getByRole('button', { name: /VCA Bus duty/ })).toBeVisible();
             } else {
                 expect(screen.queryByRole('button', { name: /VCA Bus duty/ })).toBeNull();
             }
+            phase = 'preset';
             expect(screen.getByLabelText('Search Gluten presets')).toBeVisible();
+            phase = 'threshold';
             expect(screen.getByRole('slider', { name: 'Threshold' })).toHaveAttribute('aria-valuenow', '-27');
+            completedTiers.push(tier);
         }
     });
 
