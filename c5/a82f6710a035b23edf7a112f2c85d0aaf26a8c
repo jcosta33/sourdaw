@@ -1,0 +1,16 @@
+src/modules/Gluten/presentations/views/GlutenPanel.tsx
+  h_beb54bf43b47b7 438,460,463
+src/modules/Gluten/presentations/views/__tests__/GlutenDisclosure.integration.spec.tsx
+  h_beb54bf43b47b7 13,152-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5a82f6710a035b23edf7a112f2c85d0aaf26a8c",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
