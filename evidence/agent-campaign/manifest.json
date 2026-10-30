@@ -797,15 +797,15 @@
             "fixtures": [
                 {
                     "path": "evidence/agent-campaign/corpora/development.json",
-                    "digest": "12fa8880f4cbdbc981f497ca3c07841532905e10a9bf0de8ce749d58e3eab06d"
+                    "digest": "046b590136d3fe07052322a1cc75943b6a629a1e8a859c72e3f49ad1a14d6f70"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/fixture-project.json",
-                    "digest": "0a6f07e0f30b603d4b5e54c09eebbc9b5d08bec6708fcce3c9217df2e85f48ec"
+                    "digest": "b5615d7e95539640cae79a2e9277383376ee6b1acc0957c8583ab99f120ebef5"
                 },
                 {
                     "path": "evidence/agent-campaign/corpora/held-out.json",
-                    "digest": "8bc6dee65265c2b2c16b0b0899ece604e1b1be33bed0376850a8ed1832adbaf9"
+                    "digest": "31242f745fb05a6eddac209f48c2bc44dd0d7d504a01f437bfccd604cd56e901"
                 },
                 {
                     "path": "scripts/agent-campaign/run-evidence-gate.ts",
@@ -813,7 +813,7 @@
                 },
                 {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "9791c5fdf95cb8239d2e85686fa536cfc28f3dfdfa92e17bd67c841a11bce63b"
+                    "digest": "68012f27f3fa59068e4a94d40bca3813ccca24873dc21284069f6be3b436c2a1"
                 }
             ]
         },

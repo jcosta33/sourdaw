@@ -46,6 +46,7 @@ import {
     type AgentPromptClass,
     type AgentScoredPromptClass,
 } from '../models/AgentAcceptanceOutcome';
+import { type AgentPlanProposal } from '../models/AgentRun';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
 import {
@@ -71,6 +72,7 @@ import {
     declineCall,
     discoverSearchedCalls,
     isRecord,
+    proposeCall,
     proposeDiscoveredCalls,
     scriptProviderTurns,
     searchCalls,
@@ -172,7 +174,7 @@ const MINIMUM_SEALED_CLASS_CASES = 3;
 type CorpusProviderTurn =
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
-    | { kind: 'propose'; items: Record<string, unknown>[] }
+    | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
     | ProposeCommandsTurn
     | { kind: 'decline'; args: Record<string, unknown> };
 
@@ -401,7 +403,7 @@ function toScriptedTurn(
             return discoverSearchedCalls(turn.names);
         case 'propose': {
             const names = [...new Set(turn.items.map((item) => String(item.name)))];
-            return proposeDiscoveredCalls(turn.items, names);
+            return proposeDiscoveredCalls(turn.items, names, turn.plan);
         }
         case 'propose-commands': {
             const names = [...new Set(turn.commands.map((command) => command.name))];
@@ -1546,6 +1548,34 @@ function assertHeldOutDisjointness(development: Corpus, heldOut: Corpus): void {
     }
 }
 
+describe('scripted proposal plans', () => {
+    it('preserves the original default and forwards an explicit plan unchanged', () => {
+        const items = [{ id: 'item', name: 'setTrackGain', arguments: { gainDb: -3 } }];
+        expect(proposeCall(items)).toEqual({
+            name: 'command.batch.propose',
+            arguments: {
+                plan: {
+                    semantic: { classification: 'complex', uncertainty: [] },
+                    objective: 'Lay out a blues chord progression on a MIDI track this batch creates.',
+                    constraints: ['Leave every object the project already holds unchanged.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: [],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Validate that the notes land inside the clip the batch creates.'],
+                    stoppingConditions: ['Stop if the created clip cannot hold the progression.'],
+                },
+                list: { schemaVersion: 1, items },
+            },
+        });
+        const turn = corpusCase('development', 'AC054-DEV-BULK-1').providerTurns[2];
+        if (turn?.kind !== 'propose' || turn.plan === undefined) {
+            throw new Error('Missing explicit bulk plan');
+        }
+        expect(proposeCall(items, turn.plan).arguments.plan).toBe(turn.plan);
+    });
+});
+
 describe('agent acceptance corpora', () => {
     it('carries unique case ids across both corpora and held-out prompts disjoint from development', () => {
         const allIds = [...corpora.development.cases, ...corpora['held-out'].cases].map((testCase) => testCase.id);
@@ -2317,6 +2347,21 @@ describe('agent acceptance corpora', () => {
             ).toBe(0.27);
             createCrdtDoc('root', original);
         }
+
+        it('counts a restored root installation while scoring a role-selected bulk plan', async () => {
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const testCase = corpusCase('development', 'AC054-DEV-BULK-1');
+                const run = await runCorpusCase(testCase, barrel.log, installKickPanAndRestore);
+                expect(run.result.exactMatch).toBe(true);
+                expect(barrel.log.count()).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
 
         it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
             const testCase = phase === 'follow-up' ? relativeCase : undoCase;
