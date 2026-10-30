@@ -1,0 +1,18 @@
+scripts/__tests__/e2eStartupDiagnostics.spec.ts
+  h_beb54bf43b47b7 11
+scripts/__tests__/fixtures/e2eStartupDiagnostics.ts
+  h_beb54bf43b47b7 70
+scripts/e2eStartupDiagnostics.ts
+  h_beb54bf43b47b7 3,7,52-83,94,121-323,336,338,343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3356b4fef88cd1181d8b66f4eca2cc92bc20b949",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
