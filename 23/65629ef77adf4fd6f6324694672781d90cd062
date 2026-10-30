@@ -1,0 +1,32 @@
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_dde1671ba022b8::t_339097bc450de0 16-28,66-67,69-73,89,112-120
+  s_dde1671ba022b8::t_c7119d6a52cf84 121
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_dde1671ba022b8::t_d803e4f02b45ce 110-113,115-119
+  s_dde1671ba022b8::t_69dc33815d1172 347,374-380,510-630
+src/modules/Transport/useCases/scheduling/resetMetronomeBeat.ts
+  s_dde1671ba022b8::t_d4b2379098e4b2 5-9
+.agents/skills/review-stances/test-validity.md
+  s_dde1671ba022b8::t_278341c44820d2 2229-2237
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_dde1671ba022b8::t_772cbca2fbe48a 307-308,310-316,321-322
+  s_dde1671ba022b8::t_d4c4c8efed8387 259-306,309,317-320,323-324
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_5aeef9c8e3f875 1140-1146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2365629ef77adf4fd6f6324694672781d90cd062",
+  "prompts": {},
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
