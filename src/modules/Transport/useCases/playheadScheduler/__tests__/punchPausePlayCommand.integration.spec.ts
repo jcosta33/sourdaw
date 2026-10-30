@@ -36,8 +36,8 @@ import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { pausePlayback } from '../../transportControls/pausePlayback';
-import { startPlayback } from '../../transportControls/startPlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
+import { startPlayback } from '../../transportControls/startPlayback';
 
 const TRACK_ID = 'track-recording';
 const SESSION_KEY = 'sourdaw-undo-session';
@@ -60,7 +60,9 @@ const mocks = vi.hoisted(() => {
         ),
         stopAudioRecording: vi.fn<() => Promise<void>>(() => {
             const callback = terminals.shift();
-            if (!callback) return Promise.resolve();
+            if (!callback) {
+                return Promise.resolve();
+            }
             return new Promise<void>((resolve) => pending.push({ callback, resolve }));
         }),
         reset(): void {
@@ -72,7 +74,9 @@ const mocks = vi.hoisted(() => {
         },
         release(): void {
             const capture = pending.shift();
-            if (!capture) throw new Error('Expected a held recorder flush');
+            if (!capture) {
+                throw new Error('Expected a held recorder flush');
+            }
             capture.callback({ kind: 'completed', buffer: { duration: 2 } });
             capture.resolve();
         },
@@ -150,7 +154,9 @@ function recordingTrack(kind: 'audio' | 'midi', id = TRACK_ID): Track {
 
 async function tick(expectedCaptures: number): Promise<void> {
     const worker = schedulerSession.worker;
-    if (!worker) throw new Error('Expected a scheduler worker from Play');
+    if (!worker) {
+        throw new Error('Expected a scheduler worker from Play');
+    }
     mocks.audioClock.currentTime += 0.07;
     const now = performance.timeOrigin + performance.now();
     worker.onmessage?.(
@@ -313,13 +319,12 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(full.takes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old, successor]);
         expect(actionHistoryStore.value?.entries).toHaveLength(2);
         const root = getCrdtDoc(DOC_PREFIX_ROOT);
-        if (!root) throw new Error('Expected committed project root');
+        if (!root) {
+            throw new Error('Expected committed project root');
+        }
         const raw = toJS(root);
-        expect(raw.tracks?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old, successor]);
-        expect(raw.tracks?.tracks[0]?.clips.map((clip) => clip.audioBufferId)).toEqual(
-            clips.map((clip) => clip.audioBufferId)
-        );
-        expect(raw.takeLanes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old, successor]);
+        expect(raw.tracks).toEqual({ tracks: full.tracks?.tracks });
+        expect(raw.takeLanes).toEqual(full.takes);
         await undo();
         expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([old]);
         expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([old]);
@@ -351,18 +356,28 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         pausePlayback();
         flushAutomergeStorageWrites();
         const root = getCrdtDoc(DOC_PREFIX_ROOT);
-        if (!root) throw new Error('Expected outgoing project root');
+        if (!root) {
+            throw new Error('Expected outgoing project root');
+        }
         replaceCrdtDoc({ id: DOC_PREFIX_ROOT, doc: cloneAutomergeDoc(root) });
         projectCrdtToStores({ resetProjections: true });
         flushAutomergeStorageWrites();
-        const before = structuredClone(toJS(getCrdtDoc(DOC_PREFIX_ROOT)!));
+        const successorRoot = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!successorRoot) {
+            throw new Error('Expected successor project root');
+        }
+        const before = structuredClone(toJS(successorRoot));
         const beforeProjection = captured();
         mocks.release();
         await vi.waitFor(() =>
             expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('not kept'), 'warning')
         );
         flushAutomergeStorageWrites();
-        expect(toJS(getCrdtDoc(DOC_PREFIX_ROOT)!)).toEqual(before);
+        const after = getCrdtDoc(DOC_PREFIX_ROOT);
+        if (!after) {
+            throw new Error('Expected successor project root after terminal');
+        }
+        expect(toJS(after)).toEqual(before);
         expect(captured()).toEqual(beforeProjection);
         expect(commits()).toBe(0);
     });
