@@ -249,8 +249,9 @@ describe('TrackHeader', () => {
     it.each(['audio', 'folder'] as const)(
         'keeps the current selection when the %s freeze error is activated',
         (kind) => {
+            const baseTrack = kind === 'folder' ? mockFolderTrack : mockTrack;
             const track = {
-                ...(kind === 'folder' ? mockFolderTrack : mockTrack),
+                ...baseTrack,
                 freezeState: { status: 'error' as const, errorMessage: 'Render failed' },
             };
             renderWithTooltip(<TrackHeader track={track} isSelected={false} />);
