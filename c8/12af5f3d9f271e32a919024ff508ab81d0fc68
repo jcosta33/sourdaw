@@ -1,0 +1,43 @@
+src/types/automerge-wasm-url.d.ts
+  s_59e31a5c6f3e31::t_8d4b51fc76f8e7 1-4
+src/app/__tests__/prospectiveMutationWorkerAssets.spec.ts
+  s_59e31a5c6f3e31::t_ba873fb8cbb40e 26-28,59-61,71-73,79-81,86-88,97-102,132-134,141-143,168-170,210-212,266-268,303-305
+  s_59e31a5c6f3e31::t_81fb31dfd48eed 114,145,157,213-218
+  s_59e31a5c6f3e31::t_8d4b51fc76f8e7 164,199-201
+src/modules/CrdtDocument/workers/prospectiveMutationWorker.ts
+  s_59e31a5c6f3e31::t_8d4b51fc76f8e7 2
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_bd25bc03ed92e3 77-78,81,88-89,91-95,97-111,126,148-149,263-264,346-349,351-356,371
+  s_59e31a5c6f3e31::t_29d786df04a383 90,112-125,127-147
+  s_59e31a5c6f3e31::t_6ae57c093b8c1d 96,345,350
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_59e31a5c6f3e31::t_49362deaa0b3c0 26,143-145,215-217,259-261,429-431,437-439,447-449,463-465,472-474,484-486,512-514,526-528,535-537,548-550,553-555,633-647,649-651,657,664-665,667,682-684,739-741,746-748,762-764,787,789-793,796-801,827-828,836,840,850,858,862,876,880,894,896,900,903,967-969,971-973,976-978,987-989
+  s_59e31a5c6f3e31::t_81fb31dfd48eed 281-286,306-307,811-821,935-941
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  s_59e31a5c6f3e31::t_49362deaa0b3c0 35,623-656
+  s_59e31a5c6f3e31::t_7be40e3f1631d0 620-622,657
+src/modules/CrdtDocument/workers/prospectiveMutationWorkerRuntime.ts
+  s_59e31a5c6f3e31::t_7be40e3f1631d0 19-24
+vite.config.ts
+  s_59e31a5c6f3e31::t_8d4b51fc76f8e7 143-146
+src/infra/store/storage/applyCanonicalStorageSlotMutation.ts
+  s_59e31a5c6f3e31::t_7be40e3f1631d0 18-21
+src/modules/CrdtDocument/workers/__tests__/prospectiveMutationWorkerRuntime.spec.ts
+  s_59e31a5c6f3e31::t_81fb31dfd48eed 123-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c812af5f3d9f271e32a919024ff508ab81d0fc68",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
