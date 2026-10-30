@@ -1,22 +1,23 @@
 # Lesson library: project integrity
 
-## 2026-10-30 — optimistic history eviction outlived an aborted transaction
+## 2026-10-30 — a rejected bundle merge still owns its installed prefix (#5887)
 
-The replay observer introduced by #229 (`490b39269a`) consumes ordinary store notifications.
-The supported abort path arrived in #576 (`ecd24df665`), with later projection settlement in
-#4082 (`dcb995a672`). Static history establishes these components, not an executed historical
-reproduction or a single introducing PR. On current main, a real history trim notified that
-observer before publication: abort restored the metadata, but its inverse authority was gone.
-Historical private review prompts and tiers are unknown.
+The synchronous merge loop in `0a6c596db4b9bddafab3e63a79b9e3845077d2e4` and the worker
+installation loop added by `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` notified projections
+only after the whole loop succeeded. The GitHub commit/pulls lookup returned no associated PR for
+either commit; historical review prompts, stances and tiers are not established. PR #5880 exposed
+partial installation through root observers while preserving the existing omission from ordinary
+change listeners. A root observer proving the installed value does not prove the project stores
+received it.
 
-Fill the real bounded history while retaining its oldest replay capability. Stage single and
-multi-entry metadata through the public storage transaction, then abort or refuse publication.
-Require exact raw/projected restoration and actual replay of that oldest entry. Reconcile
-authority from committed history and root installation, preserving optimistic UI visibility.
-Keep successful eviction, same-content empty clear followed by ID re-add, unrelated root commits
-before a new metadata row flushes, changed fingerprints, consumed/claimed inverses and root reset
-as independent controls. Never reconstruct authority from restored metadata or use elapsed time
-as a publication signal.
+Fail a later decode after an earlier root is actually installed, on both the worker-result and
+synchronous fallback routes. At the caller's rejection boundary, require raw durable fields and
+the real owning stores behind `setupProjectionBridge` to agree, with one bulk notification after
+root-installation bookkeeping and the original error preserved. Cover a branch-only prefix and
+failure before any installation; only the former publishes. Keep stale and cancelled results
+uninstalled, private preview edits isolated, and a later successful merge coherent. Removing
+either failure-path publication must fail its real-store case; checking only repository values
+or root-observer calls misses the split.
 
 ## 2026-10-30 — an installed root swap escaped the acceptance state oracle (#5649)
 
@@ -796,6 +797,8 @@ The scheduler audio terminal originated in `4f410257b212` (no associated PR), ga
 
 Capture the opening root for every audio terminal. With the real commit and command executor, hold an active snapshot transaction without reserving root, observe the real unresolved action wait, publicly replace/project a clone carrying the same provisional clip ID, then release. Neither raw/projected clips, takes, durable action history, undo stacks/tree nor the actual session mirror may change; the notice must report refusal. Pair real same-root completed takes and remove only the post-wait guard to require failure. Separately replace before queued invocation with nontrivial staged passes: no pre-dispatch placement may reach the successor. A false execution guard must have a caller-visible refusal rather than silently resolving as success.
 
+For the PR #4564 manual-terminal escape (#5289; fenced by PR #5373), preserve the current branch contract in the test: switch awaits Stop before replacing the root, while fork snapshots and replaces it before the old recorder terminal settles. Use the actual branch use cases, real Command/CRDT projection and branch-state commit. Observe outgoing commit at the switch's real replacement and read its actual backing snapshot; after a real fork, compare raw root, projected clips/takes, durable action history, Undo stacks/tree and the actual session mirror before and after stale success and stale failure. The fork's legitimate copied provisional clip is part of its baseline, not a ghost to delete. A same-owner PCM/Undo/Redo control and an always-true captured-root mutation must distinguish retained ownership from a disconnected callback fixture. Immediate Stop mocks or direct root replacement do not prove these branch routes.
+
 ## Legacy inverse refusal must reach the history consumer
 
 The pre-#5578 trim handler records inverses without an offset capture. The current handler
@@ -899,6 +902,24 @@ untouched Undo snapshot again before consuming a no-publication result. Exercise
 and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
 discard, original-reference restoration and request cancellation. This fence applies only
 before publication: a real committed inverse remains committed truth.
+
+## 2026-10-30 — optimistic history eviction outlived an aborted transaction
+
+The replay observer introduced by #229 (`490b39269a`) consumes ordinary store notifications.
+The supported abort path arrived in #576 (`ecd24df665`), with later projection settlement in
+#4082 (`dcb995a672`). Static history establishes these components, not an executed historical
+reproduction or a single introducing PR. On current main, a real history trim notified that
+observer before publication: abort restored the metadata, but its inverse authority was gone.
+Historical private review prompts and tiers are unknown.
+
+Fill the real bounded history while retaining its oldest replay capability. Stage single and
+multi-entry metadata through the public storage transaction, then abort or refuse publication.
+Require exact raw/projected restoration and actual replay of that oldest entry. Reconcile
+authority from committed history and root installation, preserving optimistic UI visibility.
+Keep successful eviction, same-content empty clear followed by ID re-add, unrelated root commits
+before a new metadata row flushes, changed fingerprints, consumed/claimed inverses and root reset
+as independent controls. Never reconstruct authority from restored metadata or use elapsed time
+as a publication signal.
 
 ## 2026-10-30 — startup retry must preserve the initialized project and its history
 

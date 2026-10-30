@@ -1,21 +1,25 @@
 # Lesson library: test and evidence validity
 
-### 2026-10-30 — metadata restoration did not prove retained replay authority
+### 2026-10-30 — a timed-out integration case kept running under its successor's fixture (#5899)
 
-The #229 observer (`490b39269a`), #576 abort path (`ecd24df665`) and later #4082 projection
-settlement (`dcb995a672`) compose a boundary absent from the original observer and transaction
-fixtures. This is a qualified static history trace; historical versions were not executed and
-private review prompts and tiers are unknown. A current-main production-observer fixture restores
-every metadata row on abort while both replay status and actual inverse execution remain unavailable.
+PR #5899's real project-store partial-merge spec loaded the projection graph inside each test and
+used one mutable cleanup slot with per-case global Worker and module mocks. An independent run
+timed out the worker-prefix case; its later stack reached a Worker constructor from the next case.
+The exact await that crossed the deadline is unproven. A timeout reports failure but does not by
+itself settle the old async body or give its cleanup ownership of the next case's globals.
 
-Use the actual bootstrap publication subscriber, real metadata producers, a full history and a
-live oldest inverse. Observe the pending trim with unchanged durable truth, then require exact
-restoration plus successful `revertAction` after abort and pre-publication failure. A metadata-only
-assertion cannot catch lost authority. Separately require successful publication to evict, a new
-unflushed capability to survive unrelated commits, and an equal-content empty clear to fence ID
-re-add. Replacing publication observation with the visible-store subscriber must fail the rollback
-cases; removing map/list identity from dedupe must fail the same-empty-clear case. Run such probes
-only on committed work and keep root replacement, consumed and claimed capability controls strict.
+Preload the cold graph in a bounded suite hook. Keep each case's setup, assertions and captured
+cleanup under one lease until its async body settles, and refuse the next case before it touches
+Worker, module mocks or the storage port while that lease remains active. Revoke late assertions
+when Vitest reports failure. Probe the actual fixture with a real Vitest deadline while holding
+both setup and body in turn: require the actual timeout error before expected-failure inversion,
+the successor to be refused without changing globals, the expired case to make no later assertion,
+and a fresh setup to work only after the first case drains. Observe real repository project creation
+and project-store writes across the held await, with call counts captured at the gate and after the
+old body drains. The body control must first prove
+setup occurred; the setup control must prove none occurs after the deadline. Removing only the
+post-await guard must fail this oracle. An arbitrary expected failure is not the deadline probe.
+A helper-only test cannot prove the real integration cases use this boundary.
 
 ### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
 
@@ -31,6 +35,8 @@ write. Removing the root-installation producer must fail the probe, while author
 prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
 capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
 cleanups. A self-check that calls only the comparator does not observe the missing producer.
+For rejected partial merges, use the complementary real-store probe in `project-integrity.md`:
+the root-installation scorer alone cannot detect a stale projected store.
 
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
@@ -2010,6 +2016,23 @@ and AI metadata together after completion. A same-lineage edit retaining the exa
 snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
 Pair it with clear-only and original-reference restore, normal no-op consumption and caller
 cancellation. Await the observation and completion, never a chosen number of microtasks.
+
+### 2026-10-30 — metadata restoration did not prove retained replay authority
+
+The #229 observer (`490b39269a`), #576 abort path (`ecd24df665`) and later #4082 projection
+settlement (`dcb995a672`) compose a boundary absent from the original observer and transaction
+fixtures. This is a qualified static history trace; historical versions were not executed and
+private review prompts and tiers are unknown. A current-main production-observer fixture restores
+every metadata row on abort while both replay status and actual inverse execution remain unavailable.
+
+Use the actual bootstrap publication subscriber, real metadata producers, a full history and a
+live oldest inverse. Observe the pending trim with unchanged durable truth, then require exact
+restoration plus successful `revertAction` after abort and pre-publication failure. A metadata-only
+assertion cannot catch lost authority. Separately require successful publication to evict, a new
+unflushed capability to survive unrelated commits, and an equal-content empty clear to fence ID
+re-add. Replacing publication observation with the visible-store subscriber must fail the rollback
+cases; removing map/list identity from dedupe must fail the same-empty-clear case. Run such probes
+only on committed work and keep root replacement, consumed and claimed capability controls strict.
 
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
