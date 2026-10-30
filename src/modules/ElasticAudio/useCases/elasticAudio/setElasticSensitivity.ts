@@ -74,7 +74,9 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
         );
     };
     const invalidate = (): void => {
-        if (!matches()) invalidated = true;
+        if (!matches()) {
+            invalidated = true;
+        }
     };
     const subscriptions = [
         elasticAudioStore.subscribe(invalidate),
@@ -83,9 +85,13 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
     ];
     let disposed = false;
     const dispose = (): void => {
-        if (disposed) return;
+        if (disposed) {
+            return;
+        }
         disposed = true;
-        for (const unsubscribe of subscriptions) unsubscribe();
+        for (const unsubscribe of subscriptions) {
+            unsubscribe();
+        }
     };
     updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
     if (validSource) {
@@ -95,9 +101,13 @@ export function setElasticSensitivity(sensitivity: number): Promise<void> {
         completion,
         dispose,
         timer: setTimeout(() => {
-            if (pending === scheduled) pending = undefined;
+            if (pending === scheduled) {
+                pending = undefined;
+            }
             try {
-                if (!validSource || !target.clipId || invalidated || !matches()) return;
+                if (!validSource || !target.clipId || invalidated || !matches()) {
+                    return;
+                }
                 const currentSensitivity =
                     preferencesStore.value?.elasticTransientSensitivity ??
                     defaultPreferences.elasticTransientSensitivity;
