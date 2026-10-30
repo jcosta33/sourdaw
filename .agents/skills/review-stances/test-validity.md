@@ -2074,3 +2074,27 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
+
+A single-head fixture cannot expose the lost sibling context. A simple no-op checkpoint write or
+a merge created only after both writes cannot expose it either. Build distinct project edits
+on two fixed actors, capture after their merge, retain the individual branches, add a distinct
+checkpoint record to each, and merge those descendants. Compare full project truth excluding only
+`commandBatchIdempotency`, prove no conflicts, and require the matcher to accept; retain project
+edit, edit-then-restore, discarded-history and unresolved-checkpoint-conflict refusals. The public
+confirmation regression must also observe exactly one action, receipt and Undo entry. Replacing
+the dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
+
+### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
+
+An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
+consumes only the intended entry, and leaves project state untouched. Use the real agent mixer batch,
+Command history and track projection: commit the guarded solo, change it with a plain-click exclusive
+solo, then Undo. Require `headConsumed`, unchanged root/revision/projection for the target-equal
+inverse, and a following Undo that reaches the older entry. Exercise target-equal Redo and a mixed
+batch containing a valid send inverse; separately retain changed-target, missing-track, and manual
+solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
+validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
+mock-only solo handler case is not this proof.

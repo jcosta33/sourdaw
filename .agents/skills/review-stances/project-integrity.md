@@ -895,3 +895,24 @@ then require unchanged project identity, exact raw and projected owners, full-ch
 durable witness-bound history, and successful Undo/Redo after recovery. Confirm a changed
 `performance.timeOrigin`; a same-URL fragment navigation is not a new document. Playback controls
 and mirror existence alone are insufficient.
+
+### 2026-10-30 — checkpoint descendants lost the captured sibling frontier (#5681)
+
+The root checkpoint-equivalence helper originated in PR #3175. Its first form compared each
+descendant's single-head projection with the captured merged projection. After approval captured
+two concurrent root heads, either branch therefore appeared changed when it advanced only
+`commandBatchIdempotency`, because its isolated view omitted the sibling's project truth. This
+pre-existing rejection was recorded while reviewing PR #5677; PR #5716 fixed it by comparing
+each new change with the projection at that change's own dependency frontier. The historical
+review prompt, stance and tier for this specific failure are not established.
+
+Capture two fixed-actor branches with distinct real project edits, merge them, and retain both
+branch documents. Add checkpoint-only records independently to each retained branch, merge the
+descendants, and require the root frontier to remain two-headed, conflict-free, and equal to the
+captured project truth after excluding only `commandBatchIdempotency`. The matcher must accept
+this forward history. Keep a real project edit, edit-then-restore, discarded history, and an
+unresolved checkpoint conflict as refusal controls. Drive the public confirmation path as well:
+the original proposal executes once, stores its receipt and one Undo entry, and Undo restores the
+previous value. Reverting the dependency-frontier comparison to compare each singleton descendant
+with the merged capture must fail the focused regression in
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts`.
