@@ -53,16 +53,18 @@ export function getTimelineRulerGrid({
     return starts.map((startBeat, index) => {
         const meter = getTimeSignatureSegmentAtBeat(changes, startBeat, defaultNumerator, defaultDenominator);
         const endBeat = starts[index + 1] ?? toBeat;
-        while (points[pointIndex] && points[pointIndex].beat < startBeat) {
+        let point = points[pointIndex];
+        while (point && point.beat < startBeat) {
             pointIndex += 1;
+            point = points[pointIndex];
         }
         const ticks = [];
-        while (points[pointIndex] && points[pointIndex].beat < endBeat) {
-            const point = points[pointIndex];
+        while (point && point.beat < endBeat) {
             if (point.position.beat > 1) {
                 ticks.push({ beat: point.beat, index: point.position.beat - 1 });
             }
             pointIndex += 1;
+            point = points[pointIndex];
         }
         return {
             startBeat,
