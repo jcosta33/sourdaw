@@ -1,0 +1,24 @@
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  s_59e31a5c6f3e31::t_dc8a2adb355812 1,739-796
+  s_59e31a5c6f3e31::t_02ad7a79f0f13b 797-798
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.offThreadMaterialization.spec.ts
+  s_59e31a5c6f3e31::t_e84d156cc63787 105,113-116,120,216-233,235-253
+  s_59e31a5c6f3e31::t_dc8a2adb355812 234
+  s_59e31a5c6f3e31::t_465308077088dc 254-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e2bc12803d0657b89008826673d4c0b2158ae0b0",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
