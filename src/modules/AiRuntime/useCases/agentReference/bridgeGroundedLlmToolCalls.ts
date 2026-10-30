@@ -7073,7 +7073,7 @@ function reachesOutsideWorkflowSubjects(
         return false;
     }
     const references: unknown[] = (getExecutableAppActionGroundingRules(action.type)?.targetRules ?? []).flatMap(
-        (rule) => {
+        (rule): readonly unknown[] => {
             const value = payload[rule.argument];
             return Array.isArray(value) ? value : [value];
         }

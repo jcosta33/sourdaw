@@ -812,8 +812,12 @@
                     "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
                 },
                 {
+                    "path": "src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts",
+                    "digest": "7f4773abe87c3038d285386dd973f6fbeab326581fbdb226171a2330b30f60ca"
+                },
+                {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "954756447e3d32c3d551393c76b1a29ff675fc8ae97039e5b69a0ef86fe5974f"
+                    "digest": "4d5976e44e07d98542ecd0e99c24443bf3a61762829a577334144a62340b19cd"
                 }
             ]
         },
