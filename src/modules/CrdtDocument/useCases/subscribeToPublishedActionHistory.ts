@@ -20,7 +20,7 @@ export function subscribeToPublishedActionHistory({
     const publish = (): void => {
         const document = automergeRepository.getDoc<{ actionHistory?: unknown }>(DOC_PREFIX_ROOT);
         const history = document?.actionHistory;
-        const rawEntries =
+        const rawEntries: unknown =
             history !== null && typeof history === 'object' ? Reflect.get(history, 'entries') : undefined;
         const { entries } = sanitize_action_history_state(history);
         // A same-content clear replaces CRDT objects. Content alone would miss
