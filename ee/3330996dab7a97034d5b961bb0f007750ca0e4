@@ -1,0 +1,91 @@
+src/modules/Transport/useCases/index.ts
+  s_59e31a5c6f3e31::t_416bf671034c43 79
+src/modules/Transport/useCases/transportQueries/getTimelineRulerGrid.ts
+  s_59e31a5c6f3e31::t_416bf671034c43 1-6,8-42,46-50,53-55,69-72
+  s_59e31a5c6f3e31::t_114a66f995aea0 73-74
+  h_beb54bf43b47b7 7
+  s_59e31a5c6f3e31::t_fef54b5461c1e1 43-45
+  s_59e31a5c6f3e31::t_4bffbc68366cef 51-52,58,60-61,63-66,68,75
+  s_59e31a5c6f3e31::t_1ce13c72fc6409 56-57,59,62,67
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.meterMap.integration.spec.tsx
+  s_59e31a5c6f3e31::t_218160cc48b18a 21-26,40-41,45-47,53-55,57-58,90,180-208,234-288,291
+  s_59e31a5c6f3e31::t_f9a391aed7ba49 1-20,27-39,42-44,48-52,56,59-89,91-125,127-142,144-179,289-290
+  s_59e31a5c6f3e31::t_ae727968144ce9 126,143
+  s_59e31a5c6f3e31::t_9dc536ab38e03f 292-294
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 228-231
+  s_59e31a5c6f3e31::t_679ffe1416623c 209-227
+  s_59e31a5c6f3e31::t_3f493076c1d70e 232-233
+src/modules/Transport/useCases/transportQueries/__tests__/getTimelineRulerGrid.spec.ts
+  s_59e31a5c6f3e31::t_6969d009db6484 1-15,29-90
+  s_59e31a5c6f3e31::t_601c0e4a5f1965 91-93
+  s_59e31a5c6f3e31::t_936d1d88de62bc 121-151,157
+  s_59e31a5c6f3e31::t_dd4995f1a46b87 152-156
+  s_59e31a5c6f3e31::t_46f9c43b06849b 158
+  s_59e31a5c6f3e31::t_679ffe1416623c 16-26
+  s_59e31a5c6f3e31::t_8912013f3d81e9 27-28
+.agents/skills/review-stances/correctness.md
+  s_59e31a5c6f3e31::t_bf2f30a5590856 996-1015
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_bf2f30a5590856 2251-2269
+  s_dde1671ba022b8::t_278341c44820d2 2281,2315-2322
+  s_dde1671ba022b8::t_42c593a419bfe0 520-535,2282-2314
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_59e31a5c6f3e31::t_679ffe1416623c 205-207,216
+  s_59e31a5c6f3e31::t_17335ef4161e08 217-266,273-282,287,292-296
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 208-215,267-272,283-286,288-291
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_59e31a5c6f3e31::t_e7ab626df1cf84 146-148,159-161,166-167,169-171,174-178,184-186,188-191
+  s_59e31a5c6f3e31::t_4a0f7fe0613566 151,162-165,187,192-193
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_59e31a5c6f3e31::t_679ffe1416623c 56-74
+  s_dde1671ba022b8::t_772cbca2fbe48a 307-308,310-316,321-322
+  s_dde1671ba022b8::t_d4c4c8efed8387 259-306,309,317-320,323-324
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_dde1671ba022b8::t_339097bc450de0 16-28,66-67,69-73,89,112-120
+  s_dde1671ba022b8::t_c7119d6a52cf84 121
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_dde1671ba022b8::t_d803e4f02b45ce 110-113,115-119
+  s_dde1671ba022b8::t_69dc33815d1172 347,374-380,510-533,537-559,561,563-629
+  s_55244eb93b97d1::t_1ff46672574727 534-536,560,562
+src/modules/Transport/useCases/scheduling/resetMetronomeBeat.ts
+  s_dde1671ba022b8::t_d4b2379098e4b2 5-9
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_dde1671ba022b8::t_5aeef9c8e3f875 1140-1146
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ee3330996dab7a97034d5b961bb0f007750ca0e4",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
