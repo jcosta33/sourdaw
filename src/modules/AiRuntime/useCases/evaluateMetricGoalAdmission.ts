@@ -1,5 +1,5 @@
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
-import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import { getExecutableAppActionEffect, parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { type MeasuredPreview } from '../models/MeasuredPreview';
@@ -7,6 +7,7 @@ import { type MetricGoalEvaluation, type MetricGoalProof } from '../models/Metri
 
 import { bindMetricGoalsToBatch } from './bindMetricGoalsToBatch';
 import { digestCommandBatchContent } from './digestCommandBatchContent';
+import { unaccountedNumericRefusal } from './evaluateRequestNumericLiterals';
 import { type MetricGoal, type MetricGoalState } from './metricGoalContractTypes';
 import { objectiveMetricProjection } from './objectiveMetricProjection';
 
@@ -26,6 +27,33 @@ type ObservableMetric = Pick<MetricGoal, 'band'> & {
     metricId: NonNullable<MetricGoal['metricId']>;
     range: NonNullable<MetricGoal['range']>;
 };
+
+function nonAcousticScopeRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
+    if (!state.authorities.some((authority) => authority.kind === 'non-acoustic')) {
+        return null;
+    }
+    const invalidAuthority = state.authorities.some(
+        (authority) =>
+            authority.kind === 'non-acoustic' &&
+            (authority.creativeAuthority === null || authority.creativeAuthority.editDimensions.includes('processing'))
+    );
+    const acousticEffect = envelope.commands.some((command) => {
+        const effect = getExecutableAppActionEffect(command.operation);
+        return (
+            effect === null ||
+            effect.dimensions.some((dimension) =>
+                ['processing', 'clip-audio', 'master', 'monitoring'].includes(dimension)
+            )
+        );
+    });
+    if (invalidAuthority || acousticEffect) {
+        return {
+            failure: 'missing',
+            reason: 'A non-acoustic creative intake cannot exempt an acoustic processing plan from measured goals.',
+        };
+    }
+    return null;
+}
 
 function blocked(criteria: Criterion[], refusal: Refusal): MetricGoalEvaluation {
     return { status: 'blocked', ...refusal, criteria };
@@ -170,6 +198,9 @@ function scopeContains(
         return id === 'master' && kind === 'master' && preview.targets.length === 1;
     }
     const scope = preview.scope;
+    if (scope.kind !== 'tracks' && scope.kind !== 'buses') {
+        return false;
+    }
     return (
         scope.ids.includes(id) &&
         scope.ids.length === preview.targets.length &&
@@ -231,9 +262,10 @@ function proofFigure(
         return null;
     }
     const target = compatibleProofTarget(preview, provenance, targetId);
-    return target === null
-        ? null
-        : objectiveMetricProjection(metric.metricId, target[side][metric.metricId], metric.band);
+    if (target === null) {
+        return null;
+    }
+    return objectiveMetricProjection(metric.metricId, target[side][metric.metricId], metric.band);
 }
 
 function observation(
@@ -306,7 +338,7 @@ function goalReferences(
         reference.push(figure.value);
     }
     if (
-        goal.referenceTargetIds.length !== 0 &&
+        goal.referenceTargetIds.length > 0 &&
         goal.referenceTargetIds.length !== 1 &&
         goal.referenceTargetIds.length !== goal.targetIds.length
     ) {
@@ -376,10 +408,12 @@ function evaluateCriterion(
     context: ObservationContext
 ): { criterion: Criterion; failure: Failure | null } {
     const { binding } = context;
-    const prefix =
-        goal.stepId === 'overall'
-            ? { stepId: 'overall', before: null, after: binding.contentHash }
-            : binding.prefixes.find((entry) => entry.stepId === goal.stepId);
+    let prefix: Binding['prefixes'][number] | undefined = binding.prefixes.find(
+        (entry) => entry.stepId === goal.stepId
+    );
+    if (goal.stepId === 'overall') {
+        prefix = { stepId: 'overall', before: null, after: binding.contentHash };
+    }
     let values: {
         baseline: number[];
         observed: number[];
@@ -433,7 +467,20 @@ export function evaluateMetricGoalAdmission(input: AdmissionInput): MetricGoalEv
         return blocked(criteria, bound.refusal);
     }
     const binding = bound.binding;
-    if (state.authorities.every((authority) => authority.kind === 'literal' && authority.goals.length === 0)) {
+    const unaccounted = unaccountedNumericRefusal(state, parsed.envelope);
+    if (unaccounted !== null) {
+        return blocked(criteria, unaccounted);
+    }
+    const nonAcousticScope = nonAcousticScopeRefusal(state, parsed.envelope);
+    if (nonAcousticScope !== null) {
+        return blocked(criteria, nonAcousticScope);
+    }
+    if (
+        state.authorities.every(
+            (authority) =>
+                (authority.kind === 'literal' || authority.kind === 'non-acoustic') && authority.goals.length === 0
+        )
+    ) {
         return { status: 'not-required', failure: null, reason: null, criteria };
     }
     const goals = state.authorities.flatMap((authority) => authority.goals);

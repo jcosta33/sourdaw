@@ -66,8 +66,9 @@ vi.mock('../../../stores/pendingActionConfirmationStore', async () => {
         pendingActionConfirmationStore,
         clearPendingActionConfirmations: () => pendingActionConfirmationStore.set({ confirmations: [] }),
         proposePendingActionConfirmation: (input: { id: string }) => {
+            const confirmations = pendingActionConfirmationStore.value?.confirmations ?? [];
             pendingActionConfirmationStore.set({
-                confirmations: [...(pendingActionConfirmationStore.value?.confirmations ?? []), { id: input.id }],
+                confirmations: [...confirmations, { id: input.id }],
             });
             return { id: input.id };
         },
@@ -271,21 +272,25 @@ function usePendingChatState(state: {
             projectRevision: 'chat-presentation-revision',
         });
     }
-    useStoreMock.mockImplementation((store: unknown) => {
+    function usePendingFixtureStore(store: unknown) {
+        const confirmations = useRealStore(pendingActionConfirmationStore);
+        const capability = useRealStore(capabilityStore);
+        const artifacts = useRealStore(agentSectionRenderArtifactStore);
         if (store === pendingActionConfirmationStore) {
-            return useRealStore(pendingActionConfirmationStore);
+            return confirmations;
         }
         if (store === agentRunStore) {
             return { schemaVersion: 1, runs: [] };
         }
         if (store === capabilityStore) {
-            return useRealStore(capabilityStore);
+            return capability;
         }
         if (store === agentSectionRenderArtifactStore) {
-            return useRealStore(agentSectionRenderArtifactStore);
+            return artifacts;
         }
         return state;
-    });
+    }
+    useStoreMock.mockImplementation(usePendingFixtureStore);
 }
 
 describe('ChatPanel', () => {

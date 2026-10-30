@@ -201,7 +201,10 @@ describe('configured mixing plan with actual measurements', () => {
                     dimensions: ['processing'],
                     creationSlotObjectTypes: ['device'],
                 });
-                const schema = schemas.find((candidate) => candidate.function.name === base.name);
+                const schema = schemas.find(
+                    (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        candidate.function.name === base.name
+                );
                 if (schema === undefined) {
                     throw new Error('Missing actual joint schema.');
                 }
@@ -444,6 +447,7 @@ describe('configured mixing plan with actual measurements', () => {
             runId: RUN_ID,
             assistantMessageId: 'warm-assistant',
             interactionMode: 'apply',
+            trustCeiling: undefined,
             resume: undefined,
             onResumedPlanAccepted: undefined,
             projectRevision: revision,
@@ -617,9 +621,7 @@ describe('configured mixing plan with actual measurements', () => {
                 'recipe:vocal-dark:vocal',
             ]);
             expect(state?.steps.every((step) => step.recipePrefixHash !== null)).toBe(true);
-            expect(state?.binding?.prefixes).toHaveLength(
-                mode === 'two-recipes' || mode === 'two-recipes-subset' ? 2 : 0
-            );
+            expect(state?.binding?.prefixes).toHaveLength(mode === 'two-recipes' ? 2 : 0);
             expect(planned.measuredPreview?.recipeSource).toBeUndefined();
             // A complete final preview cannot substitute for the first independent recipe prefix.
             expect(evaluation).toMatchObject({

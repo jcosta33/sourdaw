@@ -1,5 +1,23 @@
 import { type AdoptedRecipe } from './AdoptedRecipe';
-import { type MetricPreviewProvenance } from './MetricGoalAdmission';
+
+/** Only successful application renders can supply these artifact identities. */
+export type MetricPreviewProvenance = {
+    readonly origin: 'planner' | 'approval-preview';
+    readonly callId: string;
+    readonly turn: number;
+    readonly runId: string;
+    readonly targets: readonly {
+        readonly targetId: string;
+        readonly baseline: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: { readonly contentAddress: string };
+        };
+        readonly preview: {
+            readonly route: 'mixdown' | 'isolated-subgraph';
+            readonly artifact: { readonly contentAddress: string };
+        };
+    }[];
+};
 
 /** One objective figure as an agent measurement reports it: read from the audio, or why it could not be. */
 export type MeasuredMetricEntry =

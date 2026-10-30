@@ -2,6 +2,7 @@ import { parseVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
 
 import { digestCommandBatchContent } from './digestCommandBatchContent';
 import { type MetricGoalState } from './metricGoalContractTypes';
+import { readNativeLiteralCommandBinding } from './readNativeLiteralCommandBinding';
 
 /** Rebinding never deletes intent. A changed/subset batch must earn fresh compatible proof. */
 export function bindMetricGoalsToBatch(input: {
@@ -51,6 +52,10 @@ export function bindMetricGoalsToBatch(input: {
     }
     return {
         ...structuredClone(original),
+        nativeLiteralUses: original.nativeLiteralUses?.map((use) => ({
+            ...structuredClone(use),
+            binding: use.binding ?? readNativeLiteralCommandBinding(use, envelope, schedulePosition),
+        })),
         proofs: advancesSchedule ? [] : structuredClone(original.proofs),
         binding: {
             contentHash: digestCommandBatchContent(envelope),

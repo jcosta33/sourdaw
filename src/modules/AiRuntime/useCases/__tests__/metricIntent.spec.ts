@@ -1,19 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
 import { getCanonicalTrackRole } from '#/modules/Project/useCases';
 
 import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
+import { createWorkflowCapabilityToolSchema, WORKFLOW_CAPABILITY_IDS } from '../../models/WorkflowCapability';
 import { projectOpenAiStrictToolSchema } from '../../repositories/cloudLlm/cloudInference/projectOpenAiStrictToolSchema';
+import {
+    admitTurnReadReceipts,
+    boundReceipt,
+    serializeReceiptContext,
+} from '../../services/applicationToolReceiptBudget';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { admitPlanningInterpretation } from '../admitPlanningInterpretation';
-import {
-    APPLICATION_OWNED_TOOL_LOOP_LIMITS,
-    runApplicationOwnedToolLoop,
-    boundReceipt,
-    admitTurnReadReceipts,
-    serializeReceiptContext,
-} from '../applicationOwnedToolLoop';
+import { admitWorkflowMetricIntake } from '../admitWorkflowMetricIntake';
+import { getSidechainRoutingPromptScope } from '../agentReference/getSidechainRoutingPromptScope';
+import { APPLICATION_OWNED_TOOL_LOOP_LIMITS, runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { buildAgentContext } from '../buildAgentContext';
 import { collectMetricGoalProof } from '../collectMetricGoalProof';
 import { compilePreviewMeasurementProposal } from '../compilePreviewMeasurementProposal';
@@ -28,11 +31,14 @@ import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { OBJECTIVE_METRIC_UNITS } from '../objectiveMetricProjection';
 import { parsePromptToActions } from '../parsePromptToActions';
+import { getPlanningProviderSchemaContract } from '../planningProviderSchema';
 import { planPromptActions } from '../planPromptActions';
 import { prepareAnswerInterpretationCatalog } from '../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { prepareMetricIntentCatalog } from '../prepareMetricIntentCatalog';
+import { prepareWorkflowMetricScopes } from '../prepareWorkflowMetricScopes';
 import { projectPlanningProviderToolSchemas } from '../projectPlanningProviderToolSchemas';
+import { projectWorkflowMetricToolSchemas } from '../projectWorkflowMetricToolSchemas';
 
 import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
 import { readMetricPublication } from './metricGoalWorkflowFixture';
@@ -50,8 +56,37 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-function fixture(prompt = 'Set Lead Vocal gain to 70%') {
+function hasMetricAuthority(result: ReturnType<typeof admitPlanningInterpretation>): result is ReturnType<
+    typeof admitPlanningInterpretation
+> & {
+    metricAuthority: Extract<
+        ReturnType<typeof import('../admitMetricIntent').admitMetricIntent>,
+        { status: 'admitted' }
+    >['authority'];
+} {
+    return 'metricAuthority' in result && result.metricAuthority !== undefined && result.metricAuthority !== null;
+}
+
+function fixture(prompt = 'Set Lead Vocal gain to 70%', options: { writableLeadVocal?: boolean } = {}) {
     const context = createPlanningProject(getProjectContext(), 3);
+    if (options.writableLeadVocal === true) {
+        const leadVocalId = context.tracks[2]?.id;
+        const brief = context.productionBrief;
+        if (leadVocalId === undefined || brief === undefined) {
+            throw new Error('Expected the typed lead-vocal fixture and production brief.');
+        }
+        const leadVocalLocks = brief.locks.filter(
+            (lock) => lock.scope.kind === 'track' && lock.scope.trackId === leadVocalId
+        );
+        if (leadVocalLocks.length !== 1) {
+            throw new Error('Expected one exact lead-vocal track lock.');
+        }
+        const leadVocalLock = leadVocalLocks[0]!;
+        context.productionBrief = {
+            ...brief,
+            locks: brief.locks.filter((lock) => lock.id !== leadVocalLock.id),
+        };
+    }
     const creative = prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: 'metric-revision' });
     const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: 'metric-revision' });
     const metric = prepareMetricIntentCatalog({ prompt, answer });
@@ -74,6 +109,20 @@ function fixture(prompt = 'Set Lead Vocal gain to 70%') {
     };
     return { context, creative, answer, metric, schema, call };
 }
+
+it('keeps the locked vocal out of real creative targets while the writable control fixture publishes it', () => {
+    const prompt = 'Make Lead Vocal warmer';
+    const locked = fixture(prompt);
+    const writable = fixture(prompt, { writableLeadVocal: true });
+    const leadVocalId = locked.context.tracks[2]?.id;
+    if (leadVocalId === undefined) {
+        throw new Error('Expected the fixture lead-vocal track.');
+    }
+
+    expect(locked.creative.targets.flatMap((target) => target.objectIds)).not.toContain(leadVocalId);
+    expect(writable.creative.targets.flatMap((target) => target.objectIds)).toContain(leadVocalId);
+    expect(locked.metric.scopes.flatMap((scope) => scope.objectIds)).toContain(leadVocalId);
+});
 
 describe('positive whole-request metric intent', () => {
     it('admits the actual local and strict hosted literal branch without creative mutation authority', () => {
@@ -144,7 +193,7 @@ describe('positive whole-request metric intent', () => {
     });
 
     it('freezes an authored recipe criterion, actual target and named range before any preview', () => {
-        const value = fixture('Make Lead Vocal warmer');
+        const value = fixture('Make Lead Vocal warmer', { writableLeadVocal: true });
         const target = value.creative.targets.find((entry) => entry.objectIds.includes(value.context.tracks[2]!.id));
         const objective = value.metric.objectives.find(
             (entry) =>
@@ -184,12 +233,7 @@ describe('positive whole-request metric intent', () => {
             },
         };
         const admitted = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admitted.status !== 'admitted' ||
-            admitted.kind !== 'creative' ||
-            !('metricAuthority' in admitted) ||
-            admitted.metricAuthority === undefined
-        ) {
+        if (admitted.status !== 'admitted' || admitted.kind !== 'creative' || !hasMetricAuthority(admitted)) {
             throw new Error('Expected admitted bounded metric intent.');
         }
         expect(admitted.metricAuthority.goals).toHaveLength(objective.goals.length);
@@ -396,14 +440,12 @@ describe('bounded metric control admission', () => {
     }
 
     it('rejects a real oversized admitted control before a following measurement or terminal turn', async () => {
-        const value = fixture('Make Lead Vocal warmer with the selected authored objectives');
+        const value = fixture('Make Lead Vocal warmer with the selected authored objectives', {
+            writableLeadVocal: true,
+        });
         const call = control(value, 24);
         const admission = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
-        if (
-            admission.status !== 'admitted' ||
-            admission.kind !== 'creative' ||
-            admission.metricAuthority === undefined
-        ) {
+        if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
             throw new Error('Expected genuine authored metric admission.');
         }
         const data = {
@@ -469,7 +511,7 @@ describe('bounded metric control admission', () => {
     it.each(['local', 'hosted'] as const)(
         'retains a genuine in-budget control and projects only the %s receipt copy',
         async (provider) => {
-            const value = fixture('Make Lead Vocal warmer');
+            const value = fixture('Make Lead Vocal warmer', { writableLeadVocal: true });
             const baseCall = control(value, 1);
             const range = value.metric.ranges[0];
             if (range === undefined) {
@@ -496,11 +538,7 @@ describe('bounded metric control admission', () => {
                 projectRevision: 'metric-revision',
                 turn: 1,
             });
-            if (
-                admission.status !== 'admitted' ||
-                admission.kind !== 'creative' ||
-                admission.metricAuthority === undefined
-            ) {
+            if (admission.status !== 'admitted' || admission.kind !== 'creative' || !hasMetricAuthority(admission)) {
                 throw new Error('Expected real in-budget admission.');
             }
             const data = {
@@ -534,7 +572,7 @@ describe('bounded metric control admission', () => {
                     }
                     expect(outgoing).toContain('metric-intent');
                     expect(outgoing).not.toContain(range.sectionId);
-                    for (const goal of admission.metricAuthority!.goals) {
+                    for (const goal of admission.metricAuthority.goals) {
                         if (goal.source.kind === 'recipe') {
                             expect(outgoing).not.toContain(goal.source.recipeDigest);
                         }
@@ -576,7 +614,9 @@ describe('bounded metric control admission', () => {
     it.each(['parser', 'correction-orchestrator'] as const)(
         'does not let the actual %s carry failed control authority into a following proposal',
         async (route) => {
-            const value = fixture('Make Lead Vocal warmer with the selected authored objectives');
+            const value = fixture('Make Lead Vocal warmer with the selected authored objectives', {
+                writableLeadVocal: true,
+            });
             const targetId = value.context.tracks[2]!.id;
             vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
                 if (vi.mocked(generateToolPlanningOutcome).mock.calls.length > 1) {
@@ -585,7 +625,10 @@ describe('bounded metric control admission', () => {
                         toolCalls: [{ name: 'setTrackGain', arguments: { trackId: targetId, gain: 0.7 } }],
                     };
                 }
-                const schema = schemas.find((candidate) => candidate.function.name === 'selectCreativeInterpretation');
+                const schema = schemas.find(
+                    (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        candidate.function.name === 'selectCreativeInterpretation'
+                );
                 if (schema === undefined) {
                     throw new Error('Expected actual published joint intake.');
                 }
@@ -908,5 +951,297 @@ describe('retained recipe and verification receipt boundaries', () => {
         expect(
             collectMetricGoalProof({ authorities: [], compilations: [], receipts: [raw, perCall, ...perRun] })
         ).toEqual([]);
+    });
+});
+
+describe('finite workflow metric intake', () => {
+    function workflowFixture() {
+        const prompt = 'Reduce kick/bass masking without replacing either basic sound.';
+        const context = createPlanningProject(getProjectContext(), 3);
+        context.tracks[1]!.devices = [{ id: 'bass-sidechain', type: 'builtin-sidechain-compressor', bypassed: false }];
+        context.selectedTrackId = getProjectContext().selectedTrackId;
+        context.selectedClipId = getProjectContext().selectedClipId;
+        context.selectedClipIds = [...getProjectContext().selectedClipIds];
+        const revision = captureProjectRevision();
+        const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: revision });
+        const catalog = prepareMetricIntentCatalog({ prompt, answer });
+        const scopes = prepareWorkflowMetricScopes({
+            sidechain: getSidechainRoutingPromptScope(prompt, context, revision),
+            wholeProject: null,
+        });
+        const schema = projectWorkflowMetricToolSchemas({
+            schemas: [createWorkflowCapabilityToolSchema(WORKFLOW_CAPABILITY_IDS)],
+            phase: 'pending',
+            catalog,
+            scopes,
+        })[0]!;
+        const objective = catalog.objectives.find((entry) =>
+            entry.goals.every((goal) => goal.source.kind === 'unsupported')
+        );
+        if (objective === undefined || scopes.length !== 1) {
+            throw new Error('Expected the real finite sidechain scope and unsupported objective.');
+        }
+        const call = {
+            id: 'actual-workflow-intake',
+            name: 'selectWorkflowCapability',
+            arguments: {
+                capabilityId: 'sidechain-routing',
+                catalogId: catalog.catalogId,
+                metricIntent: {
+                    kind: 'perceptual',
+                    uncertainty: 'none',
+                    objectives: [
+                        {
+                            objectiveId: objective.id,
+                            scopeCandidateId: null,
+                            referenceScopeCandidateId: null,
+                            rangeCandidateId: null,
+                        },
+                    ],
+                },
+            },
+        };
+        return { catalog, scopes, schema, call, turn: 1 };
+    }
+
+    it('admits the actual finite scope through local and hosted schemas without creative authority', () => {
+        const value = workflowFixture();
+        expect(matchesJsonSchema(value.call.arguments, value.schema.function.parameters)).toBe(true);
+        expect(
+            matchesJsonSchema(value.call.arguments, projectOpenAiStrictToolSchema(value.schema).function.parameters)
+        ).toBe(true);
+        const result = admitWorkflowMetricIntake(value);
+        expect(result).toMatchObject({
+            status: 'admitted',
+            authority: {
+                origin: 'admitted-workflow',
+                kind: 'perceptual',
+                callId: value.call.id,
+                turn: 1,
+                creativeAuthority: null,
+                goals: [{ relation: 'unsupported' }],
+            },
+        });
+        expect(result).not.toHaveProperty('commandBatch');
+    });
+
+    it('refuses unknown scope, stale catalog, extra fields, unbound receipt identity and literal relabeling', () => {
+        const value = workflowFixture();
+        for (const call of [
+            { ...value.call, arguments: { ...value.call.arguments, capabilityId: 'shared-vocal-fx-buses' } },
+            { ...value.call, arguments: { ...value.call.arguments, catalogId: 'stale' } },
+            { ...value.call, arguments: { ...value.call.arguments, targetIds: ['forged'] } },
+            { ...value.call, id: '' },
+            {
+                ...value.call,
+                arguments: {
+                    ...value.call.arguments,
+                    metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                },
+            },
+        ]) {
+            expect(admitWorkflowMetricIntake({ ...value, call }).status).toBe('rejected');
+        }
+        expect(admitWorkflowMetricIntake({ ...value, catalog: { ...value.catalog, revision: 'stale' } }).status).toBe(
+            'rejected'
+        );
+        const outside = value.catalog.scopes.find((scope) =>
+            scope.objectIds.some((id) => !value.scopes[0]!.targetIds.includes(id))
+        );
+        if (outside === undefined) {
+            throw new Error('Expected a published subject outside the sidechain scope.');
+        }
+        const widened = {
+            ...value.call,
+            arguments: {
+                ...value.call.arguments,
+                metricIntent: {
+                    ...value.call.arguments.metricIntent,
+                    objectives: [
+                        { ...value.call.arguments.metricIntent.objectives[0]!, scopeCandidateId: outside.candidateId },
+                    ],
+                },
+            },
+        };
+        expect(admitWorkflowMetricIntake({ ...value, call: widened }).status).toBe('rejected');
+        expect(
+            admitWorkflowMetricIntake({
+                ...value,
+                catalog: {
+                    ...value.catalog,
+                    selection: { ...value.catalog.selection, trackId: 'changed-selection' },
+                },
+            }).status
+        ).toBe('rejected');
+    });
+
+    it('keeps later execution selection after generic intake and consumes selection after workflow intake', () => {
+        const value = workflowFixture();
+        expect(
+            projectWorkflowMetricToolSchemas({
+                schemas: [value.schema],
+                phase: 'pending',
+                catalog: value.catalog,
+                scopes: [],
+            })
+        ).toEqual([]);
+        const schema = createWorkflowCapabilityToolSchema(['sidechain-routing', 'shared-vocal-fx-buses']);
+        const afterGeneric = projectPlanningProviderToolSchemas([schema], 'planning', undefined, 'admitted');
+        const afterWorkflow = projectPlanningProviderToolSchemas([schema], 'planning', undefined, 'workflow-admitted');
+        expect(matchesJsonSchema({ capabilityId: 'shared-vocal-fx-buses' }, afterGeneric[0]!.function.parameters)).toBe(
+            true
+        );
+        expect(matchesJsonSchema({ capabilityId: 'sidechain-routing' }, afterGeneric[0]!.function.parameters)).toBe(
+            false
+        );
+        expect(
+            matchesJsonSchema(
+                { capabilityId: 'shared-vocal-fx-buses', metricIntent: {} },
+                afterGeneric[0]!.function.parameters
+            )
+        ).toBe(false);
+        expect(matchesJsonSchema({ capabilityId: 'sidechain-routing' }, afterWorkflow[0]!.function.parameters)).toBe(
+            false
+        );
+        expect(projectPlanningProviderToolSchemas([schema], 'planning', 'readonly-answer', 'pending')).toEqual([]);
+        const contract = getPlanningProviderSchemaContract();
+        expect(contract.identity).toContain('workflowIntake');
+        expect(contract.identity).not.toBe(
+            JSON.stringify(
+                contract.schemas.map((schema) => ({
+                    name: schema.function.name,
+                    parameters: schema.function.parameters,
+                }))
+            )
+        );
+        expect(getPlanningProviderSchemaContract().identity).toBe(contract.identity);
+    });
+
+    it('rejects mixed initial workflow intake and proposal before any admission', async () => {
+        const value = workflowFixture();
+        const admit = vi.fn(() => {
+            throw new Error('Mixed initial control must never be admitted.');
+        });
+        const outcome = await runApplicationOwnedToolLoop({
+            loopId: 'mixed-workflow-intake',
+            requireWholeRequestIntake: true,
+            terminalToolNames: new Set(['command.batch.propose']),
+            interpretation: {
+                toolName: 'selectCreativeInterpretation',
+                workflowToolName: 'selectWorkflowCapability',
+                admit,
+            },
+            requestTurn: async () => ({
+                status: 'complete',
+                toolCalls: [value.call, { name: 'command.batch.propose', arguments: {} }],
+            }),
+        });
+        expect(outcome).toMatchObject({
+            status: 'rejected',
+            reason: 'Whole-request intake is required before preparation, compilation or proposal.',
+        });
+        expect(admit).not.toHaveBeenCalled();
+    });
+});
+
+describe('workflow selection dispatch preserves the first whole-request intake', () => {
+    function admission(value: ReturnType<typeof fixture>) {
+        const result = admitPlanningInterpretation({
+            ...value,
+            call: value.call,
+            projectRevision: 'metric-revision',
+            turn: 1,
+        });
+        if (result.status !== 'admitted' || !hasMetricAuthority(result)) {
+            throw new Error('Expected actual positive intake.');
+        }
+        return result.metricAuthority;
+    }
+
+    it('keeps generic intake frozen when a later terminal turn selects a workflow', async () => {
+        const value = fixture();
+        const authority = admission(value);
+        const frozen = JSON.stringify(authority);
+        const admit = vi.fn(() => ({
+            status: 'admitted' as const,
+            receipt: {
+                data: { kind: 'metric-intent', goals: authority.goals },
+                summary: 'Whole literal request admitted.',
+            },
+            providerProjection: { kind: 'metric-intent' as const, catalogId: value.metric.catalogId },
+        }));
+        const outcome = await runApplicationOwnedToolLoop({
+            loopId: 'generic-then-workflow',
+            requireWholeRequestIntake: true,
+            terminalToolNames: new Set(['selectWorkflowCapability']),
+            interpretation: {
+                toolName: 'selectCreativeInterpretation',
+                workflowToolName: 'selectWorkflowCapability',
+                admit,
+            },
+            requestTurn: async ({ turn, wholeRequestIntake }) => {
+                if (turn === 1) {
+                    return { status: 'complete', toolCalls: [value.call] };
+                }
+                expect(wholeRequestIntake).toBe('admitted');
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'execution-selection',
+                            name: 'selectWorkflowCapability',
+                            arguments: { capabilityId: 'shared-vocal-fx-buses' },
+                        },
+                    ],
+                };
+            },
+        });
+        expect(outcome).toMatchObject({
+            status: 'complete',
+            turns: 2,
+            toolCalls: [{ name: 'selectWorkflowCapability' }],
+        });
+        expect(admit).toHaveBeenCalledOnce();
+        expect(JSON.stringify(authority)).toBe(frozen);
+    });
+
+    it.each(['workflow', 'metric-after-generic'] as const)('refuses a repeated control: %s', async (mode) => {
+        const value = fixture();
+        const first = { ...value.call, name: mode === 'workflow' ? 'selectWorkflowCapability' : value.call.name };
+        let capturedPhase: string | undefined;
+        const admit = vi.fn(() => ({
+            status: 'admitted' as const,
+            receipt: { data: { kind: 'metric-intent' }, summary: 'Intake admitted.' },
+            providerProjection: { kind: 'metric-intent' as const, catalogId: value.metric.catalogId },
+        }));
+        const outcome = await runApplicationOwnedToolLoop({
+            loopId: `repeat-${mode}`,
+            requireWholeRequestIntake: true,
+            terminalToolNames: new Set(['selectWorkflowCapability']),
+            interpretation: {
+                toolName: 'selectCreativeInterpretation',
+                workflowToolName: 'selectWorkflowCapability',
+                admit,
+            },
+            requestTurn: async ({ turn, wholeRequestIntake }) => {
+                if (turn === 1) {
+                    return { status: 'complete', toolCalls: [first] };
+                }
+                capturedPhase = wholeRequestIntake;
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'repeated-workflow',
+                            name: 'selectWorkflowCapability',
+                            arguments: { capabilityId: 'shared-vocal-fx-buses', metricIntent: {} },
+                        },
+                    ],
+                };
+            },
+        });
+        expect(capturedPhase).toBe(mode === 'workflow' ? 'workflow-admitted' : 'admitted');
+        expect(outcome).toMatchObject({ status: 'rejected', reason: 'Provider repeated the creative interpretation.' });
+        expect(admit).toHaveBeenCalledOnce();
     });
 });

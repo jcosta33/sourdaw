@@ -524,7 +524,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts",
-                    "digest": "143665a848b2083292c6c3c67438606df7dca8af849583bb7f7d8c991865ef6e"
+                    "digest": "5b4a12244170c96653dc2f8f0229a8542de10bee066f8dd8af19c87f7a21fd7f"
                 }
             ]
         },
@@ -680,7 +680,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts",
-                    "digest": "8a14eed7a82e940a90c5ab4086cd80dcd3cff47a0dd34f47101de502ef787a7d"
+                    "digest": "9aee9c66dbeb41c941833b456791627496d795e7af2fbdbe7b6c6967bcb3435a"
                 }
             ]
         },
@@ -692,7 +692,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts",
-                    "digest": "af018699f4ac1aa91fdd83631f5b2023d6c3648bd5d7ac07aa6fab1904896f38"
+                    "digest": "a0e2abe49dc64c91bf9a77fb826fbef8d1ba4f700f36ccf009b7c62d2705c107"
                 }
             ]
         },
@@ -812,8 +812,12 @@
                     "digest": "8e40d11c3bf650b9d380ad7e80bbf4dd4763614273969c23548475087b9ddc94"
                 },
                 {
+                    "path": "src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts",
+                    "digest": "7f4773abe87c3038d285386dd973f6fbeab326581fbdb226171a2330b30f60ca"
+                },
+                {
                     "path": "src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts",
-                    "digest": "954756447e3d32c3d551393c76b1a29ff675fc8ae97039e5b69a0ef86fe5974f"
+                    "digest": "e5309cb51dfd942365e1d2c67ae0518e15e95afc05b8e47adee275b4947d155b"
                 }
             ]
         },
@@ -907,7 +911,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts",
-                    "digest": "088dfbb6c6716027482ce0eceddbf878b9f558c2642c32090740d62ddd0a70c9"
+                    "digest": "254a6d69d7855b2789236d79c779c8af016f8d47401577d9ac79a19221a9050b"
                 }
             ]
         },

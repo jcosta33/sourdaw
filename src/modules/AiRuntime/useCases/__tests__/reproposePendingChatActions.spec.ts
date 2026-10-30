@@ -268,10 +268,10 @@ describe('reproposePendingChatActions', () => {
     it.each(['missing', 'empty'] as const)(
         'refuses an unadmitted legacy proposal with %s intent without opening a preview or creating another card',
         async (kind) => {
-            const state =
-                kind === 'missing'
-                    ? null
-                    : JSON.stringify({ schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null });
+            let state: string | null = null;
+            if (kind === 'empty') {
+                state = JSON.stringify({ schemaVersion: 1, authorities: [], steps: [], proofs: [], binding: null });
+            }
             const legacy = propose('confirmation-no-intent', undefined, undefined, undefined, state);
             await expect(reproposePendingChatActions({ confirmationId: legacy.id })).resolves.toEqual({
                 status: 'rejected',

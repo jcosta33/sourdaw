@@ -8,12 +8,13 @@ import {
 import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
 import { type PlanningProfile, READONLY_ANSWER_TOOL_NAMES } from '../models/PlanningProfile';
 import { type ToolSchema } from '../models/ToolDefinitions';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
 import { projectAnswerRespondToolSchema } from './projectAnswerRespondToolSchema';
 import { projectReadonlyAnswerMeasurementToolSchema } from './projectReadonlyAnswerMeasurementToolSchema';
 
 export type PlanningAnswerPhase = 'planning' | 'intake' | 'answer';
-export type WholeRequestIntakePhase = 'pending' | 'admitted';
+export type WholeRequestIntakePhase = 'pending' | 'admitted' | 'workflow-admitted';
 
 export const WHOLE_REQUEST_PREPARATION_TOOL_NAMES: ReadonlySet<string> = new Set([
     COMMAND_BATCH_PROPOSAL_TOOL_NAME,
@@ -35,6 +36,9 @@ export function projectPlanningProviderToolSchemas(
     }
     return schemas
         .filter((schema) => {
+            if (profile === 'readonly-answer' && schema.function.name === WORKFLOW_CAPABILITY_TOOL_NAME) {
+                return false;
+            }
             if (phase === 'planning') {
                 return true;
             }
@@ -49,7 +53,9 @@ export function projectPlanningProviderToolSchemas(
             const name = schema.function.name;
             if (phase === 'planning' && wholeRequestIntake !== undefined) {
                 const effectful = isExecutableAppActionType(name) || WHOLE_REQUEST_PREPARATION_TOOL_NAMES.has(name);
-                const consumed = wholeRequestIntake === 'admitted' && name === CREATIVE_INTERPRETATION_TOOL_NAME;
+                const consumed =
+                    (wholeRequestIntake !== 'pending' && name === CREATIVE_INTERPRETATION_TOOL_NAME) ||
+                    (wholeRequestIntake === 'workflow-admitted' && name === WORKFLOW_CAPABILITY_TOOL_NAME);
                 if ((wholeRequestIntake === 'pending' && effectful) || consumed) {
                     let description =
                         'Unavailable before successful whole-request intake. This empty entry authorizes no preparation, compilation, proposal or action.';

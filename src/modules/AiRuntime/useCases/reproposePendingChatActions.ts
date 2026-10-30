@@ -296,18 +296,10 @@ function recordReplacementBatch(
     }
 }
 
-/**
- * Replace a stale or partially accepted proposal with a fresh one bound to the current
- * revision. The run stays alive: the superseded proposal is invalidated and its prepared
- * resources discarded, but nothing cancels the run the musician is still steering.
- */
-export async function reproposePendingChatActions(
-    input: ReproposePendingChatActionsInput
-): Promise<ReproposePendingChatActionsResult> {
-    void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
+function prepareReproposal(input: ReproposePendingChatActionsInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
     if (!confirmation) {
-        return { status: 'missing' };
+        return { status: 'missing' as const };
     }
     const refusal = admitReproposal(confirmation);
     if (refusal) {
@@ -315,14 +307,14 @@ export async function reproposePendingChatActions(
     }
     const { agentApproval, commandBatch } = confirmation.approvalSnapshot;
     if (!commandBatch) {
-        return { status: 'rejected', reason: 'The confirmation has no approved command batch to re-preview.' };
+        return { status: 'rejected' as const, reason: 'The confirmation has no approved command batch to re-preview.' };
     }
     if (!agentApproval) {
-        return { status: 'rejected', reason: 'The confirmation has no exact risk approval binding.' };
+        return { status: 'rejected' as const, reason: 'The confirmation has no exact risk approval binding.' };
     }
     const parsedOriginal = parseVersionedCommandBatchEnvelope(commandBatch.serialized, commandBatch.authority);
     if (parsedOriginal.status === 'invalid') {
-        return { status: 'rejected', reason: parsedOriginal.reason };
+        return { status: 'rejected' as const, reason: parsedOriginal.reason };
     }
     const originalCommandIds = parsedOriginal.envelope.commands.map((command) => command.commandId);
     const selectsSubset =
@@ -348,7 +340,7 @@ export async function reproposePendingChatActions(
         return rebound;
     }
     const { parsed: parsedRefreshed, refreshed } = rebound;
-    let approval = rebound.approval;
+    const approval = rebound.approval;
 
     const { actions, actionLabels, includedActionIndexes } = selectIncludedPlan(
         confirmation,
@@ -359,64 +351,30 @@ export async function reproposePendingChatActions(
     if (carriedSelection.status === 'rejected') {
         return carriedSelection;
     }
-    let goalState = metricGoalStateCodec(approval.metricGoalState);
-    if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
-        if (selectsSubset) {
-            goalState = { ...goalState, proofs: [] };
-        }
-        let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
-        try {
-            refreshedProof = await prepareMetricGoalPreview({
-                state: goalState,
-                commandBatch: refreshed.commandBatch,
-                context: getProjectContext(),
-                prompt: confirmation.prompt,
-                runId: confirmation.runId,
-            });
-        } catch (error) {
-            return { status: 'rejected', reason: failureReason(error) };
-        }
-        const live = getPendingActionConfirmation(confirmation.id);
-        const liveRun = agentRunLifecycle.get(confirmation.runId);
-        if (
-            live?.status !== 'proposed' ||
-            live.supersededBy !== null ||
-            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
-            liveRun === null ||
-            TERMINAL_RUN_PHASES.has(liveRun.phase)
-        ) {
-            return {
-                status: 'rejected',
-                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
-            };
-        }
-        goalState = refreshedProof.state;
-        approval = compileAgentRiskApproval({
-            commandBatch: refreshed.commandBatch,
-            requireExplicitApproval: true,
-            metricGoalState: JSON.stringify(goalState),
-        });
-        if (liveRun.plan !== null) {
-            agentRunLifecycle.recordPlan({
-                runId: liveRun.runId,
-                summary: liveRun.plan.summary,
-                commandIds: liveRun.plan.commandIds,
-                serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
-                revision: refreshed.currentRevision,
-                scope: liveRun.scope,
-                grants: liveRun.grants,
-                budgets: liveRun.budgets,
-                plan: {
-                    ...liveRun.plan,
-                    metricGoalState: approval.metricGoalState ?? undefined,
-                    applicationToolReceipts: [
-                        ...(liveRun.plan.applicationToolReceipts ?? []),
-                        ...refreshedProof.receipts,
-                    ],
-                },
-            });
-        }
-    }
+    return {
+        status: 'prepared' as const,
+        confirmation,
+        parsedOriginal,
+        originalCommandIds,
+        includedOriginalCommandIds,
+        selectsSubset,
+        parsedRefreshed,
+        refreshed,
+        approval,
+        actions,
+        actionLabels,
+        carriedSelection,
+    };
+}
+
+type PreparedReproposal = Extract<ReturnType<typeof prepareReproposal>, { status: 'prepared' }>;
+
+function persistReproposalConfirmation(
+    prepared: PreparedReproposal,
+    approval: ReturnType<typeof compileAgentRiskApproval>
+): string | null {
+    const { confirmation, parsedRefreshed, refreshed, actions, actionLabels, carriedSelection, selectsSubset } =
+        prepared;
     const assistantMessageId = `msg-${crypto.randomUUID()}`;
     appendChatMessage({
         id: assistantMessageId,
@@ -425,7 +383,7 @@ export async function reproposePendingChatActions(
         timestamp: Date.now(),
         isCommandAction: true,
     });
-    const reproposedConfirmationId = persistPromptActionConfirmation({
+    return persistPromptActionConfirmation({
         runId: confirmation.runId,
         prompt: confirmation.prompt,
         assistantMessageId,
@@ -466,6 +424,82 @@ export async function reproposePendingChatActions(
         content: REPROPOSED_CONTENT,
         supersedes: confirmation.id,
     });
+}
+
+/**
+ * Replace a stale or partially accepted proposal with a fresh one bound to the current
+ * revision. The run stays alive: the superseded proposal is invalidated and its prepared
+ * resources discarded, but nothing cancels the run the musician is still steering.
+ */
+export async function reproposePendingChatActions(
+    input: ReproposePendingChatActionsInput
+): Promise<ReproposePendingChatActionsResult> {
+    void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
+    const prepared = prepareReproposal(input);
+    if (prepared.status !== 'prepared') {
+        return prepared;
+    }
+    const { confirmation, parsedOriginal, includedOriginalCommandIds, selectsSubset, parsedRefreshed, refreshed } =
+        prepared;
+    let approval = prepared.approval;
+
+    let goalState = metricGoalStateCodec(approval.metricGoalState);
+    if (goalState !== null && !goalState.authorities.every((authority) => authority.kind === 'literal')) {
+        if (selectsSubset) {
+            goalState = { ...goalState, proofs: [] };
+        }
+        let refreshedProof: Awaited<ReturnType<typeof prepareMetricGoalPreview>>;
+        try {
+            refreshedProof = await prepareMetricGoalPreview({
+                state: goalState,
+                commandBatch: refreshed.commandBatch,
+                context: getProjectContext(),
+                prompt: confirmation.prompt,
+                runId: confirmation.runId,
+            });
+        } catch (error) {
+            return { status: 'rejected', reason: failureReason(error) };
+        }
+        const live = getPendingActionConfirmation(confirmation.id);
+        const liveRun = agentRunLifecycle.get(confirmation.runId);
+        if (
+            live?.status !== 'proposed' ||
+            live.supersededBy !== null ||
+            live.approvalSnapshot.metricGoalState !== confirmation.approvalSnapshot.metricGoalState ||
+            liveRun === null ||
+            TERMINAL_RUN_PHASES.has(liveRun.phase)
+        ) {
+            return {
+                status: 'rejected',
+                reason: 'The proposal changed or stopped while its metric proof was being refreshed.',
+            };
+        }
+        goalState = refreshedProof.state;
+        approval = compileAgentRiskApproval({
+            commandBatch: refreshed.commandBatch,
+            requireExplicitApproval: true,
+            metricGoalState: JSON.stringify(goalState),
+        });
+        if (liveRun.plan !== null) {
+            const priorReceipts = liveRun.plan.applicationToolReceipts ?? [];
+            agentRunLifecycle.recordPlan({
+                runId: liveRun.runId,
+                summary: liveRun.plan.summary,
+                commandIds: liveRun.plan.commandIds,
+                serializedBatchIdentity: liveRun.plan.serializedBatchIdentity,
+                revision: refreshed.currentRevision,
+                scope: liveRun.scope,
+                grants: liveRun.grants,
+                budgets: liveRun.budgets,
+                plan: {
+                    ...liveRun.plan,
+                    metricGoalState: approval.metricGoalState ?? undefined,
+                    applicationToolReceipts: [...priorReceipts, ...refreshedProof.receipts],
+                },
+            });
+        }
+    }
+    const reproposedConfirmationId = persistReproposalConfirmation(prepared, approval);
     if (!reproposedConfirmationId) {
         return { status: 'rejected', reason: 'Prepared action resources exceed the live confirmation limit.' };
     }

@@ -1361,11 +1361,14 @@ describe('recipe.expand through provider planning', () => {
                     dimensions: ['processing'],
                     creationSlotObjectTypes: ['device'],
                 });
-                const schema = schemas.find((entry) => entry.function.name === base.name);
-                const objective =
-                    schema === undefined
-                        ? undefined
-                        : readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
+                const schema = schemas.find(
+                    (entry: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        entry.function.name === base.name
+                );
+                if (schema === undefined) {
+                    throw new Error('Missing actual published selector.');
+                }
+                const objective = readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
                 if (objective === undefined) {
                     throw new Error('Missing actual published authored recipe objective.');
                 }

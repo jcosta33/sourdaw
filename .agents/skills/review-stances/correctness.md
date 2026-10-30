@@ -863,3 +863,15 @@ enable states. Include raw side, settled dry/mixed output, unread crossover cont
 source lifecycle boundaries. Remove the actual mid or side compensation separately: the
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
+
+### Catalog mutation candidates must respect resolved protection polarity (introduced by PR #4128)
+
+PR #4128 (`1d1471216e`) collected positive mutation targets from the entire request and fell back to contextual selection without excluding resolved protection spans; PRs #4132 and #4298 retained that behavior. The observed defect was incorrect published candidates and refusal scope, not a proven unauthorized persisted write. The missed baseline was catalog candidate semantics and source binding; historical private review prompts and tiers are unknown.
+
+Probe the actual catalog through admission and the bridge: request an edit to Drums while leaving Bass alone, protect a selected object's descendants, and combine a Vocal fader-only protection with permitted Vocal processing. Derive positive mutation candidates from completely consumed resolved spans and exact whole-object, control and clip restrictions. Unknown or ambiguous protected objects must clarify without selection fallback. Independently retain protected objects in read and measurement scopes. Reverting the polarity filtering must fail these producer-to-consumer checks.
+
+### Required per-request insertion anchors precede optional-field omission (introduced by PR #1650)
+
+PR #1650 (`a295c8b501e0834f4031934935be26161ad0b132`) admitted omitted optional target fields before checking request-bound device insertion order; PR #2811 retained the skip above its anchor comparison. A compressor requested after EQ could therefore append after a following device when `afterDeviceId` was omitted. The older PR #2712 unanchored negative refused earlier in its historical intake route and did not prove the anchor comparison. Historical private review prompts, models and tiers are unknown.
+
+Probe genuine whole-request intake through local and hosted planning, both eligible target chains, the exact resolved EQ identity and a later non-EQ device. Require missing and wrong anchors to refuse with no confirmation, document/runtime/revision or Undo writes; require the correct EQ to insert immediately after it. Keep the anchorless append control and existing supplied-unrequested-anchor refusal. In an isolated committed probe, restore only the optional-field skip before the mandatory comparison and require the original unanchored integration negative to fail at the anchor obligation, rather than at an earlier intake or schema failure.

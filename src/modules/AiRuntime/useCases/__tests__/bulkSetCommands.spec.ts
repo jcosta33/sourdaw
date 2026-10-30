@@ -31,7 +31,7 @@ import { setNotificationEventBus } from '#/utils/Notification/notificationEventB
 import { type AgentRunBatchSchedule } from '../../models/AgentRun';
 import { MAX_LLM_ACTIONS_PER_BATCH } from '../../models/LlmActionLimits';
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
-import { WORKFLOW_CAPABILITY_IDS, WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../../models/WorkflowCapability';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { resolveSemanticCommandListSelector } from '../../services/semanticCommandListCandidates';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../../stores/agentRunStore';
@@ -1932,6 +1932,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             throw new Error('Expected the protected Vocals track.');
         }
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -1970,6 +1971,7 @@ describe('a bulk request confirmed one batch at a time', () => {
         const newlySelectedId = layerIds[LAYER_COUNT - 1]!;
         trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
         scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -2047,6 +2049,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             }
             trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                literalMetricIntakeTurn,
                 () => searchCalls(['pan track']),
                 discoverSearchedCalls(['setTrackPan']),
                 proposeDiscoveredCalls(
@@ -2099,6 +2102,7 @@ describe('a bulk request confirmed one batch at a time', () => {
         const vocalsId = layerIds.at(-1)!;
         trackStore.set({ ...trackStore.value!, selectedTrackId: vocalsId });
         cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => searchCalls(['pan track']),
             discoverSearchedCalls(['setTrackPan']),
             proposeDiscoveredCalls(
@@ -2195,6 +2199,7 @@ describe('a bulk request confirmed one batch at a time', () => {
             const vocalsId = trackIds.at(-1)!;
             const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];
             scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, [
+                literalMetricIntakeTurn,
                 () => searchCalls(['mute track', 'create a bus', 'add a send to a bus', 'pan track']),
                 discoverSearchedCalls(commandNames),
                 proposeDiscoveredCalls(
@@ -2343,12 +2348,32 @@ describe('a bulk request confirmed one batch at a time', () => {
     it('refuses a list larger than one batch that shares its turn with a specialized workflow', async () => {
         await seedLayerTracks();
         cycleProviderAttempt(runtimeMocks.generateWebLlmCompletion, [
+            literalMetricIntakeTurn,
             () => [MUTE_SEARCH_CALL],
             discoverSearchedCalls(['muteTrack']),
-            (message) => [
-                { name: WORKFLOW_CAPABILITY_TOOL_NAME, arguments: { capabilityId: WORKFLOW_CAPABILITY_IDS[0] } },
-                ...proposeDiscoveredCalls([muteLayersItem()], ['muteTrack'])(message),
-            ],
+            (message, systemPrompt) => {
+                if (typeof systemPrompt !== 'string') {
+                    throw new TypeError('Expected the actual local provider schema.');
+                }
+                const line = systemPrompt
+                    .split('\n')
+                    .find((entry) => entry.startsWith(`- ${WORKFLOW_CAPABILITY_TOOL_NAME}:`));
+                const schemaStart = line?.lastIndexOf(' {"type":"object"') ?? -1;
+                if (!line || schemaStart < 0) {
+                    throw new TypeError('Expected the advertised workflow selector.');
+                }
+                const schema: { properties: { capabilityId: { oneOf: Array<{ const: string }> } } } = JSON.parse(
+                    line.slice(schemaStart + 1)
+                );
+                const capabilityId = schema.properties.capabilityId.oneOf[0]?.const;
+                if (!capabilityId) {
+                    throw new TypeError('Expected an advertised workflow capability.');
+                }
+                return [
+                    { name: WORKFLOW_CAPABILITY_TOOL_NAME, arguments: { capabilityId } },
+                    ...proposeDiscoveredCalls([muteLayersItem()], ['muteTrack'])(message),
+                ];
+            },
         ]);
 
         await requestMuteLayers();

@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore } from '#/modules/Arrangement/stores';
 import { undoHistoryStore } from '#/modules/Command/stores';
-import { mutateCrdtDoc, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import {
+    captureProjectMutationAuthorization,
+    captureProjectRootIdentity,
+    mutateCrdtDoc,
+    persistCrdtProject,
+} from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
 import { DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
@@ -38,11 +43,12 @@ const mocks = vi.hoisted(() => ({
     compileAgentActionExecution: vi.fn(),
     describePlannedAction: vi.fn(() => 'Toggle playback'),
     executePromptActionGroup: vi.fn(),
-    getProjectContext: vi.fn<() => Partial<ProjectContext>>(() => ({ tracks: [] })),
+    getProjectContext: vi.fn<() => Partial<ProjectContext>>(() => ({ tracks: [], selectedClipIds: [] })),
     notifyAiAnswer: vi.fn(),
     notifyAiChange: vi.fn(),
     parseVersionedCommandBatchEnvelope: vi.fn(),
     planPromptActions: vi.fn(),
+    parsePromptToActions: vi.fn(),
 }));
 
 vi.mock('../stopMeasuredPreviewAudition', () => ({ stopMeasuredPreviewAudition: mocks.stopMeasuredPreviewAudition }));
@@ -106,6 +112,7 @@ vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectCont
 vi.mock('../notifyAiAnswer', () => ({ notifyAiAnswer: mocks.notifyAiAnswer }));
 vi.mock('../notifyAiChange', () => ({ notifyAiChange: mocks.notifyAiChange }));
 vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
+vi.mock('../parsePromptToActions', () => ({ parsePromptToActions: mocks.parsePromptToActions }));
 
 const RUN_ID = 'agent-run-00000000-0000-0000-0000-000000000001';
 const STALE_PROVIDER_COMPLETION_WARNING =
@@ -186,7 +193,15 @@ describe('submitAdmittedPromptRequest', () => {
         agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         randomUuid = vi.spyOn(crypto, 'randomUUID').mockReturnValue('00000000-0000-0000-0000-000000000001');
         mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-1');
-        mocks.getProjectContext.mockReturnValue({ tracks: [] });
+        mocks.getProjectContext.mockReturnValue({ tracks: [], selectedClipIds: [] });
+        vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => true);
+        vi.mocked(captureProjectRootIdentity).mockReturnValue('root-identity');
+        mocks.parsePromptToActions.mockResolvedValue({
+            actions: [action],
+            rawText: 'Play',
+            requiresConfirmation: false,
+            planningOutcome: { kind: 'proposal' },
+        });
         mocks.compileAgentActionExecution.mockReturnValue(compiled);
         mocks.parseVersionedCommandBatchEnvelope.mockReturnValue({
             status: 'valid',
@@ -210,6 +225,167 @@ describe('submitAdmittedPromptRequest', () => {
         randomUuid.mockRestore();
         vi.restoreAllMocks();
     });
+
+    it('passes a selected preset to the deterministic parser without provider work or a second snapshot', async () => {
+        const claim = vi.spyOn(agentRunWorkLease, 'claim');
+        const reserve = vi.spyOn(agentRunLifecycle, 'reserveBudget');
+        const expectedContext = {
+            selectedTrackId: undefined,
+            selectedClipId: undefined,
+            selectedClipType: undefined,
+            trackCount: 0,
+        };
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'preset',
+            preset: { id: 'play', expectedContext },
+        });
+        expect(result).toEqual({ status: 'awaiting-approval', runId: RUN_ID, confirmationId: expect.any(String) });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledExactlyOnceWith(
+            expect.objectContaining({
+                prompt: 'Play',
+                context: mocks.getProjectContext.mock.results[0]?.value,
+                projectRevision: 'revision-1',
+                preset: { id: 'play', expectedContext },
+                providerPlanning: 'disabled',
+            })
+        );
+        expect(mocks.planPromptActions).not.toHaveBeenCalled();
+        expect(claim).not.toHaveBeenCalled();
+        expect(reserve).not.toHaveBeenCalled();
+    });
+
+    it('rejects a selected preset mixed with caller actions before parsing or provider work', async () => {
+        const claim = vi.spyOn(agentRunWorkLease, 'claim');
+        const input = {
+            prompt: 'Play',
+            source: 'preset',
+            preset: { id: 'play', expectedContext: {} },
+            actions: [action],
+        };
+        expect(await Reflect.apply(submitAdmittedPromptRequest, undefined, [input])).toEqual({
+            status: 'rejected',
+            runId: RUN_ID,
+        });
+        expect(mocks.parsePromptToActions).not.toHaveBeenCalled();
+        expect(mocks.planPromptActions).not.toHaveBeenCalled();
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(claim).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('failed');
+    });
+
+    it('does not parse or compile a pre-aborted selected preset', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        const claim = vi.spyOn(agentRunWorkLease, 'claim');
+        const result = await submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'preset',
+            signal: controller.signal,
+            preset: {
+                id: 'play',
+                expectedContext: {
+                    selectedTrackId: undefined,
+                    selectedClipId: undefined,
+                    selectedClipType: undefined,
+                    trackCount: 0,
+                },
+            },
+        });
+        expect(result.status).toBe('rejected');
+        expect(mocks.parsePromptToActions).not.toHaveBeenCalled();
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(claim).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
+    });
+
+    it('cancels a selected preset while its admitted parser result is pending without compilation', async () => {
+        const controller = new AbortController();
+        let finish: () => void = () => {
+            throw new Error('Expected parser entry');
+        };
+        mocks.parsePromptToActions.mockImplementationOnce(
+            () =>
+                new Promise((resolve) => {
+                    finish = () =>
+                        resolve({
+                            actions: [action],
+                            rawText: 'Play',
+                            requiresConfirmation: false,
+                            planningOutcome: { kind: 'proposal' },
+                        });
+                })
+        );
+        const pending = submitAdmittedPromptRequest({
+            prompt: 'Play',
+            source: 'preset',
+            signal: controller.signal,
+            preset: {
+                id: 'play',
+                expectedContext: {
+                    selectedTrackId: undefined,
+                    selectedClipId: undefined,
+                    selectedClipType: undefined,
+                    trackCount: 0,
+                },
+            },
+        });
+        expect(mocks.parsePromptToActions).toHaveBeenCalledOnce();
+        controller.abort();
+        finish();
+        expect((await pending).status).toBe('rejected');
+        expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+        expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('cancelled');
+    });
+
+    it.each(['revision', 'root', 'mutation', 'selection'])(
+        'rejects selected preset %s drift across admission before compilation',
+        async (drift) => {
+            let mutationCurrent = true;
+            vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => mutationCurrent);
+            mocks.parsePromptToActions.mockImplementationOnce(async () => {
+                if (drift === 'revision') {
+                    mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-2');
+                }
+                if (drift === 'root') {
+                    vi.mocked(captureProjectRootIdentity).mockReturnValue('replaced-root');
+                }
+                if (drift === 'mutation') {
+                    mutationCurrent = false;
+                }
+                if (drift === 'selection') {
+                    mocks.getProjectContext.mockReturnValue({
+                        tracks: [],
+                        selectedTrackId: 'other-track',
+                        selectedClipIds: [],
+                    });
+                }
+                return {
+                    actions: [action],
+                    rawText: 'Play',
+                    requiresConfirmation: false,
+                    planningOutcome: { kind: 'proposal' },
+                };
+            });
+            await expect(
+                submitAdmittedPromptRequest({
+                    prompt: 'Play',
+                    source: 'preset',
+                    preset: {
+                        id: 'play',
+                        expectedContext: {
+                            selectedTrackId: undefined,
+                            selectedClipId: undefined,
+                            selectedClipType: undefined,
+                            trackCount: 0,
+                        },
+                    },
+                })
+            ).rejects.toThrow('project');
+            expect(mocks.compileAgentActionExecution).not.toHaveBeenCalled();
+            expect(agentRunLifecycle.get(RUN_ID)?.phase).toBe('failed');
+        }
+    );
 
     it('claims provider work before planning and records real intermediate and final budget usage', async () => {
         const claim = vi.spyOn(agentRunWorkLease, 'claim');

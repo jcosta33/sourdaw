@@ -33,7 +33,8 @@ const mocks = vi.hoisted(() => ({
     validateApproval: vi.fn(),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.captureRevision,
 }));
 
