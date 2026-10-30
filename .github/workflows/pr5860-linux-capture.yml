@@ -9,7 +9,7 @@ jobs:
     capture:
         if: >-
             github.event.pull_request.number == 5860 &&
-            github.event.before == 'ed2e49cf20a06239e467ce300b9a3a066e9328bc' &&
+            github.event.before == '926e9c05fc6e23e7c6a22a597c21320121aa972e' &&
             github.run_attempt == 1 &&
             github.event.pull_request.head.ref == 'build/pnpm-private-store'
         runs-on: ubuntu-latest
@@ -101,7 +101,23 @@ jobs:
                   set -o pipefail
                   export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import=$GITHUB_WORKSPACE/control/.github/diagnostics/5860/debug-preload.mjs"
                   node -e "const assert=require('node:assert/strict'); const path=require('node:path'); assert.equal(process.env.DEBUG_FILE,path.join(process.env.SOURDAW_DEBUG_DIR,process.pid+'.log'))"
+                  set +e
                   node scripts/prValidationScope.ts run 2>&1 | tee shard.log
+                  results=("${PIPESTATUS[@]}")
+                  set -e
+                  test "${results[1]}" -eq 0
+                  if [ -z "$(find "$GITHUB_WORKSPACE/debug" -type f -name '*.log' -size +0c -print -quit)" ]; then
+                    echo 'No per-process debug log was captured' >&2
+                    exit 1
+                  fi
+                  if grep -a -q 'pw:protocol' shard.log; then
+                    echo 'Protocol output leaked into shard.log' >&2
+                    exit 1
+                  else
+                    grep_status=$?
+                    test "$grep_status" -eq 1
+                  fi
+                  exit "${results[0]}"
             - name: Sample memory after shard
               if: ${{ always() }}
               run: |

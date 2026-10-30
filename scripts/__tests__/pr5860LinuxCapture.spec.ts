@@ -17,7 +17,7 @@ describe('PR 5860 Linux capture', () => {
     it('admits only the intended synchronize event and attempt', () => {
         expect(workflow.on).toEqual({ pull_request: { types: ['synchronize'] } });
         expect(workflow.jobs.capture.if.replaceAll(/\s+/g, ' ').trim()).toBe(
-            "github.event.pull_request.number == 5860 && github.event.before == 'ed2e49cf20a06239e467ce300b9a3a066e9328bc' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'"
+            "github.event.pull_request.number == 5860 && github.event.before == '926e9c05fc6e23e7c6a22a597c21320121aa972e' && github.run_attempt == 1 && github.event.pull_request.head.ref == 'build/pnpm-private-store'"
         );
         expect(workflow.permissions).toEqual({ contents: 'read' });
         expect(step('Checkout diagnostic control').with?.['persist-credentials']).toBe(false);
@@ -44,6 +44,9 @@ describe('PR 5860 Linux capture', () => {
         expect(step('Verify original collection').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
         expect(step('Run original shard').run).toContain('${NODE_OPTIONS:+$NODE_OPTIONS }--import=');
         expect(step('Run original shard').run).toContain('assert.equal(process.env.DEBUG_FILE');
+        expect(step('Run original shard').run).toContain('No per-process debug log was captured');
+        expect(step('Run original shard').run).toContain('Protocol output leaked into shard.log');
+        expect(step('Run original shard').run).toContain('exit "${results[0]}"');
         expect(step('Retain capture').with?.path).toContain('debug/');
         expect(readFileSync('.github/diagnostics/5860/debug-preload.mjs', 'utf8')).toContain('`${process.pid}.log`');
     });
