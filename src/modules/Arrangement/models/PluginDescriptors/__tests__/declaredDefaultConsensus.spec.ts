@@ -700,7 +700,6 @@ const DEFAULT_SOURCES: Record<NativeDspDeviceType, DeviceDefaults> = {
                     'foldbackThreshold',
                     'bitDepth',
                     'sampleRateReduce',
-                    'breakdownDepth',
                     'filterMode',
                     'filterCutoff',
                     'filterResonance',

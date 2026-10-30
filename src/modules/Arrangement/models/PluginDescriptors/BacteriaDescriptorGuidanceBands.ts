@@ -208,17 +208,6 @@ export const BACTERIA_BANDS_PARAMETER_GUIDANCE: Readonly<Record<string, DevicePa
         ],
         noExternalModulation
     ),
-    breakdownDepth: parameterGuidance(
-        'Breakdown pitch-drop depth',
-        'Intended to set how many octaves the breakdown mode drops the pitch.',
-        0.5,
-        2,
-        [
-            'Meant for distortionMode 6, but the breakdown processor is not implemented and that mode renders as soft clip driven by drive, so this value is stored and never read.',
-        ],
-        ['Changing it has no audible effect, so a recipe that relies on it for a pitch drop will silently do nothing.'],
-        noExternalModulation
-    ),
     filterMode: parameterGuidance(
         'Filter response type',
         'Chooses low-pass (0), high-pass (1), band-pass (2), notch (3), formant (4) or comb (5).',
