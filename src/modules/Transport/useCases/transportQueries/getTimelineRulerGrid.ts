@@ -4,7 +4,7 @@ import {
     getPrecedingBars,
     getTimeSignatureSegmentAtBeat,
     type TimeSignatureChange,
-} from '../../models/timeSignatureMap';
+} from '../../models/TimeSignatureMap';
 
 type RulerGridInput = {
     changes: readonly TimeSignatureChange[];
