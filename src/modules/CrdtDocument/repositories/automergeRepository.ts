@@ -31,8 +31,8 @@ import {
 } from '#/infra/store/storage/createAutomergeStorage';
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
-import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { type ProspectiveMutationWorkerResult } from '../models/ProspectiveMutationWorkerProtocol';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 import { requestProspectiveMutation } from './prospectiveMutationWorkerClient';
@@ -617,44 +617,44 @@ class AutomergeRepository {
             }
         };
         const nativeAuthor = canonicalMutation ? getAuthor(doc) : undefined;
-        const requestMaterialization =
-            canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)
-                ? (signal: AbortSignal): Promise<void> => {
-                      if (cloneConsumed || workerRequested || !candidate) {
-                          throw new Error('Prospective clone has already settled');
-                      }
-                      authority.assertCurrent();
-                      workerRequested = true;
-                      try {
-                          // Encoding must not consume the retained adoption clone's persistence cursor.
-                          const encodingClone = clone(candidate, { actor });
-                          let seed: Uint8Array<ArrayBuffer>;
-                          try {
-                              seed = Uint8Array.from(save(encodingClone));
-                          } finally {
-                              free(encodingClone);
-                          }
-                          authority.assertCurrent();
-                          return requestProspectiveMutation(
-                              { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
-                              AbortSignal.any([signal, controller.signal])
-                          ).then(
-                              (result) => {
-                                  if (!cloneConsumed) {
-                                      workerResult = result;
-                                  }
-                              },
-                              (error: unknown) => {
-                                  releaseClone();
-                                  throw error;
-                              }
-                          );
-                      } catch (error) {
-                          releaseClone();
-                          throw error;
-                      }
-                  }
-                : undefined;
+        let requestMaterialization: ((signal: AbortSignal) => Promise<void>) | undefined;
+        if (canonicalMutation && (nativeAuthor === null || nativeAuthor === undefined)) {
+            requestMaterialization = (signal: AbortSignal): Promise<void> => {
+                if (cloneConsumed || workerRequested || !candidate) {
+                    throw new Error('Prospective clone has already settled');
+                }
+                authority.assertCurrent();
+                workerRequested = true;
+                try {
+                    // Encoding must not consume the retained adoption clone's persistence cursor.
+                    const encodingClone = clone(candidate, { actor });
+                    let seed: Uint8Array<ArrayBuffer>;
+                    try {
+                        seed = Uint8Array.from(save(encodingClone));
+                    } finally {
+                        free(encodingClone);
+                    }
+                    authority.assertCurrent();
+                    return requestProspectiveMutation(
+                        { seed, heads: previousHeads, actor, message, mutation: canonicalMutation },
+                        AbortSignal.any([signal, controller.signal])
+                    ).then(
+                        (result) => {
+                            if (!cloneConsumed) {
+                                workerResult = result;
+                            }
+                        },
+                        (error: unknown) => {
+                            releaseClone();
+                            throw error;
+                        }
+                    );
+                } catch (error) {
+                    releaseClone();
+                    throw error;
+                }
+            };
+        }
         return {
             requestMaterialization,
             isCurrent: (): boolean => !cloneConsumed && authority.isCurrent(),

@@ -30,7 +30,9 @@ describe('prospective Worker public WASM readiness', () => {
         calls.materialize.mockReturnValue(result);
         await import('../prospectiveMutationWorker');
         expect(calls.initialize).not.toHaveBeenCalled();
-        if (!endpoint.onmessage) throw new Error('Worker handler missing');
+        if (!endpoint.onmessage) {
+            throw new Error('Worker handler missing');
+        }
         const request = { seed: 'owned request' };
         const pending = endpoint.onmessage(new MessageEvent('message', { data: request }));
         expect(calls.initialize).toHaveBeenCalledExactlyOnceWith(expect.stringContaining('automerge.wasm'));
@@ -49,7 +51,9 @@ describe('prospective Worker public WASM readiness', () => {
         async (message) => {
             calls.initialize.mockRejectedValue(new Error(message));
             await import('../prospectiveMutationWorker');
-            if (!endpoint.onmessage) throw new Error('Worker handler missing');
+            if (!endpoint.onmessage) {
+                throw new Error('Worker handler missing');
+            }
             await endpoint.onmessage(new MessageEvent('message', { data: { seed: 'request' } }));
             expect(calls.initialize).toHaveBeenCalledTimes(1);
             expect(calls.materialize).not.toHaveBeenCalled();

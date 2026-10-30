@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
+import wasmUrl from '@automerge/automerge/automerge.wasm';
 import { initializeWasm } from '@automerge/automerge/slim';
-import wasmUrl from '@automerge/automerge/automerge.wasm?url';
 
 import { type ProspectiveMutationWorkerResponse } from '../models/ProspectiveMutationWorkerProtocol';
 

@@ -74,18 +74,79 @@ const worker = vi.hoisted(() =>
 );
 vi.mock('../../../repositories/transientOnsetWorkerClient', () => ({ runTransientOnsetWorker: worker }));
 type MaterializationRequest = {
-    seed: Uint8Array;
+    seed: Uint8Array<ArrayBuffer>;
+    heads: readonly string[];
     actor: string;
     message?: string;
+    time?: number;
     mutation: Parameters<typeof applyCanonicalStorageSlotMutation>[1];
 };
 type MaterializationResult = { bytes: Uint8Array<ArrayBuffer>; heads: string[] };
 const materialization = vi.hoisted(() =>
     vi.fn<(request: MaterializationRequest, signal: AbortSignal) => Promise<MaterializationResult>>()
 );
-vi.mock('#/modules/CrdtDocument/repositories/prospectiveMutationWorkerClient', () => ({
-    requestProspectiveMutation: materialization,
-}));
+class MaterializationWorker {
+    static instances: MaterializationWorker[] = [];
+    static recordedReceivingRealm = false;
+    onmessage: ((event: MessageEvent<unknown>) => void) | null = null;
+    onerror: ((event: Event) => void) | null = null;
+    onmessageerror: ((event: MessageEvent<unknown>) => void) | null = null;
+    private readonly lifetime = new AbortController();
+    lateErrors: unknown[] = [];
+    completion: Promise<void> = Promise.resolve();
+    terminated = false;
+    terminate = vi.fn(() => {
+        this.terminated = true;
+        this.lifetime.abort();
+    });
+
+    constructor(url: URL, options: WorkerOptions) {
+        expect(url.pathname).toMatch(/\/workers\/prospectiveMutationWorker\.ts$/);
+        expect(options).toEqual({ type: 'module' });
+        MaterializationWorker.instances.push(this);
+    }
+
+    postMessage(request: MaterializationRequest, transfer: Transferable[]): void {
+        const received = structuredClone(request, { transfer });
+        expect(request.seed.byteLength).toBe(0);
+        this.completion = materialization(received, this.lifetime.signal)
+            .then(
+                (result) => {
+                    const response = structuredClone(
+                        { status: 'complete', ...result },
+                        { transfer: [result.bytes.buffer] }
+                    );
+                    expect(result.bytes.byteLength).toBe(0);
+                    if (!MaterializationWorker.recordedReceivingRealm) {
+                        console.info('Controlled Worker host-clone receiving realm:', {
+                            typedArray: response.bytes instanceof Uint8Array,
+                            arrayBuffer: response.bytes.buffer instanceof ArrayBuffer,
+                        });
+                        MaterializationWorker.recordedReceivingRealm = true;
+                    }
+                    // Node's clone returns host-realm views; a browser message adopts the receiver's intrinsics.
+                    const bytes = Uint8Array.from(response.bytes);
+                    expect(bytes.buffer).toBeInstanceOf(ArrayBuffer);
+                    this.onmessage?.(new MessageEvent('message', { data: { ...response, bytes } }));
+                },
+                (error: unknown) => {
+                    if (this.terminated) {
+                        this.lateErrors.push(error);
+                        return;
+                    }
+                    this.onmessage?.(
+                        new MessageEvent('message', {
+                            data: { status: 'failed', message: error instanceof Error ? error.message : String(error) },
+                        })
+                    );
+                }
+            )
+            .catch((error: unknown) => {
+                this.lateErrors.push(error);
+                this.onerror?.(new Event('error'));
+            });
+    }
+}
 
 type WarpState = Parameters<typeof setWarpState>[1];
 
@@ -199,6 +260,8 @@ function holdAnimationFrames() {
 
 describe('locked transient markers through the real Elastic editor', () => {
     beforeEach(() => {
+        MaterializationWorker.instances = [];
+        vi.stubGlobal('Worker', MaterializationWorker);
         materialization.mockReset();
         materialization.mockImplementation(async (request) => {
             // Only transport is substituted; the same canonical helper and native codec remain real.
@@ -279,7 +342,18 @@ describe('locked transient markers through the real Elastic editor', () => {
         flushAutomergeStorageWrites();
     });
 
-    afterEach(() => {
+    afterEach(async () => {
+        for (const instance of MaterializationWorker.instances) {
+            if (!instance.terminated) {
+                instance.onerror?.(new Event('error'));
+            }
+            await instance.completion;
+            expect(instance.terminated).toBe(true);
+            expect(instance.onmessage).toBeNull();
+            expect(instance.onerror).toBeNull();
+            expect(instance.onmessageerror).toBeNull();
+            expect(instance.lateErrors).toEqual([]);
+        }
         resetPreferences();
         cleanup();
         vi.restoreAllMocks();
@@ -294,6 +368,7 @@ describe('locked transient markers through the real Elastic editor', () => {
         setElasticRootIdentityProvider(null);
         setElasticSensitivityRootIdentityCapture(null);
         clipSelectionStore.set(defaultClipSelectionState);
+        vi.unstubAllGlobals();
     });
 
     it.each(['explicitly-open', 'selected-only'] as const)(

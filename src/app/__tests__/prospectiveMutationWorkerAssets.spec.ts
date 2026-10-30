@@ -23,7 +23,9 @@ describe('shipping prospective Worker public WASM assets', () => {
             path.join(ROOT, 'vite.config.ts'),
             ROOT
         );
-        if (!loaded) throw new Error('Shipping Vite config missing');
+        if (!loaded) {
+            throw new Error('Shipping Vite config missing');
+        }
         const cacheDir = mkdtempSync(path.join(tmpdir(), 'prospective-worker-optimizer-'));
         const logger = createLogger('info', { allowClearScreen: false });
         const info = vi.spyOn(logger, 'info');
@@ -54,7 +56,9 @@ describe('shipping prospective Worker public WASM assets', () => {
             const slim = initial.optimized['@automerge/automerge/slim'];
             // This must fail on actual cold optimizer output when the startup include is removed.
             expect(slim, 'Public Slim must be optimized before any Worker entry request').toBeDefined();
-            if (!slim) throw new Error('Initial optimizer output is missing public Slim');
+            if (!slim) {
+                throw new Error('Initial optimizer output is missing public Slim');
+            }
             expect(realpathSync(path.resolve(path.dirname(metadataPath), slim.src))).toBe(
                 realpathSync(fileURLToPath(import.meta.resolve('@automerge/automerge/slim')))
             );
@@ -64,18 +68,24 @@ describe('shipping prospective Worker public WASM assets', () => {
             const visited = new Set<string>();
             while (pending.length > 0) {
                 const file = pending.pop();
-                if (!file || visited.has(file)) continue;
+                if (!file || visited.has(file)) {
+                    continue;
+                }
                 visited.add(file);
                 const code = readFileSync(file, 'utf8');
                 expect(code, `Optimized Slim closure embeds WASM: ${file}`).not.toContain(embeddedPrefix);
                 for (const match of code.matchAll(/\b(?:from\s*|import\s*)(['"])([^'"]+)\1/g)) {
                     const imported = match[2];
-                    if (imported?.startsWith('.')) pending.push(path.resolve(path.dirname(file), imported));
+                    if (imported?.startsWith('.')) {
+                        pending.push(path.resolve(path.dirname(file), imported));
+                    }
                 }
             }
             expect(visited.size).toBeGreaterThan(1);
             const origin = server.resolvedUrls?.local[0];
-            if (!origin) throw new Error('Cold dev server did not expose its temporary listener');
+            if (!origin) {
+                throw new Error('Cold dev server did not expose its temporary listener');
+            }
             const entry = await fetch(
                 new URL(
                     '/src/modules/CrdtDocument/workers/prospectiveMutationWorker.ts?worker_file&type=module',
@@ -84,10 +94,12 @@ describe('shipping prospective Worker public WASM assets', () => {
             );
             expect(entry.status).toBe(200);
             const entryCode = await entry.text();
-            const slimImport = [...entryCode.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g)]
-                .map((match) => match[1])
-                .find((url) => url && new URL(url, origin).pathname.endsWith(`/${path.basename(slim.file)}`));
-            if (!slimImport) throw new Error('Actual Worker transform did not import the startup optimized Slim');
+            const slimImport = Array.from(entryCode.matchAll(/\bfrom\s*['"]([^'"]+)['"]/g), (match) => match[1]).find(
+                (url) => url && new URL(url, origin).pathname.endsWith(`/${path.basename(slim.file)}`)
+            );
+            if (!slimImport) {
+                throw new Error('Actual Worker transform did not import the startup optimized Slim');
+            }
             const optimized = await fetch(new URL(slimImport, origin));
             expect(optimized.status).toBe(200);
             expect(await optimized.text()).toContain('initializeWasm');
@@ -99,7 +111,7 @@ describe('shipping prospective Worker public WASM assets', () => {
             console.info('Cold public Slim startup metadata:', {
                 browserHash: initial.browserHash,
                 optimized: slim,
-                reachableFiles: [...visited].map((file) => path.relative(cacheDir, file)),
+                reachableFiles: Array.from(visited, (file) => path.relative(cacheDir, file)),
             });
         } finally {
             try {
@@ -117,15 +129,20 @@ describe('shipping prospective Worker public WASM assets', () => {
             path.join(ROOT, 'vite.config.ts'),
             ROOT
         );
-        if (!loaded) throw new Error('Shipping Vite config missing');
+        if (!loaded) {
+            throw new Error('Shipping Vite config missing');
+        }
         const config = loaded.config;
         expect(config.base).toBe('./');
         expect(config.worker?.format).toBe('iife');
         const shippingBuild = config.build ?? {};
         const shippingRolldown = shippingBuild.rolldownOptions ?? {};
         const shippingOutput = shippingRolldown.output ?? {};
-        if (Array.isArray(shippingOutput)) throw new Error('Expected one shipping output configuration');
+        if (Array.isArray(shippingOutput)) {
+            throw new TypeError('Expected one shipping output configuration');
+        }
         const resolved = new Map<string, string>();
+        const shippingPlugins = config.plugins ?? [];
         const result = await build({
             root: ROOT,
             configFile: false,
@@ -137,17 +154,20 @@ describe('shipping prospective Worker public WASM assets', () => {
             esbuild: config.esbuild,
             oxc: config.oxc,
             plugins: [
-                ...(config.plugins ?? []),
+                ...shippingPlugins,
                 {
                     name: 'sourdaw-prospective-worker-leaf',
                     async buildStart() {
                         for (const id of [
                             '@automerge/automerge',
                             '@automerge/automerge/slim',
+                            '@automerge/automerge/automerge.wasm',
                             '@automerge/automerge/automerge.wasm?url',
                         ]) {
                             const target = await this.resolve(id, CLIENT);
-                            if (!target) throw new Error(`Unresolved public entry: ${id}`);
+                            if (!target) {
+                                throw new Error(`Unresolved public entry: ${id}`);
+                            }
                             resolved.set(id, target.id);
                         }
                     },
@@ -176,6 +196,9 @@ describe('shipping prospective Worker public WASM assets', () => {
         const binaryEntry = fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'));
         expect(realpathSync(resolved.get('@automerge/automerge')!)).toBe(realpathSync(rootEntry));
         expect(realpathSync(resolved.get('@automerge/automerge/slim')!)).toBe(realpathSync(slimEntry));
+        const mappedBinary = resolved.get('@automerge/automerge/automerge.wasm')!;
+        expect(mappedBinary.endsWith('?url')).toBe(true);
+        expect(realpathSync(mappedBinary.slice(0, -'?url'.length))).toBe(realpathSync(binaryEntry));
         expect(realpathSync(resolved.get('@automerge/automerge/automerge.wasm?url')!.split('?')[0]!)).toBe(
             realpathSync(binaryEntry)
         );
@@ -184,11 +207,15 @@ describe('shipping prospective Worker public WASM assets', () => {
         const assets = outputs.filter((item) => item.type === 'asset');
         const binary = assets.find((asset) => asset.fileName.endsWith('.wasm'));
         const worker = assets.find((asset) => /(?:^|\/)prospectiveMutationWorker-[^/]+\.js$/.test(asset.fileName));
-        if (!binary || !worker) throw new Error('Actual worker or raw WASM asset was not emitted');
-        const bytes =
-            typeof binary.source === 'string'
-                ? new TextEncoder().encode(binary.source)
-                : Uint8Array.from(binary.source);
+        if (!binary || !worker) {
+            throw new Error('Actual worker or raw WASM asset was not emitted');
+        }
+        let bytes: Uint8Array<ArrayBuffer>;
+        if (typeof binary.source === 'string') {
+            bytes = new TextEncoder().encode(binary.source);
+        } else {
+            bytes = Uint8Array.from(binary.source);
+        }
         expect(bytes.byteLength).toBe(3_644_225);
         expect(createHash('sha256').update(bytes).digest('hex')).toBe(WASM_SHA256);
         expect(Buffer.from(bytes)).toEqual(readFileSync(binaryEntry));
@@ -236,7 +263,9 @@ describe('shipping prospective Worker public WASM assets', () => {
             });
             vm.runInContext(code, context, { timeout: 1000 });
             expect(fetchBinary).not.toHaveBeenCalled();
-            if (!scope.onmessage) throw new Error('Actual emitted Worker handler missing');
+            if (!scope.onmessage) {
+                throw new Error('Actual emitted Worker handler missing');
+            }
             const actor = 'aaaaaaaaaaaaaaaa';
             const original = from({ slot: { count: 0 } }, { actor });
             const encoding = clone(original, { actor });
@@ -271,7 +300,9 @@ describe('shipping prospective Worker public WASM assets', () => {
                 expect(fetchBinary).toHaveBeenCalledTimes(1);
                 expect(postMessage).toHaveBeenCalledTimes(1);
                 const reply = postMessage.mock.calls[0]![0];
-                if (reply.status !== 'complete') throw new Error(reply.message);
+                if (reply.status !== 'complete') {
+                    throw new Error(reply.message);
+                }
                 const actual = load<{ slot: { count: number } }>(reply.bytes, { actor });
                 try {
                     expect(actual.slot.count).toBe(1);

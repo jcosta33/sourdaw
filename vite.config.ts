@@ -140,6 +140,10 @@ export default defineConfig({
     resolve: {
         alias: [
             { find: '#', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+            {
+                find: /^@automerge\/automerge\/automerge\.wasm$/,
+                replacement: `${fileURLToPath(import.meta.resolve('@automerge/automerge/automerge.wasm'))}?url`,
+            },
             // @automerge/automerge v3's `browser` export condition resolves to
             // `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` —
             // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does

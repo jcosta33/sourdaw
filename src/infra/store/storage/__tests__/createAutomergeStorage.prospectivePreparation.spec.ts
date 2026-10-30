@@ -171,7 +171,9 @@ describe('invisible conditional Automerge preparation', () => {
             }
             if (kind === 'message') {
                 const bytes = getLastLocalChange(document);
-                if (!bytes) throw new Error('Expected complete actual change');
+                if (!bytes) {
+                    throw new Error('Expected complete actual change');
+                }
                 // The existing first-write message contract survives complete fallback.
                 expect(decodeChange(bytes).message).toBe('Detect transients');
             }
@@ -189,9 +191,13 @@ describe('invisible conditional Automerge preparation', () => {
             appendAutomergeStoragePublicationMetadata('root', { kind: 'subscriber' });
         });
         const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
-        if (transaction.status !== 'returned') throw transaction.error;
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
         const plan = storage.prepareSet?.(transaction.value, { count: 1 }, (value) => store.set(value));
-        if (!plan) throw new Error('Expected preparation');
+        if (!plan) {
+            throw new Error('Expected preparation');
+        }
         const before = document;
         plan.clone();
         plan.materialize();
@@ -212,9 +218,13 @@ describe('invisible conditional Automerge preparation', () => {
         });
         storage.hydrate?.();
         const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
-        if (transaction.status !== 'returned') throw transaction.error;
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
         const plan = storage.prepareSet?.(transaction.value, { count: 1 });
-        if (!plan) throw new Error('Expected complete local fallback');
+        if (!plan) {
+            throw new Error('Expected complete local fallback');
+        }
         plan.clone();
         expect(descriptions).toEqual([undefined]);
         expect(plan.requestMaterialization).toBeUndefined();

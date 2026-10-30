@@ -16,10 +16,12 @@ export function materializeProspectiveMutation(request: unknown): ProspectiveMut
         if (heads.length !== input.heads.length || heads.some((head) => !input.heads.includes(head))) {
             throw new Error('Prospective mutation seed heads changed');
         }
-        const options =
-            input.time === undefined
-                ? { message: input.message || undefined }
-                : { message: input.message || undefined, time: input.time };
+        let options: { message: string | undefined; time?: number };
+        if (input.time === undefined) {
+            options = { message: input.message || undefined };
+        } else {
+            options = { message: input.message || undefined, time: input.time };
+        }
         document = change(document, options, (draft) => applyCanonicalStorageSlotMutation(draft, input.mutation));
         if (getMissingDeps(document, []).length > 0) {
             throw new Error('Prospective mutation candidate has missing dependencies');

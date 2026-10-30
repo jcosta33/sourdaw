@@ -15,9 +15,10 @@ export function applyCanonicalStorageSlotMutation(
 ): void {
     const evidenceKey = '_storagePublicationEvidence';
     const observesEvidence = Object.hasOwn(doc, evidenceKey);
-    const before = observesEvidence
-        ? JSON.stringify({ present: Object.hasOwn(doc, mutation.key), value: doc[mutation.key] })
-        : undefined;
+    let before: string | undefined;
+    if (observesEvidence) {
+        before = JSON.stringify({ present: Object.hasOwn(doc, mutation.key), value: doc[mutation.key] });
+    }
     reconcileCrdtSlot({ doc, ...mutation });
     if (
         observesEvidence &&

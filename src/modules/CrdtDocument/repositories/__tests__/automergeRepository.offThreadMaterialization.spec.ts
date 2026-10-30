@@ -23,6 +23,7 @@ import {
 import * as native from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { createStore } from '#/infra/store/createStore';
 import {
     applyCanonicalStorageSlotMutation,
     type CanonicalStorageSlotMutation,
@@ -40,8 +41,6 @@ import {
     type ProspectiveMutationWorkerResult,
 } from '../../models/ProspectiveMutationWorkerProtocol';
 import { TransactionalPersistence } from '../../testing/transactionalPersistence';
-import { createStore } from '#/infra/store/createStore';
-
 import { commandSourcePublicationContains } from '../../useCases/commandSourcePublicationContains';
 import { registerCrdtStorageRuntime } from '../../useCases/registerCrdtStorageRuntime';
 import { automergeRepository as repository } from '../automergeRepository';
@@ -141,7 +140,9 @@ function plan(original: Doc<Document>, unchanged = false) {
         ['slot'],
         mutation
     );
-    if (!candidate.requestMaterialization) throw new Error('Expected canonical Worker request');
+    if (!candidate.requestMaterialization) {
+        throw new Error('Expected canonical Worker request');
+    }
     return candidate;
 }
 function publish(candidate: ReturnType<ReturnType<typeof plan>['materialize']>, validateDocument = vi.fn()) {
@@ -211,7 +212,9 @@ describe('repository canonical Worker candidate adoption', () => {
         await prepared.requestMaterialization!(new AbortController().signal);
         publish(prepared.materialize());
         const actual = repository.getDoc<Document>('root');
-        if (!actual) throw new Error('Expected accepted native candidate');
+        if (!actual) {
+            throw new Error('Expected accepted native candidate');
+        }
         expect(getMissingDeps(actual, previousHeads)).toEqual([]);
         expect(hasHeads(actual, previousHeads)).toBe(true);
         expect(getChanges(merged, actual)).toHaveLength(unchanged ? 0 : 1);
@@ -253,7 +256,9 @@ describe('repository canonical Worker candidate adoption', () => {
         }
         expect(() => publish(prepared.materialize()), JSON.stringify({ previousHeads, metadata })).not.toThrow();
         const actual = repository.getDoc<Document>('root');
-        if (!actual) throw new Error('Expected accepted native ancestor candidate');
+        if (!actual) {
+            throw new Error('Expected accepted native ancestor candidate');
+        }
         expect(getChanges(merged, actual)).toHaveLength(options.unchanged ? 0 : 1);
         expect(actual.slot.count).toBe(options.unchanged ? 0 : 1);
         expect(actual.other).toBe(true);
@@ -273,10 +278,12 @@ describe('repository canonical Worker candidate adoption', () => {
             repository.onChange(observer);
             const previousHeads = getHeads(merged);
             const canonicalDependencies = [...previousHeads, ...ancestorHeads];
-            const dependencies =
-                kind === 'missing head'
-                    ? [...canonicalDependencies.filter((head) => head !== previousHeads[0]), ...earlierHeads]
-                    : [...canonicalDependencies, kind === 'duplicate' ? previousHeads[0]! : earlierHeads[0]!];
+            let dependencies: string[];
+            if (kind === 'missing head') {
+                dependencies = [...canonicalDependencies.filter((head) => head !== previousHeads[0]), ...earlierHeads];
+            } else {
+                dependencies = [...canonicalDependencies, kind === 'duplicate' ? previousHeads[0]! : earlierHeads[0]!];
+            }
             mocks.request.mockImplementationOnce(async (request) => {
                 const seed = load<Record<string, unknown>>(request.seed, { actor: request.actor });
                 const candidate = changeAt(seed, dependencies, { message: request.message }, (draft) =>
@@ -296,7 +303,8 @@ describe('repository canonical Worker candidate adoption', () => {
                 const additions = native.getChangesMetaSince(checked, previousHeads);
                 expect(additions).toHaveLength(1);
                 expect(additions[0]).toMatchObject({ actor, seq: 3, message: 'Detect' });
-                expect([...(additions[0]?.deps ?? [])].sort()).toEqual([...dependencies].sort());
+                const actualDependencies = additions[0]?.deps ?? [];
+                expect([...actualDependencies].sort()).toEqual([...dependencies].sort());
                 expect(getMissingDeps(checked, [])).toEqual([]);
                 expect(hasHeads(checked, previousHeads)).toBe(true);
                 expect(getHeads(checked)).toEqual(result.heads);
@@ -418,13 +426,17 @@ describe('repository canonical Worker candidate adoption', () => {
             doc.other = true;
         });
         const prior = repository.getDoc<Document>('root');
-        if (!prior) throw new Error('Expected unsaved prior edit');
+        if (!prior) {
+            throw new Error('Expected unsaved prior edit');
+        }
         const prepared = plan(prior);
         await prepared.requestMaterialization!(new AbortController().signal);
         expect(repository.getDoc('root')).toBe(prior);
         publish(prepared.materialize());
         const actual = repository.getDoc<Document>('root');
-        if (!actual) throw new Error('Expected adoption');
+        if (!actual) {
+            throw new Error('Expected adoption');
+        }
         expect(actual.other).toBe(true);
         expect(actual.slot.count).toBe(1);
         expect(getObjectId(actual.slot.rows)).toBe(getObjectId(original.slot.rows));
@@ -432,7 +444,9 @@ describe('repository canonical Worker candidate adoption', () => {
             original.slot.rows?.map((row) => getObjectId(row))
         );
         const [delta] = getChanges(prior, actual);
-        if (!delta) throw new Error('Expected one canonical delta');
+        if (!delta) {
+            throw new Error('Expected one canonical delta');
+        }
         expect(decodeChange(delta)).toMatchObject({ actor, seq: 3, deps: getHeads(prior), message: 'Detect' });
         const peer = change(clone(prior, { actor: 'bbbbbbbbbbbbbbbb' }), (doc) => {
             doc.slot.rows![0]!.value = 9.5;
@@ -446,14 +460,18 @@ describe('repository canonical Worker candidate adoption', () => {
         const graph = readChangesSinceHeads('root', oldHeads);
         expect(graph).toHaveLength(2);
         const chunk = repository.saveDocIncremental('root');
-        if (!chunk) throw new Error('Expected both unsaved changes');
+        if (!chunk) {
+            throw new Error('Expected both unsaved changes');
+        }
         const saving = saveIncrementalsToIdb([{ id: 'root', chunk }]);
         (await persistence.waitForTransaction('readwrite', 1)).complete();
         expect(await saving).toMatchObject({ status: 'committed' });
         const reading = loadAllFromIdb();
         (await persistence.waitForTransaction('readonly', 1)).complete();
         const bundle = await reading;
-        if (!bundle) throw new Error('Expected saved bundle');
+        if (!bundle) {
+            throw new Error('Expected saved bundle');
+        }
         await repository.loadAll({ bundle });
         const reloaded = repository.getDoc<Document>('root');
         expect(reloaded).toEqual(actual);
@@ -463,7 +481,9 @@ describe('repository canonical Worker candidate adoption', () => {
             doc.slot.count = 2;
         });
         const next = repository.getDoc<Document>('root');
-        if (!next) throw new Error('Expected next same-actor change');
+        if (!next) {
+            throw new Error('Expected next same-actor change');
+        }
         expect(decodeChange(getChanges(actual, next)[0]!)).toMatchObject({ actor, seq: 4, deps: getHeads(actual) });
     });
 
@@ -489,7 +509,9 @@ describe('repository canonical Worker candidate adoption', () => {
         expect(repository.getDoc('root')).toBe(original);
         publish(candidate);
         const actual = repository.getDoc<Document>('root');
-        if (!actual) throw new Error('Expected publication');
+        if (!actual) {
+            throw new Error('Expected publication');
+        }
         expect(observer).toHaveBeenCalledExactlyOnceWith('root', { localSlots: ['slot'] });
         const changes = getChanges(original, actual);
         expect(changes).toHaveLength(1);
@@ -501,14 +523,18 @@ describe('repository canonical Worker candidate adoption', () => {
         const [peer] = applyChanges(clone(original, { actor: 'bbbbbbbbbbbbbbbb' }), changes);
         expect(peer).toEqual(actual);
         const chunk = repository.saveDocIncremental('root');
-        if (!chunk) throw new Error('Expected actual persistence chunk');
+        if (!chunk) {
+            throw new Error('Expected actual persistence chunk');
+        }
         const persisted = saveIncrementalsToIdb([{ id: 'root', chunk }]);
         (await persistence.waitForTransaction('readwrite', 1)).complete();
         expect(await persisted).toMatchObject({ status: 'committed' });
         const reading = loadAllFromIdb();
         (await persistence.waitForTransaction('readonly', 1)).complete();
         const bundle = await reading;
-        if (!bundle) throw new Error('Expected saved bundle');
+        if (!bundle) {
+            throw new Error('Expected saved bundle');
+        }
         release();
         await repository.loadAll({ bundle });
         expect(repository.getDoc<Document>('root')?.slot.count).toBe(1);
@@ -519,10 +545,14 @@ describe('repository canonical Worker candidate adoption', () => {
             doc.slot.count = 2;
         });
         const next = repository.getDoc<Document>('root');
-        if (!next) throw new Error('Expected next change');
+        if (!next) {
+            throw new Error('Expected next change');
+        }
         expect(getActorId(next)).toBe(actor);
         const [last] = getChanges(actual, next);
-        if (!last) throw new Error('Expected native actor continuation');
+        if (!last) {
+            throw new Error('Expected native actor continuation');
+        }
         expect(decodeChange(last)).toMatchObject({ actor, seq: 3, deps: getHeads(actual) });
     });
 
@@ -600,27 +630,41 @@ describe('repository canonical Worker candidate adoption', () => {
         mocks.request.mockImplementationOnce(async (request) => {
             const result = response(request);
             let bytes = Uint8Array.from(result.bytes);
-            if (kind === 'magic') bytes[0] = 0;
-            if (kind === 'type') bytes[8] = 1;
-            if (kind === 'truncated') bytes = bytes.slice(0, 9);
-            if (kind === 'trailing') bytes = Uint8Array.from([...bytes, 0]);
-            if (kind === 'checksum') bytes[4] = bytes[4]! ^ 1;
+            if (kind === 'magic') {
+                bytes[0] = 0;
+            }
+            if (kind === 'type') {
+                bytes[8] = 1;
+            }
+            if (kind === 'truncated') {
+                bytes = bytes.slice(0, 9);
+            }
+            if (kind === 'trailing') {
+                bytes = Uint8Array.from([...bytes, 0]);
+            }
+            if (kind === 'checksum') {
+                bytes[4] = bytes[4]! ^ 1;
+            }
             let body = 9;
-            while (result.bytes[body]! & 128) body++;
+            while (result.bytes[body]! & 128) {
+                body++;
+            }
             body++;
             if (kind === 'overlong') {
                 bytes[body - 1] = bytes[body - 1]! | 128;
                 bytes = Uint8Array.from([...bytes.slice(0, body), 0, ...bytes.slice(body)]);
             }
-            if (kind === 'overflow' || kind === 'huge')
+            if (kind === 'overflow' || kind === 'huge') {
                 bytes = Uint8Array.from([
                     ...bytes.slice(0, 9),
                     ...Array<number>(9).fill(255),
                     kind === 'overflow' ? 2 : 1,
                     ...bytes.slice(body),
                 ]);
-            if (kind === 'unterminated')
+            }
+            if (kind === 'unterminated') {
                 bytes = Uint8Array.from([...bytes.slice(0, 9), ...Array<number>(10).fill(128)]);
+            }
             if (kind === 'frontier') {
                 const unrelated = from<Document>({ slot: { count: 1 } }, { actor });
                 try {
@@ -635,7 +679,9 @@ describe('repository canonical Worker candidate adoption', () => {
         await prepared.requestMaterialization!(new AbortController().signal);
         vi.mocked(native.load).mockClear();
         expect(prepared.materialize).toThrow(kind === 'frontier' ? 'lost the native frontier' : undefined);
-        if (kind !== 'checksum' && kind !== 'frontier') expect(native.load).not.toHaveBeenCalled();
+        if (kind !== 'checksum' && kind !== 'frontier') {
+            expect(native.load).not.toHaveBeenCalled();
+        }
         prepared.discard();
         expect(repository.getDoc('root')).toBe(original);
         expect(observer).not.toHaveBeenCalled();
@@ -690,12 +736,16 @@ describe('repository canonical Worker candidate adoption', () => {
             doc.other = true;
         });
         const current = repository.getDoc<Document>('root');
-        if (!current) throw new Error('Expected live edit');
+        if (!current) {
+            throw new Error('Expected live edit');
+        }
         const prepared = plan(current);
         await prepared.requestMaterialization!(new AbortController().signal);
         prepared.discard();
         const chunk = repository.saveDocIncremental('root');
-        if (!chunk) throw new Error('Expected unsaved live change');
+        if (!chunk) {
+            throw new Error('Expected unsaved live change');
+        }
         expect(loadIncremental(load<Document>(baseline), chunk).other).toBe(true);
         repository.changeDoc<Document>('root', (doc) => {
             doc.slot.count = 7;
@@ -709,7 +759,9 @@ describe('repository canonical Worker candidate adoption', () => {
         await prepared.requestMaterialization!(new AbortController().signal);
         publish(prepared.materialize());
         const current = repository.getDoc<Document>('root');
-        if (!current) throw new Error('Expected validated no-op');
+        if (!current) {
+            throw new Error('Expected validated no-op');
+        }
         expect(getChanges(original, current)).toEqual([]);
         expect(current).toEqual(original);
     });
@@ -732,14 +784,21 @@ describe('repository canonical Worker candidate adoption', () => {
         const observer = vi.fn();
         repository.onChange(observer);
         const prepared = plan(original);
-        if (kind === 'invalid bytes')
+        if (kind === 'invalid bytes') {
             mocks.request.mockResolvedValueOnce({ bytes: Uint8Array.of(1), heads: getHeads(original) });
-        if (kind === 'transport') mocks.request.mockRejectedValueOnce(new Error('transport failed'));
-        if (['sequence', 'dependencies', 'message', 'heads', 'missing change'].includes(kind))
+        }
+        if (kind === 'transport') {
+            mocks.request.mockRejectedValueOnce(new Error('transport failed'));
+        }
+        if (['sequence', 'dependencies', 'message', 'heads', 'missing change'].includes(kind)) {
             mocks.request.mockImplementationOnce(async (request) => {
                 const result = response(request);
-                if (kind === 'heads') return { ...result, heads: request.heads };
-                if (kind === 'missing change') return { bytes: Uint8Array.from(request.seed), heads: result.heads };
+                if (kind === 'heads') {
+                    return { ...result, heads: request.heads };
+                }
+                if (kind === 'missing change') {
+                    return { bytes: Uint8Array.from(request.seed), heads: result.heads };
+                }
                 const base = load<Record<string, unknown>>(request.seed, { actor: request.actor });
                 let candidate = base;
                 try {
@@ -749,22 +808,24 @@ describe('repository canonical Worker candidate adoption', () => {
                             doc.other = true;
                         });
                     }
-                    candidate =
-                        kind === 'dependencies'
-                            ? changeAt(candidate, [], { message: request.message }, (doc) =>
-                                  applyCanonicalStorageSlotMutation(doc, request.mutation)
-                              ).newDoc
-                            : change(
-                                  candidate,
-                                  { message: kind === 'message' ? 'Other mutation' : request.message },
-                                  (doc) => applyCanonicalStorageSlotMutation(doc, request.mutation)
-                              );
+                    if (kind === 'dependencies') {
+                        candidate = changeAt(candidate, [], { message: request.message }, (doc) =>
+                            applyCanonicalStorageSlotMutation(doc, request.mutation)
+                        ).newDoc;
+                    } else {
+                        candidate = change(
+                            candidate,
+                            { message: kind === 'message' ? 'Other mutation' : request.message },
+                            (doc) => applyCanonicalStorageSlotMutation(doc, request.mutation)
+                        );
+                    }
                     return { bytes: Uint8Array.from(save(candidate)), heads: getHeads(candidate) };
                 } finally {
                     free(candidate);
                 }
             });
-        if (kind === 'wrong actor' || kind === 'extra change')
+        }
+        if (kind === 'wrong actor' || kind === 'extra change') {
             mocks.request.mockImplementationOnce(async (request) => {
                 const seed = load<Document>(request.seed, {
                     actor: kind === 'wrong actor' ? 'bbbbbbbbbbbbbbbb' : request.actor,
@@ -772,10 +833,11 @@ describe('repository canonical Worker candidate adoption', () => {
                 let candidate = change(seed, { message: request.message }, (draft) =>
                     applyCanonicalStorageSlotMutation(draft, request.mutation)
                 );
-                if (kind === 'extra change')
+                if (kind === 'extra change') {
                     candidate = change(candidate, (draft) => {
                         draft.other = true;
                     });
+                }
                 try {
                     return {
                         bytes: Uint8Array.from(save(candidate)),
@@ -785,6 +847,7 @@ describe('repository canonical Worker candidate adoption', () => {
                     free(candidate);
                 }
             });
+        }
         if (kind === 'transport') {
             await expect(prepared.requestMaterialization!(new AbortController().signal)).rejects.toThrow(
                 'transport failed'
@@ -792,10 +855,11 @@ describe('repository canonical Worker candidate adoption', () => {
             prepared.discard();
         } else {
             await prepared.requestMaterialization!(new AbortController().signal);
-            if (kind === 'mutation')
+            if (kind === 'mutation') {
                 repository.changeDoc<Document>('root', (doc) => {
                     doc.other = true;
                 });
+            }
             if (kind === 'root ABA') {
                 repository.insertDoc('root', clone(original));
                 repository.insertDoc('root', original);
@@ -809,10 +873,11 @@ describe('repository canonical Worker candidate adoption', () => {
                     })
                 ).toThrow('full validator refused');
                 candidate.discard();
-            } else
+            } else {
                 expect(prepared.materialize).toThrow(
                     ['wrong actor', 'dependencies', 'message'].includes(kind) ? 'changed native authority' : undefined
                 );
+            }
             prepared.discard();
         }
         expect(repository.getDoc<Document>('root')?.slot.count).toBe(0);
@@ -826,14 +891,16 @@ describe('repository canonical Worker candidate adoption', () => {
             const original = seed();
             const clones = vi.mocked(native.clone).mockClear();
             const releases = vi.mocked(native.free).mockClear();
-            if (kind === 'transport' || kind === 'abort')
+            if (kind === 'transport' || kind === 'abort') {
                 mocks.request.mockImplementationOnce(async (_request, signal) => {
-                    if (kind === 'abort')
+                    if (kind === 'abort') {
                         await new Promise<void>((resolve) =>
                             signal.addEventListener('abort', () => resolve(), { once: true })
                         );
+                    }
                     throw new Error(kind);
                 });
+            }
             const prepared = plan(original);
             const controller = new AbortController();
             const request = prepared.requestMaterialization!(controller.signal);
@@ -865,9 +932,13 @@ describe('repository canonical Worker candidate adoption', () => {
             expect(releases.mock.calls.filter(([doc]) => doc === encoding)).toHaveLength(1);
             expect(releases.mock.calls.filter(([doc]) => doc === retained)).toHaveLength(1);
             expect(releases.mock.calls.some(([doc]) => doc === original)).toBe(false);
-            expect(releases).toHaveBeenCalledTimes(
-                kind === 'transport' || kind === 'abort' ? 2 : kind === 'validator' ? 4 : 3
-            );
+            let expectedReleases = 3;
+            if (kind === 'transport' || kind === 'abort') {
+                expectedReleases = 2;
+            } else if (kind === 'validator') {
+                expectedReleases = 4;
+            }
+            expect(releases).toHaveBeenCalledTimes(expectedReleases);
             repository.changeDoc<Document>('root', (doc) => {
                 doc.slot.count = 7;
             });
@@ -893,12 +964,18 @@ describe('repository canonical Worker candidate adoption', () => {
             });
         });
         const transaction = runWithAutomergeStorageTransaction(undefined, captureAutomergeStoragePreparationScope);
-        if (transaction.status !== 'returned') throw transaction.error;
+        if (transaction.status !== 'returned') {
+            throw transaction.error;
+        }
         const preparation = storage.prepareSet?.(transaction.value, { count: 1 }, (value) => store.set(value));
-        if (!preparation) throw new Error('Expected preparation');
+        if (!preparation) {
+            throw new Error('Expected preparation');
+        }
         preparation.clone();
         const request = preparation.requestMaterialization;
-        if (!request) throw new Error('Expected request');
+        if (!request) {
+            throw new Error('Expected request');
+        }
         await request(new AbortController().signal);
         preparation.materialize();
         expect(mocks.request).toHaveBeenCalledTimes(1);
@@ -907,7 +984,9 @@ describe('repository canonical Worker candidate adoption', () => {
         transaction.commit();
         release();
         const current = repository.getDoc<Document>('root');
-        if (!current) throw new Error('Expected complete fallback publication');
+        if (!current) {
+            throw new Error('Expected complete fallback publication');
+        }
         expect(current.slot.count).toBe(1);
         expect(Reflect.get(current, 'checkpoint')).toEqual({ records: ['subscriber checkpoint'] });
         expect(commandSourcePublicationContains(getHeads(current)[0]!, 'new-member', 'new-source', 'new-digest')).toBe(

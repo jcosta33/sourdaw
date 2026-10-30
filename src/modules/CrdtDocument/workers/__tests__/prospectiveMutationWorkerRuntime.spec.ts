@@ -120,14 +120,16 @@ describe('private canonical materialization Worker runtime', () => {
         (kind) => {
             const { initial, mutation } = fixture();
             const request = { seed: save(clone(initial)), actor, heads: getHeads(initial), mutation };
-            const invalid =
-                kind === 'heads'
-                    ? { ...request, heads: ['0'.repeat(64)] }
-                    : kind === 'actor'
-                      ? { ...request, actor: 'invalid' }
-                      : kind === 'kind'
-                        ? { ...request, mutation: { ...mutation, kind: 'custom' } }
-                        : { ...request, mutation: { ...mutation, value: { callback: () => undefined } } };
+            let invalid: unknown;
+            if (kind === 'heads') {
+                invalid = { ...request, heads: ['0'.repeat(64)] };
+            } else if (kind === 'actor') {
+                invalid = { ...request, actor: 'invalid' };
+            } else if (kind === 'kind') {
+                invalid = { ...request, mutation: { ...mutation, kind: 'custom' } };
+            } else {
+                invalid = { ...request, mutation: { ...mutation, value: { callback: () => undefined } } };
+            }
             expect(() => materializeProspectiveMutation(invalid)).toThrow();
             expect(initial.slot.rows.map((row) => row.id)).toEqual(['locked', 'old', 'user']);
             expect(native.free).toHaveBeenCalledTimes(kind === 'heads' ? 1 : 0);

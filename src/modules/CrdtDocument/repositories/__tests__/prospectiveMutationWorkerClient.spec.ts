@@ -94,7 +94,9 @@ describe('prospective mutation Worker ownership', () => {
         expect(originalBytes.byteLength).toBeGreaterThan(0);
         const worker = ControlledWorker.instances[0]!;
         const posted = worker.posted;
-        if (!posted) throw new Error('Expected transferred request');
+        if (!posted) {
+            throw new Error('Expected transferred request');
+        }
         const seed = load<Record<string, unknown>>(posted.seed, { actor: posted.actor });
         const candidate = change(seed, { message: posted.message }, (draft) =>
             applyCanonicalStorageSlotMutation(draft, posted.mutation)
@@ -132,26 +134,37 @@ describe('prospective mutation Worker ownership', () => {
         'settles once and releases on %s including a late reply',
         async (kind) => {
             vi.useFakeTimers();
-            if (kind === 'post throw')
+            if (kind === 'post throw') {
                 vi.spyOn(ControlledWorker.prototype, 'postMessage').mockImplementationOnce(() => {
                     throw new Error('post failed');
                 });
+            }
             const { request } = fixture();
             const controller = new AbortController();
             const result = requestProspectiveMutation(request, controller.signal);
             const rejected = expect(result).rejects.toThrow();
             const worker = ControlledWorker.instances[0]!;
             const late = worker.onmessage;
-            if (kind === 'abort') controller.abort();
-            if (kind === 'error') worker.onerror?.();
-            if (kind === 'messageerror') worker.onmessageerror?.();
-            if (kind === 'timeout') await vi.advanceTimersByTimeAsync(30_000);
-            if (kind === 'invalid')
+            if (kind === 'abort') {
+                controller.abort();
+            }
+            if (kind === 'error') {
+                worker.onerror?.();
+            }
+            if (kind === 'messageerror') {
+                worker.onmessageerror?.();
+            }
+            if (kind === 'timeout') {
+                await vi.advanceTimersByTimeAsync(30_000);
+            }
+            if (kind === 'invalid') {
                 worker.onmessage?.(new MessageEvent('message', { data: { status: 'complete', bytes: [] } }));
-            if (kind === 'failed')
+            }
+            if (kind === 'failed') {
                 worker.onmessage?.(
                     new MessageEvent('message', { data: { status: 'failed', message: 'canonical refusal' } })
                 );
+            }
             await rejected;
             late?.(new MessageEvent('message', { data: { status: 'complete', bytes: Uint8Array.of(1) } }));
             expectReleased(worker);
