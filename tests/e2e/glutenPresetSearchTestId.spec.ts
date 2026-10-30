@@ -7,12 +7,13 @@ import { setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 // as deviceKnobKeyboardTestId.spec.ts: select the track, click the device entry.
 async function openGlutenPanel(page: Page): Promise<void> {
     const trackList = page.getByRole('grid', { name: /Track list/i }).first();
-    const drumBus = trackList.getByRole('row').filter({ hasText: /Drum Bus/i }).first();
+    const drumBus = trackList
+        .getByRole('row')
+        .filter({ hasText: /Drum Bus/i })
+        .first();
     await drumBus.click();
-    await page.waitForTimeout(500);
 
     await page.getByText('Drum Glue', { exact: false }).first().click();
-    await page.waitForTimeout(800);
     // The panel mounts named knobs as role="slider".
     await expect(page.getByRole('slider', { name: 'Threshold' })).toBeVisible({ timeout: 10_000 });
 }
@@ -37,6 +38,31 @@ test.describe('Gluten panel — preset search filtering', () => {
         await page.getByRole('button', { name: 'Pop Song' }).click();
         await wait_for_workspace_ready(page);
         await openGlutenPanel(page);
+    });
+
+    test('control detail reveals cumulative controls and retains the current values', async ({ page }) => {
+        const disclosure = page.getByRole('group', { name: 'Effect control detail' });
+        await expect(disclosure.getByRole('button', { name: 'play', exact: true })).toHaveAttribute(
+            'aria-pressed',
+            'true'
+        );
+        const threshold = page.getByRole('slider', { name: 'Threshold', exact: true });
+        const before = await threshold.getAttribute('aria-valuenow');
+        if (before === null) {
+            throw new Error('The Threshold control must expose its current value');
+        }
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toHaveCount(0);
+        await disclosure.getByRole('button', { name: 'shape', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toBeVisible();
+        await expect(threshold).toBeVisible();
+        await disclosure.getByRole('button', { name: 'lab', exact: true }).click();
+        await expect(page.getByRole('button', { name: '4×', exact: true })).toBeVisible();
+        await expect(page.getByRole('slider', { name: 'SC HPF', exact: true })).toBeVisible();
+        await disclosure.getByRole('button', { name: 'play', exact: true }).click();
+        await expect(page.getByRole('slider', { name: 'Attack', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: '4×', exact: true })).toHaveCount(0);
+        await expect(threshold).toHaveAttribute('aria-valuenow', before);
+        await expect(page.getByLabel('Search Gluten presets')).toBeVisible();
     });
 
     test('narrow query drops the preset count and clearing restores it', async ({ page }) => {

@@ -1,5 +1,66 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
+
+PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
+approval covered a hung import and marker removal rather than this rejection path. Force an actual
+App-only transitive abort after observing the production bootstrap capability signal. A test must
+not import bootstrap itself to arrange readiness. Await the existing configuration barrier, retain
+the real event bus/document handles, and require one capability emission, stable identity and saved
+workspace readiness. Removing only the identical-import reattempt must fail that same browser case.
+Pair persistent fetch failure with a throwing dependency and count successful/throwing effects;
+an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
+feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
+
+The pre-merge #5874 immediate reattempt also passed a one-leaf fault but rejected a concurrent
+eighty-leaf graph. Its successful "settled" control crossed a Node-to-browser RPC boundary absent
+from production. HAR failure completion arithmetic records Node receipt order, not renderer module
+map cleanup. Use the real production loader for the burst oracle; release a still-finishing healthy
+edge from an actual failure event, never an injector timer or retry gate. Require every first abort,
+fresh successful reissues, saved content, singleton/effect identity and no document replacement.
+An immediate-producer baseline must fail before crediting a bounded backoff; a healthy rerun or
+an external cleanup gate cannot supply that discrimination.
+
+### 2026-10-30 — fault admission raced the real bootstrap producer (#5874, pre-merge)
+
+The normal CI recovery cases polled for App within five seconds of document commit, before
+bootstrap emitted capabilities; even their successful seed needed 6.8 seconds to issue App.
+Await the existing production signal before checking the held request, within the existing whole-case
+deadline. Retain exact request counts, fault admission, identity and workspace assertions. Do not
+initialize bootstrap from the test or replace producer readiness with a guessed delay.
+
+### 2026-10-29 — an HMR-disabled server still navigated the browser
+
+The dev-server exposure began in `0ef2e91d94`, survived #5363's companion and #5738's
+lifecycle wrapper, and remains in Vite 8.3.5 pinned by #5748. Private historical prompts
+and tiers are unavailable. A configuration assertion that HMR is false does not observe
+the installed client's disconnect/ping/reload behavior.
+
+Run the real pinned Vite and Chromium fixture in browser-equipped CI. Await the browser's
+connected frame as well as the server's client before terminating its own socket. Require
+actual App import and CSS completion, no console/page errors, unchanged time origin and no
+CDP-requested navigation for immutable E2E documents; default developer HMR must reload.
+The unpatched immutable case must fail on the observed extra reload. Do not require a CDP
+`loadingFailed` event for the abandoned import: the real fixture can close that HTTP response
+unfinished without emitting one. This mechanism proof does not reproduce the original
+Linux blank shell or discharge its failed Gate.
+
+The unpublished `51f7581418` regression could finish green before a delayed reconnect reload:
+removing the client gate while delaying its real ping wait by five seconds emitted Vite's
+existing polling-start log, then completed App/CSS before teardown. Observe that signal,
+emitted before the asynchronous wait, and require zero polling starts for immutable documents
+and exactly one for the developer reload control, alongside the existing navigation assertions.
+The same delayed bad-client probe must fail; finishing before a scheduled side effect is not
+evidence that the side effect was prevented.
+
+PR #5874's pre-merge hardware run 40972746984 exposed a distinct intentional reload contract:
+the existing DDSP worker probe handles Vite's cold dependency reoptimization by awaiting a new
+document. Applying `NO_HMR=1` to that profile filtered the optimizer's `full-reload` payload;
+its converter import then received `504 Outdated Optimize Dep` without navigation. Trace the
+producer and transport policy for every required reload, not only literal HMR consumers.
+Keep the dedicated cold-worker profile's HMR enabled while ordinary immutable E2E documents
+retain their disconnect fence; a config-value assertion alone cannot establish that policy.
+
 ### 2026-10-30 — a timed-out integration case kept running under its successor's fixture (#5899)
 
 PR #5899's real project-store partial-merge spec loaded the projection graph inside each test and
@@ -2124,3 +2185,22 @@ batch containing a valid send inverse; separately retain changed-target, missing
 solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
 validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
 mock-only solo handler case is not this proof.
+
+### Bootstrap transport and activation probes need an observed phase
+
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
+
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.

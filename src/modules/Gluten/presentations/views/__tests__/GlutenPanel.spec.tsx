@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { glutenStore, setGlutenUiLevel } from '../../../stores/glutenStore';
 import { GlutenPanel } from '../GlutenPanel';
 
 vi.mock('#/infra/store/useStore', () => ({
@@ -13,11 +14,13 @@ const DEVICE_ID = 'gluten-test-device';
 describe('GlutenPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        glutenStore.set({});
+        setGlutenUiLevel(DEVICE_ID, 5);
     });
 
     it('should render without crashing', () => {
         render(<GlutenPanel deviceId={DEVICE_ID} />);
-        expect(document.body).toBeTruthy();
+        expect(screen.getByRole('group', { name: 'Effect control detail' })).toBeVisible();
     });
 
     it('should render interactive elements', () => {
