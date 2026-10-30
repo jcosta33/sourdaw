@@ -158,6 +158,7 @@ async function importIntoTrack(page: Page, trackName: string, kind: 'Audio' | 'M
 
 async function readSnapshot(page: Page): Promise<Snapshot> {
     const serializedSnapshot = await page.evaluate(async () => {
+        const entryPath = '/e2e/persisted-hydration.js';
         const {
             arrangement,
             midi,
@@ -166,7 +167,7 @@ async function readSnapshot(page: Page): Promise<Snapshot> {
             crdt,
             inspection: { agentProjectInspectionPort },
             audio,
-        }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         const document = crdt.getCrdtDoc('root');
         const projectState = project.projectStore.value;
         const tracks = arrangement.trackStore.value?.tracks;
@@ -257,9 +258,10 @@ async function expectExact(page: Page, expected: Snapshot): Promise<Snapshot> {
         .poll(
             () =>
                 page.evaluate(async (projectId: string) => {
+                    const entryPath = '/e2e/persisted-hydration.js';
                     const {
                         project: { projectStore },
-                    }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+                    }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                     const state = projectStore.value;
                     return state?.initialized === true && state.loading === false && state.projectId === projectId;
                 }, expected.projectId),
@@ -381,9 +383,10 @@ async function clipPoint(page: Page, clip: Clip, ratio = 0.5): Promise<{ x: numb
     const header = await row.getByRole('button', { name: `Mute ${track.name}`, exact: true }).boundingBox();
     const canvas = await page.getByLabel('Timeline editor surface').boundingBox();
     const view = await page.evaluate(async () => {
+        const entryPath = '/e2e/persisted-hydration.js';
         const {
             arrangement: { timelineViewStore },
-        }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         return timelineViewStore.value;
     });
     if (!header || !canvas || !view) {
@@ -421,11 +424,12 @@ async function addComp(page: Page, trackName: string): Promise<void> {
 
 async function addAutomation(page: Page): Promise<void> {
     await page.evaluate(async () => {
+        const entryPath = '/e2e/persisted-hydration.js';
         const {
             arrangement: { trackStore },
             automation: { automationStore },
             command: { executeAppAction },
-        }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
         for (const track of trackStore.value?.tracks ?? []) {
             if (track.clips.length === 0) {
                 continue;
@@ -573,9 +577,10 @@ test('persisted clip edits replay exact owners and source material through real 
         await replayTwice(page, info, 'delete-time', MIDI_NAME, ['deleteTime'], capabilities, async () => {
             const ruler = await page.getByLabel('Beat ruler').boundingBox();
             const view = await page.evaluate(async () => {
+                const entryPath = '/e2e/persisted-hydration.js';
                 const {
                     arrangement: { timelineViewStore },
-                }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+                }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                 return timelineViewStore.value;
             });
             if (!ruler || !view) {
@@ -640,9 +645,10 @@ test('persisted clip edits replay exact owners and source material through real 
         // Establish the real loop anchor through the registered command before
         // replayTwice captures the material that Backspace must restore.
         await page.evaluate(async (clipId) => {
+            const entryPath = '/e2e/persisted-hydration.js';
             const {
                 command: { executeAppAction },
-            }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+            }: typeof import('./persistedHydrationEntry') = await import(entryPath);
             await executeAppAction({ type: 'setClipLoop', payload: { clipId, enabled: true } }, { source: 'manual' });
         }, target.id);
         await expect
@@ -703,9 +709,10 @@ test('persisted clip edits replay exact owners and source material through real 
                 // Atomic forward admission is separately tracked by #5439.
                 const commits = await page.evaluate(
                     async ({ firstId, secondId, beat }) => {
+                        const entryPath = '/e2e/persisted-hydration.js';
                         const {
                             command: { executeAppAction },
-                        }: typeof import('./persistedHydrationEntry') = await import('/e2e/persisted-hydration.js');
+                        }: typeof import('./persistedHydrationEntry') = await import(entryPath);
                         const batch: AppAction[] = [
                             { type: 'removeClip', payload: { clipId: firstId } },
                             { type: 'splitClip', payload: { clipId: secondId, beat } },
