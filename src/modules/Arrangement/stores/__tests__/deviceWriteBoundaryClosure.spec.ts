@@ -571,8 +571,8 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // references (import identifier and path, two ReturnType projections,
         // two calls), two `compilePartialCommandBatchAcceptance` (import
         // and call) and two `compileSelectedSubset` (declaration and call). The
-        // ninth lexical match, `compilePendingActionCommandEnvelopes`, is a
-        // comment recording why an original command's position is its action's.
+        // `compilePendingActionCommandEnvelopes` is mentioned only in a comment
+        // recording why an original command's position is its action's.
         // Re-proposal compiles command batches only; it reaches no device sink.
         'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 10,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
