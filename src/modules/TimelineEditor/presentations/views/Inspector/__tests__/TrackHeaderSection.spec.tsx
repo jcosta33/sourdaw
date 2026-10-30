@@ -241,12 +241,12 @@ describe('TrackHeaderSection', () => {
         });
     });
 
-    it('dispatches unfreezeTrack through executeUserAppAction when update freeze button is clicked on stale track', () => {
+    it('starts a new render when update freeze is clicked on a stale frozen track', () => {
         const staleTrack = { ...mockTrack, frozen: true, freezeState: { status: 'stale' as const } };
         render(<TrackHeaderSection track={staleTrack} />);
         fireEvent.click(screen.getByText(/Update Freeze/i));
-        expect(executeUserAppAction).toHaveBeenCalledWith({
-            type: 'unfreezeTrack',
+        expect(executeUserAppAction).toHaveBeenCalledExactlyOnceWith({
+            type: 'freezeTrack',
             payload: { trackId: 'track-1' },
         });
     });

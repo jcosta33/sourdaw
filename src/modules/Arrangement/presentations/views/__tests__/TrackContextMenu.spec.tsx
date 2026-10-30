@@ -41,6 +41,7 @@ import { takeLaneStore, trackStore, type Track } from '../../../stores';
 import { getArrangementHandlers } from '../../../useCases';
 import { addClip } from '../../../useCases/clip/addClip';
 import { bounceTrack } from '../../../useCases/freezeBounce/bounceTrack';
+import { cancelFreezeTrack } from '../../../useCases/freezeBounce/cancelFreezeTrack';
 import { getTrackStoreState } from '../../../useCases/getTrackStoreState';
 import { importAudioClipToTrack } from '../../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../../useCases/importMidiFile';
@@ -80,6 +81,10 @@ vi.mock('../../../useCases/clip/addClip', () => ({
 
 vi.mock('../../../useCases/freezeBounce/bounceTrack', () => ({
     bounceTrack: vi.fn(),
+}));
+
+vi.mock('../../../useCases/freezeBounce/cancelFreezeTrack', () => ({
+    cancelFreezeTrack: vi.fn(),
 }));
 
 vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
@@ -416,6 +421,44 @@ describe('TrackContextMenu', () => {
             type: 'freezeTrack',
             payload: { trackId: 'stale1' },
         });
+        expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    });
+
+    it('unfreezes a frozen track whose refresh failed', () => {
+        const failedTrack = TrackDummy.create({
+            id: 'err1',
+            frozen: true,
+            freezeState: { status: 'error', errorMessage: 'render failed' },
+        });
+        renderWithTooltip(
+            <TrackContextMenu track={failedTrack}>
+                <div data-testid="track">Failed</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        fireEvent.click(screen.getByText('Unfreeze'));
+        expect(vi.mocked(executeUserAppAction)).toHaveBeenCalledExactlyOnceWith({
+            type: 'unfreezeTrack',
+            payload: { trackId: 'err1' },
+        });
+    });
+
+    it.each([true, false])('cancels a running render instead of dispatching while frozen is %s', (frozen) => {
+        const freezingTrack = TrackDummy.create({
+            id: 'run1',
+            frozen,
+            freezeState: { status: 'freezing', renderProgress: 0.4 },
+        });
+        renderWithTooltip(
+            <TrackContextMenu track={freezingTrack}>
+                <div data-testid="track">Freezing</div>
+            </TrackContextMenu>
+        );
+        fireEvent.contextMenu(screen.getByTestId('track'));
+        expect(screen.queryByText('Unfreeze')).not.toBeInTheDocument();
+        fireEvent.click(screen.getByText('Cancel Freeze'));
+        expect(vi.mocked(cancelFreezeTrack)).toHaveBeenCalledExactlyOnceWith('run1');
+        expect(vi.mocked(executeUserAppAction)).not.toHaveBeenCalled();
         expect(screen.queryByRole('menu')).not.toBeInTheDocument();
     });
 

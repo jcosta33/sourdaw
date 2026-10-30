@@ -16,6 +16,7 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 
 import { type Track, type InputMonitoring } from '../../models/Track';
 import { bounceTrack, type BounceOptions } from '../../useCases/freezeBounce/bounceTrack';
+import { cancelFreezeTrack } from '../../useCases/freezeBounce/cancelFreezeTrack';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
 import { importAudioClipToTrack } from '../../useCases/importAudioClipToTrack';
 import { importMidiFile } from '../../useCases/importMidiFile';
@@ -163,8 +164,11 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         });
     };
 
+    const isFreezing = track.freezeState.status === 'freezing';
     let freezeLabel = 'Freeze';
-    if (track.freezeState.status === 'stale') {
+    if (isFreezing) {
+        freezeLabel = 'Cancel Freeze';
+    } else if (track.freezeState.status === 'stale') {
         freezeLabel = 'Update Freeze';
     } else if (track.frozen) {
         freezeLabel = 'Unfreeze';
@@ -262,7 +266,10 @@ export const TrackContextMenu = ({ track, children }: TrackContextMenuProps): Re
         {
             label: freezeLabel,
             action: () => {
-                if (track.frozen && track.freezeState.status !== 'stale') {
+                if (isFreezing) {
+                    // A refresh keeps the old render frozen while it runs; unfreezing would not stop it.
+                    cancelFreezeTrack(track.id);
+                } else if (track.frozen && track.freezeState.status !== 'stale') {
                     void executeUserAppAction({
                         type: 'unfreezeTrack',
                         payload: { trackId: track.id },
