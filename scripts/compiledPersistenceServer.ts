@@ -30,7 +30,9 @@ export async function startCompiledPersistenceServer(root: string): Promise<Comp
         try {
             await close();
         } catch (cleanupError) {
-            throw new AggregateError([error, cleanupError], 'Compiled persistence startup and cleanup failed');
+            throw new AggregateError([error, cleanupError], 'Compiled persistence startup and cleanup failed', {
+                cause: error,
+            });
         }
         throw error;
     }

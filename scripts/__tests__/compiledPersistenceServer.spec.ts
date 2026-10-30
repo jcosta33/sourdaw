@@ -84,4 +84,31 @@ describe('selected persistence acceptance server', () => {
         const { outDir } = recordedBuild();
         expect(existsSync(outDir)).toBe(false);
     });
+
+    it('preserves both startup and cleanup failures, chains the original cause, and still removes output', async () => {
+        const startupError = new Error('listener address failed');
+        const cleanupError = new Error('preview close failed');
+        vite.preview.mockResolvedValue({
+            httpServer: {
+                address: () => {
+                    throw startupError;
+                },
+            },
+            close: vite.close,
+        });
+        vite.close.mockRejectedValue(cleanupError);
+        const failure: unknown = await startCompiledPersistenceServer(resolve(import.meta.dirname, '../..')).then(
+            () => null,
+            (error: unknown) => error
+        );
+        if (!(failure instanceof AggregateError)) {
+            throw new TypeError('Expected the actual combined startup and cleanup failure', { cause: failure });
+        }
+        expect(failure.errors).toHaveLength(2);
+        expect(failure.errors[0]).toBe(startupError);
+        expect(failure.errors[1]).toBe(cleanupError);
+        expect(failure.cause).toBe(startupError);
+        expect(vite.close).toHaveBeenCalledOnce();
+        expect(existsSync(recordedBuild().outDir)).toBe(false);
+    });
 });
