@@ -20,6 +20,27 @@ function recordCommand(root: string, args: string[], env: NodeJS.ProcessEnv, out
     });
 }
 
+function observePhaseHeartbeat(record: ReturnType<typeof createJournal>): () => void {
+    const delay = monitorEventLoopDelay({ resolution: 20 });
+    delay.enable();
+    let lastHeartbeat = performance.now();
+    const heartbeat = setInterval(() => {
+        const now = performance.now();
+        record('runner-heartbeat', {
+            pid: process.pid,
+            intervalMs: now - lastHeartbeat,
+            eventLoopDelayMaxMs: delay.max / 1e6,
+        });
+        lastHeartbeat = now;
+        delay.reset();
+    }, 2_000);
+    heartbeat.unref();
+    return () => {
+        clearInterval(heartbeat);
+        delay.disable();
+    };
+}
+
 export async function runPhase(
     root: string,
     args: string[],
@@ -34,20 +55,7 @@ export async function runPhase(
     return new Promise((_resolve) => {
         const child = spawn('pnpm', args, { cwd: root, env, detached: true, stdio: ['ignore', 'pipe', 'pipe'] });
         record('spawn', { pid: child.pid, argv: child.spawnargs });
-        const delay = monitorEventLoopDelay({ resolution: 20 });
-        delay.enable();
-        let lastHeartbeat = performance.now();
-        const heartbeat = setInterval(() => {
-            const now = performance.now();
-            record('runner-heartbeat', {
-                pid: process.pid,
-                intervalMs: now - lastHeartbeat,
-                eventLoopDelayMaxMs: delay.max / 1e6,
-            });
-            lastHeartbeat = now;
-            delay.reset();
-        }, 2_000);
-        heartbeat.unref();
+        const stopHeartbeat = observePhaseHeartbeat(record);
         let stopping = false;
         let completed = false;
         let escalation: NodeJS.Timeout | undefined;
@@ -95,8 +103,7 @@ export async function runPhase(
             if (escalation) {
                 clearTimeout(escalation);
             }
-            clearInterval(heartbeat);
-            delay.disable();
+            stopHeartbeat();
             process.off('SIGTERM', stop);
             process.off('SIGINT', stop);
             child.stdout.destroy();

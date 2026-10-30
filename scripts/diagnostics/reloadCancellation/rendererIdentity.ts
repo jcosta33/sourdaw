@@ -47,6 +47,73 @@ export function assertRendererIdentity(
     }
 }
 
+type RendererAssociationValidation = {
+    owner: number;
+    record: RecordObservation;
+    ports: Parameters<typeof createRendererAssociations>[2];
+    frames: Map<string, string>;
+    seen: Map<number, string>;
+    mapped: number;
+};
+
+async function validateRendererAssociation(
+    event: Record<string, unknown>,
+    pid: number | undefined,
+    invalid: Error | undefined,
+    state: RendererAssociationValidation
+): Promise<void> {
+    const { owner, record, ports, frames, seen } = state;
+    try {
+        if (invalid) {
+            throw invalid;
+        }
+        if (pid === undefined) {
+            throw new Error('Renderer PID unavailable');
+        }
+        if (frames.get(String(event.frameId)) !== event.loaderId) {
+            throw new Error('Script frame/loader registration missed');
+        }
+        const before = ports.identity(pid, owner);
+        const processes = await ports.processes();
+        const entries = recordOf(processes, 'process info').processInfo;
+        if (!Array.isArray(entries)) {
+            throw new TypeError('SystemInfo processes missing');
+        }
+        const types = new Map<number, string>();
+        for (const value of entries) {
+            const entry = recordOf(value, 'process');
+            if (typeof entry.id === 'number' && typeof entry.type === 'string') {
+                types.set(entry.id, entry.type);
+            }
+        }
+        const after = ports.identity(pid, owner);
+        assertRendererIdentity(pid, types, before, after);
+        const binding = ports.binding(processes);
+        const prior = seen.get(pid);
+        if (prior !== undefined && prior !== after.start) {
+            record('renderer-pid-reuse', { pid, priorStart: prior, currentStart: after.start });
+        }
+        seen.set(pid, after.start);
+        record('page-renderer-identity', {
+            requestId: event.requestId,
+            frameId: event.frameId,
+            loaderId: event.loaderId,
+            requestTimestamp: event.timestamp,
+            identity: after,
+            traceBinding: binding,
+            birth: 'unknown before live registration; new loader/PID associations are revalidated',
+        });
+        state.mapped++;
+    } catch (error) {
+        record('page-renderer-identity-unknown', {
+            requestId: event.requestId,
+            frameId: event.frameId,
+            loaderId: event.loaderId,
+            reason: String(error),
+        });
+    }
+}
+
 export function createRendererAssociations(
     owner: number,
     record: RecordObservation,
@@ -64,7 +131,7 @@ export function createRendererAssociations(
     const seen = new Map<number, string>();
     const attempted = new Set<string>();
     const pending = new Set<Promise<void>>();
-    let mapped = 0;
+    const state: RendererAssociationValidation = { owner, record, ports, frames, seen, mapped: 0 };
     let capacityReported = false;
     return {
         frame(frame) {
@@ -101,63 +168,13 @@ export function createRendererAssociations(
                 return;
             }
             attempted.add(key);
-            const operation = (async (): Promise<void> => {
-                try {
-                    if (invalid) {
-                        throw invalid;
-                    }
-                    if (pid === undefined) {
-                        throw new Error('Renderer PID unavailable');
-                    }
-                    if (frames.get(String(event.frameId)) !== event.loaderId) {
-                        throw new Error('Script frame/loader registration missed');
-                    }
-                    const before = ports.identity(pid, owner);
-                    const processes = await ports.processes();
-                    const entries = recordOf(processes, 'process info').processInfo;
-                    if (!Array.isArray(entries)) {
-                        throw new TypeError('SystemInfo processes missing');
-                    }
-                    const types = new Map<number, string>();
-                    for (const value of entries) {
-                        const entry = recordOf(value, 'process');
-                        if (typeof entry.id === 'number' && typeof entry.type === 'string') {
-                            types.set(entry.id, entry.type);
-                        }
-                    }
-                    const after = ports.identity(pid, owner);
-                    assertRendererIdentity(pid, types, before, after);
-                    const binding = ports.binding(processes);
-                    const prior = seen.get(pid);
-                    if (prior !== undefined && prior !== after.start) {
-                        record('renderer-pid-reuse', { pid, priorStart: prior, currentStart: after.start });
-                    }
-                    seen.set(pid, after.start);
-                    record('page-renderer-identity', {
-                        requestId: event.requestId,
-                        frameId: event.frameId,
-                        loaderId: event.loaderId,
-                        requestTimestamp: event.timestamp,
-                        identity: after,
-                        traceBinding: binding,
-                        birth: 'unknown before live registration; new loader/PID associations are revalidated',
-                    });
-                    mapped++;
-                } catch (error) {
-                    record('page-renderer-identity-unknown', {
-                        requestId: event.requestId,
-                        frameId: event.frameId,
-                        loaderId: event.loaderId,
-                        reason: String(error),
-                    });
-                }
-            })();
+            const operation = validateRendererAssociation(event, pid, invalid, state);
             pending.add(operation);
             void operation.finally(() => pending.delete(operation));
         },
         async settle() {
             await Promise.all(pending);
-            return mapped;
+            return state.mapped;
         },
     };
 }

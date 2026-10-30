@@ -218,28 +218,14 @@ function observeConsole(
     });
 }
 
-export async function attachPassiveObservations(
-    page: Page,
-    context: BrowserContext,
-    browser: Browser,
-    output: string,
-    profile: 'full' | 'transport' = 'full'
-): Promise<void> {
-    if (browser.version() !== ORIGINAL_BROWSER) {
-        throw new Error(`Expected original Chromium ${ORIGINAL_BROWSER}, got ${browser.version()}`);
-    }
-    const record = createJournal(resolve(output, 'browser-observations.jsonl'));
-    const session = await context.newCDPSession(page);
-    const websocket = createWebSocketObserver(record, profile === 'full');
-    const counts: Record<string, number> = {};
-    const errors: string[] = [];
-    const settleRendererMappings = await observeRendererIdentities(
-        browser,
-        session,
-        Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid')),
-        record,
-        resolve(output, 'native-traces')
-    );
+function observeSessionEvents(
+    session: CDPSession,
+    profile: 'full' | 'transport',
+    counts: Record<string, number>,
+    errors: string[],
+    record: RecordObservation,
+    websocket: ReturnType<typeof createWebSocketObserver>
+): void {
     for (const name of PASSIVE_EVENTS) {
         session.on(name, (payload: unknown) => {
             counts[name] = (counts[name] ?? 0) + 1;
@@ -271,6 +257,31 @@ export async function attachPassiveObservations(
             record('unexpected-debugger-pause', payload);
         });
     }
+}
+
+export async function attachPassiveObservations(
+    page: Page,
+    context: BrowserContext,
+    browser: Browser,
+    output: string,
+    profile: 'full' | 'transport' = 'full'
+): Promise<void> {
+    if (browser.version() !== ORIGINAL_BROWSER) {
+        throw new Error(`Expected original Chromium ${ORIGINAL_BROWSER}, got ${browser.version()}`);
+    }
+    const record = createJournal(resolve(output, 'browser-observations.jsonl'));
+    const session = await context.newCDPSession(page);
+    const websocket = createWebSocketObserver(record, profile === 'full');
+    const counts: Record<string, number> = {};
+    const errors: string[] = [];
+    const settleRendererMappings = await observeRendererIdentities(
+        browser,
+        session,
+        Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid')),
+        record,
+        resolve(output, 'native-traces')
+    );
+    observeSessionEvents(session, profile, counts, errors, record, websocket);
     await session.send('Network.enable');
     await session.send('Page.enable');
     await session.send('Runtime.enable');

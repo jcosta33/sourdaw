@@ -111,12 +111,14 @@ export function preserveNativeTermination(
     ports.code(1);
 }
 
-export async function traceCommand(
-    command: string,
-    args: string[],
-    output: string,
-    browserPipes: boolean
-): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+async function openNativeTraceStream(output: string): Promise<{
+    raw: string;
+    events: string;
+    fifoDirectory: string;
+    fifo: string;
+    anchor: number;
+    stream: ReturnType<typeof createReadStream>;
+}> {
     mkdirSync(output, { recursive: true });
     const raw = resolve(output, 'raw-prefix.log');
     writeFileSync(raw, '', { flag: 'wx' });
@@ -138,28 +140,27 @@ export async function traceCommand(
         stream.once('open', () => resolve());
         stream.once('error', reject);
     });
-    // strace(1): -qq suppresses the very terminal statuses this control must retain.
-    // https://man7.org/linux/man-pages/man1/strace.1.html
-    const child = spawn(
-        '/usr/bin/strace',
-        ['-f', '-q', '-ttt', '-e', `trace=${TRACE_SYSCALLS}`, '-o', fifo, '--', command, ...args],
-        {
-            stdio: browserPipes ? [0, 1, 2, 3, 4] : ['ignore', 'inherit', 'inherit'],
-            detached: false,
-        }
-    );
-    if (!child.pid) {
-        throw new Error('Native tracer PID unavailable');
-    }
-    const traceInstance = {
-        wrapper: linuxIdentity(process.pid, process.pid),
-        tracer: linuxIdentity(child.pid, process.pid),
-    };
-    writeReceipt(resolve(output, 'capture.json'), {
-        complete: false,
-        traceInstance,
-        unknown: 'Native capture has not reached its terminal EOF',
-    });
+    return { raw, events, fifoDirectory, fifo, anchor, stream };
+}
+
+type NativeStreamSnapshot = {
+    tail: Buffer;
+    complete: boolean;
+    partialLine: boolean;
+    streamError: string | undefined;
+    totalBytes: number;
+    prefixBytes: number;
+    rawDroppedBytes: number;
+    rawTailBytes: number;
+    emittedEvents: number;
+    droppedEvents: number;
+};
+
+function observeNativeStream(
+    stream: ReturnType<typeof createReadStream>,
+    raw: string,
+    events: string
+): { drained: Promise<void>; snapshot: () => NativeStreamSnapshot } {
     let total = 0;
     let retained = 0;
     let tail = Buffer.alloc(0);
@@ -168,7 +169,6 @@ export async function traceCommand(
     let droppedEvents = 0;
     let streamEnded = false;
     let streamError: string | undefined;
-    let spawnError: string | undefined;
     const drained = new Promise<void>((resolve) => {
         stream.once('end', resolve);
         stream.once('error', () => resolve());
@@ -209,6 +209,54 @@ export async function traceCommand(
     stream.on('error', (error: Error) => {
         streamError = String(error);
     });
+    return {
+        drained,
+        snapshot: () => ({
+            tail,
+            complete: streamEnded && !streamError,
+            partialLine: partial.length > 0,
+            streamError,
+            totalBytes: total,
+            prefixBytes: retained,
+            rawDroppedBytes: Math.max(0, total - retained - tail.length),
+            rawTailBytes: tail.length,
+            emittedEvents: emitted,
+            droppedEvents,
+        }),
+    };
+}
+
+export async function traceCommand(
+    command: string,
+    args: string[],
+    output: string,
+    browserPipes: boolean
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+    const { raw, events, fifoDirectory, fifo, anchor, stream } = await openNativeTraceStream(output);
+    // strace(1): -qq suppresses the very terminal statuses this control must retain.
+    // https://man7.org/linux/man-pages/man1/strace.1.html
+    const child = spawn(
+        '/usr/bin/strace',
+        ['-f', '-q', '-ttt', '-e', `trace=${TRACE_SYSCALLS}`, '-o', fifo, '--', command, ...args],
+        {
+            stdio: browserPipes ? [0, 1, 2, 3, 4] : ['ignore', 'inherit', 'inherit'],
+            detached: false,
+        }
+    );
+    if (!child.pid) {
+        throw new Error('Native tracer PID unavailable');
+    }
+    const traceInstance = {
+        wrapper: linuxIdentity(process.pid, process.pid),
+        tracer: linuxIdentity(child.pid, process.pid),
+    };
+    writeReceipt(resolve(output, 'capture.json'), {
+        complete: false,
+        traceInstance,
+        unknown: 'Native capture has not reached its terminal EOF',
+    });
+    const { drained, snapshot } = observeNativeStream(stream, raw, events);
+    let spawnError: string | undefined;
     const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => {
         child.once('error', (error) => {
             spawnError = String(error);
@@ -219,21 +267,22 @@ export async function traceCommand(
     await drained;
     unlinkSync(fifo);
     rmdirSync(fifoDirectory);
-    writeFileSync(resolve(output, 'raw-tail.log'), tail);
+    const capture = snapshot();
+    writeFileSync(resolve(output, 'raw-tail.log'), capture.tail);
     writeReceipt(resolve(output, 'capture.json'), {
         tracerPid: child.pid,
         traceInstance,
         tracerResult: result,
-        complete: streamEnded && !streamError && !spawnError,
-        partialLine: partial.length > 0,
-        streamError,
+        complete: capture.complete && !spawnError,
+        partialLine: capture.partialLine,
+        streamError: capture.streamError,
         spawnError,
-        totalBytes: total,
-        prefixBytes: retained,
-        rawDroppedBytes: Math.max(0, total - retained - tail.length),
-        rawTailBytes: tail.length,
-        emittedEvents: emitted,
-        droppedEvents,
+        totalBytes: capture.totalBytes,
+        prefixBytes: capture.prefixBytes,
+        rawDroppedBytes: capture.rawDroppedBytes,
+        rawTailBytes: capture.rawTailBytes,
+        emittedEvents: capture.emittedEvents,
+        droppedEvents: capture.droppedEvents,
         limits: [
             'Tracer PID is not browser PID.',
             'Missing terminal records remain unknown.',

@@ -4,8 +4,8 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { runAfterNativeQualification } from '../diagnostics/reloadCancellation/nativePreflight';
 import { joinNativeMapping } from '../diagnostics/reloadCancellation/nativeEvidence';
+import { runAfterNativeQualification } from '../diagnostics/reloadCancellation/nativePreflight';
 import { superviseNativeControl } from '../diagnostics/reloadCancellation/nativeSupervisor';
 import {
     assertTraceControl,
@@ -13,13 +13,14 @@ import {
     preserveNativeTermination,
     TRACE_SYSCALLS,
 } from '../diagnostics/reloadCancellation/nativeTrace';
-import { admitExecutionParent } from '../diagnostics/reloadCancellation/trigger';
 import {
     assertRendererIdentity,
     createRendererAssociations,
     rendererPid,
     type ProcessIdentity,
 } from '../diagnostics/reloadCancellation/rendererIdentity';
+import { admitExecutionParent } from '../diagnostics/reloadCancellation/trigger';
+
 import type { BrowserTraceBinding } from '../diagnostics/reloadCancellation/traceBinding';
 
 const capture = { complete: true, partialLine: false, droppedEvents: 0 };
