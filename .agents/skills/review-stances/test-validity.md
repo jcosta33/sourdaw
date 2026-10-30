@@ -583,6 +583,10 @@ Use a moved locked automatic row with exact ID, original and warped beats, lock 
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
 
+### Explicit-open setup hid a selected-only sensitivity no-op
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` allowed the panel to display the selected clip while sensitivity read only its explicit open clip. No associated introducing PR or historical private prompt, stance or tier is established. An explicit-open-only fixture cannot prove the selected entry route. Render the actual selected-only panel with varied PCM, move sensitivity and observe raw CRDT marker mutation, retained locked/user identities and untouched control clip/PCM. Pair it with an explicit-open positive control and no-target/MIDI preference-only cases. Reverting only selected fallback must fail the unchanged raw-state oracle; reverting pending selection/root ownership must fail its ABA/replacement cases. Completion text, observer delivery and a persisted preference alone do not prove detection.
+
 ### Project-device assertions missed the Web Audio projection and cold strip
 
 PR #2035 constructed runtime topology from every project device; PR #2083 filtered Yeast but not
