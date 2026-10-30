@@ -4,6 +4,7 @@ import { hasSharedArrayBuffer } from '#/utils/capabilities';
 import { runAllEffects } from '#/utils/runEffects';
 
 import { SIDECHAIN_COMPRESSOR_WORKLET_OPTIONS } from '../models/BuiltinDeviceRuntime';
+import { captureDeviceParameterRuntimeWriteReceipt } from '../useCases/deviceControls/captureDeviceParameterRuntimeWriteReceipt';
 import { applyParams } from '../useCases/deviceResolvers/applyParams';
 import { createBuiltinDeviceNode } from '../useCases/deviceResolvers/createBuiltinDeviceNode';
 
@@ -173,7 +174,12 @@ export class RuntimeGraphMutationRejected extends Error {
 }
 
 type PendingParameterWrite =
-    | Readonly<{ kind: 'immediate'; name: string; value: number }>
+    | Readonly<{
+          kind: 'immediate';
+          name: string;
+          value: number;
+          receipt: ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>;
+      }>
     | Readonly<{ kind: 'scheduled'; name: string; value: number; sampleFrame: number }>;
 
 type PendingDeviceLoad = {
@@ -181,6 +187,7 @@ type PendingDeviceLoad = {
     bypassed?: boolean;
     parameterIds: readonly string[];
     parameterWrites: PendingParameterWrite[];
+    parameterReceipts: Map<string, ReturnType<typeof captureDeviceParameterRuntimeWriteReceipt>>;
     loadPromise?: Promise<unknown>;
     placeholder?: BuiltinDeviceNode;
     readinessToken: DeviceReadinessToken;
@@ -784,16 +791,26 @@ export class TrackNode {
                     pendingLoad.parameterWrites.push(Object.freeze({ kind: 'scheduled', name, value, sampleFrame }));
                     return;
                 }
+                const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, name);
+                receipt.pending();
                 const previous = pendingLoad.parameterWrites.at(-1);
                 if (previous?.kind === 'immediate' && previous.name === name) {
                     pendingLoad.parameterWrites[pendingLoad.parameterWrites.length - 1] = Object.freeze({
                         kind: 'immediate',
                         name,
                         value,
+                        receipt,
                     });
                     return;
                 }
-                pendingLoad.parameterWrites.push(Object.freeze({ kind: 'immediate', name, value }));
+                pendingLoad.parameterWrites.push(
+                    Object.freeze({
+                        kind: 'immediate',
+                        name,
+                        value,
+                        receipt,
+                    })
+                );
             },
         };
     }
@@ -876,8 +893,16 @@ export class TrackNode {
                 if (pending.kind === 'scheduled') {
                     finalDn.controller?.setParam(pending.name, pending.value, pending.sampleFrame);
                 } else {
-                    finalDn.controller?.setParam(pending.name, pending.value);
+                    if (finalDn.controller) {
+                        const complete = pending.receipt.begin();
+                        finalDn.controller.setParam(pending.name, pending.value);
+                        complete();
+                    }
                 }
+            }
+            // Descriptors with their own placeholder controller replay before onLoaded.
+            for (const receipt of pendingLoad.parameterReceipts.values()) {
+                receipt.begin()();
             }
             if (pendingLoad.bypassed !== undefined) {
                 finalDn.controller?.setBypass?.(pendingLoad.bypassed);
@@ -1226,6 +1251,7 @@ export class TrackNode {
                     abortController: new AbortController(),
                     parameterIds: Object.freeze([...parameterIds]),
                     parameterWrites: [],
+                    parameterReceipts: new Map(),
                     readinessToken,
                     resolved: false,
                 };
@@ -1485,7 +1511,22 @@ export class TrackNode {
         if (!dn || !dn.controller) {
             return;
         }
+        const receipt = captureDeviceParameterRuntimeWriteReceipt(this.trackId, deviceId, paramId);
+        const complete = receipt.begin();
         dn.controller.setParam(paramId, value);
+        const pendingLoad = this._pendingDeviceLoads.get(deviceId);
+        if (pendingLoad && !pendingLoad.resolved) {
+            // The generic placeholder already retains one receipt per actual queued write.
+            if (!pendingLoad.parameterWrites.some((write) => write.name === paramId) && receipt.pending()) {
+                pendingLoad.parameterReceipts.set(paramId, receipt);
+            }
+            return;
+        }
+        // Placeholders only queue; their promotion publishes the captured producer.
+        // Hosted plugin IPC has no synchronous application receipt.
+        if (dn.controller.ready !== false && dn.type !== 'external-plugin') {
+            complete();
+        }
     }
 
     public updatePatch(deviceId: string, patch: Record<string, unknown>): void {

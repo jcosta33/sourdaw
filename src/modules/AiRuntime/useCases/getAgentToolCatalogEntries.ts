@@ -12,6 +12,7 @@ import {
     AGENT_CAPABILITIES_TOOL_NAME,
     AGENT_CATALOG_DISCOVERY_TOOL_NAME,
     ANALYSIS_COMPARE_REFERENCE_TOOL_NAME,
+    ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME,
     ANALYSIS_MEASURE_TOOL_NAME,
     ANALYSIS_REQUEST_TOOL_NAME,
     COMMAND_HISTORY_TOOL_NAME,
@@ -93,7 +94,7 @@ const lifecycleAvailability: readonly LifecycleAvailability[] = [
 
 /** The reference comparison is published only while the user has a reference loaded. */
 function getAnalysisToolNames(): readonly string[] {
-    const names = [ANALYSIS_REQUEST_TOOL_NAME, ANALYSIS_MEASURE_TOOL_NAME];
+    const names = [ANALYSIS_REQUEST_TOOL_NAME, ANALYSIS_MEASURE_TOOL_NAME, ANALYSIS_DETECT_TRANSIENTS_TOOL_NAME];
     if (readAgentReference() === null) {
         return names;
     }

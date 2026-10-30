@@ -11,6 +11,17 @@
 import { type AgentRenderReceipt, type AgentWorkOwnerIdentity } from './agentRenderReceipt';
 import { type DeviceParameterValueUnit } from './deviceParameterValueUnit';
 
+/** Identity-scoped row numbers captured by an executed slip or trim, without row snapshots. */
+type MidiRowCoordinateCapture = {
+    beatDelta: number;
+    coordinates: {
+        kind: 'note' | 'cc' | 'pitchBend';
+        id: string;
+        beforeBeat: number;
+        afterBeat: number;
+    }[];
+};
+
 /**
  * Structural mirror of the `DeviceStateChunk` model. Kept structural, like every
  * other snapshot here, so this neutral contract does not depend on a model owned by
@@ -1450,6 +1461,24 @@ export type AppAction =
                * set it.
                */
               loopOriginBeat?: number | null;
+              /**
+               * The pre-action stored `midiOffsetBeats` a recorded inverse
+               * restores verbatim (#5512). The trim's forward wrap derives its
+               * loop length from the post-trim duration while the replay's wrap
+               * derives from the post-restore duration, and on a
+               * duration-derived loop (`loopLength` unset) those durations
+               * differ, so the re-wrapping replay lands the stored rows a
+               * trim-wrap distance from the figures the slip's own recorded
+               * inverse then restores against. The capture keys the verbatim
+               * restoration on this key's presence — zero included — the same
+               * recorded-inverse law the slip's `rowLiftBeats` follows. Only
+               * recorded inverses set it: a fresh dispatch never carries it,
+               * and entries recorded before the field existed decode without it
+               * and replay the re-wrapping law they always did.
+               */
+              midiOffsetBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | { type: 'trimClipEnd'; payload: { clipId: string; newEndBeat: number } }
@@ -1471,6 +1500,8 @@ export type AppAction =
                * restoration (`rowLiftBeats: 0`).
                */
               rowLiftBeats?: number;
+              /** Owner-bound inverse/redo capture; never supplied by a fresh provider request. */
+              midiRowCoordinates?: MidiRowCoordinateCapture;
           };
       }
     | {
@@ -3199,6 +3230,14 @@ export type HandlerValidationContext = {
     readonly workOwner?: AgentWorkOwnerIdentity | null;
     /** The same handler is projecting into an isolated CRDT workspace; live runtime effects must stay deferred. */
     readonly executionMode?: 'isolated-preview';
+    /** Ephemeral Inspector preview owner; never part of persisted actions or replay. */
+    readonly deviceParameterRuntimeAuthority?: {
+        readonly trackId: string;
+        readonly deviceId: string;
+        readonly paramId: string;
+        readonly owner: symbol;
+        readonly isCurrent: () => boolean;
+    };
 };
 
 export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'>;
@@ -3256,7 +3295,7 @@ type ActionHandlerCommon<Action extends AppAction> = {
     /** Owner-provided strict validation for an internal persisted replay payload. */
     validateSessionActionArguments?: (payload: unknown) => boolean;
     /** Capture an owner-provided rollback for non-CRDT pre-commit state before dispatch begins. */
-    prepareAbort?: (action: Action) => HandlerAfterCommit;
+    prepareAbort?: (action: Action, context?: HandlerValidationContext) => HandlerAfterCommit;
     /**
      * Called with this inverse action once a redo has replayed the entry it inverts.
      *

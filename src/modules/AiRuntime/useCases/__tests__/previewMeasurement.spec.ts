@@ -12,7 +12,7 @@ import {
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
 import { clearAgentMeasurementArtifacts } from '#/modules/AudioRendering/useCases';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
     commandTrackDefaultsPort,
@@ -26,10 +26,12 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import { type AnalysisMeasureRead } from '../../models/AnalysisMeasureRead';
 import { type CreativeRequestAuthority } from '../../models/CreativeInterpretation';
+import { type HostedTurnHistory } from '../../models/HostedTurnHistory';
 import { type IntentResult } from '../../models/IntentResult';
 import { chatStore } from '../../stores/chatStore';
 import {
@@ -43,7 +45,9 @@ import { persistPromptActionConfirmation } from '../agentRequestOrchestration/pe
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import * as batchDigest from '../digestCommandBatchContent';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
+import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
@@ -296,9 +300,17 @@ function scriptMeasureThenAdoptTurns(revision: string, proposal: Proposal): void
 /** The interpretation turn, then each scripted turn in order. */
 function scriptTurns(revision: string, turns: ReadonlyArray<ToolCallResult[]>): void {
     const planning = vi.mocked(generateToolPlanningOutcome);
-    planning.mockResolvedValueOnce({ status: 'complete', toolCalls: [interpretationCall(revision)] });
+    planning.mockResolvedValueOnce({
+        status: 'complete',
+        toolCalls: [interpretationCall(revision)],
+        providerTurn: { provider: 'openai', assistantItems: null },
+    });
     for (const toolCalls of turns) {
-        planning.mockResolvedValueOnce({ status: 'complete', toolCalls });
+        planning.mockResolvedValueOnce({
+            status: 'complete',
+            toolCalls,
+            providerTurn: { provider: 'openai', assistantItems: null },
+        });
     }
 }
 
@@ -308,6 +320,84 @@ function measureCallFor(id: string, proposal: Proposal): ToolCallResult {
 
 function proposeCall(args: Record<string, unknown>): ToolCallResult {
     return { id: 'propose-1', name: 'command.batch.propose', arguments: args };
+}
+
+function recipePreviewCall(id = 'measure-recipe'): ToolCallResult {
+    return {
+        id,
+        name: 'analysis.measure',
+        arguments: {
+            scope: DRUMS_SCOPE,
+            range: RANGE,
+            metrics: ['integratedLoudness'],
+            subject: 'preview',
+            recipeCallId: 'expand-1',
+        },
+    };
+}
+
+function recipeExpansionCall(): ToolCallResult {
+    return {
+        id: 'expand-1',
+        name: 'recipe.expand',
+        arguments: {
+            recipeId: 'drums-punchy',
+            targetId: 'drums',
+            values: [{ step: 0, paramId: 'comp-threshold', value: -18 }],
+        },
+    };
+}
+
+function scriptRecipePreview(revision: string, commands: ReadonlyArray<Readonly<Record<string, unknown>>> = []) {
+    const expansionCalls: ToolCallResult[] = [recipeExpansionCall()];
+    if (commands.length > 0) {
+        expansionCalls.push({
+            id: 'discover-extra',
+            name: 'agent.catalog.discover',
+            arguments: { category: 'command', names: ['setDeviceParameter'] },
+        });
+    }
+    scriptTurns(revision, [
+        expansionCalls,
+        [recipePreviewCall()],
+        [proposeCall({ commands, compiledCallIds: ['measure-recipe'] })],
+    ]);
+}
+
+function measureRecipe(options: Pick<Parameters<typeof executeAnalysisMeasure>[0], 'signal' | 'admit'> = {}) {
+    const revision = captureProjectRevision();
+    const preview = previewDependencies(revision);
+    const expansion = executeRecipeExpansion({
+        call: recipeExpansionCall(),
+        callId: 'expand-1',
+        turn: 1,
+        ordinal: 1,
+        context: preview.context,
+        revision,
+    });
+    if (expansion.commands === null || expansion.recipe === null) {
+        throw new Error('Expected recipe expansion');
+    }
+    return executeAnalysisMeasure({
+        call: recipePreviewCall(),
+        callId: 'measure-recipe',
+        turn: 2,
+        projectRevision: revision,
+        sections: [],
+        preview: {
+            ...preview,
+            retainedCompilations: [
+                {
+                    kind: 'recipe',
+                    callId: 'expand-1',
+                    revision,
+                    commands: expansion.commands,
+                    recipe: expansion.recipe,
+                },
+            ],
+        },
+        ...options,
+    });
 }
 
 /** The drums-trim edit a turn adds beside the measured preview. */
@@ -440,6 +530,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.restoreAllMocks();
     clearPendingActionConfirmations();
     agentRunLifecycle.clear();
     resetAiWorkflowCommandPreflightFixture();
@@ -449,6 +540,7 @@ afterEach(() => {
     resetActionReplayAuthority();
     clearAgentMeasurementArtifacts();
     trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+    projectStore.set(structuredClone(defaultProjectStoreState));
     configureAutomergeStoragePort(null);
     removeCrdtDoc('root');
 });
@@ -572,6 +664,186 @@ describe('a measured preview through proposal and approval', () => {
         expect(loudness?.preview).toMatchObject({ unit: 'LUFS' });
         expect(loudness?.delta?.value).toBeCloseTo(-6, 1);
         expect(drumsLevel()).toBe(0);
+    });
+
+    // Red when the order the planning prompt states (resolve, measure, discover and expand a recipe, measure
+    // the planned list as a preview, then propose adopting only the preview by call id) stops completing
+    // with measured deltas.
+    it('completes the prompt-stated method: resolve, measure, recipe, preview measure, then a propose adopting the preview', async () => {
+        const revision = captureProjectRevision();
+        const historyBefore = structuredClone(undoHistoryStore.value);
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -18 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 30 },
+            { paramId: 'comp-release', value: 100 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        const ADOPTED_CALL_IDS = ['measure-preview'];
+        scriptTurns(revision, [
+            // The target is resolved from the project context, so no project.query turn is spent. The
+            // measure and the discovery need no earlier receipt and share a turn: four tool turns, after
+            // the interpretation turn above.
+            [
+                {
+                    id: 'measure-target',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: DRUMS_SCOPE,
+                        range: RANGE,
+                        metrics: ['integratedLoudness'],
+                        subject: 'project',
+                    },
+                },
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [
+                {
+                    id: 'expand-1',
+                    name: 'recipe.expand',
+                    arguments: {
+                        recipeId: 'drums-punchy',
+                        targetId: 'drums',
+                        values: recipeValues.map((value) => ({ step: 0, ...value })),
+                    },
+                },
+            ],
+            [
+                {
+                    id: 'measure-preview',
+                    name: 'analysis.measure',
+                    arguments: {
+                        scope: DRUMS_SCOPE,
+                        range: RANGE,
+                        metrics: ['integratedLoudness'],
+                        subject: 'preview',
+                        recipeCallId: 'expand-1',
+                    },
+                },
+            ],
+            [proposeCall({ commands: [], compiledCallIds: ADOPTED_CALL_IDS })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        const replay: HostedTurnHistory | undefined = vi
+            .mocked(generateToolPlanningOutcome)
+            .mock.calls.at(-1)?.[9]?.history;
+        expect(replay?.flatMap((turn) => turn.receipts).map((receipt) => receipt.callId)).toEqual(
+            receipts.map((receipt) => receipt.callId)
+        );
+        const turnOf = (callId: string) => receipts.find((receipt) => receipt.callId === callId)?.turn;
+        expect(turnOf('discover-1')).toBe(turnOf('measure-target'));
+        expect(turnOf('expand-1')).toBeGreaterThan(turnOf('discover-1') ?? Number.POSITIVE_INFINITY);
+        expect(turnOf('measure-preview')).toBeGreaterThan(turnOf('expand-1') ?? Number.POSITIVE_INFINITY);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['measure-target', 'discover-1', 'expand-1', 'measure-preview'].map((callId) => ({
+                    callId,
+                    status: 'success',
+                }))
+            )
+        );
+        const expansion: unknown = receipts.find(({ callId }) => callId === 'expand-1')?.data;
+        const expandedValues =
+            typeof expansion === 'object' && expansion !== null && 'values' in expansion ? expansion.values : null;
+        expect(expandedValues).toMatchObject(recipeValues);
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({
+                type: 'setDeviceParameter',
+                payload: { paramId, value },
+            })),
+        ]);
+
+        const confirmationId = persistForApproval(planned, revision);
+        const view = getAgentApprovalView({ confirmationId });
+        expect(view?.recipes).toMatchObject([
+            { recipeId: 'drums-punchy', targetId: 'drums', title: expect.any(String) },
+        ]);
+        expect(view?.recipes).toHaveLength(1);
+        expect(planned.adoptedRecipes ?? []).toEqual([]);
+        expect(planned.actions).toHaveLength(6);
+        const [target] = view?.measuredPreview?.targets ?? [];
+        const loudness = target?.metrics.find((metric) => metric.metricId === 'integratedLoudness');
+        expect(target?.targetId).toBe('drums');
+        expect(typeof loudness?.delta?.value).toBe('number');
+        expect(captureProjectRevision()).toBe(revision);
+        expect(undoHistoryStore.value).toEqual(historyBefore);
+        expect(engine.updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    // Red when the query branch the planning prompt states (the context cannot resolve the target: the
+    // interpretation, project.query alone, discovery, expansion, then a propose adopting the expansion)
+    // stops fitting the loop's turns or completing without a rejection.
+    it('completes the prompt-stated query branch in the loop turns: query alone, discover, expand, then adopt the expansion', async () => {
+        projectStore.set({
+            ...structuredClone(defaultProjectStoreState),
+            projectId: '405e744b-dead-843a-9395-86fdcd66368c',
+        });
+        // The identity is persisted through the CRDT, so the revision is captured only once that write has landed.
+        flushAutomergeStorageWrites();
+        const revision = captureProjectRevision();
+        const recipeValues = [
+            { paramId: 'comp-threshold', value: -16 },
+            { paramId: 'comp-ratio', value: 4 },
+            { paramId: 'comp-attack', value: 25 },
+            { paramId: 'comp-release', value: 90 },
+            { paramId: 'comp-makeup', value: 4.5 },
+        ];
+        scriptTurns(revision, [
+            [{ id: 'resolve-target', name: 'project.query', arguments: { type: 'project-summary' } }],
+            [
+                {
+                    id: 'discover-1',
+                    name: 'recipe.discover',
+                    arguments: { descriptors: ['punchy'], targetId: 'drums' },
+                },
+            ],
+            [{ id: 'expand-1', name: 'recipe.expand', arguments: { recipeId: 'drums-punchy', targetId: 'drums' } }],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+        ]);
+
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+
+        const receipts = planned.applicationToolReceipts ?? [];
+        const failedReads = receipts.flatMap((receipt) => (receipt.error === null ? [] : [receipt.error.safeMessage]));
+        expect({ rejection: planned.rejectionReason ?? null, failedReads }).toEqual({
+            rejection: null,
+            failedReads: [],
+        });
+        // The interpretation turn, then query, discover, expand and the propose: five turns, the loop's
+        // four plus the one an admitted interpretation adds.
+        expect(vi.mocked(generateToolPlanningOutcome)).toHaveBeenCalledTimes(5);
+        expect(receipts.map(({ callId, status }) => ({ callId, status }))).toEqual(
+            expect.arrayContaining(
+                ['resolve-target', 'discover-1', 'expand-1'].map((callId) => ({ callId, status: 'success' }))
+            )
+        );
+        expect(planned.actions).toMatchObject([
+            { type: 'addDevice', payload: { trackId: 'drums', deviceType: 'builtin-compressor' } },
+            ...recipeValues.map(({ paramId, value }) => ({ type: 'setDeviceParameter', payload: { paramId, value } })),
+        ]);
+        expect(planned.measuredPreview).toBeUndefined();
     });
 
     // Red when the batch hash counts the ids each compilation mints for the objects it creates.
@@ -749,5 +1021,239 @@ describe('a measured preview through proposal and approval', () => {
             ).toBeUndefined();
             expect(getAgentApprovalView({ confirmationId: reproposed.confirmationId })?.measuredPreview).toBeNull();
         }
+    });
+});
+
+describe('recipe preview evidence stays with the exact measured batch', () => {
+    it('keeps both recipe identity and figures on unchanged whole reproposal', async () => {
+        const revision = captureProjectRevision();
+        scriptRecipePreview(revision);
+        const { confirmationId } = await approvalMeasuredPreview(revision);
+        const original = getAgentApprovalView({ confirmationId });
+        expect(original?.recipes).toHaveLength(1);
+        expect(original?.measuredPreview).not.toBeNull();
+        const result = await reproposePendingChatActions({ confirmationId });
+        expect(result.status).toBe('reproposed');
+        if (result.status !== 'reproposed') {
+            throw new Error('Expected reproposal');
+        }
+        const view = getAgentApprovalView({ confirmationId: result.confirmationId });
+        expect(view?.recipes).toEqual(original?.recipes);
+        expect(view?.measuredPreview).toEqual(original?.measuredPreview);
+        expect(getPendingActionConfirmation(result.confirmationId)?.approvalSnapshot.adoptedRecipes ?? []).toEqual([]);
+    });
+
+    it('drops both recipe identity and figures from an augmented terminal batch', async () => {
+        const revision = captureProjectRevision();
+        scriptRecipePreview(revision, [{ name: 'setDeviceParameter', arguments: TRIM_EDIT }]);
+        const { confirmationId } = await approvalMeasuredPreview(revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({ recipes: [], measuredPreview: null });
+    });
+
+    it('drops identity and figures when one measured value changes before persistence', async () => {
+        const revision = captureProjectRevision();
+        scriptRecipePreview(revision);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(planned.measuredPreview?.recipeSource).toBeDefined();
+        const actions = planned.actions.map((action) => {
+            if (action.type === 'setDeviceParameter' && action.payload.paramId === 'comp-threshold') {
+                return { ...action, payload: { ...action.payload, value: -20 } };
+            }
+            return action;
+        });
+        const confirmationId = persistForApproval({ ...planned, actions }, revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({ recipes: [], measuredPreview: null });
+    });
+
+    it.each(['budget', 'duplicate-reference'] as const)(
+        'refuses adoption after %s without granting preview provenance',
+        async (mode) => {
+            const revision = captureProjectRevision();
+            const preview = previewDependencies(revision);
+            const expansion = executeRecipeExpansion({
+                call: recipeExpansionCall(),
+                callId: 'expand-1',
+                turn: 1,
+                ordinal: 1,
+                context: preview.context,
+                revision,
+            });
+            const expansionBytes = new TextEncoder().encode(JSON.stringify(expansion.receipt)).length;
+            const ids = mode === 'duplicate-reference' ? ['measure-recipe', 'measure-recipe'] : ['measure-recipe'];
+            const turns = [
+                [recipeExpansionCall()],
+                [recipePreviewCall()],
+                [proposeCall({ commands: [], compiledCallIds: ids })],
+            ];
+            const requestTurn = vi.fn();
+            for (const toolCalls of turns) {
+                requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls });
+            }
+            const measured: AnalysisMeasureRead[] = [];
+            const loopInput: Parameters<typeof runApplicationOwnedToolLoop>[0] = {
+                loopId: 'recipe-preview-admission',
+                terminalToolNames: new Set(['command.batch.propose']),
+                requestTurn,
+                recipe: {
+                    toolName: 'recipe.expand',
+                    revision,
+                    execute: (call, ids) =>
+                        executeRecipeExpansion({ call, ...ids, context: preview.context, revision }),
+                },
+                measurement: {
+                    toolName: 'analysis.measure',
+                    revision,
+                    execute: async (call, ids) => {
+                        const read = await executeAnalysisMeasure({
+                            call,
+                            ...ids,
+                            projectRevision: revision,
+                            sections: [],
+                            preview: { ...preview, retainedCompilations: ids.retainedCompilations },
+                        });
+                        measured.push(read);
+                        return read;
+                    },
+                },
+            };
+            if (mode === 'budget') {
+                loopInput.limits = { maxReceiptBytesPerCall: expansionBytes };
+            }
+            const result = await runApplicationOwnedToolLoop(loopInput);
+            expect(measured[0]?.receipt.status).toBe('success');
+            expect(measured[0]?.measuredPreview?.recipeSource).toBeDefined();
+            expect(result).toMatchObject({
+                status: 'rejected',
+                reason: expect.stringContaining('unknown, duplicate, or failed'),
+            });
+            if (mode === 'budget') {
+                expect(new TextEncoder().encode(JSON.stringify(measured[0]?.receipt)).length).toBeGreaterThan(
+                    expansionBytes
+                );
+                expect(result.receipts.find((receipt) => receipt.callId === 'expand-1')?.status).toBe('success');
+                expect(result.receipts.find((receipt) => receipt.callId === 'measure-recipe')?.status).toBe('failure');
+            }
+        }
+    );
+
+    it('drops both recipe identity and figures when the revision moves', async () => {
+        const revision = captureProjectRevision();
+        scriptRecipePreview(revision);
+        const { confirmationId } = await approvalMeasuredPreview(revision);
+        trackStore.set({
+            ...trackStore.value!,
+            tracks: (trackStore.value?.tracks ?? []).map((track) =>
+                track.id === 'bass' ? { ...track, gain: 0.5 } : track
+            ),
+        });
+        flushAutomergeStorageWrites();
+        const result = await reproposePendingChatActions({ confirmationId });
+        expect(result.status).toBe('reproposed');
+        if (result.status !== 'reproposed') {
+            throw new Error('Expected reproposal');
+        }
+        expect(getAgentApprovalView({ confirmationId: result.confirmationId })).toMatchObject({
+            recipes: [],
+            measuredPreview: null,
+        });
+    });
+
+    it('drops identity and figures for a subset even if its digest equals the whole batch', async () => {
+        vi.spyOn(batchDigest, 'digestCommandBatchContent').mockReturnValue('same-content-digest');
+        const revision = captureProjectRevision();
+        scriptRecipePreview(revision);
+        const { confirmationId } = await approvalMeasuredPreview(revision);
+        expect(getAgentApprovalView({ confirmationId })?.recipes).toHaveLength(1);
+        const [deviceCommandId] = commandIdsOf(confirmationId);
+        if (deviceCommandId === undefined) {
+            throw new Error('Expected device command');
+        }
+        const result = await reproposePendingChatActions({ confirmationId, selectedIntentGroupIds: [deviceCommandId] });
+        expect(result.status).toBe('reproposed');
+        if (result.status !== 'reproposed') {
+            throw new Error('Expected subset reproposal');
+        }
+        expect(getAgentApprovalView({ confirmationId: result.confirmationId })).toMatchObject({
+            recipes: [],
+            measuredPreview: null,
+        });
+    });
+
+    it('remeasures an admitted earlier recipe in a later turn without expanding it again', async () => {
+        const revision = captureProjectRevision();
+        const preview = previewDependencies(revision);
+        const turns = [
+            [recipeExpansionCall()],
+            [recipePreviewCall('measure-first')],
+            [recipePreviewCall('measure-second')],
+            [proposeCall({ commands: [], compiledCallIds: ['measure-second'] })],
+        ];
+        const requestTurn = vi.fn();
+        for (const toolCalls of turns) {
+            requestTurn.mockResolvedValueOnce({ status: 'complete', toolCalls });
+        }
+        const executeExpansion = vi.fn((call: ToolCallResult, ids: { callId: string; turn: number; ordinal: number }) =>
+            executeRecipeExpansion({ call, ...ids, context: preview.context, revision })
+        );
+        const result = await runApplicationOwnedToolLoop({
+            loopId: 'repeat-recipe',
+            terminalToolNames: new Set(['command.batch.propose']),
+            requestTurn,
+            recipe: { toolName: 'recipe.expand', revision, execute: executeExpansion },
+            measurement: {
+                toolName: 'analysis.measure',
+                revision,
+                execute: (call, ids) =>
+                    executeAnalysisMeasure({
+                        call,
+                        ...ids,
+                        projectRevision: revision,
+                        sections: [],
+                        preview: { ...preview, retainedCompilations: ids.retainedCompilations },
+                    }),
+            },
+        });
+        expect(result.status).toBe('complete');
+        expect(executeExpansion).toHaveBeenCalledTimes(1);
+        expect(
+            result.receipts
+                .filter((receipt) => receipt.toolName === 'analysis.measure')
+                .map((receipt) => receipt.status)
+        ).toEqual(['success', 'success']);
+    });
+});
+
+describe('recipe previews retain existing render controls', () => {
+    it('releases a refused budget preview so the next measurement can run', async () => {
+        const refused = await measureRecipe({ admit: () => ({ status: 'refused', category: 'maxRenderJobs' }) });
+        expect(refused).toMatchObject({
+            commands: null,
+            measuredPreview: null,
+            receipt: { status: 'failure', error: { code: 'measurement-budget-exhausted' } },
+        });
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect((await measureRecipe()).receipt.status).toBe('success');
+    });
+
+    it('settles cancellation, retains no preview identity, and releases the isolated workspace', async () => {
+        const controller = new AbortController();
+        const settle = vi.fn();
+        engine.renderTrackSubgraphOffline.mockImplementationOnce(async (request: SubgraphRequest) => {
+            controller.abort();
+            return renderSubgraph(request);
+        });
+        const read = await measureRecipe({ signal: controller.signal, admit: () => ({ status: 'admitted', settle }) });
+        expect(read).toMatchObject({
+            commands: null,
+            measuredPreview: null,
+            receipt: { status: 'failure', error: { code: 'cancelled' } },
+        });
+        expect(settle).toHaveBeenCalledTimes(1);
+        expect((await measureRecipe()).receipt.status).toBe('success');
     });
 });

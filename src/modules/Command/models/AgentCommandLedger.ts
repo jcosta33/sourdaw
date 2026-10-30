@@ -255,6 +255,28 @@ const AGENT_COMMAND_LEDGER_TUPLES: readonly SupportedEntryTuple[] = [
 export const AGENT_COMMAND_LEDGER: readonly AgentCommandLedgerEntry[] =
     AGENT_COMMAND_LEDGER_TUPLES.map(toSupportedEntry);
 
+type AgentCommandReadLedgerEntry = {
+    operationId: string;
+    category: AgentCommandLedgerCategory;
+    owner: 'AiRuntime';
+    /** Application reads are versioned by their hosting tool loop, not an AppAction descriptor. */
+    descriptorVersion: null;
+    packet: string;
+    closure: AgentCommandLedgerClosure;
+};
+
+/** Read discovery never adds an executable command or changes the mutation census above. */
+export const AGENT_COMMAND_READ_ONLY_LEDGER: readonly AgentCommandReadLedgerEntry[] = [
+    {
+        operationId: 'analysis.detectTransients',
+        category: 'audio-editing',
+        owner: 'AiRuntime',
+        descriptorVersion: null,
+        packet: 'executeTransientOnsetRead',
+        closure: 'supported',
+    },
+];
+
 /**
  * The published categories no registered executable command currently targets. Each names the
  * later packet and the factual reason the category has zero ledger entries today.

@@ -10,11 +10,13 @@ type AnalysisMeasureScope = { kind: 'master' | 'project' } | { kind: 'tracks' | 
 type AnalysisMeasureRange = { sectionId: string } | { startBeat: number; endBeat: number };
 
 /**
- * What is measured: the project as it stands, or the project with a proposed semantic command list
- * applied in isolation, beside the project itself. The list is validated by the compiler a
- * proposal uses, not here.
+ * What is measured: the project as it stands, or a semantic list or retained recipe expansion
+ * applied in isolation beside it. The executor validates commands through proposal admission.
  */
-type AnalysisMeasureSubject = { kind: 'project' } | { kind: 'preview'; proposal: Readonly<Record<string, unknown>> };
+type AnalysisMeasureSubject =
+    | { kind: 'project' }
+    | { kind: 'preview'; proposal: Readonly<Record<string, unknown>> }
+    | { kind: 'preview'; recipeCallId: string };
 
 type AnalysisMeasureArguments = {
     scope: AnalysisMeasureScope;
@@ -100,12 +102,15 @@ function parseMetrics(value: unknown): AgentMeasurementMetricId[] | null {
     return metricIds.filter((id) => requested.has(id));
 }
 
-function parseSubject(subject: unknown, proposal: unknown): AnalysisMeasureSubject | null {
+function parseSubject(subject: unknown, proposal: unknown, recipeCallId: unknown): AnalysisMeasureSubject | null {
     if (subject === undefined || subject === 'project') {
-        return proposal === undefined ? { kind: 'project' } : null;
+        return proposal === undefined && recipeCallId === undefined ? { kind: 'project' } : null;
     }
-    if (subject === 'preview' && isRecord(proposal)) {
+    if (subject === 'preview' && isRecord(proposal) && recipeCallId === undefined) {
         return { kind: 'preview', proposal };
+    }
+    if (subject === 'preview' && proposal === undefined && isBoundedId(recipeCallId)) {
+        return { kind: 'preview', recipeCallId };
     }
     return null;
 }
@@ -126,18 +131,18 @@ export function parseAnalysisMeasureArguments(
 ): ParsedAnalysisMeasureArguments {
     if (
         !isRecord(argumentsValue) ||
-        !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics', 'subject', 'proposal'])
+        !hasOnlyKeys(argumentsValue, ['scope', 'range', 'metrics', 'subject', 'proposal', 'recipeCallId'])
     ) {
         return {
             status: 'invalid',
-            reason: `${toolName} accepts only scope, range, metrics, subject and proposal.`,
+            reason: `${toolName} accepts only scope, range, metrics, subject, proposal and recipeCallId.`,
         };
     }
-    const subject = parseSubject(argumentsValue.subject, argumentsValue.proposal);
+    const subject = parseSubject(argumentsValue.subject, argumentsValue.proposal, argumentsValue.recipeCallId);
     if (subject === null) {
         return {
             status: 'invalid',
-            reason: `${toolName} subject is project, which takes no proposal, or preview, which requires a proposal list.`,
+            reason: `${toolName} subject is project, which takes neither source, or preview, which requires exactly one of proposal or recipeCallId.`,
         };
     }
     const scope = parseScope(argumentsValue.scope);

@@ -347,7 +347,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
         );
     });
 
@@ -400,7 +400,7 @@ describe('undo', () => {
 
         expect(mocks.executeAppAction).toHaveBeenCalledWith(
             { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: 0 } },
-            { skipUndo: true, skipMacroRecording: true }
+            { skipUndo: true, skipMacroRecording: true, authorizeFirstHandler: expect.any(Function) }
         );
     });
 
@@ -429,7 +429,7 @@ describe('undo', () => {
                 { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 4, loopOriginBeat: null } },
                 { type: 'trimClipStart', payload: { clipId: 'c1', newStartBeat: 2, loopOriginBeat: null } },
             ],
-            { skipUndo: true, skipMacroRecording: true, source: 'manual' }
+            { skipUndo: true, skipMacroRecording: true, source: 'manual', preExecutionValidation: expect.any(Function) }
         );
     });
 });

@@ -80,6 +80,10 @@ const {
 vi.mock('#/infra/logger/appLogger', () => ({ logger: mockLogger }));
 vi.mock('#/infra/store/createStore', () => ({ batchStoreUpdates: mockBatchStoreUpdates }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    // Admission belongs to the caller; this helper imports its shape only.
+    isValidTakePlacement: vi.fn(() => {
+        throw new Error('Unexpected take placement admission in a helper lifecycle test');
+    }),
     trackStore: {
         get value() {
             return mockTrackStoreValue.value;

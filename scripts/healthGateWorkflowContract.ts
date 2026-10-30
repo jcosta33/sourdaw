@@ -40,7 +40,6 @@ export const HEALTH_GATE_WORKFLOW_FILES = [
     'nightly-evidence-report.yml',
     'quantum-measurements.yml',
     'wasm-artifacts.yml',
-    'semantic-review.yml',
     'cargo-dependency-seed.yml',
 ] as const;
 
@@ -63,8 +62,8 @@ const NODE_SETUP_ACTIONS = ['Checkout', 'Set up pnpm', 'Set up Node'] as const;
 const SETUP_NODE = [...NODE_SETUP_ACTIONS, 'Install dependencies'] as const;
 const SETUP_PNPM_NODE = ['Checkout', 'Enable Corepack', 'Set up pnpm', 'Set up Node', 'Install dependencies'] as const;
 const SHARDED_BROWSER_STEPS = [
-    ...SETUP_PNPM_NODE,
-    'Install Playwright browsers',
+    ...SETUP_NODE,
+    'Verify preinstalled browser runtime',
     'Run shard',
     'Report shard failure',
     'Upload blob report',
@@ -98,6 +97,7 @@ const STATIC_SUITE_STEPS = [
     'Desktop shell types',
     'Format',
     'Command argument schemas',
+    'Release inventory',
     'Test collection scope',
     'Barrel mock coverage',
     'Device write boundary census',
@@ -105,14 +105,13 @@ const STATIC_SUITE_STEPS = [
     'Agent delivery scripts',
     'Health gate infrastructure',
 ] as const;
-// Release provenance (tracked sets, licenses, trademark, asset digests) is
-// checked nightly and by the release proof, never on a pull request: a pull
-// request that edits package.json must not need a restamp to pass.
-const NIGHTLY_STATIC_SUITE_STEPS = [
-    ...STATIC_SUITE_STEPS.slice(0, STATIC_SUITE_STEPS.indexOf('Test collection scope')),
-    'Release inventory',
-    ...STATIC_SUITE_STEPS.slice(STATIC_SUITE_STEPS.indexOf('Test collection scope')),
+const VALIDATION_STATIC_SUITE_STEPS = [
+    STATIC_SUITE_STEPS[0],
+    'Hosted installer systemd proof',
+    'Campaign fixture freshness',
+    ...STATIC_SUITE_STEPS.slice(1),
 ] as const;
+const NIGHTLY_STATIC_SUITE_STEPS = STATIC_SUITE_STEPS;
 
 // Every job in every gate workflow, pinned to its exact ordered step names —
 // or `null` for a reusable-workflow caller that must never grow steps. A
@@ -188,12 +187,12 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
             'Retry changed-paths filter after a transient API failure',
             'Resolve scope',
         ],
-        static: [...SETUP_NODE, ...STATIC_SUITE_STEPS],
+        static: [...SETUP_NODE, ...VALIDATION_STATIC_SUITE_STEPS],
         lint: [...SETUP_NODE, 'Lint'],
         boundaries: [...SETUP_NODE, 'Validate the dependency graph'],
         unit: ISOLATED_UNIT_STEPS,
         'tooling-unit': [...SETUP_NODE, 'Run script suite'],
-        smoke: [...SETUP_NODE, 'Install Playwright browsers', 'Run offline smoke set'],
+        smoke: [...SETUP_NODE, 'Verify preinstalled browser runtime', 'Run offline smoke set'],
         build: [...SETUP_NODE, 'Build'],
         rust: [
             ...NODE_SETUP_ACTIONS,
@@ -246,20 +245,6 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         'e2e-report': [...SETUP_PNPM_NODE, 'Download blob reports', 'Merge into one report', 'Upload report'],
         'browser-ai-webgpu': [...WEBGPU_ADMISSION_STEPS, 'Upload Browser AI WebGPU diagnostics'],
         'heavy-gate': ['Require selected browser jobs to succeed'],
-    },
-    'semantic-review.yml': {
-        assess: [
-            'Checkout the trusted revision',
-            'Fetch the reviewed head as Git objects',
-            'Set up pnpm',
-            'Set up Node',
-            'Install dependencies',
-            'Assess the change',
-            'Report the assessment',
-            'Upload the advisory report',
-            'Compute the coverage line',
-        ],
-        coverage: ['Download the advisory report', 'Publish the withheld paths'],
     },
     'nightly.yml': {
         decide: ['Resolve scope'],

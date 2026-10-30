@@ -33,12 +33,23 @@ The orchestrator specifies, dispatches, adjudicates, and organizes; it does not 
 or merge. Each delegated agent executes one precise task, returns evidence and a result, and neither
 contacts the user nor owns decisions.
 
-Use economy, standard, or strongest tiers; model assignments are deployment details. Default one
-tier below the orchestrator. Use economy for bounded mechanical work with a decisive oracle; raise
-toward strongest for architecture, real-time audio, security, data loss, irreversible change,
-conflicting evidence, or unresolved ambiguity. Raise blocked or disputed steps one tier, then return
-to the cheapest adequate tier. Route on evidence, scope, reversibility, and repeated failure, never
-habit or agent confidence.
+Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
+orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
+available verification; a small diff alone does not make a task easy. Economy fits bounded mechanical
+work with a decisive oracle; standard fits ordinary behavior and integration work. Use strongest for
+architecture, real-time audio, security, data loss, irreversible change, conflicting evidence, or
+unresolved consequential ambiguity.
+
+Diagnose a blocked or disputed step before changing its tier. Escalate a genuine reasoning or model-capability
+failure, or a disputed interpretation, for the affected subproblem; then return to the cheapest
+adequate tier. Missing credentials, dependencies, browser access, resource capacity, or a deterministic
+environment failure call for fixing or reporting that blocker, not a blind retry on a stronger model.
+
+At dispatch, resolve the tier to an explicitly selected available model and a reasoning setting that
+model supports. Deployment profiles own tier mappings outside this portable policy. If no profile is
+available, select from the current model catalog, state the capability basis and provisional nature
+of the choice, and continue. If the harness cannot configure reasoning effort, use its default and
+do not claim a setting or capability it did not provide.
 
 For each PR, diversify delegated tasks among equally adequate models at the cheapest adequate tier.
 Assign reviewers a model different from the author's when that set offers one; otherwise reuse the
@@ -82,12 +93,19 @@ Independence is distinct failure modes, never distinct files: stances pinned to 
 paths that share one probe library are one stance. Dispatch one stance per independent risk, never
 fewer than the risk plan's floor below.
 
-Tier reviewers by the criticality of the risk each stance attacks: economy for narrow low-risk
-checks, standard for behavioral and integration risk, strongest for real-time audio, security,
-data loss, irreversible change, or disputed severe findings. Also raise the tier for wide module
-diffusion, heavy churn on defect-prone surfaces, or surfaces touched by many recent lanes. Two
-independent strongest-tier draws from different models may share one stance to expose different
-findings; that extends model diversity, not the stance count.
+Reviewers use only fast, low-cost mid-tier models or below: the Luna, Terra, Sonnet and Haiku
+families, recorded by their public model names. Use economy or standard for every review stance,
+including real-time audio, security, data loss, irreversible change and disputed findings. Never
+use frontier or high-end review models: Fable, Astra, Opus, or any Sol model. Unknown families and
+premium aliases are not eligible. This ceiling applies to reviewers only; author and orchestrator
+routing above stays unchanged. Preserve specialist risk classes, independent stances, blind review,
+and discriminating evidence rather than escalating the review model.
+
+Diversify among permitted configured models, preferring a different model from the author's when
+available. When only one permitted model is available, disclose the unavailable alternatives in
+`modelExhaustion`; it never waives the cost ceiling. Independent draws from different permitted
+models may share one stance to expose different findings; that extends model diversity, not the
+stance count.
 
 Every reviewer carries the baseline posture regardless of stance: establish what must break for
 each existing check to fail and whether it observes what its name claims. A pass alone is not
@@ -132,38 +150,22 @@ the stances.
 `review.json` is the round's only caller document
 ([ADR 0054](./.agents/decisions/0054-proportional-machine-checked-review-floor.md)). Beside the
 event, body, comments, `reviewerModel`, and approval evidence it carries `draws`, one
-`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy`, `standard`, or
-`strongest`; `outcome` is `clean` or `findings`), and optional `discarded`, one `{ finding, reason }`
+`{ stance, reviewerModel, tier, outcome }` per completed draw (`tier` is `economy` or `standard`
+for fresh publication; historical `strongest` values stay readable; `outcome` is `clean` or
+`findings`), and optional `discarded`, one `{ finding, reason }`
 per discard, never posted. `review:publish` itself derives the head-bound record `deliver` reads
 from `review.json`, `risk-plan.json`, and live facts. A fresh plan-carrying publication is refused
 before any remote write unless its draws cover the plan's floor of distinct stances — one for
 `docs-only` and `test-only`, two for `small` (product code under `src/` only), otherwise three, or
-every stance the plan's classes earn when they earn fewer — and unless a `realtime-audio`, `native-security`, or `undo` plan carries
-a `strongest` draw. The floor is the minimum the record can prove; whether the stances attack
+every stance the plan's classes earn when they earn fewer. Every fresh publication also checks
+the summary reviewer model and each draw against the cost ceiling, including effective draws
+reused from an unpublished historical dossier; `strongest` metadata refuses a fresh publication.
+The floor is the minimum the record can prove; whether the stances attack
 independent risks and whether each probe ran stays the orchestrator's judgement. The retired caller
 files `stances.json`, `discarded.json`, `reassessment.json`, and a caller-written `dossier.json` are
 ignored with one log line. Re-publishing a head whose record already binds its
 publication replays that record unchanged, and records persisted under earlier contracts keep
 replaying and verifying.
-
-`pnpm review:semantic scan --pr <pr>` may be run before dispatch to surface risks the enumeration
-should weigh, and `pnpm review:semantic verify --bundle <bundle> --findings <path>` after independent
-findings are collected and before `review.json` is written. Both are advisory and optional: their
-output is input to the orchestrator's own judgement, an unavailable provider or missing credential is
-a disclosed limitation rather than a stop, and neither may count as a completed reviewer draw, waive a
-deterministic check, or publish anything. `review:publish` imposes no duty on their output. Their
-sidecars live outside the review bundle, in gitignored `.agents/semantic-review/`, so a blind reviewer
-is never handed a proposed verdict. They never substitute for the reproduction and baseline-probe
-duties above, and no semantic result may approve, request changes, resolve a thread, or merge
-([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
-
-The same assessment also runs by itself as the non-required `Semantic review` check on every non-draft
-same-repository pull request that targets `main`, so an orchestrator reviewing a lane it did not author
-still gets it. Read it the same way: green means the assessment was delivered, never that the change is
-clean, and a red check means no assessment was delivered at all — a coverage gap, not a finding to
-weigh and not a blocker. A stacked lane whose base is another lane branch is not assessed: it would
-run that branch's revision of the command rather than the default branch's, which the command's own
-trusted-execution assertion refuses.
 
 A pull request whose public history holds `REVIEW_ROUND_FREEZE_THRESHOLD` (five, in
 `scripts/reviewRoundEscalation.ts`) reviewer `REQUEST_CHANGES` rounds is frozen: `review:publish`
@@ -174,6 +176,12 @@ unresolved threads remain resolvable. `review:prepare` logs
 `review-round-freeze:<pr>:request-changes=<n>:threshold=<t>` on every run, and `review:repair` logs it
 only at or above the threshold.
 
+An obsolete pull request with no truthful merged replacement may use `pr:retire` only when every
+live review root is resolved by an author-App repair and reviewer-App confirmation on the named
+head, and every `REQUEST_CHANGES` review maps to those roots. Its public `retirement-v1` record
+attests the reason and evidence; the command verifies native review and closure facts, not semantic
+obsolescence. This route does not approve or deliver the PR.
+
 Every recorded value — draws, discards, and approval claims — is single-line, trimmed and bounded,
 and refused when it carries a credential-shaped value, a private-key header, a JWT, a bearer token,
 or raw session-transcript markers. Private reviewer prose belongs nowhere in the record.
@@ -181,16 +189,18 @@ or raw session-transcript markers. Private reviewer prose belongs nowhere in the
 A lane that adds credential-shaped or armored-key fixtures composes them at runtime from their parts;
 the pull-request diff secret scan is a required gate and matches those literals in source.
 
-A bundle with no `risk-plan.json` predates this contract and publishes exactly as before. Historical
-review and acceptance documents stay readable unchanged, and `review:accept` takes no dossier.
+A bundle with no `risk-plan.json` retains its legacy shape, but fresh publications still meet the
+reviewer cost and diversity rules. Historical review and acceptance documents stay readable
+unchanged; exact published replay and recovery do not re-run fresh model eligibility, and
+`review:accept` takes no dossier.
 
 Post validated blockers BEFORE repair: publish a `REQUEST_CHANGES` review against the reviewed
 head, then dispatch repairs. The author pushes the fixed head and records each repair through
 `review:repair`, leaving the thread open; the reviewer App, a distinct identity, resolves only the
 threads whose recorded repair validates through `review:confirm`, and a refusal resolves nothing.
-`review:resolve` keeps its exact `Done` path for legacy roots. Never repair first and approve in
+`review:resolve` is retired and refuses all resolutions. Never repair first and approve in
 one motion: the public record must retain the reviewer identity's findings against the original
-head and the author identity's fixing pushes and `Done` replies. Orchestrator judgement lives in its
+head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
 delivery authorization, and the author then merges through `deliver` as the immutable author App.
@@ -221,12 +231,14 @@ convention unless Sourdaw deliberately differs.
 All lanes share this machine. Run costly verification in the pipeline's per-job runners, not
 locally at other lanes' expense.
 
-- Locally, run only what is cheap and narrow: the spec you wrote or changed, lint on the files you
-  touched. Push for everything else.
+- Run the exact affected tests and formatting locally when the changed files can fail those checks.
+  PR CI owns lint, every TypeScript typecheck, module-boundary validation, barrel-mock coverage,
+  repository builds, broad unit and Rust suites, and release inventory. Do not run these broad
+  checks locally; inspect the pull request's CI results as their verification evidence.
 - Run repository commands sequentially within your lane. Other lanes may validate concurrently only
   when the guard admits them.
 - `package.json` scripts are plain, standard commands. In agent sessions, wrap compute-heavy runs
-  (tests, typechecks, builds, Cargo, Playwright, WASM, measurements) with
+  (tests, builds, Cargo, Playwright, WASM, measurements) with
   `pnpm guard --profile <focused|broad|extended> [--max-rss-mib <estimate>] [--require-target] --
 <command>`. Estimate peak RAM from the latest observed guard peak or the nearest command; without
   an estimate the guard applies the profile ceiling, raised to the measured budget it records for
@@ -234,34 +246,28 @@ locally at other lanes' expense.
   observed peak in the guard's `measuredScriptBudgets`, never in a note. The guard waits until free
   RAM covers active reservations, this command, and the system reserve. Never bypass it. A timeout,
   RSS kill, or memory-monitor failure is a stop.
-- Run only checks that can fail because of the changed files. Never expand to repository-wide tests,
-  lint, coverage, E2E, builds, Cargo, WASM, or measurements unless explicitly requested.
+- Run only checks that can fail because of the changed files. Do not run repository-wide tests, lint, coverage, E2E, builds, Cargo, WASM, boundaries, barrel
+  mocks, release inventory, or measurements locally; use PR CI for those checks unless an explicit
+  targeted debugging need requires a local diagnostic.
 - Name exact affected test files. Shared code never justifies guessed or expanded test scope.
 - Never use watch mode for verification. Start a server only when the task needs it.
 
 ## Checks
 
-| Need                      | Command                                      |
-| ------------------------- | -------------------------------------------- |
-| Focused tests             | `pnpm test:run <file-or-narrow-directory>`   |
-| Focused E2E               | `pnpm test:e2e <spec>`                       |
-| Focused lint              | `pnpm lint <changed-files>`                  |
-| Focused format            | `pnpm format <changed-files>`                |
-| App types                 | `pnpm typecheck`                             |
-| Test types                | `pnpm typecheck:test`                        |
-| Script types              | `pnpm typecheck:scripts`                     |
-| E2E types                 | `pnpm typecheck:e2e`                         |
-| Focused Rust tests        | `pnpm cargo:test --package <crate> <filter>` |
-| Focused Rust format       | `pnpm cargo:fmt --package <crate>`           |
-| Module boundaries         | `pnpm deps:validate`                         |
-| Barrel mocks              | `pnpm test:barrel-mocks`                     |
-| Rebuild one wasm pkg      | that package's own `wasm:*` script           |
-| Rebuild every wasm        | `pnpm wasm:all`                              |
-| Rewrite wasm manifest     | `pnpm wasm:manifest`                         |
-| Prove wasm freshness      | `pnpm wasm:verify`                           |
-| Restamp the wasm surface  | `pnpm release:restamp:wasm`                  |
-| Restamp a tracked set     | `pnpm release:restamp:tracked-set`           |
-| Restamp a dependency bump | `pnpm release:restamp`                       |
+| Need                                              | Command or evidence                                  |
+| ------------------------------------------------- | ---------------------------------------------------- |
+| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
+| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
+| Focused format                                    | `pnpm format <changed-files>`                        |
+| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
+| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
+| Generate one affected WASM package                | that package's own `wasm:*` script                   |
+| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
+| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
+| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
+| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
+| Restamp a dependency bump                         | `pnpm release:restamp`                               |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
@@ -305,7 +311,8 @@ a retry never authorizes delivery.
 - React Compiler owns memoization. Do not add `useMemo`, `useCallback`, `React.memo`, or
   `forwardRef`.
 
-Run `pnpm deps:validate` after cross-module changes. Full rules:
+PR CI checks module boundaries after cross-module changes; inspect that check on the pull request.
+Full rules:
 [system](./docs/architecture/01-system.md),
 [TypeScript modules](./docs/architecture/03-typescript-module.md),
 [Rust backend](./docs/architecture/02-rust-backend.md), and
@@ -412,6 +419,12 @@ After create, attach parent/child issues as GitHub sub-issues.
 Every issue needs priority, status, and descriptive labels. On `issue:file`, set an applicable
 milestone by title, never UI number (validation against **open** milestones rejects it before filing),
 and roadmap project membership when applicable; leave either empty rather than force a fit.
+Sourdaw Features auto-add requires `project:features` and excludes `bug`; unfiltered sub-issue
+inheritance is disabled because it cannot filter by category. Feature, Spec, and Campaign forms set
+the route label. Generic Task, Audit, Research, and Inventory forms remain neutral: select
+`--project "Sourdaw Features"` with `issue:file` or add the label manually when they belong there.
+Selecting Bugs or Refactors removes the Features route, and Bug or Change plan forms cannot target
+Features.
 No sanctioned script edits existing issues beyond the claim and reconciliation — `pnpm issue:claim
 <issue>` swaps the status labels and moves the boards, and `pnpm issue:reconcile` applies
 digest-guarded body edits and closures at delivery; later corrections require manual `gh`, as does
@@ -468,20 +481,14 @@ skips `Gate` can pass a red head (a `pull_request_review` trigger did, in produc
   `ci:approved` label for that App's undismissed APPROVE of the event's exact head; any other label event fails
   `Gate` with the reason rather than skipping it, so heavy CI runs once per approved head instead of on every push.
 - `.github/workflows/pr-checks.yml` runs the scope plan and validation on every push, mints no `Gate`, and is
-  never required: it is the cheap pre-review signal, and a new head has no `Gate` until it is approved again.
+  never required: it is a preliminary pre-review signal that skips broad unit, build, Rust and native jobs, and a new head has no `Gate` until it is approved again.
   Known limits, kept because sharing one concurrency group would let label events cancel push checks: a push
   does not cancel an admitted run still working on the old head, and any later label event on the pull request
   cancels the admitted run and fails `Gate`; re-running `review:publish` on the approved head re-applies the label.
-- `.github/workflows/semantic-review.yml` is advisory and holds the provider key, so it answers to
-  `pull_request_target` alone (plus dispatch) and runs the base revision's definition: it reads the
-  reviewed head as Git objects and never checks out or executes it, and it mints the non-required
-  `Semantic review` check. Its whole trust boundary is pinned by
-  `scripts/semanticReviewWorkflowContract.ts`
-  ([ADR 0047](./.agents/decisions/0047-advisory-semantic-review-also-runs-in-ci.md)).
 - `.github/workflows/validation.yml` runs types, lint, boundaries, unit matrix, build, Rust,
-  native checks, scoped smoke, PR diff secret scanning and dependency review on each push and in the admitted run.
-  Release provenance (`pnpm test:release-inventory`) is not a pull-request check: it runs in `nightly.yml`
-  and in `release:proof:assemble`, which `docs/release.md` has the release owner run before `release:cut`.
+  native checks, scoped smoke, release inventory, PR diff secret scanning and dependency review on
+  in the admitted full run; preliminary push validation omits the broad unit, build, Rust and native jobs. Nightly and `release:proof:assemble` also run release inventory;
+  the release owner still assembles proof before `release:cut` as described in `docs/release.md`.
 - `.github/workflows/heavy-gates.yml` is reusable only, called by the required PR workflow.
   Its explicit affected E2E matrix and selected Browser AI hardware proof decide `Gate`, and run
   only in the admitted run. CodeQL has a separately permissioned required
@@ -535,8 +542,11 @@ manifest, stage artifacts, then verify after staging. Exception: root `Cargo.tom
 only canonical profile tables, the workspace package table, patch/replace tables, the resolver
 line, and closure-resolved workspace dependencies; new members, comments, and unrelated
 dependencies do not. `wasm:manifest` retains hashes for packages without rebuild evidence, so
-rebuilding the wrong package can match a manifest over stale artifacts; use `pnpm wasm:all` when
-unsure. Clean rebases can leave wasm stale; only `pnpm wasm:verify` proves freshness.
+rebuilding the wrong package can match a manifest over stale artifacts. Identify every affected
+package from `scripts/wasm-artifacts.ts`; rebuild each affected package when its generated artifacts
+must change, then rewrite and verify the manifest. PR CI checks committed WASM freshness; do not run
+`pnpm wasm:all` as a broad local fallback. Clean rebases can leave wasm stale; only
+`pnpm wasm:verify` proves freshness after generation or staging.
 
 `lane:publish` pushes without `--force` and refuses uncommitted changes: commit the work yourself
 with a conventional subject first. Titling, bodies, flags, stacks, and stranded lanes:
@@ -566,13 +576,13 @@ teammate reviewing the work, not an auditor verifying the pipeline ran. If the s
 appear unchanged in a CI log, it does not belong in a review.
 
 Approvals carry no inline comments; `review:publish` rejects APPROVE documents with comments.
-Each inline comment opens a merge-blocking thread; `review:resolve` replies `Done`, asserting a
+Each inline comment opens a merge-blocking thread; `review:confirm` validates an author-recorded
 repair, so it cannot honestly clear a non-blocking note. Put observations in the approval body
 with `Nit:` or `Optional:`, or file them — they belong to `CHANGES_REQUESTED` reviews and
 require an addressing new head.
 
-Push fixes before `review:resolve`; resolve a thread only once the current head addresses the
-finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
+Push fixes before `review:repair`; the reviewer resolves through `review:confirm` only once the
+current head addresses the finding, then obtain a fresh review. No script writes free-form thread replies, so wrongly posted
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
@@ -594,7 +604,7 @@ reviewer Bot's APPROVE of the current head and its recorded delivery authorizati
 threads resolved, and executes the merge as the immutable author App; it is main-only — merge no
 other way. Validation order, admission, and retry semantics: [delivery-orchestration].
 
-Keep batches small and merges prompt. Hold at most four live lanes at once. Lanes that do not
+Keep batches small and merges prompt. Hold at most five live lanes at once. Lanes that do not
 stack on one another stay write-disjoint as Delegation requires. A change also shares a generated
 file or pinned digest when it feeds that file's generator or digest: an app action feeds the
 command schema and the agent evidence manifest, device guidance feeds the evidence manifest, a

@@ -495,8 +495,8 @@ function supersedesRepairRecord(
  * supersedes the running candidate or conflicts with it, and a single conflict refuses the thread no
  * matter what later records supersede.
  */
-function authorRepairRecords(
-    thread: ReviewRepairThreadState,
+export function authorRepairRecords(
+    thread: Pick<ReviewRepairThreadState, 'replies'>,
     authorNodeId: string,
     isAncestor: (commit: string, head: string) => boolean
 ): AuthorRepairRecords {
@@ -599,7 +599,7 @@ type ReviewerConfirmationContext = Pick<RepairConfirmation, 'pr' | 'head' | 'isA
  * record and an ancestry chain from its recorded head through the confirmation head to the live head.
  */
 export function reviewerConfirmationState(
-    thread: ReviewRepairThreadState,
+    thread: Pick<ReviewRepairThreadState, 'thread' | 'replies'>,
     record: ReviewRepairRecord,
     reviewerNodeId: string,
     confirmation: ReviewerConfirmationContext

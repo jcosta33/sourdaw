@@ -18,7 +18,7 @@ import {
     type Heads,
     type SyncState,
 } from '@automerge/automerge';
-import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
 
 import {
     subscribeToCrdtChanges,
@@ -42,8 +42,19 @@ import { AutomergeSync } from '../automergeSync';
 import { installFakeDurableAssetIndexedDb, type FakeDurableAssetIndexedDb } from './fakeDurableAssetIndexedDb';
 import { createPeerSyncMessages } from './peerSyncHandshake';
 
+type CommandUseCases = typeof import('#/modules/Command/useCases');
+
 const command_mocks = vi.hoisted(() => ({
     sync_action_replay_metadata: vi.fn<(entries: readonly { id: string }[]) => void>(),
+    get_executable_app_action_effect: vi.fn<CommandUseCases['getExecutableAppActionEffect']>(() => {
+        throw new Error('Unexpected getExecutableAppActionEffect call in AutomergeSync fixture');
+    }),
+    execute_app_action: vi.fn<CommandUseCases['executeAppAction']>(() => {
+        throw new Error('Unexpected executeAppAction call in AutomergeSync fixture');
+    }),
+    push_undo_entry: vi.fn<CommandUseCases['pushUndoEntry']>(() => {
+        throw new Error('Unexpected pushUndoEntry call in AutomergeSync fixture');
+    }),
 }));
 
 const crdt_mocks = vi.hoisted(() => ({
@@ -60,6 +71,9 @@ beforeAll(() => {
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
     syncActionReplayMetadata: command_mocks.sync_action_replay_metadata,
+    getExecutableAppActionEffect: command_mocks.get_executable_app_action_effect,
+    executeAppAction: command_mocks.execute_app_action,
+    pushUndoEntry: command_mocks.push_undo_entry,
 }));
 
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
@@ -201,6 +215,12 @@ describe('AutomergeSync', () => {
         vi.mocked(hasCrdtDoc).mockReset().mockReturnValue(false);
         vi.mocked(getCrdtDocIds).mockReset().mockReturnValue([]);
         vi.mocked(persistCrdtProject).mockReset().mockResolvedValue(undefined);
+    });
+
+    afterEach(() => {
+        expect(command_mocks.get_executable_app_action_effect).not.toHaveBeenCalled();
+        expect(command_mocks.execute_app_action).not.toHaveBeenCalled();
+        expect(command_mocks.push_undo_entry).not.toHaveBeenCalled();
     });
 
     it('subscribes to CRDT changes on start using injected dependencies', () => {

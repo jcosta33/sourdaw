@@ -8,12 +8,31 @@ type ParsedTrack = {
     endTick: number;
 };
 
+type TimingOrigin = {
+    tick: number;
+    beat: number;
+    sourceTrackIndex: number;
+    eventOrdinal: number;
+};
+
+type TimingEvent =
+    | (TimingOrigin & { kind: 'tempo'; microsecondsPerQuarterNote: number })
+    | (TimingOrigin & {
+          kind: 'meter';
+          numerator: number;
+          denominatorExponent: number;
+          clocksPerClick: number;
+          notated32ndsPerQuarter: number;
+      });
+
 export type ReadMidiFileResult = {
     /** The track count the file's header declared, recovered or not. */
     declaredTrackCount: number;
     tracks: ParsedTrack[];
     /** True when the parse recovered less than the header declared. */
     truncated: boolean;
+    /** Explicit file timing only; completeness describes parsing, not whether project timing can adopt it. */
+    timing: { format: 0 | 1; ticksPerBeat: number; events: TimingEvent[]; complete: boolean };
 };
 
 type WorkerResponse =
@@ -24,6 +43,7 @@ type WorkerResponse =
           tempo: number;
           declaredTrackCount: number;
           truncated: boolean;
+          timing: ReadMidiFileResult['timing'];
       }
     | { type: 'error'; message: string };
 
@@ -71,6 +91,7 @@ export async function readMidiFile(file: File): Promise<ReadMidiFileResult> {
                     declaredTrackCount: msg.declaredTrackCount,
                     tracks: msg.tracks,
                     truncated: msg.truncated,
+                    timing: msg.timing,
                 });
             } else if (msg.type === 'error') {
                 cleanup();

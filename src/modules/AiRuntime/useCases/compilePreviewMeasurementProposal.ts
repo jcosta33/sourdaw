@@ -4,7 +4,12 @@ import { doesProductionBriefAllowActionBatch } from '#/modules/Project/useCases'
 import { COMMAND_BATCH_PROPOSAL_TOOL_NAME } from '../models/AgentToolCatalogNames';
 import { type CreativeRequestAuthority } from '../models/CreativeInterpretation';
 import { type ProjectContext } from '../models/ProjectContext';
-import { type RetainedCommand, type RetainedCommandSet } from '../models/RetainedCompilation';
+import {
+    type AdoptedRecipe,
+    type RetainedCommand,
+    type RetainedCommandSet,
+    type RetainedCompilation,
+} from '../models/RetainedCompilation';
 import { type ToolCallResult } from '../transformers/toolCallParser';
 
 import { bridgeGroundedLlmToolCalls } from './agentReference/bridgeGroundedLlmToolCalls';
@@ -18,8 +23,9 @@ import { validateActions } from './validateActions';
 
 type CompilePreviewMeasurementProposalInput = {
     callId: string;
-    /** The provider's semantic command list, in the schema `command.batch.propose` takes it. */
-    proposal: Readonly<Record<string, unknown>>;
+    /** An uncompiled semantic list, or the exact application-retained recipe commands. */
+    source:
+        { proposal: Readonly<Record<string, unknown>> } | { recipe: Extract<RetainedCompilation, { kind: 'recipe' }> };
     context: ProjectContext;
     prompt: string;
     revision: string;
@@ -33,7 +39,12 @@ type CommandBatchEnvelope = Extract<
 >['envelope'];
 
 type CompiledPreviewProposal =
-    | { status: 'compiled'; commands: readonly RetainedCommand[]; envelope: CommandBatchEnvelope }
+    | {
+          status: 'compiled';
+          commands: readonly RetainedCommand[];
+          envelope: CommandBatchEnvelope;
+          recipeSource?: AdoptedRecipe;
+      }
     | { status: 'rejected'; reason: string };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -158,32 +169,56 @@ function withPreviewColor(action: AdmittedAction): AdmittedAction {
 }
 
 /**
- * Compile one preview measurement's semantic list into the batch a proposal adopting it would
- * become: the list compiler a proposal uses, then grounding with the list as an adopted
- * compilation, runtime validation, state guards and the versioned command batch, all against the
+ * Compile a semantic list or reuse a retained recipe, then ground and validate its commands,
+ * materialize state guards and build the versioned command batch, all against the
  * loop's revision and project read model. Nothing here touches the project.
  */
 export function compilePreviewMeasurementProposal(
     input: CompilePreviewMeasurementProposalInput
 ): CompiledPreviewProposal {
+    const retained = 'recipe' in input.source ? input.source.recipe : compileSemanticList(input, input.source.proposal);
+    if ('status' in retained) {
+        return retained;
+    }
+    if (retained.commands.length === 0) {
+        return { status: 'rejected', reason: 'The proposal compiled to no command to measure.' };
+    }
+    const compiled = compileRetainedPreview(input, retained);
+    if (compiled.status === 'rejected' || !('recipe' in input.source)) {
+        return compiled;
+    }
+    return { ...compiled, recipeSource: input.source.recipe.recipe };
+}
+
+function compileSemanticList(
+    input: CompilePreviewMeasurementProposalInput,
+    proposal: Readonly<Record<string, unknown>>
+) {
     const compiled = compileArbitraryCommandList({
-        calls: [{ name: COMMAND_BATCH_PROPOSAL_TOOL_NAME, arguments: { list: input.proposal } }],
+        calls: [{ name: COMMAND_BATCH_PROPOSAL_TOOL_NAME, arguments: { list: proposal } }],
         context: input.context,
         revision: input.revision,
         creativeAuthority: input.creativeAuthority,
     });
     if (compiled.status === 'rejected') {
-        return { status: 'rejected', reason: `The proposal list did not compile: ${compiled.reason}` };
+        return { status: 'rejected' as const, reason: `The proposal list did not compile: ${compiled.reason}` };
     }
     const commands = compiledCommandsOf(compiled.calls[0]);
     if (commands === null || commands.length === 0) {
-        return { status: 'rejected', reason: 'The proposal list compiled to no command to measure.' };
+        return { status: 'rejected' as const, reason: 'The proposal list compiled to no command to measure.' };
     }
     const retained: RetainedCommandSet = {
         callId: input.callId,
         revision: input.revision,
         commands: toRetainedCommands(commands),
     };
+    return retained;
+}
+
+function compileRetainedPreview(
+    input: CompilePreviewMeasurementProposalInput,
+    retained: RetainedCommandSet
+): CompiledPreviewProposal {
     const admitted = admitRetainedCommands(input, retained);
     if (admitted.status === 'rejected') {
         return admitted;

@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type AudioGraphBackend } from '../../../models/AudioGraphBackend';
 import { abandonNativeLiveGraphSession } from '../abandonNativeLiveGraphSession';
+import { disarmNativeLiveAutomationWriter } from '../disarmNativeLiveAutomationWriter';
 import { type LiveAutomationWriterPass, nativeLiveAutomationWriter } from '../nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession } from '../nativeLiveGraphSessionState';
 import { type LiveMidiWriterPass, nativeLiveMidiWriter } from '../nativeLiveMidiWriterState';
@@ -56,6 +57,19 @@ function armedMidiPass(): LiveMidiWriterPass {
 /** A minimal armed automation pass — only `pass` and `epoch` are read by this spec. */
 function armedAutomationPass(): LiveAutomationWriterPass {
     return {
+        inputs: {
+            revision: 0,
+            acceptedRevision: 0,
+            referenceSpan: { startSeconds: 0, endSeconds: 0, clipsAtEnd: false },
+            loopSpan: null,
+            reference: [],
+            strips: new Map(),
+            readTargets: () => [],
+            readStrips: () => new Map(),
+            pending: null,
+            inheritedHolds: [],
+            observers: [],
+        },
         stripTracks: [],
         sampleRate: 48_000,
         programmeEndSeconds: 0,
@@ -97,6 +111,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    disarmNativeLiveAutomationWriter();
     nativeLiveGraphSession.backend = null;
     nativeLiveGraphSession.orphanedBackend = null;
     nativeLiveMidiWriter.pass = null;

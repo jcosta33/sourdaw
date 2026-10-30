@@ -7,6 +7,11 @@ name: Validation
 on:
   workflow_call:
     inputs:
+      mode:
+        description: Full required validation or preliminary push validation.
+        required: false
+        default: full
+        type: string
       browser:
         description: Whether the affected plan requires browser smoke.
         required: true
@@ -222,6 +227,7 @@ jobs:
           EVENT: ${{ github.event_name }}
           BROWSER: ${{ inputs.browser }}
           PROFILE: ${{ inputs.profile }}
+          MODE: ${{ inputs.mode }}
           # The retry attempt's verdict wins; its empty outputs (it never ran,
           # or it failed too) fall through to the first attempt's, and both
           # being empty leaves the value empty for the guard below to refuse.
@@ -240,6 +246,10 @@ jobs:
               exit 1
             fi
           done
+          case "$MODE" in
+            full|preliminary) ;;
+            *) printf 'Invalid validation mode: %s\n' "$MODE" >&2; exit 1 ;;
+          esac
           case "$PROFILE" in
             docs|tooling|broad) ;;
             *) printf 'Invalid affected profile: %s\n' "$PROFILE" >&2; exit 1 ;;
@@ -305,6 +315,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Release inventory reads immutable Levain measurement provenance.
+          fetch-depth: 0
+          ref: ${{ github.sha }}
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
       # field, replacing the Corepack shim this setup used to rely on: a
@@ -330,6 +344,15 @@ jobs:
       # filter would hide.
       - name: Artifact freshness
         run: pnpm wasm:verify
+
+      # This privileged systemd proof must run outside the confined unit account.
+      - name: Hosted installer systemd proof
+        env:
+          SOURDAW_SYSTEMD_TESTS: "1"
+        run: pnpm test:run scripts/__tests__/hostedAptInstall.spec.ts --maxWorkers=2
+
+      - name: Campaign fixture freshness
+        run: pnpm test:run scripts/__tests__/agentCampaignHarness.spec.ts -t 'records each fixture as the tree actually holds it' --maxWorkers=2
 
       - name: App types
         if: needs.decide.outputs.tooling != 'true'
@@ -357,10 +380,8 @@ jobs:
         if: needs.decide.outputs.tooling != 'true'
         run: pnpm test:command-schema
 
-      # Release provenance (tracked sets, licenses, trademark, asset digests)
-      # is not checked here. `test:release-inventory` runs in nightly.yml and
-      # in `release:proof:assemble`, so an ordinary pull request never needs
-      # a restamp.
+      - name: Release inventory
+        run: pnpm test:release-inventory
 
       - name: Test collection scope
         if: needs.decide.outputs.tooling != 'true'
@@ -397,9 +418,10 @@ jobs:
     # contract checks answer to files a prose-classified path can still touch.
     if: needs.decide.outputs.code == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 50
     steps:
       - name: Checkout
+        timeout-minutes: 10
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # Provisions the exact pnpm declared in package.json's `packageManager`
@@ -408,20 +430,24 @@ jobs:
       # undici and red the job before any check ran (#3851). Must precede
       # `Set up Node` so `cache: pnpm` resolves the store path.
       - name: Set up pnpm
+        timeout-minutes: 5
         uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 5
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Install dependencies
+        timeout-minutes: 5
         run: pnpm install --frozen-lockfile
 
       - name: Lint
+        timeout-minutes: 20
         # The longest single check in the fast lane, and the local default runs
         # it on one worker for the resource guard's sake rather than the work's.
         env:
@@ -465,7 +491,7 @@ jobs:
   unit:
     name: Unit suite ${{ matrix.shard }}/4
     needs: decide
-    if: needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.web == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -578,6 +604,12 @@ jobs:
     # proof. The affected browser matrix runs separately in heavy-gates.yml.
     if: github.event.pull_request != null && needs.decide.outputs.e2e == 'true'
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27
+      options: --init --ipc=host
+    defaults:
+      run:
+        shell: bash
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -602,54 +634,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Installing the browser library set shells out to apt-get, and a
-      # transient mirror outage (apt exiting 100) red this job and Gate on an
-      # otherwise-green head (#4085). Three attempts with a 5s then 10s
-      # backoff; the last failure still fails the step.
-      #
-      # The install is split so each half can be bounded by the user that owns
-      # it: `--with-deps` runs apt-get as root through sudo, where a `timeout`
-      # run as the runner user cannot signal it and would leave apt holding its
-      # lock for the next attempt. So the system dependencies run under
-      # `sudo timeout` and the browser download under its own `timeout`; a
-      # timed-out attempt is a failed one and the loop continues. GNU timeout
-      # signals its whole process group, but its TERM grace period ends when
-      # the direct child exits while a grandchild survives, so the browser
-      # download is killed outright and apt gets a TERM first.
-      #
-      # Caps and what they cost, from 2026-09-20 to 2026-10-08 installs: the
-      # whole step took 45s at the 99th percentile until 2026-10-05, but a slow
-      # Ubuntu mirror stretched the apt phase to 523s on 2026-09-29 and 1252s on 2026-10-06,
-      # while the browser download never exceeded 56s. The 8m dependency cap
-      # therefore also kills the rare install that is slowly making progress
-      # (15 of about 4300) and retries it, relying on apt resuming its partial
-      # downloads; it is the price of failing a genuine stall, which prints
-      # nothing after `apt-get update` for an hour, within minutes.
-      #
-      # Every apt run reads the runner's sources except the image's standalone
-      # Microsoft product feed, which nothing here installs from and whose 403
-      # failed `apt-get update` on all three attempts (#5359); see
-      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
-      #
-      # Limit: apt runs dpkg in its own session, which the group signal of
-      # `timeout` does not reach. A cap that expires while dpkg is unpacking,
-      # seconds after the downloads finish, can leave dpkg holding its lock
-      # and fail the next attempt; the attempt after that retries.
-      #
-      # Three timed-out attempts take 34 minutes, which this job's limit holds
-      # together with the longest observed smoke run.
-      - name: Install Playwright browsers
-        run: |
-          for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
-              timeout --signal=KILL 3m pnpm exec playwright install chromium; then
-              break
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              exit 1
-            fi
-            sleep $((attempt * 5))
-          done
+      # The immutable image contains browsers and their OS libraries. Verify the
+      # resolved package can launch them without per-job apt or binary downloads.
+      - name: Verify preinstalled browser runtime
+        timeout-minutes: 2
+        run: node scripts/verifyPlaywrightRuntime.ts 1.63.0
 
       # No retries: a smoke set that needs a second attempt is not the fast
       # deterministic signal this job exists to give.
@@ -659,7 +648,7 @@ jobs:
   build:
     name: Production build
     needs: decide
-    if: needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.web == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -691,7 +680,7 @@ jobs:
   rust:
     name: Rust workspace and collaboration server
     needs: decide
-    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.server == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -730,25 +719,14 @@ jobs:
       # 523s and 1252s on a slow Ubuntu mirror, so the cap matches that
       # install's 8 minutes and a merely slow mirror is not killed. The root
       # `timeout` is required because one owned by the runner user cannot
-      # signal apt under sudo; the deadline sends a TERM, and the KILL after
-      # 15 seconds only reaches a `bash -c` wrapper that survives it.
-      # Three timed-out attempts take 3 x 495s plus 45s of backoff, 1530s, so
-      # the step carries a 30 minute limit inside the 60 minute job limit.
+      # Keep the root package install in one bounded transaction. The helper
+      # checks dpkg before and after its complete cgroup drains.
       - name: Install ALSA development headers
         shell: bash
         timeout-minutes: 30
         run: |
           set -euo pipefail
-          for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
-              exit 0
-            fi
-            printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2
-            if [ "$attempt" -lt 3 ]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          exit 1
+          sudo env "PATH=$PATH" bash scripts/aptWithoutMicrosoftFeed.sh --deadline 8m -- bash -c 'apt-get update && apt-get install -y libasound2-dev'
 
       # The trusted main seed stores the installed compiler under the complete
       # TOML identity. A pull request only restores an exact host match.
@@ -808,7 +786,7 @@ jobs:
     # `sourdaw-native` is excluded from the Linux Rust leg because its manifest
     # unconditionally enables whisper-rs's `metal` feature. A macOS runner is
     # the only place it compiles, and public repositories get those free.
-    if: needs.decide.outputs.rust == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -910,7 +888,7 @@ jobs:
     # testing keeps that oracle rather than trading it away: a test build
     # compiles everything a `cargo check` of the same crate compiles, and then
     # runs it too.
-    if: needs.decide.outputs.rust == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true')
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -952,7 +930,7 @@ jobs:
     # is the one platform the crate compiles on, for the reason `native-macos`
     # records above. A TypeScript producer can break parity exactly as a Rust
     # consumer can, so this leg answers to both scopes rather than to `rust`.
-    if: needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true'
+    if: inputs.mode == 'full' && (needs.decide.outputs.rust == 'true' || needs.decide.outputs.web == 'true')
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -1068,21 +1046,37 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
           path: trusted-scanner
           persist-credentials: false
+          sparse-checkout: |
+            /.gitleaks.toml
+            /.gitleaksignore
+          sparse-checkout-cone-mode: false
 
       - name: Checkout scan target
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Leaving repository unset keeps origin at the base repository. The
           # pinned head SHA is valid for both same-repository and fork PRs;
-          # the next step fetches the independently pinned base SHA there.
+          # the next step completes both pinned histories without unrelated refs.
           ref: ${{ github.event.pull_request.head.sha }}
           path: scan-target
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - name: Fetch immutable base SHA
         working-directory: scan-target
-        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --no-tags --no-recurse-submodules --unshallow origin "$BASE_SHA" "$HEAD_SHA"
+          else
+            git fetch --no-tags --no-recurse-submodules origin "$BASE_SHA" "$HEAD_SHA"
+          fi
+          if [ "$(git rev-parse --is-shallow-repository)" != false ]; then
+            printf 'PR secret scan requires complete pinned histories\n' >&2
+            exit 1
+          fi
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$HEAD_SHA^{commit}"
 
       - name: Install trusted Gitleaks
         working-directory: ${{ github.workspace }}
@@ -1214,25 +1208,28 @@ jobs:
         env:
           RESULTS: ${{ toJSON(needs) }}
           PULL_REQUEST: ${{ github.event.pull_request != null }}
+          MODE: ${{ inputs.mode }}
         run: |
           set -euo pipefail
-          printf '%s' "$RESULTS" | jq -e --arg pr "$PULL_REQUEST" '
+          printf '%s' "$RESULTS" | jq -e --arg pr "$PULL_REQUEST" --arg mode "$MODE" '
             def selected($flag):
               if $flag == "true" then "success"
               elif $flag == "false" then "skipped"
               else error("missing scope verdict") end;
+            def broad($flag): if $mode == "preliminary" then "skipped" else selected($flag) end;
+            ($mode == "full" or $mode == "preliminary") and
             (keys | sort) == (["decide", "static", "lint", "boundaries", "unit", "tooling-unit", "smoke", "build", "rust", "native-macos", "native-windows", "native-parity", "dependency-review", "pr-secrets"] | sort) and
             .decide.result == "success" and .static.result == "success" and
             (.decide.outputs | [.rust, .server, .e2e, .web, .code, .tooling] | all(. == "true" or . == "false")) and
             .lint.result == selected(.decide.outputs.code) and
             .boundaries.result == selected(.decide.outputs.code) and
-            .unit.result == selected(.decide.outputs.web) and
+            .unit.result == broad(.decide.outputs.web) and
             .["tooling-unit"].result == selected(.decide.outputs.tooling) and
-            .build.result == selected(.decide.outputs.web) and
-            .rust.result == (if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "success" else "skipped" end) and
-            .["native-macos"].result == selected(.decide.outputs.rust) and
-            .["native-windows"].result == selected(.decide.outputs.rust) and
-            .["native-parity"].result == (if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "success" else "skipped" end) and
+            .build.result == broad(.decide.outputs.web) and
+            .rust.result == broad(if .decide.outputs.rust == "true" or .decide.outputs.server == "true" then "true" else "false" end) and
+            .["native-macos"].result == broad(.decide.outputs.rust) and
+            .["native-windows"].result == broad(.decide.outputs.rust) and
+            .["native-parity"].result == broad(if .decide.outputs.rust == "true" or .decide.outputs.web == "true" then "true" else "false" end) and
             .smoke.result == (if $pr == "true" then selected(.decide.outputs.e2e) elif $pr == "false" then "skipped" else error("missing PR verdict") end) and
             .["dependency-review"].result == selected($pr) and
             .["pr-secrets"].result == selected($pr)'
