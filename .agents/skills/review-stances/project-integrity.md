@@ -545,6 +545,56 @@ Distinguish same-effective metadata replay, which preserves usable cached peaks,
 leaf witness that owns a pending result. Retain nested paired holds, withdrawal convergence
 and user-pick replay controls. A fake injected token cannot prove the app's authority producer.
 
+## Device automation must retain its current admitted owner
+
+### Ordinary content publication is not root replacement
+
+PR #1648's track-snapshot fence retired runtime ownership on ordinary immutable edits; PR #3847's
+later boolean extraction preserved that behavior. Historical private reviewer prompts, stances and
+tiers are unestablished. Distinguish an installed-root change from immutable track/base edits,
+ancillary child membership, same-lineage peer merge and rollback. Those content publications may
+replace projections while retaining the current root.
+
+A driving lane becoming Off, disabled or removed must resolve its present eligible owner and
+restore that owner's latest saved base, including a peer or typed manual base edit. Pair these
+preservation cases with an actual same-ID/same-content root reinstall and a same-root arrangement
+switch after real transport teardown. Require no outgoing restoration or bypass edge in the new
+owner. Durable IDs and equal bytes do not establish runtime ownership; a fabricated token cannot
+prove the root/session producers.
+
+### Stored keys do not establish descriptor membership
+
+Playback first admitted every stored key in `4f410257b212bbbd2210fa6553f7aaa3394f69bc`; GitHub reports
+no associated PR. Restoration independently introduced that predicate
+in PR #807. PR #831 later bound the global parameter law while deliberately retaining pass-through for a missing
+descriptor; it did not introduce the original omission. Historical private reviewer
+prompts, stances and tiers are unestablished. Connected cases observed runtime writes for an unknown
+Bacteria key and bogus Yeast/Knead keys despite their absent automation declarations.
+
+For a known descriptor, both delivery and Off/disabled/removed-lane restoration must require a
+declared automatable member AND the existing internal-key denial. Probe a valid member beside an
+unknown stored key, an empty descriptor, and a driving receipt whose same-ID owner loses parameter
+admission. Require no invalid runtime write and exact raw/project, semantic/session history and
+macro preservation. Keep the deliberately unknown-family compatibility control and hosted-plugin
+asymmetry: delivery requires its attached published parameter, while restoration invents no
+separate manual base. Narrowing the global law would change unrelated consumers.
+
+### Linked material belongs to the resolved source
+
+`2a0e594f94d36a6e1898a8a567b6b9c5de2ca0d9` introduced linked lanes and a getter that resolved the
+source before checking the follower's local points. Transport retained the opposite empty-points
+gate. GitHub reports no associated PR; historical private reviewer prompts, stances and tiers are
+unestablished. The later cycle guard in `f16dd649e90` and offline parity in PR #765 did not introduce
+that live caller mismatch. A connected witness delivered the valid source's `macro1 = 0.8` but
+omitted the follower's expected `mix = 0.4`.
+
+Carry an empty follower through track playback and clip ownership using real admitted scaled source
+material. Require its exact terminal runtime event and unchanged raw lanes, links, parameter bases,
+semantic/session history and active macro recording. Keep dangling/cyclic/nonlinked-empty refusals,
+Off/disabled/recording gates, and held-versus-source-material duplicate controls. A local empty
+array is not absent linked material, and admitting a link must not revive an invalid source or
+suppress the wrong target. These are required probes; selective gate mutations were not run here.
+
 ## Lesson from direct commit 61adb8: redetection dropped locked automatic markers
 
 Commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised to preserve locked markers, but its predicate retained only markers whose origin was not `transient-auto`, dropping locked automatic rows too. The original preservation fixture covered a user row and an unlocked automatic row, so it could not expose that loss. Current main retains `locked === true` rows and suppresses detections within `1e-3` of a retained original beat (PR #5515).

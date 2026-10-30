@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import * as Arrangement from '#/modules/Arrangement/useCases';
 import { scheduleSendAutomation, updateDeviceParam, updateMidiFxParam } from '#/modules/AudioEngine/useCases';
 import { applyFermenterRuntimeParam } from '#/modules/Fermenter/useCases';
 
@@ -107,6 +108,63 @@ describe('restoreAutomationBaseValue', () => {
         // A lane that may not drive the parameter may not restore it either —
         // restoring would be the same unauthorised write arriving one tick after
         // the gate that refused it.
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+    });
+
+    it.each(['bacteria', 'yeast', 'knead'])('refuses an undeclared stored base on known %s', (type) => {
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'device:bogus' },
+            track: { gain: 0.4, pan: 0, devices: [{ id: 'device', type, parameterValues: { bogus: 0.42 } }] },
+            landTime: 7,
+        });
+        expect(updateDeviceParam).not.toHaveBeenCalled();
+        expect(applyFermenterRuntimeParam).not.toHaveBeenCalled();
+    });
+
+    it('keeps the existing internal-key denial conjunctive with declared membership', () => {
+        const law = vi.spyOn(Arrangement, 'isDeviceParameterAutomatable').mockReturnValue(false);
+        try {
+            restoreAutomationBaseValue({
+                lane: { trackId: 'track-1', parameterId: 'ov-1:mix' },
+                track: trackWithDeviceParam('mix', 0.42),
+                landTime: 7,
+            });
+            expect(updateDeviceParam).not.toHaveBeenCalled();
+        } finally {
+            law.mockRestore();
+        }
+    });
+
+    it('preserves unknown-family manual-base compatibility', () => {
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'device:custom' },
+            track: {
+                gain: 0.4,
+                pan: 0,
+                devices: [{ id: 'device', type: 'unregistered-family', parameterValues: { custom: 0.42 } }],
+            },
+            landTime: 7,
+        });
+        expect(updateDeviceParam).toHaveBeenCalledExactlyOnceWith('track-1', 'device', 'custom', 0.42);
+    });
+
+    it('does not invent a separate manual base for a hosted plugin', () => {
+        restoreAutomationBaseValue({
+            lane: { trackId: 'track-1', parameterId: 'device:7' },
+            track: {
+                gain: 0.4,
+                pan: 0,
+                devices: [
+                    {
+                        id: 'device',
+                        type: 'external-plugin',
+                        externalInstanceId: 'instance',
+                        parameterValues: { '7': 0.42 },
+                    },
+                ],
+            },
+            landTime: 7,
+        });
         expect(updateDeviceParam).not.toHaveBeenCalled();
     });
 
