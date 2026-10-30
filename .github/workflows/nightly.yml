@@ -68,7 +68,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -152,7 +152,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -188,7 +188,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -237,7 +237,7 @@ jobs:
           printf 'root=%s\n' "$tool_root" >> "$GITHUB_OUTPUT"
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           dest: ${{ steps.unit_tools.outputs.root }}
           package_json_file: package.json
@@ -288,7 +288,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -467,7 +467,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -591,7 +591,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -649,7 +649,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -687,7 +687,7 @@ jobs:
         run: corepack enable
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 
@@ -959,7 +959,7 @@ jobs:
 
       - name: Set up pnpm
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
-        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        uses: ./.github/actions/setup-pnpm
         with:
           package_json_file: package.json
 

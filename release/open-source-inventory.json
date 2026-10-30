@@ -2260,6 +2260,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/setupPnpm.ts",
+            "value": "https://registry.npmjs.org/"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/supersedePullRequestGh.ts",
             "value": "https://api.github.com/${slot}",
             "templateSha256": "725407b8838cd002370ac4e364fd714c7be6ff0c379600b259f1b8e43cc3505b"

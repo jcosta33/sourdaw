@@ -2101,3 +2101,22 @@ batch containing a valid send inverse; separately retain changed-target, missing
 solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
 validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
 mock-only solo handler case is not this proof.
+
+### Bootstrap transport and activation probes need an observed phase
+
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
+
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.

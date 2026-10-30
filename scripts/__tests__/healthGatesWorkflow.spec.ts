@@ -510,7 +510,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const pnpm = stepNamed(scope, 'Set up pnpm');
     if (
         typeof pnpm.uses !== 'string' ||
-        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        pnpm.uses !== './.github/actions/setup-pnpm' ||
         recordAt(pnpm, 'with').package_json_file !== 'package.json'
     ) {
         throw new Error('required scope must install the repository package manager');
@@ -894,6 +894,51 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     if (typeof jobTimeoutMinutes !== 'number' || stepTimeoutMinutes >= jobTimeoutMinutes) {
         throw new Error(`${label} must keep the ALSA step limit below its job limit`);
     }
+}
+
+function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): number {
+    let callers = 0;
+    const jobs = recordAt(candidate, 'jobs');
+    for (const [jobName, value] of Object.entries(jobs)) {
+        const job = asRecord(value, 'pnpm caller job');
+        if (!Array.isArray(job.steps)) {
+            continue;
+        }
+        const steps = job.steps.map((step) => asRecord(step, 'pnpm caller step'));
+        for (const [index, setup] of steps.entries()) {
+            if (typeof setup.uses === 'string' && setup.uses.startsWith('pnpm/action-setup@')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            if (setup.name !== PNPM_SETUP_STEP) {
+                continue;
+            }
+            callers += 1;
+            if (setup.uses !== (control ? './control/.github/actions/setup-pnpm' : './.github/actions/setup-pnpm')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            const manifest = setup.with === undefined ? undefined : recordAt(setup, 'with').package_json_file;
+            if (control ? manifest !== 'source/package.json' : manifest !== undefined && manifest !== 'package.json') {
+                throw new Error(`${jobName} must select the source pnpm manifest`);
+            }
+            const node = steps[index + 1];
+            if (node?.name !== NODE_SETUP_STEP || node.if !== setup.if) {
+                throw new Error(`${jobName} must retain the later Node caller and its admission`);
+            }
+            const nodeVersion = recordAt(node, 'with')['node-version'];
+            const selectedVersion =
+                nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
+            if (selectedVersion !== '24.19.0') {
+                throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
+            }
+            const checkout = steps
+                .slice(0, index)
+                .find((step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'));
+            if (!checkout) {
+                throw new Error(`${jobName} must acquire its local setup action before execution`);
+            }
+        }
+    }
+    return callers;
 }
 
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
@@ -2628,6 +2673,14 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
+        const sourceBootstrap = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceBootstrap, 'build-artifacts'), 'Set up pnpm').uses =
+            './source/.github/actions/setup-pnpm';
+        expect(() => assertHostedWasmWorkflow(sourceBootstrap)).toThrow('pnpm setup from workflow control');
+        const controlTarget = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(controlTarget, 'build-artifacts'), 'Set up pnpm'), 'with').package_json_file =
+            'control/package.json';
+        expect(() => assertHostedWasmWorkflow(controlTarget)).toThrow('pnpm target from the source manifest');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
@@ -4153,6 +4206,33 @@ describe('health gates workflow contract', () => {
         expect(withWorkflowFiles(HEALTH_GATE_WORKFLOW_FILES.slice(1))).toThrow(
             'health-gates.yml is pinned in the recorded workflow file inventory but missing from .github/workflows'
         );
+    });
+
+    it('keeps every pnpm acquisition on the verified action and the same later Node runtime', () => {
+        let callers = 0;
+        for (const file of readdirSync(join(repositoryRoot, '.github/workflows')).filter((file) =>
+            /\.ya?ml$/.test(file)
+        )) {
+            const candidate = loadWorkflow(file).parsed;
+            callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
+        }
+        expect(callers).toBe(26);
+
+        const oldBootstrap = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
+            'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+        expect(() => assertVerifiedPnpmCallers(oldBootstrap, false)).toThrow('verified pnpm acquisition');
+        const mismatchedRuntime = structuredClone(nightly);
+        recordAt(stepNamed(jobAt(mismatchedRuntime, 'build'), NODE_SETUP_STEP), 'with')['node-version'] = '22';
+        expect(() => assertVerifiedPnpmCallers(mismatchedRuntime, false)).toThrow(
+            'match the verified bootstrap runtime'
+        );
+        const unguardedDeploy = structuredClone(nightly);
+        delete stepNamed(jobAt(unguardedDeploy, DEPLOY_WEB_JOB), PNPM_SETUP_STEP).if;
+        expect(() => assertVerifiedPnpmCallers(unguardedDeploy, false)).toThrow('later Node caller and its admission');
+        const sourceAction = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceAction, 'build-artifacts'), PNPM_SETUP_STEP).uses = './source/.github/actions/setup-pnpm';
+        expect(() => assertVerifiedPnpmCallers(sourceAction, true)).toThrow('verified pnpm acquisition');
     });
 
     it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {

@@ -1,0 +1,30 @@
+name: Set up verified JavaScript pnpm
+description: Install the project-pinned JavaScript pnpm release through an integrity-pinned official bootstrap
+inputs:
+  package_json_file:
+    description: Project manifest relative to the workspace
+    default: package.json
+  dest:
+    description: Empty owned tool directory; otherwise a fresh runner temporary directory is used
+outputs:
+  bin_dest:
+    description: Verified target executable directory
+    value: ${{ steps.install.outputs.bin_dest }}
+  dest:
+    description: Independent tool directory
+    value: ${{ steps.install.outputs.dest }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: 24.19.0
+        package-manager-cache: false
+    - shell: bash
+      run: node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts" --prepare-node
+    - id: install
+      shell: bash
+      env:
+        SOURDAW_PNPM_MANIFEST: ${{ inputs.package_json_file }}
+        SOURDAW_PNPM_DEST: ${{ inputs.dest }}
+      run: node "$GITHUB_ACTION_PATH/../../../scripts/setupPnpm.ts"
