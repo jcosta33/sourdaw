@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
     constants,
     fstatSync,
+    realpathSync,
     lstatSync,
     readdirSync,
     mkdirSync,
@@ -1471,4 +1472,13 @@ export function parseLaneAdoptionArgs(
         fail(usage);
     }
     return { adoptPr: assertIssueNumber(values.get('--adopt-pr') ?? '', usage), expectedHead, model };
+}
+
+export function assertAdoptionParent(path: string): void {
+    if (!adoptionPathExists(path)) {
+        return;
+    }
+    if (realpathSync(path) !== path || !lstatSync(path).isDirectory()) {
+        fail('adoption parent directory is redirected');
+    }
 }

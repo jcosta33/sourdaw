@@ -10,6 +10,7 @@ import {
     AUTHOR_LOCK_REASON,
     AUTHOR_BOT_NODE_ID,
     REQUIRED_REPOSITORY,
+    GITHUB_HTTPS_REMOTE,
     githubAuthorizationGitEnv,
     assertTrustedExecutingBlob,
     originMainBlob,
@@ -42,6 +43,7 @@ import {
     verifyAdoptionSources,
     parseLaneAdoptionArgs,
     adoptionPathExists,
+    assertAdoptionParent,
 } from './prContract.ts';
 import {
     assertStackAcyclic,
@@ -139,7 +141,7 @@ function takeTypeOption(args: string[], typeIndex: number): { type: LaneChangeTy
     return { type: assertLaneChangeType(token), rest };
 }
 
-export function parseOpenLaneArgs(args: string[]): {
+type OpenLaneArgs = {
     issue?: number;
     slug: string;
     help: boolean;
@@ -148,11 +150,17 @@ export function parseOpenLaneArgs(args: string[]): {
     type?: LaneChangeType;
     adoptPr?: number;
     expectedHead?: string;
-} {
+};
+
+export function parseOpenLaneArgs(args: string[]): OpenLaneArgs {
     const adoption = parseLaneAdoptionArgs(args, OPEN_LANE_USAGE);
     if (adoption !== undefined) {
         return { ...adoption, model: normalizeAuthorModel(adoption.model), help: false, slug: DEFAULT_LANE_SLUG };
     }
+    return parseNewLaneArgs(args);
+}
+
+function parseNewLaneArgs(args: string[]): OpenLaneArgs {
     const selector = args.indexOf('--stack-on');
     if (selector !== -1) {
         const parent = args[selector + 1];
@@ -163,7 +171,7 @@ export function parseOpenLaneArgs(args: string[]): {
         if (rest.includes('--stack-on') || rest.includes('--help')) {
             fail(OPEN_LANE_USAGE);
         }
-        return { ...parseOpenLaneArgs(rest), stackOn: parent };
+        return { ...parseNewLaneArgs(rest), stackOn: parent };
     }
     const modelIndex = args.indexOf('--model');
     if (modelIndex !== -1) {
@@ -175,12 +183,12 @@ export function parseOpenLaneArgs(args: string[]): {
         if (rest.includes('--model')) {
             fail(OPEN_LANE_USAGE);
         }
-        return { ...parseOpenLaneArgs(rest), model: normalizeAuthorModel(token) };
+        return { ...parseNewLaneArgs(rest), model: normalizeAuthorModel(token) };
     }
     const typeIndex = args.indexOf('--type');
     if (typeIndex !== -1) {
         const { type, rest } = takeTypeOption(args, typeIndex);
-        return { ...parseOpenLaneArgs(rest), type };
+        return { ...parseNewLaneArgs(rest), type };
     }
     if (args[0] === '--help') {
         if (args.length !== 1) {
@@ -489,14 +497,6 @@ function adoptionShellContext(cwd: string) {
     return { env, primaryRoot, sourceCommit, git, run };
 }
 
-function assertAdoptionParent(path: string): void {
-    if (!adoptionPathExists(path)) {
-        return;
-    }
-    if (realpathSync(path) !== path || !lstatSync(path).isDirectory()) {
-        fail('adoption parent directory is redirected');
-    }
-}
 function adoptionBirthMessage(record: LaneAdoption): string {
     return `sourdaw: present PR adoption ${record.pullRequest.id} ${record.nonce}`;
 }
@@ -580,7 +580,7 @@ function adoptionReservationPort(
 ): Pick<AdoptionPort, 'reserve' | 'add'> {
     return {
         reserve: (record) => {
-            run(['fetch', '--no-tags', GITHUB_ADOPTION_REMOTE, `refs/heads/${record.pullRequest.branch}`]);
+            run(['fetch', '--no-tags', GITHUB_HTTPS_REMOTE, `refs/heads/${record.pullRequest.branch}`]);
             if (git(['rev-parse', '--verify', 'FETCH_HEAD^{commit}']) !== record.pullRequest.head) {
                 fail('adopted branch moved during fetch');
             }
@@ -664,7 +664,6 @@ function adoptionCheckoutPort(
         saveModel: (branch, model) => run(['config', `branch.${branch}.sourdaw-author-model`, model]),
     };
 }
-const GITHUB_ADOPTION_REMOTE = 'https://github.com/jcosta33/sourdaw.git';
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(runCli(process.argv.slice(2)));
