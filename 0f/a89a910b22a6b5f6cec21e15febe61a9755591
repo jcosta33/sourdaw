@@ -1,0 +1,20 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderFreezeFailure.integration.spec.tsx
+  s_59e31a5c6f3e31::t_377b1a6350da58 1-323
+  s_59e31a5c6f3e31::t_64aec42ff84b70 324-326
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0fa89a910b22a6b5f6cec21e15febe61a9755591",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
