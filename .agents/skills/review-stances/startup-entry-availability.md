@@ -98,3 +98,17 @@ repeated bootstrap or bus registration. Keep document, URL and retry budget unch
 user explicitly reloads. The HTML surface remains owned by startup until rendering takes over;
 an entry-start marker or capability emission alone never proves that a usable view replaced it.
 Do not retry the whole rendering phase or import a new failure view from the already failing graph.
+
+### Terminal App recovery retains both rejection causes (introduced by PR #5874)
+
+PR #5874's initial App catch and terminal rejection continuation discarded their arguments.
+Its recovery probes checked the fallback and document lifetime but required no terminal report,
+so a second failed graph could leave no original reason for diagnosis. This observation does not
+identify the cancellation actor or establish that a retry repairs every transport failure.
+
+Reject the two actual App attempts with distinct original values and require one platform
+AggregateError report whose errors retain both values by identity and order. Keep their original
+error classes, the same manual fallback, and no automatic navigation. A successful same-specifier
+retry must emit no terminal report. Rendering exceptions belong to React's error path, and
+bootstrap rejection must retain its identity-transition failure route. Exercise desktop reset
+ordering and saved audio/MIDI, PCM and Undo/Redo preservation independently of error reporting.

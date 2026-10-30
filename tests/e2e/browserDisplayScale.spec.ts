@@ -1,6 +1,8 @@
 import { expect, test, type Frame, type FrameLocator, type Locator, type Page } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { expectStartupExact, readStartupSnapshot, requireStartupMirror } from './helpers/startupRecoveryEvidence';
+
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS } from './e2eUtils';
 
 type Box = { x: number; y: number; width: number; height: number };
@@ -445,4 +447,403 @@ test('browser display scale preserves viewport geometry and interactions at 50%,
     await expect(app.getByTestId('app-shell')).toHaveCount(1);
     await expect.poll(async () => frame.evaluate(() => window.innerWidth)).toBe(VIEWPORT.width / 2);
     await expectFrameGeometry(page, frame, 2);
+});
+
+function sineWav(): Buffer {
+    const samples = 44_100 * 4;
+    const result = Buffer.alloc(44 + samples * 2);
+    result.write('RIFF', 0);
+    result.writeUInt32LE(result.length - 8, 4);
+    result.write('WAVEfmt ', 8);
+    result.writeUInt32LE(16, 16);
+    result.writeUInt16LE(1, 20);
+    result.writeUInt16LE(1, 22);
+    result.writeUInt32LE(44_100, 24);
+    result.writeUInt32LE(44_100 * 2, 28);
+    result.writeUInt16LE(2, 32);
+    result.writeUInt16LE(16, 34);
+    result.write('data', 36);
+    result.writeUInt32LE(samples * 2, 40);
+    for (let sample = 0; sample < samples; sample += 1) {
+        result.writeInt16LE(Math.round(Math.sin((sample * 440 * Math.PI * 2) / 44_100) * 12_000), 44 + sample * 2);
+    }
+    return result;
+}
+
+function midiFile(): Buffer {
+    const vlq = (value: number): number[] => {
+        const bytes = [value & 127];
+        for (let remainder = value >>> 7; remainder > 0; remainder >>>= 7) {
+            bytes.unshift((remainder & 127) | 128);
+        }
+        return bytes;
+    };
+    const name = [...Buffer.from('Startup recovery MIDI')];
+    const events = Buffer.from([
+        0,
+        255,
+        3,
+        ...vlq(name.length),
+        ...name,
+        0,
+        255,
+        81,
+        3,
+        7,
+        161,
+        32,
+        0,
+        144,
+        60,
+        100,
+        ...vlq(480),
+        176,
+        1,
+        20,
+        ...vlq(960),
+        176,
+        1,
+        100,
+        ...vlq(1920),
+        176,
+        1,
+        40,
+        ...vlq(480),
+        128,
+        60,
+        0,
+        0,
+        255,
+        47,
+        0,
+    ]);
+    const header = Buffer.alloc(14);
+    header.write('MThd');
+    header.writeUInt32BE(6, 4);
+    header.writeUInt16BE(0, 8);
+    header.writeUInt16BE(1, 10);
+    header.writeUInt16BE(480, 12);
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(events.length);
+    return Buffer.concat([header, Buffer.from('MTrk'), length, events]);
+}
+
+test('failed initial App graph recovers in the same child document and preserves saved material and Undo', async ({
+    page,
+}, info) => {
+    test.setTimeout(240_000);
+    await page.setViewportSize(VIEWPORT);
+    await page.addInitScript((dismissed) => {
+        if (window.parent === window) {
+            localStorage.setItem('wd:onboarding-completed', '1');
+            localStorage.setItem('sourdaw-alpha-notice-dismissed', dismissed);
+            localStorage.setItem('wd:first-load-hint-shown', '1');
+        }
+    }, superjsonStringify(true));
+    await page.goto('/?startup-recovery=1#retained-position');
+    const frame = await findApplicationFrame(page);
+    await expect(frame.getByLabel('Sourdaw — start a project')).toBeVisible({
+        timeout: LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
+    });
+    await frame.locator('#launch-new-project').click();
+    await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
+    const mod = process.platform === 'darwin' ? 'Meta' : 'Control';
+    async function command(label: string): Promise<void> {
+        await frame.locator('body').press(`${mod}+k`);
+        const input = frame.getByTestId('command-palette-input');
+        await expect(input).toBeVisible();
+        await input.fill(label);
+        await frame
+            .getByRole('option')
+            .filter({ has: frame.getByText(label, { exact: true }) })
+            .click();
+        await expect(input).toHaveCount(0);
+    }
+    async function reloadChild(): Promise<void> {
+        const previousOrigin = await frame.evaluate(() => performance.timeOrigin);
+        // goto(current URL) can be only a fragment navigation when the retained URL has a hash.
+        await frame.evaluate(() => window.location.reload());
+        await expect
+            .poll(async () => frame.evaluate(() => performance.timeOrigin).catch(() => 0), {
+                timeout: 30_000,
+            })
+            .toBeGreaterThan(previousOrigin);
+    }
+    function audioTrack(): Locator {
+        return frame
+            .getByRole('grid', { name: 'Track list', exact: true })
+            .locator('[role="row"][draggable="true"]')
+            .filter({ has: frame.getByText('Audio', { exact: true }) });
+    }
+    await command('Add Audio Track');
+    for (const kind of ['Audio', 'MIDI'] as const) {
+        await audioTrack().click({ button: 'right', position: { x: 8, y: 8 } });
+        const chooser = page.waitForEvent('filechooser');
+        await frame.getByRole('menuitem', { name: new RegExp(`Import ${kind}`, 'i') }).click();
+        await (
+            await chooser
+        ).setFiles(
+            kind === 'Audio'
+                ? { name: 'startup-source.wav', mimeType: 'audio/wav', buffer: sineWav() }
+                : { name: 'startup-source.mid', mimeType: 'audio/midi', buffer: midiFile() }
+        );
+        await expect
+            .poll(
+                async () =>
+                    (await readStartupSnapshot(frame)).tracks
+                        .flatMap((track) => track.clips)
+                        .filter((clip) => clip.type === kind.toLowerCase()).length
+            )
+            .toBe(1);
+    }
+    // Establish nonempty comp and automation owners through their real UI and registered actions.
+    const toggle = audioTrack().getByRole('button', { name: 'Toggle variation lanes' });
+    await toggle.click();
+    await frame.getByRole('button', { name: 'Add take', exact: true }).click();
+    const promote = frame.getByRole('button', { name: 'Promote Take 1 to main take', exact: true });
+    const strip = requireBox(await promote.locator('..').getByRole('presentation').boundingBox(), 'Comp strip');
+    await page.mouse.move(strip.x + strip.width / 4, strip.y + strip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(strip.x + (strip.width * 3) / 4, strip.y + strip.height / 2, { steps: 4 });
+    await page.mouse.up();
+    await expect(frame.getByText('1 take · 1 comp region', { exact: true })).toBeVisible();
+    await toggle.click();
+    await frame.evaluate(async () => {
+        const arrangementPath = '/src/modules/Arrangement/stores/index.ts';
+        const automationPath = '/src/modules/Automation/stores/index.ts';
+        const commandPath = '/src/modules/Command/useCases/index.ts';
+        const { trackStore }: typeof import('../../src/modules/Arrangement/stores') = await import(arrangementPath);
+        const { automationStore }: typeof import('../../src/modules/Automation/stores') = await import(automationPath);
+        const { executeAppAction }: typeof import('../../src/modules/Command/useCases') = await import(commandPath);
+        const track = trackStore.value?.tracks.find((entry) => entry.name === 'Audio');
+        if (!track) throw new Error('Actual audio owner is absent');
+        await executeAppAction({
+            type: 'addAutomationLane',
+            payload: { trackId: track.id, parameterId: 'gain', parameterName: 'Recovery gain' },
+        });
+        const lane = automationStore.value?.lanes.find(
+            (entry) => entry.trackId === track.id && entry.parameterId === 'gain'
+        );
+        if (!lane) throw new Error('Registered automation action produced no owner');
+        await executeAppAction({
+            type: 'addAutomationPoint',
+            payload: { laneId: lane.id, beat: 1, value: 0.4, curve: 'linear', tension: 0 },
+        });
+    });
+    const seed = await readStartupSnapshot(frame);
+    await command('Save Project');
+    await expect(frame.locator('[title="Unsaved changes"]')).toHaveCount(0);
+    // Hydration stamps the existing MIDI coordinate format before the preservation baseline.
+    await reloadChild();
+    await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
+    await expect
+        .poll(
+            () =>
+                frame.evaluate(async (projectId) => {
+                    const path = '/src/modules/Project/stores/index.ts';
+                    const { projectStore }: typeof import('../../src/modules/Project/stores') = await import(path);
+                    const state = projectStore.value;
+                    return state?.initialized === true && state.loading === false && state.projectId === projectId;
+                }, seed.projectId),
+            { timeout: 30_000 }
+        )
+        .toBe(true);
+    const beforeEdit = await readStartupSnapshot(frame);
+    expect(beforeEdit.counts).toEqual({ notes: 1, controllers: 3, takes: 1, compRegions: 1, automationPoints: 1 });
+    const clip = beforeEdit.tracks.flatMap((track) => track.clips).find((entry) => entry.type === 'midi');
+    const owner = beforeEdit.tracks.find((track) => track.id === clip?.trackId);
+    if (!clip || !owner) throw new Error('Hydrated MIDI edit owner is absent');
+    const row = frame
+        .getByRole('grid', { name: 'Track list', exact: true })
+        .locator('[role="row"][draggable="true"]')
+        .filter({ has: frame.getByText(owner.name, { exact: true }) });
+    const header = requireBox(
+        await row.getByRole('button', { name: `Mute ${owner.name}`, exact: true }).boundingBox(),
+        'MIDI header'
+    );
+    const canvas = requireBox(await frame.getByLabel('Timeline editor surface').boundingBox(), 'Timeline');
+    const view = await frame.evaluate(async () => {
+        const path = '/src/modules/Arrangement/stores/index.ts';
+        const { timelineViewStore }: typeof import('../../src/modules/Arrangement/stores') = await import(path);
+        return timelineViewStore.value;
+    });
+    if (!view) throw new Error('Actual timeline view is absent');
+    const x = canvas.x + (clip.startBeat + (clip.endBeat - clip.startBeat) / 2) * view.pixelsPerBeat - view.scrollX;
+    const y = header.y + header.height / 2;
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + 96, y, { steps: 8 });
+    await page.mouse.up();
+    await expect
+        .poll(
+            async () =>
+                (await readStartupSnapshot(frame)).tracks
+                    .flatMap((track) => track.clips)
+                    .find((entry) => entry.id === clip.id)?.startBeat
+        )
+        .not.toBe(clip.startBeat);
+    await command('Save Project');
+    await expect(frame.locator('[title="Unsaved changes"]')).toHaveCount(0);
+    await expect
+        .poll(async () => {
+            const state = await readStartupSnapshot(frame);
+            return state.mirror.witness === state.witness;
+        })
+        .toBe(true);
+    const saved = await readStartupSnapshot(frame);
+    const history = requireStartupMirror(saved, 'past', ['moveClip']);
+    const hostOrigin = await page.evaluate(() => performance.timeOrigin);
+    const beforeNavigation = await frame.evaluate(() => ({
+        timeOrigin: performance.timeOrigin,
+        href: location.href,
+        name: window.name,
+    }));
+    const failures: { url: string; error: string | undefined }[] = [];
+    const pageErrors: string[] = [];
+    const childNavigations: string[] = [];
+    let appRequests = 0;
+    let routerRequests = 0;
+    let capabilityEmissions = 0;
+    let markCapabilitiesReady = (): void => undefined;
+    const capabilitiesReady = new Promise<void>((resolve) => (markCapabilitiesReady = resolve));
+    let releaseApp = (): void => undefined;
+    const appAllowed = new Promise<void>((resolve) => (releaseApp = resolve));
+    page.on('console', (message) => {
+        if (message.text().includes('[capabilities] {')) {
+            capabilityEmissions += 1;
+            markCapabilitiesReady();
+        }
+    });
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+    page.on('framenavigated', (navigated) => {
+        if (navigated === frame) childNavigations.push(navigated.url());
+    });
+    page.on('requestfailed', (request) => {
+        if (request.frame() === frame && new URL(request.url()).pathname === '/src/app/router.ts') {
+            failures.push({ url: request.url(), error: request.failure()?.errorText });
+        }
+    });
+    await page.route(
+        (url) => url.pathname === '/src/app/App.tsx',
+        async (route) => {
+            if (route.request().frame() !== frame) {
+                await route.continue();
+                return;
+            }
+            appRequests += 1;
+            await appAllowed;
+            await route.continue();
+        }
+    );
+    await page.route(
+        (url) => url.pathname === '/src/app/router.ts',
+        async (route) => {
+            if (route.request().frame() !== frame) {
+                await route.continue();
+                return;
+            }
+            routerRequests += 1;
+            if (routerRequests === 1) {
+                await route.abort('aborted');
+                return;
+            }
+            await route.continue();
+        }
+    );
+    try {
+        await reloadChild();
+        await capabilitiesReady;
+        await expect.poll(() => appRequests).toBe(1);
+        await expect(frame.getByTestId('app-shell')).toBeVisible();
+        expect(capabilityEmissions).toBe(1);
+        expect(routerRequests).toBe(0);
+        const identity = await frame.evaluateHandle(async () => {
+            const project = '/src/modules/Project/useCases/index.ts';
+            const {
+                whenProjectIdentityTransitionDependenciesConfigured,
+            }: typeof import('../../src/modules/Project/useCases') = await import(project);
+            await whenProjectIdentityTransitionDependenciesConfigured();
+            const dependencies = '/src/app/registerDependencies.ts';
+            const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(dependencies);
+            return { eventBus, document, timeOrigin: performance.timeOrigin, href: location.href, name: window.name };
+        });
+        const failedDocument = await frame.evaluate(() => {
+            if (
+                !document.documentElement.hasAttribute('data-sourdaw-entry-started') ||
+                !document.querySelector('[data-testid="app-shell"]')
+            ) {
+                throw new Error('Fault did not reach the initial App boundary after first paint');
+            }
+            return { timeOrigin: performance.timeOrigin, href: location.href, name: window.name };
+        });
+        releaseApp();
+        await expect(frame.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 45_000 });
+        const recovered = await expectStartupExact(frame, saved);
+        expect(requireStartupMirror(recovered, 'past', ['moveClip'])).toEqual(history);
+        const afterNavigation = await frame.evaluate(() => ({
+            timeOrigin: performance.timeOrigin,
+            href: location.href,
+            name: window.name,
+        }));
+        const preservation = await identity.evaluate(async (before) => {
+            const dependencies = '/src/app/registerDependencies.ts';
+            const { eventBus }: typeof import('../../src/app/registerDependencies') = await import(dependencies);
+            return {
+                document: before.document === document,
+                eventBus: before.eventBus === eventBus,
+                timeOrigin: before.timeOrigin === performance.timeOrigin,
+                href: before.href === location.href,
+                name: before.name === window.name,
+            };
+        });
+        expect(failedDocument.timeOrigin).toBeGreaterThan(beforeNavigation.timeOrigin);
+        expect(afterNavigation.timeOrigin).toBe(failedDocument.timeOrigin);
+        expect(afterNavigation.href).toBe(beforeNavigation.href);
+        expect(afterNavigation.name).toBe(beforeNavigation.name);
+        expect(preservation).toEqual({ document: true, eventBus: true, timeOrigin: true, href: true, name: true });
+        expect(await page.evaluate(() => performance.timeOrigin)).toBe(hostOrigin);
+        await expect(page.locator('iframe[title="Sourdaw"]')).toHaveCount(1);
+        expect(childNavigations).toEqual([beforeNavigation.href]);
+        expect(failures).toHaveLength(1);
+        expect(failures[0]?.error).toBe('net::ERR_ABORTED');
+        expect(appRequests).toBe(1);
+        expect(routerRequests).toBe(2);
+        expect(capabilityEmissions).toBe(1);
+        expect(pageErrors).toEqual([]);
+        await expect(frame.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled();
+        await frame.getByRole('button', { name: 'Undo', exact: true }).click();
+        const undone = await expectStartupExact(frame, beforeEdit);
+        expect(requireStartupMirror(undone, 'future', ['moveClip'])).toEqual(history);
+        await expect(frame.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled();
+        await frame.getByRole('button', { name: 'Redo', exact: true }).click();
+        const redone = await expectStartupExact(frame, saved);
+        expect(requireStartupMirror(redone, 'past', ['moveClip'])).toEqual(history);
+        await info.attach('startup-recovery-preservation', {
+            body: JSON.stringify(
+                {
+                    beforeEdit,
+                    saved,
+                    recovered,
+                    undone,
+                    redone,
+                    beforeNavigation,
+                    failedDocument,
+                    afterNavigation,
+                    failures,
+                    childNavigations,
+                    preservation,
+                    appRequests,
+                    routerRequests,
+                    capabilityEmissions,
+                    pageErrors,
+                },
+                null,
+                2
+            ),
+            contentType: 'application/json',
+        });
+        expect(pageErrors).toEqual([]);
+    } finally {
+        releaseApp();
+    }
 });
