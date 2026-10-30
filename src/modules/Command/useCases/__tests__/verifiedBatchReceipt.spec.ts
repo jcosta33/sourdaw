@@ -5,9 +5,16 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
+import {
+    clearHandlerRegistry,
+    registerHandlerMap,
+    undoHistoryStore,
+    undoStore,
+    undoTreeStore,
+} from '#/modules/Command/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
+import { createEmptyTree } from '../../models/UndoTree';
 import { type ActionHistoryMetadata } from '../actionHistoryMetadataPort';
 import { commandBatchPreflightPort } from '../commandBatchPreflightPort';
 import { commandProjectRevisionPort } from '../commandProjectRevisionPort';
@@ -33,7 +40,6 @@ const PAN_COMMAND_ID = '22222222-2222-4222-8222-222222222222';
 
 const mocks = vi.hoisted(() => ({
     clearSemanticContext: vi.fn(),
-    commitUndoEntry: vi.fn(),
     recordAction: vi.fn(),
     recordActionHistoryMetadata: vi.fn<(entry: ActionHistoryMetadata) => string[]>(() => []),
     setSemanticContext: vi.fn(),
@@ -51,7 +57,6 @@ vi.mock('../actionHistoryMetadataPort', () => ({
             entries.flatMap((entry) => mocks.recordActionHistoryMetadata(entry)),
     },
 }));
-vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry }));
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 function revision(head: number): string {
@@ -361,6 +366,7 @@ describe('verified batch receipt', () => {
     });
 
     afterEach(() => {
+        undoTreeStore.set({ tree: createEmptyTree(), enabled: false });
         flushAutomergeStorageWrites();
         configureAutomergeStoragePort(null);
         commandBatchPreflightPort.setProvider(null);
@@ -971,6 +977,8 @@ describe('verified batch receipt', () => {
             .mockImplementationOnce(() => {
                 throw new Error('history staging refused');
             });
+        undoHistoryStore.set({ past: [], future: [] });
+        undoTreeStore.set({ tree: createEmptyTree(), enabled: true });
         const batch = compileBatch();
 
         const result = await executeVersionedCommandBatchEnvelope({
@@ -985,7 +993,8 @@ describe('verified batch receipt', () => {
         expect(mutationCount).toBe(0);
         expect(projectDocument).toEqual({ trackGain: { value: 1 }, trackPan: { value: 0 } });
         expect(history.get()?.entries ?? []).toEqual([]);
-        expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+        expect(undoStore.value?.past).toEqual([]);
+        expect(undoTreeStore.value?.tree).toEqual(createEmptyTree());
         expect(mocks.recordAction).not.toHaveBeenCalled();
         expect(receiptFrom(result)).toMatchObject({
             outcome: 'failed',

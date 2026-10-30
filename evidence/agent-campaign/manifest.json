@@ -259,7 +259,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Command/useCases/__tests__/verifiedBatchReceipt.spec.ts",
-                    "digest": "e9b8fb6ba61197664d5779d65fca849b728751de8a9207c71665db0547e53f4e"
+                    "digest": "25ee4896c2664d0f46aac859de674f7f75afb63b14fba52cc87cb2f9cd93715e"
                 }
             ]
         },
