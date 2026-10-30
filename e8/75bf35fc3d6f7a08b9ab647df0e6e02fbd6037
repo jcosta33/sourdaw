@@ -1,0 +1,24 @@
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-21
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 64-84,99-100
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 4-10,174,181,201,281,288,302-445
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 1192-1194,1249-1251
+src/modules/CrdtDocument/useCases/projection/__tests__/projectionAfterPartialMerge.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+tests/e2e/smoke.spec.ts
+  h_beb54bf43b47b7 411-561
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e875bf35fc3d6f7a08b9ab647df0e6e02fbd6037",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
