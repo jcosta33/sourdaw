@@ -147,12 +147,14 @@ for (const entry of ['chat', 'prompt-bar'] as const) {
                 [drumsId, 'Drums', 0.8],
                 [bassId, 'Bass', 0.4],
             ] as const) {
-                const payload = {
+                const payload: Parameters<typeof import('../../src/modules/Arrangement/useCases').addTrack>[0] & {
+                    kind: 'audio';
+                } = {
                     id,
                     name,
                     kind: 'audio',
                     gain,
-                } satisfies Parameters<typeof import('../../src/modules/Arrangement/useCases').addTrack>[0];
+                };
                 await command.executeAppAction({ type: 'addTrack', payload });
                 const rate = 48_000;
                 const buffer = new AudioBuffer({ numberOfChannels: 2, sampleRate: rate, length: rate * 2 });
