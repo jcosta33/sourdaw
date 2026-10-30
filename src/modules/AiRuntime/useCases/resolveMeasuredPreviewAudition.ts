@@ -46,8 +46,9 @@ function renderAddress(value: unknown, route: string): { render: Record<string, 
         !exactKeys(value.artifact, ['contentAddress']) ||
         typeof value.artifact.contentAddress !== 'string' ||
         value.artifact.contentAddress.length === 0
-    )
+    ) {
         return null;
+    }
     return { render: value, address: value.artifact.contentAddress };
 }
 
@@ -74,10 +75,13 @@ function hasExactGeometry(value: Record<string, unknown>, artifact: RetainedArti
 
 function retained(value: unknown, route: string, revision: string) {
     const identity = renderAddress(value, route);
-    if (identity === null) return null;
-    const artifact = getAgentMeasurementArtifact(identity.address);
-    if (artifact === null || artifact.sourceRevision !== revision || !hasExactGeometry(identity.render, artifact))
+    if (identity === null) {
         return null;
+    }
+    const artifact = getAgentMeasurementArtifact(identity.address);
+    if (artifact === null || artifact.sourceRevision !== revision || !hasExactGeometry(identity.render, artifact)) {
+        return null;
+    }
     return artifact;
 }
 
@@ -127,19 +131,22 @@ function bindingMatches(
 
 function readCurrentProposal(input: AuditionInput) {
     const confirmation = getPendingActionConfirmation(input.confirmationId);
-    if (confirmation === null || confirmation.status !== 'proposed' || confirmation.supersededBy !== null)
+    if (confirmation === null || confirmation.status !== 'proposed' || confirmation.supersededBy !== null) {
         return unavailable('This proposal is no longer awaiting approval.');
+    }
     const view = getAgentApprovalView({ confirmationId: input.confirmationId });
-    if (view === null || view.freshness.status !== 'current')
+    if (view === null || view.freshness.status !== 'current') {
         return unavailable('Measure the exact current proposal before auditioning it.');
+    }
     const groups = view.intentGroups.map((group) => group.id);
     const selected = input.selectedIntentGroupIds ?? groups;
     if (
         new Set(selected).size !== selected.length ||
         selected.length !== groups.length ||
         selected.some((id) => !groups.includes(id))
-    )
+    ) {
         return unavailable('Re-preview the selected actions to obtain their exact measured audio.');
+    }
     const batch = confirmation.approvalSnapshot.commandBatch;
     const state = metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState);
     const run = agentRunLifecycle.get(confirmation.runId);
@@ -148,10 +155,13 @@ function readCurrentProposal(input: AuditionInput) {
         state === null ||
         run === null ||
         ['completed', 'failed', 'cancelled', 'partially-completed'].includes(run.phase)
-    )
+    ) {
         return unavailable('The proposal has no current admitted measurement pair.');
+    }
     const parsed = parseVersionedCommandBatchEnvelope(batch.serialized, batch.authority);
-    if (parsed.status !== 'valid') return unavailable('The proposed command batch is unavailable.');
+    if (parsed.status !== 'valid') {
+        return unavailable('The proposed command batch is unavailable.');
+    }
     const revision = captureProjectRevision();
     const hash = digestCommandBatchContent(parsed.envelope);
     if (
@@ -161,8 +171,9 @@ function readCurrentProposal(input: AuditionInput) {
             runId: confirmation.runId,
             confirmationRevision: confirmation.projectRevision,
         })
-    )
+    ) {
         return unavailable('The measured proposal belongs to another project, revision or batch.');
+    }
     return {
         status: 'current' as const,
         state,
@@ -190,10 +201,11 @@ function proofMatches(preview: Preview, provenance: Provenance, context: ProofCo
 }
 
 function scopeMatches(preview: Preview, target: Preview['targets'][number], targetId: string): boolean {
-    if (target.targetKind === 'master')
+    if (target.targetKind === 'master') {
         return (
             targetId === 'master' && ['master', 'project'].includes(preview.scope.kind) && preview.targets.length === 1
         );
+    }
     const scope = preview.scope;
     return (
         scope.kind === (target.targetKind === 'track' ? 'tracks' : 'buses') &&
@@ -206,7 +218,9 @@ function scopeMatches(preview: Preview, target: Preview['targets'][number], targ
 function readProofTarget(proof: Proof, context: ProofContext) {
     const preview = proof.preview;
     const provenance = preview.provenance;
-    if (provenance === undefined || !proofMatches(preview, provenance, context)) return null;
+    if (provenance === undefined || !proofMatches(preview, provenance, context)) {
+        return null;
+    }
     const target = preview.targets.find((entry) => entry.targetId === context.targetId);
     const source = provenance.targets.find((entry) => entry.targetId === context.targetId);
     if (
@@ -220,12 +234,13 @@ function readProofTarget(proof: Proof, context: ProofContext) {
             'previewIntegratedLoudness',
         ]) ||
         !scopeMatches(preview, target, context.targetId)
-    )
+    ) {
         return null;
+    }
     return { target, source, provenance, audition: target.audition };
 }
 
-type Receipt = NonNullable<ProofContext['run']['plan']>['applicationToolReceipts'][number];
+type Receipt = NonNullable<NonNullable<ProofContext['run']['plan']>['applicationToolReceipts']>[number];
 
 function receiptOriginMatches(receipt: Receipt, provenance: Provenance): boolean {
     return (
@@ -250,8 +265,9 @@ function readReceiptTarget(proof: Proof, provenance: Provenance, context: ProofC
         receipt.data.kind !== 'analysis-measurement' ||
         receipt.data.subject !== 'preview' ||
         !Array.isArray(receipt.data.targets)
-    )
+    ) {
         return null;
+    }
     const targets: unknown[] = receipt.data.targets;
     const target = targets.find((entry) => record(entry) && entry.targetId === context.targetId);
     return record(target) ? target : null;
@@ -276,8 +292,9 @@ function matchedPair(input: {
         baselineGain > 1 ||
         proposedGain < 0 ||
         proposedGain > 1
-    )
+    ) {
         return null;
+    }
     return {
         status: 'available' as const,
         identity: digest({
@@ -301,9 +318,13 @@ function matchedPair(input: {
 
 function resolveProof(proof: Proof, context: ProofContext) {
     const resolved = readProofTarget(proof, context);
-    if (resolved === null) return null;
+    if (resolved === null) {
+        return null;
+    }
     const receiptTarget = readReceiptTarget(proof, resolved.provenance, context);
-    if (receiptTarget === null) return null;
+    if (receiptTarget === null) {
+        return null;
+    }
     const { target, source, audition } = resolved;
     const route = target.targetKind === 'master' ? 'mixdown' : 'isolated-subgraph';
     const baseline = retained(audition.baseline, route, context.revision);
@@ -319,18 +340,23 @@ function resolveProof(proof: Proof, context: ProofContext) {
         !sameRender(source.preview, route, proposed.contentAddress) ||
         !sameRender(receiptTarget.baselineRender, route, baseline.contentAddress) ||
         !sameRender(receiptTarget.previewRender, route, proposed.contentAddress)
-    )
+    ) {
         return null;
+    }
     return matchedPair({ baseline, proposed, baselineLufs, proposedLufs, context, receiptDigest: proof.receiptDigest });
 }
 
 /** Resolve only canonical receipt-backed resources; caller figures and addresses are never inputs. */
 export function resolveMeasuredPreviewAudition(input: AuditionInput) {
     const proposal = readCurrentProposal(input);
-    if (proposal.status === 'unavailable') return proposal;
+    if (proposal.status === 'unavailable') {
+        return proposal;
+    }
     for (const proof of [...proposal.state.proofs].reverse()) {
         const pair = resolveProof(proof, proposal.context);
-        if (pair !== null) return pair;
+        if (pair !== null) {
+            return pair;
+        }
     }
     return unavailable('The exact retained audio pair or finite loudness match is unavailable.');
 }

@@ -1,6 +1,5 @@
-import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { logger } from '#/infra/logger/appLogger';
-import { nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
+import { audioEngine, nativeLiveGraphSessionOffered, resumeEngine } from '#/modules/AudioEngine/useCases';
 import { captureProjectRootIdentity } from '#/modules/CrdtDocument/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 

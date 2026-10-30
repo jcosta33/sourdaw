@@ -6,8 +6,8 @@ import { stoppedEngineTransportPosition } from '../../models/EngineTransportPosi
 import { createAudioEngine } from '../../repositories/createWebAudioEngine';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
 import { nativeLiveGraphSessionOffered } from '../livePlayback/nativeLiveGraphSessionOffered';
-import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
 import { nativeLiveGraphSession } from '../livePlayback/nativeLiveGraphSessionState';
+import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
 import { playAudioBufferPreview } from '../playAudioBufferPreview';
 import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPreview';
 
@@ -23,7 +23,9 @@ vi.mock('../../repositories/createWebAudioEngine', async (importOriginal) => {
     return {
         ...actual,
         get audioEngine() {
-            if (fixture.engine === null) throw new Error('The real fixture engine is not installed.');
+            if (fixture.engine === null) {
+                throw new Error('The real fixture engine is not installed.');
+            }
             return fixture.engine;
         },
     };
@@ -41,7 +43,9 @@ vi.mock('../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
 }));
 vi.mock('../../repositories/nativeGraph/createNativeLiveGraphBackend', () => ({
     createNativeLiveGraphBackend: () => {
-        if (fixture.startBackend === null) throw new Error('Missing start transport fixture.');
+        if (fixture.startBackend === null) {
+            throw new Error('Missing start transport fixture.');
+        }
         return fixture.startBackend;
     },
 }));
@@ -163,7 +167,9 @@ function contextFixture() {
     const engine = createAudioEngine(context as unknown as AudioContext);
     fixture.engine = engine;
     const gate = analysers[0]?.connections[0];
-    if (gate === undefined) throw new Error('The real constructor must wire its programme gate.');
+    if (gate === undefined) {
+        throw new Error('The real constructor must wire its programme gate.');
+    }
     return { context, engine, sources, gate };
 }
 
@@ -254,7 +260,9 @@ describe('exclusive retained buffer listening lifetime', () => {
         const intent = driven.engine.beginAudioPreviewIntent();
         expect(intent.ready).toBeDefined();
         const ordinary = playAudioBufferPreview({ buffer: buffer(), intent, onEnded: vi.fn() });
-        if (ordinary === null) throw new Error('The new ordinary gesture must own its source.');
+        if (ordinary === null) {
+            throw new Error('The new ordinary gesture must own its source.');
+        }
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         expect(driven.sources[1]?.start).not.toHaveBeenCalled();
         await ordinary.ready;
@@ -301,8 +309,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             batchesApplied: 1,
         });
         let reentrant: Promise<void> | null = null;
-        let playback: ReturnType<typeof playExclusiveAudioBufferPreview>;
-        playback = playExclusiveAudioBufferPreview({
+        const playback = playExclusiveAudioBufferPreview({
             buffer: buffer(),
             gain: 1,
             isCurrent: () => true,

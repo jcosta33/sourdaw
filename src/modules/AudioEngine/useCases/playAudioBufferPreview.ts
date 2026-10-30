@@ -22,14 +22,16 @@ function allocatePreviewNodes(context: AudioContext, input: BufferPreviewInput, 
         intent.release();
         throw error;
     }
-    let gain: GainNode | null = null;
+    let gain: GainNode | null;
     try {
         gain = input.gain === undefined ? null : context.createGain();
     } catch (error) {
         runAllEffects([() => source.disconnect(), () => intent.release()]);
         throw error;
     }
-    if (gain !== null && input.gain !== undefined) gain.gain.value = input.gain;
+    if (gain !== null && input.gain !== undefined) {
+        gain.gain.value = input.gain;
+    }
     return { source, gain };
 }
 

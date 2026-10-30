@@ -1,8 +1,8 @@
-import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { logger } from '#/infra/logger/appLogger';
 import { getTrackEligibility } from '#/modules/Arrangement/stores';
 import { getTrackStoreState, startRecording, discardRecording, commitRecording } from '#/modules/Arrangement/useCases';
 import {
+    audioEngine,
     resumeEngine,
     getAudioContext,
     scheduleClick,

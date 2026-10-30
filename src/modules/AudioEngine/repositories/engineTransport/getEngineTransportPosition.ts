@@ -121,8 +121,12 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
 
     const payload = response as Record<string, unknown>;
     const incarnation = readPositionIncarnation(payload);
+    const identity: Pick<EngineTransportPosition, 'engineIncarnation'> = {};
+    if (incarnation !== undefined) {
+        identity.engineIncarnation = incarnation;
+    }
     return {
-        ...(incarnation === undefined ? {} : { engineIncarnation: incarnation }),
+        ...identity,
         running: payload.running === true,
         playing: payload.playing === true,
         positionSeconds: readNumber(payload, 'positionSeconds'),

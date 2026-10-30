@@ -1,40 +1,59 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
-
-import { type AudioEngine } from '#/modules/AudioEngine/models/AudioEngineState';
-import { type AudioGraphBackend } from '#/modules/AudioEngine/models/AudioGraphBackend';
-import { stoppedEngineTransportPosition } from '#/modules/AudioEngine/models/EngineTransportPosition';
-import { createAudioEngine } from '#/modules/AudioEngine/repositories/createWebAudioEngine';
-import { getEngineTransportPosition } from '#/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition';
-import { nativeLiveGraphSession } from '#/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionState';
-import { nativeLiveGraphSessionOffered } from '#/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionOffered';
-
-import { measuredPreviewAuditionRuntime } from '../../services/measuredPreviewAuditionRuntime';
-import { measuredPreviewAuditionStore } from '../../stores/measuredPreviewAuditionStore';
-import { resolveMeasuredPreviewAudition } from '../resolveMeasuredPreviewAudition';
-import { startMeasuredPreviewAudition } from '../startMeasuredPreviewAudition';
-import { stopMeasuredPreviewAudition } from '../stopMeasuredPreviewAudition';
-
-const fixture = vi.hoisted(() => ({ engine: null as AudioEngine | null }));
-vi.mock('#/modules/AudioEngine/repositories/createWebAudioEngine', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('#/modules/AudioEngine/repositories/createWebAudioEngine')>()),
-    get audioEngine() {
-        if (fixture.engine === null) throw new Error('The actual controller fixture engine is missing.');
-        return fixture.engine;
+type Audio = typeof import('#/modules/AudioEngine/useCases');
+let audio: Audio;
+let agentMeasurementArtifactStore: typeof import('#/modules/AudioRendering/stores').agentMeasurementArtifactStore;
+let measuredPreviewAuditionStore: typeof import('../../stores/measuredPreviewAuditionStore').measuredPreviewAuditionStore;
+let startMeasuredPreviewAudition: typeof import('../startMeasuredPreviewAudition').startMeasuredPreviewAudition;
+let stopMeasuredPreviewAudition: typeof import('../stopMeasuredPreviewAudition').stopMeasuredPreviewAudition;
+const wire = vi.hoisted(() => ({
+    native: false,
+    fence: 0,
+    apply: vi.fn<(_: unknown) => Promise<unknown>>(),
+    resolve: vi.fn<typeof import('../resolveMeasuredPreviewAudition').resolveMeasuredPreviewAudition>(),
+}));
+vi.mock('../resolveMeasuredPreviewAudition', () => ({ resolveMeasuredPreviewAudition: wire.resolve }));
+vi.mock('#/utils/desktopBridge', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/utils/desktopBridge')>()),
+    isDesktopRuntime: () => wire.native,
+    desktopInvoke: async (command: string, args?: unknown) => {
+        if (command === 'apply_graph_commands') {
+            return wire.apply(args);
+        }
+        if (command === 'map_graph_batch') {
+            return {};
+        }
+        if (command === 'engine_transport_position') {
+            return { engineIncarnation: ID, running: true, playing: false, batchesApplied: wire.fence };
+        }
+        if (command === 'engine_transport_set_maps') {
+            return {
+                sampleRate: 48_000,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: false,
+                admittedBatch: wire.fence,
+            };
+        }
+        if (command === 'timeline_sample_lifecycle' && typeof args === 'object' && args !== null && 'request' in args) {
+            const request = args.request;
+            if (typeof request === 'object' && request !== null && 'action' in request) {
+                if (request.action === 'open') {
+                    return { owner: 'measured-audition-owner' };
+                }
+                if (request.action === 'prepare') {
+                    return { lease: 'measured-audition-lease', missing: [] };
+                }
+                if (request.action === 'release') {
+                    return { released: true };
+                }
+                if (request.action === 'retire') {
+                    return { complete: true, remainingReaders: 0, pendingFence: false };
+                }
+            }
+        }
+        throw new Error(`Unexpected native fixture command: ${command}`);
     },
-}));
-// These cases own controller/executor lifetime, not proof admission. Genuine
-// receipt production and inverse resolver admission run in previewMeasurement.spec.ts.
-vi.mock('../resolveMeasuredPreviewAudition', () => ({ resolveMeasuredPreviewAudition: vi.fn() }));
-vi.mock('#/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition', () => ({
-    getEngineTransportPosition: vi.fn(),
-}));
-vi.mock('#/modules/AudioEngine/useCases/livePlayback/nativeLiveGraphSessionOffered', () => ({
-    nativeLiveGraphSessionOffered: vi.fn(() => false),
-}));
-vi.mock('#/modules/AudioEngine/useCases/livePlayback/reportAttachedPlugins', () => ({
-    reportAttachedPlugins: vi.fn(),
 }));
 
 function parameter() {
@@ -62,7 +81,7 @@ class Node {
         this.connections.length = 0;
     });
 }
-function engineFixture() {
+async function engineFixture() {
     const analysers: Node[] = [];
     const sources: Node[] = [];
     const context = {
@@ -85,10 +104,19 @@ function engineFixture() {
         resume: vi.fn(async () => {}),
         close: vi.fn(async () => {}),
     };
-    const engine = createAudioEngine(context as unknown as AudioContext);
-    fixture.engine = engine;
+    vi.stubGlobal(
+        'AudioContext',
+        vi.fn(function () {
+            return context;
+        })
+    );
+    audio = await import('#/modules/AudioEngine/useCases');
+    const engine = audio.audioEngine;
+    expect(engine.context).toBe(context);
     const gate = analysers[0]?.connections[0];
-    if (gate === undefined) throw new Error('Missing actual programme gate.');
+    if (gate === undefined) {
+        throw new Error('Missing actual programme gate.');
+    }
     return { context, sources, gate, engine };
 }
 const ID = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0';
@@ -110,37 +138,39 @@ const exact = {
     getChannelData: () => pcm,
 } as unknown as AudioBuffer;
 
+async function installNativeSession() {
+    wire.native = true;
+    wire.apply.mockImplementation(async () => applied(++wire.fence));
+    const result = await audio.startNativeLiveGraphSession({
+        positionSeconds: 0,
+        transport: { kind: 'held', webAudioRollingSince: () => null },
+        transportMaps: {
+            tempo: [{ startSeconds: 0, beatsPerMinute: 120 }],
+            timeSignature: [{ startSeconds: 0, numerator: 4, denominator: 4 }],
+            loopRegion: { enabled: false, startSeconds: 0, endSeconds: 0 },
+        },
+        sampleRate: 48_000,
+    });
+    expect(result.outcome).toBe('started');
+    wire.apply.mockClear();
+}
+
+const RESTORE_FAILURE = 'The native engine did not apply its audition output gate.';
+
 describe('measured audition controller through the actual exclusive source executor', () => {
-    let driven: ReturnType<typeof engineFixture>;
-    beforeEach(() => {
-        driven = engineFixture();
-        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(false);
-        vi.mocked(getEngineTransportPosition).mockReset();
-        Object.assign(nativeLiveGraphSession, {
-            backend: null,
-            orphanedBackend: null,
-            startsPending: 0,
-            programmeCarrier: false,
-            audibleCarrier: false,
-            monitorShadowed: false,
-            auditionOwner: null,
-            auditionRestorationOwner: null,
-            auditionOutputSuppressed: false,
-            auditionEpoch: 0,
-            auditionInvalidation: null,
-            pending: Promise.resolve(),
-        });
-        measuredPreviewAuditionRuntime.current = null;
-        measuredPreviewAuditionRuntime.operations.clear();
-        measuredPreviewAuditionStore.set({
-            confirmationId: null,
-            operationId: null,
-            targetId: null,
-            side: null,
-            phase: 'idle',
-            error: null,
-        });
-        vi.mocked(resolveMeasuredPreviewAudition).mockReturnValue({
+    let driven: Awaited<ReturnType<typeof engineFixture>>;
+    beforeEach(async () => {
+        vi.resetModules();
+        wire.native = false;
+        wire.fence = 0;
+        wire.apply.mockReset();
+        wire.resolve.mockReset();
+        driven = await engineFixture();
+        ({ agentMeasurementArtifactStore } = await import('#/modules/AudioRendering/stores'));
+        ({ measuredPreviewAuditionStore } = await import('../../stores/measuredPreviewAuditionStore'));
+        ({ startMeasuredPreviewAudition } = await import('../startMeasuredPreviewAudition'));
+        ({ stopMeasuredPreviewAudition } = await import('../stopMeasuredPreviewAudition'));
+        wire.resolve.mockReturnValue({
             status: 'available',
             identity: 'pair-current',
             revision: 'revision',
@@ -152,25 +182,15 @@ describe('measured audition controller through the actual exclusive source execu
     });
     afterEach(async () => {
         await stopMeasuredPreviewAudition();
+        await audio.stopNativeLiveGraphSession({ positionSeconds: 0 });
         await driven.engine.dispose();
-        await nativeLiveGraphSession.pending;
-        fixture.engine = null;
+        vi.unstubAllGlobals();
     });
 
     it('keeps explicit-stop/onEnded releasing until the actual native restore rejects', async () => {
-        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        await installNativeSession();
         const restore = Promise.withResolvers<ReturnType<typeof applied>>();
-        const apply = vi
-            .fn<AudioGraphBackend['apply']>()
-            .mockResolvedValueOnce(applied(1))
-            .mockReturnValueOnce(restore.promise);
-        nativeLiveGraphSession.backend = { backendId: 'native/live', apply, dispose: vi.fn() };
-        vi.mocked(getEngineTransportPosition).mockResolvedValue({
-            ...stoppedEngineTransportPosition,
-            running: true,
-            engineIncarnation: ID,
-            batchesApplied: 1,
-        });
+        const apply = wire.apply.mockResolvedValueOnce(applied(++wire.fence)).mockReturnValueOnce(restore.promise);
         await expect(startMeasuredPreviewAudition(INPUT)).resolves.toEqual({ status: 'playing' });
         expect(driven.sources[0]?.buffer).toBe(exact);
         const stopped = stopMeasuredPreviewAudition();
@@ -179,21 +199,23 @@ describe('measured audition controller through the actual exclusive source execu
         expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         expect(driven.gate.gain.value).toBe(0);
         restore.reject(new Error('actual restore rejected'));
-        await expect(stopped).resolves.toEqual({ status: 'restore-failed', reason: 'actual restore rejected' });
+        await expect(stopped).resolves.toEqual({ status: 'restore-failed', reason: RESTORE_FAILURE });
         expect(measuredPreviewAuditionStore.value?.phase).toBe('restore-failed');
         expect(driven.gate.gain.value).toBe(0);
     });
 
     it('canonical invalidation while acquiring the source handle waits its real restoration', async () => {
-        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        await installNativeSession();
         const restore = Promise.withResolvers<ReturnType<typeof applied>>();
-        const apply = vi.fn<AudioGraphBackend['apply']>().mockReturnValue(restore.promise);
-        nativeLiveGraphSession.backend = { backendId: 'native/live', apply, dispose: vi.fn() };
-        const pair = resolveMeasuredPreviewAudition(INPUT);
+        const apply = wire.apply.mockReturnValueOnce(restore.promise);
+        const pair = wire.resolve(INPUT);
         let valid = true;
-        vi.mocked(resolveMeasuredPreviewAudition).mockImplementation(() =>
-            valid ? pair : { status: 'unavailable', reason: 'retained pair retired' }
-        );
+        wire.resolve.mockImplementation(() => {
+            if (valid) {
+                return pair;
+            }
+            return { status: 'unavailable', reason: 'retained pair retired' };
+        });
         const begin = driven.engine.beginExclusiveAudioPreviewIntent.bind(driven.engine);
         const acquiring = vi.spyOn(driven.engine, 'beginExclusiveAudioPreviewIntent').mockImplementationOnce(() => {
             const intent = begin();
@@ -231,21 +253,9 @@ describe('measured audition controller through the actual exclusive source execu
     });
 
     it('a retired operation cannot overwrite its playing successor when its restore fails', async () => {
-        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        await installNativeSession();
         const restore = Promise.withResolvers<ReturnType<typeof applied>>();
-        let fence = 1;
-        const apply = vi
-            .fn<AudioGraphBackend['apply']>()
-            .mockImplementation(async () => applied(++fence))
-            .mockResolvedValueOnce(applied(1))
-            .mockReturnValueOnce(restore.promise);
-        nativeLiveGraphSession.backend = { backendId: 'native/live', apply, dispose: vi.fn() };
-        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
-            ...stoppedEngineTransportPosition,
-            running: true,
-            engineIncarnation: ID,
-            batchesApplied: fence,
-        }));
+        const apply = wire.apply.mockResolvedValueOnce(applied(++wire.fence)).mockReturnValueOnce(restore.promise);
         await startMeasuredPreviewAudition(INPUT);
         const old = stopMeasuredPreviewAudition();
         await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(2));

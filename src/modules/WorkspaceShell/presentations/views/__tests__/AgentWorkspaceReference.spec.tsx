@@ -22,6 +22,7 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
 }));
 vi.mock('#/modules/AiRuntime/presentations/views', () => ({
     AgentRunDecisionPanel: () => <div data-testid="agent-decision-panel" />,
+    MeasuredPreviewAudition: () => <section aria-label="Measured audio comparison" />,
 }));
 
 const SAMPLE_RATE = 48_000;

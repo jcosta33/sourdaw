@@ -7,8 +7,8 @@ import {
     scheduleKitNote as scheduleKitNoteReal,
 } from '#/modules/Synth/useCases';
 import { dbToGain } from '#/utils/audioLevelLaw';
-import { createAudioPreviewIntents } from '../../services/audioPreview/createAudioPreviewIntents';
 
+import { createAudioPreviewIntents } from '../../services/audioPreview/createAudioPreviewIntents';
 import { getDrumKitByIndex as getDrumKitByIndexReal } from '../audioEngineQueries/getDrumKitByIndex';
 import { playAuditionNote } from '../audition';
 import { startFaustNote as startFaustNoteReal } from '../faustScheduler/startFaustNote';
@@ -127,9 +127,10 @@ vi.mock('../../repositories/createWebAudioEngine', async () => {
                     throw new Error('The real preview intent fixture is unavailable.');
                 }
                 const intent = registry.beginOrdinary();
-                return mocks.previewReady.current === undefined
-                    ? intent
-                    : { ...intent, ready: mocks.previewReady.current };
+                if (mocks.previewReady.current === undefined) {
+                    return intent;
+                }
+                return { ...intent, ready: mocks.previewReady.current };
             },
         },
     };
@@ -213,7 +214,9 @@ describe('playAuditionNote', () => {
 
     it('stopping one inherited child preserves its group and permits the later note', () => {
         const group = mocks.previewIntents.current?.beginOrdinary();
-        if (group === undefined) throw new Error('The actual group registry must be installed.');
+        if (group === undefined) {
+            throw new Error('The actual group registry must be installed.');
+        }
         const first = playAuditionNote('track-a', 60, 100, group);
         first();
         expect(group.isCurrent()).toBe(true);

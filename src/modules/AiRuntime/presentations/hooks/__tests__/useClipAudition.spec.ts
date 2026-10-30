@@ -1,25 +1,30 @@
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { createAudioPreviewIntents } from '#/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents';
 import { startClipAudition, useClipAudition } from '../useClipAudition';
 
 const fixture = vi.hoisted(() => ({
-    registry: null as ReturnType<typeof createAudioPreviewIntents> | null,
+    engine: null as typeof import('#/modules/AudioEngine/useCases').audioEngine | null,
     restoration: undefined as Promise<void> | undefined,
     play: vi.fn(),
     stopNote: vi.fn(),
 }));
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    playAuditionNote: fixture.play,
-    audioEngine: {
-        beginAudioPreviewIntent: () => {
-            if (fixture.registry === null) throw new Error('Missing real clip intent registry.');
-            const intent = fixture.registry.beginOrdinary();
-            return fixture.restoration === undefined ? intent : { ...intent, ready: fixture.restoration };
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    fixture.engine = actual.audioEngine;
+    return {
+        playAuditionNote: fixture.play,
+        audioEngine: {
+            beginAudioPreviewIntent: () => {
+                if (fixture.engine === null) {
+                    throw new Error('Missing real clip intent registry.');
+                }
+                const intent = fixture.engine.beginAudioPreviewIntent();
+                return fixture.restoration === undefined ? intent : { ...intent, ready: fixture.restoration };
+            },
         },
-    },
-}));
+    };
+});
 vi.mock('#/modules/Arrangement/useCases', () => ({ getTrackStoreState: () => ({ tracks: [{ id: 'track' }] }) }));
 vi.mock('#/modules/MIDI/useCases', () => ({
     getNotesForClip: () => [
@@ -33,13 +38,13 @@ describe('committed clip ordinary group lifetime', () => {
     beforeEach(() => {
         vi.useFakeTimers();
         vi.clearAllMocks();
-        fixture.registry = createAudioPreviewIntents();
+        fixture.engine?.resetGraph();
         fixture.restoration = undefined;
         fixture.play.mockReturnValue(fixture.stopNote);
     });
     afterEach(() => {
         cleanup();
-        fixture.registry?.dispose();
+        fixture.engine?.resetGraph();
         vi.useRealTimers();
     });
 
@@ -63,7 +68,7 @@ describe('committed clip ordinary group lifetime', () => {
         const ended = vi.fn();
         startClipAudition({ clipId: 'clip', trackId: 'track' }, ended);
         vi.advanceTimersByTime(0);
-        const exclusive = fixture.registry?.beginExclusive();
+        const exclusive = fixture.engine?.beginExclusiveAudioPreviewIntent();
         expect(exclusive?.isCurrent()).toBe(true);
         expect(fixture.stopNote).toHaveBeenCalledTimes(1);
         vi.advanceTimersByTime(2_000);

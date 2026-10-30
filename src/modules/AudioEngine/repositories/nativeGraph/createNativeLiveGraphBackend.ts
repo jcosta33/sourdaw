@@ -187,13 +187,17 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         const admittedBatch =
             typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
         const incarnation = readNativeEngineIncarnation(payload.engineIncarnation);
+        const identity: { engineIncarnation?: string } = {};
+        if (incarnation !== undefined) {
+            identity.engineIncarnation = incarnation;
+        }
         return {
             acceptance: 'accepted',
             application: 'applied',
             ...correlation,
             runtimeRevision,
             ...admittedBatch,
-            ...(incarnation === undefined ? {} : { engineIncarnation: incarnation }),
+            ...identity,
             reports,
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
             attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),

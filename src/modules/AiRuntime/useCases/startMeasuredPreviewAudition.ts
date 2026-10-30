@@ -1,5 +1,5 @@
-import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
 import { playExclusiveAudioBufferPreview } from '#/modules/AudioEngine/useCases';
+import { agentMeasurementArtifactStore } from '#/modules/AudioRendering/stores';
 import { subscribeToCrdtChanges } from '#/modules/CrdtDocument/useCases';
 
 import {
@@ -95,7 +95,9 @@ function acquirePlayback(input: StartInput, pair: ResolvedPair, prepared: Prepar
             void stopMeasuredPreviewAudition({ operationId: previous.id });
         }
     }
-    if (playback === null) throw new Error('The audition source handle was not acquired.');
+    if (playback === null) {
+        throw new Error('The audition source handle was not acquired.');
+    }
     return playback;
 }
 
@@ -104,7 +106,9 @@ export async function startMeasuredPreviewAudition(
     input: StartInput
 ): Promise<{ status: 'playing' | 'superseded' } | { status: 'unavailable'; reason: string }> {
     const pair = resolveMeasuredPreviewAudition(input);
-    if (pair.status === 'unavailable') return pair;
+    if (pair.status === 'unavailable') {
+        return pair;
+    }
     const prepared = prepareOperation(input, pair);
     const { runtime, operation, isCurrent, stop } = prepared;
     try {

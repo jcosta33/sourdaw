@@ -11,8 +11,8 @@ import {
     reserveNextTrackColorForCommand,
     setArrangementEventBus,
 } from '#/modules/Arrangement/useCases';
-import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifact } from '#/modules/AudioRendering/useCases';
 import * as audioAnalysisUseCases from '#/modules/AudioAnalysis/useCases';
+import { clearAgentMeasurementArtifacts, getAgentMeasurementArtifact } from '#/modules/AudioRendering/useCases';
 import { clearHandlerRegistry, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import {
     clearUndoHistory,
@@ -52,16 +52,16 @@ import * as batchDigest from '../digestCommandBatchContent';
 import { executeAnalysisMeasure } from '../executeAnalysisMeasure';
 import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { getAgentApprovalView } from '../getAgentApprovalView';
+import { getMeasuredPreviewAuditionView } from '../getMeasuredPreviewAuditionView';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
-import { metricGoalStateCodec } from '../metricGoalStateCodec';
-import { startMeasuredPreviewAudition } from '../startMeasuredPreviewAudition';
-import { resolveMeasuredPreviewAudition } from '../resolveMeasuredPreviewAudition';
-import { getMeasuredPreviewAuditionView } from '../getMeasuredPreviewAuditionView';
-import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 import { reproposePendingChatActions } from '../reproposePendingChatActions';
+import { resolveMeasuredPreviewAudition } from '../resolveMeasuredPreviewAudition';
+import { startMeasuredPreviewAudition } from '../startMeasuredPreviewAudition';
+import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
@@ -600,12 +600,15 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
             scriptMeasureThenAdoptTurns(revision, proposalOf(lowerGain(DRUMS_GAIN_ID, -6)));
             const result = await submitAdmittedPromptRequest({ prompt: PROMPT, source, requiresConfirmation: true });
             expect(result.status).toBe('awaiting-approval');
-            if (result.status !== 'awaiting-approval')
+            if (result.status !== 'awaiting-approval') {
                 throw new Error(`Actual prompt admission failed: ${result.status}`);
+            }
             const input = { confirmationId: result.confirmationId, targetId: 'drums' };
             const resolved = resolveMeasuredPreviewAudition(input);
             expect(resolved.status).toBe('available');
-            if (resolved.status !== 'available') throw new Error(resolved.reason);
+            if (resolved.status !== 'available') {
+                throw new Error(resolved.reason);
+            }
             expect(resolved.baseline.buffer).not.toBe(resolved.preview.buffer);
             expect(resolved.baseline.gain).toBeCloseTo(10 ** (-6 / 20), 2);
             expect(resolved.preview.gain).toBe(1);
@@ -616,7 +619,9 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
             expect(JSON.stringify(view)).not.toContain('contentAddress');
             expect(JSON.stringify(view)).not.toContain('getChannelData');
             const run = agentRunLifecycle.get(result.runId);
-            if (run?.plan == null) throw new Error('The actual admitted caller must persist a plan.');
+            if (run?.plan === null || run?.plan === undefined) {
+                throw new Error('The actual admitted caller must persist a plan.');
+            }
             expect(
                 run.plan.applicationToolReceipts.some(
                     (receipt) => receipt.callId === 'measure-1' && receipt.status === 'success'
@@ -626,88 +631,103 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
                 [],
                 run.plan.applicationToolReceipts.map((receipt) => ({ ...receipt, callId: 'foreign-measurement' })),
             ]) {
-                agentRunStore.update((state) =>
-                    state
-                        ? {
-                              ...state,
-                              runs: state.runs.map((candidate) =>
-                                  candidate.runId === result.runId && candidate.plan !== null
-                                      ? { ...candidate, plan: { ...candidate.plan, applicationToolReceipts: receipts } }
-                                      : candidate
-                              ),
-                          }
-                        : state
-                );
+                agentRunStore.update((state) => {
+                    if (!state) {
+                        return state;
+                    }
+                    return {
+                        ...state,
+                        runs: state.runs.map((candidate) => {
+                            if (candidate.runId === result.runId && candidate.plan !== null) {
+                                return { ...candidate, plan: { ...candidate.plan, applicationToolReceipts: receipts } };
+                            }
+                            return candidate;
+                        }),
+                    };
+                });
                 expect(resolveMeasuredPreviewAudition(input).status).toBe('unavailable');
             }
-            agentRunStore.update((state) =>
-                state
-                    ? {
-                          ...state,
-                          runs: state.runs.map((candidate) => (candidate.runId === run.runId ? run : candidate)),
-                      }
-                    : state
-            );
+            agentRunStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    runs: state.runs.map((candidate) => {
+                        if (candidate.runId === run.runId) {
+                            return run;
+                        }
+                        return candidate;
+                    }),
+                };
+            });
             expect(resolveMeasuredPreviewAudition(input).status).toBe('available');
             const confirmation = getPendingActionConfirmation(result.confirmationId);
             const goals = metricGoalStateCodec(confirmation?.approvalSnapshot.metricGoalState);
-            if (confirmation === null || goals === null) throw new Error('Missing actual bound proof.');
+            if (confirmation === null || goals === null) {
+                throw new Error('Missing actual bound proof.');
+            }
             const forged = {
                 ...goals,
                 proofs: goals.proofs.map((proof) => ({
                     ...proof,
                     preview: {
                         ...proof.preview,
-                        targets: proof.preview.targets.map((target) =>
-                            target.audition === undefined
-                                ? target
-                                : {
-                                      ...target,
-                                      audition: {
-                                          ...target.audition,
-                                          baseline: {
-                                              ...target.audition.baseline,
-                                              artifact: {
-                                                  contentAddress: target.audition.preview.artifact.contentAddress,
-                                              },
-                                          },
-                                      },
-                                  }
-                        ),
+                        targets: proof.preview.targets.map((target) => {
+                            if (target.audition === undefined) {
+                                return target;
+                            }
+                            return {
+                                ...target,
+                                audition: {
+                                    ...target.audition,
+                                    baseline: {
+                                        ...target.audition.baseline,
+                                        artifact: { contentAddress: target.audition.preview.artifact.contentAddress },
+                                    },
+                                },
+                            };
+                        }),
                     },
                 })),
             };
-            pendingActionConfirmationStore.update((state) =>
-                state
-                    ? {
-                          ...state,
-                          confirmations: state.confirmations.map((entry) =>
-                              entry.id === confirmation.id
-                                  ? {
-                                        ...entry,
-                                        approvalSnapshot: {
-                                            ...entry.approvalSnapshot,
-                                            metricGoalState: JSON.stringify(forged),
-                                        },
-                                    }
-                                  : entry
-                          ),
-                      }
-                    : state
-            );
+            pendingActionConfirmationStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    confirmations: state.confirmations.map((entry) => {
+                        if (entry.id === confirmation.id) {
+                            return {
+                                ...entry,
+                                approvalSnapshot: {
+                                    ...entry.approvalSnapshot,
+                                    metricGoalState: JSON.stringify(forged),
+                                },
+                            };
+                        }
+                        return entry;
+                    }),
+                };
+            });
             await expect(startMeasuredPreviewAudition({ ...input, side: 'baseline' })).resolves.toMatchObject({
                 status: 'unavailable',
             });
-            pendingActionConfirmationStore.update((state) =>
-                state
-                    ? {
-                          ...state,
-                          confirmations: state.confirmations.map((entry) =>
-                              entry.id === confirmation.id ? confirmation : entry
-                          ),
-                      }
-                    : state
-            );
+            pendingActionConfirmationStore.update((state) => {
+                if (!state) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    confirmations: state.confirmations.map((entry) => {
+                        if (entry.id === confirmation.id) {
+                            return confirmation;
+                        }
+                        return entry;
+                    }),
+                };
+            });
             const expired = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 5 * 60 * 60 * 1_000);
             try {
                 expect(getAgentApprovalView({ confirmationId: result.confirmationId })?.freshness.status).toBe(
@@ -715,7 +735,9 @@ describe('receipt-backed retained audition through the admitted prompt caller', 
                 );
                 const retainedAddress =
                     goals.proofs.at(-1)?.preview.targets[0]?.audition?.baseline.artifact.contentAddress;
-                if (retainedAddress === undefined) throw new Error('Missing genuine retained baseline address.');
+                if (retainedAddress === undefined) {
+                    throw new Error('Missing genuine retained baseline address.');
+                }
                 expect(getAgentMeasurementArtifact(retainedAddress)).toBeNull();
                 await expect(startMeasuredPreviewAudition({ ...input, side: 'preview' })).resolves.toMatchObject({
                     status: 'unavailable',

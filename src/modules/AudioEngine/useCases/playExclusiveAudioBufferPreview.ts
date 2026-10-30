@@ -35,7 +35,9 @@ function current(operation: ExclusiveOperation): boolean {
 }
 
 function stopExclusive(operation: ExclusiveOperation): Promise<void> {
-    if (operation.restoration !== null) return operation.restoration;
+    if (operation.restoration !== null) {
+        return operation.restoration;
+    }
     // Publish settlement before abort/ended callbacks can stop us reentrantly.
     // Every caller then waits for this same real restoration, never an idle no-op.
     const settled = Promise.withResolvers<void>();
@@ -43,8 +45,9 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     audioEngine.holdAudioPreviewRestoration(operation.restoration);
     operation.stopped = true;
     operation.acquisition.abort();
-    if (nativeLiveGraphSession.auditionInvalidation === operation.invalidate)
+    if (nativeLiveGraphSession.auditionInvalidation === operation.invalidate) {
         nativeLiveGraphSession.auditionInvalidation = null;
+    }
     try {
         runAllEffects([() => operation.playback?.stop(), () => operation.intent?.release()]);
     } catch (error) {
@@ -81,7 +84,9 @@ function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {
 }
 
 function attachRetainedSource(operation: ExclusiveOperation, witness: { isCurrent: () => boolean }): void {
-    if (!current(operation) || !witness.isCurrent()) throw new Error('The measured audition changed before playback.');
+    if (!current(operation) || !witness.isCurrent()) {
+        throw new Error('The measured audition changed before playback.');
+    }
     operation.playback = playAudioBufferPreview({
         buffer: operation.input.buffer,
         gain: operation.input.gain,
@@ -92,13 +97,17 @@ function attachRetainedSource(operation: ExclusiveOperation, witness: { isCurren
             operation.input.onEnded();
         },
     });
-    if (operation.playback === null) throw new Error('The audition lost its source admission.');
+    if (operation.playback === null) {
+        throw new Error('The audition lost its source admission.');
+    }
 }
 
 function prepareSource(operation: ExclusiveOperation): Promise<void> {
     let resuming: Promise<void>;
     try {
-        if (!current(operation)) throw new Error('The audition gesture was superseded.');
+        if (!current(operation)) {
+            throw new Error('The audition gesture was superseded.');
+        }
         // beginExclusive has already set programme gain0. Resume stays in the
         // actual activation, before any native await, including on suspension.
         resuming = audioEngine.context.resume();
@@ -121,10 +130,14 @@ function prepareSource(operation: ExclusiveOperation): Promise<void> {
             throw error;
         })
         .finally(() => {
-            if (cancelReady !== undefined) operation.acquisition.signal.removeEventListener('abort', cancelReady);
+            if (cancelReady !== undefined) {
+                operation.acquisition.signal.removeEventListener('abort', cancelReady);
+            }
         });
     void ready.catch((error: unknown) => {
-        if (!operation.acquisition.signal.aborted) report(error);
+        if (!operation.acquisition.signal.aborted) {
+            report(error);
+        }
     });
     return ready;
 }
@@ -134,10 +147,12 @@ export function playExclusiveAudioBufferPreview(input: ExclusiveInput): {
     ready: Promise<void>;
     stop: () => Promise<void>;
 } {
-    if (!Number.isFinite(input.gain) || input.gain < 0 || input.gain > 1)
+    if (!Number.isFinite(input.gain) || input.gain < 0 || input.gain > 1) {
         throw new RangeError('A matched audition gain must be finite and between zero and one.');
-    if (!audioEngine.isAudioAvailable() || !input.isCurrent() || unsafeOutputContexts.has(audioEngine.context))
+    }
+    if (!audioEngine.isAudioAvailable() || !input.isCurrent() || unsafeOutputContexts.has(audioEngine.context)) {
         throw new Error('The retained audition is no longer available.');
+    }
     const operation: ExclusiveOperation = {
         input,
         owner: Symbol('retained-audition'),
@@ -164,6 +179,8 @@ export function playExclusiveAudioBufferPreview(input: ExclusiveInput): {
         return { ready: failed(operation, error), stop };
     }
     operation.intent.signal.addEventListener('abort', operation.invalidate, { once: true });
-    if (operation.stopped) operation.intent.release();
+    if (operation.stopped) {
+        operation.intent.release();
+    }
     return { ready: prepareSource(operation), stop };
 }

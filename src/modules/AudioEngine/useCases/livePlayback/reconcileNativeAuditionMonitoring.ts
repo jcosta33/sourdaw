@@ -12,7 +12,7 @@ function cancelled(): Error {
     return new Error('The audition listening request changed.');
 }
 
-function bounded<T>(work: () => Promise<T>, signal: AbortSignal, timeoutMs: number): Promise<T> {
+function bounded<Value>(work: () => Promise<Value>, signal: AbortSignal, timeoutMs: number): Promise<Value> {
     if (signal.aborted) {
         return Promise.reject(cancelled());
     }
@@ -57,17 +57,21 @@ type MonitoringScope = {
     deadline: number;
     current: () => boolean;
     assertCurrent: () => void;
-    queued: <T>(work: () => Promise<T>) => Promise<T>;
+    queued: <Value>(work: () => Promise<Value>) => Promise<Value>;
 };
 
 function createScope(input: MonitoringInput): MonitoringScope {
     const deadline = performance.now() + READINESS_TIMEOUT_MS;
     const current = () => !input.signal.aborted && input.isCurrent();
     const assertCurrent = () => {
-        if (!current()) throw cancelled();
-        if (performance.now() >= deadline) throw new Error('Native audition listening readiness timed out.');
+        if (!current()) {
+            throw cancelled();
+        }
+        if (performance.now() >= deadline) {
+            throw new Error('Native audition listening readiness timed out.');
+        }
     };
-    const queued = <T>(work: () => Promise<T>) =>
+    const queued = <Value>(work: () => Promise<Value>) =>
         bounded(
             () =>
                 queueOnNativeLiveGraphSession(async () => {
@@ -95,22 +99,30 @@ function admitOutputGate(scope: MonitoringScope) {
             session.monitorShadowed === baseShadowed;
         const assertUnchanged = () => {
             scope.assertCurrent();
-            if (!unchanged()) throw new SessionTransition();
+            if (!unchanged()) {
+                throw new SessionTransition();
+            }
         };
         if (backend === null) {
-            if (session.startsPending !== 0) throw new SessionTransition();
-            if (session.orphanedBackend !== null)
+            if (session.startsPending !== 0) {
+                throw new SessionTransition();
+            }
+            if (session.orphanedBackend !== null) {
                 throw new Error('A native programme has not settled into an owned listening session.');
+            }
             const position = await getEngineTransportPosition();
             assertUnchanged();
-            if (session.startsPending !== 0) throw new SessionTransition();
+            if (session.startsPending !== 0) {
+                throw new SessionTransition();
+            }
             if (
                 session.orphanedBackend !== null ||
                 position.engineIncarnation !== null ||
                 position.running ||
                 position.playing
-            )
+            ) {
                 throw new Error('The native engine did not witness an empty output slot.');
+            }
             scope.input.restoreWebProgramme?.();
             return { unchanged, assertUnchanged, incarnation: null, fence: 0 };
         }
@@ -119,12 +131,14 @@ function admitOutputGate(scope: MonitoringScope) {
         reportAttachedPlugins(result);
         // A native refusal remains a failure even if a new gesture arrived
         // while it was in flight. Only a successful old fence can be replaced.
-        if (result.application !== 'applied')
+        if (result.application !== 'applied') {
             throw new Error('The native engine did not apply its audition output gate.');
+        }
         const incarnation = readNativeEngineIncarnation(result.engineIncarnation);
         const fence = result.admittedBatch;
-        if (incarnation === undefined || fence === undefined || !Number.isSafeInteger(fence) || fence < 1)
+        if (incarnation === undefined || fence === undefined || !Number.isSafeInteger(fence) || fence < 1) {
             throw new Error('The native output gate has no exact engine identity and admitted fence.');
+        }
         assertUnchanged();
         return { unchanged, assertUnchanged, incarnation, fence };
     });
@@ -133,17 +147,23 @@ function admitOutputGate(scope: MonitoringScope) {
 type AdmittedGate = Awaited<ReturnType<typeof admitOutputGate>>;
 
 async function witnessOutputGate(scope: MonitoringScope, admitted: AdmittedGate) {
-    if (admitted.incarnation === null) return { isCurrent: admitted.unchanged };
+    if (admitted.incarnation === null) {
+        return { isCurrent: admitted.unchanged };
+    }
     for (;;) {
         const witnessed = await scope.queued(async () => {
             admitted.assertUnchanged();
             const position = await getEngineTransportPosition();
             admitted.assertUnchanged();
-            if (position.engineIncarnation !== admitted.incarnation || !position.running)
+            if (position.engineIncarnation !== admitted.incarnation || !position.running) {
                 throw new Error('The native engine changed or stopped before its output gate was witnessed.');
-            if (!Number.isSafeInteger(position.batchesApplied) || position.batchesApplied < 0)
+            }
+            if (!Number.isSafeInteger(position.batchesApplied) || position.batchesApplied < 0) {
                 throw new Error('The native output gate returned an inexact fence counter.');
-            if (position.batchesApplied < admitted.fence) return false;
+            }
+            if (position.batchesApplied < admitted.fence) {
+                return false;
+            }
             const session = nativeLiveGraphSession;
             session.auditionOutputSuppressed = session.auditionOwner !== null;
             session.audibleCarrier =
@@ -153,7 +173,9 @@ async function witnessOutputGate(scope: MonitoringScope, admitted: AdmittedGate)
             scope.input.restoreWebProgramme?.();
             return true;
         });
-        if (witnessed) return { isCurrent: admitted.unchanged };
+        if (witnessed) {
+            return { isCurrent: admitted.unchanged };
+        }
         await bounded(
             () => new Promise<void>((resolve) => setTimeout(resolve, POSITION_POLL_MS)),
             scope.input.signal,
@@ -178,8 +200,9 @@ export async function reconcileNativeAuditionMonitoring(input: MonitoringInput):
                 !(error instanceof SessionTransition) ||
                 input.restoreWebProgramme === undefined ||
                 nativeLiveGraphSession.auditionOwner !== null
-            )
+            ) {
                 throw error;
+            }
             // Stop may overlap a genuine newer native admission. Follow its
             // queued installation, using the ORIGINAL absolute deadline, then
             // obtain a new identity/fence. Never replay stale base flags.

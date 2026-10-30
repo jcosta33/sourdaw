@@ -3,15 +3,13 @@ import { type ReactElement, useEffect, useRef } from 'react';
 import { render, screen, fireEvent, act, cleanup } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { createAudioPreviewIntents } from '#/modules/AudioEngine/services/audioPreview/createAudioPreviewIntents';
-
 import { usePianoRollInteractions } from '../usePianoRollInteractions';
 
 const mocks = vi.hoisted(() => {
     let idCounter = 0;
     return {
         nextId: (): string => `gen-${++idCounter}`,
-        previewIntents: null as ReturnType<typeof createAudioPreviewIntents> | null,
+        previewEngine: null as typeof import('#/modules/AudioEngine/useCases').audioEngine | null,
         playAuditionNote: vi.fn(),
         auditionStop: vi.fn(),
         pushUndoEntry: vi.fn(),
@@ -64,15 +62,21 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     },
 }));
 
-vi.mock('#/modules/AudioEngine/useCases', () => ({
-    audioEngine: {
-        beginAudioPreviewIntent: () => {
-            if (mocks.previewIntents === null) throw new Error('Missing actual hover registry.');
-            return mocks.previewIntents.beginOrdinary();
+vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/AudioEngine/useCases')>();
+    mocks.previewEngine = actual.audioEngine;
+    return {
+        audioEngine: {
+            beginAudioPreviewIntent: () => {
+                if (mocks.previewEngine === null) {
+                    throw new Error('Missing actual hover registry.');
+                }
+                return mocks.previewEngine.beginAudioPreviewIntent();
+            },
         },
-    },
-    playAuditionNote: mocks.playAuditionNote,
-}));
+        playAuditionNote: mocks.playAuditionNote,
+    };
+});
 
 vi.mock('#/modules/Command/useCases', () => ({
     executeUserAppAction: vi.fn(),
@@ -258,8 +262,7 @@ describe('usePianoRollInteractions', () => {
             })
         );
         mocks.getNotesForClip.mockReturnValue([]);
-        mocks.previewIntents?.dispose();
-        mocks.previewIntents = createAudioPreviewIntents();
+        mocks.previewEngine?.resetGraph();
         mocks.playAuditionNote.mockReturnValue(mocks.auditionStop);
         mocks.getTransportState.mockReturnValue({ playheadPosition: 2.5 });
         mocks.stepRecordState = { currentPitch: 62 };
@@ -776,7 +779,7 @@ describe('usePianoRollInteractions', () => {
             vi.useFakeTimers();
             const { canvas } = renderRoll({ notePreviewEnabled: true });
             fireEvent.mouseMove(canvas, { clientX: 100, clientY: yForPitch(60) });
-            const exclusive = mocks.previewIntents?.beginExclusive();
+            const exclusive = mocks.previewEngine?.beginExclusiveAudioPreviewIntent();
             expect(exclusive?.isCurrent()).toBe(true);
             act(() => vi.advanceTimersByTime(1_000));
             expect(mocks.playAuditionNote).not.toHaveBeenCalled();

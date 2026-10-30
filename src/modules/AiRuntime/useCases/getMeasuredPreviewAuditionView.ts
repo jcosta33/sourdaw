@@ -23,12 +23,12 @@ export function getMeasuredPreviewAuditionView(input: {
             .filter((proof) => proof.preview.batchContentHash === hash)
             .flatMap((proof) => proof.preview.targets.map((target) => target.targetId))
     );
-    const targets = [...ids].map((targetId) => {
+    const targets = Array.from(ids, (targetId) => {
         const resolved = resolveMeasuredPreviewAudition({ ...input, targetId });
-        const targetName =
-            targetId === 'master'
-                ? 'Master output'
-                : (trackStore.value?.tracks.find((track) => track.id === targetId)?.name ?? targetId);
+        let targetName = 'Master output';
+        if (targetId !== 'master') {
+            targetName = trackStore.value?.tracks.find((track) => track.id === targetId)?.name ?? targetId;
+        }
         if (resolved.status === 'unavailable') {
             return { targetId, targetName, available: false as const, reason: resolved.reason };
         }

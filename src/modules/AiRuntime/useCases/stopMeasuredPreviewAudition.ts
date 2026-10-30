@@ -10,7 +10,8 @@ export function stopMeasuredPreviewAudition(
     const runtime = measuredPreviewAuditionRuntime;
     const operation = input.operationId === undefined ? runtime.current : runtime.operations.get(input.operationId);
     if (
-        operation == null ||
+        operation === null ||
+        operation === undefined ||
         (input.confirmationId !== undefined && operation.confirmationId !== input.confirmationId)
     ) {
         return Promise.resolve({ status: 'idle' });
