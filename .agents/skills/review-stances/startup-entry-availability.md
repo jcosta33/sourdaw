@@ -67,6 +67,22 @@ module reattempt must not spend or emulate it. Keep transport initiation unknown
 lifecycle or network-initiator evidence distinguishes it.
 Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.
 
+### 2026-10-30 — an immediate App retry could join still-failing sibling fetches (#5874, pre-merge)
+
+A single aborted dependency passed the native-module retry check, but the production-shaped
+immediate catch rejected again under an eighty-leaf cancellation burst with a healthy edge still
+finishing. Chromium 156's [ModuleTreeLinker](https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.4/third_party/blink/renderer/core/loader/modulescript/module_tree_linker.cc#299)
+can finish on the first failed descendant while others remain outstanding; its
+[ModuleMap](https://chromium.googlesource.com/chromium/src/+/refs/tags/156.0.8078.4/third_party/blink/renderer/core/script/module_map.cc#120)
+attaches new clients to entries still fetching. A short configured pause before the sole identical
+reattempt is best effort, not a public cleanup fence or guaranteed transport recovery.
+
+Exercise the actual App loader with simultaneous first-only aborts and a healthy edge released by
+the first real failure. Removing only the pause must fail the same saved-workspace/identity oracle.
+Keep bootstrap, successful effects and document lifetime unchanged; retain terminal manual recovery.
+The controlled failure refetched only some leaves, unlike the required CI capture's eighty reissued
+and aborted leaves. Do not infer its physical cancellation actor from this regression or HAR receipt order.
+
 ### 2026-10-30 — the rendering imports could discard recovery before React existed
 
 PR #5804 (`53af306a8aef69e3e9a91b2d7cde823bfdafa157`) added the independent HTML startup

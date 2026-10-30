@@ -12,6 +12,15 @@ Pair persistent fetch failure with a throwing dependency and count successful/th
 an already-loaded terminal view must work without another fetch or automatic navigation. Runtime
 feasibility probes on an external browser are not proof of the pinned CI browser or persisted Undo.
 
+The pre-merge #5874 immediate reattempt also passed a one-leaf fault but rejected a concurrent
+eighty-leaf graph. Its successful "settled" control crossed a Node-to-browser RPC boundary absent
+from production. HAR failure completion arithmetic records Node receipt order, not renderer module
+map cleanup. Use the real production loader for the burst oracle; release a still-finishing healthy
+edge from an actual failure event, never an injector timer or retry gate. Require every first abort,
+fresh successful reissues, saved content, singleton/effect identity and no document replacement.
+An immediate-producer baseline must fail before crediting a bounded backoff; a healthy rerun or
+an external cleanup gate cannot supply that discrimination.
+
 ### 2026-10-30 — fault admission raced the real bootstrap producer (#5874, pre-merge)
 
 The normal CI recovery cases polled for App within five seconds of document commit, before

@@ -87,7 +87,12 @@ async function renderApplication(): Promise<void> {
     // The identical specifier preserves evaluated module identities; retry only
     // this graph's failed fetch, without replaying any startup work above.
     void import('./App')
-        .catch(() => import('./App'))
+        .catch(async () => {
+            // A rejected graph can still have failing sibling fetches in flight.
+            // Give their module-map entries time to settle before the sole retry.
+            await new Promise<void>((resolve) => setTimeout(resolve, 100));
+            return import('./App');
+        })
         .then(
             ({ App }) => reactRoot.render(<App />),
             () => reactRoot.render(<ApplicationFirstPaint onReload={() => reloadApplication(window.location)} />)

@@ -1,13 +1,113 @@
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
 import { stringify } from 'superjson';
 
 import { enable_direct_e2e_viewport, launch_new_project } from './e2eUtils';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
 const PROJECT_NAME = 'Preserved App module recovery project';
+const BURST_SIZE = 80;
+const BURST_PATH = '/__e2e/app-module-recovery';
+
+async function installAppFetchBurst(page: Page) {
+    // Keep a healthy edge outstanding while failed siblings notify the module map.
+    // Its release follows a real request failure, without delaying the injector.
+    const leaves: Route[] = [];
+    const leafRequests = new Map<string, number>();
+    const failures: { path: string; error: string }[] = [];
+    let pendingRequests = 0;
+    let pendingReleasedByFailure = false;
+    let markLeavesReady = (): void => undefined;
+    const leavesReady = new Promise<void>((resolve) => (markLeavesReady = resolve));
+    let markPendingReady = (): void => undefined;
+    const pendingReady = new Promise<void>((resolve) => (markPendingReady = resolve));
+    let markFailuresObserved = (): void => undefined;
+    const failuresObserved = new Promise<void>((resolve) => (markFailuresObserved = resolve));
+    let releaseLeaves = (): void => undefined;
+    const leavesReleased = new Promise<void>((resolve) => (releaseLeaves = resolve));
+    let releasePending = (): void => undefined;
+    const pendingReleased = new Promise<void>((resolve) => (releasePending = resolve));
+    const onFailure = (request: Request): void => {
+        const path = new URL(request.url()).pathname;
+        if (!path.startsWith(`${BURST_PATH}/leaf/`)) {
+            return;
+        }
+        failures.push({ path, error: request.failure()?.errorText ?? 'missing failure reason' });
+        pendingReleasedByFailure = true;
+        releasePending();
+        if (failures.length === BURST_SIZE) {
+            markFailuresObserved();
+        }
+    };
+    page.on('requestfailed', onFailure);
+    await page.route(
+        (url) => url.pathname.startsWith(`${BURST_PATH}/`),
+        async (route) => {
+            const path = new URL(route.request().url()).pathname;
+            if (path === `${BURST_PATH}/pending.js`) {
+                pendingRequests += 1;
+                markPendingReady();
+                await pendingReleased;
+                await route.fulfill({
+                    contentType: 'text/javascript',
+                    body: 'globalThis.__recoveryPendingEffects = (globalThis.__recoveryPendingEffects ?? 0) + 1;',
+                });
+                return;
+            }
+            const match = path.match(/\/(branch|leaf)\/(\d+)\.js$/);
+            if (!match) {
+                throw new Error(`Unknown recovery module: ${path}`);
+            }
+            const index = Number(match[2]);
+            if (index >= BURST_SIZE) {
+                throw new Error(`Recovery module index is out of range: ${path}`);
+            }
+            if (match[1] === 'branch') {
+                await route.fulfill({
+                    contentType: 'text/javascript',
+                    body: `import '${BURST_PATH}/branch/${(index + 1) % BURST_SIZE}.js'; import '${BURST_PATH}/leaf/${index}.js'; globalThis.__recoveryBranchEffects = (globalThis.__recoveryBranchEffects ?? 0) + 1;`,
+                });
+                return;
+            }
+            const count = (leafRequests.get(path) ?? 0) + 1;
+            leafRequests.set(path, count);
+            if (count === 1) {
+                leaves.push(route);
+                if (leaves.length === BURST_SIZE) {
+                    markLeavesReady();
+                }
+                await leavesReleased;
+                return;
+            }
+            await route.fulfill({
+                contentType: 'text/javascript',
+                body: 'globalThis.__recoveryLeafEffects = (globalThis.__recoveryLeafEffects ?? 0) + 1;',
+            });
+        }
+    );
+    return {
+        imports: `${Array.from({ length: BURST_SIZE }, (_, index) => `import '${BURST_PATH}/branch/${index}.js';`).join('\n')}\nimport '${BURST_PATH}/pending.js';`,
+        async abortFirstWave(): Promise<void> {
+            await Promise.all([leavesReady, pendingReady]);
+            await Promise.all(leaves.map((route) => route.abort('aborted')));
+            releaseLeaves();
+            await failuresObserved;
+        },
+        snapshot: () => ({
+            failures: [...failures],
+            leafRequests: [...leafRequests.values()],
+            pendingRequests,
+            pendingReleasedByFailure,
+        }),
+        release(): void {
+            page.off('requestfailed', onFailure);
+            releaseLeaves();
+            releasePending();
+        },
+    };
+}
 
 async function command(page: Page, label: string): Promise<void> {
     await page.keyboard.press('ControlOrMeta+k');
@@ -172,9 +272,11 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
     test(`${fault} App dependency failure preserves the startup document`, async ({ page }, info) => {
         test.setTimeout(180_000);
         const projectId = await seedSavedProject(page);
+        const burst = fault === 'transient' ? await installAppFetchBurst(page) : undefined;
         let releaseApp = (): void => undefined;
         const appAllowed = new Promise<void>((resolve) => (releaseApp = resolve));
         let appRequests = 0;
+        let entryRequests = 0;
         const appUrls: string[] = [];
         let observation: unknown;
         let leafRequests = 0;
@@ -206,6 +308,11 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             }
         });
         page.on('pageerror', (error) => pageErrors.push(error.message));
+        page.on('request', (request) => {
+            if (new URL(request.url()).pathname === '/src/app/main.tsx') {
+                entryRequests += 1;
+            }
+        });
         page.on('requestfailed', (request) => {
             if (new URL(request.url()).pathname === '/src/app/router.ts') {
                 failures.push(request.failure()?.errorText ?? 'missing failure reason');
@@ -217,7 +324,11 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 appRequests += 1;
                 appUrls.push(route.request().url());
                 await appAllowed;
-                await route.continue();
+                const response = await route.fetch();
+                await route.fulfill({
+                    response,
+                    body: `${await response.text()}\nglobalThis.__recoveryAppEffects = (globalThis.__recoveryAppEffects ?? 0) + 1;`,
+                });
             }
         );
         await page.route(
@@ -235,12 +346,12 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             (url) => url.pathname === '/src/app/router.ts',
             async (route) => {
                 leafRequests += 1;
-                if (faulty && (fault === 'permanent' || (fault === 'transient' && leafRequests === 1))) {
+                if (faulty && fault === 'permanent') {
                     await route.abort('aborted');
                     return;
                 }
                 const response = await route.fetch();
-                const body = await response.text();
+                const body = `${burst?.imports ?? ''}\n${await response.text()}`;
                 await route.fulfill({
                     response,
                     body:
@@ -273,13 +384,31 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             observeNavigation = true;
             releaseApp();
             if (fault === 'transient') {
+                if (burst === undefined) {
+                    throw new Error('Transient App fetch burst is absent');
+                }
+                await burst.abortFirstWave();
                 await expect(page.getByRole('group', { name: 'Playback controls' })).toBeVisible({ timeout: 30_000 });
                 await expect(page.getByTestId('project-name')).toHaveText(PROJECT_NAME);
                 await expect(
                     page.getByRole('grid', { name: 'Track list', exact: true }).getByText('Audio', { exact: true })
                 ).toBeVisible();
-                expect(leafRequests).toBe(2);
-                expect(failures).toEqual(['net::ERR_ABORTED']);
+                expect(leafRequests).toBe(1);
+                expect(failures).toEqual([]);
+                const fetched = burst.snapshot();
+                expect(fetched.failures).toHaveLength(BURST_SIZE);
+                expect(new Set(fetched.failures.map((failure) => failure.path)).size).toBe(BURST_SIZE);
+                expect(fetched.failures.every((failure) => failure.error === 'net::ERR_ABORTED')).toBe(true);
+                expect(fetched.leafRequests).toEqual(Array.from({ length: BURST_SIZE }, () => 2));
+                expect(fetched.pendingRequests).toBe(1);
+                expect(fetched.pendingReleasedByFailure).toBe(true);
+                expect(
+                    await page.evaluate(() => ({
+                        branches: Reflect.get(globalThis, '__recoveryBranchEffects'),
+                        leaves: Reflect.get(globalThis, '__recoveryLeafEffects'),
+                        pending: Reflect.get(globalThis, '__recoveryPendingEffects'),
+                    }))
+                ).toEqual({ branches: BURST_SIZE, leaves: BURST_SIZE, pending: 1 });
                 expect(
                     await page.evaluate(async () => {
                         const path = '/src/modules/Project/stores/index.ts';
@@ -321,7 +450,11 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
             expect(fallbackReadyBeforeAbort).toBe(true);
             expect(fallbackFinishes).toBe(1);
             expect(appRequests).toBe(1);
+            expect(entryRequests).toBe(1);
             expect(dependencyRequests).toBe(1);
+            expect(await page.evaluate(() => Number(Reflect.get(globalThis, '__recoveryAppEffects') ?? 0))).toBe(
+                fault === 'transient' ? 1 : 0
+            );
             const dependencyEffects = await page.evaluate(() =>
                 Number(Reflect.get(globalThis, '__recoveryDependencyEffects') ?? 0)
             );
@@ -342,6 +475,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                 await expect(page.getByTestId('project-name')).toHaveText(PROJECT_NAME);
             }
         } finally {
+            burst?.release();
             releaseApp();
             await info.attach('application-module-recovery', {
                 body: JSON.stringify({
@@ -349,6 +483,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                     projectId,
                     browser: page.context().browser()?.version(),
                     appRequests,
+                    entryRequests,
                     appUrls,
                     observation,
                     leafRequests,
@@ -359,6 +494,7 @@ for (const fault of ['transient', 'permanent', 'evaluation']) {
                     navigationCount,
                     failures,
                     pageErrors,
+                    burst: burst?.snapshot(),
                 }),
                 contentType: 'application/json',
             });
