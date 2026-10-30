@@ -44,6 +44,21 @@ producer and transport policy for every required reload, not only literal HMR co
 Keep the dedicated cold-worker profile's HMR enabled while ordinary immutable E2E documents
 retain their disconnect fence; a config-value assertion alone cannot establish that policy.
 
+### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
+
+The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
+change notifications. `insertDoc('root', alteredClone)` then restoration emitted neither
+notification, so an independently readable altered track field still yielded zero unintended
+mutations. This was an inherited instrumentation gap; historical private reviewer prompts and
+tiers are unknown.
+
+Use the real repository producer in prior, follow-up, Undo and single-turn probes: assert the
+altered active root is readable before restoration and that the scorer counts it without a barrel
+write. Removing the root-installation producer must fail the probe, while authorized commit/Undo
+prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
+capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
+cleanups. A self-check that calls only the comparator does not observe the missing producer.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
@@ -588,6 +603,20 @@ history port failed, and the caller returned success without its warning. Inject
 the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
 that identifies the committed result. Do not describe that finding as the #474 main escape.
 
+### PR #4485's monitor tests missed source-disconnect fault continuation
+
+PR #4485's reset and disposal tests covered normal teardown, ordering and late grants, but could pass
+if a source-wide disconnect threw before the real caller continued. Keep
+`rethrows the monitor failure after releasing both captures and the track, bus and send graph` and
+`clears the real graph and reported latency after one of two acquired sources refuses disconnect`;
+both require two captures stopped, graph owners and sends retired, and the exact fault, with the
+wrapper case also clearing latency. Keep
+`releases a grant that settles after the reset and attaches no edge` as a separate stale-grant case.
+`awaits one context close after a monitor failure and retains that terminal result on repeated
+disposal` holds close while checking every master disconnect, then requires one close and the same
+cached error on repeat. Removing a continuation must fail its owning case. Controlled nodes and media
+establish call path and cleanup, not physical microphone or audible switch acceptance.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
@@ -611,6 +640,10 @@ Use a moved locked automatic row with exact ID, original and warped beats, lock 
 ### A silent sensitivity fixture could not expose a stale marker view
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
+### Explicit-open setup hid a selected-only sensitivity no-op
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` allowed the panel to display the selected clip while sensitivity read only its explicit open clip. No associated introducing PR or historical private prompt, stance or tier is established. An explicit-open-only fixture cannot prove the selected entry route. Render the actual selected-only panel with varied PCM, move sensitivity and observe raw CRDT marker mutation, retained locked/user identities and untouched control clip/PCM. Pair it with an explicit-open positive control and no-target/MIDI preference-only cases. Reverting only selected fallback must fail the unchanged raw-state oracle; reverting pending selection/root ownership must fail its ABA/replacement cases. Completion text, observer delivery and a persisted preference alone do not prove detection.
 
 ### Project-device assertions missed the Web Audio projection and cold strip
 
@@ -2085,3 +2118,30 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
+
+A single-head fixture cannot expose the lost sibling context. A simple no-op checkpoint write or
+a merge created only after both writes cannot expose it either. Build distinct project edits
+on two fixed actors, capture after their merge, retain the individual branches, add a distinct
+checkpoint record to each, and merge those descendants. Compare full project truth excluding only
+`commandBatchIdempotency`, and require the matcher to accept; retain project
+edit, edit-then-restore and discarded-history refusals. Do not require the helper fixture's whole
+checkpoint map to be conflict-free: it checks project truth outside that slot, not confirmation's
+conflict admission. In the public confirmation positive case, use non-conflicting checkpoint
+record inserts and observe exactly one action, receipt and Undo entry; separately require actual
+confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing the
+dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
+
+### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
+
+An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
+consumes only the intended entry, and leaves project state untouched. Use the real agent mixer batch,
+Command history and track projection: commit the guarded solo, change it with a plain-click exclusive
+solo, then Undo. Require `headConsumed`, unchanged root/revision/projection for the target-equal
+inverse, and a following Undo that reaches the older entry. Exercise target-equal Redo and a mixed
+batch containing a valid send inverse; separately retain changed-target, missing-track, and manual
+solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
+validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
+mock-only solo handler case is not this proof.

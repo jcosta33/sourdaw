@@ -341,6 +341,18 @@ that owner; non-audio Auto and unadmitted store-only On must acquire nothing. Th
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
 
+### Monitor disconnect faults must not strand the shared graph (introduced by PR #4485; fixed in #5376)
+
+PR #4485 moved monitor release to the start of shared graph reset so source edges stopped while
+strips still existed. A source-wide disconnect could throw before track, bus and send retirement;
+disposal then depended on this failing reset before master teardown and `context.close()`. Public
+approval covers ordering and late-grant release, not fault continuation; private prompts and tiers are
+unknown. Exercise the real reset and dispose callers with two controlled captures and a throwing first
+source: require both tracks stopped, graph owners and sends retired, and the original error retained.
+Disposal must attempt every master disconnect, await one close, and return the same terminal result on
+repeat. Keep late-grant rejection as a separate reset case. Controlled nodes and media prove cleanup,
+not physical microphone or audible playback.
+
 ### An aborted graph repair must rearm committed monitoring intent (issue #5286)
 
 Start a connected On track, hold same-project graph repair at plugin reset, then project Off before
@@ -502,6 +514,10 @@ Replace the root while an audio capture is open, retaining copied provisional st
 ### Deferred sensitivity must redraw the current clip's markers
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
+
+### Debounced Elastic gestures retain their displayed owner
+
+The initial Elastic target mismatch in `33a3549990c5ce2234e22bf48f3d5758711e2b56` was hidden by explicitly opening every sensitivity fixture. No associated introducing PR or private review prompt, stance or tier is established. Hold the real debounce across selection A→B→A, explicit editor close/reopen, source replacement and same-ID root replacement. The old gesture must leave native rows and PCM exact, settle callers and release listeners; only a fresh gesture may act on the new owner. An unrelated selection must not override an explicitly opened target. Removing pending-owner invalidation must fail real raw-state controls, not merely a cancellation flag.
 
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 
