@@ -408,3 +408,137 @@ test.describe('Offline project smoke', () => {
         }
     });
 });
+
+test.describe('Crust runtime lifecycle', () => {
+    for (const warm of [false, true]) {
+        test(`keeps the live chain and history through ${warm ? 'Play before add' : 'cold add'}`, async ({ page }) => {
+            test.setTimeout(150_000);
+            const errors: string[] = [];
+            const pendingErrors: Promise<void>[] = [];
+            page.on('pageerror', (error) => errors.push(`${error.name}: ${error.message}`));
+            page.on('console', (message) => {
+                if (message.type() !== 'error') return;
+                pendingErrors.push(
+                    Promise.all(
+                        message.args().map((arg) =>
+                            arg.evaluate((value: unknown) => {
+                                const seen = new WeakSet<object>();
+                                function describe(item: unknown): string {
+                                    if (typeof item !== 'object' || item === null) return String(item);
+                                    if (seen.has(item)) return '[circular]';
+                                    seen.add(item);
+                                    if (item instanceof Error) {
+                                        const nested = item instanceof AggregateError ? item.errors.map(describe) : [];
+                                        return [item.name, item.message, item.cause && describe(item.cause), ...nested]
+                                            .filter(Boolean)
+                                            .join(': ');
+                                    }
+                                    return String(item);
+                                }
+                                return describe(value);
+                            })
+                        )
+                    ).then((parts) => {
+                        errors.push(`${message.text()} ${parts.join(' ')}`);
+                    })
+                );
+            });
+            const assertOffline = await openNewProject(page);
+            await addMidiTrack(page);
+            const readState = () =>
+                page.evaluate(async () => {
+                    const { trackStore } = await import('/src/modules/Arrangement/stores/index.ts');
+                    const audio = await import('/src/modules/AudioEngine/useCases/index.ts');
+                    const { undoHistoryStore } = await import('/src/modules/Command/stores/index.ts');
+                    const trackId = trackStore.value?.selectedTrackId;
+                    const track = trackStore.value?.tracks.find((candidate) => candidate.id === trackId);
+                    const strip = trackId ? audio.getTrackStrip(trackId) : undefined;
+                    const entries = (items: NonNullable<typeof undoHistoryStore.value>['past']) =>
+                        items.map((entry) => ({
+                            id: entry.id,
+                            action: entry.kind === 'action' ? entry.action.type : null,
+                            deviceId:
+                                entry.kind === 'action' && entry.action.type === 'addDevice'
+                                    ? entry.action.payload.deviceId
+                                    : null,
+                        }));
+                    return {
+                        trackId,
+                        devices: track?.devices.map(({ id, type }) => ({ id, type })) ?? [],
+                        nodes:
+                            strip?.deviceNodes.map((node) => ({
+                                id: node.deviceId,
+                                type: node.type,
+                                ready: node.controller?.ready === true,
+                                worklet: node.inputNode instanceof AudioWorkletNode,
+                                nativeControls: Boolean(node.nativeDspControls),
+                            })) ?? [],
+                        readiness: audio.getDeviceReadinessDiagnostics().devices,
+                        past: entries(undoHistoryStore.value?.past ?? []),
+                        future: entries(undoHistoryStore.value?.future ?? []),
+                    };
+                });
+            const before = await readState();
+            expect(before.trackId).toBeTruthy();
+            expect(before.devices.map(({ type }) => type)).toEqual(['builtin-synth']);
+            if (warm) {
+                await page.getByRole('button', { name: 'Play', exact: true }).click();
+                await expect(page.getByRole('group', { name: 'Playback controls' }).getByRole('status')).toHaveText(
+                    'Playing'
+                );
+            }
+            const inspector = page.getByRole('complementary', { name: 'Inspector panel' });
+            await inspector.getByRole('button', { name: 'Add device' }).click();
+            await page.getByRole('menuitem', { name: /^Crust$/ }).click();
+            await expect
+                .poll(async () => (await readState()).devices.filter(({ type }) => type === 'crust').length)
+                .toBe(1);
+            await expect.poll(async () => (await readState()).past.at(-1)?.action).toBe('addDevice');
+            const added = await readState();
+            const deviceId = added.devices.find(({ type }) => type === 'crust')!.id;
+            const entry = added.past.at(-1);
+            expect(entry).toMatchObject({ action: 'addDevice', deviceId });
+            expect(added.devices).toEqual([...before.devices, { id: deviceId, type: 'crust' }]);
+            const expectReady = async () => {
+                await expect
+                    .poll(async () => {
+                        const state = await readState();
+                        return {
+                            devices: state.devices,
+                            nodes: state.nodes,
+                            readiness: state.readiness.find((device) => device.deviceId === deviceId),
+                        };
+                    })
+                    .toMatchObject({
+                        devices: [...before.devices, { id: deviceId, type: 'crust' }],
+                        nodes: [{ id: deviceId, type: 'crust', ready: true, worklet: true, nativeControls: true }],
+                        readiness: { deviceId, deviceType: 'crust', status: 'ready', failureStage: null },
+                    });
+                const result = await page.evaluate(async () => {
+                    const audio = await import('/src/modules/AudioEngine/useCases/index.ts');
+                    return audio.waitForDevices();
+                });
+                expect(result.status).toBe('ready');
+            };
+            await expectReady();
+            const undo = page.getByRole('button', { name: 'Undo', exact: true });
+            await expect(undo).toBeEnabled();
+            await undo.click();
+            await expect
+                .poll(async () => {
+                    const state = await readState();
+                    return { devices: state.devices, nodes: state.nodes, future: state.future.at(-1) };
+                })
+                .toEqual({ devices: before.devices, nodes: [], future: entry });
+            const redo = page.getByRole('button', { name: 'Redo', exact: true });
+            await expect(redo).toBeEnabled();
+            await redo.click();
+            await expect.poll(async () => (await readState()).past.at(-1)).toEqual(entry);
+            await expectReady();
+            await expect(page.getByText(/requires runtime retry or repair/i)).toHaveCount(0);
+            await Promise.all(pendingErrors);
+            expect(errors).toEqual([]);
+            await assertOffline();
+        });
+    }
+});
