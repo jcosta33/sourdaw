@@ -2870,11 +2870,19 @@ describe('fixture lifetime deadline integration', () => {
     );
 
     it('admits the real successor only after old close and spy restoration', async () => {
+        events.push('successor body entered');
         const barrel = spyOnBarrelWrites();
         try {
             await controller;
             expect(reason).toContain('timed out');
-            expect(events).toEqual(['old held', 'deadline', 'admission entered', 'old closed', 'old restored']);
+            expect(events).toEqual([
+                'old held',
+                'deadline',
+                'admission entered',
+                'old closed',
+                'old restored',
+                'successor body entered',
+            ]);
             openChatProject();
             events.push('successor opened');
             const testCase = corpusCase('development', 'AC004-DEV-UNDO-MULTI-TRACK');
