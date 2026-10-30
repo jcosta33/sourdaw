@@ -206,11 +206,7 @@ function assertCheckout(named: (name: string) => UnknownRecord): void {
 }
 
 function assertSetup(named: (name: string) => UnknownRecord): void {
-    requireEqual(
-        named('Set up pnpm').uses,
-        'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86',
-        'the pinned pnpm action'
-    );
+    requireEqual(named('Set up pnpm').uses, './.github/actions/setup-pnpm', 'the verified JavaScript pnpm action');
     requireEqual(
         named('Set up Node').uses,
         'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
