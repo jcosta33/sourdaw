@@ -2226,3 +2226,12 @@ batch containing a valid send inverse; separately retain changed-target, missing
 solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
 validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
 mock-only solo handler case is not this proof.
+
+### 2026-10-30 — click times alone could not show which pass owned the loop seam (introduced by PR #4897)
+
+PR #4897 (`16773be5f4`) introduced the two-pass seam with a [0, 4) metronome case that counted
+click times only. There loopEnd and loopStart are both bar lines, so the dying pass's inclusive
+loopEnd click and the incoming loopStart click are indistinguishable. Pin incoming-phase ownership
+with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
+incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
+the real scheduler, for the seam and a later pass.

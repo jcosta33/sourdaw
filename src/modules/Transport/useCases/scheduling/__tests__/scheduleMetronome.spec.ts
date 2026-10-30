@@ -256,4 +256,70 @@ describe('scheduleMetronome', () => {
         // beats 1, 2 — both fire despite null stores.
         expect(mockScheduleClick).toHaveBeenCalledTimes(2);
     });
+
+    describe('loop end fence', () => {
+        const loopOn = { ...metronomeOn, isLooping: true, loopStart: 1, loopEnd: 4 };
+
+        it.each([undefined, 20])('leaves the click at exact loopEnd to the incoming pass with anchor %s', (anchor) => {
+            const origin = anchor ?? 0;
+
+            scheduleMetronome(2.75, 4.1, 2.9, loopOn, anchor);
+
+            // Beat 3 is the dying pass's last click; beat 4 is the incoming
+            // pass's loopStart instant and must not be claimed here.
+            expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo(origin + 0.05, 8), false, 0.5);
+
+            // The fenced beat moved neither `lastBeat` nor the time key: the
+            // incoming pass, re-opened at loopStart and anchored so beat 1
+            // lands on the instant beat 4 would have, still clicks there.
+            resetMetronomeBeat(1);
+            scheduleMetronome(1, 1.2, 1 - 0.55 * 2, loopOn, anchor);
+            expect(mockScheduleClick).toHaveBeenCalledTimes(2);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(2, expect.closeTo(origin + 0.55, 8), false, 0.5);
+        });
+
+        it.each([undefined, 20])('still clicks a beat just below loopEnd with anchor %s', (anchor) => {
+            // The next double above 3: beat 3 is strictly inside the pass.
+            const loopEnd = 3 + 2 ** -51;
+            expect(loopEnd).toBeGreaterThan(3);
+
+            scheduleMetronome(2.75, 3.1, 2.9, { ...loopOn, loopEnd }, anchor);
+
+            expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo((anchor ?? 0) + 0.05, 8), false, 0.5);
+        });
+
+        it.each([undefined, 20])('includes the endpoint when looping is off with anchor %s', (anchor) => {
+            scheduleMetronome(3.75, 4.1, 3.9, { ...loopOn, isLooping: false }, anchor);
+
+            expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo((anchor ?? 0) + 0.05, 8), true, 0.5);
+        });
+
+        it.each([undefined, 20])('includes the endpoint for an empty loop region with anchor %s', (anchor) => {
+            scheduleMetronome(3.75, 4.1, 3.9, { ...loopOn, loopStart: 4, loopEnd: 4 }, anchor);
+
+            expect(mockScheduleClick).toHaveBeenCalledTimes(1);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo((anchor ?? 0) + 0.05, 8), true, 0.5);
+        });
+
+        it.each([undefined, 20])('plays straight through from an anchor at loopEnd with anchor %s', (anchor) => {
+            const origin = anchor ?? 0;
+
+            scheduleMetronome(3.9, 5.1, 4, loopOn, anchor);
+
+            expect(mockScheduleClick).toHaveBeenCalledTimes(2);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo(origin, 8), true, 0.5);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(2, expect.closeTo(origin + 0.5, 8), false, 0.5);
+        });
+
+        it.each([undefined, 20])('plays straight through from an anchor past loopEnd with anchor %s', (anchor) => {
+            scheduleMetronome(4.4, 6.1, 4.5, loopOn, anchor);
+
+            expect(mockScheduleClick).toHaveBeenCalledTimes(2);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(1, expect.closeTo((anchor ?? 0) + 0.25, 8), false, 0.5);
+            expect(mockScheduleClick).toHaveBeenNthCalledWith(2, expect.closeTo((anchor ?? 0) + 0.75, 8), false, 0.5);
+        });
+    });
 });
