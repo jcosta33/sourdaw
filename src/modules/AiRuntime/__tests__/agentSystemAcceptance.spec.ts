@@ -46,7 +46,6 @@ import {
 } from '../models/AgentAcceptanceOutcome';
 import { type PlanningOutcome } from '../models/PlanningOutcome';
 import { type ProjectContext } from '../models/ProjectContext';
-import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 import {
     classifyPlanningOutcome,
     computeAgentAcceptanceMetrics,
@@ -84,6 +83,8 @@ import { parsePromptToActions } from '../useCases/parsePromptToActions';
 import { type planPromptActions } from '../useCases/planPromptActions';
 import { readChatThreadContext } from '../useCases/readChatThreadContext';
 import { sendChatMessage } from '../useCases/sendChatMessage';
+
+import { completeAcceptanceResults, createAcceptanceFixtureLifetime } from './acceptanceFixtureLifetime';
 
 type PlannedChatRequest = Awaited<ReturnType<typeof planPromptActions>>['result'];
 
