@@ -1,0 +1,90 @@
+.agents/skills/review-stances/async-file-imports.md
+  h_beb54bf43b47b7 27-40
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 924-938
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 495-508
+.agents/skills/review-stances/saved-control-projection.md
+  h_beb54bf43b47b7 8-23
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 75-98,493,495-499,501-506
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 213-228
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 1495-1511,1996-2010
+crates/daw-dsp/src/bacteria/convolution.rs
+  h_beb54bf43b47b7 3-5,7,9-12,29-30,32,34-36,42,44-46,53,72-74,121-123,125-136,159-166,171,179,210,282-284,324,326,335,340,342,358,402-403,419-420,438-439,479,481,501-502,523,529,586-587,606,609
+crates/daw-dsp/src/bacteria/engine.rs
+  h_beb54bf43b47b7 695,718,749,889-890
+crates/daw-dsp/src/bacteria/mod.rs
+  h_beb54bf43b47b7 22
+crates/daw-dsp/src/bacteria/spring_body.rs
+  h_beb54bf43b47b7 1-312
+crates/daw-dsp/tests/bacteria_body_switch_rt.rs
+  h_beb54bf43b47b7 3,122-123,153,285-338
+crates/daw-dsp/tests/bacteria_spring_body.rs
+  h_beb54bf43b47b7 1-302
+docs/manual/devices/13-bacteria.md
+  h_beb54bf43b47b7 223-239
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10
+public/wasm/daw-dsp/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1292-1366,1368-1394
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  h_beb54bf43b47b7 1,144-218,220-246
+public/wasm/manifest.json
+  h_beb54bf43b47b7 12,16-18,21
+release/open-source-inventory.json
+  h_beb54bf43b47b7 1345,1351,1769
+src/app/__tests__/crumbsSamplePresentationAuthority.integration.spec.tsx
+  h_beb54bf43b47b7 1-508
+src/app/__tests__/initDeviceStateReconciliation.spec.ts
+  h_beb54bf43b47b7 5-6,10,16-17,23-26,64-81
+src/app/createCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-80
+src/app/initDeviceStateReconciliation.ts
+  h_beb54bf43b47b7 2,6-7,40-41,46-47,65
+src/modules/Arrangement/models/PluginDescriptors/BacteriaDescriptorGuidanceEffects.ts
+  h_beb54bf43b47b7 14-15,274-275,278-279
+src/modules/Arrangement/useCases/__tests__/getDeviceContractVersionForCommand.spec.ts
+  h_beb54bf43b47b7 24-30,176,184,188
+src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts
+  h_beb54bf43b47b7 5-6,169-228
+src/modules/AudioEngine/models/BacteriaRuntimeControl.ts
+  h_beb54bf43b47b7 98
+src/modules/AudioEngine/services/__tests__/bacteriaProcessor.spec.ts
+  h_beb54bf43b47b7 3-4,123,215-250
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  h_beb54bf43b47b7 1,1292-1366,1368-1394
+src/modules/Crumbs/presentations/components/__tests__/WaveformDisplay.spec.tsx
+  h_beb54bf43b47b7 2,6-45
+src/modules/Crumbs/stores/__tests__/crumbsStore.spec.ts
+  h_beb54bf43b47b7 12-14,17-18,25-83
+src/modules/Crumbs/stores/crumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-4
+src/modules/Crumbs/stores/crumbsStore.ts
+  h_beb54bf43b47b7 8,127-130,136
+src/modules/Crumbs/useCases/__tests__/loadSample.spec.ts
+  h_beb54bf43b47b7 1,16-33,43-44,66-76
+src/modules/Crumbs/useCases/__tests__/reconcileCrumbsDeviceStatesFromProject.spec.ts
+  h_beb54bf43b47b7 37,136,140,153
+src/modules/Crumbs/useCases/__tests__/sampleWaveformPublication.integration.spec.ts
+  h_beb54bf43b47b7 1-394
+src/modules/Crumbs/useCases/configureCrumbsSampleProjectAccess.ts
+  h_beb54bf43b47b7 1-11
+src/modules/Crumbs/useCases/index.ts
+  h_beb54bf43b47b7 5
+src/modules/Crumbs/useCases/loadSample.ts
+  h_beb54bf43b47b7 12-13,16,76-86,92-96,98-105,116,120,136-139,141-143,153-155,167-169,176-178,181-183,187-189,193
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "73b493fd626c90f65644c093cde79c541238aa53",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
