@@ -7,6 +7,7 @@ import {
 } from '#/modules/AudioEngine/useCases';
 import { stopAutomationRecording } from '#/modules/Automation/useCases';
 
+import { forgetHeldNoteExpression } from '../../services/heldNoteExpression';
 import { captureGestureBeat } from '../../stores/captureGestureBeat';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
@@ -60,6 +61,8 @@ export function stopPlayheadScheduler(): void {
     // stop and the all-notes-off above, so it is released here for the stop, the
     // pause and the locate that all tear the scheduler down through this one door.
     releaseStoredControllers();
+    // The notes whose later expression changes were parked are over, and a new playback starts none of them.
+    forgetHeldNoteExpression();
     // RT-5: hold each track's fader gain/pan and drop pending automation ramps
     // so a ramp scheduled toward a compensated future time cannot land after
     // playback has stopped (the AudioParam analog of stopActiveSources).

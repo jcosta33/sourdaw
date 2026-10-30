@@ -797,6 +797,82 @@ describe('connected stem export output ownership', () => {
             throw failure;
         }
     }, 20000);
+    it('consumes two reported WAV targets before releasing each of64 rendered stems', async () => {
+        const chunks: Uint8Array[] = [];
+        let closed = false;
+        let releaseFirstWrite: () => void = () => {};
+        let signalFirstWrite: () => void = () => {};
+        const firstWriteStarted = new Promise<void>((resolve) => {
+            signalFirstWrite = resolve;
+        });
+        const firstWriteDrain = new Promise<void>((resolve) => {
+            releaseFirstWrite = resolve;
+        });
+        let firstWrite = true;
+        vi.stubGlobal('showSaveFilePicker', async () => ({
+            createWritable: async () => ({
+                write: async (bytes: Uint8Array) => {
+                    if (firstWrite) {
+                        firstWrite = false;
+                        signalFirstWrite();
+                        await firstWriteDrain;
+                    }
+                    chunks.push(bytes.slice());
+                },
+                close: async () => {
+                    closed = true;
+                },
+                abort: async () => {},
+            }),
+        }));
+        try {
+            render(<ExportDialog open onClose={() => {}} />);
+            fireEvent.click(screen.getByTestId('export-mode-stems'));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Apple Music stereo master' }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
+            fireEvent.change(screen.getByRole('combobox', { name: 'Output channels' }), { target: { value: '1' } });
+            fireEvent.click(screen.getByRole('button', { name: /^Off$/ }));
+            fireEvent.click(screen.getByRole('checkbox', { name: 'Include WAV loudness reports' }));
+            fireEvent.click(screen.getByTestId('export-start'));
+            await firstWriteStarted;
+            expect(ownership.rendered).toBe(1);
+            releaseFirstWrite();
+            await waitFor(() => expect(closed).toBe(true), { timeout: 60000 });
+            expect(ownership.rendered).toBe(64);
+            expect(ownership.consumed).toBe(64);
+            expect(ownership.peakRetained).toBe(1);
+            const archive = new Uint8Array(chunks.reduce((sum, b) => sum + b.length, 0));
+            let offset = 0;
+            for (const b of chunks) {
+                archive.set(b, offset);
+                offset += b.length;
+            }
+            const entries = unzipSync(archive);
+            expect(Object.keys(entries)).toHaveLength(256);
+            for (const [name, bytes] of Object.entries(entries)) {
+                if (name.endsWith('.loudness.json')) {
+                    const report = JSON.parse(new TextDecoder().decode(bytes));
+                    expect(report.audioFile).toBe(name.slice(0, -'.loudness.json'.length));
+                    expect(report.measurementBasis).toBe('decoded-WAV-bytes');
+                    expect(report.publicationAttested).toBe(false);
+                    continue;
+                }
+                const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+                if (name.endsWith('__game-audio-pcm.wav')) {
+                    expect(view.getUint32(24, true)).toBe(48000);
+                    expect(view.getUint16(22, true)).toBe(1);
+                    expect(bytes.length).toBe(44 + 48000 * 3);
+                    expect(bytes.subarray(44).every((b) => b === 0)).toBe(true);
+                } else {
+                    expect(name).toMatch(/__apple-music-stereo-master\.wav$/);
+                    expect(view.getUint32(24, true)).toBe(44100);
+                    expect(view.getUint16(22, true)).toBe(2);
+                }
+            }
+        } finally {
+            vi.unstubAllGlobals();
+        }
+    }, 65000);
     it('observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems', async () => {
         const gc: unknown = Reflect.get(globalThis, 'gc');
         if (typeof gc !== 'function') {

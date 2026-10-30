@@ -35,12 +35,9 @@ import { buildReviewDossier } from '../reviewDossierPublication.ts';
 import { deliveryAuthorization, publishedFindings, publishedReviewId } from '../reviewDossierViews.ts';
 import { recordedPublicationReplay } from '../reviewPublicationBinding.ts';
 import { inspectReviewPublicationRemote } from '../reviewPublicationRemoteInspection.ts';
-import {
-    REASSESSMENT_FILE_NAME,
-    REVIEW_REASSESSMENT_FORMAT,
-    REVIEW_ROUND_ESCALATION_THRESHOLD,
-} from '../reviewRoundEscalation.ts';
+import { REVIEW_ROUND_FREEZE_THRESHOLD } from '../reviewRoundEscalation.ts';
 
+import type { ReviewDraw } from '../reviewDocumentParser.ts';
 import type { ReviewRiskPlan } from '../reviewRiskPolicy.ts';
 
 /*
@@ -60,9 +57,16 @@ const landedCommentIds = [4199756097, 4199756111];
 
 type Landing = 'request-changes' | 'approve';
 
+/** The round's draws; a plan-less bundle carries them unread. */
+const roundDraws: ReviewDraw[] = [
+    { stance: 'correctness', reviewerModel: 'review-model', tier: 'strongest', outcome: 'findings' },
+    { stance: 'test-validity', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+];
+
 const reviewDocumentJson = {
     event: 'REQUEST_CHANGES',
     reviewerModel: 'claude-opus-5-5',
+    draws: roundDraws,
     body: 'Stacking unrelated lanes to serialize a digest collides with the stack procedure and does not prevent the collision.',
     comments: [
         {
@@ -87,6 +91,7 @@ const reviewDocumentJson = {
 const approvalDocumentJson = {
     event: 'APPROVE',
     reviewerModel: 'claude-opus-5-5',
+    draws: roundDraws.map((draw): ReviewDraw => ({ ...draw, outcome: 'clean' })),
     body: 'Attacked the amended stacking rule against the stack procedure; it held.',
     comments: [],
 };
@@ -316,37 +321,9 @@ const riskPlan: ReviewRiskPlan = {
     triggers: ['small:handwritten-lines<=200'],
 };
 
-function dossierInput(landing: Landing): Record<string, unknown> {
-    return {
-        format: 'dossier-input-v1',
-        pr: number,
-        headSha: head,
-        baseSha: base,
-        stances: [
-            {
-                stance: 'correctness',
-                reviewerModel: 'review-model',
-                modelTier: 'strongest',
-                outcome: landing === 'approve' ? 'clean' : 'blocker-found',
-            },
-            { stance: 'test-validity', reviewerModel: 'review-model', modelTier: 'standard', outcome: 'clean' },
-        ],
-        evidence: [
-            {
-                observable: 'the stacking rule against the stack procedure',
-                verification: 'read AGENTS.md against the delivery skill',
-                observed: 'the two sentences compared',
-            },
-        ],
-        limitations: [],
-        assessmentImpact: 'none',
-    };
-}
-
 /**
- * The plan-carrying files review:prepare writes, and the dossier: the caller's input for a
- * request-changes round (the publish run persists the canonical record), or the canonical record
- * an approval's publish run persists before its POST.
+ * The plan-carrying files review:prepare writes, plus the canonical record the publish run derives
+ * from review.json and persists before its POST.
  */
 function writePlanCarryingBundleFiles(bundle: string, landing: Landing): void {
     writeFileSync(
@@ -354,16 +331,14 @@ function writePlanCarryingBundleFiles(bundle: string, landing: Landing): void {
         JSON.stringify({ pr: number, baseRefName: 'main', baseSha: base, headSha: head })
     );
     writeFileSync(join(bundle, 'risk-plan.json'), JSON.stringify(riskPlan));
-    if (landing === 'request-changes') {
-        writeFileSync(join(bundle, 'dossier.json'), JSON.stringify(dossierInput(landing)));
-        return;
-    }
+    const landed = parseReviewDocument(documentJson[landing]);
     const { canonical } = buildReviewDossier({
         plan: riskPlan,
-        raw: dossierInput(landing),
-        discarded: [],
-        comments: [],
-        recommendation: 'approve',
+        persisted: undefined,
+        draws: landed.draws,
+        evidence: [],
+        comments: landed.comments,
+        recommendation: landing === 'approve' ? 'approve' : 'request-changes',
     });
     writeFileSync(join(bundle, 'dossier.json'), canonical);
 }
@@ -466,66 +441,17 @@ function readDossier(root: string) {
 
 /** Runs the real publish against the fake until its POST lands and the comment read then fails. */
 function crashAfterPost(root: string, remote: ReturnType<typeof fakeGitHub>): void {
-    const draws = [
+    const draws: ReviewDraw[] = [
         {
             stance: 'reply review mistaken for the landed review',
-            admittedBy: 'reply-only COMMENTED reviews precede the landed CHANGES_REQUESTED review',
-            mutation: 'treat a reply-only COMMENTED review as the landed review',
-            modelTier: 'strongest',
-            outcome: 'blocker-found',
+            reviewerModel: 'review-model',
+            tier: 'strongest',
+            outcome: 'findings',
         },
-        {
-            stance: 'landed comment binding drifts',
-            admittedBy: 'a posted comment changes body or line before binding',
-            mutation: 'skip the exact landed comment comparison',
-            modelTier: 'standard',
-            outcome: 'clean',
-        },
-        {
-            stance: 'landed review identity changes',
-            admittedBy: 'the landed review id changes between the two recovery inspections',
-            mutation: 'skip the second-inspection review id comparison',
-            modelTier: 'standard',
-            outcome: 'clean',
-        },
-    ] as const;
-    const bundle = bundlePath(root);
-    writeFileSync(
-        join(bundle, 'dossier.json'),
-        JSON.stringify({
-            ...dossierInput('request-changes'),
-            stances: draws.map(({ stance, modelTier, outcome }) => ({
-                stance,
-                reviewerModel: 'review-model',
-                modelTier,
-                outcome,
-            })),
-        })
-    );
-    writeFileSync(
-        join(bundle, 'stances.json'),
-        JSON.stringify({
-            format: 'stances-admission-v1',
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            stances: draws.map(({ stance, admittedBy, mutation }) => ({
-                stance,
-                admittedBy,
-                draws: [
-                    {
-                        reviewerModel: 'review-model',
-                        baselineProbe: {
-                            spec: 'scripts/__tests__/recoverPublishReviewLock5008.spec.ts',
-                            mutation,
-                            observed: 'the named recovery spec failed on the targeted mutation',
-                            result: 'mutation-detected',
-                        },
-                    },
-                ],
-            })),
-        })
-    );
+        { stance: 'landed comment binding drifts', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+        { stance: 'landed review identity changes', reviewerModel: 'review-model', tier: 'standard', outcome: 'clean' },
+    ];
+    writeFileSync(join(bundlePath(root), 'review.json'), JSON.stringify({ ...reviewDocumentJson, draws }));
     remote.state.failCommentReadsAfterPost = 1;
     expect(() => publishReview(number, publicationPort(root, remote.gh))).toThrow(/transient comment listing failure/);
     expect(remote.state.posts).toBe(1);
@@ -847,11 +773,15 @@ describe('review-publication recovery of a landed review among thread-reply revi
         expect(lockOid(fixture.root)).not.toBeUndefined();
     });
 
-    it('recounts the escalation rounds without the landed review and records no reassessment', async () => {
+    it('binds a landed review without re-running the round freeze, even once the history reaches it', async () => {
         const fixture = fixtureFor({ planCarrying: true });
+        // Four earlier rounds (three here plus the incident's own previous round) admit the fresh
+        // post; the landed fifth then puts the history at the freeze.
         const remote = fakeGitHub({
             posted: false,
-            priorReviews: [restReview(5433500000, 'CHANGES_REQUESTED', 'An older round.', REVIEWER_BOT_NODE_ID, base)],
+            priorReviews: Array.from({ length: REVIEW_ROUND_FREEZE_THRESHOLD - 2 }, (_, index) =>
+                restReview(5433500000 + index, 'CHANGES_REQUESTED', 'An older round.', REVIEWER_BOT_NODE_ID, base)
+            ),
         });
         crashAfterPost(fixture.root, remote);
 
@@ -860,42 +790,6 @@ describe('review-publication recovery of a landed review among thread-reply revi
         const dossier = readDossier(fixture.root);
         expect(publishedReviewId(dossier)).toBe(landedReviewId);
         expect(dossier.events.some((event) => event.kind === 'review-reassessed')).toBe(false);
-    });
-
-    it('hands the consumed reassessment to the recovered binding when the prior rounds met the threshold', async () => {
-        const fixture = fixtureFor({ planCarrying: true });
-        const reassessment = {
-            format: REVIEW_REASSESSMENT_FORMAT,
-            pr: number,
-            headSha: head,
-            baseSha: base,
-            roundsObserved: 3,
-            threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-            action: 'continue',
-            reason: 'The remaining findings are narrow wording repairs inside one rule.',
-        };
-        writeFileSync(join(bundlePath(fixture.root), REASSESSMENT_FILE_NAME), JSON.stringify(reassessment));
-        const remote = fakeGitHub({
-            posted: false,
-            priorReviews: [
-                restReview(5433500000, 'CHANGES_REQUESTED', 'An older round.', REVIEWER_BOT_NODE_ID, base),
-                restReview(5433500001, 'CHANGES_REQUESTED', 'Another older round.', REVIEWER_BOT_NODE_ID, base),
-            ],
-        });
-        crashAfterPost(fixture.root, remote);
-        expect(readDossier(fixture.root).events.some((event) => event.kind === 'review-reassessed')).toBe(false);
-
-        await expect(recoverWith(fixture.root, fixture.ownerOid, remote.gh)).resolves.toBe(0);
-
-        const reassessed = readDossier(fixture.root).events.filter((event) => event.kind === 'review-reassessed');
-        expect(reassessed).toHaveLength(1);
-        expect(reassessed[0]).toMatchObject({
-            kind: 'review-reassessed',
-            roundsObserved: 3,
-            threshold: REVIEW_ROUND_ESCALATION_THRESHOLD,
-            action: 'continue',
-            reason: reassessment.reason,
-        });
         expect(lockOid(fixture.root)).toBeUndefined();
     });
 

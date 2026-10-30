@@ -1762,6 +1762,40 @@ mod tests {
     }
 
     #[test]
+    fn export_transactions_commit_report_before_audio_on_manifest_failure() {
+        let dir = TempExportDir::create("report-before-audio");
+        let audio = dir.path("stem.wav");
+        let report = dir.path("stem.wav.loudness.json");
+        std::fs::write(&audio, b"old audio").unwrap();
+        let mut registry = ExportFileRegistry::open(&dir.path("private")).unwrap();
+        let audio_token = registry
+            .begin(audio.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry.append(&audio_token, b"new audio", 7).unwrap();
+        registry.seal(&audio_token, 7).unwrap();
+        let report_token = registry
+            .begin(report.to_string_lossy().into_owned(), 7)
+            .unwrap();
+        registry
+            .append(&report_token, b"unattested report", 7)
+            .unwrap();
+        registry.seal(&report_token, 7).unwrap();
+
+        // The first rename succeeds, then the real manifest persistence fails.
+        std::fs::remove_file(&registry.manifest_path).unwrap();
+        std::fs::create_dir(&registry.manifest_path).unwrap();
+        let error = registry
+            .commit(&[report_token, audio_token], 7)
+            .unwrap_err();
+        assert!(
+            error.contains("Cannot") || error.contains("directory"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read(&report).unwrap(), b"unattested report");
+        assert_eq!(std::fs::read(&audio).unwrap(), b"old audio");
+    }
+
+    #[test]
     fn export_transactions_abort_and_drop_preserve_existing_files() {
         let dir = TempExportDir::create("abort");
         let target = dir.path("stem.flac");

@@ -1,7 +1,8 @@
 name: Validation
 
-# Required validation called only by health-gates.yml. Browser smoke uses the
-# same deterministic affected plan as the browser matrix. Nightly owns full-load validation.
+# Validation called by pr-checks.yml on every push and by health-gates.yml for
+# the required Gate. Browser smoke uses the same deterministic affected plan as
+# the browser matrix. Nightly owns full-load validation.
 
 on:
   workflow_call:
@@ -565,9 +566,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # These expensive specs run once in static, outside a pooled unit run.
+      # Release proof and agent delivery specs run once in static, outside a
+      # pooled unit run. The guard storage specs refuse cleanup while any
+      # same-UID process is uninspectable, which the hosted runner account
+      # holds, so they run only in the isolated `unit` account. A tooling
+      # profile cannot change the guard: its sources are not review tooling
+      # (scripts/prValidationScope.ts), so a head touching them takes the broad
+      # profile, whose unit shards run them isolated.
       - name: Run script suite
-        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts'
+        run: pnpm test:run scripts --exclude='**/releaseProof.spec.ts' --exclude='**/agentDeliveryScripts.spec.ts' --exclude='**/resourceGuardStorage.spec.ts' --exclude='**/resourceGuard.spec.ts' --exclude='**/resourceGuardShowOutput.spec.ts'
 
   smoke:
     name: Offline browser smoke
@@ -624,6 +631,11 @@ jobs:
       # downloads; it is the price of failing a genuine stall, which prints
       # nothing after `apt-get update` for an hour, within minutes.
       #
+      # Every apt run reads the runner's sources except the image's standalone
+      # Microsoft product feed, which nothing here installs from and whose 403
+      # failed `apt-get update` on all three attempts (#5359); see
+      # scripts/aptWithoutMicrosoftFeed.sh. Any other apt failure stays fatal.
+      #
       # Limit: apt runs dpkg in its own session, which the group signal of
       # `timeout` does not reach. A cap that expires while dpkg is unpacking,
       # seconds after the downloads finish, can leave dpkg holding its lock
@@ -634,7 +646,7 @@ jobs:
       - name: Install Playwright browsers
         run: |
           for attempt in 1 2 3; do
-            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m node_modules/.bin/playwright install-deps chromium &&
+            if sudo env "PATH=$PATH" timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh node_modules/.bin/playwright install-deps chromium &&
               timeout --signal=KILL 3m pnpm exec playwright install chromium; then
               break
             fi
@@ -714,6 +726,9 @@ jobs:
       # retries three times with a 15s then 30s backoff; the last failure
       # still fails the step. Package list unchanged: libasound2-dev only.
       #
+      # As for the browser dependencies, apt reads every source except the
+      # image's standalone Microsoft product feed (#5359).
+      #
       # An apt run has hung until the job limit (#5072), and a hung attempt
       # never exits, so each one carries a deadline. `apt-get update` is the
       # slow part: the browser-dependency install above saw its apt phase take
@@ -730,7 +745,7 @@ jobs:
         run: |
           set -euo pipefail
           for attempt in 1 2 3; do
-            if sudo timeout --kill-after=15s 8m bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
+            if sudo timeout --kill-after=15s 8m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install -y libasound2-dev'; then
               exit 0
             fi
             printf 'ALSA header install failed (attempt %s/3)\n' "$attempt" >&2

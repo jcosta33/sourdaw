@@ -24,6 +24,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { BEAT_EPSILON, getTempoAtBeat, secondsBetweenBeats } from '../../models/TempoMap';
 import { type TransportState } from '../../models/TransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
+import { forgetHeldNoteExpression } from '../../services/heldNoteExpression';
 import { playheadClockRef } from '../../stores/playheadClockRef';
 import { playheadPositionRef } from '../../stores/playheadPositionRef';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
@@ -259,6 +260,9 @@ export function startPlayheadScheduler(): void {
     schedulerSession.scheduledFrozenTracks.clear();
     schedulerSession.lastLoopSeamAudioTime = null;
     stopActiveSources(schedulerSession.activeAudioSources, ctx);
+    // The expression changes the previous playback parked belong to notes that playback started: this one
+    // starts none of them, and would post them against whatever sounds at their beats.
+    forgetHeldNoteExpression();
 
     schedulerSession.lastTickTime = ctx.currentTime;
     schedulerSession.accumulatedPosition = state.playheadPosition;

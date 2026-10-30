@@ -207,6 +207,7 @@ vi.mock('#/infra/store/useStore', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({
+    activeRecordingRef: { current: [] },
     readMusicalRangeInputs: vi.fn(() => []),
     defaultTrackState: { tracks: [], selectedTrackId: null, ghostClips: [] },
     trackStore: mocks.trackStore,
@@ -717,6 +718,21 @@ describe('ExportDialog', () => {
             createClip({ id: 'clip-1', audioBufferId: 'buffer-1' }),
             createClip({ id: 'clip-2', audioBufferId: 'buffer-2' }),
         ]);
+    });
+
+    it('admits WAV reports only in Stems and refuses a mixed-format plan before picker or render', async () => {
+        render(<ExportDialog open={true} onClose={vi.fn()} />);
+        expect(screen.queryByRole('checkbox', { name: 'Include WAV loudness reports' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /slices/i }));
+        const reports = screen.getByRole('checkbox', { name: 'Include WAV loudness reports' });
+        expect(reports).not.toBeChecked();
+        fireEvent.click(reports);
+        fireEvent.click(screen.getByTestId('export-format-mp3'));
+        fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+        expect(await screen.findByText(/WAV loudness reports require Stems and WAV-only/)).toBeInTheDocument();
+        expect(mocks.selectNativeAudioExportDirectory).not.toHaveBeenCalled();
+        expect(mocks.restoreCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(mocks.exportStems).not.toHaveBeenCalled();
     });
 
     it('exports Podcast RSS MP3 with real audio and Unicode tags to the native file', async () => {
@@ -1666,12 +1682,6 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
         };
 
-        const holdRender = <TValue,>(setReturnValue: (promise: Promise<TValue>) => void) => {
-            const rendering = createDeferred<TValue>();
-            setReturnValue(rendering.promise);
-            return rendering;
-        };
-
         // The callbacks the dialog really handed the render: a late report goes through these.
         const renderCallbacks = (renderedWith: OfflineRenderOptions | undefined): RenderCallbacks => {
             const { onProgress, onWarning } = renderedWith ?? {};
@@ -1700,9 +1710,8 @@ describe('ExportDialog', () => {
 
         const cancelStemExportWhileRendering = async (): Promise<RenderCallbacks> => {
             setProjectTracks(stemTracks);
-            const rendering = holdRender<Map<string, AudioBuffer>>((promise) => {
-                mocks.exportStems.mockReturnValue(promise);
-            });
+            const rendering = createDeferred<Map<string, AudioBuffer>>();
+            mocks.exportStems.mockReturnValue(rendering.promise);
             startStemExport();
             return cancelRenderInFlight(
                 () => expect(mocks.exportStems).toHaveBeenCalledTimes(1),
@@ -1715,9 +1724,8 @@ describe('ExportDialog', () => {
         };
 
         const cancelMixdownWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>((promise) => {
-                mocks.renderOffline.mockReturnValue(promise);
-            });
+            const rendering = createDeferred<AudioBuffer>();
+            mocks.renderOffline.mockReturnValue(rendering.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
             return cancelRenderInFlight(
@@ -1731,9 +1739,8 @@ describe('ExportDialog', () => {
         };
 
         const cancelClipRenderWhileRendering = async (): Promise<RenderCallbacks> => {
-            const rendering = holdRender<AudioBuffer>((promise) => {
-                mocks.renderOffline.mockReturnValue(promise);
-            });
+            const rendering = createDeferred<AudioBuffer>();
+            mocks.renderOffline.mockReturnValue(rendering.promise);
             render(<ExportDialog open={true} onClose={vi.fn()} />);
             fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
             fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));

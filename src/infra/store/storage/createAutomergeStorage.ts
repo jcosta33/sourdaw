@@ -3,7 +3,7 @@ import { change, clone, getConflicts, type Doc } from '@automerge/automerge';
 import { logger } from '#/infra/logger/appLogger';
 
 import { reconcileCrdtSlot, type CrdtEntityIdentityByField, type CrdtSlotPresence } from './reconcileCrdtSlot';
-import { type StorageAdapter } from './types';
+import { type StorageAdapter, type StorageHydrateOptions } from './types';
 
 type AutomergeStorageDocId = string;
 
@@ -1631,6 +1631,20 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
         return authorityValue;
     };
 
+    const keepLocalRuntimeState = (
+        authorityValue: TData | null,
+        localValue: TData | null,
+        options: StorageHydrateOptions | undefined
+    ): TData | null => {
+        if (!options?.keepLocalRuntimeState || !projectCommittedLocalState) {
+            return authorityValue;
+        }
+        if (authorityValue === null || localValue === null) {
+            return authorityValue;
+        }
+        return projectCommittedLocalState({ authorityValue, localValue });
+    };
+
     const guardInboundValue = (value: TData | null, purpose: 'baseline' | 'visible'): TData | null => {
         if (!inboundProjector) {
             return value;
@@ -2460,7 +2474,7 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             };
         },
 
-        hydrate(): boolean {
+        hydrate(options?: StorageHydrateOptions): boolean {
             if (activeAutomergeStoragePreview) {
                 return false;
             }
@@ -2510,7 +2524,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                 );
                 const localSeed = cachedValue;
                 if (visiblePending) {
-                    const acceptedBaseline = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'baseline');
+                    const acceptedBaseline = keepLocalRuntimeState(
+                        guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'baseline'),
+                        localSeed,
+                        options
+                    );
                     if (
                         !isCurrentProjection() ||
                         pendingWritesByOwner.get(visiblePending.write.commitOwner) !== visiblePending ||
@@ -2558,7 +2576,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                         lastHydratedHeads = headsKey;
                         return true;
                     }
-                    const acceptedVisible = guardInboundValue(rebasedValue, 'visible');
+                    const acceptedVisible = keepLocalRuntimeState(
+                        guardInboundValue(rebasedValue, 'visible'),
+                        visiblePending.value,
+                        options
+                    );
                     if (!isCurrentVisibleProjection()) {
                         return false;
                     }
@@ -2587,7 +2609,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
                     visiblePending.value = acceptedVisible;
                     visiblePending.revision = cachedRevision;
                 } else {
-                    const acceptedValue = guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'visible');
+                    const acceptedValue = keepLocalRuntimeState(
+                        guardInboundValue(mergePartialAuthority(localSeed, crdtData), 'visible'),
+                        localSeed,
+                        options
+                    );
                     if (!isCurrentProjection()) {
                         return false;
                     }
@@ -2613,7 +2639,11 @@ export const createAutomergeStorage = <TData, TWriteMetadata = never>(
             // projection bridge, and bled the previous project's cache into a
             // fresh document.
             if (cachedValue !== null && hydrateMissing) {
-                const missingValue = guardInboundValue(toDocSafe(hydrateMissing()), 'visible');
+                const missingValue = keepLocalRuntimeState(
+                    guardInboundValue(toDocSafe(hydrateMissing()), 'visible'),
+                    cachedValue,
+                    options
+                );
                 if (!isCurrentProjection()) {
                     return false;
                 }

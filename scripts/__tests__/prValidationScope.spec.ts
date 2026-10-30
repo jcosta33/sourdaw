@@ -3,6 +3,7 @@ import {
     appendFileSync,
     chmodSync,
     cpSync,
+    existsSync,
     mkdtempSync,
     mkdirSync,
     readFileSync,
@@ -13,7 +14,7 @@ import {
     writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
@@ -116,6 +117,83 @@ describe('graph-backed browser selection', () => {
     });
 
     // Four planner invocations collect the real Playwright suite, alongside a direct list check.
+    it.each([
+        ['deletes', (git: (args: string[]) => string) => git(['rm', '--quiet', 'docs/retired.md'])],
+        ['renames', (git: (args: string[]) => string) => git(['mv', 'docs/retired.md', 'docs/moved.md'])],
+    ])(
+        'widens a module-only candidate when only the integration delta %s a path',
+        (_name, change) => {
+            const root = temporaryRoot();
+            const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
+            const crust = 'tests/e2e/crustCeilingTestId.spec.ts';
+            const specs = [SMOKE_SPEC, TUNER_SPECS[0], crust];
+            for (const path of [
+                source,
+                ...specs,
+                'scripts/e2eSuiteOwners.json',
+                'docs/retired.md',
+                'public/fixture.js',
+            ]) {
+                mkdirSync(join(root, path.slice(0, path.lastIndexOf('/'))), { recursive: true });
+            }
+            writeFileSync(join(root, source), 'export const TunerPanel = "needle";\n');
+            writeFileSync(join(root, 'docs/retired.md'), 'retired\n');
+            writeFileSync(join(root, 'public/fixture.js'), 'export const fixedAsset = true;\n');
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { baseUrl: '.' } }));
+            writeFileSync(
+                join(root, 'scripts/e2eSuiteOwners.json'),
+                JSON.stringify({
+                    version: 1,
+                    owners: ['Crust', 'Tuner'],
+                    entries: [
+                        { spec: TUNER_SPECS[0], owners: ['Tuner'] },
+                        { spec: crust, owners: ['Crust'] },
+                    ],
+                })
+            );
+            for (const spec of specs) {
+                writeFileSync(
+                    join(root, spec),
+                    `import { test, expect } from '@playwright/test';\ntest('${spec}', () => expect(true).toBe(true));\n`
+                );
+            }
+            fixturePlaywright(root);
+            writeFileSync(
+                join(root, 'playwright.config.mjs'),
+                "export default { testDir: './tests/e2e', projects: [{ name: 'chromium' }] };\n"
+            );
+            const git = (args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git(['init', '--quiet', '-b', 'trunk']);
+            git(['config', 'user.email', 'ci@example.invalid']);
+            git(['config', 'user.name', 'Scope test']);
+            git(['add', 'src', 'public', 'scripts', 'tests', 'docs', 'tsconfig.json']);
+            git(['commit', '--quiet', '-m', 'base']);
+            const base = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', '-b', 'feature']);
+            writeFileSync(join(root, source), 'export const TunerPanel = "strobe";\n');
+            git(['add', source]);
+            git(['commit', '--quiet', '-m', 'change tuner panel']);
+            const head = git(['rev-parse', 'HEAD']);
+            git(['checkout', '--quiet', 'trunk']);
+            change(git);
+            git(['commit', '--quiet', '-m', 'main moves a documentation path']);
+            git(['merge', '--quiet', '--no-ff', '-m', 'integration', 'feature']);
+            const output = join(root, 'github-output');
+            const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                cwd: root,
+                encoding: 'utf8',
+                env: { ...process.env, BASE_SHA: base, HEAD_SHA: head, GITHUB_OUTPUT: output },
+            });
+            expect(result.status, result.stderr).toBe(0);
+            const plan = JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                typeof selectValidationPlan
+            >;
+            expect(allSelected(plan)).toEqual([crust, TUNER_SPECS[0]].sort());
+            expect(plan.reasons.some((row) => row.reason.startsWith('affected feature owners'))).toBe(false);
+        },
+        60_000
+    );
+
     it('emits a narrowed immutable-head plan that Playwright collects as exact files', () => {
         const root = temporaryRoot();
         const source = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
@@ -287,8 +365,6 @@ const PR_4902_PATHS = [
     'scripts/trustedGithubWriteBootstrap.ts',
 ];
 const KNOWN_NODE_REVIEW_TOOLING = [
-    'scripts/checkStancesRecord.ts',
-    'scripts/__tests__/checkStancesRecord.spec.ts',
     'scripts/typesafeRequest.ts',
     'scripts/__tests__/typesafeRequest.spec.ts',
     'scripts/semanticReviewEvaluation.ts',
@@ -316,6 +392,7 @@ const REVIEW_REPAIR_TOOLING = [
 ];
 const NEW_REVIEW_TOOLING_PATHS = [
     'scripts/__tests__/agentDeliveryScripts.spec.ts',
+    'scripts/reviewApprovalLabel.ts',
     'scripts/reviewRiskPolicy.ts',
     'scripts/savedProjectStatePaths.ts',
     'scripts/trustedGithubWriteBootstrap.ts',
@@ -325,7 +402,6 @@ const REVIEW_HELPER_STEMS = [
     'reviewDossierChain',
     'reviewDossierPublication',
     'reviewDossierReassessed',
-    'reviewDossierSemanticAssessment',
     'reviewDossierViews',
     'reviewPublicationBinding',
     'reviewPublicationLegacyIncidents',
@@ -371,6 +447,13 @@ const SHARED_OR_BROWSER_OWNED_SCRIPTS = [
     'loopbackOpenAiProvider',
     'offlineAudioWorkletTrace',
 ];
+// The tooling unit suite excludes these specs, so they and every script they reach must plan broad.
+const RESOURCE_GUARD_SPECS = [
+    'scripts/__tests__/resourceGuard.spec.ts',
+    'scripts/__tests__/resourceGuardStorage.spec.ts',
+    'scripts/__tests__/resourceGuardShowOutput.spec.ts',
+];
+const RELATIVE_IMPORT = /(?:\bfrom|\bimport|\bvi\.mock)\s*\(?\s*['"](\.{1,2}\/[^'"]+)['"]/g;
 const folders: string[] = [];
 const callerTrace2Event = process.env.GIT_TRACE2_EVENT;
 
@@ -401,6 +484,34 @@ function fixturePlaywright(root: string): void {
 
 function fixtureBrowserCase(root: string, path: string): void {
     writeFileSync(join(root, path), "import { test } from '@playwright/test';\ntest('fixture', () => {});\n");
+}
+
+function resolveRelativeImport(importer: string, specifier: string): string {
+    const base = posix.join(posix.dirname(importer), specifier);
+    const candidates = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`];
+    const found = candidates.find((candidate) => /\.tsx?$/.test(candidate) && existsSync(resolve(candidate)));
+    if (found === undefined) {
+        throw new Error(`${importer} imports unresolved ${specifier}`);
+    }
+    return found;
+}
+
+function relativeImportClosure(roots: readonly string[]): string[] {
+    const reached = new Set<string>();
+    const pending = [...roots];
+    for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+        if (reached.has(path)) {
+            continue;
+        }
+        reached.add(path);
+        for (const [statement, specifier] of readFileSync(resolve(path), 'utf8').matchAll(RELATIVE_IMPORT)) {
+            if (specifier === undefined) {
+                throw new Error(`${path} import ${statement} captured no specifier`);
+            }
+            pending.push(resolveRelativeImport(path, specifier));
+        }
+    }
+    return [...reached].sort();
 }
 
 function allSelected(plan: ReturnType<typeof selectValidationPlan>): string[] {
@@ -810,6 +921,21 @@ describe('required affected verification', () => {
         }
     });
 
+    it('keeps every resource guard spec and the scripts it reaches off the tooling profile', () => {
+        const closure = relativeImportClosure(RESOURCE_GUARD_SPECS);
+        expect(closure).toEqual(
+            expect.arrayContaining([
+                ...RESOURCE_GUARD_SPECS,
+                'scripts/resourceGuard.ts',
+                'scripts/resourceGuardStorage.ts',
+                'scripts/pnpmModulesPreflight.ts',
+            ])
+        );
+        expect(closure.every((path) => path.startsWith('scripts/'))).toBe(true);
+        const toolingPaths = closure.filter((path) => selectValidationPlan([path], INVENTORY).profile !== 'broad');
+        expect(toolingPaths).toEqual([]);
+    });
+
     it.each([
         'scripts/reviewPublicationFuture.ts',
         'scripts/__tests__/agentDeliveryScriptsLookalike.spec.ts',
@@ -968,7 +1094,6 @@ describe('required affected verification', () => {
             })),
         });
         const nodePaths = [
-            'scripts/checkStancesRecord.ts',
             'scripts/typesafeRequest.ts',
             'scripts/semanticReview/evaluation/runEvaluation.ts',
             'scripts/semanticReview/evaluation/semanticEvaluationCorpus.json',

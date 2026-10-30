@@ -4148,8 +4148,10 @@ impl LevainBody {
     /// about.
     ///
     /// The value crosses as the raw 7-bit byte the wire carries, because that
-    /// is what `LevainEngine::handle_cc` reads: it divides by full scale and
-    /// compares against the switch threshold itself.
+    /// is what `LevainEngine::handle_cc` reads. The sustain mirror applies the
+    /// same nonzero-holds law the engine does, so the mirror is up exactly
+    /// while the instrument is deferring note-offs and a stop kills precisely
+    /// the voices a pedal at any nonzero position holds.
     ///
     /// No channel: the instrument's controller surface is per-instrument rather
     /// than per-member-channel, so there is nothing here for one to address.
@@ -4158,7 +4160,11 @@ impl LevainBody {
     /// state its constructor already sized.
     fn control_change(&mut self, event: MidiControlEvent) {
         if event.controller == CC_SUSTAIN_PEDAL {
-            self.sustain_held = event.value >= MIDI_SWITCH_THRESHOLD;
+            // Sustain is a continuous position, not a halfway latch: any
+            // nonzero value holds and only 0 lifts — the same law the engine
+            // itself applies (`LevainEngine::handle_cc`), so this mirror is
+            // up exactly while the instrument defers note-offs.
+            self.sustain_held = event.value > 0;
         }
         self.instance.handle_cc(event.controller, event.value);
     }
@@ -26955,15 +26961,11 @@ mod timeline_tests {
     /// enough past the edge for that fall to be decisive, and still inside the
     /// fixture's one-second sample, where the control render is sounding
     /// rather than out of recording.
-    #[test]
-    fn a_transport_stop_silences_a_pedalled_levain_body() {
+    fn assert_a_transport_stop_silences_a_pedalled_levain_body(pedal_down: u8) {
         const CALLBACK: usize = 256;
         const CALLBACKS: usize = 176;
         const RENDERED: usize = CALLBACK * CALLBACKS;
         const RUNS_PER_CALLBACK: usize = CALLBACK / LEVAIN_RUN_FRAMES;
-        /// The pedal press, above [`MIDI_SWITCH_THRESHOLD`] and spelled here
-        /// so the fixture states the byte the wire carries.
-        const PEDAL_DOWN: u8 = 127;
         /// Where the key is let go, into a pedal that defers the release.
         const RELEASE_CALLBACK: usize = 2;
         const RELEASE_RUN: usize = RELEASE_CALLBACK * RUNS_PER_CALLBACK;
@@ -26989,12 +26991,13 @@ mod timeline_tests {
         const DECISIVE: f32 = 10.0;
 
         /// The hosted programme, with the edge taken at [`EDGE_CALLBACK`] or
-        /// not taken at all.
-        fn render(stops: bool) -> (Vec<f32>, Vec<f32>) {
+        /// not taken at all. A `fn` item captures nothing, so the byte under
+        /// test crosses as a parameter.
+        fn render(stops: bool, pedal_down: u8) -> (Vec<f32>, Vec<f32>) {
             let mut harness = Harness::new(32);
             track_with_levain(&mut harness, LEVAIN_TRACK, LEVAIN_ID);
             harness.playing();
-            harness.send(levain_control(CC_SUSTAIN_PEDAL, PEDAL_DOWN));
+            harness.send(levain_control(CC_SUSTAIN_PEDAL, pedal_down));
             harness.send(GraphCommand::SendMidiNote(
                 LEVAIN_ID,
                 levain_hit(LEVAIN_SPEC_NOTE, 0, 0),
@@ -27019,7 +27022,7 @@ mod timeline_tests {
 
         let (killed_left, killed_right) = render_levain_reference(RENDERED, |run, instance| {
             if run == 0 {
-                instance.handle_cc(CC_SUSTAIN_PEDAL, PEDAL_DOWN);
+                instance.handle_cc(CC_SUSTAIN_PEDAL, pedal_down);
                 instance.note_on_with_channel(LEVAIN_SPEC_NOTE, LEVAIN_SPEC_VELOCITY, 0);
             }
             if run == RELEASE_RUN {
@@ -27032,8 +27035,8 @@ mod timeline_tests {
                 instance.all_notes_off();
             }
         });
-        let (hosted_left, hosted_right) = render(true);
-        let (control_left, _control_right) = render(false);
+        let (hosted_left, hosted_right) = render(true, pedal_down);
+        let (control_left, _control_right) = render(false, pedal_down);
 
         assert!(
             rms(&hosted_left[BEFORE]) > 0.0,
@@ -27064,6 +27067,21 @@ mod timeline_tests {
             "the hosted right channel is not the signal a stop that kills and keeps the pedal \
              renders"
         );
+    }
+
+    #[test]
+    fn a_transport_stop_silences_a_pedalled_levain_body() {
+        assert_a_transport_stop_silences_a_pedalled_levain_body(127);
+    }
+
+    /// The same stop against a pedal parked at a partial position: CC64=63 is
+    /// a held position under the nonzero-holds law the engine and this mirror
+    /// share, so the stop must still find the mirror up and kill the deferred
+    /// release. A `>= 64` mirror reads this pedal as up and leaves the body
+    /// ringing past the stop.
+    #[test]
+    fn a_transport_stop_silences_a_levain_body_pedalled_at_a_partial_position() {
+        assert_a_transport_stop_silences_a_pedalled_levain_body(63);
     }
 
     /// A hosted Levain takes a pedal, a strike, a deferred release, the pedal
