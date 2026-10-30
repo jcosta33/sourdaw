@@ -255,20 +255,20 @@ locally at other lanes' expense.
 
 ## Checks
 
-| Need                                              | Command or evidence                                  |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
-| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
-| Focused format                                    | `pnpm format <changed-files>`                        |
-| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
-| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
-| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
-| Generate one affected WASM package                | that package's own `wasm:*` script                   |
-| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
-| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
-| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
-| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
-| Restamp a dependency bump                         | `pnpm release:restamp`                               |
+| Need                                                                                     | Command or evidence                          |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Focused tests                                                                            | `pnpm test:run <changed-spec>`               |
+| Focused E2E diagnostic                                                                   | `pnpm test:e2e <spec>`                       |
+| Focused format                                                                           | `pnpm format <changed-files>`                |
+| Focused Rust tests                                                                       | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format                                                                      | `pnpm cargo:fmt --package <crate>`           |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI                              |
+| Generate one affected WASM package                                                       | that package's own `wasm:*` script           |
+| Rewrite WASM manifest after generation                                                   | `pnpm wasm:manifest`                         |
+| Verify generated WASM surface                                                            | `pnpm wasm:verify` after generation          |
+| Restamp the wasm surface                                                                 | `pnpm release:restamp:wasm`                  |
+| Restamp a tracked set                                                                    | `pnpm release:restamp:tracked-set`           |
+| Restamp a dependency bump                                                                | `pnpm release:restamp`                       |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 

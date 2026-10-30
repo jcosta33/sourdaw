@@ -84,8 +84,8 @@ pub async fn arm_retrospective_capture(
     Ok(())
 }
 
-/// Stop retrospective retention. Capture-callback writes keep nothing until
-/// the next arm.
+/// Stop retrospective retention and release its input holder. Capture remains
+/// open only while a take still needs it.
 ///
 /// Clears the recorded arm, so no later engine boot arms anything, and
 /// disarms the running engine when there is one. Answers `Ok` either way.
@@ -199,6 +199,17 @@ mod tests {
                 "devices": [],
                 "honorMuted": true,
                 "contributesAudio": true,
+            }],
+        })
+    }
+
+    fn parked_transport_batch() -> Value {
+        json!({
+            "schemaVersion": 1,
+            "commands": [{
+                "kind": "set-transport",
+                "playing": false,
+                "positionSeconds": 0,
             }],
         })
     }
@@ -369,6 +380,51 @@ mod tests {
 
         assert_eq!(armed_target(&state), None);
         assert_eq!(recorded(&state), None);
+        apply(&state, parked_transport_batch());
+        assert_eq!(
+            armed_target(&state),
+            None,
+            "a later batch cannot reacquire the arm"
+        );
+
+        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
+            .expect("a fresh arm after release resolves");
+        assert_eq!(armed_target(&state), Some(resolved_native_id(&state)));
+        block_on_test(disarm_retrospective_capture(&state)).expect("the fresh arm releases");
+        assert_eq!(armed_target(&state), None);
+        assert_eq!(recorded(&state), None);
+    }
+
+    #[test]
+    fn a_disarm_during_a_take_clears_the_arm_without_reapplying_it() {
+        let state = AppState::default();
+        let _commands = boot_capture_engine(&state);
+        apply(&state, one_strip_batch());
+        state
+            .engine
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .register_capture_consumer(7)
+            .expect("the take holds input");
+        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
+            .expect("the arm shares the take's input");
+
+        block_on_test(disarm_retrospective_capture(&state)).expect("the disarm resolves");
+
+        assert_eq!(recorded(&state), None);
+        assert_eq!(armed_target(&state), None);
+        apply(&state, parked_transport_batch());
+        assert_eq!(armed_target(&state), None);
+        state
+            .engine
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .unregister_capture_consumer(7)
+            .expect("the take releases its own holder");
     }
 
     #[test]
@@ -387,6 +443,9 @@ mod tests {
         let state = Arc::new(AppState::default());
         let _commands = boot_capture_engine(&state);
         apply(&state, one_strip_batch());
+        block_on_test(arm_retrospective_capture(STRIP.to_string(), 2, &state))
+            .expect("the old session already owns an arm");
+        assert_eq!(armed_target(&state), Some(resolved_native_id(&state)));
 
         let held_graph = state
             .graph

@@ -110,6 +110,43 @@ function formatSeconds(atMs: number | null): string {
     return atMs === null ? 'never' : `+${(atMs / 1000).toFixed(1)}s`;
 }
 
+function formatBootStages(timeline: FirstPaintTimeline): string {
+    const progress = first_paint_boot_progress(timeline);
+    return [
+        `Vite client connected ${formatSeconds(progress.viteConnectedAtMs)}`,
+        `React first render ${formatSeconds(progress.reactFirstRenderAtMs)}`,
+        `WASM booted ${formatSeconds(progress.wasmBootedAtMs)}`,
+        `[capabilities] (bootstrap complete) ${formatSeconds(progress.capabilitiesLoggedAtMs)}`,
+    ].join('; ');
+}
+
+function formatConsoleTail(timeline: FirstPaintTimeline): string {
+    const tail = timeline.events.slice(-CONSOLE_TAIL_LENGTH).map((event) => event.text);
+    return tail.length > 0
+        ? `Console tail:\n${tail.map((line) => `  ${line}`).join('\n')}`
+        : 'The page logged no console messages.';
+}
+
+export type FirstPaintFailureDiagnosisInput = {
+    timeline: FirstPaintTimeline;
+    elapsedMs: number;
+    underlyingMessage: string;
+};
+
+/** Evidence for a warmup failure that does not claim every failure was a timeout. */
+export function format_first_paint_failure_diagnosis({
+    timeline,
+    elapsedMs,
+    underlyingMessage,
+}: FirstPaintFailureDiagnosisInput): string {
+    return [
+        `First-paint warmup failed after ${Math.round(elapsedMs)}ms.`,
+        `Boot progress from the page console since navigation: ${formatBootStages(timeline)}.`,
+        formatConsoleTail(timeline),
+        `Underlying error: ${underlyingMessage}`,
+    ].join('\n');
+}
+
 export type FirstPaintTimeoutDiagnosisInput = {
     timeline: FirstPaintTimeline;
     timeoutMs: number;
@@ -130,21 +167,12 @@ export function format_first_paint_timeout_diagnosis({
     underlyingMessage,
 }: FirstPaintTimeoutDiagnosisInput): string {
     const progress = first_paint_boot_progress(timeline);
-    const stages = [
-        `Vite client connected ${formatSeconds(progress.viteConnectedAtMs)}`,
-        `React first render ${formatSeconds(progress.reactFirstRenderAtMs)}`,
-        `WASM booted ${formatSeconds(progress.wasmBootedAtMs)}`,
-        `[capabilities] (bootstrap complete) ${formatSeconds(progress.capabilitiesLoggedAtMs)}`,
-    ];
-    const tail = timeline.events.slice(-CONSOLE_TAIL_LENGTH).map((event) => event.text);
 
     return [
         `The launch screen did not mount within ${timeoutMs}ms (the wait consumed ${Math.round(waitedMs)}ms).`,
-        `Boot progress from the page console since navigation: ${stages.join('; ')}.`,
+        `Boot progress from the page console since navigation: ${formatBootStages(timeline)}.`,
         `The wait most likely measured ${stalledStageLabel(progress)} rather than a warm launch-screen mount.`,
-        tail.length > 0
-            ? `Console tail:\n${tail.map((line) => `  ${line}`).join('\n')}`
-            : 'The page logged no console messages.',
+        formatConsoleTail(timeline),
         `Underlying Playwright error: ${underlyingMessage}`,
     ].join('\n');
 }

@@ -6,8 +6,8 @@ Assembled records use hash-pinned metadata from the lock-resolved install plus c
 Generation fails when configured records are missing or inconsistent.
 
 Source graph digests:
-- Cargo.lock sha256:eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563
-- pnpm-lock.yaml sha256:91105e8ae10deea87aa3f0ff558b8d5f82e519b3da849a09531bb6cf7330f6a6
+- Cargo.lock sha256:7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6
+- pnpm-lock.yaml sha256:98cd4e79ec2aa237a937142f3fd3608e8f1a8277bc984af1cf0c8aae12988321
 - server/package-lock.json sha256:d04ebe31f27acb854fda988a3245708b33b5eeb917cadf4970dcabd8c2dcdfef
 
 Package inventory: 353 npm, 319 Cargo

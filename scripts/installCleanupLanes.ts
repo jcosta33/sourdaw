@@ -183,6 +183,13 @@ export function refreshCleanupLauncher(port: CleanupInstallationPort, commit: st
     }
 }
 
+function assertExclusiveCleanupLog(path: string): void {
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) {
+        throw new Error('cleanup log path is not an exclusive regular file');
+    }
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -232,11 +239,7 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
         throw new Error('cleanup runtime directory is not inside the primary checkout');
     }
     for (const name of ['worker.log', 'worker-error.log']) {
-        const path = join(directory, name);
-        const stat = lstatSync(path, { throwIfNoEntry: false });
-        if (stat !== undefined && (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1)) {
-            throw new Error('cleanup log path is not an exclusive regular file');
-        }
+        assertExclusiveCleanupLog(join(directory, name));
     }
     const runtime = join(runtimes, `${commit}-${randomUUID()}`);
     mkdirSync(join(runtime, 'scripts'), { recursive: true, mode: 0o700 });
