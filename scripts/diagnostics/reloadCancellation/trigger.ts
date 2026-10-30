@@ -2,6 +2,26 @@ import { openSync, closeSync, writeFileSync } from 'node:fs';
 
 import { recordOf, requiredText } from './journal.ts';
 
+export function admitExecutionParent(event: unknown, rawCommit: string, expectedParent: string | undefined): void {
+    const before = recordOf(event, 'event').before;
+    // Raw commit metadata retains parents even at actions/checkout's shallow boundary.
+    const header = rawCommit.split('\n\n')[0] ?? '';
+    const firstParent = header
+        .split('\n')
+        .find((line) => line.startsWith('parent '))
+        ?.slice(7);
+    if (
+        !expectedParent ||
+        !/^[0-9a-f]{40}$/.test(expectedParent) ||
+        before !== expectedParent ||
+        firstParent !== expectedParent
+    ) {
+        throw new Error(
+            'Native observation is frozen or event.before/actual first parent differs from the published preparation head'
+        );
+    }
+}
+
 export function admitHostedAttempt(
     event: unknown,
     env: NodeJS.ProcessEnv,

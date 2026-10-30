@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 
 import { ORIGINAL_SPEC, PRIVATE_DIRECTORY, WRAPPER } from './identity.ts';
+import { requiredText } from './journal.ts';
 
 import type { PlaywrightTestConfig } from '@playwright/test';
 
@@ -54,6 +55,18 @@ export function configureDiagnostic(
     }
     return {
         ...original,
+        use: observing
+            ? {
+                  ...original.use,
+                  launchOptions: {
+                      ...original.use?.launchOptions,
+                      executablePath: requiredText(
+                          process.env.RELOAD_DIAGNOSTIC_BROWSER_WRAPPER,
+                          'qualified browser wrapper'
+                      ),
+                  },
+              }
+            : original.use,
         testDir: resolve(root, 'tests/e2e'),
         globalSetup: resolve(root, 'tests/e2e/firstPaintWarmup.ts'),
         projects,

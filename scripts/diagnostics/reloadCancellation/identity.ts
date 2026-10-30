@@ -7,6 +7,9 @@ export const ORIGINAL_BROWSER = '153.0.8010.12';
 export const ORIGINAL_PLAYWRIGHT = '1.63.0';
 export const WRAPPER = 'tests/e2e/test-results/reloadCancellation/zzPersistedClip.diagnostic.spec.ts';
 export const PRIVATE_DIRECTORY = 'test-results/reloadCancellation/harness';
+// Set to the verified published preparation head only in the single enable commit.
+// Its successor (including the freeze commit) cannot satisfy the same event.before.
+export const NATIVE_EXECUTION_PARENT: string | undefined = undefined;
 
 // Frozen selectors from run40908733061 attempt1, rather than a fresh affected-plan calculation.
 export const ORIGINAL_SELECTORS = [

@@ -3,20 +3,22 @@ import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { assertCompletedHistory, historicalCases, parseHistoryEvents } from './history.ts';
-import { ORIGINAL_NODE, ORIGINAL_PLAYWRIGHT } from './identity.ts';
+import { NATIVE_EXECUTION_PARENT, ORIGINAL_NODE, ORIGINAL_PLAYWRIGHT } from './identity.ts';
 import { requiredText, writeReceipt } from './journal.ts';
 import { materializeHarness } from './materialize.ts';
+import { qualifyNativeTracing, runAfterNativeQualification } from './nativePreflight.ts';
 import { runPhase } from './processPhase.ts';
 import { qualifyExecution } from './qualification.ts';
 import { diagnosticArguments, diagnosticEnvironment, qualifyOriginalHistory } from './qualify.ts';
 import { assertOriginalSource, gitRead, installedPlaywrightVersion } from './sourceBinding.ts';
-import { admitHostedAttempt, claimExecution } from './trigger.ts';
+import { admitExecutionParent, admitHostedAttempt, claimExecution } from './trigger.ts';
 
 export async function runHostedDiagnostic(harness: string, root: string, output: string): Promise<number> {
     mkdirSync(output, { recursive: true });
     const event: unknown = JSON.parse(readFileSync(requiredText(process.env.GITHUB_EVENT_PATH, 'event path'), 'utf8'));
     const head = gitRead(harness, ['rev-parse', 'HEAD']);
     admitHostedAttempt(event, process.env, process.platform, head);
+    admitExecutionParent(event, gitRead(harness, ['cat-file', '-p', 'HEAD']), NATIVE_EXECUTION_PARENT);
     claimExecution(resolve(output, 'execution-claimed.json'), {
         harnessHead: head,
         runId: process.env.GITHUB_RUN_ID,
@@ -39,14 +41,24 @@ export async function runHostedDiagnostic(harness: string, root: string, output:
     const prepared = materializeHarness(root);
     writeReceipt(resolve(output, 'phase-state.json'), { phase: 'collection', executionAttempted: false });
     await qualifyOriginalHistory(root, output, prepared);
-    const env = { ...diagnosticEnvironment(root, output), RELOAD_DIAGNOSTIC_PHASE: 'run' };
-    writeReceipt(resolve(output, 'phase-state.json'), { phase: 'execution', executionAttempted: true });
-    const code = await runPhase(
-        root,
-        diagnosticArguments(root, prepared.config, undefined, true),
-        env,
-        resolve(output, 'run'),
-        60 * 60 * 1_000
+    writeReceipt(resolve(output, 'phase-state.json'), { phase: 'native-qualification', executionAttempted: false });
+    const code = await runAfterNativeQualification(
+        () => qualifyNativeTracing(root, output, prepared.directory),
+        async (wrapper) => {
+            const env = {
+                ...diagnosticEnvironment(root, output),
+                RELOAD_DIAGNOSTIC_PHASE: 'run',
+                RELOAD_DIAGNOSTIC_BROWSER_WRAPPER: wrapper,
+            };
+            writeReceipt(resolve(output, 'phase-state.json'), { phase: 'execution', executionAttempted: true });
+            return runPhase(
+                root,
+                diagnosticArguments(root, prepared.config, undefined, true),
+                env,
+                resolve(output, 'run'),
+                60 * 60 * 1_000
+            );
+        }
     );
     const qualification = qualifyExecution(root, output, code);
     const qualified = Object.values(qualification).every((check) => check.observed);

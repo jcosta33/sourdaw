@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 
 import { assertRuntimeOrder, assertRuntimePrefix, historicalCases, parseHistoryEvents } from './history.ts';
 import { recordOf } from './journal.ts';
+import { qualifyNativeEvidence } from './nativeEvidence.ts';
 import { assertOriginalSource } from './sourceBinding.ts';
 import { assertSuccessfulAppCoverage, assertTelemetryHealth, telemetryOutcomes } from './telemetry.ts';
 
@@ -64,6 +65,7 @@ export function qualifyExecution(root: string, output: string, childCode: number
             .filter(Boolean)
             .map((line) => recordOf(JSON.parse(line) as unknown, path));
     return {
+        native: observe(() => qualifyNativeEvidence(output)),
         source: observe(() => assertOriginalSource(root)),
         prefix: observe(() => {
             const events = runtime();

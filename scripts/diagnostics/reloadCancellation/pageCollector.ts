@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { observeBrowserDocument } from './browserSignals.ts';
 import { ORIGINAL_BROWSER } from './identity.ts';
 import { createJournal, recordOf, requiredText, writeReceipt, type RecordObservation } from './journal.ts';
+import { linuxIdentity, observeRendererIdentities } from './rendererIdentity.ts';
 import { createWebSocketObserver, WEBSOCKET_EVENTS } from './websocket.ts';
 
 import type { Browser, BrowserContext, CDPSession, Page } from '@playwright/test';
@@ -139,6 +140,24 @@ async function sampleBrowserProcesses(browser: Browser, record: RecordObservatio
         try {
             const processes: unknown = await root.send('SystemInfo.getProcessInfo');
             record('browser-processes', processes);
+            const entries = recordOf(processes, 'browser processes').processInfo;
+            if (Array.isArray(entries)) {
+                for (const value of entries) {
+                    const entry = recordOf(value, 'native browser process');
+                    if (entry.type !== 'browser' || typeof entry.id !== 'number') continue;
+                    try {
+                        const identity = linuxIdentity(
+                            entry.id,
+                            Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid'))
+                        );
+                        if (!identity.owned || identity.namespace !== identity.observerNamespace)
+                            throw new Error('Native browser namespace/ownership unproved');
+                        record('browser-native-identity', { identity });
+                    } catch (error) {
+                        record('browser-native-identity-unknown', { pid: entry.id, reason: String(error) });
+                    }
+                }
+            }
         } catch (error) {
             record('browser-process-observation-unknown', String(error));
         } finally {
@@ -208,6 +227,12 @@ export async function attachPassiveObservations(
     const websocket = createWebSocketObserver(record, profile === 'full');
     const counts: Record<string, number> = {};
     const errors: string[] = [];
+    const settleRendererMappings = await observeRendererIdentities(
+        browser,
+        session,
+        Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid')),
+        record
+    );
     for (const name of PASSIVE_EVENTS) {
         session.on(name, (payload: unknown) => {
             counts[name] = (counts[name] ?? 0) + 1;
@@ -278,6 +303,16 @@ export async function attachPassiveObservations(
     }
     page.once('close', () => {
         stop();
+        void settleRendererMappings()
+            .then((mappings) =>
+                writeReceipt(resolve(output, 'renderer-mapping-health.json'), { mappings, observed: mappings > 0 })
+            )
+            .catch((error: unknown) =>
+                writeReceipt(resolve(output, 'renderer-mapping-health.json'), {
+                    observed: false,
+                    unknown: String(error),
+                })
+            );
         writeReceipt(resolve(output, 'collector-health.json'), {
             counts,
             errors,

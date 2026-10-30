@@ -72,6 +72,19 @@ jobs:
           } > "$RUNNER_TEMP/reload-cancellation/runtime.txt"
           test "$(node --version)" = v24.19.0
           test "$(pnpm --version)" = 11.6.0
+          # Inspect the pinned image first; add only strace to this disposable
+          # container if absent. No upgrades, ptrace privilege or seccomp changes.
+          if ! test -x /usr/bin/strace; then
+            printf 'strace absent from pinned image; installing only strace\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
+            (cd harness && bash scripts/aptWithoutMicrosoftFeed.sh --deadline 3m -- bash -c 'apt-get update && apt-get install --no-install-recommends --no-upgrade -y strace')
+          else
+            printf 'strace already present in pinned image\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
+          fi
+          {
+            /usr/bin/strace --version
+            dpkg-query -W strace
+            sha256sum /usr/bin/strace
+          } > "$RUNNER_TEMP/reload-cancellation/strace-provenance.txt"
 
       - name: Install original dependencies
         working-directory: original
