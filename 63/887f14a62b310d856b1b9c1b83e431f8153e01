@@ -1,0 +1,20 @@
+tests/e2e/exportFilePickerCapture.spec.ts
+  h_beb54bf43b47b7 1-137
+tests/e2e/exportFilePickerCapture.ts
+  h_beb54bf43b47b7 10-11,32-91,123,216-228,231-237,262-268
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 2,9,393-412
+tests/e2e/tempoSourceTimeAcceptance.spec.ts
+  h_beb54bf43b47b7 3,18,561-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63887f14a62b310d856b1b9c1b83e431f8153e01",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
