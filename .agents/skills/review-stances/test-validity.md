@@ -1935,6 +1935,19 @@ mutable document as well as the immutable root: proxy identity is not an ownersh
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
 
+### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+
+A forged export manifest test created its key by opening and dropping a registry before opening it
+again for authentication. A deliberately retained duplicate of that setup lock made the required
+`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
+reached authentication on the same manifest and victim bytes. The original CI error was not printed,
+so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+
+Build the private key and directory directly when the obligation is manifest authentication; call the
+production registry once and include the actual error in the assertion. Preserve the victim and
+manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
+bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
@@ -2186,15 +2199,21 @@ solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-e
 validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
 mock-only solo handler case is not this proof.
 
-### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+### Bootstrap transport and activation probes need an observed phase
 
-A forged export manifest test created its key by opening and dropping a registry before opening it
-again for authentication. A deliberately retained duplicate of that setup lock made the required
-`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
-reached authentication on the same manifest and victim bytes. The original CI error was not printed,
-so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+PR #4222 (`120c9e2b418`) introduced the setup action implicated in #5806; PR #5464
+(`eded998aebf`) introduced push checks' Corepack-producer and later Node/cache-consumer route.
+Historical private prompts and tiers remain unknown. Public workflow-shape approval does not
+establish whether those execution-boundary probes ran; the mechanical coverage obligation is to
+observe the actual selected-engine verifier and the final caller after PATH changes.
 
-Build the private key and directory directly when the obligation is manifest authentication; call the
-production registry once and include the actual error in the assertion. Preserve the victim and
-manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
-bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+Require canonical-origin wire observations and a producer-backed phase witness after environment
+resolution completes. Full-metadata Accept headers can belong to resolution too, and a global
+mock can be bypassed by a custom dispatcher; zero observed requests proves no transport claim.
+Keep a real authenticated target positive control. Selected-package timeout, missing or bad
+signature, substituted installed integrity, corrupt bytes and truncated streams must fail before
+activation or success outputs. The old-release counterfactual must complete resolution and fail
+specifically on unused-engine signature verification, not missing fixture dependencies or a
+generic fetch failure. Allow legitimate native resolution metadata without claiming it executes.
+Remove launcher-ownership admission, composite preparation and the target-version gate separately;
+the original focused checks must reject each mutation while their baseline controls pass.
