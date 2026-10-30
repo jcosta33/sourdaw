@@ -330,10 +330,15 @@ describe('Command action-history replay integration', () => {
         expect(actionHistoryStore.value?.entries[0]?.id).toBe(initial_entry_id);
         expect(getActionReplayStatus(initial_entry_id)).toEqual({ status: 'ready' });
 
-        for (let index = 1; index <= 200; index += 1) {
-            await executeAppAction({ type: 'setSnapValue', payload: { value: index } });
-        }
+        const eviction_actions: SetSnapValueAction[] = Array.from({ length: 200 }, (_, index) => ({
+            type: 'setSnapValue',
+            payload: { value: index + 1 },
+        }));
+        await expect(executeAppActionBatch(eviction_actions)).resolves.toMatchObject({ status: 'committed' });
 
+        expect(executed_actions.slice(1)).toEqual(
+            eviction_actions.map(({ payload }) => `setSnapValue:${payload.value}`)
+        );
         expect(actionHistoryStore.value?.entries).toHaveLength(200);
         expect(getActionReplayStatus(initial_entry_id)).toEqual({ status: 'unavailable' });
 
