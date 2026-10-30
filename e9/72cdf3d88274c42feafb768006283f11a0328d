@@ -1,0 +1,31 @@
+tests/e2e/punchRecordingClockWitness.ts
+  s_29d8df116c5b92::t_805bad64265e9b 32-44,55,72,140,143-150,156-192,196-197,421-422
+  s_29d8df116c5b92::t_8a5638c4024c19 52,137,366
+  s_29d8df116c5b92::t_aabc4ec367905c 127
+  s_29d8df116c5b92::t_c1be1a0ab25dbd 194-195
+tests/unit/punchRecordingClockWitness.spec.ts
+  s_29d8df116c5b92::t_aabc4ec367905c 1-48,57-208
+  s_29d8df116c5b92::t_6fd078a25dd0fe 49-56,209-303
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_29d8df116c5b92::t_c1be1a0ab25dbd 1362,1541-1545
+  s_29d8df116c5b92::t_4861b88bfe871b 759-767,769-771,791-794,797-806,808-813,815-816,818-819,826-834,837-870,1380-1386,1423,1548-1552,1557
+  s_29d8df116c5b92::t_8a5638c4024c19 768,772-790,795-796,807,814,817,820-825,835-836
+  s_29d8df116c5b92::t_bc447781e8fbe3 1546-1547
+  s_29d8df116c5b92::t_45d4fbe0b8059c 1553-1554
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e972cdf3d88274c42feafb768006283f11a0328d",
+  "prompts": {},
+  "sessions": {
+    "s_29d8df116c5b92": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b93-4f11-7ce2-ad27-35228470fc52",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
