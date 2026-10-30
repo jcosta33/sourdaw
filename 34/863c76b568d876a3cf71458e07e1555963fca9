@@ -1,0 +1,86 @@
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 400-403,943-960
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 3-22,924-946
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 330-341,504-507
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 3-17,585-598,623-626,2138-2164
+crates/daw-engine/src/lib.rs
+  h_beb54bf43b47b7 1656,2104-2235
+crates/sourdaw-native/src/commands/engine_retrospective.rs
+  h_beb54bf43b47b7 87-88,206-216,383-427,446-448
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 10,13,623,816
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 159-160,294-295,523,545-548,808-815
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  h_beb54bf43b47b7 62
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 118,138,258
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  h_beb54bf43b47b7 6,18,21-22,484,512-523,527-529,531,533,535-537,542-558,564-565,570,589-612,851,1047,1056,1130,1241,1309-1310,1382,1787,1976-2094,2300-2563
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  h_beb54bf43b47b7 8-9,12,19,102-165,284
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  h_beb54bf43b47b7 1-3,6-33,35,37,40-41,44,54-55,65-72,85-86,154-169,178,416-436,438-456,458-608,1119-1514
+src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts
+  h_beb54bf43b47b7 216,226-228,231-233,428-435,513-522,525,542-549
+src/modules/CommandInterface/useCases/commands/TrackCommands.ts
+  h_beb54bf43b47b7 1,3-7,126-128,130-190
+src/modules/CommandInterface/useCases/commands/__tests__/RenameCommands.spec.ts
+  h_beb54bf43b47b7 14,22-24,26
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommands.spec.ts
+  h_beb54bf43b47b7 8-9,14-22
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsDeep.spec.ts
+  h_beb54bf43b47b7 13-21,26-29,31-32,39-47,72-73,111-113,115-122,124-186
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  h_beb54bf43b47b7 1-709
+src/modules/CrdtDocument/repositories/__tests__/automergeRepository.rootInstallation.spec.ts
+  h_beb54bf43b47b7 1-324
+src/modules/CrdtDocument/repositories/automergeRepository.ts
+  h_beb54bf43b47b7 266-271,306,406-413,416,427-436,441,458-460,472-474,539-541,605-607,912-914,984,1155-1169,1172-1179,1182-1189,1191-1205,1212,1214-1234,1236,1238-1248,1258-1260,1276-1278,1291,1295,1344-1355
+src/modules/CrdtDocument/useCases/__tests__/captureProjectRootIdentity.spec.ts
+  h_beb54bf43b47b7 8-11,73-103,165,176-194
+src/modules/CrdtDocument/useCases/createCrdtDoc.ts
+  h_beb54bf43b47b7 1-2,8,14-18
+src/modules/CrdtDocument/useCases/index.ts
+  h_beb54bf43b47b7 63
+src/modules/CrdtDocument/useCases/subscribeToActiveRootInstallations.ts
+  h_beb54bf43b47b7 1-8
+src/modules/ElasticAudio/AGENTS.md
+  h_beb54bf43b47b7 28
+src/modules/ElasticAudio/presentations/views/ElasticEditorPanel.tsx
+  h_beb54bf43b47b7 39,109
+src/modules/ElasticAudio/presentations/views/__tests__/ElasticEditorPanel.spec.tsx
+  h_beb54bf43b47b7 27-31,65,116-118,134,268,288-307,511,535
+src/modules/ElasticAudio/presentations/views/__tests__/elasticLockedTransientMarkers.integration.spec.tsx
+  h_beb54bf43b47b7 1,10-17,23-29,41,43,45,62-68,122,125,170,178-280
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/resolveElasticEditorTarget.spec.ts
+  h_beb54bf43b47b7 1-54
+src/modules/ElasticAudio/useCases/elasticAudio/__tests__/setElasticSensitivity.spec.ts
+  h_beb54bf43b47b7 3-6,12,14,21,24-43,47-78,83-84,86,169-395
+src/modules/ElasticAudio/useCases/elasticAudio/elasticSensitivityDependencies.ts
+  h_beb54bf43b47b7 1-7
+src/modules/ElasticAudio/useCases/elasticAudio/resolveElasticEditorTarget.ts
+  h_beb54bf43b47b7 1-17
+src/modules/ElasticAudio/useCases/elasticAudio/setElasticSensitivity.ts
+  h_beb54bf43b47b7 1-3,6,11-12,16-18,20,22-28,30-40,42-49,51-60,62-64,66-67,69-161
+src/modules/ElasticAudio/useCases/index.ts
+  h_beb54bf43b47b7 13
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 101
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/AutomationLane.spec.tsx
+  h_beb54bf43b47b7 89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34863c76b568d876a3cf71458e07e1555963fca9",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
