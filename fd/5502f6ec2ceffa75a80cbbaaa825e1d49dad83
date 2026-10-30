@@ -1,0 +1,33 @@
+scripts/cleanupLanes.ts
+  s_4a92fcb4f3e922::t_0221f61269e9af 20
+  s_4a92fcb4f3e922::t_7ca128e3358adb 21-23
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_4a92fcb4f3e922::t_387f6529fe8678 193-251,253,255
+  s_4a92fcb4f3e922::t_dc7616e416952f 4,161-191
+  s_4a92fcb4f3e922::t_4022db0495f2c9 192
+  s_4a92fcb4f3e922::t_d23f55dff00752 252
+  s_4a92fcb4f3e922::t_22af6bee60967b 254
+  s_4a92fcb4f3e922::t_714855316112ff 256-258
+scripts/cleanupLaneBookkeeping.ts
+  s_4a92fcb4f3e922::t_0221f61269e9af 2-13,24-45,48,52,56,61
+  s_4a92fcb4f3e922::t_7480ed10c151c9 46-47
+  s_4a92fcb4f3e922::t_0c610013dcce18 49-51
+  s_4a92fcb4f3e922::t_c26695e4ecba84 53-55
+  s_4a92fcb4f3e922::t_b6eec654de5f98 57-60
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd5502f6ec2ceffa75a80cbbaaa825e1d49dad83",
+  "prompts": {},
+  "sessions": {
+    "s_4a92fcb4f3e922": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a188d4-5e00-7b41-a25f-393f9e294d9d",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
