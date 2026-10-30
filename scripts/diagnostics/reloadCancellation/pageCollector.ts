@@ -4,7 +4,8 @@ import { resolve } from 'node:path';
 import { observeBrowserDocument } from './browserSignals.ts';
 import { ORIGINAL_BROWSER } from './identity.ts';
 import { createJournal, recordOf, requiredText, writeReceipt, type RecordObservation } from './journal.ts';
-import { linuxIdentity, observeRendererIdentities } from './rendererIdentity.ts';
+import { observeRendererIdentities } from './rendererIdentity.ts';
+import { browserTraceBinding } from './traceBinding.ts';
 import { createWebSocketObserver, WEBSOCKET_EVENTS } from './websocket.ts';
 
 import type { Browser, BrowserContext, CDPSession, Page } from '@playwright/test';
@@ -129,7 +130,11 @@ async function observeAppSettlement(session: CDPSession, event: unknown, record:
     });
 }
 
-async function sampleBrowserProcesses(browser: Browser, record: RecordObservation): Promise<() => void> {
+async function sampleBrowserProcesses(
+    browser: Browser,
+    record: RecordObservation,
+    traceRoot: string
+): Promise<() => void> {
     const root = await browser.newBrowserCDPSession();
     let pending = false;
     const sample = async (): Promise<void> => {
@@ -146,13 +151,12 @@ async function sampleBrowserProcesses(browser: Browser, record: RecordObservatio
                     const entry = recordOf(value, 'native browser process');
                     if (entry.type !== 'browser' || typeof entry.id !== 'number') continue;
                     try {
-                        const identity = linuxIdentity(
-                            entry.id,
-                            Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid'))
+                        const traceBinding = browserTraceBinding(
+                            processes,
+                            Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid')),
+                            traceRoot
                         );
-                        if (!identity.owned || identity.namespace !== identity.observerNamespace)
-                            throw new Error('Native browser namespace/ownership unproved');
-                        record('browser-native-identity', { identity });
+                        record('browser-native-identity', { identity: traceBinding.browser, traceBinding });
                     } catch (error) {
                         record('browser-native-identity-unknown', { pid: entry.id, reason: String(error) });
                     }
@@ -231,7 +235,8 @@ export async function attachPassiveObservations(
         browser,
         session,
         Number(requiredText(process.env.RELOAD_DIAGNOSTIC_RUNNER_PID, 'runner pid')),
-        record
+        record,
+        resolve(output, 'native-traces')
     );
     for (const name of PASSIVE_EVENTS) {
         session.on(name, (payload: unknown) => {
@@ -295,7 +300,7 @@ export async function attachPassiveObservations(
     if (profile === 'full') {
         await page.addInitScript(observeBrowserDocument);
     }
-    const stop = await sampleBrowserProcesses(browser, record);
+    const stop = await sampleBrowserProcesses(browser, record, resolve(output, 'native-traces'));
     const limits = ['Absent events do not establish a cause; debugger and DOM observation can affect timing.'];
     if (profile === 'transport') {
         limits[0] =

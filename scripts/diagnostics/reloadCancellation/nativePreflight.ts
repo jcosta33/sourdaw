@@ -3,11 +3,14 @@ import { mkdirSync, readFileSync, readlinkSync, readdirSync, writeFileSync } fro
 import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { ORIGINAL_BROWSER } from './identity.ts';
 import { createJournal, recordOf, requiredText, writeReceipt } from './journal.ts';
 import { assertTraceControl, readNativeEvents, traceCommand } from './nativeTrace.ts';
+import { superviseNativeControl } from './nativeSupervisor.ts';
 import { linuxIdentity, observeRendererIdentities } from './rendererIdentity.ts';
+import { assertTraceBinding, type BrowserTraceBinding, type TraceInstance } from './traceBinding.ts';
 
 import type { AddressInfo } from 'node:net';
 
@@ -24,6 +27,14 @@ export async function runAfterNativeQualification(
 }
 
 export async function qualifyNativeTracing(root: string, output: string, runtime: string): Promise<string> {
+    return superviseNativeControl(
+        root,
+        ['exec', 'node', fileURLToPath(import.meta.url), root, output, runtime],
+        output
+    );
+}
+
+async function runNativeControls(root: string, output: string, runtime: string): Promise<string> {
     if (process.platform !== 'linux') throw new Error('Native trace qualification requires actual Linux');
     const directory = resolve(output, 'native-preflight');
     mkdirSync(directory, { recursive: true });
@@ -104,6 +115,7 @@ export async function qualifyNativeTracing(root: string, output: string, runtime
         );
     });
     const tracedPids = new Set<number>();
+    const bindings: BrowserTraceBinding[] = [];
     await new Promise<void>((done) => server.listen(0, '127.0.0.1', done));
     try {
         const browser = await chromium.launch({ executablePath: wrapper });
@@ -129,13 +141,20 @@ export async function qualifyNativeTracing(root: string, output: string, runtime
             const context = await browser.newContext();
             const page = await context.newPage();
             const session = await context.newCDPSession(page);
-            const settled = await observeRendererIdentities(browser, session, process.pid, (kind, data) => {
-                record(kind, data);
-                if (kind === 'page-renderer-identity') {
-                    const identity = recordOf(recordOf(data, 'renderer mapping').identity, 'renderer identity');
-                    if (typeof identity.pid === 'number') tracedPids.add(identity.pid);
-                }
-            });
+            const settled = await observeRendererIdentities(
+                browser,
+                session,
+                process.pid,
+                (kind, data) => {
+                    record(kind, data);
+                    if (kind === 'page-renderer-identity') {
+                        const identity = recordOf(recordOf(data, 'renderer mapping').identity, 'renderer identity');
+                        if (typeof identity.pid === 'number') tracedPids.add(identity.pid);
+                        bindings.push(recordOf(data, 'renderer mapping').traceBinding as BrowserTraceBinding);
+                    }
+                },
+                resolve(output, 'run/native-traces')
+            );
             await page.goto(`http://127.0.0.1:${(server.address() as AddressInfo).port}/`, { timeout: 15_000 });
             if (
                 (await page.evaluate(() => Reflect.get(globalThis, 'nativeTraceScriptLoaded'))) !== true ||
@@ -159,6 +178,8 @@ export async function qualifyNativeTracing(root: string, output: string, runtime
     );
     if (capture.complete !== true || capture.partialLine !== false || capture.droppedEvents !== 0)
         throw new Error('Native browser control tail is incomplete');
+    if (!bindings.length) throw new Error('Native browser control trace instance was not bound');
+    for (const binding of bindings) assertTraceBinding(binding, capture.traceInstance as TraceInstance);
     const nativeEvents = readNativeEvents(trace);
     for (const pid of tracedPids) {
         if (!nativeEvents.some((event) => event.pid === pid && event.kind === 'exit' && event.code === 0))
@@ -172,4 +193,24 @@ export async function qualifyNativeTracing(root: string, output: string, runtime
         advisoryOnly: true,
     });
     return wrapper;
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+    const [root, output, runtime] = process.argv.slice(2);
+    try {
+        await runNativeControls(
+            requiredText(root, 'source root'),
+            requiredText(output, 'output root'),
+            requiredText(runtime, 'materialized runtime')
+        );
+    } catch (error) {
+        if (output)
+            writeReceipt(resolve(output, 'native-preflight/control-failure.json'), {
+                observed: false,
+                appExecutionAdmitted: false,
+                unknown: String(error),
+            });
+        process.stderr.write(`${String(error)}\n`);
+        process.exitCode = 1;
+    }
 }

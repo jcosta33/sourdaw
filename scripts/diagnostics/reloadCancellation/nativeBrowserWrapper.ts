@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 
-import { requiredText } from './journal.ts';
-import { traceCommand } from './nativeTrace.ts';
+import { requiredText, writeReceipt } from './journal.ts';
+import { preserveNativeTermination, traceCommand } from './nativeTrace.ts';
 
 const [executable, output, ...args] = process.argv.slice(2);
 const result = await traceCommand(
@@ -11,4 +11,16 @@ const result = await traceCommand(
     true
 );
 // Playwright closes through its unchanged debugging pipes, then owns group cleanup.
-process.exitCode = result.code ?? 1;
+preserveNativeTermination(result, {
+    signal: (signal) => {
+        process.kill(process.pid, signal);
+    },
+    code: (code) => {
+        process.exitCode = code;
+    },
+    unknown: () =>
+        writeReceipt(
+            resolve(requiredText(output, 'trace directory'), `browser-${process.pid}/termination-unknown.json`),
+            { unknown: 'Neither native numeric status nor signal was observed' }
+        ),
+});

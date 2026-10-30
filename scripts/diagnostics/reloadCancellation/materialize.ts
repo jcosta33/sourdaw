@@ -23,6 +23,8 @@ const RUNTIME_FILES = [
     'nativeBrowserWrapper.ts',
     'nativeControl.ts',
     'rendererIdentity.ts',
+    'linuxProcessIdentity.ts',
+    'traceBinding.ts',
     'serverObserver.ts',
     'viteTransportProbe.ts',
     'original-history.json',

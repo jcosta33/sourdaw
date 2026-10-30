@@ -25,7 +25,8 @@ export async function runPhase(
     args: string[],
     env: NodeJS.ProcessEnv,
     output: string,
-    timeoutMs: number
+    timeoutMs: number,
+    beforeStop?: (pid: number) => void
 ): Promise<number> {
     mkdirSync(output, { recursive: true });
     const record = createJournal(resolve(output, 'process.jsonl'));
@@ -64,6 +65,13 @@ export async function runPhase(
         const stop = (): void => {
             if (!stopping) {
                 stopping = true;
+                if (beforeStop && child.pid) {
+                    try {
+                        beforeStop(child.pid);
+                    } catch (error) {
+                        record('owned-detached-cleanup-unknown', String(error));
+                    }
+                }
                 signalGroup('SIGTERM');
                 escalation = setTimeout(() => signalGroup('SIGKILL'), 5_000);
             }

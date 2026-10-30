@@ -16,10 +16,11 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 
 import { writeReceipt } from './journal.ts';
+import { linuxIdentity } from './linuxProcessIdentity.ts';
 
 // Explicit syscall allowlist: no execve, environment, file contents or network payloads.
 export const TRACE_SYSCALLS =
-    'wait4,waitid,exit,exit_group,kill,tgkill,mmap,mprotect,munmap,mremap,brk,madvise,pkey_mprotect';
+    'wait4,waitid,exit,exit_group,kill,tgkill,mmap,mprotect,munmap,mremap,brk,madvise,pkey_mprotect,clone,clone3,fork,vfork';
 const RAW_LIMIT = 8 * 1024 * 1024;
 const TAIL_LIMIT = 256 * 1024;
 const EVENT_LIMIT = 100_000;
@@ -31,6 +32,7 @@ export type NativeEvent = {
     detail: string;
     code?: number;
     signal?: string;
+    childPid?: number;
 };
 
 export function parseNativeLine(line: string): NativeEvent | undefined {
@@ -42,6 +44,10 @@ export function parseNativeLine(line: string): NativeEvent | undefined {
     if (exited) return { ...base, kind: 'exit', code: Number(exited[1]) };
     const killed = /^\+\+\+ killed by (SIG[A-Z0-9]+)(?: \(core dumped\))? \+\+\+$/.exec(detail);
     if (killed) return { ...base, kind: 'signal-exit', signal: killed[1] };
+    if (/^(?:clone|clone3|fork|vfork)\(|^<\.\.\. (?:clone|clone3|fork|vfork) resumed>/.test(detail)) {
+        const child = / = ([1-9][0-9]*)$/.exec(detail);
+        return { ...base, kind: 'process-creation', ...(child ? { childPid: Number(child[1]) } : {}) };
+    }
     if (/^(?:mmap|mprotect|munmap|mremap|brk|madvise|pkey_mprotect)\(/.test(detail) && / = -1 [A-Z0-9]+/.test(detail)) {
         return { ...base, kind: 'memory-syscall-failure' };
     }
@@ -79,6 +85,22 @@ export function assertTraceControl(
     }
 }
 
+export function preserveNativeTermination(
+    result: { code: number | null; signal: NodeJS.Signals | null },
+    ports: { signal: (signal: NodeJS.Signals) => void; code: (code: number) => void; unknown: () => void }
+): void {
+    if (result.signal) {
+        ports.signal(result.signal);
+        return;
+    }
+    if (result.code !== null) {
+        ports.code(result.code);
+        return;
+    }
+    ports.unknown();
+    ports.code(1);
+}
+
 export async function traceCommand(
     command: string,
     args: string[],
@@ -113,9 +135,19 @@ export async function traceCommand(
         ['-f', '-q', '-ttt', '-e', `trace=${TRACE_SYSCALLS}`, '-o', fifo, '--', command, ...args],
         {
             stdio: browserPipes ? [0, 1, 2, 3, 4] : ['ignore', 'inherit', 'inherit'],
-            detached: !browserPipes,
+            detached: false,
         }
     );
+    if (!child.pid) throw new Error('Native tracer PID unavailable');
+    const traceInstance = {
+        wrapper: linuxIdentity(process.pid, process.pid),
+        tracer: linuxIdentity(child.pid, process.pid),
+    };
+    writeReceipt(resolve(output, 'capture.json'), {
+        complete: false,
+        traceInstance,
+        unknown: 'Native capture has not reached its terminal EOF',
+    });
     let total = 0;
     let retained = 0;
     let tail = Buffer.alloc(0);
@@ -125,17 +157,6 @@ export async function traceCommand(
     let streamEnded = false;
     let streamError: string | undefined;
     let spawnError: string | undefined;
-    let timedOut = false;
-    const deadline = browserPipes
-        ? undefined
-        : setTimeout(() => {
-              timedOut = true;
-              try {
-                  if (child.pid) process.kill(-child.pid, 'SIGKILL');
-              } catch (error) {
-                  streamError = String(error);
-              }
-          }, 20_000);
     const drained = new Promise<void>((done) => {
         stream.once('end', done);
         stream.once('error', () => done());
@@ -176,7 +197,6 @@ export async function traceCommand(
         });
         child.once('close', (code, signal) => done({ code, signal }));
     });
-    if (deadline) clearTimeout(deadline);
     closeSync(anchor);
     await drained;
     unlinkSync(fifo);
@@ -184,9 +204,9 @@ export async function traceCommand(
     writeFileSync(resolve(output, 'raw-tail.log'), tail);
     writeReceipt(resolve(output, 'capture.json'), {
         tracerPid: child.pid,
+        traceInstance,
         tracerResult: result,
-        complete: streamEnded && !streamError && !spawnError && !timedOut,
-        timedOut,
+        complete: streamEnded && !streamError && !spawnError,
         partialLine: partial.length !== 0,
         streamError,
         spawnError,
@@ -201,6 +221,7 @@ export async function traceCommand(
             'Missing terminal records remain unknown.',
             'SIGTRAP does not establish OOM.',
             'brk can fail without errno; raw trace remains necessary.',
+            'Creation records retain TIDs and clone flags for offline interpretation; unmatched TIDs remain unknown.',
         ],
     });
     return result;

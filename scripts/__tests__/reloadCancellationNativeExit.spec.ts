@@ -1,15 +1,26 @@
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { resolve } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
 import { runAfterNativeQualification } from '../diagnostics/reloadCancellation/nativePreflight';
-import { assertTraceControl, parseNativeLine, TRACE_SYSCALLS } from '../diagnostics/reloadCancellation/nativeTrace';
+import { joinNativeMapping } from '../diagnostics/reloadCancellation/nativeEvidence';
+import { superviseNativeControl } from '../diagnostics/reloadCancellation/nativeSupervisor';
+import {
+    assertTraceControl,
+    parseNativeLine,
+    preserveNativeTermination,
+    TRACE_SYSCALLS,
+} from '../diagnostics/reloadCancellation/nativeTrace';
 import { admitExecutionParent } from '../diagnostics/reloadCancellation/trigger';
 import {
     assertRendererIdentity,
+    createRendererAssociations,
     rendererPid,
     type ProcessIdentity,
 } from '../diagnostics/reloadCancellation/rendererIdentity';
+import type { BrowserTraceBinding } from '../diagnostics/reloadCancellation/traceBinding';
 
 const capture = { complete: true, partialLine: false, droppedEvents: 0 };
 const identity: ProcessIdentity = {
@@ -22,8 +33,228 @@ const identity: ProcessIdentity = {
 };
 const types = new Map([[320, 'renderer']]);
 const script = { type: 'Script', requestId: '320.7', frameId: 'actual-frame', loaderId: 'actual-loader' };
+const binding: BrowserTraceBinding = {
+    traceName: 'browser-200',
+    wrapper: { ...identity, pid: 200, parent: 100, start: '80000' },
+    tracer: { ...identity, pid: 300, parent: 200, start: '80001' },
+    browser: { ...identity, pid: 310, parent: 300, start: '80002' },
+};
 
 describe('reload diagnostic native evidence negative controls', () => {
+    it('validates a thousand same-association Scripts once, including while its CDP query is pending', async () => {
+        const records: Array<{ kind: string; data: unknown }> = [];
+        let finish!: (value: unknown) => void;
+        const processes = vi.fn(
+            () =>
+                new Promise<unknown>((done) => {
+                    finish = done;
+                })
+        );
+        let start = identity.start;
+        const readIdentity = vi.fn((pid: number) => ({ ...identity, pid, start }));
+        const bind = vi.fn(() => binding);
+        const observer = createRendererAssociations(100, (kind, data) => records.push({ kind, data }), {
+            identity: readIdentity,
+            processes,
+            binding: bind,
+        });
+        observer.frame({ id: script.frameId, loaderId: script.loaderId });
+        for (let index = 0; index < 1000; index++) observer.request({ ...script, requestId: `320.${index}` });
+        expect(processes).toHaveBeenCalledTimes(1);
+        expect(readIdentity).toHaveBeenCalledTimes(1);
+        finish({ processInfo: [{ id: 320, type: 'renderer' }] });
+        expect(await observer.settle()).toBe(1);
+        expect(readIdentity).toHaveBeenCalledTimes(2);
+        expect(bind).toHaveBeenCalledTimes(1);
+        expect(records.filter((record) => record.kind === 'page-renderer-identity')).toHaveLength(1);
+        processes.mockImplementation(async () => ({ processInfo: [{ id: 320, type: 'renderer' }] }));
+        start = '92816';
+        observer.frame({ id: script.frameId, loaderId: 'next-loader' });
+        for (let index = 0; index < 1000; index++)
+            observer.request({ ...script, loaderId: 'next-loader', requestId: `320.${index}` });
+        expect(await observer.settle()).toBe(2);
+        expect(processes).toHaveBeenCalledTimes(2);
+        expect(readIdentity).toHaveBeenCalledTimes(4);
+        expect(records.filter((record) => record.kind === 'renderer-pid-reuse')).toHaveLength(1);
+        processes.mockImplementation(async () => ({ processInfo: [{ id: 321, type: 'renderer' }] }));
+        for (let index = 0; index < 1000; index++)
+            observer.request({ ...script, loaderId: 'next-loader', requestId: `321.${index}` });
+        expect(await observer.settle()).toBe(3);
+        expect(processes).toHaveBeenCalledTimes(3);
+        expect(readIdentity).toHaveBeenCalledTimes(6);
+    });
+
+    it('records a failed or missed association once without retrying on its script burst', async () => {
+        const record = vi.fn();
+        const processes = vi.fn(async () => {
+            throw new Error('CDP unavailable');
+        });
+        const readIdentity = vi.fn(() => identity);
+        const observer = createRendererAssociations(100, record, {
+            identity: readIdentity,
+            processes,
+            binding: () => binding,
+        });
+        observer.frame({ id: script.frameId, loaderId: script.loaderId });
+        for (let index = 0; index < 1000; index++) observer.request({ ...script, requestId: `320.${index}` });
+        expect(await observer.settle()).toBe(0);
+        expect(processes).toHaveBeenCalledTimes(1);
+        expect(record).toHaveBeenCalledTimes(1);
+        for (let index = 0; index < 1000; index++)
+            observer.request({ ...script, loaderId: 'missed-loader', requestId: `320.${index}` });
+        expect(await observer.settle()).toBe(0);
+        expect(processes).toHaveBeenCalledTimes(1);
+        expect(record).toHaveBeenCalledTimes(2);
+    });
+
+    it('never borrows a reused numeric PID terminal from another browser/tracer instance', () => {
+        const observation = { time: '1970-01-01T00:01:40.000Z', data: { identity, traceBinding: binding, ...script } };
+        const oldTrace = {
+            name: binding.traceName,
+            capture: { traceInstance: binding },
+            events: [{ pid: 320, timestamp: 101, kind: 'memory-syscall-failure', detail: 'mmap = -1 ENOMEM' }],
+        };
+        const otherBinding: BrowserTraceBinding = {
+            ...binding,
+            traceName: 'browser-201',
+            wrapper: { ...binding.wrapper, pid: 201 },
+            tracer: { ...binding.tracer, pid: 301, parent: 201 },
+            browser: { ...binding.browser, pid: 311, parent: 301 },
+        };
+        const laterTrace = {
+            name: otherBinding.traceName,
+            capture: { traceInstance: otherBinding },
+            events: [{ pid: 320, timestamp: 102, kind: 'exit', code: 99, detail: 'later reused PID' }],
+        };
+        expect(joinNativeMapping(observation, [oldTrace, laterTrace])).toMatchObject({
+            terminal: { unknown: expect.any(String) },
+            failedMemorySyscalls: [],
+        });
+        const ownedExit = {
+            pid: 320,
+            timestamp: 103,
+            kind: 'signal-exit',
+            signal: 'SIGTRAP',
+            detail: 'owned terminal',
+        };
+        expect(
+            joinNativeMapping(observation, [{ ...oldTrace, events: [...oldTrace.events, ownedExit] }, laterTrace])
+        ).toMatchObject({ terminal: { signal: 'SIGTRAP' }, failedMemorySyscalls: [{ pid: 320, timestamp: 101 }] });
+        expect(
+            joinNativeMapping({ ...observation, data: { ...observation.data, traceBinding: undefined } }, [laterTrace])
+        ).toMatchObject({ terminal: { unknown: expect.any(String) } });
+        const wrongStart = {
+            ...oldTrace,
+            capture: { traceInstance: { ...binding, tracer: { ...binding.tracer, start: 'different-start' } } },
+        };
+        expect(joinNativeMapping(observation, [wrongStart, laterTrace])).toMatchObject({
+            terminal: { unknown: expect.any(String) },
+        });
+        const reusedInsideTrace = {
+            pid: 300,
+            timestamp: 102,
+            kind: 'process-creation',
+            childPid: 320,
+            detail: 'clone returned reused PID',
+        };
+        expect(
+            joinNativeMapping(observation, [
+                { ...oldTrace, events: [...oldTrace.events, reusedInsideTrace, ownedExit] },
+            ])
+        ).toMatchObject({ terminal: { unknown: expect.any(String) }, failedMemorySyscalls: [] });
+    });
+
+    it('bounds an unresponsive synthetic child and never admits original execution', async () => {
+        const output = mkdtempSync(resolve(tmpdir(), 'reload-native-supervisor-'));
+        const execute = vi.fn(async () => 0);
+        const ready = resolve(output, 'unresponsive-control-ready');
+        try {
+            await expect(
+                runAfterNativeQualification(
+                    () =>
+                        superviseNativeControl(
+                            process.cwd(),
+                            [
+                                'exec',
+                                'node',
+                                '-e',
+                                'require("node:fs").writeFileSync(process.argv[1],"ready");setInterval(()=>{},1000)',
+                                ready,
+                            ],
+                            output,
+                            1500
+                        ),
+                    execute
+                )
+            ).rejects.toThrow('failed or exceeded its deadline');
+            expect(execute).not.toHaveBeenCalled();
+            expect(readFileSync(ready, 'utf8')).toBe('ready');
+            const receipt = JSON.parse(
+                readFileSync(resolve(output, 'native-preflight-supervisor/qualification.json'), 'utf8')
+            ) as { observed: boolean; exit: { stopping: boolean } };
+            expect(receipt.observed).toBe(false);
+            expect(receipt.exit.stopping).toBe(true);
+        } finally {
+            rmSync(output, { recursive: true, force: true });
+        }
+    }, 20_000);
+
+    it.each([0, 7])('refuses a control exiting %i without actual Linux qualification proof', async (code) => {
+        const output = mkdtempSync(resolve(tmpdir(), 'reload-native-rejected-'));
+        const execute = vi.fn(async () => 0);
+        try {
+            await expect(
+                runAfterNativeQualification(
+                    () =>
+                        superviseNativeControl(
+                            process.cwd(),
+                            ['exec', 'node', '-e', `process.exit(${code})`],
+                            output,
+                            5000
+                        ),
+                    execute
+                )
+            ).rejects.toThrow('failed or exceeded its deadline');
+            expect(execute).not.toHaveBeenCalled();
+            expect(
+                JSON.parse(
+                    readFileSync(resolve(output, 'native-preflight-supervisor/qualification.json'), 'utf8')
+                ) as unknown
+            ).toMatchObject({ observed: false, childCode: code });
+        } finally {
+            rmSync(output, { recursive: true, force: true });
+        }
+    });
+
+    it('preserves the actual wrapper termination signal after capture instead of translating it to exit1', () => {
+        const signal = vi.fn();
+        const code = vi.fn();
+        const unknown = vi.fn();
+        preserveNativeTermination({ code: null, signal: 'SIGTRAP' }, { signal, code, unknown });
+        expect(signal).toHaveBeenCalledExactlyOnceWith('SIGTRAP');
+        expect(code).not.toHaveBeenCalled();
+        preserveNativeTermination({ code: 37, signal: null }, { signal, code, unknown });
+        expect(code).toHaveBeenCalledExactlyOnceWith(37);
+        preserveNativeTermination({ code: null, signal: null }, { signal, code, unknown });
+        expect(unknown).toHaveBeenCalledTimes(1);
+        expect(code).toHaveBeenLastCalledWith(1);
+    });
+
+    it.each([
+        ['clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD) = 321', 321],
+        ['clone3({flags=CLONE_VM|CLONE_THREAD, exit_signal=0}, 88) = 322', 322],
+        ['fork() = 323', 323],
+        ['vfork() = 324', 324],
+        ['clone(child_stack=NULL, flags=CLONE_VM|CLONE_THREAD <unfinished ...>', undefined],
+        ['<... clone resumed>) = 325', 325],
+        ['<... clone3 resumed>) = 326', 326],
+        ['<... fork resumed>) = 327', 327],
+        ['<... vfork resumed>) = 328', 328],
+    ])('retains creation flags/result or unfinished/resumed part: %s', (detail, childPid) => {
+        const event = parseNativeLine(`320 1793350000.123456 ${detail}`);
+        expect(event).toMatchObject({ pid: 320, kind: 'process-creation', detail });
+        expect(event?.childPid).toBe(childPid);
+    });
     it('admits only the first successor of the published preparation head, including shallow commit metadata', () => {
         const prepared = 'a'.repeat(40);
         const enabled = 'b'.repeat(40);
