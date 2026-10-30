@@ -25,7 +25,7 @@ import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelop
 import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
 import { undoStore } from '../stores/undoStore';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
@@ -431,11 +431,33 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type, refusal);
             }
 
+            const historyMetadata: ActionHistoryMetadata | null =
+                !options?.skipUndo && handler.undoable
+                    ? {
+                          id: command.envelope.commandId,
+                          label,
+                          actionKind: action.type,
+                          source: options?.source ?? 'manual',
+                          timestamp: command.envelope.issuedAt,
+                          groupId: historyGroupId,
+                          groupLabel: historyGroupLabel,
+                          reverted: false,
+                      }
+                    : null;
+            let evictedEntryIds: string[] = [];
+
             try {
                 registerHandlerCommitValidation(
                     storage_transaction,
                     execution_result?.commitValidation ? [execution_result.commitValidation] : []
                 );
+                // Durable bookkeeping shares the command's publication owner. Session
+                // Undo/replay authority is installed only after this commit succeeds.
+                storage_transaction.scope(() => {
+                    if (historyMetadata) {
+                        evictedEntryIds = actionHistoryMetadataPort.record(historyMetadata);
+                    }
+                });
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the
@@ -509,21 +531,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                    if (handler.undoable) {
+                    if (historyMetadata) {
                         const entry_id = command.envelope.commandId;
                         const inverse_action = undoResult?.inverseAction ?? null;
-                        const metadata = {
-                            id: entry_id,
-                            label,
-                            actionKind: action.type,
-                            source: options?.source ?? 'manual',
-                            timestamp: command.envelope.issuedAt,
-                            groupId: historyGroupId,
-                            groupLabel: historyGroupLabel,
-                            reverted: false,
-                        };
-                        const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
-                        for (const evicted_entry_id of evicted_entry_ids) {
+                        const metadata = historyMetadata;
+                        for (const evicted_entry_id of evictedEntryIds) {
                             revokeActionReplayCapability(evicted_entry_id);
                         }
                         if (inverse_action) {

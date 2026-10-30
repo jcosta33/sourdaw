@@ -363,7 +363,7 @@ describe('executeAppAction', () => {
             expect(onCommitted).not.toHaveBeenCalled();
             expect(afterCommit).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
             expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         } finally {
             releaseHandler?.();
@@ -1025,7 +1025,7 @@ describe('executeAppAction', () => {
         expect(storage.get()).toEqual({ tool: 'select' });
         expect(doc.editingTool).toEqual({ tool: 'select' });
         expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
     });
 
@@ -1085,7 +1085,7 @@ describe('executeAppAction', () => {
         expect(secondaryStorage.get()).toEqual({ value: 0 });
         expect(docs.secondary?.snap).toEqual({ value: 0 });
         expect(mocks.recordAction).not.toHaveBeenCalled();
-        expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+        expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         expect(onCommitted).not.toHaveBeenCalled();
     });
@@ -1377,7 +1377,7 @@ describe('executeAppAction', () => {
         expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
     });
 
-    it('should surface a committed error when metadata recording fails after handler execution', async () => {
+    it('aborts before publication when durable metadata preparation fails after handler execution', async () => {
         const action: SetSnapValueAction = { type: 'setSnapValue', payload: { value: 0.25 } };
         const metadata_failure = new Error('metadata failed');
         const doc: Record<string, unknown> = {};
@@ -1392,10 +1392,13 @@ describe('executeAppAction', () => {
             },
         });
         const storage = createAutomergeStorage<{ value: number }>('root', 'snap');
-        const handler = create_mock_handler<SetSnapValueAction>({
-            describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
-            execute: () => storage.set({ value: action.payload.value }),
-        });
+        const handler = {
+            ...create_mock_handler<SetSnapValueAction>({
+                describe: () => ({ label: 'Replayable', inverseAction: { type: 'togglePlayback' } }),
+                execute: () => storage.set({ value: action.payload.value }),
+            }),
+            requiresAbortCompensation: false,
+        };
         mocks.recordActionHistoryMetadata.mockImplementation(() => {
             throw metadata_failure;
         });
@@ -1403,15 +1406,15 @@ describe('executeAppAction', () => {
 
         const execution = executeAppAction(action);
 
-        await expect(execution).rejects.toBeInstanceOf(AppActionCommittedError);
+        await expect(execution).rejects.toBe(metadata_failure);
         expect(handler.execute).toHaveBeenCalledTimes(1);
         expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(1);
         expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         const reported_error = mocks.logger.error.mock.calls.at(-1)?.[0];
-        expect(reported_error).toBeInstanceOf(AppActionCommittedError);
+        expect(reported_error?.message).toBe('Action storage commit failed for action: setSnapValue');
         expect(reported_error?.cause).toBe(metadata_failure);
-        expect(doc.snap).toEqual({ value: 0.25 });
-        expect(mutations).toHaveLength(1);
+        expect(doc.snap).toBeUndefined();
+        expect(mutations).toHaveLength(0);
     });
 
     // Dispatch-ordering invariant. `executeAppAction` documents that, for an

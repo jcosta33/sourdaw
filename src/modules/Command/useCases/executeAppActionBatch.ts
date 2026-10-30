@@ -471,9 +471,35 @@ function compensateAttemptedBatch(
     );
 }
 
-function recordCommittedBatch(
+function prepareBatchHistoryMetadata(
     preparedActions: readonly PreparedBatchAction[],
     options: ExecuteOptions | undefined
+): ReadonlyMap<string, ActionHistoryMetadata> {
+    const entries = new Map<string, ActionHistoryMetadata>();
+    for (const { action, description, envelope, handler, label } of preparedActions) {
+        if (options?.skipUndo || !handler.undoable || description === null) {
+            continue;
+        }
+        const groupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
+        entries.set(envelope.commandId, {
+            id: envelope.commandId,
+            label,
+            actionKind: action.type,
+            source: options?.source ?? 'manual',
+            timestamp: envelope.issuedAt,
+            groupId,
+            groupLabel: groupId ? options?.groupLabel : undefined,
+            reverted: false,
+        });
+    }
+    return entries;
+}
+
+function recordCommittedBatch(
+    preparedActions: readonly PreparedBatchAction[],
+    options: ExecuteOptions | undefined,
+    metadataByCommandId: ReadonlyMap<string, ActionHistoryMetadata>,
+    evictedEntryIds: readonly string[]
 ): void {
     if (!options?.skipMacroRecording) {
         for (const { action } of preparedActions) {
@@ -525,7 +551,7 @@ function recordCommittedBatch(
         undoEntry: ReturnType<typeof createUndoEntry>;
     }> = [];
     for (const prepared of historyActions) {
-        const { action, description, envelope, handler, label } = prepared;
+        const { action, description, envelope, handler } = prepared;
         if (!description) {
             throw new Error(`Missing history description for ${action.type}`);
         }
@@ -562,16 +588,10 @@ function recordCommittedBatch(
             }
         }
         const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
-        const metadata: ActionHistoryMetadata = {
-            id: entryId,
-            label,
-            actionKind: action.type,
-            source: options?.source ?? 'manual',
-            timestamp: envelope.issuedAt,
-            groupId: historyGroupId,
-            groupLabel: historyGroupLabel,
-            reverted: false,
-        };
+        const metadata = metadataByCommandId.get(entryId);
+        if (!metadata) {
+            throw new Error(`Missing staged history metadata for ${action.type}`);
+        }
         const undoEntry = createUndoEntry(
             description.label,
             action,
@@ -590,7 +610,6 @@ function recordCommittedBatch(
         return;
     }
 
-    const evictedEntryIds = actionHistoryMetadataPort.recordBatch(historyUnit.map(({ metadata }) => metadata));
     registerActionReplayCapabilities(
         historyUnit.flatMap(({ metadata, inverseAction }) =>
             inverseAction ? [{ entryId: metadata.id, inverseAction, metadata }] : []
@@ -1024,9 +1043,16 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
             const committedActions = executedActions.map(({ requestedAction }) => requestedAction);
             const captureActions = executedActions.map(({ action }) => action);
             const executedBatchActions = executedActions.map(createExecutedBatchAction);
+            const historyMetadata = prepareBatchHistoryMetadata(executedActions, options);
+            let evictedEntryIds: string[] = [];
 
             try {
                 storageTransaction.scope(() => {
+                    // History metadata is durable command state; replay and Undo
+                    // capabilities remain unpublished until the commit succeeds.
+                    if (historyMetadata.size > 0) {
+                        evictedEntryIds = actionHistoryMetadataPort.recordBatch([...historyMetadata.values()]);
+                    }
                     const pendingEffects = executedActions.flatMap((executed): PendingPostCommitEffect[] =>
                         executed.afterCommit ? [getPreparedPendingPostCommitEffect(executed)] : []
                     );
@@ -1112,7 +1138,7 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                 for (const executed of executedActions) {
                     executed.commitValidation?.afterPublication?.();
                 }
-                recordCommittedBatch(executedActions, options);
+                recordCommittedBatch(executedActions, options, historyMetadata, evictedEntryIds);
             } catch (error) {
                 const warning = failureReason(error);
                 logger.error(new Error('Action batch history recording failed after commit', { cause: error }));

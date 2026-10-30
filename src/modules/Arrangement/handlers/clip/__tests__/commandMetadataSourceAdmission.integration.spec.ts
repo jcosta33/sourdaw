@@ -22,6 +22,7 @@ import { clearHandlerRegistry, macroStore, undoHistoryStore } from '#/modules/Co
 import {
     clearUndoHistory,
     executeAppAction,
+    executeAppActionBatch,
     redo,
     registerProductionCommandHandlers,
     resetActionReplayAuthority,
@@ -235,6 +236,49 @@ describe('completed command metadata and audio source admission', () => {
         ]);
         return { firstId: clips[0].id, secondId: clips[1].id };
     }
+
+    it.each([false, true])('freezes an implicit removal with real metadata and ripple=%s', async (ripple) => {
+        const { firstId, secondId } = await deleteMiddle();
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+        const before = sourceOwners();
+        await executeAppAction({ type: 'removeClip', payload: { clipId: firstId } });
+        const entry = undoHistoryStore.value?.past.at(-1);
+        expect(entry).toMatchObject({ redoAction: { type: 'removeClip', payload: { clipId: firstId, ripple } } });
+        const forward = sourceOwners();
+        expect(forward.tracks[0]?.clips).toMatchObject([
+            { id: secondId, startBeat: ripple ? 0 : 2, endBeat: ripple ? 4 : 6 },
+        ]);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(sourceOwners()).toEqual(before);
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+        await redo();
+        expect(sourceOwners()).toEqual(forward);
+    });
+
+    it.each([false, true])('freezes an atomic grouped removal with real metadata and ripple=%s', async (ripple) => {
+        const { firstId, secondId } = await deleteMiddle();
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
+        const before = sourceOwners();
+        expect(
+            await executeAppActionBatch([{ type: 'removeClip', payload: { clipId: firstId } }], {
+                groupId: 'atomic-removal-mode',
+                source: 'prompt',
+            })
+        ).toMatchObject({ status: 'committed' });
+        expect(undoHistoryStore.value?.past.at(-1)).toMatchObject({
+            groupId: 'atomic-removal-mode',
+            redoAction: { type: 'removeClip', payload: { clipId: firstId, ripple } },
+        });
+        const forward = sourceOwners();
+        expect(forward.tracks[0]?.clips).toMatchObject([
+            { id: secondId, startBeat: ripple ? 0 : 2, endBeat: ripple ? 4 : 6 },
+        ]);
+        expect((await undo()).headConsumed).toBe(true);
+        expect(sourceOwners()).toEqual(before);
+        workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: !ripple });
+        await redo();
+        expect(sourceOwners()).toEqual(forward);
+    });
 
     it('replays a registered grouped ripple removal and adjacent-sample split with exact raw and projected owners', async () => {
         const { firstId, secondId } = await deleteMiddle();

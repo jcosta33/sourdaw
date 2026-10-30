@@ -620,7 +620,7 @@ describe('executeAppActionBatch', () => {
             expect(document).toHaveProperty('tracks.tracks.0.clips', [initialClip]);
             expect(afterCommit).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
             expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         } finally {
             releaseHandler?.();
