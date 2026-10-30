@@ -213,6 +213,7 @@ type ComplexBin = { real: number; imaginary: number };
 let browserPromise: Promise<Browser | null> | null = null;
 let pagePromise: Promise<Page | null> | null = null;
 let launchFailure: string | null = null;
+let renderBrowser: { version: string; launch: 'bundled' | 'channel:chrome' } | null = null;
 
 /**
  * Launch one Chromium for the whole file: the bundled Playwright browser,
@@ -222,10 +223,14 @@ let launchFailure: string | null = null;
 function launchOnce(): Promise<Browser | null> {
     browserPromise ??= (async () => {
         try {
-            return await chromium.launch();
+            const browser = await chromium.launch();
+            renderBrowser = { version: browser.version(), launch: 'bundled' };
+            return browser;
         } catch {
             try {
-                return await chromium.launch({ channel: 'chrome' });
+                const browser = await chromium.launch({ channel: 'chrome' });
+                renderBrowser = { version: browser.version(), launch: 'channel:chrome' };
+                return browser;
             } catch (error) {
                 launchFailure = error instanceof Error ? error.message : String(error);
                 return null;
@@ -420,6 +425,14 @@ function magnitudeOf(bin: ComplexBin): number {
     return Math.hypot(bin.real, bin.imaginary);
 }
 
+function peakMagnitude(signal: readonly number[]): number {
+    let peak = 0;
+    for (const sample of signal) {
+        peak = Math.max(peak, Math.abs(sample));
+    }
+    return peak;
+}
+
 /** Normalised single-bin DFT magnitude over `[from, to)`; a sine reads its peak. */
 function binMagnitude(signal: readonly number[], frequency: number, from: number, to: number): number {
     return magnitudeOf(complexBin(signal, frequency, from, to));
@@ -497,11 +510,19 @@ describe('createDeEsser real OfflineAudioContext renders', () => {
         const expectedReal = inputBin.real - weight * bandBin.real;
         const expectedImaginary = inputBin.imaginary - weight * bandBin.imaginary;
         const residual = Math.hypot(outputBin.real - expectedReal, outputBin.imaginary - expectedImaginary);
-        expect(residual / magnitudeOf(inputBin)).toBeLessThan(0.01);
+        const attenuationDb = gainToDb(magnitudeOf(outputBin) / magnitudeOf(inputBin));
+        // Prepare every figure before the first assertion so a residual failure
+        // retains the vectors and browser that distinguish the possible causes.
+        const diagnostic =
+            `Range=-12 dB; browser=${JSON.stringify(renderBrowser)}; ` +
+            `inputBin=(${inputBin.real}, ${inputBin.imaginary}); bandBin=(${bandBin.real}, ${bandBin.imaginary}); ` +
+            `outputBin=(${outputBin.real}, ${outputBin.imaginary}); expectedBin=(${expectedReal}, ${expectedImaginary}); ` +
+            `normalizedResidual=${residual / magnitudeOf(inputBin)}; attenuationDb=${attenuationDb}; ` +
+            `peaks(input, band, output)=(${peakMagnitude(control)}, ${peakMagnitude(band)}, ${peakMagnitude(device)})`;
+        expect(residual / magnitudeOf(inputBin), diagnostic).toBeLessThan(0.01);
         // And the musician's reading of it: the band-centred tone drops by
         // exactly the declared 12 dB (a reduction reads as a negative gain).
-        const attenuationDb = gainToDb(magnitudeOf(outputBin) / magnitudeOf(inputBin));
-        expect(attenuationDb).toBeCloseTo(-12, 1);
+        expect(attenuationDb, diagnostic).toBeCloseTo(-12, 1);
     }, 30_000);
 
     it('reduces a fully engaged band by exactly the declared Range at −30', async (ctx) => {
@@ -517,8 +538,14 @@ describe('createDeEsser real OfflineAudioContext renders', () => {
         const expectedReal = inputBin.real - weight * bandBin.real;
         const expectedImaginary = inputBin.imaginary - weight * bandBin.imaginary;
         const residual = Math.hypot(outputBin.real - expectedReal, outputBin.imaginary - expectedImaginary);
-        expect(residual / magnitudeOf(inputBin)).toBeLessThan(0.01);
         const attenuationDb = gainToDb(magnitudeOf(outputBin) / magnitudeOf(inputBin));
-        expect(attenuationDb).toBeCloseTo(-30, 1);
+        const diagnostic =
+            `Range=-30 dB; browser=${JSON.stringify(renderBrowser)}; ` +
+            `inputBin=(${inputBin.real}, ${inputBin.imaginary}); bandBin=(${bandBin.real}, ${bandBin.imaginary}); ` +
+            `outputBin=(${outputBin.real}, ${outputBin.imaginary}); expectedBin=(${expectedReal}, ${expectedImaginary}); ` +
+            `normalizedResidual=${residual / magnitudeOf(inputBin)}; attenuationDb=${attenuationDb}; ` +
+            `peaks(input, band, output)=(${peakMagnitude(control)}, ${peakMagnitude(band)}, ${peakMagnitude(device)})`;
+        expect(residual / magnitudeOf(inputBin), diagnostic).toBeLessThan(0.01);
+        expect(attenuationDb, diagnostic).toBeCloseTo(-30, 1);
     }, 30_000);
 });
