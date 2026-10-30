@@ -2973,7 +2973,7 @@
     "jobs": {
       "diagnose": {
         "name": "Diagnose original reload cancellation",
-        "if": "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.event.before == 'c1deb856de3d68ceb19f5a5be9c37aa351dd575c' && github.run_attempt == 1 }}",
+        "if": "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.event.pull_request.head.sha == '6b976fed8ef8996084ae5b3819e53a0036b4fca5' && github.run_attempt == 1 }}",
         "runs-on": "ubuntu-latest",
         "container": {
           "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
