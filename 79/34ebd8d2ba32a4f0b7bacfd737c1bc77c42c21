@@ -1,0 +1,155 @@
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentWorkflowFixture.ts
+  s_55244eb93b97d1::t_8be1a57befc427 4,148,197-200,203,309-310,314
+.agents/skills/review-stances/correctness.md
+  s_55244eb93b97d1::t_558d75c00cee88 60-71,976-1015
+.agents/skills/review-stances/moving-coordinate-inverses.md
+  s_55244eb93b97d1::t_ebd536ca3f05f5 119-139
+.agents/skills/review-stances/project-integrity.md
+  s_55244eb93b97d1::t_3ca761a938f2ad 935-953
+.agents/skills/review-stances/test-validity.md
+  s_55244eb93b97d1::t_1686c4d6bd9dba 1970-1982,2229-2269,2314-2322
+crates/sourdaw-native/src/commands/filesystem/mod.rs
+  s_55244eb93b97d1::t_c70c14fc164b88 2629-2631,2648-2649
+evidence/agent-campaign/corpora/development.json
+  s_55244eb93b97d1::t_4a7b4f7df5f90a 22,2744-3056
+evidence/agent-campaign/corpora/fixture-project.json
+  s_55244eb93b97d1::t_bbe6dcf97a766c 360-365,389-394,418-423,447-452,549-554,571-576,593-598
+evidence/agent-campaign/corpora/held-out.json
+  s_55244eb93b97d1::t_23c00f5126fa7f 22,2701-3005
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_f44d725eec286c 539,800,804,808,816
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_f48e346bc21820 1214
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_19a3f25b860c30 51,78,180,411,1585-1612,2393-2407
+src/modules/AiRuntime/__tests__/projectContextLevelUnits.spec.ts
+  s_55244eb93b97d1::t_5c415684b3af6f 97-98,117-199
+src/modules/AiRuntime/models/ProjectContext.ts
+  s_55244eb93b97d1::t_e54dc2448142e2 1-7,23,71-72,87-88,249
+src/modules/AiRuntime/models/RuntimeAction.ts
+  s_55244eb93b97d1::t_25aa619c6bf6ce 277-278,367-368
+src/modules/AiRuntime/models/ThreadContext.ts
+  s_55244eb93b97d1::t_e72eeb39fdc994 12-16,18
+src/modules/AiRuntime/transformers/__tests__/llmActionBridge.spec.ts
+  s_55244eb93b97d1::t_13a62ebffc33cb 3636
+src/modules/AiRuntime/transformers/__tests__/planningSystemPrompt.spec.ts
+  s_55244eb93b97d1::t_4f46363a809a89 100
+src/modules/AiRuntime/transformers/buildPlanningSystemPrompt.ts
+  s_55244eb93b97d1::t_0d7c2970718868 17
+src/modules/AiRuntime/transformers/llmActionBridge.ts
+  s_55244eb93b97d1::t_5be53285a54369 1139,1143,1145,1194,1213,1234,1237-1239,1244-1246,1274,1291,1418,1453
+src/modules/AiRuntime/transformers/llmActionStrategies/masterVcaStrategy.ts
+  s_55244eb93b97d1::t_e49405a6923323 1-7,15,130-142,149
+src/modules/AiRuntime/transformers/llmActionStrategies/transportTimelineStrategy.ts
+  s_55244eb93b97d1::t_f206383545fb64 1-2,7,61-70,266,268-273,276
+src/modules/AiRuntime/useCases/__tests__/buildAgentContext.spec.ts
+  s_55244eb93b97d1::t_3980598109f175 714,716,865
+src/modules/AiRuntime/useCases/__tests__/directLevelSchema.spec.ts
+  s_55244eb93b97d1::t_145763709e103f 1-41
+src/modules/AiRuntime/useCases/__tests__/getProjectContext.spec.ts
+  s_55244eb93b97d1::t_fefd3a77affab0 730,739
+src/modules/AiRuntime/useCases/__tests__/levelRequestGrounding.spec.ts
+  s_55244eb93b97d1::t_0f3d99993ab952 152-251
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_55244eb93b97d1::t_ee116e61374582 212-231,692-752
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_55244eb93b97d1::t_7290e4fe19652b 1839-1876,7098,7105,7110-7111
+src/modules/AiRuntime/useCases/buildAgentContext.ts
+  s_55244eb93b97d1::t_d0be458e769405 300-310,319-320,348-349,396-401,405,445-447,722
+src/modules/AiRuntime/useCases/getProjectContext.ts
+  s_55244eb93b97d1::t_6a72fd7137dc1a 157,232
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/directLevelContextWindow.spec.ts
+  s_55244eb93b97d1::t_a39cf296de8679 1-98
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/scriptedProviderProtocol.spec.ts
+  s_55244eb93b97d1::t_63e0723eb2f3c8 1-284
+src/modules/AiRuntime/useCases/validateActionPayload.ts
+  s_55244eb93b97d1::t_346c68fe9d0c78 34,37,514-521,1256,1258-1263
+src/modules/Arrangement/handlers/vca/__tests__/handleSetVcaGain.spec.ts
+  s_55244eb93b97d1::t_a57cfce014878c 3,7-8,11,19-20,24,30-39
+src/modules/Arrangement/handlers/vca/handleSetVcaGain.ts
+  s_55244eb93b97d1::t_f3046476edd698 1,3,11-20,22-36,38,42-55,63-70
+src/modules/Arrangement/models/MixRecipe.ts
+  s_55244eb93b97d1::t_b9d1bb888c2f5d 20,39,67,93
+src/modules/Arrangement/presentations/views/BeatRulerBar.tsx
+  s_55244eb93b97d1::t_ba468dc4d8cd88 4-11,20-75,107,162,164-171
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.meterMap.integration.spec.tsx
+  s_55244eb93b97d1::t_f1ba9b16d30b51 1-381
+src/modules/Arrangement/presentations/views/__tests__/BeatRulerBar.spec.tsx
+  s_55244eb93b97d1::t_7bc70fdf776c37 20,89
+src/modules/Arrangement/presentations/views/__tests__/TrackHeaderFreezeFailure.integration.spec.tsx
+  s_55244eb93b97d1::t_cf86d22828e6ac 1-337
+src/modules/Arrangement/repositories/__tests__/controlledRecipes.spec.ts
+  s_55244eb93b97d1::t_f99ddf3526e553 1-197
+src/modules/Arrangement/repositories/__tests__/drumTransientRecipes.spec.ts
+  s_55244eb93b97d1::t_40c69e31b59003 42-44,46,61,63
+src/modules/Arrangement/repositories/mixRecipes/bassMixRecipes.ts
+  s_55244eb93b97d1::t_c20f4598ed03eb 427-454
+src/modules/Arrangement/repositories/mixRecipes/busMixRecipes.ts
+  s_55244eb93b97d1::t_02a81eede49f33 408-436
+src/modules/Arrangement/repositories/mixRecipes/drumsMixRecipes.ts
+  s_55244eb93b97d1::t_711043838aef44 405-432
+src/modules/Arrangement/repositories/mixRecipes/guitarMixRecipes.ts
+  s_55244eb93b97d1::t_4e372306612d96 412-439
+src/modules/Arrangement/repositories/mixRecipes/keysMixRecipes.ts
+  s_55244eb93b97d1::t_3f9f7c3928d008 400-427
+src/modules/Arrangement/repositories/mixRecipes/masterMixRecipes.ts
+  s_55244eb93b97d1::t_bbe6243dfb1aeb 414-442
+src/modules/Arrangement/repositories/mixRecipes/vocalMixRecipes.ts
+  s_55244eb93b97d1::t_89487ad7b44e1e 432-459
+src/modules/Arrangement/useCases/vca/captureLegacyVcaState.ts
+  s_55244eb93b97d1::t_ceba018fa00c80 180-182
+src/modules/Command/useCases/__tests__/decibelCommandArguments.spec.ts
+  s_55244eb93b97d1::t_ada690e46cbc19 5,148,166,172-225
+src/modules/Command/useCases/__tests__/executableCommandRegistry.spec.ts
+  s_55244eb93b97d1::t_393018f381094f 16,19,966-975,999,1002-1004,1006,2481-2487,2490-2498,2561-2571
+src/modules/Command/useCases/executableAppActionRegistry.ts
+  s_55244eb93b97d1::t_0391a672f2c8ae 7,10,1924-1931,1934-1942,1945-1956,2027,2036-2037,2039-2049,2053-2055,2057
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_55244eb93b97d1::t_5a347267387fd6 1202-1203,1205,4621-4622,4624
+src/modules/Transport/handlers/transport/handleSetMetronomeVolume.ts
+  s_55244eb93b97d1::t_da675414dc87e5 1,3,8-17,19-23,25-42,46-53,56-57
+src/modules/Transport/models/TimeSignatureMap.ts
+  s_55244eb93b97d1::t_a98e5208d382a3 146-148,151,159-167,169-171,174-178,184-193
+src/modules/Transport/models/__tests__/TimeSignatureMap.spec.ts
+  s_55244eb93b97d1::t_82880266a2fc38 205-296
+src/modules/Transport/useCases/index.ts
+  s_55244eb93b97d1::t_c5b7459fd5595d 79
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamHandover.spec.ts
+  s_55244eb93b97d1::t_d5c5976e8957d6 110-113,115-119,347,374-380,510-629
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_55244eb93b97d1::t_901e1dd68de246 1140-1146
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMetronome.spec.ts
+  s_55244eb93b97d1::t_45cf48dbd53c09 56-74,259-324
+src/modules/Transport/useCases/scheduling/resetMetronomeBeat.ts
+  s_55244eb93b97d1::t_cd26e8b914ef30 5-9
+src/modules/Transport/useCases/scheduling/scheduleMetronome.ts
+  s_55244eb93b97d1::t_d6e056e7969734 16-28,66-67,69-73,89,112-121
+src/modules/Transport/useCases/transportQueries/__tests__/getTimelineRulerGrid.spec.ts
+  s_55244eb93b97d1::t_c2fdb9a8d24586 1-176
+src/modules/Transport/useCases/transportQueries/getTimelineRulerGrid.ts
+  s_55244eb93b97d1::t_1e9353008de245 1-78
+src/utils/audioLevelLaw.ts
+  s_55244eb93b97d1::t_8f586a0d6eb6e7 491-492
+src/utils/handlerContract.ts
+  s_55244eb93b97d1::t_3e8376c36bf9f4 1372,2833
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_55244eb93b97d1::t_dd036811fbebbd 1-505
+tests/e2e/devServerOnlySpecs.ts
+  s_55244eb93b97d1::t_5e4ce5b6c62b15 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7934ebd8d2ba32a4f0b7bacfd737c1bc77c42c21",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
