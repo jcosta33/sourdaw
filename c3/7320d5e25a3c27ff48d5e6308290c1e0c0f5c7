@@ -1,0 +1,24 @@
+src/app/__tests__/main.spec.tsx
+  s_26f70b851e8f7a::t_5942b47e1b4fba 297,299-300,302-303,483-485
+src/app/main.tsx
+  s_26f70b851e8f7a::t_84b2064735b932 91,97
+  s_26f70b851e8f7a::t_8d3510087d0df6 90,95,99
+src/app/__tests__/mainAppImportRecovery.spec.tsx
+  s_26f70b851e8f7a::t_966dfec29a66e2 50-54,73-75,82-88,90-91,93-94,120-122,156-158,173-178,228-230,243,250,254-256,260,277-279
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c37320d5e25a3c27ff48d5e6308290c1e0c0f5c7",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
