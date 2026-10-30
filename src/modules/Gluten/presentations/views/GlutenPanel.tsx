@@ -435,6 +435,7 @@ const defaultTrackState = { tracks: [], selectedTrackId: null, ghostClips: [] };
 export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement => {
     const allInstances = useStore(glutenStore, defaultGlutenInstances);
     const trackState = useStore(trackStore, defaultTrackState);
+    const hasSessionState = allInstances[deviceId] !== undefined;
     const state: GlutenState = allInstances[deviceId] ?? getGlutenState(deviceId);
     // Meters live in their own per-device store: a ~60 Hz tick on this device
     // re-renders this panel's meter readouts without rebuilding the patch map,
@@ -456,9 +457,10 @@ export const GlutenPanel = ({ deviceId }: { deviceId: string }): ReactElement =>
         hydrateGlutenPatchFromProject(deviceId);
     }, [deviceId, projectParameterValues]);
 
+    // A project restore can clear the session instance without changing absent metadata.
     useEffect(() => {
         hydrateGlutenDisclosureFromProject(deviceId);
-    }, [deviceId, projectDeviceState]);
+    }, [deviceId, projectDeviceState, hasSessionState]);
 
     const { patch } = state;
     const currentPatch = patch;

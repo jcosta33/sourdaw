@@ -10,6 +10,7 @@ import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     createCrdtDoc,
+    projectCrdtToStores,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
@@ -146,6 +147,30 @@ describe('Gluten cumulative disclosure through the real project action', () => {
             expect(screen.getByLabelText('Search Gluten presets')).toBeVisible();
             expect(screen.getByRole('slider', { name: 'Threshold' })).toHaveAttribute('aria-valuenow', '-27');
         }
+    });
+
+    it('restores Play for a mounted legacy device after its session store is reset', async () => {
+        const project = structuredClone(trackStore.value!);
+        const parameters = structuredClone(project.tracks[0]!.devices[0]!.parameterValues);
+        expect(project.tracks[0]!.devices[0]!.deviceState).toBeUndefined();
+        render(<GlutenPanel deviceId="a" />);
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'play' })).toHaveAttribute('aria-pressed', 'true')
+        );
+
+        act(() => {
+            glutenStore.set({});
+            projectCrdtToStores({ resetProjections: true });
+        });
+
+        await waitFor(() =>
+            expect(screen.getByRole('button', { name: 'play' })).toHaveAttribute('aria-pressed', 'true')
+        );
+        expect(screen.queryByRole('slider', { name: 'Attack' })).toBeNull();
+        expect(screen.getByRole('slider', { name: 'Threshold' })).toHaveAttribute('aria-valuenow', '-27');
+        expect(screen.getByRole('slider', { name: 'Makeup' })).toHaveAttribute('aria-valuenow', '5');
+        expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues).toEqual(parameters);
+        expect(trackStore.value?.tracks[0]?.devices[0]?.deviceState).toBeUndefined();
     });
 
     it('restores distinct device choices after session loss and retains hidden audio values', async () => {
