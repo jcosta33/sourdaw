@@ -342,7 +342,7 @@ describe('project projection after a partial bundle merge', () => {
                                 vi.doMock('@automerge/automerge', async (importOriginal) => importOriginal());
                                 const { projectStore } = await open();
                                 const state = projectStore.value;
-                                if (state === undefined) {
+                                if (state === null) {
                                     throw new TypeError('Expected the opened successor project state.');
                                 }
                                 projectStore.set({ ...state, name: 'Successor fixture' });
