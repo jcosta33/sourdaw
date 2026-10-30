@@ -1,0 +1,28 @@
+evidence/agent-campaign/manifest.json
+  h_beb54bf43b47b7 374
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  h_beb54bf43b47b7 1021,2015,2026,2048
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  h_beb54bf43b47b7 157,216-227,253-266
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  h_beb54bf43b47b7 56,424-434,471-480,520-553,555-562,564-566,569-573,623-633,701-716,950-968,1109-1116
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  h_beb54bf43b47b7 704,707-716,759,767-776,4372-4378
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsCorrectionEvidence.spec.ts
+  h_beb54bf43b47b7 222,225,250-261,308-309
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  h_beb54bf43b47b7 647,653-662,1159-1165
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  h_beb54bf43b47b7 54,632-649,655-662,834,843-887,909-915
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9eb76a640d0135a54f073cd97fb72c42b8563bf2",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
