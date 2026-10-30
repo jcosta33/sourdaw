@@ -980,7 +980,7 @@ const planPromptIntent = inject({ logger })(
                             callId: metricAuthority.callId,
                             turn: metricAuthority.turn,
                             revision: metricAuthority.revision,
-                            required: metricAuthority.kind !== 'literal',
+                            required: metricAuthority.kind === 'perceptual' || metricAuthority.kind === 'comparative',
                             available: metricAuthority.revision === captureProjectRevision(),
                         };
                     },
