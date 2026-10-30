@@ -1,0 +1,41 @@
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_59e31a5c6f3e31::t_93223d5526e9cf 4-5,10-11,45,54-59,75,79-81,84-110,133,141-144,146,148
+tests/e2e/exportOggCodecs.spec.ts
+  s_59e31a5c6f3e31::t_9db21cec6b10b2 1-293,336-647
+  s_59e31a5c6f3e31::t_ba4d04ac86bd86 294-335
+  s_59e31a5c6f3e31::t_47c42376052370 648-650
+src/utils/audioMetering/__tests__/measureIntegratedLoudness.spec.ts
+  s_59e31a5c6f3e31::t_8cb64d7b5744aa 3-5,140-182
+  s_59e31a5c6f3e31::t_f9042e6458c114 183
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_59e31a5c6f3e31::t_8b1cbb18164920 12-13,405-416,732-796,826-834,941-949
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_59e31a5c6f3e31::t_2fe171d8299afa 8,67
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_59e31a5c6f3e31::t_901606abb4be0b 1-22,24-29,31-133,136-154
+  s_59e31a5c6f3e31::t_0394050ff07cee 23,30,134-135
+  s_59e31a5c6f3e31::t_f68994dd29c089 155-157
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_59e31a5c6f3e31::t_8cb64d7b5744aa 1291-1296,1324-1326,1410-1412
+  s_59e31a5c6f3e31::t_b9a0aed966a84f 1385-1391
+  s_59e31a5c6f3e31::t_2fe171d8299afa 93-95,862-863,867,1304,1307
+src/utils/audioMetering/__tests__/measureTruePeak.spec.ts
+  s_59e31a5c6f3e31::t_8cb64d7b5744aa 3-5,196-217
+  s_59e31a5c6f3e31::t_9d8ee0cf29ad4d 218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6f04f409fd213dc215c20886b4a8e3b5f9e581a2",
+  "prompts": {},
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
