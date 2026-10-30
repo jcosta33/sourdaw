@@ -1,0 +1,16 @@
+scripts/__tests__/installCleanupLanes.spec.ts
+  h_beb54bf43b47b7 195-239
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 5,236-238
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8fc20a9ea135723bb8910d9f46cfd7d5964f60ed",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
