@@ -1,5 +1,6 @@
 // A browser-carrier check: Web Audio starts and exported PCM are observable here; a native device clock is not.
 import { realpathSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -14,6 +15,7 @@ import {
     wait_for_workspace_ready,
 } from './e2eUtils';
 import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
+import { installFilePickerCapture } from './exportFilePickerCapture';
 import { interiorTempoSeconds, physicalSourceFixture } from './tempoSourcePhysicalFixtures';
 
 const ROOT = realpathSync(fileURLToPath(new URL('../../', import.meta.url)));
@@ -178,7 +180,6 @@ async function installPlaybackObserver(page: Page): Promise<void> {
             });
             Reflect.apply(nativeStart, this, args);
         };
-        Reflect.deleteProperty(window, 'showSaveFilePicker');
     });
 }
 
@@ -557,25 +558,31 @@ function pcm24Wav(bytes: Buffer): { frames: number; at: (frame: number, channel:
 }
 
 async function exportPcm(page: Page): Promise<ReturnType<typeof pcm24Wav>> {
-    await page.keyboard.press(`${MOD}+Shift+E`);
-    const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
-    await expect(bakery).toBeVisible();
-    await bakery.getByRole('button', { name: '48.0k', exact: true }).click();
-    await bakery.getByRole('button', { name: '24-bit', exact: true }).click();
-    await bakery.getByRole('button', { name: 'As mixed', exact: true }).click();
-    await bakery.getByRole('button', { name: 'Off', exact: true }).click();
-    await expect(bakery.getByRole('radio', { name: 'Whole project' })).toBeChecked();
-    const download = page.waitForEvent('download', { timeout: 120_000 });
-    await bakery.getByRole('button', { name: 'Start Baking' }).click();
-    const result = await download;
-    expect(await result.failure()).toBeNull();
-    const path = await result.path();
-    if (!path) {
-        throw new Error('The visible Bakery produced no downloadable WAV');
+    const capture = await installFilePickerCapture(page, test.info().outputPath(`source-time-${randomUUID()}.wav`));
+    try {
+        await page.keyboard.press(`${MOD}+Shift+E`);
+        const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        await expect(bakery).toBeVisible();
+        await bakery.getByRole('button', { name: '48.0k', exact: true }).click();
+        await bakery.getByRole('button', { name: '24-bit', exact: true }).click();
+        await bakery.getByRole('button', { name: 'As mixed', exact: true }).click();
+        await bakery.getByRole('button', { name: 'Off', exact: true }).click();
+        await expect(bakery.getByRole('radio', { name: 'Whole project' })).toBeChecked();
+        const pickerFilename = capture.pickerFilename;
+        await bakery.getByRole('button', { name: 'Start Baking' }).click();
+        await expect(bakery.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 120_000 });
+        await capture.waitForClose();
+
+        expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+        expect(capture.writeCount()).toBeGreaterThan(0);
+        expect(capture.bytesWritten()).toBeGreaterThan(0);
+        expect(capture.abortCount()).toBe(0);
+        const pcm = pcm24Wav(await readFile(capture.path));
+        await bakery.getByRole('button', { name: 'Close Bakery' }).click();
+        return pcm;
+    } finally {
+        await capture.dispose();
     }
-    const pcm = pcm24Wav(await readFile(path));
-    await bakery.getByRole('button', { name: 'Close Bakery' }).click();
-    return pcm;
 }
 
 function expectExportEnd(pcm: ReturnType<typeof pcm24Wav>, bodyFrame: number): void {

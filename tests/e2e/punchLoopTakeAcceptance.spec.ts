@@ -1,10 +1,12 @@
 // Browser-carrier acceptance: these Web Audio observations do not authenticate a Rust device clock.
+import { randomUUID } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 
 import { chromium, expect, test, type Page, type TestInfo } from '@playwright/test';
 
 import { launch_new_project, setupWorkspace, wait_for_launch_first_paint, wait_for_workspace_ready } from './e2eUtils';
 import { attach_first_paint_console, CAPABILITIES_MARKER, wait_for_console_marker } from './firstPaintDiagnostics';
+import { installFilePickerCapture } from './exportFilePickerCapture';
 import {
     bindPunchRecordingClockWitness,
     captureFrameDrift,
@@ -131,12 +133,6 @@ async function installBrowserPlaybackObserver(page: Page): Promise<void> {
             });
             Reflect.apply(nativeStart, this, args);
         };
-    });
-}
-
-async function installDownloadFallback(page: Page): Promise<void> {
-    await page.addInitScript(() => {
-        Reflect.deleteProperty(window, 'showSaveFilePicker');
     });
 }
 
@@ -394,20 +390,27 @@ function wavRmsAt(bytes: Buffer, seconds: number): number {
 }
 
 async function exportWav(page: Page): Promise<Buffer> {
-    await page.keyboard.press(`${MODIFIER}+Shift+E`);
-    const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
-    await expect(bakery).toBeVisible();
-    await expect(bakery.getByRole('radio', { name: 'Whole project' })).toBeChecked();
-    const download = page.waitForEvent('download', { timeout: 120_000 });
-    await bakery.getByRole('button', { name: 'Start Baking' }).click();
-    const result = await download;
-    expect(await result.failure()).toBeNull();
-    const path = await result.path();
-    if (!path) {
-        throw new Error('Playwright did not retain the exported WAV');
+    const capture = await installFilePickerCapture(page, test.info().outputPath(`punch-loop-${randomUUID()}.wav`));
+    try {
+        await page.keyboard.press(`${MODIFIER}+Shift+E`);
+        const bakery = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
+        await expect(bakery).toBeVisible();
+        await expect(bakery.getByRole('radio', { name: 'Whole project' })).toBeChecked();
+        const pickerFilename = capture.pickerFilename;
+        await bakery.getByRole('button', { name: 'Start Baking' }).click();
+        await expect(bakery.getByRole('button', { name: 'Close Bakery' })).toBeVisible({ timeout: 120_000 });
+        await capture.waitForClose();
+
+        expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
+        expect(capture.writeCount()).toBeGreaterThan(0);
+        expect(capture.bytesWritten()).toBeGreaterThan(0);
+        expect(capture.abortCount()).toBe(0);
+        const bytes = await readFile(capture.path);
+        await bakery.getByRole('button', { name: 'Close Bakery' }).click();
+        return bytes;
+    } finally {
+        await capture.dispose();
     }
-    await bakery.getByRole('button', { name: 'Close Bakery' }).click();
-    return readFile(path);
 }
 
 async function sourceRmsAtSelectedBeats(
@@ -942,7 +945,6 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         await installPunchRecordingClockWitness(page);
         observeConsole(page, 'initial');
         await installBrowserPlaybackObserver(page);
-        await installDownloadFallback(page);
         await setupWorkspace(page);
         await launch_new_project(page);
         await page.getByRole('button', { name: 'Untitled Project' }).click();
@@ -1162,7 +1164,6 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         activePage = reopened;
         observeConsole(reopened, 'reopened');
         await installBrowserPlaybackObserver(reopened);
-        await installDownloadFallback(reopened);
         const bootTimeline = attach_first_paint_console(reopened);
         await reopened.goto('/');
         await wait_for_console_marker(bootTimeline, CAPABILITIES_MARKER, 30_000);
