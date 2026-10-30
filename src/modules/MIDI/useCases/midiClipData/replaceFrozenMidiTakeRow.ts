@@ -7,7 +7,11 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { isFrozenMidiTakeSource, type FrozenMidiTakeSource } from '../../stores/isFrozenMidiTakeSource';
 
-type SlotPresence = { readonly expectedSlotPresent?: boolean; readonly replacementSlotPresent?: boolean };
+type SlotPresence = {
+    readonly replacementNextRowId?: string | null;
+    readonly expectedSlotPresent?: boolean;
+    readonly replacementSlotPresent?: boolean;
+};
 type FrozenMidiTakeRowEdit = SlotPresence &
     (
         | {
@@ -30,7 +34,8 @@ type FrozenMidiTakeRowEdit = SlotPresence &
 function replaceRow<Row extends { readonly id: string }>(
     rows: readonly Row[],
     expected: Row | null,
-    replacement: Row | null
+    replacement: Row | null,
+    replacementNextRowId?: string | null
 ): Row[] | null {
     if (expected === null && replacement === null) {
         return null;
@@ -39,7 +44,11 @@ function replaceRow<Row extends { readonly id: string }>(
         if (!replacement || rows.some((row) => row.id === replacement.id)) {
             return null;
         }
-        return [...rows, structuredClone(replacement)];
+        if (replacementNextRowId === undefined || replacementNextRowId === null)
+            return [...rows, structuredClone(replacement)];
+        const beforeIndex = rows.findIndex((row) => row.id === replacementNextRowId);
+        if (beforeIndex < 0) return null;
+        return [...rows.slice(0, beforeIndex), structuredClone(replacement), ...rows.slice(beforeIndex)];
     }
     if (replacement !== null && expected.id !== replacement.id) {
         return null;
@@ -74,7 +83,12 @@ export function replaceFrozenMidiTakeRow(
             if (source.rows.notes.present !== expectedPresent) {
                 return null;
             }
-            const value = replaceRow(source.rows.notes.value, edit.expected, edit.replacement);
+            const value = replaceRow(
+                source.rows.notes.value,
+                edit.expected,
+                edit.replacement,
+                edit.replacementNextRowId
+            );
             if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }
@@ -85,7 +99,12 @@ export function replaceFrozenMidiTakeRow(
             if (source.rows.controlChanges.present !== expectedPresent) {
                 return null;
             }
-            const value = replaceRow(source.rows.controlChanges.value, edit.expected, edit.replacement);
+            const value = replaceRow(
+                source.rows.controlChanges.value,
+                edit.expected,
+                edit.replacement,
+                edit.replacementNextRowId
+            );
             if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }
@@ -96,7 +115,12 @@ export function replaceFrozenMidiTakeRow(
             if (source.rows.pitchBends.present !== expectedPresent) {
                 return null;
             }
-            const value = replaceRow(source.rows.pitchBends.value, edit.expected, edit.replacement);
+            const value = replaceRow(
+                source.rows.pitchBends.value,
+                edit.expected,
+                edit.replacement,
+                edit.replacementNextRowId
+            );
             if (!value || (!replacementPresent && value.length > 0)) {
                 return null;
             }

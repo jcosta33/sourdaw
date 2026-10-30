@@ -174,7 +174,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            action = materializeCommandHandlerArguments(action, handler);
+            action = materializeCommandHandlerArguments(
+                action,
+                handler,
+                options?.undoEntryId !== undefined || recordedRedo !== undefined
+                    ? {
+                          actions: [action],
+                          actionIndex: 0,
+                          ...(options?.undoEntryId !== undefined ? { undoEntryId: options.undoEntryId } : {}),
+                          ...(recordedRedo !== undefined ? { recordedRedo } : {}),
+                      }
+                    : undefined
+            );
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (

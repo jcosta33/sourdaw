@@ -16,7 +16,8 @@ function replaceLane(state: TakeLaneStoreValue, replacement: TakeLane): TakeLane
 function replaceCapturedMidiRow<Row extends { readonly id: string }>(
     rows: readonly Row[],
     expected: Row | null,
-    replacement: Row | null
+    replacement: Row | null,
+    replacementNextRowId?: string | null
 ): Row[] | null {
     if (expected === null && replacement === null) {
         return null;
@@ -25,7 +26,11 @@ function replaceCapturedMidiRow<Row extends { readonly id: string }>(
         if (!replacement || rows.some((row) => row.id === replacement.id)) {
             return null;
         }
-        return [...rows, cloneValue(replacement)];
+        if (replacementNextRowId === undefined || replacementNextRowId === null)
+            return [...rows, cloneValue(replacement)];
+        const beforeIndex = rows.findIndex((row) => row.id === replacementNextRowId);
+        if (beforeIndex < 0) return null;
+        return [...rows.slice(0, beforeIndex), cloneValue(replacement), ...rows.slice(beforeIndex)];
     }
     if (replacement !== null && expected.id !== replacement.id) {
         return null;
@@ -55,7 +60,12 @@ function applyMidiRow(take: Take, operation: MidiRowOperation): Take | undefined
         if (!source || source.rows.notes.present !== operation.expectedSlotPresent) {
             return undefined;
         }
-        const value = replaceCapturedMidiRow(source.rows.notes.value, operation.expected, operation.replacement);
+        const value = replaceCapturedMidiRow(
+            source.rows.notes.value,
+            operation.expected,
+            operation.replacement,
+            operation.replacementNextRowId
+        );
         if (!isValidReplacementSlot(value, operation.replacementSlotPresent)) {
             return undefined;
         }
@@ -75,7 +85,8 @@ function applyMidiRow(take: Take, operation: MidiRowOperation): Take | undefined
         const value = replaceCapturedMidiRow(
             source.rows.controlChanges.value,
             operation.expected,
-            operation.replacement
+            operation.replacement,
+            operation.replacementNextRowId
         );
         if (!isValidReplacementSlot(value, operation.replacementSlotPresent)) {
             return undefined;
@@ -93,7 +104,12 @@ function applyMidiRow(take: Take, operation: MidiRowOperation): Take | undefined
         if (!source || source.rows.pitchBends.present !== operation.expectedSlotPresent) {
             return undefined;
         }
-        const value = replaceCapturedMidiRow(source.rows.pitchBends.value, operation.expected, operation.replacement);
+        const value = replaceCapturedMidiRow(
+            source.rows.pitchBends.value,
+            operation.expected,
+            operation.replacement,
+            operation.replacementNextRowId
+        );
         if (!isValidReplacementSlot(value, operation.replacementSlotPresent)) {
             return undefined;
         }

@@ -9,15 +9,29 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { compRegionInterval } from '../../useCases/comping/compRegionInterval';
-import { prepareOriginalMidiTakeRowReplacement } from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';
+import {
+    captureOriginalMidiTakeRowCopies,
+    isWitnessedMidiCopyScope,
+    prepareOriginalMidiTakeRowReplacement,
+} from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';
 
 type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
 
 function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTakeRowReplacementPayload {
+    const copyScope = isWitnessedMidiCopyScope(payload.copyScope)
+        ? payload.copyScope.map((copy) => ({
+              ...copy,
+              expectedSlotPresent: copy.replacementSlotPresent,
+              replacementSlotPresent: copy.expectedSlotPresent,
+              expectedNextRowId: copy.replacementNextRowId,
+              replacementNextRowId: copy.expectedNextRowId,
+          }))
+        : payload.copyScope;
     switch (payload.rowKind) {
         case 'note':
             return {
                 ...payload,
+                copyScope,
                 expected: payload.replacement,
                 replacement: payload.expected,
                 expectedSlotPresent: payload.replacementSlotPresent,
@@ -26,6 +40,7 @@ function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTa
         case 'cc':
             return {
                 ...payload,
+                copyScope,
                 expected: payload.replacement,
                 replacement: payload.expected,
                 expectedSlotPresent: payload.replacementSlotPresent,
@@ -34,6 +49,7 @@ function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTa
         case 'bend':
             return {
                 ...payload,
+                copyScope,
                 expected: payload.replacement,
                 replacement: payload.expected,
                 expectedSlotPresent: payload.replacementSlotPresent,
@@ -70,6 +86,9 @@ function isRowSessionEntry(entry: HandlerSessionActionEntry): boolean {
     const inverse = entry.inverseAction.payload;
     const redo = entry.redoAction.payload;
     return (
+        isWitnessedMidiCopyScope(forward.copyScope) &&
+        isWitnessedMidiCopyScope(inverse.copyScope) &&
+        isWitnessedMidiCopyScope(redo.copyScope) &&
         valuesEqual(inverse, reverse(forward)) &&
         valuesEqual(redo, forward) &&
         (forward.expected === null || forward.rowId === forward.expected.id) &&
@@ -79,6 +98,22 @@ function isRowSessionEntry(entry: HandlerSessionActionEntry): boolean {
 }
 
 export const handleReplaceOriginalMidiTakeRow = createHandler<'replaceOriginalMidiTakeRow'>({
+    materializeCommandArgumentsAt: 'admission',
+    materializeCommandArguments: (action, context) => {
+        if (
+            action.payload.copyScope !== 'capture' ||
+            context?.undoEntryId !== undefined ||
+            context?.recordedRedo !== undefined
+        )
+            return;
+        const state = takeLaneStore.value;
+        const projected =
+            state && context
+                ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
+                : state;
+        const copyScope = captureOriginalMidiTakeRowCopies(action.payload, projected);
+        if (copyScope) action.payload = { ...action.payload, copyScope };
+    },
     canReapplyAfterDivergence: () => true,
     canReportConflict: true,
     validate: (action, context) => applies(action, context),

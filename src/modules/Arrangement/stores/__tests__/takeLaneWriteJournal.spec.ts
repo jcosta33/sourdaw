@@ -70,6 +70,52 @@ const intervalPatch: TakeLaneCompRegionPatch = {
 };
 
 describe('takeLaneWriteJournal', () => {
+    it('replays a restored row before its captured neighbour without replacing a peer edit', () => {
+        const peerRow = { id: 'peer', pitch: 64, startBeat: 2, duration: 1, velocity: 90 };
+        const restoredRow = { id: 'restored', pitch: 60, startBeat: 1, duration: 1, velocity: 90 };
+        const before = {
+            lanes: [
+                {
+                    ...structuredClone(firstLane),
+                    takes: [
+                        {
+                            ...firstLane.takes[0]!,
+                            midiSource: {
+                                sourceClipId: 'clip-a',
+                                sourceEntryBeat: 0,
+                                sourceEndBeat: 4,
+                                phaseHeadBeat: 0,
+                                passLengthBeats: 4,
+                                rows: {
+                                    notes: { present: true, value: [peerRow] },
+                                    controlChanges: { present: true, value: [] },
+                                    pitchBends: { present: true, value: [] },
+                                },
+                            },
+                        },
+                    ],
+                },
+            ],
+        };
+        const next = structuredClone(before);
+        next.lanes[0]!.takes[0]!.midiSource.rows.notes.value.unshift(restoredRow);
+        const peer = structuredClone(before);
+        peer.lanes[0]!.takes[0]!.midiSource.rows.notes.value[0]!.velocity = 111;
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next });
+        expect(journal).toHaveLength(1);
+        expect(journal[0]?.kind).toBe('take-midi-source-note-row');
+        const result = replayTakeLaneWriteJournal(peer, journal);
+        expect(result.status).toBe('applied');
+        if (result.status !== 'applied') throw new Error('Expected keyed row insertion');
+        expect(result.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value).toEqual([
+            restoredRow,
+            { ...peerRow, velocity: 111 },
+        ]);
+        const missing = structuredClone(peer);
+        missing.lanes[0]!.takes[0]!.midiSource.rows.notes.value = [];
+        expect(replayTakeLaneWriteJournal(missing, journal).status).toBe('conflict');
+    });
+
     it('replays a frozen note edit beside a peer edit to another original row', () => {
         const source = {
             sourceClipId: 'clip-a',

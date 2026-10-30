@@ -551,8 +551,25 @@ export type MidiClipDataActionSnapshot = {
     readonly controlChanges: { readonly present: boolean; readonly value: readonly MidiClipCcSnapshot[] };
     readonly pitchBends: { readonly present: boolean; readonly value: readonly MidiClipPitchBendSnapshot[] };
 };
-/** One frozen original row, addressed through its selected take and immutable capture owner. */
+/** Exact frozen copies and row placement admitted by one original-row edit. */
+export type OriginalMidiTakeRowCopy = {
+    readonly laneId: string;
+    readonly takeId: string;
+    readonly clipId: string;
+    readonly sourceEntryBeat: number;
+    readonly sourceEndBeat: number;
+    readonly passLengthBeats: number;
+    readonly recordingPassIndex?: number;
+    readonly expectedSlotPresent: boolean;
+    readonly replacementSlotPresent: boolean;
+    readonly expectedNextRowId: string | null;
+    readonly replacementNextRowId: string | null;
+};
+
+/** One original row, addressed through its selected take and admitted frozen copies. */
 export type OriginalMidiTakeRowReplacementPayload = {
+    /** Only a new forward request may capture; history carries immutable witnessed copies. */
+    readonly copyScope?: 'capture' | readonly OriginalMidiTakeRowCopy[];
     readonly laneId: string;
     readonly takeId: string;
     readonly sourceClipId: string;
@@ -3545,7 +3562,10 @@ export type HandlerValidationContext = {
     };
 };
 
-export type HandlerMaterializationContext = Pick<HandlerValidationContext, 'actions' | 'actionIndex'> & {
+export type HandlerMaterializationContext = Pick<
+    HandlerValidationContext,
+    'actions' | 'actionIndex' | 'undoEntryId' | 'recordedRedo'
+> & {
     /** Previously prepared actions; the full raw caller batch remains in `actions`. */
     readonly preparedPrefix?: readonly AppAction[];
 };

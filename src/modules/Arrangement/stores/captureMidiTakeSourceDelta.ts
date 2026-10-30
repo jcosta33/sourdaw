@@ -10,7 +10,8 @@ function changedMidiRows<Row extends { readonly id: string }>(
         expected: Row | null,
         replacement: Row | null,
         expectedSlotPresent: boolean,
-        replacementSlotPresent: boolean
+        replacementSlotPresent: boolean,
+        replacementNextRowId?: string | null
     ) => TakeFieldOperation
 ): TakeFieldOperation[] | null {
     if (valuesEqual(before, next)) {
@@ -36,6 +37,21 @@ function changedMidiRows<Row extends { readonly id: string }>(
     }
     if (following.length === previous.length + 1 && valuesEqual(previous, following.slice(0, -1))) {
         return [operation(null, cloneValue(following[following.length - 1]!), before.present, next.present)];
+    }
+    if (following.length === previous.length + 1) {
+        for (const [index, row] of following.entries()) {
+            if (
+                !previous.some((candidate) => candidate.id === row.id) &&
+                valuesEqual(
+                    previous,
+                    following.filter((candidate) => candidate.id !== row.id)
+                )
+            ) {
+                return [
+                    operation(null, cloneValue(row), before.present, next.present, following[index + 1]?.id ?? null),
+                ];
+            }
+        }
     }
     if (previous.length === following.length + 1) {
         for (const row of previous) {
@@ -66,7 +82,7 @@ function captureMidiSourceRowOperations(
     const notes = changedMidiRows(
         beforeRows.notes,
         nextRows.notes,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent) => ({
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
             kind: 'take-midi-source-note-row',
             laneId,
             takeId,
@@ -74,12 +90,13 @@ function captureMidiSourceRowOperations(
             replacement,
             expectedSlotPresent,
             replacementSlotPresent,
+            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
         })
     );
     const controllers = changedMidiRows(
         beforeRows.controlChanges,
         nextRows.controlChanges,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent) => ({
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
             kind: 'take-midi-source-cc-row',
             laneId,
             takeId,
@@ -87,12 +104,13 @@ function captureMidiSourceRowOperations(
             replacement,
             expectedSlotPresent,
             replacementSlotPresent,
+            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
         })
     );
     const bends = changedMidiRows(
         beforeRows.pitchBends,
         nextRows.pitchBends,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent) => ({
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
             kind: 'take-midi-source-bend-row',
             laneId,
             takeId,
@@ -100,6 +118,7 @@ function captureMidiSourceRowOperations(
             replacement,
             expectedSlotPresent,
             replacementSlotPresent,
+            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
         })
     );
     if (!notes || !controllers || !bends) {

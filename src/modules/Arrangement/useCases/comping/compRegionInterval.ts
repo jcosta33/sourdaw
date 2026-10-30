@@ -21,6 +21,10 @@ import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import {
+    captureOriginalMidiTakeRowCopies,
+    prepareOriginalMidiTakeRowReplacement,
+} from './prepareOriginalMidiTakeRowReplacement';
 import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAuthorizations';
 import { compRegionIntervalValidation } from './compRegionIntervalValidation';
 import { liveCompAudioSourceInputs } from './liveCompAudioSourceInputs';
@@ -261,6 +265,16 @@ function projectTakeLaneStateThroughActionPrefix(
                 return null;
             }
             state = selected;
+            continue;
+        }
+        if (action.type === 'replaceOriginalMidiTakeRow') {
+            const copyScope =
+                action.payload.copyScope === 'capture'
+                    ? captureOriginalMidiTakeRowCopies(action.payload, state)
+                    : action.payload.copyScope;
+            const next = copyScope && prepareOriginalMidiTakeRowReplacement({ ...action.payload, copyScope }, state);
+            if (!next) return null;
+            state = next;
             continue;
         }
         if (action.type === 'removeTrack') {

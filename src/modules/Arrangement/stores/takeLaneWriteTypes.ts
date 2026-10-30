@@ -95,6 +95,7 @@ export type TakeFieldOperation =
           readonly replacement: MidiTakeSource['rows']['notes']['value'][number] | null;
           readonly expectedSlotPresent: boolean;
           readonly replacementSlotPresent: boolean;
+          readonly replacementNextRowId?: string | null;
       }
     | {
           readonly kind: 'take-midi-source-cc-row';
@@ -104,6 +105,7 @@ export type TakeFieldOperation =
           readonly replacement: MidiTakeSource['rows']['controlChanges']['value'][number] | null;
           readonly expectedSlotPresent: boolean;
           readonly replacementSlotPresent: boolean;
+          readonly replacementNextRowId?: string | null;
       }
     | {
           readonly kind: 'take-midi-source-bend-row';
@@ -113,6 +115,7 @@ export type TakeFieldOperation =
           readonly replacement: MidiTakeSource['rows']['pitchBends']['value'][number] | null;
           readonly expectedSlotPresent: boolean;
           readonly replacementSlotPresent: boolean;
+          readonly replacementNextRowId?: string | null;
       };
 
 export type TakeLaneWriteOperation =
