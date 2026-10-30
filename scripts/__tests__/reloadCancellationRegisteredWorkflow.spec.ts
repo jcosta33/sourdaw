@@ -122,7 +122,7 @@ function assertRegisteredDiagnostic(value: Mapping): void {
     assert.equal(job.name, 'Diagnose original reload cancellation');
     assert.equal(
         job.if,
-        "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.event.before == '7500e21497be9f146d928062aca8652c6a80cf3b' && github.run_attempt == 1 }}"
+        "${{ github.event.action == 'synchronize' && github.event.pull_request.number == 5847 && github.event.pull_request.head.sha == '3c854054603ca7be3c4ef67fe533fbf31583aef7' && github.run_attempt == 1 }}"
     );
     assert.equal(job['runs-on'], 'ubuntu-latest');
     assert.deepEqual(job.container, { image: originalImage, options: '--init --ipc=host' });
@@ -288,10 +288,10 @@ describe('registered reload cancellation advisory workflow', () => {
             (value: Mapping) => (diagnosticJob(value).if = "${{ github.event.action == 'synchronize' }}"),
         ],
         [
-            'another preparation parent',
+            'another execution head',
             (value: Mapping) => {
                 const job = diagnosticJob(value);
-                job.if = String(job.if).replace('7500e21497be9f146d928062aca8652c6a80cf3b', 'a'.repeat(40));
+                job.if = String(job.if).replace('3c854054603ca7be3c4ef67fe533fbf31583aef7', 'a'.repeat(40));
             },
         ],
         [
