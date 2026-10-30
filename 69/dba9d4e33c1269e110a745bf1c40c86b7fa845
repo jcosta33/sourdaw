@@ -1,0 +1,18 @@
+.github/workflows/pr5860-linux-capture.yml
+  h_beb54bf43b47b7 12,104,106-120
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 240,335
+scripts/__tests__/pr5860LinuxCapture.spec.ts
+  h_beb54bf43b47b7 20,47-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69dba9d4e33c1269e110a745bf1c40c86b7fa845",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
