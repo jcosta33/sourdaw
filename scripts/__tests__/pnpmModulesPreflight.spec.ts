@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { parseDocument, stringify } from 'yaml';
+import { Document, parseDocument } from 'yaml';
 
 import {
     PNPM_MODULES_MANIFEST,
@@ -382,13 +382,11 @@ describe('pnpm modules preflight against a real filesystem', () => {
         if (enableGlobalVirtualStore !== undefined && typeof enableGlobalVirtualStore !== 'boolean') {
             throw new TypeError('enableGlobalVirtualStore must be a boolean');
         }
-        writeFileSync(
-            join(root, 'pnpm-workspace.yaml'),
-            stringify({
-                packages: ['.'],
-                ...(enableGlobalVirtualStore === undefined ? {} : { enableGlobalVirtualStore }),
-            })
-        );
+        const fixtureWorkspace = new Document({ packages: ['.'] });
+        if (enableGlobalVirtualStore !== undefined) {
+            fixtureWorkspace.set('enableGlobalVirtualStore', enableGlobalVirtualStore);
+        }
+        writeFileSync(join(root, 'pnpm-workspace.yaml'), fixtureWorkspace.toString());
         writeFileSync(
             join(root, 'package.json'),
             JSON.stringify({
