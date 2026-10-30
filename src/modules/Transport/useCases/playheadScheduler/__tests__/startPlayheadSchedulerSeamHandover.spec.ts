@@ -377,7 +377,9 @@ describe('startPlayheadScheduler seam handover', () => {
             playheadPosition: 3.99,
         });
         const prepared = prepareInitialBrowserPlayback(schedulerSession.generation);
-        if (!prepared) throw new Error('Missing initial browser programme');
+        if (!prepared) {
+            throw new Error('Missing initial browser programme');
+        }
         const onRoll = vi.fn();
         expect(await startPlayheadScheduler(prepared, onRoll)).toBe(true);
         const pending = schedulerSession.pendingSeam;

@@ -9,24 +9,24 @@ import { valuesEqual } from '#/utils/structuralEquality';
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { compRegionInterval } from '../../useCases/comping/compRegionInterval';
-import {
-    captureOriginalMidiTakeRowCopies,
-    isWitnessedMidiCopyScope,
-    prepareOriginalMidiTakeRowReplacement,
-} from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';
+import { originalMidiTakeRowReplacement } from '../../useCases/comping/prepareOriginalMidiTakeRowReplacement';
+
+const { captureOriginalMidiTakeRowCopies, isWitnessedMidiCopyScope, prepareOriginalMidiTakeRowReplacement } =
+    originalMidiTakeRowReplacement;
 
 type RowAction = Extract<AppAction, { type: 'replaceOriginalMidiTakeRow' }>;
 
 function reverse(payload: OriginalMidiTakeRowReplacementPayload): OriginalMidiTakeRowReplacementPayload {
-    const copyScope = isWitnessedMidiCopyScope(payload.copyScope)
-        ? payload.copyScope.map((copy) => ({
-              ...copy,
-              expectedSlotPresent: copy.replacementSlotPresent,
-              replacementSlotPresent: copy.expectedSlotPresent,
-              expectedNextRowId: copy.replacementNextRowId,
-              replacementNextRowId: copy.expectedNextRowId,
-          }))
-        : payload.copyScope;
+    let copyScope = payload.copyScope;
+    if (isWitnessedMidiCopyScope(copyScope)) {
+        copyScope = copyScope.map((copy) => ({
+            ...copy,
+            expectedSlotPresent: copy.replacementSlotPresent,
+            replacementSlotPresent: copy.expectedSlotPresent,
+            expectedNextRowId: copy.replacementNextRowId,
+            replacementNextRowId: copy.expectedNextRowId,
+        }));
+    }
     switch (payload.rowKind) {
         case 'note':
             return {
@@ -104,15 +104,18 @@ export const handleReplaceOriginalMidiTakeRow = createHandler<'replaceOriginalMi
             action.payload.copyScope !== 'capture' ||
             context?.undoEntryId !== undefined ||
             context?.recordedRedo !== undefined
-        )
+        ) {
             return;
+        }
         const state = takeLaneStore.value;
-        const projected =
-            state && context
-                ? compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context)
-                : state;
+        let projected = state;
+        if (state && context) {
+            projected = compRegionInterval.projectTakeLaneStateThroughMaterializedActionPrefix(state, context);
+        }
         const copyScope = captureOriginalMidiTakeRowCopies(action.payload, projected);
-        if (copyScope) action.payload = { ...action.payload, copyScope };
+        if (copyScope) {
+            action.payload = { ...action.payload, copyScope };
+        }
     },
     canReapplyAfterDivergence: () => true,
     canReportConflict: true,

@@ -174,18 +174,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            action = materializeCommandHandlerArguments(
-                action,
-                handler,
-                options?.undoEntryId !== undefined || recordedRedo !== undefined
-                    ? {
-                          actions: [action],
-                          actionIndex: 0,
-                          ...(options?.undoEntryId !== undefined ? { undoEntryId: options.undoEntryId } : {}),
-                          ...(recordedRedo !== undefined ? { recordedRedo } : {}),
-                      }
-                    : undefined
-            );
+            type Context = NonNullable<Parameters<typeof materializeCommandHandlerArguments>[2]>;
+            let materializationContext: { -readonly [K in keyof Context]: Context[K] } | undefined;
+            if (options?.undoEntryId !== undefined || recordedRedo !== undefined) {
+                materializationContext = { actions: [action], actionIndex: 0 };
+                if (options?.undoEntryId !== undefined) {
+                    materializationContext.undoEntryId = options.undoEntryId;
+                }
+                if (recordedRedo !== undefined) {
+                    materializationContext.recordedRedo = recordedRedo;
+                }
+            }
+            action = materializeCommandHandlerArguments(action, handler, materializationContext);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (

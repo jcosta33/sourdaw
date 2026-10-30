@@ -199,7 +199,9 @@ function createDivergedMidiRowAction(kind: 'base' | 'take'): AppAction {
         };
     }
     const handler = getCommandHandler(action);
-    if (handler) action = materializeCommandHandlerArguments(action, handler);
+    if (handler) {
+        action = materializeCommandHandlerArguments(action, handler);
+    }
     if (!handler?.validate?.(action, { actions: [action], actionIndex: 0 })) {
         throw new Error('Expected MIDI row action to validate before peer edit');
     }

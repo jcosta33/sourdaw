@@ -106,7 +106,9 @@ describe('takeLaneWriteJournal', () => {
         expect(journal[0]?.kind).toBe('take-midi-source-note-row');
         const result = replayTakeLaneWriteJournal(peer, journal);
         expect(result.status).toBe('applied');
-        if (result.status !== 'applied') throw new Error('Expected keyed row insertion');
+        if (result.status !== 'applied') {
+            throw new Error('Expected keyed row insertion');
+        }
         expect(result.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value).toEqual([
             restoredRow,
             { ...peerRow, velocity: 111 },

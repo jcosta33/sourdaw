@@ -44,10 +44,13 @@ function replaceRow<Row extends { readonly id: string }>(
         if (!replacement || rows.some((row) => row.id === replacement.id)) {
             return null;
         }
-        if (replacementNextRowId === undefined || replacementNextRowId === null)
+        if (replacementNextRowId === undefined || replacementNextRowId === null) {
             return [...rows, structuredClone(replacement)];
+        }
         const beforeIndex = rows.findIndex((row) => row.id === replacementNextRowId);
-        if (beforeIndex < 0) return null;
+        if (beforeIndex < 0) {
+            return null;
+        }
         return [...rows.slice(0, beforeIndex), structuredClone(replacement), ...rows.slice(beforeIndex)];
     }
     if (replacement !== null && expected.id !== replacement.id) {

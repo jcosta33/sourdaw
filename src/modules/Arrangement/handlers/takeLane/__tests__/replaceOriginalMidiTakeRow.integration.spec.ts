@@ -23,14 +23,13 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { type AppAction } from '#/utils/handlerContract';
 import {
     type ConfirmPayload,
     type NotifyPayload,
     type PromptPayload,
     setNotificationEventBus,
 } from '#/utils/Notification/notificationEventBus';
-
-import { type AppAction } from '#/utils/handlerContract';
 
 import { takeLaneStore, type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
@@ -202,10 +201,14 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         'limits %s Delete/Undo/Redo to the witnessed copies and exact row position',
         async (kind) => {
             const state = structuredClone(takeLaneStore.value);
-            if (!state) throw new Error('Missing take state');
+            if (!state) {
+                throw new Error('Missing take state');
+            }
             const selected = state.lanes[0]!.takes[0]!;
             const other = state.lanes[0]!.takes[1]!;
-            if (!selected.midiSource || !other.midiSource) throw new Error('Missing sources');
+            if (!selected.midiSource || !other.midiSource) {
+                throw new Error('Missing sources');
+            }
             const cc = { id: 'owned-cc', controller: 64, value: 127, channel: 1, beat: 5.5 };
             const peerCc = { ...cc, id: 'peer-cc', value: 80, beat: 6.5 };
             const bend = { id: 'owned-bend', value: 2048, channel: 1, beat: 5.5 };
@@ -261,60 +264,66 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
             const untouched = structuredClone(other.midiSource);
             await executeUserAppAction(action);
             const entry = undoHistoryStore.value?.past[0];
-            if (entry?.kind !== 'action' || entry.action.type !== 'replaceOriginalMidiTakeRow')
+            if (entry?.kind !== 'action' || entry.action.type !== 'replaceOriginalMidiTakeRow') {
                 throw new Error('Missing row history');
+            }
             expect(entry.action.payload.copyScope).toHaveLength(2);
             expect(takeLaneStore.value?.lanes[0]?.takes[1]?.midiSource).toEqual(untouched);
             expect(undoHistoryStore.value?.past).toHaveLength(1);
             const afterDelete = structuredClone(takeLaneStore.value);
-            if (!afterDelete) throw new Error('Missing deleted state');
+            if (!afterDelete) {
+                throw new Error('Missing deleted state');
+            }
             const sourceAfterDelete = afterDelete.lanes[0]!.takes[0]!.midiSource;
-            if (!sourceAfterDelete) throw new Error('Missing selected source');
+            if (!sourceAfterDelete) {
+                throw new Error('Missing selected source');
+            }
             // A peer row edit remains outside this inverse's authority.
-            afterDelete.lanes[0]!.takes[0]!.midiSource = {
-                ...sourceAfterDelete,
-                rows: {
-                    ...sourceAfterDelete.rows,
-                    ...(kind === 'note'
-                        ? {
-                              notes: {
-                                  ...sourceAfterDelete.rows.notes,
-                                  value: sourceAfterDelete.rows.notes.value.map((row) => ({ ...row, velocity: 111 })),
-                              },
-                          }
-                        : {}),
-                    ...(kind === 'cc'
-                        ? {
-                              controlChanges: {
-                                  ...sourceAfterDelete.rows.controlChanges,
-                                  value: sourceAfterDelete.rows.controlChanges.value.map((row) => ({
-                                      ...row,
-                                      value: 111,
-                                  })),
-                              },
-                          }
-                        : {}),
-                    ...(kind === 'bend'
-                        ? {
-                              pitchBends: {
-                                  ...sourceAfterDelete.rows.pitchBends,
-                                  value: sourceAfterDelete.rows.pitchBends.value.map((row) => ({ ...row, value: 111 })),
-                              },
-                          }
-                        : {}),
-                },
-            };
+            let rows = sourceAfterDelete.rows;
+            if (kind === 'note') {
+                rows = {
+                    ...rows,
+                    notes: { ...rows.notes, value: rows.notes.value.map((row) => ({ ...row, velocity: 111 })) },
+                };
+            }
+            if (kind === 'cc') {
+                rows = {
+                    ...rows,
+                    controlChanges: {
+                        ...rows.controlChanges,
+                        value: rows.controlChanges.value.map((row) => ({ ...row, value: 111 })),
+                    },
+                };
+            }
+            if (kind === 'bend') {
+                rows = {
+                    ...rows,
+                    pitchBends: {
+                        ...rows.pitchBends,
+                        value: rows.pitchBends.value.map((row) => ({ ...row, value: 111 })),
+                    },
+                };
+            }
+            afterDelete.lanes[0]!.takes[0]!.midiSource = { ...sourceAfterDelete, rows };
             afterDelete.lanes[0]!.takes.push({ ...structuredClone(other), id: 'new-copy' });
             takeLaneStore.set(afterDelete);
             flushAutomergeStorageWrites();
             expect(await undo()).toEqual({ headConsumed: true });
             const restored = takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource;
             const shared = takeLaneStore.value?.lanes[0]?.takes[2]?.midiSource;
-            if (!restored) throw new Error('Missing restored source');
+            if (!restored) {
+                throw new Error('Missing restored source');
+            }
             expect(shared).toEqual(selected.midiSource);
-            if (kind === 'note') expect(restored.rows.notes.value).toEqual([edited, { ...sibling, velocity: 111 }]);
-            if (kind === 'cc') expect(restored.rows.controlChanges.value).toEqual([cc, { ...peerCc, value: 111 }]);
-            if (kind === 'bend') expect(restored.rows.pitchBends.value).toEqual([bend, { ...peerBend, value: 111 }]);
+            if (kind === 'note') {
+                expect(restored.rows.notes.value).toEqual([edited, { ...sibling, velocity: 111 }]);
+            }
+            if (kind === 'cc') {
+                expect(restored.rows.controlChanges.value).toEqual([cc, { ...peerCc, value: 111 }]);
+            }
+            if (kind === 'bend') {
+                expect(restored.rows.pitchBends.value).toEqual([bend, { ...peerBend, value: 111 }]);
+            }
             expect(takeLaneStore.value?.lanes[0]?.takes[1]?.midiSource).toEqual(untouched);
             expect(takeLaneStore.value?.lanes[0]?.takes[3]?.midiSource).toEqual(untouched);
             expect(stateSnapshot().raw).toEqual(takeLaneStore.value);
@@ -334,10 +343,14 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
             const { recordingPassIndex: _previousPass, ...legacy } = edited;
             const original = recordingPassIndex === undefined ? legacy : { ...legacy, recordingPassIndex };
             const state = structuredClone(takeLaneStore.value);
-            if (!state) throw new Error('Missing state');
+            if (!state) {
+                throw new Error('Missing state');
+            }
             state.lanes[0]!.takes = state.lanes[0]!.takes.map((take) => {
                 const source = take.midiSource;
-                if (!source) throw new Error('Missing source');
+                if (!source) {
+                    throw new Error('Missing source');
+                }
                 return {
                     ...take,
                     midiSource: {
@@ -382,10 +395,14 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
 
     it('restores each copy slot presence after inserting into heterogeneous note buckets', async () => {
         const state = structuredClone(takeLaneStore.value);
-        if (!state) throw new Error('Missing state');
+        if (!state) {
+            throw new Error('Missing state');
+        }
         const owner = state.lanes[0]!.takes[0]!;
         const other = state.lanes[0]!.takes[1]!;
-        if (!owner.midiSource || !other.midiSource) throw new Error('Missing sources');
+        if (!owner.midiSource || !other.midiSource) {
+            throw new Error('Missing sources');
+        }
         owner.midiSource = {
             ...owner.midiSource,
             rows: { ...owner.midiSource.rows, notes: { present: false, value: [] } },
@@ -426,11 +443,16 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         async (change) => {
             await executeUserAppAction({ ...editAction(), payload: { ...editAction().payload, replacement: null } });
             const state = structuredClone(takeLaneStore.value);
-            if (!state) throw new Error('Missing state');
-            if (change === 'missing copy') state.lanes[0]!.takes.splice(1, 1);
-            else {
+            if (!state) {
+                throw new Error('Missing state');
+            }
+            if (change === 'missing copy') {
+                state.lanes[0]!.takes.splice(1, 1);
+            } else {
                 const source = state.lanes[0]!.takes[1]?.midiSource;
-                if (!source) throw new Error('Missing source');
+                if (!source) {
+                    throw new Error('Missing source');
+                }
                 state.lanes[0]!.takes[1]!.midiSource = {
                     ...source,
                     rows: {
@@ -457,8 +479,9 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         async (copyScope) => {
             await executeUserAppAction(editAction());
             const entry = undoHistoryStore.value?.past[0];
-            if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'replaceOriginalMidiTakeRow')
+            if (entry?.kind !== 'action' || entry.inverseAction?.type !== 'replaceOriginalMidiTakeRow') {
                 throw new Error('Missing inverse');
+            }
             const { copyScope: _previousScope, ...unwitnessed } = entry.inverseAction.payload;
             const payload: RowAction['payload'] = copyScope === 'capture' ? { ...unwitnessed, copyScope } : unwitnessed;
             const forged = { ...entry, inverseAction: { ...entry.inverseAction, payload } };
@@ -475,8 +498,9 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         await executeUserAppAction(editAction());
         expect(await undo()).toEqual({ headConsumed: true });
         const entry = undoHistoryStore.value?.future[0];
-        if (entry?.kind !== 'action' || entry.redoAction?.type !== 'replaceOriginalMidiTakeRow')
+        if (entry?.kind !== 'action' || entry.redoAction?.type !== 'replaceOriginalMidiTakeRow') {
             throw new Error('Missing redo');
+        }
         const forged = {
             ...entry,
             redoAction: {
@@ -498,8 +522,9 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
         );
         expect(await undo()).toEqual({ headConsumed: true });
         const future = undoHistoryStore.value!.future.map((entry, index) => {
-            if (index !== 0 || entry.kind !== 'action' || entry.redoAction?.type !== 'replaceOriginalMidiTakeRow')
+            if (index !== 0 || entry.kind !== 'action' || entry.redoAction?.type !== 'replaceOriginalMidiTakeRow') {
                 return entry;
+            }
             return {
                 ...entry,
                 redoAction: {
@@ -527,8 +552,9 @@ describe('replaceOriginalMidiTakeRow registered action', () => {
                     index !== 1 ||
                     entry.kind !== 'action' ||
                     entry.inverseAction?.type !== 'replaceOriginalMidiTakeRow'
-                )
+                ) {
                     return entry;
+                }
                 return {
                     ...entry,
                     inverseAction: {

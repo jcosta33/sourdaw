@@ -962,19 +962,20 @@ export function startPlayheadScheduler(
             playheadClockRef.beat = publishedBeat;
             playheadClockRef.audioTimeSeconds = now;
             const pending = schedulerSession.pendingSeam;
-            playheadClockRef.pendingLoopSeam = pending
-                ? {
-                      generation: schedulerGeneration,
-                      anchorBeat: publishedBeat,
-                      anchorAudioTimeSeconds: now,
-                      tempo: current.tempo,
-                      tempoMapChanges: changes,
-                      audioTimeSeconds: pending.seamAudioTime,
-                      loopStart: current.loopStart,
-                      loopEnd: current.loopEnd,
-                      passIndex: playheadWrapCountRef.current + 1,
-                  }
-                : null;
+            playheadClockRef.pendingLoopSeam = null;
+            if (pending) {
+                playheadClockRef.pendingLoopSeam = {
+                    generation: schedulerGeneration,
+                    anchorBeat: publishedBeat,
+                    anchorAudioTimeSeconds: now,
+                    tempo: current.tempo,
+                    tempoMapChanges: changes,
+                    audioTimeSeconds: pending.seamAudioTime,
+                    loopStart: current.loopStart,
+                    loopEnd: current.loopEnd,
+                    passIndex: playheadWrapCountRef.current + 1,
+                };
+            }
             releasePlayheadClockHold(schedulerGeneration);
             if (browserCapture && jumpToPosition !== null) {
                 recordingLifecycle.observeCaptureClock(

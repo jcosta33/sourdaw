@@ -122,9 +122,19 @@ function rowSlot(source: MidiTakeSource, kind: RowEdit['kind']) {
         case 'bend':
             return source.rows.pitchBends;
     }
+    throw new Error('Unsupported frozen MIDI row kind');
 }
 
-export function isWitnessedMidiCopyScope(
+function hasValidRecordingPass(copy: { readonly recordingPassIndex?: number }): boolean {
+    return (
+        !Object.hasOwn(copy, 'recordingPassIndex') ||
+        (typeof copy.recordingPassIndex === 'number' &&
+            Number.isSafeInteger(copy.recordingPassIndex) &&
+            copy.recordingPassIndex >= 0)
+    );
+}
+
+function isWitnessedMidiCopyScope(
     scope: OriginalMidiTakeRowReplacementPayload['copyScope']
 ): scope is readonly OriginalMidiTakeRowCopy[] {
     return (
@@ -148,16 +158,36 @@ export function isWitnessedMidiCopyScope(
                 typeof copy.replacementSlotPresent === 'boolean' &&
                 (copy.expectedNextRowId === null || typeof copy.expectedNextRowId === 'string') &&
                 (copy.replacementNextRowId === null || typeof copy.replacementNextRowId === 'string') &&
-                (!Object.hasOwn(copy, 'recordingPassIndex') ||
-                    (typeof copy.recordingPassIndex === 'number' &&
-                        Number.isSafeInteger(copy.recordingPassIndex) &&
-                        copy.recordingPassIndex >= 0))
+                hasValidRecordingPass(copy)
         )
     );
 }
 
+function matchesCapturedSource(
+    source: MidiTakeSource,
+    input: OriginalMidiTakeRowReplacementPayload,
+    edit: RowEdit
+): boolean {
+    return (
+        source.sourceClipId === input.sourceClipId && (edit.expected === null || containsRow(source, edit, input.rowId))
+    );
+}
+
+function copyWithRecordingPass(
+    copy: OriginalMidiTakeRowCopy,
+    take: { readonly recordingPassIndex?: number }
+): OriginalMidiTakeRowCopy | null {
+    if (!Object.hasOwn(take, 'recordingPassIndex')) {
+        return copy;
+    }
+    if (!hasValidRecordingPass(take) || take.recordingPassIndex === undefined) {
+        return null;
+    }
+    return { ...copy, recordingPassIndex: take.recordingPassIndex };
+}
+
 /** Capture only copies this forward edit changes, before any dispatch wait. */
-export function captureOriginalMidiTakeRowCopies(
+function captureOriginalMidiTakeRowCopies(
     input: OriginalMidiTakeRowReplacementPayload,
     state: TakeLaneStoreState | null
 ): readonly OriginalMidiTakeRowCopy[] | null {
@@ -175,12 +205,9 @@ export function captureOriginalMidiTakeRowCopies(
     for (const lane of state.lanes) {
         for (const take of lane.takes) {
             const source = take.midiSource;
-            if (
-                !source ||
-                source.sourceClipId !== input.sourceClipId ||
-                (edit.expected !== null && !containsRow(source, edit, input.rowId))
-            )
+            if (!source || !matchesCapturedSource(source, input, edit)) {
                 continue;
+            }
             const slot = rowSlot(source, edit.kind);
             const index = slot.value.findIndex((row) => row.id === input.rowId);
             const nextRowId = index < 0 ? null : (slot.value[index + 1]?.id ?? null);
@@ -196,17 +223,11 @@ export function captureOriginalMidiTakeRowCopies(
                 expectedNextRowId: nextRowId,
                 replacementNextRowId: edit.replacement === null ? null : nextRowId,
             };
-            if (Object.hasOwn(take, 'recordingPassIndex')) {
-                if (
-                    typeof take.recordingPassIndex !== 'number' ||
-                    !Number.isSafeInteger(take.recordingPassIndex) ||
-                    take.recordingPassIndex < 0
-                )
-                    return null;
-                copies.push({ ...copy, recordingPassIndex: take.recordingPassIndex });
-            } else {
-                copies.push(copy);
+            const witnessed = copyWithRecordingPass(copy, take);
+            if (!witnessed) {
+                return null;
             }
+            copies.push(witnessed);
         }
     }
     return isWitnessedMidiCopyScope(copies) ? copies : null;
@@ -217,7 +238,7 @@ function copyKey(copy: Pick<OriginalMidiTakeRowCopy, 'laneId' | 'takeId'>): stri
 }
 
 /** Prepare the admitted copies atomically; new and untouched copies have no replay authority. */
-export function prepareOriginalMidiTakeRowReplacement(
+function prepareOriginalMidiTakeRowReplacement(
     input: OriginalMidiTakeRowReplacementPayload,
     state: TakeLaneStoreState | null
 ): TakeLaneStoreState | null {
@@ -228,17 +249,22 @@ export function prepareOriginalMidiTakeRowReplacement(
         !state ||
         !isWitnessedMidiCopyScope(scope) ||
         !ownerAcceptsEdit(input, edit, owner?.midiSource, owner?.recordingPassIndex)
-    )
+    ) {
         return null;
+    }
     const copies = new Map(scope.map((copy) => [copyKey(copy), copy]));
-    if (copies.size !== scope.length || !copies.has(copyKey(input))) return null;
+    if (copies.size !== scope.length || !copies.has(copyKey(input))) {
+        return null;
+    }
     let changed = 0;
     let refused = false;
     const lanes = state.lanes.map((lane) => ({
         ...lane,
         takes: lane.takes.map((take) => {
             const copy = copies.get(copyKey({ laneId: lane.id, takeId: take.id }));
-            if (!copy) return take;
+            if (!copy) {
+                return take;
+            }
             const source = take.midiSource;
             if (
                 !source ||
@@ -278,3 +304,9 @@ export function prepareOriginalMidiTakeRowReplacement(
     }));
     return refused || changed !== copies.size ? null : { lanes };
 }
+
+export const originalMidiTakeRowReplacement = {
+    isWitnessedMidiCopyScope,
+    captureOriginalMidiTakeRowCopies,
+    prepareOriginalMidiTakeRowReplacement,
+};

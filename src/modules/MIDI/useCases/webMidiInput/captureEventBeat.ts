@@ -94,6 +94,84 @@ function ridesRollGeometry(beatNow: number, loopStart: number, loopEnd: number, 
     return loopEnd > loopStart && beatNow >= loopStart && (beatNow < loopEnd || !isLooping);
 }
 
+function isWitnessedSeam(
+    pending: ReturnType<typeof captureGestureClock>['pendingLoopSeam'],
+    transport: NonNullable<typeof transportStore.value>,
+    wrapsSinceEpoch: number,
+    pendingIncomingSeconds: number
+): boolean {
+    return (
+        pending !== null &&
+        transport.isLooping &&
+        pending.loopStart === transport.loopStart &&
+        pending.loopEnd === transport.loopEnd &&
+        pending.passIndex === wrapsSinceEpoch + 1 &&
+        pendingIncomingSeconds >= 0 &&
+        pendingIncomingSeconds <= MAX_PROJECTION_SECONDS &&
+        pendingIncomingSeconds < travelSeconds(pending.loopStart, pending.loopEnd)
+    );
+}
+
+function captureAtSeam(input: {
+    witnessedSeam: boolean;
+    pendingIncomingSeconds: number;
+    overshootSeconds: number;
+    elapsedSeconds: number;
+    wrapsSinceEpoch: number;
+    epochStartBeat: number;
+    transport: NonNullable<typeof transportStore.value>;
+}): { beat: number; passIndex: number } {
+    const {
+        witnessedSeam,
+        pendingIncomingSeconds,
+        overshootSeconds,
+        elapsedSeconds,
+        wrapsSinceEpoch,
+        epochStartBeat,
+        transport,
+    } = input;
+    // The overshoot's wall age stands in for the incoming pass's
+    // distance — the same quantity the post-arrival branch reads off the
+    // wrapped cursor — so charging it first lands the event where the
+    // next grain's capture will.
+    const incomingSeconds = witnessedSeam ? pendingIncomingSeconds : overshootSeconds;
+    const eventAge = Math.max(0, elapsedSeconds);
+    if (eventAge <= incomingSeconds) {
+        // A scheduled witness dates the incoming offset exactly. Legacy
+        // anchors without one retain their bounded seam-origin fallback.
+        const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
+        let beat = transport.loopStart;
+        if (witnessedSeam) {
+            beat = invertTravelBackward(
+                transport.loopEnd,
+                passSeconds - (incomingSeconds - eventAge),
+                transport.loopStart
+            );
+        }
+        return {
+            beat,
+            passIndex: wrapsSinceEpoch + 1,
+        };
+    }
+    // The dying pass closing here is the roll's `wrapsSinceEpoch + 1`th,
+    // so the traversal is the epoch-to-seam span plus every pass the
+    // count already covers plus the incoming distance — the post-arrival
+    // bound with the count the arrival tick is about to write.
+    const traversalSeconds =
+        travelSeconds(epochStartBeat, transport.loopEnd) +
+        wrapsSinceEpoch * travelSeconds(transport.loopStart, transport.loopEnd) +
+        incomingSeconds;
+    if (elapsedSeconds > traversalSeconds) {
+        return { beat: epochStartBeat, passIndex: 0 };
+    }
+    const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
+    const passesBack = Math.ceil((elapsedSeconds - incomingSeconds) / passSeconds);
+    return {
+        beat: invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd),
+        passIndex: Math.max(0, wrapsSinceEpoch + 1 - passesBack),
+    };
+}
+
 /**
  * The beat a live event happened at, projected from its own arrival instant
  * instead of from the moment the handler runs (#4875).
@@ -157,15 +235,7 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
         playheadClockRef.audioTimeSeconds +
         Math.max(0, Math.min(now - playheadClockRef.audioTimeSeconds, MAX_PROJECTION_SECONDS));
     const pendingIncomingSeconds = pending ? projectedNow - pending.audioTimeSeconds : -1;
-    const witnessedSeam =
-        pending !== null &&
-        transport.isLooping &&
-        pending.loopStart === transport.loopStart &&
-        pending.loopEnd === transport.loopEnd &&
-        pending.passIndex === wrapsSinceEpoch + 1 &&
-        pendingIncomingSeconds >= 0 &&
-        pendingIncomingSeconds <= MAX_PROJECTION_SECONDS &&
-        pendingIncomingSeconds < travelSeconds(pending.loopStart, pending.loopEnd);
+    const witnessedSeam = isWitnessedSeam(pending, transport, wrapsSinceEpoch, pendingIncomingSeconds);
     if (elapsedSeconds <= 0 && !witnessedSeam) {
         return { beat: beatNow, passIndex: wrapsSinceEpoch };
     }
@@ -240,44 +310,15 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
             beatNow >= transport.loopEnd &&
             overshootSeconds <= MAX_PROJECTION_SECONDS);
     if (inSeamWindow) {
-        // The overshoot's wall age stands in for the incoming pass's
-        // distance — the same quantity the post-arrival branch reads off the
-        // wrapped cursor — so charging it first lands the event where the
-        // next grain's capture will.
-        const incomingSeconds = witnessedSeam ? pendingIncomingSeconds : overshootSeconds;
-        const eventAge = Math.max(0, elapsedSeconds);
-        if (eventAge <= incomingSeconds) {
-            // A scheduled witness dates the incoming offset exactly. Legacy
-            // anchors without one retain their bounded seam-origin fallback.
-            const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
-            return {
-                beat: witnessedSeam
-                    ? invertTravelBackward(
-                          transport.loopEnd,
-                          passSeconds - (incomingSeconds - eventAge),
-                          transport.loopStart
-                      )
-                    : transport.loopStart,
-                passIndex: wrapsSinceEpoch + 1,
-            };
-        }
-        // The dying pass closing here is the roll's `wrapsSinceEpoch + 1`th,
-        // so the traversal is the epoch-to-seam span plus every pass the
-        // count already covers plus the incoming distance — the post-arrival
-        // bound with the count the arrival tick is about to write.
-        const traversalSeconds =
-            travelSeconds(epochStartBeat, transport.loopEnd) +
-            wrapsSinceEpoch * travelSeconds(transport.loopStart, transport.loopEnd) +
-            incomingSeconds;
-        if (elapsedSeconds > traversalSeconds) {
-            return { beat: epochStartBeat, passIndex: 0 };
-        }
-        const passSeconds = travelSeconds(transport.loopStart, transport.loopEnd);
-        const passesBack = Math.ceil((elapsedSeconds - incomingSeconds) / passSeconds);
-        return {
-            beat: invertTravelToSeam(elapsedSeconds - incomingSeconds, transport.loopStart, transport.loopEnd),
-            passIndex: Math.max(0, wrapsSinceEpoch + 1 - passesBack),
-        };
+        return captureAtSeam({
+            witnessedSeam,
+            pendingIncomingSeconds,
+            overshootSeconds,
+            elapsedSeconds,
+            wrapsSinceEpoch,
+            epochStartBeat,
+            transport,
+        });
     }
 
     if (!ridesRegionGeometry) {

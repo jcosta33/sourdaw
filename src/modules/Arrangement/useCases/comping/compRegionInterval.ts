@@ -21,15 +21,14 @@ import { sanitizeTrackSnapshot } from '../../stores/trackStore';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
-import {
-    captureOriginalMidiTakeRowCopies,
-    prepareOriginalMidiTakeRowReplacement,
-} from './prepareOriginalMidiTakeRowReplacement';
 import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAuthorizations';
 import { compRegionIntervalValidation } from './compRegionIntervalValidation';
 import { liveCompAudioSourceInputs } from './liveCompAudioSourceInputs';
 import { prepareCompAudioSourcePatch } from './prepareCompAudioSourcePatch';
+import { originalMidiTakeRowReplacement } from './prepareOriginalMidiTakeRowReplacement';
 import { takeLaneSelection } from './takeLaneSelection';
+
+const { captureOriginalMidiTakeRowCopies, prepareOriginalMidiTakeRowReplacement } = originalMidiTakeRowReplacement;
 
 const {
     isValidInterval,
@@ -209,42 +208,30 @@ function prefixCompPatch(
     actionIndex: number,
     mode: 'capture' | 'validate'
 ): CompRegionIntervalPatch | null | undefined {
-    let patch: CompRegionIntervalPatch | null;
     if (action.type === 'setCompRegion') {
         if (mode === 'capture') {
-            patch = captureCompRegionIntervalPatchFromState(
+            return captureCompRegionIntervalPatchFromState(
                 state,
                 action.payload,
                 sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
             );
-        } else {
-            if (!isCompleteSetCompRegionPayload(action.payload)) {
-                return null;
-            }
-            patch = action.payload;
         }
-    } else if (action.type === 'removeCompRegion') {
-        if (mode === 'capture') {
-            patch = captureRemovedCompRegionPatchFromState(
-                state,
-                action.payload,
-                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
-            );
-        } else {
-            if (!isCompleteRemoveCompRegionPayload(action.payload)) {
-                return null;
-            }
-            patch = action.payload;
-        }
-    } else if (action.type === 'restoreCompRegionInterval') {
-        if (!isCompleteRestoreCompRegionIntervalPayload(action.payload)) {
-            return null;
-        }
-        patch = action.payload;
-    } else {
-        return undefined;
+        return isCompleteSetCompRegionPayload(action.payload) ? action.payload : null;
     }
-    return patch;
+    if (action.type === 'removeCompRegion') {
+        if (mode === 'capture') {
+            return captureRemovedCompRegionPatchFromState(
+                state,
+                action.payload,
+                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
+            );
+        }
+        return isCompleteRemoveCompRegionPayload(action.payload) ? action.payload : null;
+    }
+    if (action.type === 'restoreCompRegionInterval') {
+        return isCompleteRestoreCompRegionIntervalPayload(action.payload) ? action.payload : null;
+    }
+    return undefined;
 }
 
 function projectTakeLaneStateThroughActionPrefix(
@@ -268,12 +255,14 @@ function projectTakeLaneStateThroughActionPrefix(
             continue;
         }
         if (action.type === 'replaceOriginalMidiTakeRow') {
-            const copyScope =
-                action.payload.copyScope === 'capture'
-                    ? captureOriginalMidiTakeRowCopies(action.payload, state)
-                    : action.payload.copyScope;
+            let copyScope: typeof action.payload.copyScope | null = action.payload.copyScope;
+            if (copyScope === 'capture') {
+                copyScope = captureOriginalMidiTakeRowCopies(action.payload, state);
+            }
             const next = copyScope && prepareOriginalMidiTakeRowReplacement({ ...action.payload, copyScope }, state);
-            if (!next) return null;
+            if (!next) {
+                return null;
+            }
             state = next;
             continue;
         }

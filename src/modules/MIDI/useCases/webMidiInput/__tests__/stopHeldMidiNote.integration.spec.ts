@@ -227,9 +227,6 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             retireRecordingMidiAdmission,
             takeOwnsRecordingRoot,
             recordingMidiSourceBeatAt,
-            stageRecordingTake,
-            selectTake,
-            resolveClipsWithComping,
         });
         activeNotes.clear();
         playheadClockRef.pendingLoopSeam = null;
@@ -306,7 +303,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             mocks.getCompensationDelay.mockReturnValue(compensation);
             mocks.audioClock.currentTime = 0.085;
             const [clip] = startRecording(6);
-            if (!clip) throw new Error('Missing recording clip');
+            if (!clip) {
+                throw new Error('Missing recording clip');
+            }
             // Same planned first-boundary input emitted by stageLoopWrapTakes:
             // clip starts inside [0,8), so pass0 spans source [0,2) and pass1 opens.
             stageRecordingTake({
@@ -364,7 +363,7 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
                 getAudioTimeSeconds: () => mocks.audioClock.currentTime,
                 readNativeCursorBeats: () => null,
             });
-            await handleWebMidiMessage({ data: new Uint8Array([0x91, 60, 100]), timeStamp: 1100 } as MIDIMessageEvent);
+            await handleWebMidiMessage({ data: new Uint8Array([0x91, 60, 100]), timeStamp: 1100 });
             expect(activeNotes.get(createWebMidiNoteKey(1, 60))?.recordingPassIndex).toBe(1);
             expect(activeRecordingRef.midiAdmissions[0]?.onsetSourceBeat).toBeCloseTo(2.03 - compensation * 2, 9);
             midiStore.set({
@@ -375,14 +374,14 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
                 },
             });
             flushAutomergeStorageWrites();
-            await handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 100]), timeStamp: 1095 } as MIDIMessageEvent);
+            await handleWebMidiMessage({ data: new Uint8Array([0x91, 62, 100]), timeStamp: 1095 });
             expect(activeNotes.get(createWebMidiNoteKey(1, 62))?.recordingPassIndex).toBe(1);
             if (release === 'released') {
                 mocks.audioClock.currentTime = 1.15;
                 await handleWebMidiMessage({
                     data: new Uint8Array([0x81, 60, 0]),
                     timeStamp: 1150,
-                } as MIDIMessageEvent);
+                });
             }
             // Arrival publishes pass1 before Stop, which now seals on that pass.
             mocks.audioClock.currentTime = 1.2;
@@ -396,7 +395,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             const notes = midiStore.value?.notesByClipId[clip.id] ?? [];
             const raw = getCrdtDoc<{ midi?: typeof midiStore.value }>('root')?.midi?.notesByClipId[clip.id] ?? [];
             const incoming = takeLaneStore.value?.lanes[0]?.takes.find((take) => take.recordingPassIndex === 1);
-            if (!incoming) throw new Error('Missing incoming take');
+            if (!incoming) {
+                throw new Error('Missing incoming take');
+            }
             await selectTake(TRACK_ID, incoming.id);
             await executeUserAppAction({
                 type: 'setCompRegion',
@@ -405,7 +406,9 @@ describe('stopActiveRecording commit ordering (issue #4439)', () => {
             const tracks = trackStore.value?.tracks ?? [];
             const resolved = resolveClipsWithComping(TRACK_ID, tracks[0]?.clips ?? []);
             const selected = resolved.find((entry) => entry.midiTakeRecordingPassIndex === 1);
-            if (!selected) throw new Error('Missing selected incoming programme');
+            if (!selected) {
+                throw new Error('Missing selected incoming programme');
+            }
             const incomingRows = selectMidiNotesForRecordingPass(notes, selected.midiTakeRecordingPassIndex);
             expect(raw).toEqual(notes);
             expect(notes).toHaveLength(2);

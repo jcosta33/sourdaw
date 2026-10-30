@@ -82,44 +82,59 @@ function captureMidiSourceRowOperations(
     const notes = changedMidiRows(
         beforeRows.notes,
         nextRows.notes,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
-            kind: 'take-midi-source-note-row',
-            laneId,
-            takeId,
-            expected,
-            replacement,
-            expectedSlotPresent,
-            replacementSlotPresent,
-            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
-        })
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => {
+            const base: Extract<TakeFieldOperation, { kind: 'take-midi-source-note-row' }> = {
+                kind: 'take-midi-source-note-row',
+                laneId,
+                takeId,
+                expected,
+                replacement,
+                expectedSlotPresent,
+                replacementSlotPresent,
+            };
+            if (replacementNextRowId !== undefined) {
+                return { ...base, replacementNextRowId };
+            }
+            return base;
+        }
     );
     const controllers = changedMidiRows(
         beforeRows.controlChanges,
         nextRows.controlChanges,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
-            kind: 'take-midi-source-cc-row',
-            laneId,
-            takeId,
-            expected,
-            replacement,
-            expectedSlotPresent,
-            replacementSlotPresent,
-            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
-        })
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => {
+            const base: Extract<TakeFieldOperation, { kind: 'take-midi-source-cc-row' }> = {
+                kind: 'take-midi-source-cc-row',
+                laneId,
+                takeId,
+                expected,
+                replacement,
+                expectedSlotPresent,
+                replacementSlotPresent,
+            };
+            if (replacementNextRowId !== undefined) {
+                return { ...base, replacementNextRowId };
+            }
+            return base;
+        }
     );
     const bends = changedMidiRows(
         beforeRows.pitchBends,
         nextRows.pitchBends,
-        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => ({
-            kind: 'take-midi-source-bend-row',
-            laneId,
-            takeId,
-            expected,
-            replacement,
-            expectedSlotPresent,
-            replacementSlotPresent,
-            ...(replacementNextRowId !== undefined ? { replacementNextRowId } : {}),
-        })
+        (expected, replacement, expectedSlotPresent, replacementSlotPresent, replacementNextRowId) => {
+            const base: Extract<TakeFieldOperation, { kind: 'take-midi-source-bend-row' }> = {
+                kind: 'take-midi-source-bend-row',
+                laneId,
+                takeId,
+                expected,
+                replacement,
+                expectedSlotPresent,
+                replacementSlotPresent,
+            };
+            if (replacementNextRowId !== undefined) {
+                return { ...base, replacementNextRowId };
+            }
+            return base;
+        }
     );
     if (!notes || !controllers || !bends) {
         return null;

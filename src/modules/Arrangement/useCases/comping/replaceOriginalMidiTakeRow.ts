@@ -2,17 +2,16 @@ import { type OriginalMidiTakeRowReplacementPayload } from '#/utils/handlerContr
 
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
-import {
-    captureOriginalMidiTakeRowCopies,
-    prepareOriginalMidiTakeRowReplacement,
-} from './prepareOriginalMidiTakeRowReplacement';
+import { originalMidiTakeRowReplacement } from './prepareOriginalMidiTakeRowReplacement';
+
+const { captureOriginalMidiTakeRowCopies, prepareOriginalMidiTakeRowReplacement } = originalMidiTakeRowReplacement;
 
 /** One original row is shared by the frozen selected and unselected fragments of its source clip. */
 export function replaceOriginalMidiTakeRow(input: OriginalMidiTakeRowReplacementPayload): void {
-    const copyScope =
-        input.copyScope === undefined || input.copyScope === 'capture'
-            ? captureOriginalMidiTakeRowCopies(input, takeLaneStore.value)
-            : input.copyScope;
+    let copyScope: typeof input.copyScope | null = input.copyScope;
+    if (copyScope === undefined || copyScope === 'capture') {
+        copyScope = captureOriginalMidiTakeRowCopies(input, takeLaneStore.value);
+    }
     const next = copyScope && prepareOriginalMidiTakeRowReplacement({ ...input, copyScope }, takeLaneStore.value);
     if (!next) {
         throw new Error('Frozen MIDI take row changed or owner is unavailable');
