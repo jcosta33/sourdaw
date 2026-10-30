@@ -27,6 +27,61 @@ const expectedSteps = [
     'Upload diagnostic evidence',
 ];
 
+// Pin the container caller independently of the general workflow snapshot.
+const runtimeProvenance = String.raw`set -euo pipefail
+{
+  node --version
+  pnpm --version
+  pnpm store path --silent
+  node -p "require('./original/package.json').packageManager"
+} > "$RUNNER_TEMP/reload-cancellation/runtime.txt"
+test "$(node --version)" = v24.19.0
+test "$(pnpm --version)" = 11.6.0
+test "$(node -p process.platform)" = linux
+if ! test -x /usr/bin/timeout; then
+  printf 'Required GNU timeout is unavailable\n' >&2
+  exit 1
+fi
+{
+  /usr/bin/timeout --version
+  dpkg-query -W coreutils
+  sha256sum /usr/bin/timeout
+} > "$RUNNER_TEMP/reload-cancellation/timeout-provenance.txt"
+case "$(head -n 1 "$RUNNER_TEMP/reload-cancellation/timeout-provenance.txt")" in
+  'timeout (GNU coreutils) '*) ;;
+  *)
+    printf 'Required GNU timeout was not identified\n' >&2
+    exit 1
+    ;;
+esac
+timeout_control_status=0
+/usr/bin/timeout --signal=TERM --kill-after=1s 2s bash -c 'exit 0' || timeout_control_status=$?
+printf 'success=%s\n' "$timeout_control_status" > "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+test "$timeout_control_status" = 0
+timeout_control_status=0
+/usr/bin/timeout --signal=TERM --kill-after=1s 2s bash -c 'exit 37' || timeout_control_status=$?
+printf 'failure=%s\n' "$timeout_control_status" >> "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+test "$timeout_control_status" = 37
+timeout_control_status=0
+/usr/bin/timeout --signal=TERM --kill-after=1s 1s bash -c 'trap "printf trapped-zero; exit 0" TERM; while :; do sleep 1; done' > "$RUNNER_TEMP/reload-cancellation/timeout-trapped-zero.txt" || timeout_control_status=$?
+printf 'deadline=%s\n' "$timeout_control_status" >> "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+test "$timeout_control_status" = 124
+test "$(cat "$RUNNER_TEMP/reload-cancellation/timeout-trapped-zero.txt")" = trapped-zero
+# Inspect the pinned image first; add only strace to this disposable
+# container if absent. No upgrades, ptrace privilege or seccomp changes.
+if ! test -x /usr/bin/strace; then
+  printf 'strace absent from pinned image; installing only strace\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
+  (cd harness && /usr/bin/timeout --signal=TERM --kill-after=15s 3m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install --no-install-recommends --no-upgrade -y strace')
+else
+  printf 'strace already present in pinned image\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
+fi
+{
+  /usr/bin/strace --version
+  dpkg-query -W strace
+  sha256sum /usr/bin/strace
+} > "$RUNNER_TEMP/reload-cancellation/strace-provenance.txt"
+`;
+
 function mapping(value: unknown, label: string): Mapping {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
         throw new TypeError(`${label} must be a mapping`);
@@ -100,8 +155,8 @@ function assertRegisteredDiagnostic(value: Mapping): void {
         cache: 'pnpm',
         'cache-dependency-path': 'original/pnpm-lock.yaml',
     });
-    assert.match(String(steps[5]?.run), /test "\$\(node --version\)" = v24\.19\.0/);
-    assert.match(String(steps[5]?.run), /test "\$\(pnpm --version\)" = 11\.6\.0/);
+    assert.equal(steps[5]?.['timeout-minutes'], 4);
+    assert.equal(steps[5]?.run, runtimeProvenance);
     assert.equal(steps[6]?.['working-directory'], 'original');
     assert.equal(steps[6]?.run, 'pnpm install --frozen-lockfile');
     assert.equal(steps[7]?.['working-directory'], 'original');
@@ -134,6 +189,50 @@ describe('registered reload cancellation advisory workflow', () => {
         expect(() => assertRegisteredDiagnostic(workflow)).not.toThrow();
     });
 
+    const unsafeProvisioning: Array<readonly [string, string, string]> = [
+        ['unbounded install', '/usr/bin/timeout --signal=TERM --kill-after=15s 3m ', ''],
+        ['unfiltered install', 'bash scripts/aptWithoutMicrosoftFeed.sh bash -c', 'bash -c'],
+        ['foreground install', '--kill-after=15s 3m', '--foreground --kill-after=15s 3m'],
+        ['preserved timeout status', '--kill-after=15s 3m', '--preserve-status --kill-after=15s 3m'],
+        ['missing kill grace', '--kill-after=15s ', ''],
+        ['ignored install failure', "-y strace')", "-y strace') || true"],
+        ['broadened install', '-y strace', '-y strace curl'],
+        ['enabled upgrades', ' --no-upgrade', ''],
+        ['enabled recommendations', ' --no-install-recommends', ''],
+        [
+            'host-only deadline mode',
+            'aptWithoutMicrosoftFeed.sh bash -c',
+            'aptWithoutMicrosoftFeed.sh --deadline 3m -- bash -c',
+        ],
+        ['missing Linux qualification', 'test "$(node -p process.platform)" = linux', 'true'],
+        ['missing timeout qualification', 'if ! test -x /usr/bin/timeout; then', 'if false; then'],
+        ['missing GNU version', '/usr/bin/timeout --version', 'printf fake'],
+        ['missing timeout hash', 'sha256sum /usr/bin/timeout', 'true'],
+        ['missing strace hash', 'sha256sum /usr/bin/strace', 'true'],
+        ['ignored success control', 'test "$timeout_control_status" = 0', 'true'],
+        ['ignored failure control', 'test "$timeout_control_status" = 37', 'true'],
+        [
+            'accepted trapped zero after deadline',
+            'test "$timeout_control_status" = 124',
+            'test "$timeout_control_status" = 0',
+        ],
+        [
+            'unproved zero-exit trap',
+            'test "$(cat "$RUNNER_TEMP/reload-cancellation/timeout-trapped-zero.txt")" = trapped-zero',
+            'true',
+        ],
+        ['nonfatal shell', 'set -euo pipefail', 'set -uo pipefail'],
+    ];
+
+    it.each(unsafeProvisioning)('rejects container provisioning with %s', (_label, from, to) => {
+        const candidate = structuredClone(workflow);
+        const step = stepsOf(diagnosticJob(candidate))[5]!;
+        const before = String(step.run);
+        step.run = before.replace(from, to);
+        expect(step.run).not.toBe(before);
+        expect(() => assertRegisteredDiagnostic(candidate)).toThrow();
+    });
+
     const invalidCases: Array<readonly [string, (value: Mapping) => void]> = [
         [
             'later pull-request action',
@@ -141,6 +240,18 @@ describe('registered reload cancellation advisory workflow', () => {
                 (mapping(mapping(value.on, 'events').pull_request, 'pull_request').types as string[]).push('opened'),
         ],
         ['write grant', (value: Mapping) => (mapping(value.permissions, 'permissions').contents = 'write')],
+        [
+            'missing provenance step deadline',
+            (value: Mapping) => {
+                delete stepsOf(diagnosticJob(value))[5]!['timeout-minutes'];
+            },
+        ],
+        [
+            'broadened provenance step deadline',
+            (value: Mapping) => {
+                stepsOf(diagnosticJob(value))[5]!['timeout-minutes'] = 5;
+            },
+        ],
         [
             'original merge drift',
             (value: Mapping) => (mapping(stepsOf(diagnosticJob(value))[2]?.with, 'checkout').ref = '0'.repeat(40)),

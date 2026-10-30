@@ -62,6 +62,7 @@ jobs:
           cache-dependency-path: original/pnpm-lock.yaml
 
       - name: Record runtime provenance
+        timeout-minutes: 4
         run: |
           set -euo pipefail
           {
@@ -72,11 +73,41 @@ jobs:
           } > "$RUNNER_TEMP/reload-cancellation/runtime.txt"
           test "$(node --version)" = v24.19.0
           test "$(pnpm --version)" = 11.6.0
+          test "$(node -p process.platform)" = linux
+          if ! test -x /usr/bin/timeout; then
+            printf 'Required GNU timeout is unavailable\n' >&2
+            exit 1
+          fi
+          {
+            /usr/bin/timeout --version
+            dpkg-query -W coreutils
+            sha256sum /usr/bin/timeout
+          } > "$RUNNER_TEMP/reload-cancellation/timeout-provenance.txt"
+          case "$(head -n 1 "$RUNNER_TEMP/reload-cancellation/timeout-provenance.txt")" in
+            'timeout (GNU coreutils) '*) ;;
+            *)
+              printf 'Required GNU timeout was not identified\n' >&2
+              exit 1
+              ;;
+          esac
+          timeout_control_status=0
+          /usr/bin/timeout --signal=TERM --kill-after=1s 2s bash -c 'exit 0' || timeout_control_status=$?
+          printf 'success=%s\n' "$timeout_control_status" > "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+          test "$timeout_control_status" = 0
+          timeout_control_status=0
+          /usr/bin/timeout --signal=TERM --kill-after=1s 2s bash -c 'exit 37' || timeout_control_status=$?
+          printf 'failure=%s\n' "$timeout_control_status" >> "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+          test "$timeout_control_status" = 37
+          timeout_control_status=0
+          /usr/bin/timeout --signal=TERM --kill-after=1s 1s bash -c 'trap "printf trapped-zero; exit 0" TERM; while :; do sleep 1; done' > "$RUNNER_TEMP/reload-cancellation/timeout-trapped-zero.txt" || timeout_control_status=$?
+          printf 'deadline=%s\n' "$timeout_control_status" >> "$RUNNER_TEMP/reload-cancellation/timeout-controls.txt"
+          test "$timeout_control_status" = 124
+          test "$(cat "$RUNNER_TEMP/reload-cancellation/timeout-trapped-zero.txt")" = trapped-zero
           # Inspect the pinned image first; add only strace to this disposable
           # container if absent. No upgrades, ptrace privilege or seccomp changes.
           if ! test -x /usr/bin/strace; then
             printf 'strace absent from pinned image; installing only strace\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
-            (cd harness && bash scripts/aptWithoutMicrosoftFeed.sh --deadline 3m -- bash -c 'apt-get update && apt-get install --no-install-recommends --no-upgrade -y strace')
+            (cd harness && /usr/bin/timeout --signal=TERM --kill-after=15s 3m bash scripts/aptWithoutMicrosoftFeed.sh bash -c 'apt-get update && apt-get install --no-install-recommends --no-upgrade -y strace')
           else
             printf 'strace already present in pinned image\n' > "$RUNNER_TEMP/reload-cancellation/strace-install.txt"
           fi
