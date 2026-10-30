@@ -966,7 +966,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
                 ];
                 project.activeArrangementId = 'saved';
             }
-            const serialized: unknown = JSON.parse(JSON.stringify(project));
+            const fileContent = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(fileContent);
             await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
             expect(resetCrdtProject).toHaveBeenCalledOnce();
             expect(takeLaneStore.value).toEqual(takeLanes);
@@ -995,7 +996,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
         };
         const project = makeProject();
         const takeLanes = frozenMidiTakeLanes();
-        const serializedLanes = JSON.parse(JSON.stringify(takeLanes));
+        const laneContent = JSON.stringify(takeLanes);
+        const serializedLanes = JSON.parse(laneContent);
         if (defect === 'source') {
             serializedLanes.lanes[0].takes[0].midiSource.rows.notes.present = false;
         } else {
@@ -1010,7 +1012,8 @@ describe('applyImportedProjectData round-trip hydration', () => {
             ];
             project.activeArrangementId = route === 'inactive saved arrangement' ? 'first' : 'saved';
         }
-        const serialized: unknown = JSON.parse(JSON.stringify(project));
+        const fileContent = JSON.stringify(project);
+        const serialized: unknown = JSON.parse(fileContent);
         await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
         expect(resetCrdtProject).not.toHaveBeenCalled();
         expect(resetAudioGraph).not.toHaveBeenCalled();

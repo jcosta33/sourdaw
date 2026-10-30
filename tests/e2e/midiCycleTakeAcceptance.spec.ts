@@ -716,7 +716,8 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
                         notes: { present: false, value: malformed.rows.notes.value },
                     };
                     take.midiSource = { ...malformed, rows: malformedRows };
-                    const result = await applyImportedProjectData({ data: JSON.parse(JSON.stringify(data)) });
+                    const fileContent = JSON.stringify(data);
+                    const result = await applyImportedProjectData({ data: JSON.parse(fileContent) });
                     results.push({ route, result, unchanged: snapshot() === beforeImport });
                 }
                 return results;
