@@ -110,7 +110,7 @@ function multiheadFixture() {
     const right = change(clone(base, { actor: 'cccccccccccccccc' }), (doc) => {
         doc.slot.rows = [{ id: 'retained', value: 0.9 }];
     });
-    const merged = merge(merge(clone(base, { actor }), left), right);
+    const merged = merge(clone(left, { actor: getActorId(left) }), right);
     const rightHeads = getHeads(right);
     free(base);
     free(right);
@@ -192,7 +192,7 @@ describe('repository canonical Worker candidate adoption', () => {
         }
     });
 
-    it.each([true, false])('accepts a complete multihead frontier with a genuine no-op: %s', async (unchanged) => {
+    it.each([true, false])('accepts a complete multihead frontier with unchanged=%s', async (unchanged) => {
         const { merged, left } = multiheadFixture();
         free(left);
         repository.insertDoc('root', merged);
@@ -262,7 +262,15 @@ describe('repository canonical Worker candidate adoption', () => {
             expect(hasHeads(queued, queuedHeads)).toBe(false);
             expect(getMissingDeps(queued, queuedHeads)).toEqual(getHeads(first));
             const bytes = Uint8Array.from(save(queued));
-            expect(() => load<Document>(bytes, { actor })).toThrow();
+            const checked = load<Document>(bytes, { actor });
+            try {
+                expect(getHeads(checked)).toEqual([]);
+                expect(getMissingDeps(checked, [])).toEqual(getHeads(first));
+                expect(getMissingDeps(checked, queuedHeads)).toEqual(getHeads(first));
+                expect(hasHeads(checked, queuedHeads)).toBe(false);
+            } finally {
+                free(checked);
+            }
             mocks.request.mockResolvedValueOnce({ bytes, heads: queuedHeads });
             const prepared = plan(original);
             await prepared.requestMaterialization!(new AbortController().signal);
