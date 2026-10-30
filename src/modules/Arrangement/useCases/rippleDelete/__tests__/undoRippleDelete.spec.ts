@@ -97,6 +97,47 @@ describe('undoRippleDelete', () => {
         expect(c2).toMatchObject({ id: 'c2', startBeat: 4, endBeat: 8 });
     });
 
+    it('restores the physical loop pass origin of a ripple-shifted neighbor', () => {
+        const shifted = ClipDummy.create({
+            id: 'shifted',
+            trackId: 't1',
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+        });
+        const ordinary = ClipDummy.create({ id: 'ordinary', trackId: 't1', startBeat: 16, endBeat: 20 });
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [shifted, ordinary] }] });
+
+        undoRippleDelete({
+            trackId: 't1',
+            removedClips: [],
+            shiftedClips: [
+                { clipId: 'shifted', origStartBeat: 10, origEndBeat: 18, automationDelta: -4 },
+                { clipId: 'ordinary', origStartBeat: 20, origEndBeat: 24, automationDelta: -4 },
+            ],
+        });
+
+        const clips = mocks.setTrackState.mock.calls[0]?.[0].tracks[0]?.clips;
+        expect(clips?.find((clip: { id: string }) => clip.id === 'shifted')).toMatchObject({
+            startBeat: 10,
+            endBeat: 18,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 8,
+            loopOriginBeat: 6,
+        });
+        const restoredOrdinary = clips?.find((clip: { id: string }) => clip.id === 'ordinary');
+        expect(restoredOrdinary).toMatchObject({ startBeat: 20, endBeat: 24 });
+        expect(Object.hasOwn(restoredOrdinary, 'audioLoopPassOriginBeat')).toBe(false);
+    });
+
     it('restores a removed clip gain envelope, warp state, and automation lanes captured before retirement', () => {
         mocks.getTrackStoreState.mockReturnValue({
             tracks: [{ id: 't1', clips: [] }],

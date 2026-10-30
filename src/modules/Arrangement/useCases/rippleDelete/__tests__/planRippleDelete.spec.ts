@@ -109,6 +109,42 @@ describe('planRippleDelete', () => {
         });
     });
 
+    it('plans a physical loop pass origin at the relocated beat without rebasing source seconds', () => {
+        const follower = {
+            id: 'follower',
+            trackId: 't1',
+            startBeat: 10,
+            endBeat: 18,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 8,
+            loopOriginBeat: 6,
+        };
+        const ordinary = { id: 'ordinary', trackId: 't1', startBeat: 20, endBeat: 24 };
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [
+                { id: 't1', clips: [{ id: 'removed', trackId: 't1', startBeat: 4, endBeat: 8 }, follower, ordinary] },
+            ],
+        });
+        const plan = planRippleDelete({ trackId: 't1', clipIds: ['removed'], ripple: true });
+        expect(plan?.nextClips.find((clip) => clip.id === 'follower')).toMatchObject({
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+        });
+        const shiftedOrdinary = plan?.nextClips.find((clip) => clip.id === 'ordinary');
+        expect(shiftedOrdinary).toMatchObject({ startBeat: 16, endBeat: 20 });
+        expect(Object.hasOwn(shiftedOrdinary!, 'audioLoopPassOriginBeat')).toBe(false);
+        expect(follower).toMatchObject({ startBeat: 10, audioLoopPassOriginBeat: 8 });
+    });
+
     it('bails if track or clips not found', () => {
         mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
         expect(planRippleDelete({ trackId: 't1', clipIds: ['c1'] })).toBeNull();

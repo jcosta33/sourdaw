@@ -27,6 +27,7 @@ import { undoStore } from '../stores/undoStore';
 
 import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
@@ -49,6 +50,9 @@ export type ExecuteAppActionOptions = ExecuteOptions & {
     authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
+    /** Observe an isolated copy of final owner arguments, including a successful noop's arguments.
+     * This grants no commit authority; callers consume it only after dispatch succeeds. */
+    observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
 };
 
@@ -151,6 +155,7 @@ function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
@@ -189,6 +194,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
 
+                options?.observeMaterializedAction?.(structuredClone(action));
                 if (handler.isNoop?.(action)) {
                     return;
                 }
@@ -277,6 +283,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type);
             }
 
+            options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
                 return;
             }
@@ -289,7 +296,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 redoAction?: AppAction;
             } | null = null;
             if (handler.undoable) {
-                undoResult = handler.describe(action);
+                if (recordedRedo) {
+                    undoResult = handler.describe(action, { actions: [action], actionIndex: 0, recordedRedo });
+                } else {
+                    undoResult = handler.describe(action);
+                }
             }
 
             const command = options?.commandEnvelope

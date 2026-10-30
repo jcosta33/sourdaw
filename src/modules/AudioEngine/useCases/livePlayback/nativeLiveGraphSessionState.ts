@@ -15,8 +15,11 @@
 
 import { type AudioGraphBackend } from '../../models/AudioGraphBackend';
 import { type EngineLoopRegion } from '../../models/EngineTransportPosition';
+import { type NativeRecordingAdmission } from '../../models/NativeRecordingCapture';
 
 export type NativeLiveGraphSession = {
+    /** Issued capture geometry stays behind its actual audio-thread fence. */
+    captureAdmissions: NativeRecordingAdmission[];
     backend: AudioGraphBackend | null;
     /**
      * The handle of a session the renderer abandoned on a stall, retained
@@ -193,6 +196,7 @@ export type NativeLiveGraphSession = {
 };
 
 export const nativeLiveGraphSession: NativeLiveGraphSession = {
+    captureAdmissions: [],
     backend: null,
     orphanedBackend: null,
     audibleCarrier: false,

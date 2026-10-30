@@ -467,13 +467,15 @@ class AutomergeRepository {
         changeFn: ChangeFn<TDoc>,
         message?: string,
         snapshotTransaction?: object,
-        localSlots?: readonly string[]
+        localSlots?: readonly string[],
+        beforeChange?: (document: Readonly<TDoc>) => void
     ): void {
         const doc = this.docs.get(id) as Doc<TDoc> | undefined;
         if (!doc) {
             throw new Error(`Document not found: ${id}`);
         }
 
+        beforeChange?.(doc);
         this.captureBeforeMutation(id, snapshotTransaction);
         const previousHeads = getHeads(doc);
         const updated = message ? change(doc, { message }, changeFn) : change(doc, changeFn);

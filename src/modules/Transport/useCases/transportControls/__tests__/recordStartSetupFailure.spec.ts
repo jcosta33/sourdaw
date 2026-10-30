@@ -11,7 +11,14 @@ const fixture = vi.hoisted(() => {
         capturedRootIdentity: null,
     };
     const capture: {
-        terminal: ((result: { kind: 'completed'; buffer: { duration: number } }) => void) | null;
+        terminal:
+            | ((result: {
+                  kind: 'completed';
+                  buffer: { duration: number };
+                  sampleZeroContextFrame: number;
+                  sampleRate: number;
+              }) => void)
+            | null;
     } = { terminal: null };
     return {
         state,
@@ -34,8 +41,10 @@ vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: fixture.logError, 
 vi.mock('#/modules/Arrangement/stores', () => ({
     activeRecordingRef: fixture.activeRecordingRef,
     getTrackEligibility: () => ({ acceptsRecording: true }),
+    trackStore: { getState: () => ({}) },
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingCaptureClock: vi.fn(),
     getTrackStoreState: () => ({ tracks: [{ id: 'audio-1', armed: true, kind: 'audio' }] }),
     startRecording: () => {
         fixture.activeRecordingRef.current = ['take-1'];
@@ -46,8 +55,10 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: () => true,
     commitRecording: fixture.commitRecording,
     discardRecording: fixture.discardRecording,
+    prepareRecoveredRecording: vi.fn(),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     resumeEngine: () => Promise.resolve(),
     nativeLiveGraphSessionOffered: () => false,
     startNativeLiveGraphSession: () => Promise.resolve({ outcome: 'declined', reason: 'browser fixture' }),
@@ -59,6 +70,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     },
     stopAudioRecording: fixture.stopAudioRecording,
     cacheAudioBuffer: vi.fn(),
+    ensureCachedAudioBuffersDurable: vi.fn(),
     scheduleClick: vi.fn(),
 }));
 vi.mock('#/modules/MIDI/useCases', () => ({
@@ -110,7 +122,12 @@ describe('Record from stopped when playback setup fails', () => {
             return 'closed';
         });
         fixture.stopAudioRecording.mockImplementation(async () => {
-            fixture.capture.terminal?.({ kind: 'completed', buffer: { duration: 2 } });
+            fixture.capture.terminal?.({
+                kind: 'completed',
+                buffer: { duration: 2 },
+                sampleZeroContextFrame: fixture.audioClock.currentTime * 48_000,
+                sampleRate: 48_000,
+            });
         });
     });
 
