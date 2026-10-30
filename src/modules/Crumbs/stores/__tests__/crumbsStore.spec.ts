@@ -9,13 +9,77 @@ import {
     ensureInstance,
     replaceCrumbsProjectParameters,
     setMasterGain,
+    setActiveSample,
+    setWaveformPeaks,
+    setTune,
 } from '../crumbsStore';
+
+import type { SampleMeta } from '../../models/CrumbsTypes';
 
 const DEVICE = 'gain-clamp-test';
 
 function readGain(): number | undefined {
     return crumbsStore.value?.[DEVICE]?.masterGain;
 }
+
+function metadata(filePath: string): SampleMeta {
+    return {
+        sampleId: 1,
+        sampleRate: 48000,
+        channels: 1,
+        frameCount: 1000,
+        durationSecs: 1 / 48,
+        detectedRoot: 67,
+        detectedBpm: null,
+        category: 'tonal',
+        filePath,
+        fileName: filePath.slice(1),
+    };
+}
+
+describe('active sample and waveform pairing', () => {
+    beforeEach(() => {
+        crumbsStore.set({});
+        ensureInstance(DEVICE);
+    });
+    afterEach(() => {
+        crumbsStore.set({});
+    });
+
+    it('clears the old vector in the same notification as changed metadata and preserves controls', () => {
+        setActiveSample(DEVICE, metadata('/a.wav'));
+        setWaveformPeaks(DEVICE, [-0.9, 0.8]);
+        setTune(DEVICE, 7);
+        const observed: { path: string | undefined; peaks: number[] | undefined }[] = [];
+        const stop = crumbsStore.subscribe((instances) => {
+            observed.push({
+                path: instances?.[DEVICE]?.activeSample?.filePath,
+                peaks: instances?.[DEVICE]?.waveformPeaks,
+            });
+        });
+        try {
+            setActiveSample(DEVICE, metadata('/b.wav'));
+        } finally {
+            stop();
+        }
+
+        expect(observed).toEqual([{ path: '/b.wav', peaks: [] }]);
+        expect(crumbsStore.value?.[DEVICE]).toMatchObject({ tune: 7, rootNote: 67, isLoading: false });
+    });
+
+    it('retains the exact cache on a same-effective metadata replay while accepting the fresh leaf', () => {
+        const first = metadata('/a.wav');
+        const peaks = [-0.9, 0.8];
+        setActiveSample(DEVICE, first);
+        setWaveformPeaks(DEVICE, peaks);
+        const replay = structuredClone(first);
+
+        setActiveSample(DEVICE, replay);
+
+        expect(crumbsStore.value?.[DEVICE]?.activeSample).toBe(replay);
+        expect(crumbsStore.value?.[DEVICE]?.waveformPeaks).toBe(peaks);
+    });
+});
 
 describe('setMasterGain', () => {
     beforeEach(() => {

@@ -41,3 +41,21 @@ Exercise host and child separately: only the failed document may reload, while o
 budget survives successful entry execution. Unavailable, unwritable or corrupt retry storage
 requires manual recovery. Keep real same-project saved state and future Undo preservation as a
 separate integration obligation whenever recovery navigates.
+
+### 2026-10-30 — the initial App import could reject after first paint (introduced by PR #3356)
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) changed the initial App import to a
+fulfillment-only continuation after `ApplicationFirstPaint`; the introduced code has no rejection
+handler for that actual initial App graph. Its public approval names a hung import and first-paint
+marker removal, not rejection. The captured later failure proves App rejection and a subsequent
+same-frame document, but the initiating transport or navigation cause is unknown; a clean WebSocket
+close or Vite polling branch does not prove a poller-triggered navigation.
+
+Reject the real initial App request after first paint and require an explicit failure path rather
+than a permanently empty shell. When recovery is allowed, require a confirmed fresh retry budget
+and a new document lifetime. Spent, corrupt, unavailable or unwritable budget, desktop startup,
+bootstrap/render issuance and late failure after navigation intent must refuse automatic retry while
+preserving manual Reload. Once retry navigation is requested, delayed App success must not start the
+runtime. Keep transport initiation unknown unless direct lifecycle or network-initiator evidence
+distinguishes it.
+Do not widen this initial-import lesson to lazy feature imports, which do not own startup recovery.

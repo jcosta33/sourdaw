@@ -492,6 +492,20 @@ last-owner case, the old input must stop. Neither case may recreate `a`'s strip 
 permission. Commit must remove `a`; abort must re-admit its current input. A same-input abort preserves the original owner
 and capture. Testing deletion and selector changes separately misses this authority crossing.
 
+## Crumbs waveform ownership must survive its own project mirror
+
+The unfenced sampler continuation in `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+survived PR #5041's decode-only sequence check (#5780). No public PR is associated with the
+origin, and private historical review prompts and tiers are unknown.
+
+Trace the accepted sample through the real session store, persistence subscriber, registered
+Command, raw CRDT device and reconciliation. Its own metadata commit and ordinary knob/track
+edits must preserve authority; a whole-root revision or projected row identity cancels valid
+work. A replaced root/device and a fresh accepted sample leaf must revoke older publications.
+Distinguish same-effective metadata replay, which preserves usable cached peaks, from the
+leaf witness that owns a pending result. Retain nested paired holds, withdrawal convergence
+and user-pick replay controls. A fake injected token cannot prove the app's authority producer.
+
 ## Lesson from direct commit 61adb8: redetection dropped locked automatic markers
 
 Commit `61adb8dfbb04f8cb6eb01057b9814a6e6ef1d53d` promised to preserve locked markers, but its predicate retained only markers whose origin was not `transient-auto`, dropping locked automatic rows too. The original preservation fixture covered a user row and an unlocked automatic row, so it could not expose that loss. Current main retains `locked === true` rows and suppresses detections within `1e-3` of a retained original beat (PR #5515).
@@ -847,3 +861,17 @@ untouched Undo snapshot again before consuming a no-publication result. Exercise
 and thread callers, same-lineage edits with the exact Undo snapshot retained, clear-only,
 discard, original-reference restoration and request cancellation. This fence applies only
 before publication: a real committed inverse remains committed truth.
+
+## 2026-10-30 — startup retry must preserve the initialized project and its history
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a second App render after first paint.
+The later initial-App rejection occurred before that App rendered, while bootstrap activity was
+already visible. The App rejection defect reached main; exact private review prompts and tier are
+unknown. A retry that only proves a new page or restored controls does not prove project integrity.
+
+Begin with a canonical same-project new-document reload of a genuinely initialized project, live
+witness-bound history and an operative Undo/Redo entry. Inject the actual initial App rejection,
+then require unchanged project identity, exact raw and projected owners, full-channel PCM digests,
+durable witness-bound history, and successful Undo/Redo after recovery. Confirm a changed
+`performance.timeOrigin`; a same-URL fragment navigation is not a new document. Playback controls
+and mirror existence alone are insufficient.

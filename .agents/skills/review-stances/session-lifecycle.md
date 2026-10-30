@@ -224,6 +224,22 @@ read each caller and name what stands in for the deleted correction there. A cal
 is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
 the callers.
 
+### Crumbs waveform work must retain its actual root and device incarnation
+
+The sampler continuation introduced by `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+could publish after its device or root was replaced; PR #5041's per-ID decode sequence did
+not establish lifetime authority (#5780). No introducing public PR or historical private
+review prompt/tier is established.
+
+Hold telemetry and peaks through the actual app-injected owner reader. Replace an identical-ID
+root and remove/restore the same device object while its preceding view is still present.
+Observe every committed owner transition before coalescing reconciliation, so absence/type/
+owner/duplicate ABA cannot revive an old token. Do not start a newer load or replace its sample
+leaf before the refusal assertion: those guards would hide a missing lifetime fence. Keep real
+ordinary parameter writes and fresh successor loads as controls. Remove synchronous owner
+refresh and require the unchanged ABA case to fail. This proves display authority, not native
+sample selection or audible last-drop ordering.
+
 ### 2026-09-19 — the acquisition cache keyed by nothing (escaped via PR #4394, fixed in #4423)
 
 PR #4394 let two tracks record from different audio devices, but the input-monitoring session stayed
@@ -554,3 +570,18 @@ Probe the real import, Command/CRDT/history and engine boundary with a completed
 PR #5461 observed a newer lane, VCA or solo projection when a native batch was in flight, then returned. The predecessor's completion released its in-flight marker but arranged no follow-up; the edit reached the backend only if a later playhead poll happened. The existing real-store pending case settled the batch before asking for another pump. Public review covered queue and gain repairs, but its final approval reported unrun mutation probes; private stance prompts and tiers are unavailable, so no precise historical stance is inferred.
 
 Hold an earlier backend apply after it has captured a real-store batch. Edit a lane, VCA or solo state and invoke one same-pass pump while that apply remains unanswered. Require no overlap, then settle the predecessor **without another pump** and require one serialized successor with the new Hold or control and untouched unrelated queue. Coalesce later matching snapshots; reject an old pass or backend after seek, disarm or replacement, and preserve refusal and batch-fence accounting. Removing only the completion follow-up must fail this case. This proves scheduled submission after settlement, not a wall-clock audio deadline while the backend is blocked.
+
+### 2026-10-30 — first paint concealed that bootstrap effects had already started
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) introduced first paint before the initial
+App import settled while bootstrap remained in the parallel startup path. The failed reload
+contained capability and BrowserAi initialization before App rejection, so an empty shell or absent
+controls did not mean the runtime was pristine. The App rejection defect reached main; the
+historical private reviewer prompt and tier are unknown. The separate legacy desktop-test ordering
+failure during #5876 repair was caught before merge.
+
+Hold the actual initial App import after first paint. Before release, observe the real bootstrap
+evaluation/effect boundary. If App fulfillment owns bootstrap, require effects initiated by bootstrap
+to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
+quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
+case; preserve the distinct cold-stylesheet lesson in test-validity.
