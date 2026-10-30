@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { BacteriaInstance, initSync } from '../daw_dsp.js';
+import { BacteriaInstance, initSync } from '../../wasm/daw_dsp.js';
 
 const wasmBytes = readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm'));
 const wasm = initSync({ module: new WebAssembly.Module(wasmBytes) });
