@@ -1967,6 +1967,19 @@ mutable document as well as the immutable root: proxy identity is not an ownersh
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
 
+### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+
+A forged export manifest test created its key by opening and dropping a registry before opening it
+again for authentication. A deliberately retained duplicate of that setup lock made the required
+`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
+reached authentication on the same manifest and victim bytes. The original CI error was not printed,
+so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+
+Build the private key and directory directly when the obligation is manifest authentication; call the
+production registry once and include the actual error in the assertion. Preserve the victim and
+manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
+bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
@@ -2213,6 +2226,47 @@ confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing th
 dependency-frontier comparison with the old singleton-versus-merged comparison must make
 `projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
 
+### 2026-10-30 — meter properties did not observe the ruler consumer (#5247)
+
+The retained #5440 property and forward-Command checks establish carried map/clip
+semantics; their historical carry-removal red does not establish a mounted reader or
+its subscription. The top ruler still used a flat numerator grid, and the new mounted
+original-case red confirmed the committed raw/projected carry before failing because
+no stopped repaint occurred. Its Undo/Redo assertions were not reached in that red run.
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; no
+introducing PR association, historical prompt or model tier is verified. The original
+missing-carry introducer remains unestablished. Do not attribute #5440's corrected
+pre-merge intermediate to a main escape.
+
+Mount the required Beat ruler surface unconditionally with a valid canvas platform
+fixture. Observe the real painter's gradient background `fillRect` boundary, emitted
+labels and stroked bar lines. Save a draw cursor before each actual Command or map write
+and require a new drawing after it; canvas presence, mocked query results, counters or
+an older matching frame prove less. Keep Command, CRDT projection, owner validators and
+Undo/Redo real. Independently pass an empty map at the real query call and replace only
+the map hook with an imperative read. The mapped geometry cases and stopped fresh-paint
+cases respectively must fail. These ruler probes are prescribed and have not yet run;
+they must not inherit the older carry mutation's credit.
+
+### 2026-10-30 — wide meter windows concealed a fractional seam stopping defect
+
+PR #2078 introduced the metrical-beat walk in `f626b84b9aed3b715780e20d3b9976c3f88fedd1`.
+Whole-span tests, integer change origins and fractional pulse lengths did not isolate a
+fractional change whose outgoing next tick lies outside the queried window. A change at
+5 with later ticks at 5.5 is not that input. The private historical review prompt and
+tier are unknown; the missed input/window stance is established by the unchanged walk.
+
+For 4/4 at 0 and 3/4 at 5.5, require exactly `[4, 5, 5.5]` in 4..5.7 and `[5.5]` in
+5.4..5.6. Follow the real model into `scheduleClick`: assert the seam's absolute time,
+accent and volume with both the audio clock and supplied initial anchor, then the next
+nonaccent tick and adjacent-window absence of a duplicate. Require the real ruler query's
+two physical pieces and an unconditionally mounted, freshly published map's full-height
+x120 stroke in the 136-pixel viewport at 80 pixels per beat, scrolled to beat 4. A list
+assertion alone cannot prove either consumer. These valid-input regressions failed on
+the old gate at their list, event, query and mounted-paint assertions. After a clean
+repair commit, restoring only that gate must make them fail again. Add invalid-unit and
+non-advancing arithmetic controls after the repair; do not baseline a known hanging walk.
+
 ### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
 
 An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
@@ -2257,3 +2311,12 @@ callbacks, with no runtime source graph. Substitute a separate Project store onl
 served inspection entry on committed test source: the same acceptance oracle must fail.
 A second build, cloned stores, browser bridge or merely finding export names cannot prove
 that inspection observes the actual App.
+
+### 2026-10-30 — click times alone could not show which pass owned the loop seam (introduced by PR #4897)
+
+PR #4897 (`16773be5f4`) introduced the two-pass seam with a [0, 4) metronome case that counted
+click times only. There loopEnd and loopStart are both bar lines, so the dying pass's inclusive
+loopEnd click and the incoming loopStart click are indistinguishable. Pin incoming-phase ownership
+with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
+incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
+the real scheduler, for the seam and a later pass.
