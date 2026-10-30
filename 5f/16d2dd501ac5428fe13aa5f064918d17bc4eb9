@@ -1,0 +1,21 @@
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  s_567a084d0540c4::t_3391f61ca358c5 788-790,804-805,858,863-867,897-902,913-918,934-936,947-951,962-963,977-980
+  s_567a084d0540c4::t_a0f7028871ae2b 551,752-787,791-803,806-857,859-862,868-896,903-912,919-933,937-946,952-961,964-976,981
+  s_567a084d0540c4::t_92002d88488e6e 982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f16d2dd501ac5428fe13aa5f064918d17bc4eb9",
+  "prompts": {},
+  "sessions": {
+    "s_567a084d0540c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fdb-3997-7dc0-bfd8-612b0825b795",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
