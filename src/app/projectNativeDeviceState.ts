@@ -143,6 +143,7 @@ const NATIVE_DEVICE_STATE_PROJECTIONS: Record<NativeDspDeviceType, ProjectDevice
     'native-scoring': null,
     // Knead's closed vocabulary is entirely `parameterValues` entries.
     knead: null,
+    'transient-shaper': null,
 };
 
 /**

@@ -210,6 +210,22 @@ read each caller and name what stands in for the deleted correction there. A cal
 is the finding, and "the shared path handles it" is not an answer unless that path can distinguish
 the callers.
 
+### Crumbs waveform work must retain its actual root and device incarnation
+
+The sampler continuation introduced by `c8c1257477838ab15d98b5ea6b38e821ddb4ad57`
+could publish after its device or root was replaced; PR #5041's per-ID decode sequence did
+not establish lifetime authority (#5780). No introducing public PR or historical private
+review prompt/tier is established.
+
+Hold telemetry and peaks through the actual app-injected owner reader. Replace an identical-ID
+root and remove/restore the same device object while its preceding view is still present.
+Observe every committed owner transition before coalescing reconciliation, so absence/type/
+owner/duplicate ABA cannot revive an old token. Do not start a newer load or replace its sample
+leaf before the refusal assertion: those guards would hide a missing lifetime fence. Keep real
+ordinary parameter writes and fresh successor loads as controls. Remove synchronous owner
+refresh and require the unchanged ABA case to fail. This proves display authority, not native
+sample selection or audible last-drop ordering.
+
 ### 2026-09-19 — the acquisition cache keyed by nothing (escaped via PR #4394, fixed in #4423)
 
 PR #4394 let two tracks record from different audio devices, but the input-monitoring session stayed
@@ -310,6 +326,18 @@ owner-supported project kind, including permission still pending. Off and remova
 that owner; non-audio Auto and unadmitted store-only On must acquire nothing. The eligibility table's
 dormant VCA entry is not a valid `TrackKind`: publishing it as a project track is not typed caller
 proof. Controlled gain-node ports prove ownership, not actual folder-strip creation or hardware audio.
+
+### Monitor disconnect faults must not strand the shared graph (introduced by PR #4485; fixed in #5376)
+
+PR #4485 moved monitor release to the start of shared graph reset so source edges stopped while
+strips still existed. A source-wide disconnect could throw before track, bus and send retirement;
+disposal then depended on this failing reset before master teardown and `context.close()`. Public
+approval covers ordering and late-grant release, not fault continuation; private prompts and tiers are
+unknown. Exercise the real reset and dispose callers with two controlled captures and a throwing first
+source: require both tracks stopped, graph owners and sends retired, and the original error retained.
+Disposal must attempt every master disconnect, await one close, and return the same terminal result on
+repeat. Keep late-grant rejection as a separate reset case. Controlled nodes and media prove cleanup,
+not physical microphone or audible playback.
 
 ### An aborted graph repair must rearm committed monitoring intent (issue #5286)
 
@@ -473,6 +501,10 @@ Replace the root while an audio capture is open, retaining copied provisional st
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
 
+### Debounced Elastic gestures retain their displayed owner
+
+The initial Elastic target mismatch in `33a3549990c5ce2234e22bf48f3d5758711e2b56` was hidden by explicitly opening every sensitivity fixture. No associated introducing PR or private review prompt, stance or tier is established. Hold the real debounce across selection A→B→A, explicit editor close/reopen, source replacement and same-ID root replacement. The old gesture must leave native rows and PCM exact, settle callers and release listeners; only a fresh gesture may act on the new owner. An unrelated selection must not override an explicitly opened target. Removing pending-owner invalidation must fail real raw-state controls, not merely a cancellation flag.
+
 ### 2026-10-26 — roll admission waited after the shared clock projection (introduced by PR #5453)
 
 PR #5453 added `material.prepare` to every native backend apply. The live session computes its
@@ -540,3 +572,18 @@ Probe the real import, Command/CRDT/history and engine boundary with a completed
 PR #5461 observed a newer lane, VCA or solo projection when a native batch was in flight, then returned. The predecessor's completion released its in-flight marker but arranged no follow-up; the edit reached the backend only if a later playhead poll happened. The existing real-store pending case settled the batch before asking for another pump. Public review covered queue and gain repairs, but its final approval reported unrun mutation probes; private stance prompts and tiers are unavailable, so no precise historical stance is inferred.
 
 Hold an earlier backend apply after it has captured a real-store batch. Edit a lane, VCA or solo state and invoke one same-pass pump while that apply remains unanswered. Require no overlap, then settle the predecessor **without another pump** and require one serialized successor with the new Hold or control and untouched unrelated queue. Coalesce later matching snapshots; reject an old pass or backend after seek, disarm or replacement, and preserve refusal and batch-fence accounting. Removing only the completion follow-up must fail this case. This proves scheduled submission after settlement, not a wall-clock audio deadline while the backend is blocked.
+
+### 2026-10-30 — first paint concealed that bootstrap effects had already started
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) introduced first paint before the initial
+App import settled while bootstrap remained in the parallel startup path. The failed reload
+contained capability and BrowserAi initialization before App rejection, so an empty shell or absent
+controls did not mean the runtime was pristine. The App rejection defect reached main; the
+historical private reviewer prompt and tier are unknown. The separate legacy desktop-test ordering
+failure during #5876 repair was caught before merge.
+
+Hold the actual initial App import after first paint. Before release, observe the real bootstrap
+evaluation/effect boundary. If App fulfillment owns bootstrap, require effects initiated by bootstrap
+to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
+quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
+case; preserve the distinct cold-stylesheet lesson in test-validity.

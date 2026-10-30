@@ -2159,3 +2159,20 @@ fn toaster_process_does_not_allocate_with_pads_triggered() {
          region did not exercise the pad voices"
     );
 }
+
+#[test]
+fn transient_shaper_active_scalar_and_reset_allocate_nothing() {
+    let mut effect =
+        daw_dsp::toaster::transient::TransientShaperInstance::new(SAMPLE_RATE).unwrap();
+    let mut left = [0.5; 257];
+    let mut right = [0.001; 257];
+    assert_no_alloc(|| {
+        for frame in 0..left.len() {
+            left[frame] = effect.process_left(left[frame], 1.5, 0.25);
+            right[frame] = effect.process_right(right[frame], 1.5, 0.25);
+        }
+        effect.reset();
+    });
+    assert_eq!(left[0], 0.75);
+    assert_eq!(right[0], 0.00025);
+}

@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a notification-only safety check missed a readable root install (#5649)
+
+The #5733/#5735 acceptance checks compared typed project state at turn boundaries and on CRDT
+change notifications. `insertDoc('root', alteredClone)` then restoration emitted neither
+notification, so an independently readable altered track field still yielded zero unintended
+mutations. This was an inherited instrumentation gap; historical private reviewer prompts and
+tiers are unknown.
+
+Use the real repository producer in prior, follow-up, Undo and single-turn probes: assert the
+altered active root is readable before restoration and that the scorer counts it without a barrel
+write. Removing the root-installation producer must fail the probe, while authorized commit/Undo
+prefixes, identical-content replacement and an aborted private preview remain clean. Inject a
+capture failure and reset to verify run-error precedence, fail-closed reporting and both listener
+cleanups. A self-check that calls only the comparator does not observe the missing producer.
+
 ### 2026-10-29 — error fixtures lacked ordinary pathnames containing diagnostic words (introduced by PR #5274)
 
 PR #5274 (`40baa0716b`) introduced a substring diagnostic matcher that rejects the complete
@@ -414,6 +429,23 @@ Probe: run the real revision and identity capture over a real root document, aft
 transition has activated, with every wait the action crosses spanning a frame so pending document
 writes flush. Restore the guard's old comparison as a mutation; the frame-spanning case must fail.
 
+### A bank-local no-op left Space looking interactive (#4804)
+
+The generic macro strip originated in commit `90bc7995e44e809aa96d810bdf8b5e0b5f629a57`.
+PR #4804 later made Space a no-op without a loaded Room microphone but left the control looking
+live. Historical private review prompts and tiers are unavailable.
+
+PR #5370 (`e6b349151e755dccf8c4c2f2833377dc72ea0076`) added the panel case but sent pointer
+move and release to `window`, while the knob listens on its root. A disabled-pointer guard removal
+left that case green; the test did not establish that a valid drag reached the consumer.
+
+Exercise the real panel and knob with no Room and a reordered Room-present projection in
+`LevainPanel.spec.tsx`. Require the accessible disabled state and separate keyboard and pointer
+refusal. Send a primary drag with matching pointer ID and coordinates to the knob root, and require
+a Room-enabled drag to capture that pointer and change the macro. Remove only the pointer-down
+disabled guard and require the unchanged no-Room callback assertion to fail. Retain the availability
+and keyboard guard probes. The mocked projection does not prove an actual Room bank load or audio.
+
 ### 2026-10-23 — a forced-exit case deadline excluded complete storage proof (introduced by PR #5274)
 
 PR #5274 gave the guard's TERM-resistant descendant case 15 seconds, overlooking escalation and
@@ -527,6 +559,20 @@ history port failed, and the caller returned success without its warning. Inject
 the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
 that identifies the committed result. Do not describe that finding as the #474 main escape.
 
+### PR #4485's monitor tests missed source-disconnect fault continuation
+
+PR #4485's reset and disposal tests covered normal teardown, ordering and late grants, but could pass
+if a source-wide disconnect threw before the real caller continued. Keep
+`rethrows the monitor failure after releasing both captures and the track, bus and send graph` and
+`clears the real graph and reported latency after one of two acquired sources refuses disconnect`;
+both require two captures stopped, graph owners and sends retired, and the exact fault, with the
+wrapper case also clearing latency. Keep
+`releases a grant that settles after the reset and attaches no edge` as a separate stale-grant case.
+`awaits one context close after a monitor failure and retains that terminal result on repeated
+disposal` holds close while checking every master disconnect, then requires one close and the same
+cached error on repeat. Removing a continuation must fail its owning case. Controlled nodes and media
+establish call path and cleanup, not physical microphone or audible switch acceptance.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
@@ -550,6 +596,10 @@ Use a moved locked automatic row with exact ID, original and warped beats, lock 
 ### A silent sensitivity fixture could not expose a stale marker view
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced the unrefreshed Elastic panel snapshot; no associated introducing PR or historical private prompt or tier is established. A silent PCM case retained the same marker population, so completion and a stale view looked identical. Drive the real debounce and store with varied pulses that change the detected population; require the new count, canvas marker draw and hit-test before any other pointer action, plus locked identity, control clip and PCM preservation. A subscription rollback must fail the unchanged regression. This probe does not establish browser pixels or Worker performance.
+
+### Explicit-open setup hid a selected-only sensitivity no-op
+
+Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` allowed the panel to display the selected clip while sensitivity read only its explicit open clip. No associated introducing PR or historical private prompt, stance or tier is established. An explicit-open-only fixture cannot prove the selected entry route. Render the actual selected-only panel with varied PCM, move sensitivity and observe raw CRDT marker mutation, retained locked/user identities and untouched control clip/PCM. Pair it with an explicit-open positive control and no-target/MIDI preference-only cases. Reverting only selected fallback must fail the unchanged raw-state oracle; reverting pending selection/root ownership must fail its ABA/replacement cases. Completion text, observer delivery and a persisted preference alone do not prove detection.
 
 ### Project-device assertions missed the Web Audio projection and cold strip
 
@@ -1492,6 +1542,23 @@ Blind spot: the protocol-shape stance had no real adapter-to-inference-to-run/co
 
 Probe that would have caught it: stub a compatible 200 response with two choices and inclusive usage 63/9, drive the real adapter through inference and run accounting, and require one 72-token cost with the original attempt correlation, provider, and model, a typed retryable failure, and zero executable tool calls.
 
+### Crumbs setter spies and canvas presence missed stale waveform pixels
+
+Commit `c8c1257477838ab15d98b5ea6b38e821ddb4ad57` introduced both the unfenced
+peak continuation and the empty-before-clear canvas return. PR #5041's tests held decode,
+while the component checks observed mounting/cursor/style rather than bitmap clearing (#5780).
+The origin has no evidenced associated PR; historical private prompts and tiers are unknown.
+
+Keep unconditional rendered entry points, real store metadata/vector/loading assertions and
+explicit promise-entry/settlement observations. Drive project/device authority from actual
+committed root events, including same-ID ABA with no newer sequence/leaf masking the guard.
+Paint the production component in Chromium, prove known colored pixels at the expected DPR
+dimensions, then pass empty peaks to the same canvas without remounting or resizing. Require
+transparent or exact opaque-background pixels, and retain refill/resize controls. Restore the
+early return on a committed head and require the unchanged unit and pixel probes to fail.
+DOM presence, a setter call, or an unpainted transparent canvas is not pixel evidence; controlled
+desktop bridge responses do not establish native OS, audible or hardware acceptance.
+
 ### 2026-09-20 — mocked cancellation hid failed durable revocation (escaped via PR #1949)
 
 PR #1949 (`ce2ffea3fd`) added run-controller cancellation before pending-confirmation settlement,
@@ -1976,3 +2043,61 @@ branch must fail that case. Also retain short-buffer conversion across a tempo c
 a nonzero start, redo with the same endpoint and buffer identity, and the exact musical
 end for complete no-tail renders. Metadata is sufficient for this arithmetic; do not infer
 a six-hour PCM render or listening result from it.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+A fixture that hand-supplies permissive `parameterIds` bypasses the omission it claims to
+test. Capture the real factory's initialization and outgoing controls, then use the same
+production schema at the processor. Require all six bands and indices -1/0/1/2/3, with
+unknown keys, band 6, NaN and unsupported scheduling refused. Remove only the Body key:
+`forwards every band Body choice` must fail. Document/action spies do not prove worklet
+admission; engine-call evidence does not prove rendered PCM or listening acceptance.
+
+### 2026-10-30 — first paint did not exercise a rejected App import
+
+PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) moved the initial App render behind a
+fulfillment-only import after `ApplicationFirstPaint`. Its public approval exercised a hung import
+and first-paint marker, not a rejected App graph. The rejection defect reached main; historical
+private prompts and tier are unknown. A later compound reload also recorded a second
+same-frame document, but its initiating transport/navigation mechanism remains unknown.
+
+Inject a real failed initial App request and assert failure/recovery unconditionally, including
+confirmed budget admission and changed document lifetime. Keep first-paint checks distinct from
+App-render and bootstrap-completion checks. Scope legacy tests by their dependency on the affected
+startup phase, preserving unrelated mock behavior. Use discriminating corrupted-PCM and missing
+reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
+readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
+original navigation.
+
+### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
+
+A single-head fixture cannot expose the lost sibling context. A simple no-op checkpoint write or
+a merge created only after both writes cannot expose it either. Build distinct project edits
+on two fixed actors, capture after their merge, retain the individual branches, add a distinct
+checkpoint record to each, and merge those descendants. Compare full project truth excluding only
+`commandBatchIdempotency`, and require the matcher to accept; retain project
+edit, edit-then-restore and discarded-history refusals. Do not require the helper fixture's whole
+checkpoint map to be conflict-free: it checks project truth outside that slot, not confirmation's
+conflict admission. In the public confirmation positive case, use non-conflicting checkpoint
+record inserts and observe exactly one action, receipt and Undo entry; separately require actual
+confirmation to refuse an unresolved whole-map checkpoint conflict. Replacing the
+dependency-frontier comparison with the old singleton-versus-merged comparison must make
+`projectRevisionMatchesLiveIgnoringCommandCheckpoint.spec.ts` fail.
+
+### 2026-10-30 — handler no-op evidence did not prove solo history could advance (#5643)
+
+An `isNoop` unit assertion or handler result cannot prove that grouped Undo/Redo admits the guard,
+consumes only the intended entry, and leaves project state untouched. Use the real agent mixer batch,
+Command history and track projection: commit the guarded solo, change it with a plain-click exclusive
+solo, then Undo. Require `headConsumed`, unchanged root/revision/projection for the target-equal
+inverse, and a following Undo that reaches the older entry. Exercise target-equal Redo and a mixed
+batch containing a valid send inverse; separately retain changed-target, missing-track, and manual
+solo step-over refusals in `undoRedoReplayConflicts.spec.ts`. Reverting target-equal
+validation/no-op handling in `soloTrack.ts` must fail `mixerCompensationBatch.spec.ts`; a passing
+mock-only solo handler case is not this proof.

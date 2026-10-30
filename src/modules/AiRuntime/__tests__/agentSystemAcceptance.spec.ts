@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
 
-import { Counter, toJS } from '@automerge/automerge';
+import { change, clone, Counter, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -15,8 +15,11 @@ import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrang
 import { automationStore } from '#/modules/Automation/stores';
 import { clearHandlerRegistry, macroStore, registerHandlerMap, undoHistoryStore } from '#/modules/Command/stores';
 import * as commandUseCases from '#/modules/Command/useCases';
+import * as crdtDocumentUseCases from '#/modules/CrdtDocument/useCases';
 import {
     createCrdtDoc,
+    createCommandPreviewWorkspace,
+    captureProjectRevision,
     getCrdtDoc,
     getCrdtDocIds,
     mutateCrdtDoc,
@@ -24,7 +27,6 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
-    subscribeToCrdtChanges,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -479,6 +481,7 @@ type PlannedActions = Awaited<ReturnType<typeof parsePromptToActions>>['actions'
 type CaseRun = { result: AgentAcceptanceCaseResult; unintendedMutations: number };
 
 type ProjectTruth = Record<string, Record<string, unknown>>;
+type ProjectObservation = { kind: 'full' | 'root'; truth: ProjectTruth };
 
 /** Materialized project values, independent of the route that wrote them. */
 function materializeProjectTruth(): ProjectTruth {
@@ -506,31 +509,65 @@ function captureProjectTruth(): ProjectTruth {
     return materializeProjectTruth();
 }
 
+function materializeInstalledRoot(document: ReturnType<typeof getCrdtDoc>): ProjectTruth {
+    if (document === undefined) {
+        return {};
+    }
+    const value: unknown = toJS(document);
+    if (!isRecord(value)) {
+        throw new TypeError('The acceptance active root has no object value.');
+    }
+    delete value.commandBatchIdempotency;
+    return { root: value };
+}
+
 /** Capture applied CRDT content without settling from inside a repository notification. */
 async function observeProjectChanges<T>(
     run: () => Promise<T>,
-    materialize: () => ProjectTruth = materializeProjectTruth
-): Promise<{ result: T; transitions: ProjectTruth[] }> {
+    materialize: () => ProjectTruth = materializeProjectTruth,
+    materializeRoot: (document: ReturnType<typeof getCrdtDoc>) => ProjectTruth = materializeInstalledRoot
+): Promise<{ result: T; transitions: ProjectTruth[]; observations: ProjectObservation[] }> {
     const transitions: ProjectTruth[] = [];
+    const observations: ProjectObservation[] = [];
     let failure: Error | undefined;
-    const unsubscribe = subscribeToCrdtChanges(() => {
+    const unsubscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges(() => {
         try {
-            transitions.push(materialize());
+            const truth = materialize();
+            transitions.push(truth);
+            observations.push({ kind: 'full', truth });
         } catch (error) {
             failure ??= error instanceof Error ? error : new Error('Project truth capture failed.', { cause: error });
         }
     });
+    let unsubscribeRoot: () => void;
+    try {
+        unsubscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations((installation) => {
+            if (installation.kind === 'reset') {
+                failure ??= new Error('Acceptance project reset during observation.');
+                return;
+            }
+            try {
+                observations.push({ kind: 'root', truth: materializeRoot(installation.document) });
+            } catch (error) {
+                failure ??= error instanceof Error ? error : new Error('Active root capture failed.', { cause: error });
+            }
+        });
+    } catch (error) {
+        unsubscribeChanges();
+        throw error;
+    }
     let result: T;
     try {
         result = await run();
         captureSettledRevision();
     } finally {
-        unsubscribe();
+        unsubscribeChanges();
+        unsubscribeRoot();
     }
     if (failure !== undefined) {
         throw failure;
     }
-    return { result, transitions };
+    return { result, transitions, observations };
 }
 
 /** Every applied state must match one oracle-authorized prefix. */
@@ -540,6 +577,30 @@ function transitionDifferences(transitions: readonly ProjectTruth[], allowed: re
     for (const transition of transitions) {
         const remaining = allowed.slice(earliest);
         const counts = remaining.map((state) => projectDifferences(state, transition));
+        const nearest = Math.min(...counts);
+        differences = Math.max(differences, nearest);
+        if (nearest === 0) {
+            earliest += counts.indexOf(0);
+        }
+    }
+    return differences;
+}
+
+function observedDifferences(
+    observed: { observations: readonly ProjectObservation[] },
+    allowed: readonly ProjectTruth[]
+): number {
+    const allowedRoots = allowed.map((state): ProjectTruth => {
+        if (state.root === undefined) {
+            return {};
+        }
+        return { root: state.root };
+    });
+    let earliest = 0;
+    let differences = 0;
+    for (const observation of observed.observations) {
+        const states = observation.kind === 'root' ? allowedRoots : allowed;
+        const counts = states.slice(earliest).map((state) => projectDifferences(state, observation.truth));
         const nearest = Math.min(...counts);
         differences = Math.max(differences, nearest);
         if (nearest === 0) {
@@ -787,7 +848,7 @@ async function runCorpusCase(
         unintendedMutations: Math.max(
             barrel.count() - writesBefore,
             projectDifferences(projectBefore, observed.result.projectAfter),
-            transitionDifferences(observed.transitions, [projectBefore])
+            observedDifferences(observed, [projectBefore])
         ),
     };
 }
@@ -983,6 +1044,7 @@ type ChatTurnWrites = {
     projectBefore: ProjectTruth;
     projectAfter: ProjectTruth;
     transitions: ProjectTruth[];
+    observations: ProjectObservation[];
 };
 
 /** A write the turn made, counted once even where only the project revision shows it. */
@@ -991,7 +1053,7 @@ function anyWrites(writes: ChatTurnWrites): number {
         writes.barrelActions.length,
         writes.moved ? 1 : 0,
         projectDifferences(writes.projectBefore, writes.projectAfter),
-        transitionDifferences(writes.transitions, [writes.projectBefore])
+        observedDifferences(writes, [writes.projectBefore])
     );
 }
 
@@ -1065,7 +1127,7 @@ async function sendScriptedChatTurn(input: {
             projectAfter: captureProjectTruth(),
         };
     });
-    return { ...observed.result, transitions: observed.transitions };
+    return { ...observed.result, transitions: observed.transitions, observations: observed.observations };
 }
 
 /** The prior card or commit, with frozen originals for Undo atop the current project. */
@@ -1176,7 +1238,7 @@ function writesBeyondCommit(
     return Math.max(
         writes.barrelActions.length,
         projectDifferences(projectAfterOracleActions(writes.projectBefore, oracle), writes.projectAfter),
-        transitionDifferences(writes.transitions, commitPrefixes(writes.projectBefore, oracle))
+        observedDifferences(writes, commitPrefixes(writes.projectBefore, oracle))
     );
 }
 
@@ -1244,8 +1306,8 @@ function scoreFollowUp(input: {
                         projectAfterOracleUndo(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions),
                         writes.projectAfter
                     ),
-                    transitionDifferences(
-                        writes.transitions,
+                    observedDifferences(
+                        writes,
                         undoPrefixes(prior.projectBeforeCommit, writes.projectBefore, prior.commitActions)
                     )
                 ),
@@ -1317,7 +1379,7 @@ async function runRefinementCase(
             priorUnintendedMutations = Math.max(
                 priorWrites.barrelActions.length,
                 projectDifferences(projectAfterOracleActions(projectBeforePrior, priorActions), captureProjectTruth()),
-                transitionDifferences(observedPrior.transitions, commitPrefixes(projectBeforePrior, priorActions))
+                observedDifferences(observedPrior, commitPrefixes(projectBeforePrior, priorActions))
             );
         }
         for (const edit of testCase.interveningFaderEdits ?? []) {
@@ -1722,6 +1784,7 @@ describe('agent acceptance corpora', () => {
                 projectBefore,
                 projectAfter: structuredClone(projectBefore),
                 transitions: [],
+                observations: [],
                 ...overrides,
             };
         }
@@ -1906,6 +1969,125 @@ describe('agent acceptance corpora', () => {
                 write();
                 expect(captures).toBe(afterRun);
             } finally {
+                closeChatProject();
+            }
+        });
+
+        it('surfaces root capture failures, preserves run failures and unsubscribes', async () => {
+            openChatProject();
+            const original = getCrdtDoc('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            let captures = 0;
+            const captureFailure = new Error('root capture failure');
+            const captureRoot = () => {
+                captures++;
+                throw captureFailure;
+            };
+            try {
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            createCrdtDoc('root', clone(original));
+                        },
+                        materializeProjectTruth,
+                        captureRoot
+                    )
+                ).rejects.toBe(captureFailure);
+                const afterCapture = captures;
+                createCrdtDoc('root', original);
+                expect(captures).toBe(afterCapture);
+                const runFailure = new Error('run failure');
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            createCrdtDoc('root', clone(original));
+                            throw runFailure;
+                        },
+                        materializeProjectTruth,
+                        captureRoot
+                    )
+                ).rejects.toBe(runFailure);
+                const afterRun = captures;
+                expect(afterRun).toBeGreaterThan(afterCapture);
+                createCrdtDoc('root', original);
+                expect(captures).toBe(afterRun);
+            } finally {
+                closeChatProject();
+            }
+        });
+
+        it('fails closed on a terminal root event and leaves no observer in the next project session', async () => {
+            openChatProject();
+            const original = getCrdtDoc('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            let captures = 0;
+            const capture = () => {
+                captures++;
+                return materializeProjectTruth();
+            };
+            const subscribeRoot = crdtDocumentUseCases.subscribeToActiveRootInstallations;
+            const subscribeChanges = crdtDocumentUseCases.subscribeToCrdtChanges;
+            const rootUnsubscribe = vi.fn();
+            const changesUnsubscribe = vi.fn();
+            let rootListener: Parameters<typeof subscribeRoot>[0] | undefined;
+            const rootSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToActiveRootInstallations')
+                .mockImplementation((listener) => {
+                    rootListener = listener;
+                    const unsubscribe = subscribeRoot(listener);
+                    return () => {
+                        rootUnsubscribe();
+                        unsubscribe();
+                    };
+                });
+            const changesSubscription = vi
+                .spyOn(crdtDocumentUseCases, 'subscribeToCrdtChanges')
+                .mockImplementation((listener) => {
+                    const unsubscribe = subscribeChanges(listener);
+                    return () => {
+                        changesUnsubscribe();
+                        unsubscribe();
+                    };
+                });
+            try {
+                await expect(
+                    observeProjectChanges(
+                        async () => {
+                            if (rootListener === undefined) {
+                                throw new Error('Missing active root installation listener');
+                            }
+                            createCrdtDoc('root', clone(original));
+                            expect(captures).toBe(1);
+                            rootListener({ kind: 'reset' });
+                        },
+                        capture,
+                        (document) => {
+                            captures++;
+                            return materializeInstalledRoot(document);
+                        }
+                    )
+                ).rejects.toThrow('Acceptance project reset during observation.');
+                const afterReset = captures;
+                expect(rootSubscription).toHaveBeenCalledTimes(1);
+                expect(changesSubscription).toHaveBeenCalledTimes(1);
+                expect(rootUnsubscribe).toHaveBeenCalledTimes(1);
+                expect(changesUnsubscribe).toHaveBeenCalledTimes(1);
+                resetCrdtProjectAuthority('next session');
+                createCrdtDoc('root');
+                mutateCrdtDoc({
+                    id: 'root',
+                    changeFn: (document: Record<string, unknown>) => {
+                        document.nextSession = true;
+                    },
+                });
+                expect(captures).toBe(afterReset);
+            } finally {
+                rootSubscription.mockRestore();
+                changesSubscription.mockRestore();
                 closeChatProject();
             }
         });
@@ -2114,6 +2296,270 @@ describe('agent acceptance corpora', () => {
             expect(changed).not.toBe(before);
             expect(restored).not.toBe(changed);
         }
+
+        async function installKickPanAndRestore(): Promise<void> {
+            const original = getCrdtDoc<{ tracks: { tracks: { id: string; pan: number }[] } }>('root');
+            if (original === undefined) {
+                throw new Error('Missing active root');
+            }
+            const altered = change(clone(original), (document) => {
+                const kick = document.tracks.tracks.find((track) => track.id === 'track-kick');
+                if (kick === undefined) {
+                    throw new Error('Missing kick in active root');
+                }
+                kick.pan = 0.27;
+            });
+            createCrdtDoc('root', altered);
+            expect(
+                getCrdtDoc<{ tracks: { tracks: { id: string; pan: number }[] } }>('root')?.tracks.tracks.find(
+                    (track) => track.id === 'track-kick'
+                )?.pan
+            ).toBe(0.27);
+            createCrdtDoc('root', original);
+        }
+
+        it.each(['follow-up', 'undo'] as const)('counts installed restored root content beside %s', async (phase) => {
+            const testCase = phase === 'follow-up' ? relativeCase : undoCase;
+            const run = await runWithBarrel(testCase, installKickPanAndRestore);
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.observedBarrelWrites).toBe(0);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts a prior root restored after a legitimate relative follow-up commits', async () => {
+            let beforeFollowUp: ReturnType<typeof getCrdtDoc> | undefined;
+            const run = await runWithBarrel(
+                relativeCase,
+                async () => {
+                    const committed = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined || committed === undefined) {
+                        throw new Error('Missing saved or committed active root');
+                    }
+                    expect(
+                        projectDifferences(
+                            materializeInstalledRoot(beforeFollowUp),
+                            materializeInstalledRoot(committed)
+                        )
+                    ).toBeGreaterThan(0);
+                    createCrdtDoc('root', beforeFollowUp);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(
+                        materializeInstalledRoot(beforeFollowUp)
+                    );
+                    createCrdtDoc('root', committed);
+                    expect(materializeInstalledRoot(getCrdtDoc('root'))).toEqual(materializeInstalledRoot(committed));
+                },
+                undefined,
+                async () => {
+                    beforeFollowUp = getCrdtDoc('root');
+                    if (beforeFollowUp === undefined) {
+                        throw new Error('Missing active root before follow-up');
+                    }
+                }
+            );
+            expect(run.result.exactMatch).toBe(true);
+            expect(run.observedBarrelWrites).toBe(0);
+            expect(run.unintendedMutations).toBeGreaterThan(0);
+        });
+
+        it('counts installed restored root content inside the prior-turn observation', async () => {
+            const prior = pendingCase.prior;
+            if (prior === undefined) {
+                throw new Error('Missing pending prior turn');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const before = captureProjectTruth();
+                const observed = await observeProjectChanges(() =>
+                    sendScriptedChatTurn({
+                        id: pendingCase.id,
+                        prompt: prior.prompt,
+                        providerTurns: prior.providerTurns,
+                        priorProposalId: () => undefined,
+                        barrel: barrel.log,
+                        alongside: installKickPanAndRestore,
+                    })
+                );
+                expect(observed.result.projectAfter).toEqual(before);
+                expect(observed.result.barrelActions).toEqual([]);
+                expect(transitionDifferences(observed.transitions, [before])).toBe(0);
+                expect(observedDifferences(observed, [before])).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it('counts installed restored root content beside single-turn planning', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, installKickPanAndRestore);
+                expect(run.result.exactMatch).toBe(true);
+                expect(barrel.log.count()).toBe(0);
+                expect(run.unintendedMutations).toBeGreaterThan(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it.each(['track', 'clip', 'device', 'group'] as const)(
+            'counts installed restored %s content in the active root',
+            async (field) => {
+                const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+                if (testCase === undefined) {
+                    throw new Error('Missing single-turn case');
+                }
+                openChatProject();
+                const barrel = spyOnBarrelWrites();
+                try {
+                    const run = await runCorpusCase(testCase, barrel.log, async () => {
+                        type Root = {
+                            tracks: {
+                                tracks: Array<{
+                                    id: string;
+                                    pan: number;
+                                    clips: Array<{ id: string; startBeat: number }>;
+                                    devices: Array<{ id: string; parameterValues: Record<string, number> }>;
+                                }>;
+                            };
+                            vcaGroups?: {
+                                groups: Array<{
+                                    id: string;
+                                    name: string;
+                                    gain: number;
+                                    muted: boolean;
+                                    trackIds: string[];
+                                }>;
+                            };
+                        };
+                        const original = getCrdtDoc<Root>('root');
+                        if (original === undefined) {
+                            throw new Error('Missing active root');
+                        }
+                        const altered = change(clone(original), (document) => {
+                            const kick = document.tracks.tracks.find((track) => track.id === 'track-kick');
+                            if (kick === undefined) {
+                                throw new Error('Missing kick');
+                            }
+                            switch (field) {
+                                case 'track':
+                                    kick.pan = 0.27;
+                                    break;
+                                case 'clip':
+                                    kick.clips.push({ id: 'unapproved-clip', startBeat: 2 });
+                                    break;
+                                case 'device': {
+                                    const bass = document.tracks.tracks.find((track) => track.id === 'track-bass-di');
+                                    const compressor = bass?.devices[0];
+                                    if (compressor === undefined) {
+                                        throw new Error('Missing fixture compressor');
+                                    }
+                                    compressor.parameterValues['comp-threshold'] = -12;
+                                    break;
+                                }
+                                case 'group':
+                                    document.vcaGroups = {
+                                        groups: [
+                                            {
+                                                id: 'unapproved-group',
+                                                name: 'Changed',
+                                                gain: 1,
+                                                muted: false,
+                                                trackIds: [kick.id],
+                                            },
+                                        ],
+                                    };
+                                    break;
+                            }
+                        });
+                        const before = captureProjectTruth();
+                        createCrdtDoc('root', altered);
+                        expect(projectDifferences(before.root, materializeProjectTruth().root)).toBeGreaterThan(0);
+                        createCrdtDoc('root', original);
+                    });
+                    expect(run.result.exactMatch).toBe(true);
+                    expect(barrel.log.count()).toBe(0);
+                    expect(run.unintendedMutations).toBeGreaterThan(0);
+                } finally {
+                    barrel.restore();
+                    closeChatProject();
+                }
+            }
+        );
+
+        it('does not count an identical active-root identity replacement', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, async () => {
+                    const original = getCrdtDoc('root');
+                    if (original === undefined) {
+                        throw new Error('Missing active root');
+                    }
+                    const identical = clone(original);
+                    createCrdtDoc('root', identical);
+                    expect(getCrdtDoc('root')).toBe(identical);
+                    createCrdtDoc('root', original);
+                });
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.unintendedMutations).toBe(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
+
+        it('excludes an aborted private command preview whose active root stays unchanged', async () => {
+            const testCase = scoredCases(corpora.development).find((entry) => entry.promptClass !== 'refinement');
+            if (testCase === undefined) {
+                throw new Error('Missing single-turn case');
+            }
+            openChatProject();
+            const barrel = spyOnBarrelWrites();
+            try {
+                const run = await runCorpusCase(testCase, barrel.log, async () => {
+                    const before = captureProjectTruth();
+                    const workspace = createCommandPreviewWorkspace(captureProjectRevision());
+                    try {
+                        workspace.scope(() => {
+                            const state = trackStore.value;
+                            if (state === null) {
+                                throw new Error('Missing project');
+                            }
+                            trackStore.set({
+                                ...state,
+                                tracks: state.tracks.map((track) =>
+                                    track.id === 'track-kick' ? { ...track, pan: 0.27 } : track
+                                ),
+                            });
+                            const preview = workspace.getProjectDocument() as {
+                                tracks: { tracks: Array<{ id: string; pan: number }> };
+                            };
+                            expect(preview.tracks.tracks.find((track) => track.id === 'track-kick')?.pan).toBe(0.27);
+                        });
+                    } finally {
+                        workspace.release();
+                    }
+                    expect(captureProjectTruth()).toEqual(before);
+                    expect(getCrdtDoc('root')).toBeDefined();
+                });
+                expect(run.result.exactMatch).toBe(true);
+                expect(run.unintendedMutations).toBe(0);
+            } finally {
+                barrel.restore();
+                closeChatProject();
+            }
+        });
 
         it.each(['prior', 'follow-up', 'undo'] as const)(
             'counts persisted restored writes beside %s',

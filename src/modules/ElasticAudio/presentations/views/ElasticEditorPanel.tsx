@@ -36,6 +36,7 @@ import { detectTransientsForClip } from '../../useCases/elasticAudio/detectTrans
 import { markElasticDetectionComplete } from '../../useCases/elasticAudio/markElasticDetectionComplete';
 import { quantizeTransients } from '../../useCases/elasticAudio/quantizeTransients';
 import { removeMarker } from '../../useCases/elasticAudio/removeMarker';
+import { resolveElasticEditorTarget } from '../../useCases/elasticAudio/resolveElasticEditorTarget';
 import { selectElasticMarkers } from '../../useCases/elasticAudio/selectElasticMarkers';
 import { setElasticSensitivity } from '../../useCases/elasticAudio/setElasticSensitivity';
 import { setElasticTool } from '../../useCases/elasticAudio/setElasticTool';
@@ -105,8 +106,7 @@ export const ElasticEditorPanel = (): ReactElement => {
         globalPitchShift: 0,
     });
 
-    const clipId = elasticState.openClipId ?? clipSelection.selectedClipId;
-    const clip = clipId === null ? null : findClip(trackState.tracks, clipId);
+    const { clipId, clip } = resolveElasticEditorTarget(elasticState, clipSelection, trackState);
     const isAudioClip = clip !== null && clip.type === 'audio';
 
     const warpState = (clipId === null ? undefined : warpStates.states[clipId]) ?? EMPTY_WARP_STATE;
@@ -455,19 +455,6 @@ export const ElasticEditorPanel = (): ReactElement => {
         </Stack>
     );
 };
-
-function findClip(
-    tracks: ReadonlyArray<{ clips: ReadonlyArray<{ id: string; type: string; audioBufferId?: string }> }>,
-    clipId: string
-): { id: string; type: string; audioBufferId?: string } | null {
-    for (const track of tracks) {
-        const clip = track.clips.find((c) => c.id === clipId);
-        if (clip) {
-            return clip;
-        }
-    }
-    return null;
-}
 
 function countMarkers(markers: ReadonlyArray<WarpMarkerView>): {
     transient: number;

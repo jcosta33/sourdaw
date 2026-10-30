@@ -11,8 +11,8 @@ import { NO_SOURCE_SPECIFIC_MODULATION } from './GuidanceProfiles';
  * Every stage here starts switched off per band and has no descriptor enable
  * parameter, so each entry is inaudible until the stage is switched on in the
  * Bacteria panel; the convolution stage additionally needs a body chosen in the
- * panel's Body module — Ceramic, Wood, Metal or Spring, where Spring shares
- * Metal's response — and passes audio through unchanged while the choice is
+ * panel's Body module — Ceramic, Wood, Metal or the dispersive, longer-tailed
+ * Spring — and passes audio through unchanged while the choice is
  * None, which every band starts with. The body is a panel choice per band, not
  * a descriptor parameter. Stages run in this order inside a band: distortion,
  * filter, chorus, phaser, granular, spectral, frequency shifter, lo-fi,
@@ -271,12 +271,12 @@ export const BACTERIA_EFFECTS_PARAMETER_GUIDANCE: Readonly<Record<string, Device
         0.2,
         0.8,
         [
-            'The built-in body impulse responses keep the same audible-band level at every session rate and carry unit energy at 48 kHz, so at 48 kHz a mix of 1 leaves mono or identical-channel white noise at about its dry level, within 0.2 dB over 64 s measurements and 0.5 dB over 16 s ones; convolutionSeparation widens side content in the convolved signal, and gain trims the result afterwards.',
-            'Dry and body add as a crossfade of two mostly uncorrelated signals: for mono white noise at 48 kHz, every built-in body lowers the level by about 0.9 dB at mix 0.1, 2.0 dB at 0.25, 2.4 dB at 0.3, 3.0 dB at 0.5 and 2.0 dB at 0.75, and measurements land within 0.2 dB of those figures over 64 s and within 0.5 dB over 16 s.',
+            'All bodies target unit impulse energy at 48 kHz and energy scaled by 48000 divided by the session rate elsewhere. Ceramic, Wood and Metal use short impulse responses; Spring uses an analytically normalized dispersive feedback model with a much longer tail. At 48 kHz the normalization matches fully wet mono white noise to its dry level; convolutionSeparation widens side content, and gain trims the result afterwards.',
+            'Dry and body add as a crossfade of two mostly uncorrelated signals: for mono white noise at 48 kHz, Ceramic, Wood and Metal lower the level by about 0.9 dB at mix 0.1, 2.0 dB at 0.25, 2.4 dB at 0.3, 3.0 dB at 0.5 and 2.0 dB at 0.75, and their measurements land within 0.2 dB of those figures over 64 s and within 0.5 dB over 16 s.',
         ],
         [
-            'Stereo material that differs between channels gets louder, because convolutionSeparation boosts the side content of the convolved signal: for independent left and right white noise at 48 kHz, a mix of 1 raises each channel by about 4.0 dB at the default separation of 0.5 and by about 7.0 dB at separation 1, and measurements land within 0.2 dB of those figures over 64 s and within 0.5 dB over 16 s.',
-            "Each body still lifts its own resonance by 25.7 to 26.5 dB at session rates from 44.1 to 96 kHz (ceramic at 2.2 kHz, wood at 800 Hz, metal and spring at 3.5 kHz), so material with energy near a body's resonance gets louder as the mix rises, by an amount set by how much of its energy sits there; pink noise is no fixed reference for it, because its level through a body moves by 1 to 2 dB with how far below 20 Hz the noise extends.",
+            'Stereo material that differs between channels gets louder because convolutionSeparation boosts the wet side signal. For Ceramic, Wood and Metal with independent left and right white noise at 48 kHz, a mix of 1 raises each channel by about 4.0 dB at the default separation of 0.5 and by about 7.0 dB at separation 1; their measurements land within 0.2 dB of those figures over 64 s and within 0.5 dB over 16 s.',
+            'Ceramic, Wood and Metal lift their resonances by 25.7 to 26.5 dB from 44.1 to 96 kHz (ceramic at 2.2 kHz, wood at 800 Hz, metal at 3.5 kHz). Spring instead spreads frequencies in time through a fixed dispersive feedback model; it is a stylized spring character, not a measured tank emulation. Resonant material can get louder as mix rises; pink noise is no fixed level reference for the short bodies because its result moves with how far below 20 Hz the noise extends.',
         ],
         noExternalModulation
     ),
