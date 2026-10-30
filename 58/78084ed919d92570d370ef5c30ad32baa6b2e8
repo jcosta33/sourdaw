@@ -1,0 +1,14 @@
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  h_beb54bf43b47b7 4,45,49-54,59-62,121,127,147,149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5878084ed919d92570d370ef5c30ad32baa6b2e8",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
