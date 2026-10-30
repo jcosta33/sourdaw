@@ -1,0 +1,22 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_3168504f6ce387::t_5be469d494945b 484,529,531,535-537,550,570,590,599-610,1047,1130,1787
+  s_3168504f6ce387::t_2b2b58922b6941 2326-2327,2329-2357
+  s_3168504f6ce387::t_0a2acaa53600e6 2328
+  s_3168504f6ce387::t_58744390b076d6 2358-2360
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fede0618395422be09c8ace95febaaf46d4c6839",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
