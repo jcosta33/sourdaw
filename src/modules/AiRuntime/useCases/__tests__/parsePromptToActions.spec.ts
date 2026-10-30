@@ -577,9 +577,9 @@ describe('parsePromptToActions', () => {
             expectedContext.selectedClipType = 'midi';
         }
         const options: Parameters<typeof parsePromptToActions>[0] = {
-            prompt: prompt!,
+            prompt,
             context,
-            preset: { id: id!, expectedContext },
+            preset: { id, expectedContext },
         };
         if (variation === 'readonly') {
             options.profile = 'readonly-answer';

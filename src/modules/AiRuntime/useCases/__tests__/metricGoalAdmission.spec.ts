@@ -9,9 +9,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { createTrack } from '#/modules/Arrangement/models/Track';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
+import { createTrack, getArrangementHandlers, setArrangementEventBus } from '#/modules/Arrangement/useCases';
 import { collaborationStore } from '#/modules/Collaboration/stores';
 import { clearHandlerRegistry, getHandlerMap, registerHandlerMap } from '#/modules/Command/stores';
 import {
@@ -109,7 +108,7 @@ describe('metric goal admission at the final Command boundary', () => {
         registerCrdtStorageRuntime();
         trackStore.set({
             ...initialTracks,
-            tracks: [createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio', color: '#123456' })],
+            tracks: [{ ...createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' }), color: '#123456' }],
             selectedTrackId: null,
         });
         firstHandlerWrites = 0;
@@ -215,7 +214,7 @@ describe('metric goal admission at the final Command boundary', () => {
     it.each([undefined, false])(
         'keeps selected deletion behind the real confirmation owner (caller confirmation: %s)',
         async (requiresConfirmation) => {
-            const track = createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio', color: '#123456' });
+            const track = { ...createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' }), color: '#123456' };
             trackStore.set({ ...initialTracks, tracks: [track], selectedTrackId: track.id });
             const removeTrackExecution = vi.spyOn(getHandlerMap().removeTrack!, 'execute');
             const result = await submitAdmittedPromptRequest({
@@ -249,7 +248,7 @@ describe('metric goal admission at the final Command boundary', () => {
     );
 
     it('refuses project restoration after a selected destructive preview', async () => {
-        const track = createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio', color: '#123456' });
+        const track = { ...createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' }), color: '#123456' };
         trackStore.set({ ...initialTracks, tracks: [track], selectedTrackId: track.id });
         const removeTrackExecution = vi.spyOn(getHandlerMap().removeTrack!, 'execute');
         const result = await submitAdmittedPromptRequest({
@@ -275,7 +274,7 @@ describe('metric goal admission at the final Command boundary', () => {
     });
 
     it('retains one collision-safe Add EQ identity through parsing, compilation, card and execution', async () => {
-        const track = createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio', color: '#123456' });
+        const track = { ...createTrack({ id: 'track-vocal', name: 'Vocal', kind: 'audio' }), color: '#123456' };
         const existingId = 'device-ai-track-vocal-builtin-eq';
         track.devices = [{ id: existingId, name: 'EQ', type: 'builtin-eq', bypassed: false, parameterValues: {} }];
         trackStore.set({ ...initialTracks, tracks: [track], selectedTrackId: track.id });
@@ -298,7 +297,7 @@ describe('metric goal admission at the final Command boundary', () => {
         const expectedPayload = {
             trackId: track.id,
             deviceType: 'builtin-eq',
-            deviceId: existingId + '-2',
+            deviceId: `${existingId}-2`,
             expectedDeviceIds: [existingId],
             expectedFrozen: false,
         };

@@ -194,7 +194,7 @@ function text(value: unknown): string {
     return typeof value === 'string' ? value : ((value as { value?: string }).value ?? '');
 }
 
-const { generateToolPlanningOutcome } = vi.mocked(await import('../llmOrchestration/inference'));
+const { generateToolPlanningOutcome } = await import('../llmOrchestration/inference');
 
 describe('planPromptActions bounded correction evidence', () => {
     beforeEach(() => {

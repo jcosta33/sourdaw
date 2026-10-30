@@ -333,20 +333,22 @@ describe('submitAdmittedPromptRequest', () => {
             let mutationCurrent = true;
             vi.mocked(captureProjectMutationAuthorization).mockReturnValue(() => mutationCurrent);
             mocks.parsePromptToActions.mockImplementationOnce(async () => {
-                if (drift === 'revision')
+                if (drift === 'revision') {
                     mocks.settlePendingProjectWritesAndCaptureRevision.mockReturnValue('revision-2');
+                }
                 if (drift === 'root') {
                     vi.mocked(captureProjectRootIdentity).mockReturnValue('replaced-root');
                 }
                 if (drift === 'mutation') {
                     mutationCurrent = false;
                 }
-                if (drift === 'selection')
+                if (drift === 'selection') {
                     mocks.getProjectContext.mockReturnValue({
                         tracks: [],
                         selectedTrackId: 'other-track',
                         selectedClipIds: [],
                     });
+                }
                 return {
                     actions: [action],
                     rawText: 'Play',

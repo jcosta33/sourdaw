@@ -215,7 +215,9 @@ describe('usePromptExecution', () => {
         });
         executionUseCaseMocks.submitAdmittedPromptRequest.mockReset();
         executionUseCaseMocks.submitAdmittedPromptRequest.mockImplementation(async (input) => {
-            if (input.preset !== undefined) return { status: 'executed' as const, runId: 'prompt-run-1' };
+            if (input.preset !== undefined) {
+                return { status: 'executed' as const, runId: 'prompt-run-1' };
+            }
             const planned =
                 input.actions === undefined
                     ? await executionUseCaseMocks.planPromptActions({ prompt: input.prompt, signal: input.signal })

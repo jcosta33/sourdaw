@@ -7068,7 +7068,7 @@ function reachesOutsideWorkflowSubjects(
     context: ProjectContext,
     targetIds: ReadonlySet<string>
 ): boolean {
-    const payload = 'payload' in action ? action.payload : undefined;
+    const payload: unknown = 'payload' in action ? action.payload : undefined;
     if (!isRecord(payload)) {
         return false;
     }

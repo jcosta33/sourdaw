@@ -43,7 +43,7 @@ export function prepareWorkflowMetricScopes(input: {
 
 export function projectWorkflowMetricToolSchemas(input: {
     schemas: readonly ToolSchema[];
-    phase: WholeRequestIntakePhase;
+    phase: WholeRequestIntakePhase | undefined;
     catalog: MetricIntentCatalog;
     scopes: ReturnType<typeof prepareWorkflowMetricScopes>;
 }): ToolSchema[] {
