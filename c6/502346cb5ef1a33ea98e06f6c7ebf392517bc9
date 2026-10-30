@@ -1,0 +1,52 @@
+src/modules/Transport/useCases/transportControls/__tests__/setPlayback.spec.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 104
+src/modules/AudioEngine/useCases/livePlayback/abandonNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 40-41
+src/modules/Transport/useCases/transportControls/setPlayback.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 2
+src/modules/AudioEngine/useCases/livePlayback/retireOrphanedNativeEngine.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 65-66
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_3168504f6ce387::t_893c3bab919b15 21,65,540-544,634-638
+  s_3168504f6ce387::t_4ae0497ddcd425 22-60,63-64,573-588
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 117,120
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 24
+src/modules/ContentBrowser/presentations/hooks/usePreviewAudio.ts
+  s_3168504f6ce387::t_155a40dec0be6a 1,19-65,70,110,163
+src/modules/AiRuntime/presentations/views/__tests__/MeasuredPreviewAudition.spec.tsx
+  s_3168504f6ce387::t_616e1a4b95b0df 56,63,74,77-78
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 625-629,631,637
+src/modules/AiRuntime/presentations/hooks/useClipAudition.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 3,10
+src/modules/AudioEngine/useCases/livePlayback/invalidateNativeAuditionMonitoring.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 1-16
+src/modules/AiRuntime/useCases/__tests__/measuredPreviewAudition.spec.ts
+  s_3168504f6ce387::t_4ae0497ddcd425 16-47,50-51,153-163
+  s_3168504f6ce387::t_893c3bab919b15 15,52,137-140,171,173-174,195-206
+src/modules/AiRuntime/presentations/views/__tests__/GenerativeAiPanel.resultActions.integration.spec.tsx
+  s_3168504f6ce387::t_616e1a4b95b0df 5
+src/modules/AudioEngine/useCases/livePlayback/stopNativeLiveGraphSession.ts
+  s_3168504f6ce387::t_e9995ee36a13fa 30
+  s_3168504f6ce387::t_616e1a4b95b0df 31
+src/modules/AudioEngine/useCases/audition.ts
+  s_3168504f6ce387::t_616e1a4b95b0df 2,13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c6502346cb5ef1a33ea98e06f6c7ebf392517bc9",
+  "prompts": {},
+  "sessions": {
+    "s_3168504f6ce387": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a16fe7-dbd7-7a60-8832-8654a86d4447",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
