@@ -66,7 +66,11 @@ acceptance observable (event, counter, or caller-read figure) to its producing l
 prescribed mechanism to every required code route. Unemitted observables and partially covered routes
 are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
 check, or dispatch inventories into it, and do not require another plan file or issue for work the
-session owns. Require back only status, changed paths, decisive evidence, and blockers.
+session owns. Require back only status, changed paths, decisive evidence, and blockers. Author and
+repair dispatches also say how to do the work, as a senior engineer briefs a junior and never as
+pseudo-code: the approach and rejected alternative, where to work and the code to follow, step order,
+area traps and generated artifacts, per-step verification, and stop-and-report conditions. Reviewer
+dispatches never carry that reasoning; the templates live in [delivery-orchestration].
 
 Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
 together. Split distinct outcomes when separate review materially helps, provided each slice can land
