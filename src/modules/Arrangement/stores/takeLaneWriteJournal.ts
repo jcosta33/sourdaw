@@ -10,6 +10,8 @@ import {
     replaceBaseGapAudioSources,
     reconcileBaseGapAudioSourceDelta,
 } from './baseGapAudioSourceDelta';
+import { applyTakeFieldOperation } from './applyTakeFieldOperation';
+import { captureMidiSourceChanges } from './captureMidiTakeSourceDelta';
 import { type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
     applyCompAudioSourcePromotions,
@@ -17,8 +19,6 @@ import {
     type CompAudioSourceAuthorization,
 } from './compAudioSourcePromotions';
 import { captureCompRegionSourceOperations } from './compRegionAudioSourceDelta';
-import { applyTakeFieldOperation } from './applyTakeFieldOperation';
-import { captureMidiSourceChanges } from './captureMidiTakeSourceDelta';
 import { cloneValue, optionalNumber, optionalString, valuesEqual } from './takeLaneJournalValues';
 import {
     type TakeFieldOperation,
