@@ -1,0 +1,390 @@
+src/app/__tests__/bootstrap.spec.ts
+  h_beb54bf43b47b7 164,300,364-372,624,1004-1014
+src/app/__tests__/main.spec.tsx
+  h_beb54bf43b47b7 150-153
+src/app/bootstrap.ts
+  h_beb54bf43b47b7 44-52,172,417-427
+src/modules/Arrangement/handlers/clip/__tests__/handleRestoreClipSplitState.spec.ts
+  h_beb54bf43b47b7 326
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  h_beb54bf43b47b7 34,159,161-162,198-199,284-346
+src/modules/Arrangement/handlers/recording/__tests__/overdubControllerUndo.integration.spec.ts
+  h_beb54bf43b47b7 48,60-67,70,73,120-130,145
+src/modules/Arrangement/handlers/recording/__tests__/recordedControllerTake.integration.spec.ts
+  h_beb54bf43b47b7 53,62-69,72,76,113-123,136
+src/modules/Arrangement/handlers/takeLane/__tests__/replaceOriginalMidiTakeRow.integration.spec.ts
+  h_beb54bf43b47b7 1-434
+src/modules/Arrangement/handlers/takeLane/replaceOriginalMidiTakeRow.ts
+  h_beb54bf43b47b7 1-103
+src/modules/Arrangement/models/ResolvedClip.ts
+  h_beb54bf43b47b7 1,8-11
+src/modules/Arrangement/models/TakeLane.ts
+  h_beb54bf43b47b7 2,6-7,56-59
+src/modules/Arrangement/presentations/hooks/__tests__/useTimelineInteractions.spec.tsx
+  h_beb54bf43b47b7 233-240,242,245,247
+src/modules/Arrangement/presentations/views/__tests__/trackCreateUndo.integration.spec.tsx
+  h_beb54bf43b47b7 94-97
+src/modules/Arrangement/presentations/views/__tests__/trackDeleteUndo.integration.spec.tsx
+  h_beb54bf43b47b7 82-85
+src/modules/Arrangement/stores/__tests__/takeLaneSourcePrefixProjection.spec.ts
+  h_beb54bf43b47b7 38-68
+src/modules/Arrangement/stores/__tests__/takeLaneStore.spec.ts
+  h_beb54bf43b47b7 561-641,716-732,738-749,760-761
+src/modules/Arrangement/stores/__tests__/takeLaneWriteJournal.spec.ts
+  h_beb54bf43b47b7 3,73-158,484-572
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  h_beb54bf43b47b7 12-49,52-57
+src/modules/Arrangement/stores/applyTakeFieldOperation.ts
+  h_beb54bf43b47b7 1-175
+src/modules/Arrangement/stores/captureMidiTakeSourceDelta.ts
+  h_beb54bf43b47b7 1-158
+src/modules/Arrangement/stores/index.ts
+  h_beb54bf43b47b7 31
+src/modules/Arrangement/stores/takeLaneJournalValues.ts
+  h_beb54bf43b47b7 1-55
+src/modules/Arrangement/stores/takeLaneStore.ts
+  h_beb54bf43b47b7 6,37,46,87-96,114-115,151-156,255-283,363-376,386,392-401,509-510
+src/modules/Arrangement/stores/takeLaneWriteJournal.ts
+  h_beb54bf43b47b7 20-22,96,111
+src/modules/Arrangement/stores/takeLaneWriteTypes.ts
+  h_beb54bf43b47b7 7,31-32,41-42,75-115
+src/modules/Arrangement/useCases/__tests__/captureTrackRemovalSnapshot.spec.ts
+  h_beb54bf43b47b7 67-68
+src/modules/Arrangement/useCases/__tests__/exportMidiClipPlayback.spec.ts
+  h_beb54bf43b47b7 3-8,15,109,115-116,130,132-137
+src/modules/Arrangement/useCases/__tests__/importMidiFile.spec.ts
+  h_beb54bf43b47b7 5,84,86,147-149
+src/modules/Arrangement/useCases/__tests__/resolveComping.spec.ts
+  h_beb54bf43b47b7 3,438-494
+src/modules/Arrangement/useCases/clipEditing/__tests__/executeSelectedTimeRangeDeletion.spec.ts
+  h_beb54bf43b47b7 1351-1414
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClip.spec.ts
+  h_beb54bf43b47b7 19-20
+src/modules/Arrangement/useCases/clipEditing/__tests__/splitClipTakeRestore.integration.spec.ts
+  h_beb54bf43b47b7 23,94,102-105,131-134,199-244
+src/modules/Arrangement/useCases/clipEditing/prepareClipSplit.ts
+  h_beb54bf43b47b7 303
+src/modules/Arrangement/useCases/clipEditing/splitClip.ts
+  h_beb54bf43b47b7 116
+src/modules/Arrangement/useCases/clipboard/__tests__/cutSelectedClip.spec.ts
+  h_beb54bf43b47b7 40-41
+src/modules/Arrangement/useCases/clipboard/__tests__/pasteNotes.spec.ts
+  h_beb54bf43b47b7 4,11-12,21,152
+src/modules/Arrangement/useCases/clipboard/copyPianoRollNotes.ts
+  h_beb54bf43b47b7 1-9
+src/modules/Arrangement/useCases/clipboard/getCopiedPianoRollNotes.ts
+  h_beb54bf43b47b7 1-7
+src/modules/Arrangement/useCases/comping/__tests__/captureMidiTakeSource.spec.ts
+  h_beb54bf43b47b7 1-75
+src/modules/Arrangement/useCases/comping/__tests__/flattenComp.spec.ts
+  h_beb54bf43b47b7 16,153,502
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  h_beb54bf43b47b7 1-169
+src/modules/Arrangement/useCases/comping/__tests__/replaceOriginalMidiTakeRow.spec.ts
+  h_beb54bf43b47b7 1-162
+src/modules/Arrangement/useCases/comping/__tests__/writeTakeReKeyTransitions.spec.ts
+  h_beb54bf43b47b7 72-109
+src/modules/Arrangement/useCases/comping/captureClipSplitTakeReKey.ts
+  h_beb54bf43b47b7 1-2,23,42
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  h_beb54bf43b47b7 1-2,5,15-16,25-26,149-179,207-213,248-252
+src/modules/Arrangement/useCases/comping/prepareMidiTakeSourceCapture.ts
+  h_beb54bf43b47b7 1-62
+src/modules/Arrangement/useCases/comping/prepareOriginalMidiTakeRowReplacement.ts
+  h_beb54bf43b47b7 1-140
+src/modules/Arrangement/useCases/comping/relocateMidiTakeSource.ts
+  h_beb54bf43b47b7 1-19
+src/modules/Arrangement/useCases/comping/replaceOriginalMidiTakeRow.ts
+  h_beb54bf43b47b7 1-14
+src/modules/Arrangement/useCases/comping/resolveCompingProgramme.ts
+  h_beb54bf43b47b7 1,21,24,28-40,42-115,160-162
+src/modules/Arrangement/useCases/comping/writeTakeReKeyTransitions.ts
+  h_beb54bf43b47b7 27-29,33-48,123,156-158
+src/modules/Arrangement/useCases/getArrangementHandlers.ts
+  h_beb54bf43b47b7 59,184
+src/modules/Arrangement/useCases/index.ts
+  h_beb54bf43b47b7 113-114,219-226
+src/modules/Arrangement/useCases/recording/__tests__/startRecording.spec.ts
+  h_beb54bf43b47b7 125,222
+src/modules/Arrangement/useCases/recording/admitRecordingMidiExpression.ts
+  h_beb54bf43b47b7 1-41
+src/modules/Arrangement/useCases/recording/admitRecordingMidiNoteOff.ts
+  h_beb54bf43b47b7 1-34
+src/modules/Arrangement/useCases/recording/admitRecordingMidiNoteOn.ts
+  h_beb54bf43b47b7 1-55
+src/modules/Arrangement/useCases/recording/findOpenRecordingMidiAdmission.ts
+  h_beb54bf43b47b7 1-13
+src/modules/Arrangement/useCases/recording/findOpenRecordingMidiMemberAdmission.ts
+  h_beb54bf43b47b7 1-12
+src/modules/Arrangement/useCases/recording/getRecordingMidiAdmission.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Arrangement/useCases/recording/recordingMidiSourceBeatAt.ts
+  h_beb54bf43b47b7 1-17
+src/modules/Arrangement/useCases/recording/recordingPassIndex.ts
+  h_beb54bf43b47b7 1-8
+src/modules/Arrangement/useCases/recording/retireRecordingMidiAdmission.ts
+  h_beb54bf43b47b7 1-10
+src/modules/Arrangement/useCases/recording/sourceBeat.ts
+  h_beb54bf43b47b7 1-25
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  h_beb54bf43b47b7 1,14,23-77,99-104,117,126-129,140-142,155
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  h_beb54bf43b47b7 3,112,118-122,139-144
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  h_beb54bf43b47b7 3,16,50-107,148-183,186-217,286-292,295,357-363,367,370-372
+src/modules/AudioEngine/repositories/offlineScheduler/offlineMidiEventProjectorState.ts
+  h_beb54bf43b47b7 110-119
+src/modules/AudioEngine/useCases/audioRecorder/__tests__/reconcileAutoInputMonitoring.stopGesture.integration.spec.ts
+  h_beb54bf43b47b7 3,102,119,150-179
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  h_beb54bf43b47b7 21-42,48,204-438
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  h_beb54bf43b47b7 54-58,282-348,357-363,365
+src/modules/AudioEngine/useCases/noteExpression/__tests__/projectNoteExpressionCurves.spec.ts
+  h_beb54bf43b47b7 547-570
+src/modules/AudioEngine/useCases/noteExpression/startNoteExpression.ts
+  h_beb54bf43b47b7 47-48,140,153,160,184,205
+src/modules/AudioEngine/useCases/offlineRender/__tests__/controllerTakeExport.integration.spec.ts
+  h_beb54bf43b47b7 3-4,29,32-40,42-43,46,60-61,65,67,70,82,130-140,153-155,190,199,229,237,280-524
+src/modules/AudioEngine/useCases/offlineRender/__tests__/resolveTrackClipsWithComping.spec.ts
+  h_beb54bf43b47b7 37-106
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  h_beb54bf43b47b7 371,375,401,405,424-426,485-487,499-512,524,741-872,1975-1978,2196-2377
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  h_beb54bf43b47b7 2,24-26,228-268,271-289,291-335,337-359,361-373,376,378-381,383,391,395,437-443
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  h_beb54bf43b47b7 4-8,67-109,516,663-688,690,752,857-860,877-890,893,895-932,1040-1043,1055-1056,1060-1068,1094-1108,1110-1126,1129,1137,1139-1144,1146-1149,1178-1181
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 223,226
+src/modules/Command/useCases/__tests__/canReportConflictRegistry.spec.ts
+  h_beb54bf43b47b7 18,121-231,313-322,754-758
+src/modules/GrandBoule/useCases/__tests__/grandBouleParameterPersistence.integration.spec.ts
+  h_beb54bf43b47b7 85-88
+src/modules/MIDI/handlers/noteCrud/__tests__/handleReplaceOriginalMidiBaseRow.spec.ts
+  h_beb54bf43b47b7 1-88
+src/modules/MIDI/handlers/noteCrud/handleReplaceOriginalMidiBaseRow.ts
+  h_beb54bf43b47b7 1-93
+src/modules/MIDI/models/MidiNote.ts
+  h_beb54bf43b47b7 68-69,82
+src/modules/MIDI/models/WebMidiTypes.ts
+  h_beb54bf43b47b7 92-97
+src/modules/MIDI/services/decodeMidiClipDataSnapshots.ts
+  h_beb54bf43b47b7 1-83
+src/modules/MIDI/services/isExactMidiClipDataActionSnapshot.ts
+  h_beb54bf43b47b7 1-39
+src/modules/MIDI/services/projectMidiClipWindow.ts
+  h_beb54bf43b47b7 1-207
+src/modules/MIDI/stores/__tests__/midiStore.spec.ts
+  h_beb54bf43b47b7 353,365-378
+src/modules/MIDI/stores/index.ts
+  h_beb54bf43b47b7 33-35
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  h_beb54bf43b47b7 1-46
+src/modules/MIDI/stores/midiStore.ts
+  h_beb54bf43b47b7 110-113,185-191,335-358,367-368
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  h_beb54bf43b47b7 1-129
+src/modules/MIDI/stores/selectMidiNotesForRecordingPass.ts
+  h_beb54bf43b47b7 1-25
+src/modules/MIDI/transformers/__tests__/isMidiNoteSnapshot.spec.ts
+  h_beb54bf43b47b7 23-27
+src/modules/MIDI/transformers/__tests__/midiNotesEqual.spec.ts
+  h_beb54bf43b47b7 53
+src/modules/MIDI/transformers/isMidiNoteSnapshot.ts
+  h_beb54bf43b47b7 31-41,52-56
+src/modules/MIDI/transformers/midiNotesEqual.ts
+  h_beb54bf43b47b7 19-20
+src/modules/MIDI/useCases/__tests__/getMidiNoteTransformHandlers.spec.ts
+  h_beb54bf43b47b7 70
+src/modules/MIDI/useCases/getMidiNoteTransformHandlers.ts
+  h_beb54bf43b47b7 4,25,49
+src/modules/MIDI/useCases/index.ts
+  h_beb54bf43b47b7 59-62,64,124,195,206-207
+src/modules/MIDI/useCases/midiClipData/__tests__/isExactMidiClipDataActionSnapshot.spec.ts
+  h_beb54bf43b47b7 3
+src/modules/MIDI/useCases/midiClipData/__tests__/projectChannelBend.spec.ts
+  h_beb54bf43b47b7 79-108
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  h_beb54bf43b47b7 1-346
+src/modules/MIDI/useCases/midiClipData/__tests__/projectMidiClipWindow.spec.ts
+  h_beb54bf43b47b7 4
+src/modules/MIDI/useCases/midiClipData/__tests__/replaceFrozenMidiTakeRow.spec.ts
+  h_beb54bf43b47b7 1-118
+src/modules/MIDI/useCases/midiClipData/decodeMidiClipDataSnapshots.ts
+  h_beb54bf43b47b7 1
+src/modules/MIDI/useCases/midiClipData/isExactMidiClipDataActionSnapshot.ts
+  h_beb54bf43b47b7 1
+src/modules/MIDI/useCases/midiClipData/midiClipSplitStateMatches.ts
+  h_beb54bf43b47b7 5
+src/modules/MIDI/useCases/midiClipData/prepareMidiClipGlueState.ts
+  h_beb54bf43b47b7 5
+src/modules/MIDI/useCases/midiClipData/projectChannelBend.ts
+  h_beb54bf43b47b7 1-2,12-16,77-81,84-92,97,99
+src/modules/MIDI/useCases/midiClipData/projectClipControllerEvents.ts
+  h_beb54bf43b47b7 2
+src/modules/MIDI/useCases/midiClipData/projectClipPitchBendEvents.ts
+  h_beb54bf43b47b7 1,6,14,19-20,31
+src/modules/MIDI/useCases/midiClipData/projectFrozenMidiTakeWindow.ts
+  h_beb54bf43b47b7 1-5
+src/modules/MIDI/useCases/midiClipData/projectMidiClipWindow.ts
+  h_beb54bf43b47b7 1
+src/modules/MIDI/useCases/midiClipData/replaceFrozenMidiTakeRow.ts
+  h_beb54bf43b47b7 1-108
+src/modules/MIDI/useCases/midiClipData/restoreMidiClipData.ts
+  h_beb54bf43b47b7 1
+src/modules/MIDI/useCases/midiClipData/sliceMidiTakeNoteForEdit.ts
+  h_beb54bf43b47b7 1-9
+src/modules/MIDI/useCases/midiNoteCrud/prepareOriginalMidiBaseRowReplacement.ts
+  h_beb54bf43b47b7 1-62
+src/modules/MIDI/useCases/midiNoteTransforms/__tests__/projectMidiNoteMenuTransform.spec.ts
+  h_beb54bf43b47b7 1-22
+src/modules/MIDI/useCases/midiNoteTransforms/projectMidiNoteMenuTransform.ts
+  h_beb54bf43b47b7 1-74
+src/modules/MIDI/useCases/triggerLiveNoteOff.ts
+  h_beb54bf43b47b7 11-14,16-18,21-34
+src/modules/MIDI/useCases/triggerLiveNoteOn.ts
+  h_beb54bf43b47b7 10-17,19-21,24-55
+src/modules/MIDI/useCases/webMidiInput/__tests__/eventTimeRecordingBeat.spec.ts
+  h_beb54bf43b47b7 35,263
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiCC.spec.ts
+  h_beb54bf43b47b7 19-26,38
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiMessage.spec.ts
+  h_beb54bf43b47b7 6,24-43,405,413,460-464,475-528,541-550,652
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOff.spec.ts
+  h_beb54bf43b47b7 26-49
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffAdmissionClip.spec.ts
+  h_beb54bf43b47b7 5-6,10-27,121-171
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOffTempoMap.spec.ts
+  h_beb54bf43b47b7 11-24
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiNoteOn.spec.ts
+  h_beb54bf43b47b7 22-35
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiPitchBend.spec.ts
+  h_beb54bf43b47b7 14-19,31
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiReleaseOwnership.spec.ts
+  h_beb54bf43b47b7 1,35-47,49,68-71,76-79,457-458
+src/modules/MIDI/useCases/webMidiInput/__tests__/handleWebMidiToasterLifecycle.spec.ts
+  h_beb54bf43b47b7 18
+src/modules/MIDI/useCases/webMidiInput/__tests__/initWebMidi.spec.ts
+  h_beb54bf43b47b7 75
+src/modules/MIDI/useCases/webMidiInput/__tests__/stopHeldMidiNote.integration.spec.ts
+  h_beb54bf43b47b7 1-397
+src/modules/MIDI/useCases/webMidiInput/captureCompensatedRecordingPosition.ts
+  h_beb54bf43b47b7 1-16
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  h_beb54bf43b47b7 134,137,140,147,149,230,241,243-248,252,264,268,276,290,292-297
+src/modules/MIDI/useCases/webMidiInput/captureEventBeatAt.ts
+  h_beb54bf43b47b7 1-5
+src/modules/MIDI/useCases/webMidiInput/captureRecordingMemberExpression.ts
+  h_beb54bf43b47b7 1-27
+src/modules/MIDI/useCases/webMidiInput/createRecordedAdmittedMidiNote.ts
+  h_beb54bf43b47b7 1-72
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiMessage.ts
+  h_beb54bf43b47b7 3,6,10-11,16-18,24-25,28-35,162-163,169-264,279-290,298,300-302,312,317-322
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOff.ts
+  h_beb54bf43b47b7 15-16,18,30-31,386-398
+src/modules/MIDI/useCases/webMidiInput/handleWebMidiNoteOn.ts
+  h_beb54bf43b47b7 3,23,63,100-106,119-122,127
+src/modules/MIDI/useCases/webMidiInput/isRecordingOnArmedTrack.ts
+  h_beb54bf43b47b7 1,7-11
+src/modules/MIDI/useCases/webMidiInput/recordChannelEvent.ts
+  h_beb54bf43b47b7 2,8,10,38-39,57,60,66-73,77,84
+src/modules/MIDI/useCases/webMidiInput/recordingMidiAdmissionPort.ts
+  h_beb54bf43b47b7 1-71
+src/modules/MIDI/useCases/webMidiInput/resolveAdmittedEventBeat.ts
+  h_beb54bf43b47b7 1,20
+src/modules/MIDI/useCases/webMidiInput/resolveAdmittedEventPosition.ts
+  h_beb54bf43b47b7 1-33
+src/modules/MIDI/useCases/webMidiInput/resolveInputEventTime.ts
+  h_beb54bf43b47b7 17-22
+src/modules/MIDI/useCases/webMidiInput/sealHeldRecordedMidiNotes.ts
+  h_beb54bf43b47b7 1-73
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/mixerStripUndo.integration.spec.tsx
+  h_beb54bf43b47b7 148-151
+src/modules/Project/useCases/__tests__/arrangement.spec.ts
+  h_beb54bf43b47b7 240-243
+src/modules/Project/useCases/__tests__/projectPersistence.spec.ts
+  h_beb54bf43b47b7 133-142
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  h_beb54bf43b47b7 649-661,716-738
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  h_beb54bf43b47b7 2-7,681-686
+src/modules/TimelineEditor/models/MidiNoteViewTypes.ts
+  h_beb54bf43b47b7 19
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  h_beb54bf43b47b7 1-975
+src/modules/TimelineEditor/presentations/helpers/__tests__/projectPianoRollTakeNotes.spec.ts
+  h_beb54bf43b47b7 1-123
+src/modules/TimelineEditor/presentations/helpers/applyPianoRollTakeMenuAction.ts
+  h_beb54bf43b47b7 1-357
+src/modules/TimelineEditor/presentations/helpers/editPianoRollTakeNote.ts
+  h_beb54bf43b47b7 1-87
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  h_beb54bf43b47b7 1-249
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  h_beb54bf43b47b7 6-7,76-81,90-97,278-443
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  h_beb54bf43b47b7 19,55,64,291-292,347,416-470,750-757,781-784,957-959,1073-1094,1112-1119,1136,1143-1161,1181-1195,1197-1198,1210,1212-1213,1215-1216,1221,1225,1229-1231,1233-1238,1240-1243,1245-1247,1249-1266,1273-1286,1294-1304,1447-1449,1452-1453,1483-1503,1505-1506,1508,1514,1576,1578-1588,1607-1621,1623-1624,1631-1633,1665,1688,1712,1747-1748,1750-1751,1754-1757,1759-1769,1771-1774,1776-1779,1781-1796,1803-1804,1807,1809-1820,1822-1825,1827-1830,1832-1847,1888-1889,1894-1899,1902-1921,1924,1928,1933
+src/modules/TimelineEditor/presentations/views/AutomationLane/NotePropertyLane.tsx
+  h_beb54bf43b47b7 44,148,154,172-180,188,192-201,205,241-243,285-287,314-362,570,581,590,622,629,634,659,685,703,708
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/NotePropertyLane.spec.tsx
+  h_beb54bf43b47b7 40-41,256-337
+src/modules/TimelineEditor/presentations/views/AutomationLane/__tests__/PressureSlideLaneExpressionCurve.spec.tsx
+  h_beb54bf43b47b7 41
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRoll.tsx
+  h_beb54bf43b47b7 26,29,31,46,57,210,215,225-263,392,455-465,608-636,697-699
+src/modules/TimelineEditor/presentations/views/ClipView/PianoRollContextMenu.tsx
+  h_beb54bf43b47b7 27,32-39,41,62,73,112-143,155-161,170-181,201-211,214-224,241-244,271-274,303-306,329-332,362-365,378-381,403-406,422-425,441-444,460-463,485-491,548-554,618-621
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  h_beb54bf43b47b7 28-32,85-93,95,220-221,232-377
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.noteIdentityUndo.spec.tsx
+  h_beb54bf43b47b7 53-54
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRollContextMenu.spec.tsx
+  h_beb54bf43b47b7 5-11,23,74-77,84,139-388
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  h_beb54bf43b47b7 990
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  h_beb54bf43b47b7 263,273-277
+src/modules/Transport/useCases/scheduling/__tests__/controllerTakePlayback.integration.spec.ts
+  h_beb54bf43b47b7 65-67,70-72,74-75,78-79,81,97-104,111-112,121,192-202,215-217,376-467
+src/modules/Transport/useCases/scheduling/__tests__/resolveChannelBendClips.spec.ts
+  h_beb54bf43b47b7 4,26-45,47-65
+src/modules/Transport/useCases/scheduling/__tests__/resolveStoredControllerClips.spec.ts
+  h_beb54bf43b47b7 24-39,41-64
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  h_beb54bf43b47b7 3,41,88-90,96-98,100-102,104-105,116-117,128-129,160-161,167-168,172-173,1012-1173,4139-4213,4853-4901
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesChannelBend.spec.ts
+  h_beb54bf43b47b7 235-365
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesMutedCueSend.spec.ts
+  h_beb54bf43b47b7 35-36
+src/modules/Transport/useCases/scheduling/__tests__/selectMidiNotesForLoopWindowCompedTake.spec.ts
+  h_beb54bf43b47b7 5,84,86,138-167
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  h_beb54bf43b47b7 2,379-445,456-459,545-558
+src/modules/Transport/useCases/scheduling/resolveChannelBendClips.ts
+  h_beb54bf43b47b7 2,4,14-15,31-34
+src/modules/Transport/useCases/scheduling/resolveFrozenMidiControllerPasses.ts
+  h_beb54bf43b47b7 1-45
+src/modules/Transport/useCases/scheduling/resolveStoredControllerClips.ts
+  h_beb54bf43b47b7 1,25-30
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  h_beb54bf43b47b7 18,72,840-846,848,858-886,970-971,985-1002,1008-1011,1013-1014,1017-1038,1042,1065,1071,1117-1118,1129,1131-1136,1140,1174,1193-1197,1344
+src/modules/Transport/useCases/transportControls/__tests__/stopActiveRecordingCommit.integration.spec.ts
+  h_beb54bf43b47b7 4-10,16-30,34,50-62,71-74,150-153,255-278,315,323,330-355,360,365-366,369-371,378-382,579-778,988-1031
+src/utils/handlerContract.ts
+  h_beb54bf43b47b7 386-387,554-587,683-694,1443-1444
+tests/e2e/devServerOnlySpecs.ts
+  h_beb54bf43b47b7 22
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  h_beb54bf43b47b7 1-582
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99c59619c0bf04924f4395eb54911a3003be1028",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
