@@ -449,7 +449,7 @@ describe('caller-bound measurement receipt sequence', () => {
                 if (identity.turn !== 2) {
                     return result;
                 }
-                const receipt = Object.assign({}, result.receipt);
+                const receipt = result.receipt;
                 if (field === 'turn') {
                     receipt.turn = 1;
                 } else {
@@ -708,7 +708,7 @@ describe('caller-bound measurement receipt sequence', () => {
         async (field) => {
             const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
                 const result = executeResult(call, identity);
-                const receipt = Object.assign({}, result.receipt);
+                const receipt = result.receipt;
                 if (field === 'turn') {
                     receipt.turn = 1;
                 } else {
