@@ -559,6 +559,20 @@ history port failed, and the caller returned success without its warning. Inject
 the real batch and require persisted clips and notes, unavailable Undo history and a visible warning
 that identifies the committed result. Do not describe that finding as the #474 main escape.
 
+### PR #4485's monitor tests missed source-disconnect fault continuation
+
+PR #4485's reset and disposal tests covered normal teardown, ordering and late grants, but could pass
+if a source-wide disconnect threw before the real caller continued. Keep
+`rethrows the monitor failure after releasing both captures and the track, bus and send graph` and
+`clears the real graph and reported latency after one of two acquired sources refuses disconnect`;
+both require two captures stopped, graph owners and sends retired, and the exact fault, with the
+wrapper case also clearing latency. Keep
+`releases a grant that settles after the reset and attaches no edge` as a separate stale-grant case.
+`awaits one context close after a monitor failure and retains that terminal result on repeated
+disposal` holds close while checking every master disconnect, then requires one close and the same
+cached error on repeat. Removing a continuation must fail its owning case. Controlled nodes and media
+establish call path and cleanup, not physical microphone or audible switch acceptance.
+
 ### 2026-10-12 — grant ordering and shared PCM-copy oracles (PR #5239 review repair)
 
 Levain's queued-credit tests cancelled before granting a waiter. They missed an ACK granting
