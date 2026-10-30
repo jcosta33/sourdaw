@@ -7,20 +7,38 @@ import { assertTraceBinding, type BrowserTraceBinding, type TraceInstance } from
 
 type NativeCapture = { name: string; capture: Record<string, unknown>; events: NativeEvent[] };
 
+function observationInterval(data: Record<string, unknown>, journalTime: number): { start: number; end: number } {
+    const interval = recordOf(data.observationInterval, 'validated observation interval');
+    const { startedAtMs, completedAtMs } = interval;
+    if (
+        !Number.isFinite(journalTime) ||
+        typeof startedAtMs !== 'number' ||
+        typeof completedAtMs !== 'number' ||
+        !Number.isSafeInteger(startedAtMs) ||
+        !Number.isSafeInteger(completedAtMs) ||
+        startedAtMs < 0 ||
+        completedAtMs < startedAtMs ||
+        startedAtMs > journalTime ||
+        completedAtMs > journalTime + 1
+    ) {
+        throw new TypeError('Validated observation interval is missing or inconsistent with its journal time');
+    }
+    return { start: startedAtMs / 1000, end: completedAtMs / 1000 };
+}
+
 export function joinNativeMapping(
     event: Record<string, unknown>,
     traces: readonly NativeCapture[]
 ): Record<string, unknown> {
     const data = recordOf(event.data, 'mapping');
     const identity = recordOf(data.identity, 'identity');
-    const since = Date.parse(String(event.time)) / 1000;
+    let since: number | undefined;
     let candidates: NativeEvent[];
     let traceName: string | undefined;
     let unknown: string | undefined;
     try {
-        if (!Number.isFinite(since)) {
-            throw new TypeError('Live registration time unavailable');
-        }
+        const interval = observationInterval(data, Date.parse(String(event.time)));
+        since = interval.end;
         const binding = data.traceBinding as BrowserTraceBinding | undefined;
         if (!binding) {
             throw new Error('Actual browser/tracer instance binding was not observed');
@@ -36,20 +54,22 @@ export function joinNativeMapping(
         }
         traceName = trace.name;
         candidates = trace.events
-            .filter((native) => native.pid === identity.pid && native.timestamp >= since)
+            .filter((native) => native.pid === identity.pid && native.timestamp >= interval.end)
             .sort((left, right) => left.timestamp - right.timestamp);
         const terminal = candidates.find((native) => native.kind === 'exit' || native.kind === 'signal-exit');
-        // A later creation of this numeric PID cannot belong to the live start
-        // identity already observed. Never bridge a missed old exit to a reuse.
+        // Include the reads/binding window, before the later journal write.
+        // A terminal in that window or a reused PID cannot prove this lifetime.
         if (
             trace.events.some(
                 (native) =>
-                    native.childPid === identity.pid &&
-                    native.timestamp >= since &&
-                    (!terminal || native.timestamp <= terminal.timestamp)
+                    native.timestamp >= interval.start &&
+                    ((native.childPid === identity.pid && (!terminal || native.timestamp <= terminal.timestamp)) ||
+                        (native.pid === identity.pid &&
+                            native.timestamp < interval.end &&
+                            (native.kind === 'exit' || native.kind === 'signal-exit')))
             )
         ) {
-            throw new Error('PID creation after live registration makes this native lifetime ambiguous');
+            throw new Error('PID creation or terminal during/after observation makes this native lifetime ambiguous');
         }
     } catch (error) {
         unknown = String(error);
@@ -62,6 +82,7 @@ export function joinNativeMapping(
         requestId: data.requestId,
         frameId: data.frameId,
         loaderId: data.loaderId,
+        observationInterval: data.observationInterval,
         since,
         birth: 'unknown before live registration',
         terminal: terminal ?? {

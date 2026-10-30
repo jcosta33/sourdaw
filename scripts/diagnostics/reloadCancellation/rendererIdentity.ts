@@ -73,6 +73,7 @@ async function validateRendererAssociation(
         if (frames.get(String(event.frameId)) !== event.loaderId) {
             throw new Error('Script frame/loader registration missed');
         }
+        const startedAtMs = Date.now();
         const before = ports.identity(pid, owner);
         const processes = await ports.processes();
         const entries = recordOf(processes, 'process info').processInfo;
@@ -89,6 +90,8 @@ async function validateRendererAssociation(
         const after = ports.identity(pid, owner);
         assertRendererIdentity(pid, types, before, after);
         const binding = ports.binding(processes);
+        // Round outwards: strace has finer timestamps than the journal clock.
+        const completedAtMs = Date.now() + 1;
         const prior = seen.get(pid);
         if (prior !== undefined && prior !== after.start) {
             record('renderer-pid-reuse', { pid, priorStart: prior, currentStart: after.start });
@@ -101,6 +104,7 @@ async function validateRendererAssociation(
             requestTimestamp: event.timestamp,
             identity: after,
             traceBinding: binding,
+            observationInterval: { startedAtMs, completedAtMs },
             birth: 'unknown before live registration; new loader/PID associations are revalidated',
         });
         state.mapped++;

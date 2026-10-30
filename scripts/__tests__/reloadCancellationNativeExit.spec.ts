@@ -116,7 +116,15 @@ describe('reload diagnostic native evidence negative controls', () => {
     });
 
     it('never borrows a reused numeric PID terminal from another browser/tracer instance', () => {
-        const observation = { time: '1970-01-01T00:01:40.000Z', data: { identity, traceBinding: binding, ...script } };
+        const observation = {
+            time: '1970-01-01T00:01:40.000Z',
+            data: {
+                identity,
+                traceBinding: binding,
+                ...script,
+                observationInterval: { startedAtMs: 99_000, completedAtMs: 100_000 },
+            },
+        };
         const oldTrace = {
             name: binding.traceName,
             capture: { traceInstance: binding },
@@ -170,6 +178,67 @@ describe('reload diagnostic native evidence negative controls', () => {
                 { ...oldTrace, events: [...oldTrace.events, reusedInsideTrace, ownedExit] },
             ])
         ).toMatchObject({ terminal: { unknown: expect.any(String) }, failedMemorySyscalls: [] });
+    });
+
+    it('refuses a reused PID created between the identity reads and the later journal write', async () => {
+        let now = 100_000;
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+        const observations: Array<Record<string, unknown>> = [];
+        try {
+            const observer = createRendererAssociations(
+                100,
+                (kind, data) => observations.push({ kind, data, time: new Date(now).toISOString() }),
+                {
+                    identity: () => {
+                        now += 1000;
+                        return identity;
+                    },
+                    processes: async () => {
+                        now += 1000;
+                        return { processInfo: [{ id: 320, type: 'renderer' }] };
+                    },
+                    binding: () => {
+                        now = 105_000;
+                        return binding;
+                    },
+                }
+            );
+            observer.frame({ id: script.frameId, loaderId: script.loaderId });
+            observer.request(script);
+            expect(await observer.settle()).toBe(1);
+            const observation = observations.find((event) => event.kind === 'page-renderer-identity');
+            if (!observation) {
+                throw new Error('Renderer association was not recorded');
+            }
+            const interval = { startedAtMs: 100_000, completedAtMs: 105_001 };
+            const trace = {
+                name: binding.traceName,
+                capture: { traceInstance: binding },
+                events: [
+                    { pid: 300, timestamp: 104, kind: 'process-creation', childPid: 320, detail: 'reused PID' },
+                    { pid: 320, timestamp: 106, kind: 'exit', code: 99, detail: 'new lifetime terminal' },
+                ],
+            };
+            const mapping = {
+                ...observation,
+                data: { identity, traceBinding: binding, observationInterval: interval },
+            };
+            expect(joinNativeMapping(mapping, [trace])).toMatchObject({
+                terminal: { unknown: expect.stringContaining('ambiguous') },
+                failedMemorySyscalls: [],
+            });
+            expect(observation.data).toMatchObject({ observationInterval: interval });
+            expect(joinNativeMapping({ ...mapping, data: { identity, traceBinding: binding } }, [trace])).toMatchObject(
+                { terminal: { unknown: expect.stringContaining('observation interval') } }
+            );
+            expect(
+                joinNativeMapping(mapping, [
+                    { ...trace, events: [{ pid: 320, timestamp: 104, kind: 'exit', code: 0, detail: 'overlap' }] },
+                ])
+            ).toMatchObject({ terminal: { unknown: expect.stringContaining('ambiguous') } });
+        } finally {
+            clock.mockRestore();
+        }
     });
 
     it('bounds an unresponsive synthetic child and never admits original execution', async () => {
