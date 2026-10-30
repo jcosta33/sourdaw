@@ -59,8 +59,26 @@ afterEach(() => {
     vi.restoreAllMocks();
 });
 
-function fixture(prompt = 'Set Lead Vocal gain to 70%') {
+function fixture(prompt = 'Set Lead Vocal gain to 70%', options: { writableLeadVocal?: boolean } = {}) {
     const context = createPlanningProject(getProjectContext(), 3);
+    if (options.writableLeadVocal === true) {
+        const leadVocalId = context.tracks[2]?.id;
+        const brief = context.productionBrief;
+        if (leadVocalId === undefined || brief === undefined) {
+            throw new Error('Expected the typed lead-vocal fixture and production brief.');
+        }
+        const leadVocalLocks = brief.locks.filter(
+            (lock) => lock.scope.kind === 'track' && lock.scope.trackId === leadVocalId
+        );
+        if (leadVocalLocks.length !== 1) {
+            throw new Error('Expected one exact lead-vocal track lock.');
+        }
+        const leadVocalLock = leadVocalLocks[0]!;
+        context.productionBrief = {
+            ...brief,
+            locks: brief.locks.filter((lock) => lock.id !== leadVocalLock.id),
+        };
+    }
     const creative = prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: 'metric-revision' });
     const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: 'metric-revision' });
     const metric = prepareMetricIntentCatalog({ prompt, answer });
@@ -83,6 +101,20 @@ function fixture(prompt = 'Set Lead Vocal gain to 70%') {
     };
     return { context, creative, answer, metric, schema, call };
 }
+
+it('keeps the locked vocal out of real creative targets while the writable control fixture publishes it', () => {
+    const prompt = 'Make Lead Vocal warmer';
+    const locked = fixture(prompt);
+    const writable = fixture(prompt, { writableLeadVocal: true });
+    const leadVocalId = locked.context.tracks[2]?.id;
+    if (leadVocalId === undefined) {
+        throw new Error('Expected the fixture lead-vocal track.');
+    }
+
+    expect(locked.creative.targets.flatMap((target) => target.objectIds)).not.toContain(leadVocalId);
+    expect(writable.creative.targets.flatMap((target) => target.objectIds)).toContain(leadVocalId);
+    expect(locked.metric.scopes.flatMap((scope) => scope.objectIds)).toContain(leadVocalId);
+});
 
 describe('positive whole-request metric intent', () => {
     it('admits the actual local and strict hosted literal branch without creative mutation authority', () => {
@@ -153,7 +185,7 @@ describe('positive whole-request metric intent', () => {
     });
 
     it('freezes an authored recipe criterion, actual target and named range before any preview', () => {
-        const value = fixture('Make Lead Vocal warmer');
+        const value = fixture('Make Lead Vocal warmer', { writableLeadVocal: true });
         const target = value.creative.targets.find((entry) => entry.objectIds.includes(value.context.tracks[2]!.id));
         const objective = value.metric.objectives.find(
             (entry) =>
@@ -405,7 +437,9 @@ describe('bounded metric control admission', () => {
     }
 
     it('rejects a real oversized admitted control before a following measurement or terminal turn', async () => {
-        const value = fixture('Make Lead Vocal warmer with the selected authored objectives');
+        const value = fixture('Make Lead Vocal warmer with the selected authored objectives', {
+            writableLeadVocal: true,
+        });
         const call = control(value, 24);
         const admission = admitPlanningInterpretation({ ...value, call, projectRevision: 'metric-revision', turn: 1 });
         if (
@@ -478,7 +512,7 @@ describe('bounded metric control admission', () => {
     it.each(['local', 'hosted'] as const)(
         'retains a genuine in-budget control and projects only the %s receipt copy',
         async (provider) => {
-            const value = fixture('Make Lead Vocal warmer');
+            const value = fixture('Make Lead Vocal warmer', { writableLeadVocal: true });
             const baseCall = control(value, 1);
             const range = value.metric.ranges[0];
             if (range === undefined) {
@@ -585,7 +619,9 @@ describe('bounded metric control admission', () => {
     it.each(['parser', 'correction-orchestrator'] as const)(
         'does not let the actual %s carry failed control authority into a following proposal',
         async (route) => {
-            const value = fixture('Make Lead Vocal warmer with the selected authored objectives');
+            const value = fixture('Make Lead Vocal warmer with the selected authored objectives', {
+                writableLeadVocal: true,
+            });
             const targetId = value.context.tracks[2]!.id;
             vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
                 if (vi.mocked(generateToolPlanningOutcome).mock.calls.length > 1) {
