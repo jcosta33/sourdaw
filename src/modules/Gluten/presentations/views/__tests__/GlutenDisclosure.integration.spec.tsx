@@ -33,19 +33,40 @@ const KNOB_FLOORS = [
     ['Look', 'Color', 'VCA type'],
 ];
 
+function controlsByName(role: 'slider' | 'button'): Map<string, HTMLElement[]> {
+    const names = new Map<Element, string>();
+    const controls = screen.queryAllByRole(role, {
+        name: (name, element) => {
+            names.set(element, name);
+            return true;
+        },
+    });
+    const byName = new Map<string, HTMLElement[]>();
+    for (const control of controls) {
+        const name = names.get(control);
+        if (name === undefined) throw new Error(`Missing accessible name for ${role}`);
+        byName.set(name, [...(byName.get(name) ?? []), control]);
+    }
+    return byName;
+}
+
 function expectKnobsThrough(level: number): void {
+    const controls = controlsByName('slider');
     for (const [floor, names] of KNOB_FLOORS.entries()) {
         for (const name of names) {
+            const matches = controls.get(name) ?? [];
             if (floor <= level) {
-                expect(screen.getByRole('slider', { name })).toBeVisible();
+                expect(matches).toHaveLength(1);
+                expect(matches[0]).toBeVisible();
             } else {
-                expect(screen.queryByRole('slider', { name })).toBeNull();
+                expect(matches).toHaveLength(0);
             }
         }
     }
 }
 
 function expectButtonsThrough(level: number): void {
+    const controls = controlsByName('button');
     const floors = [
         [1, ['Auto rel', 'Auto gain']],
         [2, ['VCA', 'Opto', 'FET', 'Diode']],
@@ -71,10 +92,12 @@ function expectButtonsThrough(level: number): void {
     ] as const;
     for (const [floor, names] of floors) {
         for (const name of names) {
+            const matches = controls.get(name) ?? [];
             if (floor <= level) {
-                expect(screen.getAllByRole('button', { name })[0]).toBeVisible();
+                expect(matches.length).toBeGreaterThan(0);
+                expect(matches[0]).toBeVisible();
             } else {
-                expect(screen.queryByRole('button', { name })).toBeNull();
+                expect(matches).toHaveLength(0);
             }
         }
     }
