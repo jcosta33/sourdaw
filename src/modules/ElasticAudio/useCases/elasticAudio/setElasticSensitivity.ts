@@ -1,7 +1,7 @@
 import { logger } from '#/infra/logger/appLogger';
-import { executeAppAction } from '#/modules/Command/useCases';
 import { clipSelectionStore, trackStore } from '#/modules/Arrangement/stores';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { executeAppAction } from '#/modules/Command/useCases';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences, updatePreferences } from '#/modules/Preferences/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
@@ -70,18 +70,7 @@ function subscribeToOwnerChanges(invalidate: () => void): () => void {
     };
 }
 
-export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal): Promise<void> {
-    const request = ++generation;
-    const previous = pending;
-    if (previous) {
-        clearTimeout(previous.timer);
-        previous.abort();
-        previous.dispose();
-        pending = undefined;
-    }
-    inFlight?.abort();
-    inFlight?.dispose();
-    const completion = previous?.completion ?? Promise.withResolvers<void>();
+function captureSensitivityOwner(sensitivity: number, signal?: AbortSignal) {
     const target = currentTarget();
     const openedClipId = elasticAudioStore.value?.openClipId ?? null;
     const clipType = target.clip?.type;
@@ -104,8 +93,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
         updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
         logger.error(error instanceof Error ? error : new Error('Transient detection failed', { cause: error }));
         notifyUser('Transient detection failed. Try again.', 'error');
-        completion.resolve();
-        return completion.promise;
+        return undefined;
     }
     const controller = new AbortController();
     const abort = (): void => controller.abort();
@@ -144,14 +132,43 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
         unsubscribe();
         signal?.removeEventListener('abort', abort);
     };
+    return {
+        clipId: target.clipId,
+        validSource,
+        signal: controller.signal,
+        revision,
+        matches,
+        isInvalidated: () => invalidated,
+        dispose,
+        abort,
+    };
+}
+
+export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal): Promise<void> {
+    const request = ++generation;
+    const previous = pending;
+    if (previous) {
+        clearTimeout(previous.timer);
+        previous.abort();
+        previous.dispose();
+        pending = undefined;
+    }
+    inFlight?.abort();
+    inFlight?.dispose();
+    const completion = previous?.completion ?? Promise.withResolvers<void>();
+    const owner = captureSensitivityOwner(sensitivity, signal);
+    if (!owner) {
+        completion.resolve();
+        return completion.promise;
+    }
     updatePreferences({ patch: { elasticTransientSensitivity: sensitivity } });
-    if (validSource) {
+    if (owner.validSource) {
         elasticAudioStore.update((state) => (state ? { ...state, detected: false } : state));
     }
     const scheduled: PendingState = {
         completion,
-        dispose,
-        abort,
+        dispose: owner.dispose,
+        abort: owner.abort,
         timer: setTimeout(() => {
             if (pending === scheduled) {
                 pending = undefined;
@@ -163,13 +180,13 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
     async function run(): Promise<void> {
         try {
             if (
-                !validSource ||
-                !target.clipId ||
-                invalidated ||
-                controller.signal.aborted ||
+                !owner.validSource ||
+                !owner.clipId ||
+                owner.isInvalidated() ||
+                owner.signal.aborted ||
                 request !== generation ||
-                !matches() ||
-                transientDetectionRevision(target.clipId) !== revision
+                !owner.matches() ||
+                transientDetectionRevision(owner.clipId) !== owner.revision
             ) {
                 return;
             }
@@ -177,15 +194,15 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
                 preferencesStore.value?.elasticTransientSensitivity ?? defaultPreferences.elasticTransientSensitivity;
             let committed = false;
             await executeAppAction(
-                { type: 'detectTransients', payload: { clipId: target.clipId, sensitivity: currentSensitivity } },
+                { type: 'detectTransients', payload: { clipId: owner.clipId, sensitivity: currentSensitivity } },
                 {
-                    signal: controller.signal,
+                    signal: owner.signal,
                     onCommitted: () => {
                         committed = true;
                     },
                 }
             );
-            if (invalidated || controller.signal.aborted || request !== generation || !matches()) {
+            if (owner.isInvalidated() || owner.signal.aborted || request !== generation || !owner.matches()) {
                 return;
             }
             if (!committed) {
@@ -193,7 +210,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             }
             elasticAudioStore.update((state) => (state ? { ...state, detected: true } : state));
         } catch (error) {
-            if (!controller.signal.aborted) {
+            if (!owner.signal.aborted) {
                 logger.error(
                     error instanceof Error ? error : new Error('Transient detection failed', { cause: error })
                 );
@@ -203,7 +220,7 @@ export function setElasticSensitivity(sensitivity: number, signal?: AbortSignal)
             if (inFlight === scheduled) {
                 inFlight = undefined;
             }
-            dispose();
+            owner.dispose();
             completion.resolve();
         }
     }
