@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_26f70b851e8f7a::t_b094513d632509 1378-1380
+src/modules/CommandInterface/useCases/commands/__tests__/TrackCommandsFlatten.integration.spec.ts
+  s_26f70b851e8f7a::t_b094513d632509 636-638
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3c66e4c7239ba0daa772fd15d78325caff39559",
+  "prompts": {},
+  "sessions": {
+    "s_26f70b851e8f7a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1732d-6042-7d51-af54-4868bc4a084d",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
