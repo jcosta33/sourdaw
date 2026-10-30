@@ -1,0 +1,18 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 2028-2040
+scripts/__tests__/resourceGuardShowOutput.spec.ts
+  h_beb54bf43b47b7 1-2,4,8-14,42-85,87-183
+scripts/resourceGuard.ts
+  h_beb54bf43b47b7 3340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e5163a4b55ff47409b8e20d764997183e904437d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
