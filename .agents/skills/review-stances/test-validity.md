@@ -1967,6 +1967,19 @@ mutable document as well as the immutable root: proxy identity is not an ownersh
 canonical clip-local gain-point IDs must remain local in both. Pair these conflicts with a real
 unrelated programme edit and a valid same-target successor that commits the final owning projection.
 
+### 2026-10-30 — a setup lock can mask the authentication boundary (#5829)
+
+A forged export manifest test created its key by opening and dropping a registry before opening it
+again for authentication. A deliberately retained duplicate of that setup lock made the required
+`Unauthenticated` assertion fail with the unrelated live-host refusal. Releasing the duplicate then
+reached authentication on the same manifest and victim bytes. The original CI error was not printed,
+so this controlled probe does not establish the historical failure's cause or missed reviewer stance.
+
+Build the private key and directory directly when the obligation is manifest authentication; call the
+production registry once and include the actual error in the assertion. Preserve the victim and
+manifest byte checks and the separate live-registry lock test. Probe the authentication assertion by
+bypassing the production MAC admission condition: a later legacy-record refusal must not satisfy it.
+
 ## Historical replay fixtures must retain the real producer and reader
 
 PR #5578 repairs newly recorded trim inverses; its capture-bearing fixtures cannot prove
