@@ -415,10 +415,12 @@ describe('active root installations', () => {
         repository.onRootInstallation(rootInstalled);
         let current = true;
         const pending = repository.mergeBundle(new Map([['root', save(incoming)]]), { shouldCommit: () => current });
-        const result =
-            authority === 'cancelled'
-                ? expect(pending).resolves.toEqual({ mergedDocIds: [], newDocIds: [] })
-                : expect(pending).rejects.toThrow('Document identity changed during merge');
+        let result: Promise<void>;
+        if (authority === 'cancelled') {
+            result = expect(pending).resolves.toEqual({ mergedDocIds: [], newDocIds: [] });
+        } else {
+            result = expect(pending).rejects.toThrow('Document identity changed during merge');
+        }
         const { worker, request } = await deferred.firstRequest;
         if (authority === 'cancelled') {
             current = false;
