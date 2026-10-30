@@ -465,3 +465,18 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Pair positive admission of all six declared Body keys and indices -1/0/1/2/3 through
+the real factory and production processor target with refusal of synthetic keys, band 6,
+nonfinite values, forged identity, wrong generation and replay. Caller project parameter
+maps must not widen the finite runtime schema. Remove only the declared Body key to
+make the positive factory probe fail; a hand-built permissive target cannot establish
+that valid controls cross the production trust boundary.

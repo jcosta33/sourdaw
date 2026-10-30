@@ -921,3 +921,18 @@ while complete tail renders retain the decay. Probe both tail settings at the `2
 requested versus `2^30` returned frame boundary; reverting the returned-frame branch must
 fail the owning `renderToClip.spec.ts` boundary case. Buffer metadata suffices for this
 arithmetic contract; it does not establish long-render PCM or listening behavior.
+
+### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
+
+PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser
+while the existing finite Bacteria runtime schema omitted `convolutionIr`. Choosing Metal
+could store `band0_convolutionIr = 2` without posting a control to the actual worklet.
+Historical private review prompts and tiers are unknown; the missed probe was production
+parameter admission between the real caller and receiver.
+
+Drive every declared band Body key and None/Ceramic/Wood/Metal/Spring index through
+`createBacteriaNode`, its emitted initialization target and the processor using the production
+schema. Require the exact engine parameter and value. Removing only `convolutionIr` from
+that schema must fail the real-factory case. Preserve finite keys, band bounds, immutable
+identity/correlation, scheduling, nonfinite rejection and replay/generation guards; action or
+document spies alone cannot prove carrier admission or audible output.
