@@ -54,6 +54,13 @@ export type ExecuteAppActionOptions = ExecuteOptions & {
      * This grants no commit authority; callers consume it only after dispatch succeeds. */
     observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
+    /**
+     * Synchronous authority check on this action's project transaction, after the
+     * handler stages its writes and immediately before storage commits them.
+     * False aborts the action without history or committed observers. Runtime-only
+     * handlers have no project transaction and do not consult this predicate.
+     */
+    shouldCommit?: () => boolean;
 };
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
@@ -392,6 +399,14 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? `Action conflicts with current project state: ${action.type}`
                     : null;
             });
+            let caller_commit_denied = false;
+            if (options?.shouldCommit) {
+                const shouldCommit = options.shouldCommit;
+                storage_transaction.validateCommit(() => {
+                    caller_commit_denied = !shouldCommit();
+                    return caller_commit_denied ? `Action commit authority withdrawn: ${action.type}` : null;
+                });
+            }
             try {
                 execution_result = await storage_transaction.value;
                 execution_result?.commitValidation?.release();
@@ -472,9 +487,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 } else {
                     commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 }
+                let semantic_cleanup_failure: { error: unknown } | null = null;
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
+                    semantic_cleanup_failure = { error: clear_error };
                     logger.error(
                         new Error(`Semantic context cleanup failed for action: ${action.type}`, {
                             cause: clear_error,
@@ -497,6 +514,16 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
+                }
+                if (
+                    !hasAbortFailure(abortFailures) &&
+                    caller_commit_denied &&
+                    error instanceof AutomergeStorageTransactionValidationError
+                ) {
+                    if (semantic_cleanup_failure !== null) {
+                        throw semantic_cleanup_failure.error;
+                    }
+                    return;
                 }
                 if (
                     !hasAbortFailure(abortFailures) &&

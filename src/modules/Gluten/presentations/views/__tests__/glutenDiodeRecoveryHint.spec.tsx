@@ -249,7 +249,7 @@ let MOCKED_INSTANCES: Record<string, GlutenState> = {};
 
 function renderPanelWithTopology(topology: GlutenTopology): void {
     MOCKED_INSTANCES = {
-        [DEVICE_ID]: { patch: { ...DEFAULT_PATCH, topology }, uiLevel: 2 },
+        [DEVICE_ID]: { patch: { ...DEFAULT_PATCH, topology }, uiLevel: 5 },
     };
     render(<GlutenPanel deviceId={DEVICE_ID} />);
 }
