@@ -1,4 +1,5 @@
 import { execFileSync, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -55,7 +56,7 @@ function fixture() {
         capture: (command, args, options) => {
             const output = execFileSync(command, args, {
                 cwd: root,
-                env,
+                env: options?.processClock === 'utc' ? { ...env, LC_ALL: 'C', TZ: 'UTC' } : env,
                 encoding: 'utf8',
                 maxBuffer: 64 * 1024 * 1024,
             });
@@ -113,6 +114,18 @@ function guardReceipt(head: string, failedAt = '2026-10-28T00:00:00Z'): GuardFai
         maxRssBytes: 5,
         durationMs: 100,
     };
+}
+
+const cleanupLockRef = 'refs/sourdaw/lane-cleanup/lock';
+
+function installLock(root: string, owner: unknown): string {
+    const oid = execFileSync('git', ['-C', root, 'hash-object', '-w', '--stdin'], {
+        input: JSON.stringify(owner),
+        encoding: 'utf8',
+        env: githubAuthorizationGitEnv(),
+    }).trim();
+    execFileSync('git', ['-C', root, 'update-ref', cleanupLockRef, oid], { env: githubAuthorizationGitEnv() });
+    return oid;
 }
 
 describe('automatic lane cleanup', () => {
@@ -407,10 +420,10 @@ describe('automatic lane cleanup', () => {
             writeGuardFailureReceipt(f.root, guardReceipt(f.head));
             const script = `
                 const {cleanupLanes, withCleanupLock} = await import(${JSON.stringify(resolve('scripts/cleanupLanes.ts'))});
-                const {shellPort} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
+                const {shellPort,capture:nativeCapture} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
                 const {execFileSync} = await import('node:child_process');
                 const root = ${JSON.stringify(f.root)};
-                const shell = {capture:(command,args,options)=>{const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
+                const shell = {capture:(command,args,options)=>{if(command==='ps')return nativeCapture(command,args,options);const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
                     run:(command,args)=>execFileSync(command,args,{cwd:root})};
                 const native = shellPort(shell, root);
                 const removal = {...native,fetch:()=>{},repository:()=> 'jcosta33/sourdaw',currentDirectory:()=>root,active:()=>false,
@@ -593,10 +606,10 @@ describe('automatic lane cleanup', () => {
             const module = resolve('scripts/cleanupLanes.ts');
             const script = `
                 const {cleanupLanes, withCleanupLock} = await import(${JSON.stringify(module)});
-                const {shellPort} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
+                const {shellPort,capture:nativeCapture} = await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
                 const {execFileSync} = await import('node:child_process');
                 const root = ${JSON.stringify(f.root)};
-                const shell = { capture: (command,args,options) => {const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
+                const shell = { capture: (command,args,options) => {if(command==='ps')return nativeCapture(command,args,options);const out=execFileSync(command,args,{cwd:root,encoding:'utf8'});return options?.preserveStdout?out:out.trim()},
                     run: (command,args) => execFileSync(command,args,{cwd:root}) };
                 const removal={...shellPort(shell,root),fetch:()=>{},repository:()=> 'jcosta33/sourdaw',currentDirectory:()=>root,active:()=>false,
                     pullRequests:()=>[${JSON.stringify(f.pr)}],remoteHead:()=>undefined,
@@ -614,6 +627,309 @@ describe('automatic lane cleanup', () => {
             expect(existsSync(f.lane)).toBe(true);
             f.advance();
             expect(cleanupLanes(f.port)[0]?.status).toBe('removed');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('reclaims a lock whose PID now belongs to a different live process lifetime', async () => {
+        const f = fixture();
+        const child = spawn(process.execPath, ['-e', "process.stdout.write('ready');setInterval(()=>{},1000)"], {
+            stdio: 'pipe',
+        });
+        try {
+            await once(child.stdout, 'data');
+            installLock(f.root, {
+                version: 1,
+                pid: child.pid,
+                token: randomUUID(),
+                startedAt: '2000-01-01T00:00:00.000Z',
+            });
+            let operationRan = false;
+            withCleanupLock(f.root, f.shell, () => {
+                operationRan = true;
+            });
+            expect(operationRan).toBe(true);
+            expect(f.git(['for-each-ref', '--format=%(objectname)', cleanupLockRef])).toBe('');
+            expect(child.exitCode).toBeNull();
+        } finally {
+            child.kill();
+            await once(child, 'exit');
+            f.dispose();
+        }
+    });
+
+    it('keeps the live original lock across caller locale and timezone drift', () => {
+        const f = fixture();
+        const environments: Array<{ command: string; options?: Parameters<ShellRunner['capture']>[2] }> = [];
+        const caller = (timezone: string, locale: string): ShellRunner => ({
+            ...f.shell,
+            capture: (command, args, options) => {
+                environments.push({ command, options });
+                const env = { ...githubAuthorizationGitEnv(), TZ: timezone, LC_ALL: locale };
+                if (options?.processClock === 'utc') {
+                    env.TZ = 'UTC';
+                    env.LC_ALL = 'C';
+                }
+                const result = execFileSync(command, args, {
+                    cwd: f.root,
+                    encoding: 'utf8',
+                    env,
+                });
+                return options?.preserveStdout ? result : result.trim();
+            },
+        });
+        try {
+            let nestedRan = false;
+            withCleanupLock(f.root, caller('UTC', 'C'), () => {
+                const original = f.git(['rev-parse', '--verify', cleanupLockRef]);
+                const owner = JSON.parse(f.git(['cat-file', 'blob', original]));
+                expect(owner).toMatchObject({ pid: process.pid, startedAt: expect.stringMatching(/\.000Z$/) });
+                expect(() =>
+                    withCleanupLock(f.root, caller('America/Los_Angeles', 'de_DE.UTF-8'), () => {
+                        nestedRan = true;
+                    })
+                ).toThrow('already running');
+                expect(f.git(['rev-parse', '--verify', cleanupLockRef])).toBe(original);
+            });
+            expect(nestedRan).toBe(false);
+            expect(environments.filter((entry) => entry.command === 'ps')).toHaveLength(3);
+            for (const entry of environments.filter((item) => item.command === 'ps')) {
+                expect(entry.options).toMatchObject({ processClock: 'utc' });
+            }
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('reclaims only the exact lock ref of a conclusively dead owner', async () => {
+        const f = fixture();
+        const child = spawn(process.execPath, ['-e', ''], { stdio: 'pipe' });
+        try {
+            const pid = child.pid;
+            await once(child, 'exit');
+            installLock(f.root, { version: 1, pid, token: randomUUID(), startedAt: '2000-01-01T00:00:00.000Z' });
+            let operationRan = false;
+            withCleanupLock(f.root, f.shell, () => {
+                operationRan = true;
+            });
+            expect(operationRan).toBe(true);
+            expect(f.git(['for-each-ref', '--format=%(objectname)', cleanupLockRef])).toBe('');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each([
+        { label: 'missing lifetime', fields: { startedAt: undefined } },
+        { label: 'malformed lifetime', fields: { startedAt: 'not-a-time' } },
+        { label: 'nonexistent calendar lifetime', fields: { startedAt: '2026-02-30T00:00:00.000Z' } },
+        { label: 'missing token', fields: { token: undefined } },
+        { label: 'malformed PID', fields: { pid: 0 } },
+    ])('preserves a lock with $label and does not enter the operation', ({ fields }) => {
+        const f = fixture();
+        try {
+            const original = installLock(f.root, {
+                version: 1,
+                pid: process.pid,
+                token: randomUUID(),
+                startedAt: '2000-01-01T00:00:00.000Z',
+                ...fields,
+            });
+            let operationRan = false;
+            expect(() =>
+                withCleanupLock(f.root, f.shell, () => {
+                    operationRan = true;
+                })
+            ).toThrow('unknown');
+            expect(operationRan).toBe(false);
+            expect(f.git(['rev-parse', '--verify', cleanupLockRef])).toBe(original);
+            expect(readFileSync(join(f.lane, 'tracked'), 'utf8')).toBe('original');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each(['missing', 'malformed', 'denied'])('preserves lock and work when lifetime inspection is %s', (state) => {
+        const f = fixture();
+        try {
+            const original = installLock(f.root, {
+                version: 1,
+                pid: process.pid,
+                token: randomUUID(),
+                startedAt: '2000-01-01T00:00:00.000Z',
+            });
+            let queries = 0;
+            let operationRan = false;
+            const uncertain = {
+                ...f.shell,
+                capture: (command: string, args: string[], options?: Parameters<ShellRunner['capture']>[2]) => {
+                    if (command === 'ps' && ++queries === 2) {
+                        if (state === 'denied') {
+                            throw new Error('permission denied');
+                        }
+                        return state === 'missing' ? '' : 'unreadable process lifetime';
+                    }
+                    return f.shell.capture(command, args, options);
+                },
+            };
+            expect(() =>
+                withCleanupLock(f.root, uncertain, () => {
+                    operationRan = true;
+                })
+            ).toThrow('unknown');
+            expect(operationRan).toBe(false);
+            expect(f.git(['rev-parse', '--verify', cleanupLockRef])).toBe(original);
+            expect(existsSync(f.lane)).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('does not acquire a lock when its own process lifetime cannot be inspected', () => {
+        const f = fixture();
+        try {
+            const uncertain = {
+                ...f.shell,
+                capture: (command: string, args: string[]) => {
+                    if (command === 'ps') {
+                        throw new Error('inspection unavailable');
+                    }
+                    return f.shell.capture(command, args);
+                },
+            };
+            let operationRan = false;
+            expect(() =>
+                withCleanupLock(f.root, uncertain, () => {
+                    operationRan = true;
+                })
+            ).toThrow('unknown');
+            expect(operationRan).toBe(false);
+            expect(f.git(['for-each-ref', '--format=%(objectname)', cleanupLockRef])).toBe('');
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each(
+        ['current', 'owner'].flatMap((stage) =>
+            ['timeout', 'diagnostic', 'failure'].map((failure) => ({ stage, failure }))
+        )
+    )('keeps the native bounded inspection fail-closed for $stage $failure', ({ stage, failure }) => {
+        const f = fixture();
+        try {
+            const program = `
+                    import cp from 'node:child_process';
+                    import {syncBuiltinESMExports} from 'node:module';
+                    const root=${JSON.stringify(f.root)},stage=${JSON.stringify(stage)},failure=${JSON.stringify(failure)};
+                    const original=cp.spawnSync;
+                    let samples=0,inspection;
+                    cp.spawnSync=(command,args,options)=>{
+                        if(command==='ps'||command==='/bin/ps') {
+                            samples++;
+                            if(stage==='current'||samples===2) {
+                                inspection={command,timeout:options.timeout,locale:options.env.LC_ALL,timezone:options.env.TZ};
+                                const result={pid:process.pid,output:[null,'Fri Oct 30 00:00:00 2026',''],stdout:'Fri Oct 30 00:00:00 2026',stderr:'',status:0,signal:null};
+                                if(failure==='timeout')result.error=Object.assign(new Error('inspection timed out'),{code:'ETIMEDOUT'});
+                                if(failure==='diagnostic')result.stderr='inspection incomplete';
+                                if(failure==='failure'){result.status=1;result.stderr='permission denied';}
+                                return result;
+                            }
+                        }
+                        return original(command,args,options);
+                    };
+                    syncBuiltinESMExports();
+                    const {withCleanupLock}=await import(${JSON.stringify(resolve('scripts/cleanupLanes.ts'))});
+                    const {capture}=await import(${JSON.stringify(resolve('scripts/removeLane.ts'))});
+                    const git=(args,input)=>cp.execFileSync('git',['-C',root,...args],{encoding:'utf8',input}).trim();
+                    const owner={version:1,pid:process.pid,token:${JSON.stringify(randomUUID())},startedAt:'2000-01-01T00:00:00.000Z'};
+                    const initial=git(['hash-object','-w','--stdin'],JSON.stringify(owner));
+                    git(['update-ref',${JSON.stringify(cleanupLockRef)},initial]);
+                    const shell={capture:(command,args,options)=>command==='ps'?capture(command,args,options):cp.execFileSync(command,args,{cwd:root,encoding:'utf8'}).trim(),run:(command,args)=>cp.execFileSync(command,args,{cwd:root})};
+                    let ran=false,error;
+                    try{withCleanupLock(root,shell,()=>{ran=true;});}catch(caught){error=caught.message;}
+                    console.log(JSON.stringify({ran,error,inspection,initial,current:git(['rev-parse',${JSON.stringify(cleanupLockRef)}])}));
+                `;
+            const result = JSON.parse(
+                execFileSync(process.execPath, ['--input-type=module', '-e', program], {
+                    cwd: f.root,
+                    encoding: 'utf8',
+                    env: { ...githubAuthorizationGitEnv(), TZ: 'America/Los_Angeles', LC_ALL: 'de_DE.UTF-8' },
+                })
+            );
+            expect(result.ran).toBe(false);
+            expect(result.error).toContain('unknown');
+            expect(result.current).toBe(result.initial);
+            expect(result.inspection).toEqual({
+                command: process.platform === 'darwin' ? '/bin/ps' : 'ps',
+                timeout: 5_000,
+                locale: 'C',
+                timezone: 'UTC',
+            });
+            expect(existsSync(f.lane)).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('retains the lock on unknown PID access instead of inferring owner death', () => {
+        const f = fixture();
+        const kill = vi.spyOn(process, 'kill');
+        try {
+            const original = installLock(f.root, {
+                version: 1,
+                pid: process.pid,
+                token: randomUUID(),
+                startedAt: '2000-01-01T00:00:00.000Z',
+            });
+            kill.mockImplementationOnce(() => {
+                throw Object.assign(new Error('denied'), { code: 'EPERM' });
+            });
+            let operationRan = false;
+            expect(() =>
+                withCleanupLock(f.root, f.shell, () => {
+                    operationRan = true;
+                })
+            ).toThrow('unknown');
+            expect(operationRan).toBe(false);
+            expect(f.git(['rev-parse', '--verify', cleanupLockRef])).toBe(original);
+        } finally {
+            kill.mockRestore();
+            f.dispose();
+        }
+    });
+
+    it.each(['acquire', 'release'])('never overwrites a contending Git ref during %s', (stage) => {
+        const f = fixture();
+        try {
+            let competing = '';
+            let operationRan = false;
+            const compete = () =>
+                installLock(f.root, {
+                    version: 1,
+                    pid: process.pid,
+                    token: randomUUID(),
+                    startedAt: '2000-01-01T00:00:00.000Z',
+                });
+            const shell = {
+                ...f.shell,
+                run: (command: string, args: string[]) => {
+                    if (stage === 'acquire' && args[0] === 'update-ref' && args[1] === cleanupLockRef) {
+                        competing = compete();
+                    }
+                    f.shell.run(command, args);
+                },
+            };
+            expect(() =>
+                withCleanupLock(f.root, shell, () => {
+                    operationRan = true;
+                    if (stage === 'release') {
+                        competing = compete();
+                    }
+                })
+            ).toThrow();
+            expect(operationRan).toBe(stage === 'release');
+            expect(f.git(['rev-parse', '--verify', cleanupLockRef])).toBe(competing);
         } finally {
             f.dispose();
         }

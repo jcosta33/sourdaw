@@ -244,9 +244,68 @@ export function cleanupCandidate(primaryRoot: string, lane: Worktree): boolean {
     return false;
 }
 
+type CleanupLockOwner = { version: 1; pid: number; token: string; startedAt: string };
+
+function cleanupProcessStartedAt(pid: number, shell: ShellRunner): string {
+    let output: string;
+    try {
+        // Both caller environment and Date.parse's local timezone can differ between delivery and
+        // launchd. The trusted system tools and the interpretation must use the same fixed clock.
+        output = shell.capture('ps', ['-o', 'lstart=', '-p', String(pid)], { processClock: 'utc' });
+    } catch {
+        throw new Error('cleanup lock process lifetime inspection is unknown');
+    }
+    if (!/^[A-Za-z]{3} [A-Za-z]{3} +\d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/.test(output.trim())) {
+        throw new Error('cleanup lock process lifetime inspection is unknown');
+    }
+    const timestamp = Date.parse(`${output.trim()} UTC`);
+    if (!Number.isFinite(timestamp)) {
+        throw new TypeError('cleanup lock process lifetime inspection is unknown');
+    }
+    return new Date(timestamp).toISOString();
+}
+
+function parseCleanupLockOwner(raw: string): CleanupLockOwner {
+    const owner = JSON.parse(raw) as { version?: unknown; pid?: unknown; token?: unknown; startedAt?: unknown };
+    if (
+        owner === null ||
+        owner.version !== 1 ||
+        typeof owner.pid !== 'number' ||
+        !Number.isSafeInteger(owner.pid) ||
+        owner.pid <= 0 ||
+        owner.pid > 2 ** 31 - 1 ||
+        typeof owner.token !== 'string' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(owner.token) ||
+        typeof owner.startedAt !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.000Z$/.test(owner.startedAt) ||
+        !Number.isFinite(Date.parse(owner.startedAt)) ||
+        new Date(owner.startedAt).toISOString() !== owner.startedAt
+    ) {
+        throw new Error('cleanup lock owner lifetime is unknown');
+    }
+    return { version: 1, pid: owner.pid, token: owner.token, startedAt: owner.startedAt };
+}
+
+function cleanupOwnerIsGone(owner: CleanupLockOwner, shell: ShellRunner): boolean {
+    try {
+        process.kill(owner.pid, 0);
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+            return true;
+        }
+        throw new Error('cleanup lock owner lifetime is unknown', { cause: error });
+    }
+    return cleanupProcessStartedAt(owner.pid, shell) !== owner.startedAt;
+}
+
 /** CAS in Git, rather than a timestamp or filesystem reaper race, serializes workers across crashes. */
 export function withCleanupLock<Value>(primaryRoot: string, shell: ShellRunner, operation: () => Value): Value {
-    const owner = { version: 1, pid: process.pid, token: randomUUID() };
+    const owner: CleanupLockOwner = {
+        version: 1,
+        pid: process.pid,
+        token: randomUUID(),
+        startedAt: cleanupProcessStartedAt(process.pid, shell),
+    };
     const oid = spawnCapture('git', ['hash-object', '-w', '--stdin'], {
         cwd: primaryRoot,
         env: githubAuthorizationGitEnv(),
@@ -263,20 +322,9 @@ export function withCleanupLock<Value>(primaryRoot: string, shell: ShellRunner, 
         }
     }
     if (previous !== '') {
-        const existing = JSON.parse(shell.capture('git', ['cat-file', 'blob', previous])) as {
-            version?: number;
-            pid?: number;
-        };
-        if (existing.version !== 1 || !Number.isSafeInteger(existing.pid) || (existing.pid ?? 0) <= 0) {
-            throw new Error('cleanup lock owner is unknown');
-        }
-        try {
-            process.kill(existing.pid!, 0);
+        const existing = parseCleanupLockOwner(shell.capture('git', ['cat-file', 'blob', previous]));
+        if (!cleanupOwnerIsGone(existing, shell)) {
             throw new Error('cleanup worker is already running');
-        } catch (error) {
-            if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) {
-                throw error;
-            }
         }
     }
     shell.run('git', ['update-ref', LOCK_REF, oid, previous || '0'.repeat(oid.length)]);

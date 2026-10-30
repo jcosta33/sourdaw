@@ -75,7 +75,7 @@ export type LaneRemovalPort = {
     clearGuardFailure: (laneName: string) => void;
 };
 
-export type ShellCaptureOptions = { preserveStdout?: true };
+export type ShellCaptureOptions = { preserveStdout?: true; processClock?: 'utc' };
 
 export type ShellRunner = {
     capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
@@ -804,6 +804,9 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
 
 export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
     const inspection = command === 'lsof' || command === 'ps';
+    if (options?.processClock !== undefined && command !== 'ps') {
+        fail('fixed process clock requires ps inspection');
+    }
     let executable = command;
     if (process.platform === 'darwin' && inspection) {
         if (command === 'lsof') {
@@ -818,6 +821,7 @@ export function capture(command: string, args: string[], options?: ShellCaptureO
         shell: false,
         maxBuffer: 64 * 1024 * 1024,
         timeout: inspection ? 5_000 : undefined,
+        env: options?.processClock === 'utc' ? { ...process.env, LC_ALL: 'C', TZ: 'UTC' } : undefined,
     });
     if (result.error !== undefined) {
         throw result.error;
