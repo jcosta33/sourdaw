@@ -1754,7 +1754,7 @@ describe('agent acceptance corpora', () => {
         });
         afterEach(() => {
             if (!setupCompleted) {
-                return;
+                return Promise.resolve();
             }
             setupCompleted = false;
             return fixtureLifetime.cleanup(() => {
