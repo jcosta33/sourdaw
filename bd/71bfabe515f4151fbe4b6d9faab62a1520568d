@@ -1,0 +1,22 @@
+.github/diagnostics/5860/baseline.json
+  h_beb54bf43b47b7 4-6
+.github/workflows/pr5860-linux-capture.yml
+  h_beb54bf43b47b7 12,33,47-48,74,84,96,109-110
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  h_beb54bf43b47b7 240,266,288,311-312,321,330,341,349
+scripts/__tests__/pr5860LinuxCapture.spec.ts
+  h_beb54bf43b47b7 20,25,31,33,36,43-46
+scripts/healthGateWorkflowContract.ts
+  h_beb54bf43b47b7 132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bd71bfabe515f4151fbe4b6d9faab62a1520568d",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
