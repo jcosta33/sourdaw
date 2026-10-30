@@ -28,7 +28,7 @@ export async function createOggCodecWorker(input: {
         throw new Error('Export cancelled');
     }
     input.writer.checkCancelled?.();
-    const worker = new Worker(new URL('../../workers/oggCodecWorker.ts', import.meta.url), { type: 'module' });
+    const worker = new Worker(new URL('./oggCodecWorker.ts', import.meta.url), { type: 'module' });
     const session = ++nextSession;
     let nextId = 0;
     let pending: Pending | undefined;

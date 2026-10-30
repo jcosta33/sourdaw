@@ -4,9 +4,9 @@ import {
     OGG_CODEC_MAX_BYTES,
     type OggCodecWorkerRequest,
     type OggCodecWorkerResponse,
-} from '../models/OggCodecWorkerProtocol';
-import opus from '../repositories/audioEncoders/vendor/opus/opus-encode.js';
-import ogg from '../repositories/audioEncoders/vendor/vorbis/ogg-encode.js';
+} from '../../models/OggCodecWorkerProtocol';
+import opus from './vendor/opus/opus-encode.js';
+import ogg from './vendor/vorbis/ogg-encode.js';
 
 type Encoder = { encode: (channels: Float32Array[]) => Uint8Array; flush: () => Uint8Array; free: () => void };
 
