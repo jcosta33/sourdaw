@@ -39,11 +39,11 @@ describe('authored drum transient recipes', () => {
         }
         expect(
             catalog.recipes
-                .filter((r) => r.roles.includes('drums'))
-                .some((r) => r.steps.some((s) => s.deviceType === 'faust-noise-gate'))
-        ).toBe(false);
+                .filter((r) => r.roles.includes('drums') && r.steps.some((s) => s.deviceType === 'faust-noise-gate'))
+                .map((r) => ({ id: r.id, descriptor: r.descriptor }))
+        ).toEqual([{ id: 'drums-controlled-gate', descriptor: 'controlled' }]);
     });
-    it('preserves the complete global vocabulary and leaves bare controlled unresolved', () => {
+    it('preserves the complete old vocabulary and resolves controlled to the new authored role recipes', () => {
         expect(MIX_RECIPE_DESCRIPTOR_TERMS).toEqual({
             warm: ['warm', 'warmer', 'warmth'],
             bright: ['bright', 'brighter', 'brightness', 'crisp', 'crisper', 'less dark'],
@@ -58,7 +58,8 @@ describe('authored drum transient recipes', () => {
             glued: ['glued', 'glue', 'cohesive'],
             'lo-fi': ['lo-fi', 'lofi', 'lo fi'],
             vintage: ['vintage', 'retro'],
+            controlled: ['controlled'],
         });
-        expect(Object.values(catalog.descriptorTerms).flat()).not.toContain('controlled');
+        expect(catalog.descriptorTerms.controlled).toEqual(['controlled']);
     });
 });
