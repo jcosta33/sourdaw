@@ -1,4 +1,17 @@
-import { readFileSync } from 'node:fs';
+import {
+    constants,
+    fstatSync,
+    lstatSync,
+    readdirSync,
+    mkdirSync,
+    openSync,
+    closeSync,
+    readFileSync,
+    writeFileSync,
+    linkSync,
+    unlinkSync,
+} from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 /**
@@ -905,4 +918,557 @@ export function canonicalPath(path: string, resolveExisting: (path: string) => s
 export function containsPath(container: string, candidate: string): boolean {
     const relation = relative(container, candidate);
     return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
+}
+
+/** Present custody is deliberately separate from historical stack/fork evidence. */
+export type AdoptedPullRequest = {
+    number: number;
+    id: string;
+    repository: string;
+    authorId: string;
+    branch: string;
+    base: string;
+    baseHead: string;
+    head: string;
+};
+export type LaneAdoption = {
+    version: 1;
+    kind: 'present-pr-custody';
+    pullRequest: AdoptedPullRequest;
+    lanePath: string;
+    model: string;
+    sourceCommit: string;
+    nonce: string;
+    createdAt: string;
+};
+export type LaneAdoptionIntent = {
+    version: 1;
+    kind: 'present-pr-publication';
+    nonce: string;
+    oldHead: string;
+    head: string;
+};
+
+function adoptionObject(value: unknown, keys: string[]): Record<string, unknown> {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        fail('invalid present adoption object');
+    }
+    const row = value as Record<string, unknown>;
+    if (Object.keys(row).length !== keys.length || keys.some((key) => !Object.hasOwn(row, key))) {
+        fail('unexpected present adoption fields');
+    }
+    return row;
+}
+function adoptionText(value: unknown, pattern: RegExp): string {
+    if (typeof value !== 'string' || !pattern.test(value)) {
+        fail('invalid present adoption value');
+    }
+    return value;
+}
+const ADOPTION_SHA = /^[0-9a-f]{40}$/;
+const ADOPTION_NONCE = /^[0-9a-f-]{36}$/;
+const ADOPTION_REF = /^[a-zA-Z0-9][a-zA-Z0-9._/-]{0,199}$/;
+function adoptionRef(value: unknown): string {
+    const ref = adoptionText(value, ADOPTION_REF);
+    if (ref.includes('..') || ref.includes('//') || ref.endsWith('/') || ref.endsWith('.lock')) {
+        fail('invalid present adoption ref');
+    }
+    return ref;
+}
+export function parseAdoptedPullRequest(value: unknown): AdoptedPullRequest {
+    const row = adoptionObject(value, ['number', 'id', 'repository', 'authorId', 'branch', 'base', 'baseHead', 'head']);
+    if (typeof row.number !== 'number' || !Number.isSafeInteger(row.number) || row.number < 1) {
+        fail('invalid adopted pull request number');
+    }
+    const branch = adoptionRef(row.branch);
+    if (!isLaneBranch(branch)) {
+        fail('adoption requires a conforming existing lane branch');
+    }
+    return {
+        number: row.number,
+        id: adoptionText(row.id, /^PR_[A-Za-z0-9_-]{1,180}$/),
+        repository: adoptionText(row.repository, /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/),
+        authorId: adoptionText(row.authorId, /^BOT_[A-Za-z0-9_-]{1,180}$/),
+        branch,
+        base: adoptionRef(row.base),
+        baseHead: adoptionText(row.baseHead, ADOPTION_SHA),
+        head: adoptionText(row.head, ADOPTION_SHA),
+    };
+}
+export function parseLaneAdoption(raw: string): LaneAdoption {
+    const row = adoptionObject(JSON.parse(raw), [
+        'version',
+        'kind',
+        'pullRequest',
+        'lanePath',
+        'model',
+        'sourceCommit',
+        'nonce',
+        'createdAt',
+    ]);
+    if (row.version !== 1 || row.kind !== 'present-pr-custody') {
+        fail('invalid present adoption format');
+    }
+    const lanePath = adoptionText(row.lanePath, /^[^\r\n\0]{1,4096}$/);
+    if (!isAbsolute(lanePath) || resolve(lanePath) !== lanePath) {
+        fail('invalid adopted lane path');
+    }
+    const createdAt = adoptionText(row.createdAt, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    if (!Number.isFinite(Date.parse(createdAt))) {
+        fail('invalid adoption time');
+    }
+    return {
+        version: 1,
+        kind: 'present-pr-custody',
+        pullRequest: parseAdoptedPullRequest(row.pullRequest),
+        lanePath,
+        model: adoptionText(row.model, /^[a-z0-9][a-z0-9.+-]{0,39}$/),
+        sourceCommit: adoptionText(row.sourceCommit, ADOPTION_SHA),
+        nonce: adoptionText(row.nonce, ADOPTION_NONCE),
+        createdAt,
+    };
+}
+export function parseLaneAdoptionIntent(raw: string): LaneAdoptionIntent {
+    const row = adoptionObject(JSON.parse(raw), ['version', 'kind', 'nonce', 'oldHead', 'head']);
+    if (row.version !== 1 || row.kind !== 'present-pr-publication') {
+        fail('invalid adoption publication format');
+    }
+    return {
+        version: 1,
+        kind: 'present-pr-publication',
+        nonce: adoptionText(row.nonce, ADOPTION_NONCE),
+        oldHead: adoptionText(row.oldHead, ADOPTION_SHA),
+        head: adoptionText(row.head, ADOPTION_SHA),
+    };
+}
+export function laneAdoptionPath(primaryRoot: string, branch: string, intent = false): string {
+    if (!isLaneBranch(branch)) {
+        fail('invalid adopted branch');
+    }
+    return join(
+        primaryRoot,
+        '.agents',
+        'lane-adoptions',
+        `${encodeURIComponent(branch)}${intent ? '.publication' : ''}.json`
+    );
+}
+function assertAdoptionDirectories(primaryRoot: string, create: boolean): void {
+    for (const directory of [join(primaryRoot, '.agents'), join(primaryRoot, '.agents', 'lane-adoptions')]) {
+        if (create) {
+            try {
+                mkdirSync(directory);
+            } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+                    throw error;
+                }
+            }
+        }
+        try {
+            const stat = lstatSync(directory);
+            if (!stat.isDirectory() || stat.isSymbolicLink()) {
+                fail('adoption directory is not a private repository directory');
+            }
+        } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOENT' && !create) {
+                return;
+            }
+            throw error;
+        }
+    }
+}
+export function readLaneAdoptionRecord(
+    primaryRoot: string,
+    branch: string,
+    intent: true
+): LaneAdoptionIntent | undefined;
+export function readLaneAdoptionRecord(primaryRoot: string, branch: string, intent?: false): LaneAdoption | undefined;
+export function readLaneAdoptionRecord(
+    primaryRoot: string,
+    branch: string,
+    intent = false
+): LaneAdoption | LaneAdoptionIntent | undefined {
+    assertAdoptionDirectories(primaryRoot, false);
+    let fd: number;
+    try {
+        fd = openSync(
+            laneAdoptionPath(primaryRoot, branch, intent),
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+        );
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return undefined;
+        }
+        throw error;
+    }
+    try {
+        const stat = fstatSync(fd);
+        if (!stat.isFile() || stat.size > 32768) {
+            fail('adoption record is not a bounded regular file');
+        }
+        const raw = readFileSync(fd, 'utf8');
+        if (raw.length > 32768) {
+            fail('oversized adoption record');
+        }
+        const record = intent ? parseLaneAdoptionIntent(raw) : parseLaneAdoption(raw);
+        if (!intent && 'pullRequest' in record && record.pullRequest.branch !== branch) {
+            fail('adoption record branch mismatch');
+        }
+        return record;
+    } finally {
+        closeSync(fd);
+    }
+}
+/** Link publication makes the complete immutable record visible, never a partial JSON write. */
+export function saveLaneAdoptionRecord(
+    primaryRoot: string,
+    branch: string,
+    record: LaneAdoption | LaneAdoptionIntent
+): void {
+    const intent = record.kind === 'present-pr-publication';
+    const raw = JSON.stringify(record);
+    if (intent) {
+        parseLaneAdoptionIntent(raw);
+    } else {
+        parseLaneAdoption(raw);
+    }
+    assertAdoptionDirectories(primaryRoot, true);
+    const path = laneAdoptionPath(primaryRoot, branch, intent);
+    const temporary = `${path}.${randomUUID()}.tmp`;
+    writeFileSync(temporary, raw, { flag: 'wx', mode: 0o600 });
+    try {
+        linkSync(temporary, path);
+    } finally {
+        unlinkSync(temporary);
+    }
+}
+
+/** A complete all-state branch query plus independent live refs, ending with a fresh PR core. */
+export function observeAdoptedPullRequest(
+    number: number,
+    repository: string,
+    authorId: string,
+    read: (args: string[]) => string
+): AdoptedPullRequest {
+    const readCore = (): AdoptedPullRequest => {
+        const value: unknown = JSON.parse(read(['api', `repos/${repository}/pulls/${number}`]));
+        if (typeof value !== 'object' || value === null) {
+            fail('unreadable adopted pull request');
+        }
+        const row = value as {
+            number?: unknown;
+            node_id?: unknown;
+            state?: unknown;
+            merged_at?: unknown;
+            user?: { node_id?: unknown; type?: unknown };
+            head?: { ref?: unknown; sha?: unknown; repo?: { full_name?: unknown } };
+            base?: { ref?: unknown; repo?: { full_name?: unknown } };
+        };
+        if (
+            row.number !== number ||
+            row.state !== 'open' ||
+            row.merged_at !== null ||
+            row.user?.node_id !== authorId ||
+            row.user.type !== 'Bot' ||
+            row.head?.repo?.full_name !== repository ||
+            row.base?.repo?.full_name !== repository
+        ) {
+            fail('adoption requires the exact open same-repository author-App pull request');
+        }
+        return parseAdoptedPullRequest({
+            number,
+            id: row.node_id,
+            repository,
+            authorId,
+            branch: row.head.ref,
+            head: row.head.sha,
+            base: row.base.ref,
+            baseHead: '0'.repeat(40),
+        });
+    };
+    const first = readCore();
+    const pages: unknown = JSON.parse(
+        read([
+            'api',
+            '--paginate',
+            '--slurp',
+            `repos/${repository}/pulls?state=all&head=${encodeURIComponent(`${repository.split('/')[0]}:${first.branch}`)}&per_page=100`,
+        ])
+    );
+    if (!Array.isArray(pages) || pages.length === 0 || pages.some((page) => !Array.isArray(page))) {
+        fail('incomplete adopted branch candidates');
+    }
+    const rows: unknown[] = pages.flat();
+    if (rows.length !== 1) {
+        fail('adopted branch must identify exactly one all-state pull request');
+    }
+    const candidate = rows[0];
+    if (
+        typeof candidate !== 'object' ||
+        candidate === null ||
+        !('number' in candidate) ||
+        !('node_id' in candidate) ||
+        candidate.number !== number ||
+        candidate.node_id !== first.id
+    ) {
+        fail('adopted branch pull request identity changed');
+    }
+    const liveRef = (branch: string): string => {
+        const value: unknown = JSON.parse(read(['api', `repos/${repository}/git/ref/heads/${branch}`]));
+        if (typeof value !== 'object' || value === null) {
+            fail('unreadable adopted ref');
+        }
+        const row = value as { ref?: unknown; object?: { type?: unknown; sha?: unknown } };
+        if (row.ref !== `refs/heads/${branch}` || row.object?.type !== 'commit') {
+            fail('adopted live ref identity mismatch');
+        }
+        return adoptionText(row.object.sha, ADOPTION_SHA);
+    };
+    const head = liveRef(first.branch);
+    const baseHead = liveRef(first.base);
+    const last = readCore();
+    if (JSON.stringify(first) !== JSON.stringify(last) || head !== first.head) {
+        fail('adopted pull request moved during observation');
+    }
+    return { ...first, baseHead };
+}
+export function assertAdoptedPullRequest(
+    current: AdoptedPullRequest,
+    expected: AdoptedPullRequest,
+    head: string
+): void {
+    if (JSON.stringify({ ...current, head }) !== JSON.stringify({ ...expected, head }) || current.head !== head) {
+        fail('adopted pull request identity, base, ref or head changed');
+    }
+}
+
+/** A fresh checkout must not evade a failure retained under the branch's former lane name. */
+export function assertNoAdoptionGuardFailure(primaryRoot: string, branch: string): void {
+    const directory = join(primaryRoot, GUARD_FAILURES_DIR);
+    try {
+        const stat = lstatSync(directory);
+        if (!stat.isDirectory() || stat.isSymbolicLink()) {
+            fail('guard failure directory is redirected');
+        }
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return;
+        }
+        throw error;
+    }
+    for (const file of readdirSync(directory)) {
+        if (!file.endsWith('.json')) {
+            continue;
+        }
+        const path = join(directory, file);
+        const stat = lstatSync(path);
+        if (!stat.isFile() || stat.isSymbolicLink()) {
+            fail('guard failure evidence is redirected');
+        }
+        if (parseGuardFailureReceipt(readFileSync(path, 'utf8')).branch === branch) {
+            fail('adoption refuses unresolved guard-failure evidence for this branch');
+        }
+    }
+}
+
+export type AdoptionWorktree = { path: string; branch: string; head: string; lock: string };
+export type AdoptionPort = {
+    repository: string;
+    authorId: string;
+    lockReason: string;
+    primaryRoot: string;
+    sourceCommit: string;
+    observe: (pr: number) => AdoptedPullRequest;
+    receipt: (branch: string) => LaneAdoption | undefined;
+    save: (record: LaneAdoption) => void;
+    assertSafe: (branch: string) => void;
+    branch: (branch: string) => string;
+    birth: (record: LaneAdoption) => boolean;
+    pathExists: (path: string) => boolean;
+    worktrees: () => AdoptionWorktree[];
+    reserve: (record: LaneAdoption) => void;
+    add: (record: LaneAdoption) => void;
+    assertCheckout: (record: LaneAdoption) => void;
+    clean: (path: string) => boolean;
+    identity: (path: string) => boolean;
+    stamp: (path: string) => void;
+    model: (branch: string) => string;
+    saveModel: (branch: string, model: string) => void;
+    now: () => string;
+    nonce: () => string;
+    log: (message: string) => void;
+};
+
+function assertAdoptionOwnership(record: LaneAdoption, port: AdoptionPort): AdoptionWorktree | undefined {
+    const matches = port
+        .worktrees()
+        .filter((tree) => tree.branch === record.pullRequest.branch || tree.path === record.lanePath);
+    if (matches.length > 1) {
+        fail('adoption collides with another worktree');
+    }
+    const tree = matches[0];
+    if (
+        tree !== undefined &&
+        (tree.path !== record.lanePath ||
+            tree.branch !== record.pullRequest.branch ||
+            tree.head !== record.pullRequest.head ||
+            tree.lock !== port.lockReason ||
+            !port.birth(record))
+    ) {
+        fail('adoption worktree is foreign or changed; preserve its evidence');
+    }
+    return tree;
+}
+
+export function adoptPresentPullRequest(pr: number, expectedHead: string, model: string, port: AdoptionPort): string {
+    const observed = port.observe(pr);
+    if (
+        observed.number !== pr ||
+        observed.repository !== port.repository ||
+        observed.authorId !== port.authorId ||
+        !isLaneBranch(observed.branch)
+    ) {
+        fail('adoption public identity is not the required author-App PR');
+    }
+    if (observed.head !== expectedHead) {
+        fail('adoption expected head differs from the live pull request');
+    }
+    const lanePath = join(port.primaryRoot, '.agents', 'worktrees', `adopt-${pr}-${expectedHead.slice(0, 12)}`);
+    const existing = port.receipt(observed.branch);
+    const record: LaneAdoption = existing ?? {
+        version: 1,
+        kind: 'present-pr-custody',
+        pullRequest: observed,
+        lanePath,
+        model,
+        sourceCommit: port.sourceCommit,
+        nonce: port.nonce(),
+        createdAt: port.now(),
+    };
+    if (record.lanePath !== lanePath || record.model !== model || record.pullRequest.number !== pr) {
+        fail('conflicting present adoption replay');
+    }
+    assertAdoptedPullRequest(observed, record.pullRequest, expectedHead);
+    let registered = existing !== undefined;
+    const assertCurrent = () => {
+        port.assertSafe(observed.branch);
+        assertAdoptedPullRequest(port.observe(pr), record.pullRequest, expectedHead);
+        const retained = port.receipt(observed.branch);
+        if (
+            (registered && retained === undefined) ||
+            (retained !== undefined && JSON.stringify(retained) !== JSON.stringify(record))
+        ) {
+            fail('present adoption journal changed');
+        }
+        if (assertAdoptionOwnership(record, port) !== undefined) {
+            port.assertCheckout(record);
+        }
+    };
+    assertCurrent();
+    if (existing === undefined) {
+        if (
+            port.branch(observed.branch) !== '' ||
+            port.pathExists(lanePath) ||
+            assertAdoptionOwnership(record, port) !== undefined
+        ) {
+            fail('adoption requires an absent local branch, path and worktree');
+        }
+        port.save(record);
+        registered = true;
+    }
+    assertCurrent();
+    const branchHead = port.branch(observed.branch);
+    if (branchHead === '') {
+        if (port.pathExists(lanePath)) {
+            fail('adoption destination appeared before branch reservation');
+        }
+        port.reserve(record);
+    } else if (branchHead !== expectedHead || !port.birth(record)) {
+        fail('adoption local branch is foreign or changed');
+    }
+    assertCurrent();
+    if (assertAdoptionOwnership(record, port) === undefined) {
+        if (port.pathExists(lanePath)) {
+            fail('adoption destination exists without its native worktree');
+        }
+        port.add(record);
+    }
+    assertCurrent();
+    if (assertAdoptionOwnership(record, port) === undefined || !port.clean(lanePath)) {
+        fail('adoption checkout is incomplete or dirty; preserve the journal');
+    }
+    if (!port.identity(lanePath)) {
+        assertCurrent();
+        port.stamp(lanePath);
+    }
+    if (port.model(observed.branch) !== model) {
+        assertCurrent();
+        port.saveModel(observed.branch, model);
+    }
+    assertCurrent();
+    if (!port.clean(lanePath) || !port.identity(lanePath) || port.model(observed.branch) !== model) {
+        fail('adoption final checkout verification failed');
+    }
+    port.log(`present custody of PR #${pr}; no historical stack association recorded`);
+    port.log(lanePath);
+    return lanePath;
+}
+
+/** Verify one defined source pin before any public observation or custody mutation. */
+export function verifyAdoptionSources(
+    paths: string[],
+    sourceCommit: string,
+    read: (path: string, pin: string) => string | undefined,
+    actual: (path: string) => string
+): void {
+    if (!/^[0-9a-f]{40}$/.test(sourceCommit)) {
+        fail('adoption requires a defined origin/main source pin');
+    }
+    for (const path of paths) {
+        const expected = read(path, sourceCommit);
+        if (expected === undefined || expected !== actual(path)) {
+            fail(`adoption source unavailable or changed: ${path}`);
+        }
+    }
+}
+
+export function adoptionPathExists(path: string): boolean {
+    try {
+        lstatSync(path);
+        return true;
+    } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+            return false;
+        }
+        throw error;
+    }
+}
+
+export function parseLaneAdoptionArgs(
+    args: string[],
+    usage: string
+): { adoptPr: number; expectedHead: string; model: string } | undefined {
+    if (!args.includes('--adopt-pr') && !args.includes('--expected-head')) {
+        return undefined;
+    }
+    const values = new Map<string, string>();
+    for (let index = 0; index < args.length; index += 2) {
+        const key = args[index];
+        const value = args[index + 1];
+        if (
+            key === undefined ||
+            !['--adopt-pr', '--expected-head', '--model'].includes(key) ||
+            values.has(key) ||
+            value === undefined ||
+            value.startsWith('--')
+        ) {
+            fail(usage);
+        }
+        values.set(key, value);
+    }
+    const expectedHead = values.get('--expected-head');
+    const model = values.get('--model');
+    if (expectedHead === undefined || !/^[0-9a-f]{40}$/.test(expectedHead) || model === undefined) {
+        fail(usage);
+    }
+    return { adoptPr: assertIssueNumber(values.get('--adopt-pr') ?? '', usage), expectedHead, model };
 }

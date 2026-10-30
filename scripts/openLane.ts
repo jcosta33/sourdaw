@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, mkdirSync, realpathSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +8,9 @@ import {
     AUTHOR_BOT_COMMIT_EMAIL,
     AUTHOR_BOT_COMMIT_NAME,
     AUTHOR_LOCK_REASON,
+    AUTHOR_BOT_NODE_ID,
+    REQUIRED_REPOSITORY,
+    githubAuthorizationGitEnv,
     assertTrustedExecutingBlob,
     originMainBlob,
     resolvePrimaryRoot,
@@ -27,11 +31,28 @@ import {
     isLaneBranch,
     laneBranchName,
     type LaneChangeType,
+    readLaneAdoptionRecord,
+    saveLaneAdoptionRecord,
+    observeAdoptedPullRequest,
+    assertAdoptedPullRequest,
+    assertNoAdoptionGuardFailure,
+    type LaneAdoption,
+    type AdoptionPort,
+    adoptPresentPullRequest,
+    verifyAdoptionSources,
+    parseLaneAdoptionArgs,
+    adoptionPathExists,
 } from './prContract.ts';
-import { assertStackAcyclic, readLaneStack, writeLaneStack, type LaneStack } from './stackedLanes.ts';
+import {
+    assertStackAcyclic,
+    readLaneStack,
+    readRegisteredLaneStack,
+    writeLaneStack,
+    type LaneStack,
+} from './stackedLanes.ts';
 
 export const OPEN_LANE_USAGE =
-    'usage: pnpm lane:open [issue-number] [slug] --type <type> --model <model> [--stack-on <absolute-parent-lane>]';
+    'usage: pnpm lane:open [issue-number] [slug] --type <type> --model <model> [--stack-on <absolute-parent-lane>]\n       pnpm lane:open --adopt-pr <pr> --expected-head <full-sha> --model <model> (read-only GitHub opt-in; present custody, never historical birth)';
 
 const DEFAULT_LANE_SLUG = 'work';
 
@@ -125,7 +146,13 @@ export function parseOpenLaneArgs(args: string[]): {
     stackOn?: string;
     model?: string;
     type?: LaneChangeType;
+    adoptPr?: number;
+    expectedHead?: string;
 } {
+    const adoption = parseLaneAdoptionArgs(args, OPEN_LANE_USAGE);
+    if (adoption !== undefined) {
+        return { ...adoption, model: normalizeAuthorModel(adoption.model), help: false, slug: DEFAULT_LANE_SLUG };
+    }
     const selector = args.indexOf('--stack-on');
     if (selector !== -1) {
         const parent = args[selector + 1];
@@ -379,6 +406,7 @@ export function shellPort(
 export type OpenLaneCli = {
     verifyTrustedBlob: (cwd: string) => void;
     createPort: (cwd: string) => OpenLanePort;
+    adopt?: (pr: number, head: string, model: string, cwd: string) => void;
 };
 
 export const shellCli: OpenLaneCli = {
@@ -399,6 +427,9 @@ export const shellCli: OpenLaneCli = {
         assertTrustedExecutingBlob('scripts/laneStackForkMarkers.ts', markerReader, markerReaderBlob);
     },
     createPort: (cwd) => shellPort(spawnCapture, spawnRun, cwd),
+    adopt: (pr, head, model, cwd) => {
+        adoptPresentPullRequest(pr, head, model, shellAdoptionPort(cwd));
+    },
 };
 
 export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string = process.cwd()): number {
@@ -406,6 +437,13 @@ export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string 
         const parsed = parseOpenLaneArgs(argv);
         if (parsed.help) {
             console.log(OPEN_LANE_USAGE.replace('usage:', 'Usage:'));
+            return 0;
+        }
+        if (parsed.adoptPr !== undefined) {
+            if (cli.adopt === undefined || parsed.expectedHead === undefined || parsed.model === undefined) {
+                fail('adoption mode unavailable');
+            }
+            cli.adopt(parsed.adoptPr, parsed.expectedHead, parsed.model, cwd);
             return 0;
         }
         // Refused before the port exists, so a missing type or model can leave no worktree or branch behind.
@@ -421,6 +459,212 @@ export function runCli(argv: string[], cli: OpenLaneCli = shellCli, cwd: string 
         return 1;
     }
 }
+
+function adoptionShellContext(cwd: string) {
+    const env = githubAuthorizationGitEnv();
+    const capture = (args: string[], directory = cwd) => spawnCapture('git', args, { cwd: directory, env });
+    const primaryRoot = resolvePrimaryRoot((_command, args, directory) => capture(args, directory), cwd);
+    if (
+        realpathSync(cwd) !== primaryRoot ||
+        realpathSync(fileURLToPath(new URL('..', import.meta.url))) !== primaryRoot
+    ) {
+        fail('present adoption runs only from the protected primary checkout');
+    }
+    const sourceCommit = capture(['rev-parse', '--verify', 'origin/main^{commit}']);
+    verifyAdoptionSources(
+        [
+            'scripts/openLane.ts',
+            'scripts/prContract.ts',
+            'scripts/githubAppIdentity.ts',
+            'scripts/stackedLanes.ts',
+            'scripts/laneStackForkMarkers.ts',
+            'scripts/pnpmModulesPreflight.ts',
+        ],
+        sourceCommit,
+        (path, pin) => originMainBlob(path, primaryRoot, env, 'git', pin),
+        (path) => readFileSync(join(primaryRoot, path), 'utf8')
+    );
+    const git = (args: string[], directory = primaryRoot) => capture(args, directory);
+    const run = (args: string[], directory = primaryRoot) => spawnRun('git', args, { cwd: directory, env });
+    return { env, primaryRoot, sourceCommit, git, run };
+}
+
+function assertAdoptionParent(path: string): void {
+    if (!adoptionPathExists(path)) {
+        return;
+    }
+    if (realpathSync(path) !== path || !lstatSync(path).isDirectory()) {
+        fail('adoption parent directory is redirected');
+    }
+}
+function adoptionBirthMessage(record: LaneAdoption): string {
+    return `sourdaw: present PR adoption ${record.pullRequest.id} ${record.nonce}`;
+}
+
+export function shellAdoptionPort(cwd: string): AdoptionPort {
+    const { env, primaryRoot, sourceCommit, git, run } = adoptionShellContext(cwd);
+    const observe = (pr: number) =>
+        observeAdoptedPullRequest(pr, REQUIRED_REPOSITORY, AUTHOR_BOT_NODE_ID, (args) =>
+            spawnCapture('gh', args, { cwd: primaryRoot, env })
+        );
+    return {
+        primaryRoot,
+        sourceCommit,
+        repository: REQUIRED_REPOSITORY,
+        authorId: AUTHOR_BOT_NODE_ID,
+        lockReason: AUTHOR_LOCK_REASON,
+        observe,
+        receipt: (branch) => readLaneAdoptionRecord(primaryRoot, branch),
+        save: (record) => saveLaneAdoptionRecord(primaryRoot, record.pullRequest.branch, record),
+        assertSafe: (branch) => {
+            assertAdoptionParent(join(primaryRoot, '.agents'));
+            assertAdoptionParent(join(primaryRoot, '.agents', 'worktrees'));
+            const common = realpathSync(join(primaryRoot, '.git'));
+            if (
+                adoptionPathExists(join(common, 'info', 'grafts')) ||
+                git(['for-each-ref', '--format=%(refname)', 'refs/replace/']) !== ''
+            ) {
+                fail('adoption refuses grafts or replacement objects');
+            }
+            if (readRegisteredLaneStack(primaryRoot, branch, (args) => git(args)) !== undefined) {
+                fail('adoption cannot replace retained stack provenance');
+            }
+            if (readLaneAdoptionRecord(primaryRoot, branch, true) !== undefined) {
+                fail('adoption publication already began; use exact lane:publish replay');
+            }
+            assertNoAdoptionGuardFailure(primaryRoot, branch);
+        },
+        branch: (branch) => git(['for-each-ref', '--format=%(objectname)', `refs/heads/${branch}`]),
+        birth: (record) => {
+            const path = join(primaryRoot, '.git', 'logs', 'refs', 'heads', record.pullRequest.branch);
+            if (!adoptionPathExists(path)) {
+                return false;
+            }
+            const [first] = readFileSync(path, 'utf8').split('\n');
+            return (
+                first !== undefined &&
+                first.startsWith(`${'0'.repeat(40)} ${record.pullRequest.head} `) &&
+                first.endsWith(`\t${adoptionBirthMessage(record)}`)
+            );
+        },
+        pathExists: adoptionPathExists,
+        worktrees: () =>
+            git(['worktree', 'list', '--porcelain', '-z'])
+                .split('\0\0')
+                .filter(Boolean)
+                .map((entry) => {
+                    const fields = entry.split('\0');
+                    const field = (prefix: string) =>
+                        fields.find((value) => value.startsWith(prefix))?.slice(prefix.length) ?? '';
+                    return {
+                        path: field('worktree '),
+                        branch: field('branch refs/heads/'),
+                        head: field('HEAD '),
+                        lock: field('locked '),
+                    };
+                }),
+        ...adoptionReservationPort(primaryRoot, git, run, observe),
+        ...adoptionCheckoutPort(primaryRoot, git, run),
+        now: () => new Date().toISOString(),
+        nonce: randomUUID,
+        log: console.log,
+    };
+}
+type AdoptionGit = (args: string[], directory?: string) => string;
+type AdoptionRun = (args: string[], directory?: string) => void;
+function adoptionReservationPort(
+    primaryRoot: string,
+    git: AdoptionGit,
+    run: AdoptionRun,
+    observe: AdoptionPort['observe']
+): Pick<AdoptionPort, 'reserve' | 'add'> {
+    return {
+        reserve: (record) => {
+            run(['fetch', '--no-tags', GITHUB_ADOPTION_REMOTE, `refs/heads/${record.pullRequest.branch}`]);
+            if (git(['rev-parse', '--verify', 'FETCH_HEAD^{commit}']) !== record.pullRequest.head) {
+                fail('adopted branch moved during fetch');
+            }
+            assertAdoptedPullRequest(observe(record.pullRequest.number), record.pullRequest, record.pullRequest.head);
+            run([
+                '-c',
+                `user.name=${AUTHOR_BOT_COMMIT_NAME}`,
+                '-c',
+                `user.email=${AUTHOR_BOT_COMMIT_EMAIL}`,
+                'update-ref',
+                '--create-reflog',
+                '-m',
+                adoptionBirthMessage(record),
+                `refs/heads/${record.pullRequest.branch}`,
+                record.pullRequest.head,
+                '0'.repeat(40),
+            ]);
+        },
+        add: (record) => {
+            const parent = join(primaryRoot, '.agents', 'worktrees');
+            try {
+                mkdirSync(parent);
+            } catch (error) {
+                if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) {
+                    throw error;
+                }
+            }
+            assertAdoptionParent(parent);
+            // Git accepts an existing empty directory. Reserve this destination ourselves
+            // so an empty foreign path cannot silently become the adopted checkout.
+            mkdirSync(record.lanePath);
+            run([
+                'worktree',
+                'add',
+                '--lock',
+                '--reason',
+                AUTHOR_LOCK_REASON,
+                record.lanePath,
+                record.pullRequest.branch,
+            ]);
+        },
+    };
+}
+function adoptionCheckoutPort(
+    primaryRoot: string,
+    git: AdoptionGit,
+    run: AdoptionRun
+): Pick<AdoptionPort, 'assertCheckout' | 'clean' | 'identity' | 'stamp' | 'model' | 'saveModel'> {
+    return {
+        assertCheckout: (record) => {
+            const path = record.lanePath;
+            const common = git(['rev-parse', '--git-common-dir'], path);
+            if (
+                realpathSync(path) !== path ||
+                realpathSync(isAbsolute(common) ? common : join(path, common)) !==
+                    realpathSync(join(primaryRoot, '.git')) ||
+                git(['symbolic-ref', '--quiet', '--short', 'HEAD'], path) !== record.pullRequest.branch ||
+                git(['rev-parse', '--verify', 'HEAD^{commit}'], path) !== record.pullRequest.head
+            ) {
+                fail('adoption checkout identity or common repository changed');
+            }
+        },
+        clean: (path) => {
+            const linkTarget = resolveNodeModulesLinkTarget(path);
+            if (
+                linkTarget !== undefined &&
+                outsideSymlinkRefusal({ laneRoot: path, linkPath: join(path, 'node_modules'), linkTarget }) !==
+                    undefined
+            ) {
+                fail('adoption node_modules redirects to another checkout');
+            }
+            return git(['status', '--porcelain=v1', '--untracked-files=all'], path) === '';
+        },
+        identity: (path) =>
+            git(['config', '--get', '--default', '', 'extensions.worktreeConfig'], path) === 'true' &&
+            git(['config', '--worktree', '--get', '--default', '', 'user.email'], path) === AUTHOR_BOT_COMMIT_EMAIL &&
+            git(['config', '--worktree', '--get', '--default', '', 'user.name'], path) === AUTHOR_BOT_COMMIT_NAME &&
+            git(['config', '--worktree', '--get', '--default', '', 'commit.gpgsign'], path) === 'false',
+        stamp: (path) => runAuthorIdentityStamp(path, (_command, args, options) => run(args, options.cwd)),
+        model: (branch) => git(['config', '--get', '--default', '', `branch.${branch}.sourdaw-author-model`]),
+        saveModel: (branch, model) => run(['config', `branch.${branch}.sourdaw-author-model`, model]),
+    };
+}
+const GITHUB_ADOPTION_REMOTE = 'https://github.com/jcosta33/sourdaw.git';
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     process.exit(runCli(process.argv.slice(2)));

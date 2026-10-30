@@ -50,6 +50,14 @@ import {
     whatFromBody,
     type GuardFailureReceipt,
     type IssueRelationship,
+    assertNoAdoptionGuardFailure,
+    readLaneAdoptionRecord,
+    saveLaneAdoptionRecord,
+    observeAdoptedPullRequest,
+    assertAdoptedPullRequest,
+    type LaneAdoption,
+    type LaneAdoptionIntent,
+    type AdoptedPullRequest,
 } from './prContract.ts';
 import {
     changedReviewPaths,
@@ -626,6 +634,10 @@ export type PublishLanePort = {
     isAncestor: (ancestorSha: string, descendantSha: string, lane: string) => boolean;
     push: (lane: string, branch: string, headSha: string) => void;
     existingOpenPullRequest: (branch: string) => ExistingPullRequest | undefined;
+    adoptionRecord?: (branch: string) => LaneAdoption | undefined;
+    adoptionIntent?: (branch: string) => LaneAdoptionIntent | undefined;
+    saveAdoptionIntent?: (branch: string, intent: LaneAdoptionIntent) => void;
+    observeAdoption?: (pr: number) => AdoptedPullRequest;
     stackBase?: (lane: string, branch: string, head: string, main: string) => StackPublicationContext | undefined;
     pinStackParent?: (branch: string, number: number) => void;
     reportDiff?: (lane: string, base: string, head: string) => void;
@@ -1250,6 +1262,7 @@ export function publishLane(
     if (currentBaseSha !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
+    const adopted = prepareAdoptedPublication(lane, headSha, port);
     const laneIssue = issue ?? laneIssueNumber(lane.branch);
     // Name the resolved selection before anything mutates, so an incorrect target remains visible
     // even when a later gate refuses it.
@@ -1373,7 +1386,8 @@ export function publishLane(
         fail('origin/main changed after its permission-scoped token was minted');
     }
     assertStackContext();
-    port.push(lane.path, lane.branch, headSha);
+    const mutationPort = adopted?.bind() ?? port;
+    mutationPort.push(lane.path, lane.branch, headSha);
     if (port.baseSha() !== baseSha) {
         fail('origin/main changed after its permission-scoped token was minted');
     }
@@ -1382,9 +1396,9 @@ export function publishLane(
     // create-or-update, and the collision guard in resolution has already proven any same-named
     // label is the mechanism's own, so it is safe on every publish.
     if (metadata !== undefined) {
-        port.ensureModelLabel(metadata.model);
+        mutationPort.ensureModelLabel(metadata.model);
     }
-    const number = pullRequestNumber(lane, write, port, stack?.branch);
+    const number = pullRequestNumber(lane, write, mutationPort, stack?.branch);
     if (stack !== undefined) {
         const after = port.stackBase?.(lane.path, lane.branch, headSha, baseSha);
         const published = port.existingOpenPullRequest(lane.branch);
@@ -1398,11 +1412,148 @@ export function publishLane(
         }
     }
     if (metadata !== undefined) {
-        assertPullRequestMetadata(number, metadata, port);
+        assertPullRequestMetadata(number, metadata, mutationPort);
     }
     reportPullRequestMergeability(lane, number, comparisonHead, headSha, port);
     port.log(String(number));
     return number;
+}
+
+/** An adopted branch has one immutable successor intent and never falls back to PR creation. */
+export function prepareAdoptedPublication(
+    lane: { path: string; branch: string },
+    head: string,
+    port: PublishLanePort
+): { bind: () => PublishLanePort } | undefined {
+    const adoption = port.adoptionRecord?.(lane.branch);
+    let intent = port.adoptionIntent?.(lane.branch);
+    if (adoption === undefined) {
+        if (intent !== undefined) {
+            fail('orphaned adoption publication intent');
+        }
+        return undefined;
+    }
+    if (
+        adoption.lanePath !== lane.path ||
+        adoption.pullRequest.branch !== lane.branch ||
+        adoption.pullRequest.repository !== REQUIRED_REPOSITORY ||
+        adoption.pullRequest.authorId !== AUTHOR_BOT_NODE_ID ||
+        head === adoption.pullRequest.head ||
+        port.observeAdoption === undefined ||
+        port.saveAdoptionIntent === undefined
+    ) {
+        fail('adopted publication requires its exact owned lane and a successor head');
+    }
+    const rewrites = port.objectStoreRewrites(lane.path);
+    if (rewrites.graftsFile !== undefined || rewrites.replaceRefs !== 0) {
+        fail('adopted publication refuses rewritten object history');
+    }
+    if (!port.isAncestor(adoption.pullRequest.head, head, lane.path)) {
+        fail('adopted successor must retain the original source head');
+    }
+    const planned: LaneAdoptionIntent = {
+        version: 1,
+        kind: 'present-pr-publication',
+        nonce: adoption.nonce,
+        oldHead: adoption.pullRequest.head,
+        head,
+    };
+    if (intent !== undefined && JSON.stringify(intent) !== JSON.stringify(planned)) {
+        fail('adoption already binds a different successor publication');
+    }
+    const observe = port.observeAdoption;
+    const save = port.saveAdoptionIntent;
+    const check = (requiredHead?: string): string => {
+        if (
+            JSON.stringify(port.adoptionRecord?.(lane.branch)) !== JSON.stringify(adoption) ||
+            JSON.stringify(port.adoptionIntent?.(lane.branch)) !== JSON.stringify(intent)
+        ) {
+            fail('adoption custody or publication intent changed');
+        }
+        const trees = port.worktrees().filter((tree) => tree.branch === lane.branch || tree.path === lane.path);
+        if (
+            trees.length !== 1 ||
+            trees[0]?.branch !== lane.branch ||
+            trees[0].path !== lane.path ||
+            trees[0].lockReason !== AUTHOR_LOCK_REASON ||
+            port.headSha(lane.path) !== head ||
+            port.dirty(lane.path)
+        ) {
+            fail('adopted publication checkout ownership or head changed');
+        }
+        const remote = port.remoteBranchSha(lane.branch);
+        if (
+            remote.kind !== 'present' ||
+            (requiredHead !== undefined && remote.sha !== requiredHead) ||
+            (remote.sha !== adoption.pullRequest.head && !(intent !== undefined && remote.sha === head))
+        ) {
+            fail('adopted remote head differs from its frozen source or exact intended successor');
+        }
+        assertAdoptedPullRequest(observe(adoption.pullRequest.number), adoption.pullRequest, remote.sha);
+        const existing = port.existingOpenPullRequest(lane.branch);
+        if (
+            existing?.number !== adoption.pullRequest.number ||
+            existing.baseRefName !== adoption.pullRequest.base ||
+            existing.headRefOid !== remote.sha
+        ) {
+            fail('adopted pull request disappeared or changed; refusing create fallback');
+        }
+        return remote.sha;
+    };
+    check();
+    const afterWrite = (operation: () => void): void => {
+        try {
+            operation();
+            check(head);
+        } catch (error) {
+            throw new Error(
+                'adopted PR publication may be partial; preserve its immutable intent and replay only this exact head',
+                { cause: error }
+            );
+        }
+    };
+    return {
+        bind: () => {
+            check();
+            if (intent === undefined) {
+                save(lane.branch, planned);
+                intent = planned;
+            }
+            check();
+            return {
+                ...port,
+                push: (path, branch, target) => {
+                    if (path !== lane.path || branch !== lane.branch || target !== head) {
+                        fail('adopted publication target changed');
+                    }
+                    const remoteHead = check();
+                    if (remoteHead === head) {
+                        return;
+                    }
+                    afterWrite(() => port.push(path, branch, target));
+                },
+                ensureModelLabel: (model) => {
+                    check(head);
+                    afterWrite(() => port.ensureModelLabel(model));
+                },
+                createPullRequest: () => fail('adopted publication can only update the original pull request'),
+                updatePullRequest: (number, content) => {
+                    check(head);
+                    if (number !== adoption.pullRequest.number) {
+                        fail('adopted publication PR number changed');
+                    }
+                    afterWrite(() => port.updatePullRequest(number, content));
+                },
+                applyPullRequestMetadata: (number, plan) => {
+                    check(head);
+                    if (number !== adoption.pullRequest.number) {
+                        fail('adopted metadata PR number changed');
+                    }
+                    afterWrite(() => port.applyPullRequestMetadata(number, plan));
+                },
+            };
+        },
+    };
 }
 
 /**
@@ -2123,6 +2274,16 @@ export function shellPort(
             );
             return matchingOpenPullRequest(rows, branch);
         },
+        adoptionRecord: (branch) => {
+            const record = readLaneAdoptionRecord(primaryRoot, branch);
+            if (record !== undefined) {
+                assertNoAdoptionGuardFailure(primaryRoot, branch);
+            }
+            return record;
+        },
+        adoptionIntent: (branch) => readLaneAdoptionRecord(primaryRoot, branch, true),
+        saveAdoptionIntent: (branch, intent) => saveLaneAdoptionRecord(primaryRoot, branch, intent),
+        observeAdoption: (pr) => observeAdoptedPullRequest(pr, REQUIRED_REPOSITORY, AUTHOR_BOT_NODE_ID, gh),
         stackBase: (lane, branch, head, main) => {
             const descriptor = readRegisteredLaneStack(primaryRoot, branch, (args) =>
                 spawnCapture(executables.git, args, { cwd: primaryRoot, env: session.env })
