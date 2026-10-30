@@ -84,6 +84,9 @@ function targetVersion(workspace: string, manifest: string): string {
     if (!within(workspace, file)) {
         throw new Error('pnpm manifest must belong to the workspace');
     }
+    if (file !== requested) {
+        throw new Error('pnpm manifest must use its declared physical path');
+    }
     const data: unknown = JSON.parse(readFileSync(file, 'utf8'));
     if (data === null || typeof data !== 'object' || Array.isArray(data)) {
         throw new Error('Invalid pnpm manifest');

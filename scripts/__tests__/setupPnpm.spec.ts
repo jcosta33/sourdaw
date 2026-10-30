@@ -377,6 +377,51 @@ describe('verified JavaScript pnpm setup', () => {
         expect(input.run).not.toHaveBeenCalled();
     });
 
+    it('selects the physical source manifest beside a control checkout with a different pnpm version', () => {
+        const input = fixture();
+        const control = join(input.workspace, 'control');
+        const source = join(input.workspace, 'source');
+        mkdirSync(control);
+        mkdirSync(source);
+        writeFileSync(join(control, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.7.1' }));
+        writeFileSync(join(source, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.6.0' }));
+
+        const result = setupPnpm({ ...input.options, manifest: 'source/package.json' });
+
+        expect(result.version).toBe('11.6.0');
+        expect(input.run).toHaveBeenCalledTimes(3);
+        expect(input.run.mock.calls[1]?.[1]).toEqual([
+            join(input.dest, 'bootstrap/node_modules/pnpm/bin/pnpm.mjs'),
+            'self-update',
+            '11.6.0',
+        ]);
+        expect(input.exports()[0]).toBe(`${result.bin}\n`);
+    });
+
+    it.each(['leaf', 'ancestor'])(
+        'refuses a source manifest %s symlink into the control checkout before acquisition',
+        (redirect) => {
+            const input = fixture();
+            const control = join(input.workspace, 'control');
+            const source = join(input.workspace, 'source');
+            mkdirSync(control);
+            writeFileSync(join(control, 'package.json'), JSON.stringify({ packageManager: 'pnpm@11.7.1' }));
+            if (redirect === 'leaf') {
+                mkdirSync(source);
+                symlinkSync('../control/package.json', join(source, 'package.json'));
+            } else {
+                symlinkSync('control', source, 'dir');
+            }
+
+            expect(() => setupPnpm({ ...input.options, manifest: 'source/package.json' })).toThrow(
+                'pnpm manifest must use its declared physical path'
+            );
+            expect(input.run).not.toHaveBeenCalled();
+            expect(readdirSync(input.dest)).toEqual([]);
+            expect(input.exports()).toEqual(['', '', '']);
+        }
+    );
+
     it('refuses a destination within the project before installing or editing project files', () => {
         const input = fixture();
         input.options.dest = join(input.workspace, 'tools');
