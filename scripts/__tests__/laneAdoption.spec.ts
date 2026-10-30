@@ -368,6 +368,7 @@ function nativeFixture() {
     }
     mkdirSync(primary);
     mkdirSync(bin);
+    symlinkSync(process.execPath, join(bin, 'node'));
     mkdirSync(join(primary, 'scripts'));
     const source = (path: string) => readFileSync(join(process.cwd(), path), 'utf8');
     for (const path of trustedDependencyGraphs['lane:publish']) {
@@ -410,8 +411,7 @@ function nativeFixture() {
     expect(identity).toContain(declaration);
     writeFileSync(
         join(primary, 'scripts', 'githubAppIdentity.ts'),
-        identity.replace(declaration, 'export async function unusedFixtureAuthenticatePublishingAuthor(') +
-            `
+        `${identity.replace(declaration, 'export async function unusedFixtureAuthenticatePublishingAuthor(')}
 export async function authenticatePublishingAuthor(input) {
     writeFileSync(join(input.primaryRoot, 'auth-attempted'), 'ordinary author gate');
     throw new Error('controlled ordinary author authentication');
