@@ -73,6 +73,9 @@ vi.mock('#/infra/logger/appLogger', () => ({
 }));
 
 vi.mock('#/modules/Transport/useCases', () => ({
+    preferencesSeededTransportState: vi.fn(() => {
+        throw new Error('Unexpected preferencesSeededTransportState in this fixture');
+    }),
     stopPlayback: vi.fn(),
     defaultTransportState: { masterGain: 75, isPlaying: false },
     ensureTrackStrips: vi.fn(),

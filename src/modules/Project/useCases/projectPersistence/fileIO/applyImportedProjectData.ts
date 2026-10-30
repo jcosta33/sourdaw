@@ -1,7 +1,13 @@
+import { logger } from '#/infra/logger/appLogger';
+import { notifyUser } from '#/utils/Notification/notifyUser';
+
+import { projectDirectoryBinding } from '../../../repositories/project/projectDirectoryBinding';
 import { isHydratableProjectData } from '../helpers/isHydratableProjectData';
 import { normalizeLegacyProjectData } from '../helpers/normalizeLegacyProjectData';
 import { replaceProjectData } from '../helpers/replaceProjectData';
 import { type ProjectLoadTransaction, runProjectLoadTransaction } from '../helpers/runProjectLoadTransaction';
+
+const { clearLastProjectDirectoryBinding } = projectDirectoryBinding;
 
 type ApplyImportedProjectDataInput = {
     data: unknown;
@@ -32,5 +38,14 @@ export async function applyImportedProjectData({
         shouldProceed,
         transaction: transaction ?? runProjectLoadTransaction(),
     });
-    return result.status === 'committed';
+    if (result.status !== 'committed') {
+        return false;
+    }
+    try {
+        await clearLastProjectDirectoryBinding(normalizedData.meta.projectId);
+    } catch (error) {
+        logger.warn('Previous project folder binding could not be cleared:', error);
+        notifyUser('Project imported, but this browser could not update its startup folder.', 'warning');
+    }
+    return true;
 }

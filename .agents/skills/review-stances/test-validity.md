@@ -1049,6 +1049,12 @@ roles) rather than bare text; and select every hit of `expect\([^)]*\|\|` across
 review, requiring each arm to be load-bearing by mutating that arm's condition away and confirming
 the assertion reddens before the disjunction counts.
 
+### 2026-10-29 — a dirty project name was not admitted before autosave (PR #5749)
+
+PR #5749 (`764c86dfdd8dd64089566f10267136712e5355e8`) added Proof's saved-disclosure case after setup made the project dirty. Its exact `Untitled Project` button locator excluded the `Unsaved changes` status in the actual accessible name; an incidental autosave could clear that status and admit the stale locator. The case did not require its rename entry while dirty. Historical private reviewer prompts and tiers are unknown.
+
+Require the real project-name control while the project is dirty, before waiting for Save or autosave, using its stable identity and a separate expected-name assertion. Make that required control unavailable and require the named case to fail at admission; a conditional guard or a later successful autosave cannot discharge it. Keep the actual Save, CRDT deletion, Recent reopen and exact disclosure/ceiling assertions load-bearing.
+
 ### 2026-09-21 — internal level assertions missed the provider wire (escaped via PR #4392)
 
 PR #4392 (`5c476c92153`) added linear/decibel project-context fields, but its provider assertion covered only master and track decibels in one projection. It did not inspect the final full and delta messages for paired master, track, send, clip, and gain-lane values.

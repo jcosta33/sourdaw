@@ -74,7 +74,8 @@ vi.mock('../../stores/projectStore', () => ({
 // But when we test it from __tests__/, it's different.
 // Vitest mocks should use the same path as the import in the source file.
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),
@@ -115,6 +116,9 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 }));
 
 vi.mock('#/modules/Command/useCases', () => ({
+    clearUndoHistory: vi.fn(() => {
+        throw new Error('Unexpected clearUndoHistory in this fixture');
+    }),
     commitRedoInverseCapture: vi.fn(),
     readUndoEntryForInverse: vi.fn<typeof import('#/modules/Command/useCases').readUndoEntryForInverse>(() => null),
 
@@ -134,6 +138,9 @@ vi.mock('#/modules/MIDI/useCases', async () => ({
         await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases')
     ).isExactMidiClipDataActionSnapshot,
     decodeMidiClipDataSnapshots: vi.fn(() => null),
+    projectDrumPreviewCandidateNotes: vi.fn(() => {
+        throw new Error('Unexpected projectDrumPreviewCandidateNotes in this fixture');
+    }),
     migrateAbsoluteMidiNotes: mocks.migrateAbsoluteMidiNotes,
     readLegacyChordTrackMigration: mocks.readLegacyChordTrackMigration,
     projectClipControllerEvents: vi.fn(),

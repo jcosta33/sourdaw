@@ -20,7 +20,8 @@ const mocks = vi.hoisted(() => ({
     }),
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     commandSourcePublicationMatches: vi.fn<
         typeof import('#/modules/CrdtDocument/useCases').commandSourcePublicationMatches
     >(() => false),

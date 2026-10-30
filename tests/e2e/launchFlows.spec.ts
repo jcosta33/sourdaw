@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { chooseProjectDirectory } from './chosenProjectDirectory';
 import { launch_new_project, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -117,6 +118,7 @@ test.describe('Launch Screen & Project Entry', () => {
         });
 
         test('Saving the project clears the unsaved changes indicator', async ({ page }) => {
+            await chooseProjectDirectory(page);
             await page.keyboard.press(`${MOD}+k`);
             await page.getByPlaceholder('Type a command...', { exact: true }).fill('Add MIDI Track');
             await page.getByRole('option', { name: 'Add MIDI Track' }).click();

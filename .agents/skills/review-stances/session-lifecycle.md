@@ -168,6 +168,19 @@ session and installing it, walk Connect, then leave-the-section-and-return, then
 before the first wait settles. Name which runtime is installed. If it is the first, that is the
 finding.
 
+### Cold media recovery must reopen the project owner before transfer
+
+PR #5778 (`131b480a0418c579e2ac65c0b321794487771ccb`) resolved a missing collaboration
+asset from an authorized mapped library, but a cold session could request a peer even when the
+project already owned the verified original. The missing lifecycle probe crossed saved project
+ownership, library revocation and session teardown; historical private prompts and tiers are unknown.
+
+Copy the original into project ownership, revoke the mapped grant, end the transfer session and
+reopen the project cold. Request the hash through the real caller and require exact verified bytes
+with zero `asset.request`. Do not satisfy this with a resident Blob or a still-authorized library.
+Removing the durable-owner lookup must fail the unchanged cold case. Preserve lease and journal
+cleanup, alias and PCM guards, and terminal retry fences across recovery and teardown.
+
 ### 2026-09-08 — the window a start steps over (escaped via PR #4020)
 
 PR #4020 aimed the native session's roll at the position Web Audio had reached during the session's

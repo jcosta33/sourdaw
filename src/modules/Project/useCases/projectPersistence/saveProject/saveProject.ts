@@ -3,20 +3,34 @@ import { withProjectAudioStorageLock } from '#/infra/storage/withProjectAudioSto
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { ensureCachedAudioBuffersDurable } from '#/modules/AudioEngine/useCases';
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
-import { captureProjectRevision, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
+import { captureProjectRevision, exportSdawFile, persistCrdtProject } from '#/modules/CrdtDocument/useCases';
 import { countSettledTakes } from '#/modules/Transport/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
+import { projectDirectory } from '../../../repositories/project/projectDirectory';
+import { projectDirectoryBinding } from '../../../repositories/project/projectDirectoryBinding';
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
 import { projectStore } from '../../../stores/projectStore';
+import { isNativeProjectRuntimeAvailable } from '../../isNativeProjectRuntimeAvailable';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
+import { collectProjectFreezeOnlyBufferIds } from '../helpers/collectProjectFreezeOnlyBufferIds';
+import { collectProjectOriginalHashes } from '../helpers/collectProjectOriginalHashes';
 import { unsavedClosedTakes } from '../helpers/unsavedClosedTakes';
 import { migrateActiveProjectIdentity } from '../migrateActiveProjectIdentity';
 
 import { captureExternalPluginStates } from './captureExternalPluginStates';
+import { collectProjectDirectoryPcm } from './collectProjectDirectoryPcm';
+
+const {
+    beginProjectDirectorySelection,
+    bindProjectDirectoryRoot,
+    cachedProjectDirectoryRoot,
+    loadProjectDirectoryRoot,
+    openProjectDirectory,
+} = projectDirectoryBinding;
 
 type AudioDurabilityReceipt = {
     isCurrent: () => boolean;
@@ -27,6 +41,87 @@ function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
         throw new Error('[saveProject] Project repair became required before snapshot persistence');
     }
+}
+
+function beginSaveFolderSelection(
+    projectId: string | undefined,
+    folderSaveAvailable: boolean
+): Promise<FileSystemDirectoryHandle> | null {
+    if (
+        !folderSaveAvailable ||
+        (projectId && cachedProjectDirectoryRoot(projectId)) ||
+        !navigator.userActivation?.isActive
+    ) {
+        return null;
+    }
+    const selection = beginProjectDirectorySelection();
+    void selection.catch(() => undefined);
+    return selection;
+}
+
+async function captureRejectedPluginStates(): Promise<readonly string[]> {
+    try {
+        const capture = await captureExternalPluginStates();
+        return capture.rejectedPlugins;
+    } catch (error) {
+        logger.warn('[saveProject] Native plugin state capture failed:', error);
+        return [];
+    }
+}
+
+async function commitProjectDirectory({
+    projectId,
+    createdAt,
+    recentKey,
+    selectedRoot,
+    built,
+    audioDurabilityReceipt,
+    assertSnapshotContinuation,
+}: {
+    projectId: string;
+    createdAt: number;
+    recentKey: string;
+    selectedRoot: Promise<FileSystemDirectoryHandle> | null;
+    built: NonNullable<Awaited<ReturnType<typeof buildProjectData>>>;
+    audioDurabilityReceipt: AudioDurabilityReceipt;
+    assertSnapshotContinuation: (receipt?: AudioDurabilityReceipt) => void;
+}): Promise<void> {
+    const root = selectedRoot ? await selectedRoot : await loadProjectDirectoryRoot(projectId);
+    if (!root) {
+        throw new Error('[saveProject] Choose a project folder with Save before autosave can commit');
+    }
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const directory = await openProjectDirectory(root, projectId, true);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const isCurrent = (): boolean => {
+        try {
+            assertSnapshotContinuation(audioDurabilityReceipt);
+            return true;
+        } catch {
+            return false;
+        }
+    };
+    const { captureProjectOriginalMedia } = await import('#/modules/Collaboration/useCases');
+    const originals = await captureProjectOriginalMedia(projectId, collectProjectOriginalHashes(built.data), isCurrent);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const pcm = await collectProjectDirectoryPcm(built.requiredAudioBufferIds, isCurrent);
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    const document = new Uint8Array(await exportSdawFile().arrayBuffer());
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    await projectDirectory.write({
+        directory,
+        projectId,
+        document,
+        snapshot: JSON.stringify(built.data),
+        media: originals.media,
+        unavailableOriginals: originals.unavailable,
+        pcm,
+        freezeProjectIdByBufferId: new Map(collectProjectFreezeOnlyBufferIds(built.data).map((id) => [id, createdAt])),
+        isCurrent,
+    });
+    assertSnapshotContinuation(audioDurabilityReceipt);
+    await bindProjectDirectoryRoot(projectId, root, recentKey);
+    assertSnapshotContinuation(audioDurabilityReceipt);
 }
 
 export async function saveProject(): Promise<boolean> {
@@ -60,13 +155,14 @@ export async function saveProject(): Promise<boolean> {
         return true;
     }
 
-    const updatedAt = Date.now();
-
     // Key recent projects by a stable per-project id (createdAt, set once at
     // creation and preserved across renames and reloads) rather than the
     // mutable display name — so duplicate names don't collide and a rename
     // doesn't orphan the old key.
     const recentKey = getProjectSnapshotKey(project.createdAt);
+    const folderSaveAvailable = !isNativeProjectRuntimeAvailable() && typeof window.showDirectoryPicker === 'function';
+    // The picker must start in the same user-gesture turn, before migration or plugin capture awaits.
+    const selectedRoot = beginSaveFolderSelection(project.projectId, folderSaveAvailable);
 
     try {
         await migrateActiveProjectIdentity();
@@ -78,13 +174,7 @@ export async function saveProject(): Promise<boolean> {
         // project still persists. A PRECOMMIT rejection is reported back instead
         // of thrown: that plugin's live edit is not in project truth, so this
         // save must not read as a clean success for it.
-        let rejectedCapturePlugins: readonly string[] = [];
-        try {
-            const capture = await captureExternalPluginStates();
-            rejectedCapturePlugins = capture.rejectedPlugins;
-        } catch (error) {
-            logger.warn('[saveProject] Native plugin state capture failed:', error);
-        }
+        const rejectedCapturePlugins = await captureRejectedPluginStates();
 
         const current = projectStore.value;
         if (!current || current.createdAt !== project.createdAt) {
@@ -95,7 +185,7 @@ export async function saveProject(): Promise<boolean> {
         // Keep the project dirty until every durable write succeeds. The
         // timestamp belongs to the snapshot being built, so publish it before
         // serialization and include it in the revision token below.
-        projectStore.set({ ...current, updatedAt, dirty: true });
+        projectStore.set({ ...current, updatedAt: Date.now(), dirty: true });
 
         // Write a flat-JSON ProjectData snapshot under the SAME key the
         // recent entry uses, so loadRecentProject can reopen it. The
@@ -173,6 +263,18 @@ export async function saveProject(): Promise<boolean> {
 
                     await persistCrdtProject();
                     assertSnapshotContinuation(audioDurabilityReceipt);
+
+                    if (folderSaveAvailable) {
+                        await commitProjectDirectory({
+                            projectId: persistedProject.projectId!,
+                            createdAt: persistedProject.createdAt,
+                            recentKey,
+                            selectedRoot,
+                            built,
+                            audioDurabilityReceipt,
+                            assertSnapshotContinuation,
+                        });
+                    }
 
                     // Awaited, so a rejected transaction reaches the catch below
                     // rather than being reported as a successful save.

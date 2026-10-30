@@ -172,6 +172,19 @@ does not protect later continuations. Hold the named-project transaction and the
 invoke a public owning edit, then settle the transaction before the frame. Save must fail and remain
 dirty, and a later Save/reopen must contain the edit.
 
+### Project-owned originals must survive lost library authority
+
+PR #5778 (`131b480a0418c579e2ac65c0b321794487771ccb`) added mapped-library lookup
+before requesting a missing asset, but did not reopen an original already durably owned by the
+project after the library grant and session disappeared. Its public review addressed other
+ownership and delayed-read races; historical private prompts and tiers are unknown.
+
+Save a mapped-library original into project ownership, revoke the library grant, end the session,
+reopen cold and request its hash through the real caller. Require the exact verified project-owned
+bytes and no outgoing `asset.request`. A resident Blob or authorized library file cannot stand in
+for the project's durable owner. Removing the owner-scoped lookup must fail that cold case; retain
+lease and journal cleanup, alias and PCM protection, and terminal retry fences.
+
 ## Lesson from the PR #3877 retained-source escape
 
 A project replacement may keep a decoded buffer because the incoming project references the same
