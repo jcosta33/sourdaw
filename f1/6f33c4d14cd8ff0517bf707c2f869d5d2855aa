@@ -1,0 +1,32 @@
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToNative.spec.ts
+  s_57fdb7ae7b3ba4::t_0827bf4536f81b 82,100-106,115-119,132-162,167-173
+  s_57fdb7ae7b3ba4::t_2bd35c850b857a 64-81,83-98,110-114,120-131,163-166,174-187
+  s_57fdb7ae7b3ba4::t_98ed831ddcf73d 99,107-109
+  s_57fdb7ae7b3ba4::t_7ae768a9924902 202-206,240-244,299-303,368-372,401-405
+src/modules/AudioRendering/repositories/audioExport/streamExportToNative.ts
+  s_57fdb7ae7b3ba4::t_2f59982e727a2c 14,47,56-58,124,128,131-144,150-156,158
+  s_57fdb7ae7b3ba4::t_98ed831ddcf73d 50-52
+src/modules/AudioRendering/repositories/audioExport/__tests__/streamExportToBrowser.spec.ts
+  s_57fdb7ae7b3ba4::t_0827bf4536f81b 54,75-77
+  s_57fdb7ae7b3ba4::t_98ed831ddcf73d 73-74,78
+  s_57fdb7ae7b3ba4::t_2bd35c850b857a 39-53,55-72,79-133
+src/modules/AudioRendering/repositories/audioExport/streamExportToBrowser.ts
+  s_57fdb7ae7b3ba4::t_98ed831ddcf73d 153-155
+  s_57fdb7ae7b3ba4::t_2f59982e727a2c 22,165-166,230,234-248,254-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f16f33c4d14cd8ff0517bf707c2f869d5d2855aa",
+  "prompts": {},
+  "sessions": {
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
