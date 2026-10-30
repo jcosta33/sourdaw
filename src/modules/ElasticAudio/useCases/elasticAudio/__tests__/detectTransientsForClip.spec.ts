@@ -13,7 +13,8 @@ import { transientDetectionLifecycle } from '../transientDetectionLifecycle';
 const mocks = vi.hoisted(() => ({ read: vi.fn(), root: 'root-1', tempo: 120 }));
 vi.mock('../readProductTransientOnsets', () => ({ readProductTransientOnsets: mocks.read }));
 vi.mock('#/modules/Project/stores', () => ({ getSettledProjectId: () => 'project-1' }));
-vi.mock('#/modules/Transport/stores', () => ({
+vi.mock('#/modules/Transport/stores', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Transport/stores')>()),
     transportStore: {
         get value() {
             return { tempo: mocks.tempo };

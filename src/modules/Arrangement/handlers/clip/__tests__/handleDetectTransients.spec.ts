@@ -7,7 +7,10 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { handleDetectTransients, transientStateMatches } from '../handleDetectTransients';
 
 const mocks = vi.hoisted(() => ({ detect: vi.fn(), notice: vi.fn() }));
-vi.mock('#/modules/ElasticAudio/useCases', () => ({ detectTransientsForClip: mocks.detect }));
+vi.mock('#/modules/ElasticAudio/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/ElasticAudio/useCases')>()),
+    detectTransientsForClip: mocks.detect,
+}));
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: mocks.notice }));
 
 function changedMarkerField(key: string): boolean | string | number {
