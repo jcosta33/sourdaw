@@ -1189,6 +1189,9 @@ class AutomergeRepository {
             if (touchedRoot) {
                 this.notifyRootInstallation();
             }
+            if (installedAny) {
+                this.notifyListeners();
+            }
             throw error;
         }
         // The worker's `mergeBundle` kept the merged documents as its
@@ -1242,6 +1245,9 @@ class AutomergeRepository {
             }
             if (touchedRoot) {
                 this.notifyRootInstallation();
+            }
+            if (result.mergedDocIds.length > 0 || result.newDocIds.length > 0) {
+                this.notifyListeners();
             }
             throw error;
         }

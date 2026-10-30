@@ -1,5 +1,23 @@
 # Lesson library: project integrity
 
+## 2026-10-30 — a rejected bundle merge still owns its installed prefix (#5887)
+
+The synchronous merge loop in `0a6c596db4b9bddafab3e63a79b9e3845077d2e4` and the worker
+installation loop added by `c9fd03bfb9b13d939c20998ff6b3307fc7b5d755` notified projections
+only after the whole loop succeeded. GitHub associates no PR with either commit; historical
+review prompts, stances and tiers are unknown. PR #5880 exposed partial installation through
+root observers while preserving the existing omission from ordinary change listeners. A root
+observer proving the installed value does not prove the project stores received it.
+
+Fail a later decode after an earlier root is actually installed, on both the worker-result and
+synchronous fallback routes. At the caller's rejection boundary, require raw durable fields and
+the real owning stores behind `setupProjectionBridge` to agree, with one bulk notification after
+root-installation bookkeeping and the original error preserved. Cover a branch-only prefix and
+failure before any installation; only the former publishes. Keep stale and cancelled results
+uninstalled, private preview edits isolated, and a later successful merge coherent. Removing
+either failure-path publication must fail its real-store case; checking only repository values
+or root-observer calls misses the split.
+
 ## 2026-10-30 — an installed root swap escaped the acceptance state oracle (#5649)
 
 PRs #5733 and #5735 delivered typed state snapshots and persisted-transition checks, but

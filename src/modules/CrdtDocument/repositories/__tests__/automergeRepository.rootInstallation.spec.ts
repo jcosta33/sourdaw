@@ -1,7 +1,13 @@
 import { change, init, load, save, toJS } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { ControlledWorker, respondToLoad, respondToMerge, type MergeBundleRequest } from './automergeWorkerTestHarness';
+import {
+    ControlledWorker,
+    deferFirstMergeRequest,
+    respondToLoad,
+    respondToMerge,
+    type MergeBundleRequest,
+} from './automergeWorkerTestHarness';
 
 describe('active root installations', () => {
     beforeEach(() => {
@@ -165,12 +171,14 @@ describe('active root installations', () => {
             document.value = 2;
         });
         const observed: unknown[] = [];
+        const notifications: number[] = [];
         const epoch = repository.getMutationEpoch();
         repository.onRootInstallation((installation) => {
             if (installation.kind === 'installed') {
                 observed.push(installation.document && toJS(installation.document));
             }
         });
+        repository.onChange(() => notifications.push(observed.length));
         const pending = repository.mergeBundle(new Map([['root', save(changed)]]));
         await vi.waitFor(() => expect(mergeRequest).toBeDefined());
         if (!mergeRequest) {
@@ -190,6 +198,7 @@ describe('active root installations', () => {
         expect(repository.getDoc<{ value?: number }>('root')?.value).toBe(2);
         expect(repository.getMutationEpoch()).toBeGreaterThan(epoch);
         expect(observed).toEqual([{ value: 2 }]);
+        expect(notifications).toEqual([1]);
     });
 
     it('reports remote and synchronous-fallback root installs without changing publication', async () => {
@@ -269,12 +278,14 @@ describe('active root installations', () => {
             document.ready = true;
         });
         const observed: unknown[] = [];
+        const notifications: number[] = [];
         const epoch = repository.getMutationEpoch();
         repository.onRootInstallation((installation) => {
             if (installation.kind === 'installed') {
                 observed.push(installation.document && toJS(installation.document));
             }
         });
+        repository.onChange(() => notifications.push(observed.length));
 
         await expect(
             repository.mergeBundle(
@@ -288,6 +299,148 @@ describe('active root installations', () => {
         expect(repository.hasDoc('branch_later')).toBe(false);
         expect(repository.getMutationEpoch()).toBeGreaterThan(epoch);
         expect(observed).toEqual([{ value: 2 }]);
+        expect(notifications).toEqual([1]);
+    });
+
+    it.each([false, true])(
+        'publishes only an installed worker prefix (branch installed: %s)',
+        async (installBranch) => {
+            const deferred = deferFirstMergeRequest();
+            const { automergeRepository: repository } = await import('../automergeRepository');
+            repository.createProject('project');
+            const root = repository.getDoc('root');
+            const installed = change(init<{ ready?: boolean }>(), (document) => {
+                document.ready = true;
+            });
+            const notified = vi.fn();
+            const rootInstalled = vi.fn();
+            repository.onChange(notified);
+            repository.onRootInstallation(rootInstalled);
+            const epoch = repository.getMutationEpoch();
+            const identityEpoch = repository.getDocumentIdentityEpoch();
+            const pending = repository.mergeBundle(new Map([['branch_installed', save(installed)]]));
+            const rejected = expect(pending).rejects.toThrow();
+            const { worker, request } = await deferred.firstRequest;
+            const compacted: [string, Uint8Array][] = installBranch ? [['branch_installed', save(installed)]] : [];
+            compacted.push(['branch_bad', new Uint8Array([1, 2, 3])]);
+            worker.emitMessage({
+                id: request.id,
+                type: 'merged',
+                compacted,
+                mergedDocIds: [],
+                newDocIds: ['branch_installed', 'branch_bad'],
+            });
+
+            await rejected;
+            expect(repository.getDoc('root')).toBe(root);
+            expect(repository.getDoc<{ ready?: boolean }>('branch_installed')?.ready).toBe(installBranch || undefined);
+            expect(repository.hasDoc('branch_bad')).toBe(false);
+            expect(repository.getMutationEpoch()).toBe(epoch + Number(installBranch));
+            expect(repository.getDocumentIdentityEpoch()).toBe(identityEpoch + Number(installBranch));
+            expect(rootInstalled).not.toHaveBeenCalled();
+            expect(notified.mock.calls).toEqual(installBranch ? [[undefined, undefined]] : []);
+        }
+    );
+
+    it.each([false, true])(
+        'publishes only an installed synchronous prefix (branch installed: %s)',
+        async (installBranch) => {
+            vi.stubGlobal(
+                'Worker',
+                class {
+                    constructor() {
+                        throw new Error('worker unavailable');
+                    }
+                }
+            );
+            const failure = new Error('later branch install decode failed');
+            let laterLoads = 0;
+            vi.doMock('@automerge/automerge', async (importOriginal) => {
+                const actual = await importOriginal<typeof import('@automerge/automerge')>();
+                return {
+                    ...actual,
+                    load: (...args: Parameters<typeof actual.load>) => {
+                        const document = actual.load<{ failAtInstall?: boolean }>(...args);
+                        if (document.failAtInstall && ++laterLoads === 3) {
+                            throw failure;
+                        }
+                        return document;
+                    },
+                };
+            });
+            const { automergeRepository: repository } = await import('../automergeRepository');
+            repository.createProject('project');
+            const root = repository.getDoc('root');
+            const installed = change(init<{ ready?: boolean }>(), (document) => {
+                document.ready = true;
+            });
+            const later = change(init<{ failAtInstall?: boolean }>(), (document) => {
+                document.failAtInstall = true;
+            });
+            const bundle = new Map<string, Uint8Array>();
+            if (installBranch) {
+                bundle.set('branch_installed', save(installed));
+            }
+            bundle.set('branch_bad', save(later));
+            const notified = vi.fn();
+            const rootInstalled = vi.fn();
+            repository.onChange(notified);
+            repository.onRootInstallation(rootInstalled);
+            const epoch = repository.getMutationEpoch();
+            const identityEpoch = repository.getDocumentIdentityEpoch();
+
+            await expect(repository.mergeBundle(bundle)).rejects.toBe(failure);
+            expect(laterLoads).toBe(3);
+            expect(repository.getDoc('root')).toBe(root);
+            expect(repository.getDoc<{ ready?: boolean }>('branch_installed')?.ready).toBe(installBranch || undefined);
+            expect(repository.hasDoc('branch_bad')).toBe(false);
+            expect(repository.getMutationEpoch()).toBe(epoch + Number(installBranch));
+            expect(repository.getDocumentIdentityEpoch()).toBe(identityEpoch + Number(installBranch));
+            expect(rootInstalled).not.toHaveBeenCalled();
+            expect(notified.mock.calls).toEqual(installBranch ? [[undefined, undefined]] : []);
+        }
+    );
+
+    it.each(['cancelled', 'stale'] as const)('does not install or publish a %s worker result', async (authority) => {
+        const deferred = deferFirstMergeRequest();
+        const { automergeRepository: repository } = await import('../automergeRepository');
+        repository.createProject('project');
+        const root = repository.getDoc('root');
+        const incoming = change(init<{ value?: number }>(), (document) => {
+            document.value = 2;
+        });
+        const notified = vi.fn();
+        const rootInstalled = vi.fn();
+        repository.onChange(notified);
+        repository.onRootInstallation(rootInstalled);
+        let current = true;
+        const pending = repository.mergeBundle(new Map([['root', save(incoming)]]), { shouldCommit: () => current });
+        const result =
+            authority === 'cancelled'
+                ? expect(pending).resolves.toEqual({ mergedDocIds: [], newDocIds: [] })
+                : expect(pending).rejects.toThrow('Document identity changed during merge');
+        const { worker, request } = await deferred.firstRequest;
+        if (authority === 'cancelled') {
+            current = false;
+        } else {
+            repository.createChildDoc('branch_successor');
+        }
+        worker.emitMessage({
+            id: request.id,
+            type: 'merged',
+            compacted: [
+                ['root', save(incoming)],
+                ['branch_bad', new Uint8Array([1, 2, 3])],
+            ],
+            mergedDocIds: ['root'],
+            newDocIds: ['branch_bad'],
+        });
+
+        await result;
+        expect(repository.getDoc('root')).toBe(root);
+        expect(repository.hasDoc('branch_bad')).toBe(false);
+        expect(rootInstalled).not.toHaveBeenCalled();
+        expect(notified).not.toHaveBeenCalled();
     });
 
     it('keeps a listener exception out of the product write result', async () => {
