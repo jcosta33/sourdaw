@@ -685,7 +685,9 @@ class AutomergeRepository {
                         workerResult = undefined;
                         assertCompleteCanonicalDocument(bytes);
                         loaded = load<TDoc>(bytes, { actor });
-                        if (!hasHeads(loaded, previousHeads)) {
+                        // A checked complete document has an empty change queue; missing heads
+                        // therefore detect an absent applied frontier without exporting operations.
+                        if (getMissingDeps(loaded, previousHeads).length > 0) {
                             throw new Error('Prospective mutation Worker lost the native frontier');
                         }
                         const additions = getChangesMetaSince(loaded, previousHeads);
