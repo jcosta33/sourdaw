@@ -923,6 +923,13 @@ after the physical duration, and preserved lower-rate decay, energy and spectral
 Reverting only the cap must fail the late-tail oracle. Follow source through regenerated
 served WASM; allocation freedom and a bounded direct loop do not prove callback deadlines.
 
+Trace the actual rate producers and admission before calling a tested rate the maximum.
+PR #5858 repaired the named 192 kHz case with a 4458-frame cap and left #5182's broader
+rate obligation open. The public Bacteria constructor also admits 384 kHz, where that
+cap halves the physical response. Preserve duration at that admitted input too, through
+the actual served carrier, without inferring a product limit from a comment or another
+device's clamp. Keep lower-rate PCM and allocation-free body selection unchanged.
+
 ### 2026-10-29 — capped render placement trusted the requested end (#5013)
 
 The offline producer capped frames in `bf14e0d6c1`, while the consumer introduced in

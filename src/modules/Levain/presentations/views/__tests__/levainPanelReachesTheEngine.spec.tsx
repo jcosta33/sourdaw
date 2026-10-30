@@ -80,6 +80,15 @@ function makeLevainTracks(): Track[] {
                         type: 'levain',
                         bypassed: false,
                         parameterValues: {},
+                        // Reopen this device's saved Expert choice before reaching its rail.
+                        deviceState: {
+                            version: 1,
+                            data: {
+                                instrumentId: 'violin-1',
+                                currentArticulation: 'sustain',
+                                disclosureTier: 'expert',
+                            },
+                        },
                     },
                 ],
             },
@@ -205,6 +214,7 @@ describe('LevainPanel edits reach the live engine', () => {
         // raw type. A fix that reached the engine by routing around the store
         // mutator would send 13 and leave this reading "Long".
         expect(levainStore.value?.[DEVICE_ID]?.currentArticulationDisplay).toBe('Tremolo');
+        expect(screen.getByRole('region', { name: 'Selection detail' })).toHaveTextContent('Tremolo');
         expect(levainStore.value?.[DEVICE_ID]?.patch.currentArticulation).toBe('tremolo');
     });
 
@@ -239,7 +249,11 @@ describe('LevainPanel edits reach the live engine', () => {
         flushFrames();
         expect(lastLiveValue(setParam, 'mic_0_volume')).toBe(0.31);
 
+        const detail = screen.getByRole('region', { name: 'Selection detail' });
         fireEvent.click(screen.getByText('Cellos'));
+        expect(screen.getByRole('region', { name: 'Selection detail' })).toBe(detail);
+        expect(detail).toHaveTextContent('Cellos');
+        expect(levainStore.value?.[DEVICE_ID]?.uiLevel).toBe(6);
         flushFrames();
 
         const { port, posted } = fakePort();

@@ -5,9 +5,9 @@
 //! The wet/dry and stereo separation controls apply to all four bodies.
 //!
 //! The FIR cost is O(N) multiply-accumulates per sample per channel, with N the
-//! response length — 23.2 ms of it through 192 kHz, capped at 4458 samples.
+//! response length — 23.2 ms at the context rate, with rate-derived storage.
 //! Spring adds fixed work while any body is active; see `spring_body` for its
-//! operation and state bounds. Neither bound proves a render deadline.
+//! operation and state bounds. Neither model proves a render deadline.
 
 use super::spring_body::SpringBody;
 
@@ -16,10 +16,6 @@ use super::spring_body::SpringBody;
 /// 1024 samples at 44.1 kHz — the length these envelopes were shaped against,
 /// kept as a duration so the shape survives a change of rate.
 const BUILTIN_IR_SECONDS: f32 = 1024.0 / 44_100.0;
-
-/// Rounded 1024/44100-second duration at 192 kHz. Keep the direct-form work
-/// bounded while retaining the full built-in response at the highest session rate.
-const MAX_IR_LENGTH: usize = 4_458;
 
 /// Rate at which a built-in body IR carries unit energy. Its energy at any
 /// other rate scales by this over the session rate, which keeps the body's
@@ -66,8 +62,7 @@ impl ConvolutionProcessor {
         // 1024 samples is 23.2 ms at 44.1 kHz but 10.7 ms at 96 kHz, where the
         // wood envelope is still at 0.65 rather than 0.40 — the body would keep
         // its pitch and change its length and effective Q with the session rate.
-        let ir_length =
-            ((sample_rate * BUILTIN_IR_SECONDS).round() as usize).clamp(1, MAX_IR_LENGTH);
+        let ir_length = ((sample_rate * BUILTIN_IR_SECONDS).round() as usize).max(1);
         Self {
             bodies: FIR_BODIES.map(|name| synthesize_body(name, sample_rate, ir_length)),
             spring: SpringBody::new(sample_rate),
@@ -324,34 +319,36 @@ mod tests {
     fn every_high_rate_fir_body_spans_the_physical_duration() {
         let mut complete = true;
         for (index, name) in FIR_BODY_CASES {
-            let body = builtin_body_at(index, 192_000.0);
-            let length = response(&body).len();
-            eprintln!("{name}: 192 kHz response length {length}, required 4458");
-            complete &= length == 4_458;
-            complete &= (length as f64 / 192_000.0 - 1024.0 / 44_100.0).abs() <= 1.0 / 192_000.0;
+            for (rate, expected) in [(192_000.0, 4_458), (384_000.0, 8_916)] {
+                let body = builtin_body_at(index, rate);
+                let length = response(&body).len();
+                eprintln!("{name}: {rate} Hz response length {length}, required {expected}");
+                complete &= length == expected;
+                complete &= (length as f64 / f64::from(rate) - 1024.0 / 44_100.0).abs()
+                    <= 1.0 / f64::from(rate);
+            }
         }
-        assert!(
-            complete,
-            "each 192 kHz FIR body must span 1024/44100 seconds (4458 frames)"
-        );
+        assert!(complete, "each high-rate body must span 1024/44100 seconds");
     }
 
     #[test]
     fn every_high_rate_fir_body_renders_the_tail_past_frame_4095() {
         let mut complete = true;
         for (index, name) in FIR_BODY_CASES {
-            let heard = impulse_pcm(index, 192_000.0, 4_459);
-            let tail_energy: f64 = heard[4_096..4_458]
-                .iter()
-                .map(|s| f64::from(*s).powi(2))
-                .sum();
-            eprintln!("{name}: 192 kHz rendered energy after frame 4095 = {tail_energy}");
-            complete &= tail_energy > 0.0;
-            complete &= heard[4_394..4_458].iter().any(|sample| *sample != 0.0);
-            assert_eq!(
-                heard[4_458], 0.0,
-                "{name} must finish after its physical duration"
-            );
+            for (rate, end) in [(192_000.0, 4_458), (384_000.0, 8_916)] {
+                let heard = impulse_pcm(index, rate, end + 1);
+                let tail_energy: f64 = heard[4_096..end]
+                    .iter()
+                    .map(|s| f64::from(*s).powi(2))
+                    .sum();
+                eprintln!("{name}: {rate} Hz rendered energy after frame 4095 = {tail_energy}");
+                complete &= tail_energy > 0.0;
+                complete &= heard[end - 64..end].iter().any(|sample| *sample != 0.0);
+                assert_eq!(
+                    heard[end], 0.0,
+                    "{name} must finish after its physical duration at {rate} Hz"
+                );
+            }
         }
         assert!(
             complete,
@@ -419,7 +416,7 @@ mod tests {
     fn a_fir_body_keeps_its_audible_band_level_at_every_context_rate() {
         for (index, name) in FIR_BODY_CASES {
             let reference = audible_band_level_db(response(&builtin_body(index)), BODY_TEST_RATE);
-            for sample_rate in [44_100.0_f32, 96_000.0, 176_400.0, 192_000.0] {
+            for sample_rate in [44_100.0_f32, 96_000.0, 176_400.0, 192_000.0, 384_000.0] {
                 let level = audible_band_level_db(
                     response(&builtin_body_at(index, sample_rate)),
                     sample_rate,
@@ -500,7 +497,14 @@ mod tests {
     #[test]
     fn a_fir_body_resonates_at_the_same_hz_at_every_context_rate() {
         for ((index, name), resonance) in FIR_BODY_CASES.into_iter().zip([2_200, 800, 3_500]) {
-            for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
+            for sample_rate in [
+                44_100.0_f32,
+                48_000.0,
+                96_000.0,
+                176_400.0,
+                192_000.0,
+                384_000.0,
+            ] {
                 let convolution = builtin_body_at(index, sample_rate);
                 let peak = dominant_frequency(
                     response(&convolution),
@@ -535,6 +539,7 @@ mod tests {
                 (96_000.0, 2_229),
                 (176_400.0, 4_096),
                 (192_000.0, 4_458),
+                (384_000.0, 8_916),
             ] {
                 let ir = impulse_pcm(index, sample_rate, frames);
                 let duration = response(&builtin_body_at(index, sample_rate)).len() as f64
@@ -556,7 +561,13 @@ mod tests {
     /// Rates unaffected by the cap change define the physical sampling
     /// envelope. Deep notches vary more than broadband gain as sample times
     /// move; retain the existing 0.05 dB shape precision around that envelope.
-    fn assert_high_rate_shape(index: f32, name: &str, frequencies: &[f32]) {
+    fn assert_high_rate_shape(
+        index: f32,
+        name: &str,
+        frequencies: &[f32],
+        rate: f32,
+        frames: usize,
+    ) {
         let reference = [
             (44_100.0_f32, 1_024),
             (48_000.0, 1_115),
@@ -564,7 +575,7 @@ mod tests {
             (176_400.0, 4_096),
         ]
         .map(|(rate, frames)| (rate, impulse_pcm(index, rate, frames)));
-        let heard = impulse_pcm(index, 192_000.0, 4_458);
+        let heard = impulse_pcm(index, rate, frames);
         for &hz in frequencies {
             let mut low = f64::INFINITY;
             let mut high = f64::NEG_INFINITY;
@@ -573,10 +584,10 @@ mod tests {
                 low = low.min(db);
                 high = high.max(db);
             }
-            let db = 20.0 * amplitude_at(&heard, hz, 192_000.0).log10();
+            let db = 20.0 * amplitude_at(&heard, hz, rate).log10();
             assert!(
                 db >= low - 0.05 && db <= high + 0.05,
-                "{name} at {hz} Hz: {db:.6} dB at 192 kHz, outside the unchanged-rate \
+                "{name} at {hz} Hz: {db:.6} dB at {rate} Hz, outside the unchanged-rate \
                  sampling envelope [{low:.6}, {high:.6}] dB plus 0.05 dB shape precision"
             );
         }
@@ -585,15 +596,49 @@ mod tests {
     #[test]
     fn a_fir_body_keeps_its_rendered_spectral_shape_at_192_khz() {
         for ((index, name), (_, shape)) in FIR_BODY_CASES.into_iter().zip(PRE_CHANGE_SHAPE_DB) {
-            assert_high_rate_shape(index, name, &shape.map(|(hz, _)| hz));
+            assert_high_rate_shape(index, name, &shape.map(|(hz, _)| hz), 192_000.0, 4_458);
         }
+    }
+
+    #[test]
+    fn a_fir_body_keeps_its_rendered_spectral_shape_at_384_khz() {
+        // Closed-form finite geometric sums of the damped sinusoids at 384 kHz,
+        // normalized to 48000/rate energy. Deep notches move with the sampled
+        // endpoint, so the <=176.4 kHz envelope is not a reference at this rate.
+        let expected = [
+            [
+                -8.849341, -7.570946, 25.728877, -30.289895, 17.114126, -21.945908,
+            ],
+            [
+                -4.306538, 26.410723, -12.240727, -22.573555, -26.452508, -37.349041,
+            ],
+            [
+                -10.640772, -7.054688, -17.228582, 26.196287, -23.196074, 17.341641,
+            ],
+        ];
+        for ((index, name), bins) in FIR_BODY_CASES.into_iter().zip(expected) {
+            let heard = impulse_pcm(index, 384_000.0, 8_916);
+            for (hz, expected_db) in [200.0, 800.0, 2_200.0, 3_500.0, 4_400.0, 7_000.0]
+                .into_iter()
+                .zip(bins)
+            {
+                let db = 20.0 * amplitude_at(&heard, hz, 384_000.0).log10();
+                assert!(
+                    (db - expected_db).abs() < 0.05,
+                    "{name} at {hz} Hz: {db:.6} dB at 384 kHz, expected {expected_db} dB"
+                );
+            }
+        }
+        let wood = impulse_pcm(1.0, 384_000.0, 8_916);
+        let wood_db = 20.0 * amplitude_at(&wood, 1_000.0, 384_000.0).log10();
+        assert!((wood_db - 0.947750).abs() < 0.05);
     }
 
     /// The original high-rate truncation moved this bin by about 2.15 dB.
     /// Keep it separate so the spectral oracle runs even when length fails.
     #[test]
     fn the_192_khz_wood_body_keeps_its_one_khz_response() {
-        assert_high_rate_shape(1.0, "wood", &[1_000.0]);
+        assert_high_rate_shape(1.0, "wood", &[1_000.0], 192_000.0, 4_458);
     }
 
     /// Unit energy belongs to 48 kHz, where the guidance levels are measured,
@@ -604,7 +649,14 @@ mod tests {
     /// convolve with the one response read here.
     #[test]
     fn a_fir_body_carries_unit_energy_at_48_khz_and_scales_it_with_the_rate() {
-        for sample_rate in [44_100.0_f32, 48_000.0, 96_000.0, 176_400.0, 192_000.0] {
+        for sample_rate in [
+            44_100.0_f32,
+            48_000.0,
+            96_000.0,
+            176_400.0,
+            192_000.0,
+            384_000.0,
+        ] {
             let expected = 48_000.0 / f64::from(sample_rate);
             for (index, name) in FIR_BODY_CASES {
                 let body = builtin_body_at(index, sample_rate);

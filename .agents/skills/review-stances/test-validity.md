@@ -119,6 +119,22 @@ defect class matches this file — is recorded here as a lesson, and every dispa
 stance matches this file carries its lessons. Lessons state the escape, the blind spot, and the
 probe that would have caught it. Keep each lesson short enough to paste into a dispatch.
 
+### 2026-10-29 — an owned CI install was not fresh under local defaults (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6 and moved build policy into the workspace. CI records an
+unset `enableGlobalVirtualStore` as false, while a local unset value disagrees during freshness
+checking. Ownership-only fixtures could not observe that environment transition. Historical private
+prompts and tiers are unestablished.
+
+Read the real repository's `enableGlobalVirtualStore` setting without a fallback and project only
+that setting into a minimal workspace with `packages: ['.']` and an offline file dependency. Keep
+an omitted setting omitted so the removal probe remains meaningful; exclude unrelated workspace
+patch and build policy that the fixture does not own. Install under CI, then run error-mode and
+normal package probes under explicit CI=false and CI=true with inherited configuration isolated.
+Require the pinned runtime, original lock and install metadata, private owner/store paths and no
+installation output. Removing only the workspace pin must fail the same case with the exact
+setting-changed error; restoring it passes.
+
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
 The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
@@ -2128,6 +2144,13 @@ must fail `engine_output_retains_late_wood_tail_at_192khz`. Retain strict lower-
 duration, energy, decay and spectral controls and inspect the rebuilt served carrier.
 Native execution time, offline browser throughput and allocation guards cannot certify
 live AudioWorklet deadline or listening acceptance.
+
+A fixture's highest tested rate is not an admission boundary. PR #5858 fixed the named
+192 kHz truncation and retained the broader #5182 obligation; it did not reject higher
+rates. The real public constructor accepts 384 kHz, so require nonzero final-window PCM
+through frame 8915 and silence at 8916 for its 23.2 ms FIR bodies. Keep the 176.4/192 kHz
+oracles and pin the checked-in WASM output so source-only changes cannot satisfy the
+carrier claim. Do not impose the short FIR duration on a separately modeled Spring tail.
 
 ### 2026-10-29 — requested duration masked a capped returned buffer (#5013)
 
