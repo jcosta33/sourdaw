@@ -88,7 +88,7 @@ async function runNativeControls(root: string, output: string, runtime: string):
         const session = await original.newBrowserCDPSession();
         const processes = recordOf(await session.send('SystemInfo.getProcessInfo'), 'browser processes');
         if (!Array.isArray(processes.processInfo)) {
-            throw new Error('Browser process identity missing');
+            throw new TypeError('Browser process identity missing');
         }
         const browser = processes.processInfo
             .map((value: unknown) => recordOf(value, 'process'))
@@ -135,7 +135,7 @@ async function runNativeControls(root: string, output: string, runtime: string):
             const browserSession = await browser.newBrowserCDPSession();
             const processes = recordOf(await browserSession.send('SystemInfo.getProcessInfo'), 'traced processes');
             if (!Array.isArray(processes.processInfo)) {
-                throw new Error('Traced browser processes missing');
+                throw new TypeError('Traced browser processes missing');
             }
             for (const value of processes.processInfo) {
                 const entry = recordOf(value, 'traced process');

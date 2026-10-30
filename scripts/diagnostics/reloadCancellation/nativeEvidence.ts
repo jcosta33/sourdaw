@@ -19,7 +19,7 @@ export function joinNativeMapping(
     let unknown: string | undefined;
     try {
         if (!Number.isFinite(since)) {
-            throw new Error('Live registration time unavailable');
+            throw new TypeError('Live registration time unavailable');
         }
         const binding = data.traceBinding as BrowserTraceBinding | undefined;
         if (!binding) {

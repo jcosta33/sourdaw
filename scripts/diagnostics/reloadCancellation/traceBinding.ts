@@ -35,7 +35,7 @@ export function assertTraceBinding(binding: BrowserTraceBinding, instance: Trace
 export function browserTraceBinding(processes: unknown, owner: number, traceRoot: string): BrowserTraceBinding {
     const entries = recordOf(processes, 'process info').processInfo;
     if (!Array.isArray(entries)) {
-        throw new Error('Browser process info missing');
+        throw new TypeError('Browser process info missing');
     }
     const browsers = entries
         .map((entry: unknown) => recordOf(entry, 'process'))

@@ -116,7 +116,7 @@ export function createRendererAssociations(
                     const processes = await ports.processes();
                     const entries = recordOf(processes, 'process info').processInfo;
                     if (!Array.isArray(entries)) {
-                        throw new Error('SystemInfo processes missing');
+                        throw new TypeError('SystemInfo processes missing');
                     }
                     const types = new Map<number, string>();
                     for (const value of entries) {
