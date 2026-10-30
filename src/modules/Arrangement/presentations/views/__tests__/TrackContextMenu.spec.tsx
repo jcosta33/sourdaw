@@ -1373,8 +1373,8 @@ describe('TrackContextMenu Flatten failure with canonical project truth', () => 
         const effect = vi.fn(() => {
             throw failure;
         });
-        vi.spyOn(handler, 'execute').mockImplementation(async (...args) => {
-            const result = await execute(...args);
+        vi.spyOn(handler, 'execute').mockImplementation((...args) => {
+            const result = execute(...args);
             if (!result || result.status !== 'written') {
                 throw new Error('Expected the real Flatten handler to write');
             }
