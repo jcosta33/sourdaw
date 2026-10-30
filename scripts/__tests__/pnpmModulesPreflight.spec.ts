@@ -16,6 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { parseDocument, stringify } from 'yaml';
 
 import {
     PNPM_MODULES_MANIFEST,
@@ -375,7 +376,19 @@ describe('pnpm modules preflight against a real filesystem', () => {
     it('keeps a CI-created private install fresh for CI and local package commands', () => {
         const root = tempCheckout('ci-to-local');
         const repositoryPackage = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
-        writeFileSync(join(root, 'pnpm-workspace.yaml'), readFileSync(join(process.cwd(), 'pnpm-workspace.yaml')));
+        const workspace = parseDocument(readFileSync(join(process.cwd(), 'pnpm-workspace.yaml'), 'utf8'));
+        expect(workspace.errors).toEqual([]);
+        const enableGlobalVirtualStore: unknown = workspace.get('enableGlobalVirtualStore');
+        if (enableGlobalVirtualStore !== undefined && typeof enableGlobalVirtualStore !== 'boolean') {
+            throw new TypeError('enableGlobalVirtualStore must be a boolean');
+        }
+        writeFileSync(
+            join(root, 'pnpm-workspace.yaml'),
+            stringify({
+                packages: ['.'],
+                ...(enableGlobalVirtualStore === undefined ? {} : { enableGlobalVirtualStore }),
+            })
+        );
         writeFileSync(
             join(root, 'package.json'),
             JSON.stringify({
