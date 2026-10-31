@@ -109,8 +109,8 @@ function numericLiteralWitness(
 /**
  * Every figure a request chain stated is accounted against the text that stated it: a refinement
  * inherits its earlier requests' figures, which only the refined batch or a goal they selected can
- * account for. A later request stating a figure in the same unit replaces them, and its own figure
- * is accounted in their place.
+ * account for. A later request that restates a figure's clause with only its figures changed (case
+ * and spacing aside) replaces that figure, and its own figure is accounted in its place.
  */
 export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
     const nativeRefusal = nativeLiteralUseRefusal(state, envelope);
@@ -123,12 +123,12 @@ export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Enve
         ...inherited.map((request, index) => ({
             request,
             goals: goalsSelectedFor(state, request),
-            superseded: supersededUnits(texts.slice(index + 1)),
+            superseded: restatedClauses(texts.slice(index + 1)),
         })),
         {
             request: envelope.intent,
             goals: state.authorities.flatMap((authority) => authority.goals),
-            superseded: new Set<RequestMetricNumber['unit']>(),
+            superseded: new Set<string>(),
         },
     ];
     for (const { request, goals, superseded } of statedRequests) {
@@ -140,8 +140,38 @@ export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Enve
     return null;
 }
 
-function supersededUnits(laterTexts: readonly string[]): Set<RequestMetricNumber['unit']> {
-    return new Set(laterTexts.flatMap((text) => readRequestMetricNumbers(text).map((candidate) => candidate.unit)));
+type MaskedClause = { start: number; end: number; masked: string };
+
+/** Each clause stating a figure, with every figure folded to its unit so only the number can differ. */
+function maskedFigureClauses(text: string): MaskedClause[] {
+    const numbers = readRequestMetricNumbers(text);
+    return getPromptClauses(text, text).flatMap((clause) => {
+        const inside = numbers.filter((candidate) => candidate.start >= clause.start && candidate.start < clause.end);
+        if (inside.length === 0) {
+            return [];
+        }
+        let masked = '';
+        let cursor = clause.start;
+        for (const candidate of inside) {
+            masked += `${text.slice(cursor, candidate.start)} figure${candidate.unit} `;
+            cursor = candidate.start + candidate.token.length;
+        }
+        masked += text.slice(cursor, clause.end);
+        return [{ start: clause.start, end: clause.end, masked: normalizeAgentReferenceText(masked) }];
+    });
+}
+
+function restatedClauses(laterTexts: readonly string[]): Set<string> {
+    return new Set(laterTexts.flatMap((text) => maskedFigureClauses(text).map((clause) => clause.masked)));
+}
+
+function isRestated(
+    candidate: RequestMetricNumber,
+    clauses: readonly MaskedClause[],
+    restated: ReadonlySet<string>
+): boolean {
+    const clause = clauses.find((entry) => candidate.start >= entry.start && candidate.start < entry.end);
+    return clause !== undefined && restated.has(clause.masked);
 }
 
 function goalsSelectedFor(state: MetricGoalState, request: string): MetricGoal[] {
@@ -154,12 +184,13 @@ function goalsSelectedFor(state: MetricGoalState, request: string): MetricGoal[]
 function unaccountedRequestNumber(
     request: string,
     selected: readonly MetricGoal[],
-    superseded: ReadonlySet<RequestMetricNumber['unit']>,
+    superseded: ReadonlySet<string>,
     state: MetricGoalState,
     envelope: Envelope
 ): Refusal | null {
     const usedArguments = new Set<string>();
-    const stated = readRequestMetricNumbers(request).filter((candidate) => !superseded.has(candidate.unit));
+    const clauses = maskedFigureClauses(request);
+    const stated = readRequestMetricNumbers(request).filter((candidate) => !isRestated(candidate, clauses, superseded));
     for (const candidate of stated) {
         const selectedGoal = selected.find(
             (goal) =>

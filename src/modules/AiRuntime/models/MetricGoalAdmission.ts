@@ -115,7 +115,7 @@ export type MetricGoalState<MetricId extends string> = {
     /**
      * The requests a refinement chain replaced, oldest first. Their figures still need accounting, each
      * against its own text: thread context is cut by provider budgets and is no card's authority. A
-     * later request stating a figure in the same unit replaces that unit's earlier figures.
+     * later request replaces a figure only by restating its clause with the figures alone changed.
      */
     readonly refinedRequests?: readonly string[];
     readonly binding: {
