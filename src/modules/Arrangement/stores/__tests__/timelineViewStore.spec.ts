@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
+import { createTrack, type Track } from '../../models/Track';
 import { scrollTimelineViewportFromWheel } from '../../useCases/scrollTimelineViewportFromWheel';
 import {
     timelineViewStore,
@@ -13,6 +14,19 @@ import {
     setTimelineZoom,
 } from '../timelineViewStore';
 import { trackStore } from '../trackStore';
+
+function makeTrack(overrides: Partial<Track> & Pick<Track, 'id' | 'kind'>): Track {
+    return {
+        ...createTrack({
+            id: overrides.id,
+            kind: overrides.kind,
+            name: overrides.id,
+            initialDeviceId: `${overrides.id}-device`,
+            initialAlternativeId: `${overrides.id}-alternative`,
+        }),
+        ...overrides,
+    };
+}
 
 describe('timelineViewStore view helpers', () => {
     beforeEach(() => {
@@ -112,7 +126,10 @@ describe('timelineViewStore view helpers', () => {
     // caller-independent value.
     it('should clamp setScrollY using the viewport height last reported via setTimelineViewportHeight', () => {
         trackStore.set({
-            tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
+            tracks: [
+                makeTrack({ id: 'a', kind: 'audio', height: 100 }),
+                makeTrack({ id: 'b', kind: 'audio', height: 100 }),
+            ],
             selectedTrackId: null,
         });
 
@@ -129,7 +146,10 @@ describe('timelineViewStore view helpers', () => {
 
     it('re-clamps scrollY when the reported viewport grows past the remaining content', () => {
         trackStore.set({
-            tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
+            tracks: [
+                makeTrack({ id: 'a', kind: 'audio', height: 100 }),
+                makeTrack({ id: 'b', kind: 'audio', height: 100 }),
+            ],
             selectedTrackId: null,
         });
         setTimelineViewportHeight(50);
@@ -188,9 +208,9 @@ describe('setScrollY track-height ceiling', () => {
         // outside the scroll viewport, so it must not inflate the ceiling.
         trackStore.set({
             tracks: [
-                { id: 'a', kind: 'audio', height: 100 } as any,
-                { id: 'b', kind: 'audio', height: 100 } as any,
-                { id: 'master', kind: 'master', height: 9999 } as any,
+                makeTrack({ id: 'a', kind: 'audio', height: 100 }),
+                makeTrack({ id: 'b', kind: 'audio', height: 100 }),
+                makeTrack({ id: 'master', kind: 'master', height: 9999 }),
             ],
             selectedTrackId: null,
         });
@@ -208,10 +228,10 @@ describe('setScrollY track-height ceiling', () => {
         // last row while the header list stops earlier.
         trackStore.set({
             tracks: [
-                { id: 'a', kind: 'audio', height: 100 } as any,
-                { id: 'folder', kind: 'folder', height: 100, collapsed: true } as any,
-                { id: 'in-1', kind: 'audio', parentId: 'folder', height: 400 } as any,
-                { id: 'in-2', kind: 'audio', parentId: 'folder', height: 400 } as any,
+                makeTrack({ id: 'a', kind: 'audio', height: 100 }),
+                makeTrack({ id: 'folder', kind: 'folder', height: 100, collapsed: true }),
+                makeTrack({ id: 'in-1', kind: 'audio', parentId: 'folder', height: 400 }),
+                makeTrack({ id: 'in-2', kind: 'audio', parentId: 'folder', height: 400 }),
             ],
             selectedTrackId: null,
         });
@@ -233,7 +253,7 @@ describe('setScrollY track-height ceiling', () => {
 
     it('does not write when the clamped value equals the current scrollY', () => {
         trackStore.set({
-            tracks: [{ id: 'a', kind: 'audio', height: 100 } as any],
+            tracks: [makeTrack({ id: 'a', kind: 'audio', height: 100 })],
             selectedTrackId: null,
         });
         // Pre-position at the only reachable value (0) and ask for 0 again.
@@ -283,7 +303,10 @@ describe('scrollTimelineViewportFromWheel viewport isolation (F7)', () => {
     it("clamps the automation panel's own wheel scroll against its own reported height, not the track list's", () => {
         // 400px of scrollable track content.
         trackStore.set({
-            tracks: [{ id: 'a', kind: 'audio', height: 200 } as any, { id: 'b', kind: 'audio', height: 200 } as any],
+            tracks: [
+                makeTrack({ id: 'a', kind: 'audio', height: 200 }),
+                makeTrack({ id: 'b', kind: 'audio', height: 200 }),
+            ],
             selectedTrackId: null,
         });
 
