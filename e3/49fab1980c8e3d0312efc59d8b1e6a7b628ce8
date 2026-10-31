@@ -1,0 +1,19 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerTimerPhaseStall.spec.ts
+  s_39a96119cae224::t_947005acc23c44 231-235,242,247
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e349fab1980c8e3d0312efc59d8b1e6a7b628ce8",
+  "prompts": {},
+  "sessions": {
+    "s_39a96119cae224": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_39a96119cae224",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
