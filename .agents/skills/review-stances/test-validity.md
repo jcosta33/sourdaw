@@ -150,6 +150,29 @@ Require the pinned runtime, original lock and install metadata, private owner/st
 installation output. Removing only the workspace pin must fail the same case with the exact
 setting-changed error; restoring it passes.
 
+### 2026-10-30 — fixture transactions consumed the receipt test's deadline (PR #5191)
+
+PR #5191 (`c3ad77924b10613195d1aec01059a19ff4dbb344`) introduced the newest-receipt case with 26
+separately committed track fixtures. Hosted validation took 5,411.5 ms against the 5,000 ms
+deadline; confirmation ended at 5,238 ms and Undo at 5,386 ms, with no pending stage in the final
+trace. All stages eventually completed. The missed risk was fixture transaction overhead consuming
+the behavioral deadline; the trace does not establish a blocked await or CPU-versus-async attribution.
+
+Keep the exact 26-track topology and execute its real `addTrack` handlers in one compensated
+`executeAppActionBatch` transaction. Assert commit and exact ordered track names, then retain the
+three-batch, protection, newest-receipt and one-undo assertions at the existing 5-second deadline.
+Run the whole affected file so the changed setup is exercised with its normal hooks. Direct store
+seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
+both realistic and bounded.
+
+### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
+
+PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
+normalizes to 120 BPM. Check fixture and hydrated source geometry against each other; the detailed
+source-clock escape and probe are in [audio-source-time](audio-source-time.md#escape-strip-silence-fixture-changed-source-geometry-after-hydration-pr-2169).
+Use supported 300 BPM / 50 Hz geometry and preserve exactly 10 samples per beat through real
+publication and hydration.
+
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
 The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
@@ -1962,6 +1985,15 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+### Tempo inverse probes must cross a complete excursion (escaped via PR #4987)
+
+A single tempo rise or drop did not expose `renderTempoTimeline` alternating
+between segments. Use 180 to 60 to 180 BPM at beats 0.25 and 0.5 and a physical
+source end of frame 8320 at 48 kHz; read the ending through the actual live and
+offline comp consumers. The old inverse returns frame 320. Restoring that inverse
+must fail both the owning numerical case and source-end parity; see
+`audio-source-time.md` for the traced escape and preservation obligations.
+
 ### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
 
 PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
@@ -2061,6 +2093,17 @@ or add inspection diagnostics to the warning-success allowlist.
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.
 
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
@@ -2231,6 +2274,24 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.
 
 ### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
 

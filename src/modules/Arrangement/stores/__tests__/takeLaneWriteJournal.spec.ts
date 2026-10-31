@@ -253,3 +253,145 @@ describe('takeLaneWriteJournal', () => {
         expect(replayTakeLaneWriteJournal(authorityWithOutsideSelection, journal)).toEqual({ status: 'conflict' });
     });
 });
+
+describe('finite captured pass field ownership', () => {
+    it('retains the exclusive source end through journal replay beside a peer edit', () => {
+        const take = {
+            ...firstLane.takes[0]!,
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 0,
+            passSourceEndSeconds: 1,
+        };
+        const before = { lanes: [{ ...firstLane, takes: [take, firstLane.takes[1]!] }] };
+        const next = {
+            lanes: [{ ...before.lanes[0]!, takes: [{ ...take, passSourceEndSeconds: 2 }, firstLane.takes[1]!] }],
+        };
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next });
+        expect(journal).toContainEqual({
+            kind: 'take-optional-number-field',
+            laneId: firstLane.id,
+            takeId: take.id,
+            field: 'passSourceEndSeconds',
+            expected: { present: true, value: 1 },
+            replacement: { present: true, value: 2 },
+        });
+        const peer = structuredClone(before);
+        peer.lanes[0]!.takes[1]!.name = 'Peer phrase';
+        const replay = replayTakeLaneWriteJournal(peer, journal);
+        expect(replay.status).toBe('applied');
+        if (replay.status !== 'applied') {
+            throw new Error('Expected finite pass replay');
+        }
+        expect(replay.value!.lanes[0]!.takes[0]!.passSourceEndSeconds).toBe(2);
+        expect(replay.value!.lanes[0]!.takes[1]!.name).toBe('Peer phrase');
+        const conflict = structuredClone(before);
+        conflict.lanes[0]!.takes[0]!.passSourceEndSeconds = 1.5;
+        expect(replayTakeLaneWriteJournal(conflict, journal).status).toBe('conflict');
+    });
+});
+
+describe('comp region source-only journal ownership', () => {
+    const source = {
+        startBeat: 0,
+        audioOffsetSeconds: 4,
+        audioLoopStartSeconds: 4,
+        audioLoopPassEntrySeconds: 4,
+        audioLoopPassOriginBeat: 0,
+        loopOriginBeat: 0,
+        loopLength: 8,
+    };
+    const before = { lanes: [structuredClone(firstLane)] };
+    const after = {
+        lanes: [
+            {
+                ...firstLane,
+                activeCompRegions: firstLane.activeCompRegions.map((region) => ({ ...region, audioSource: source })),
+            },
+        ],
+    };
+
+    it('emits one keyed source-presence CAS and retains independent authoritative comp rows and take facets', () => {
+        const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: after });
+        expect(journal).toEqual([
+            {
+                kind: 'comp-region-audio-source',
+                laneId: 'lane-1',
+                takeId: 'take-a',
+                startBeat: 0,
+                endBeat: 8,
+                expected: { present: false },
+                replacement: { present: true, value: source },
+            },
+        ]);
+        const peer = {
+            ...firstLane,
+            takes: firstLane.takes.toReversed().map((take) => ({ ...take, name: 'Peer', selected: !take.selected })),
+            activeCompRegions: [...firstLane.activeCompRegions, { startBeat: 10, endBeat: 12, takeId: 'take-b' }],
+        };
+        const projected = replayTakeLaneWriteJournal({ lanes: [peer] }, journal);
+        expect(projected).toEqual({
+            status: 'applied',
+            value: {
+                lanes: [
+                    {
+                        ...peer,
+                        activeCompRegions: [
+                            { ...firstLane.activeCompRegions[0]!, audioSource: source },
+                            peer.activeCompRegions[1]!,
+                        ],
+                    },
+                ],
+            },
+        });
+        if (projected.status !== 'applied') {
+            throw new Error('Expected region source replay');
+        }
+        const inverse = captureTakeLaneWriteJournal({ beforeValue: after, nextValue: before });
+        const restored = replayTakeLaneWriteJournal(projected.value, inverse);
+        expect(restored).toEqual({ status: 'applied', value: { lanes: [peer] } });
+        if (restored.status !== 'applied') {
+            throw new Error('Expected exact source absence');
+        }
+        expect(Object.hasOwn(restored.value!.lanes[0]!.activeCompRegions[0]!, 'audioSource')).toBe(false);
+    });
+
+    it.each(['missing', 'duplicate', 'geometry', 'source'] as const)(
+        'refuses %s owned source rows without rebuilding them',
+        (change) => {
+            const journal = captureTakeLaneWriteJournal({ beforeValue: before, nextValue: after });
+            const peer = structuredClone(firstLane);
+            if (change === 'missing') {
+                peer.activeCompRegions = [];
+            }
+            if (change === 'duplicate') {
+                peer.activeCompRegions.push(structuredClone(peer.activeCompRegions[0]!));
+            }
+            if (change === 'geometry') {
+                peer.activeCompRegions[0]!.endBeat = 7;
+            }
+            if (change === 'source') {
+                peer.activeCompRegions[0]!.audioSource = { ...source, audioOffsetSeconds: 5 };
+            }
+            const original = structuredClone(peer);
+            expect(replayTakeLaneWriteJournal({ lanes: [peer] }, journal)).toEqual({ status: 'conflict' });
+            expect(peer).toEqual(original);
+        }
+    );
+
+    it('retains whole-array ownership for real geometry or ordering changes', () => {
+        const next = {
+            lanes: [
+                { ...after.lanes[0]!, activeCompRegions: [{ ...after.lanes[0]!.activeCompRegions[0]!, endBeat: 7 }] },
+            ],
+        };
+        expect(captureTakeLaneWriteJournal({ beforeValue: before, nextValue: next })).toEqual([
+            {
+                kind: 'replace-comp-regions',
+                laneId: firstLane.id,
+                expected: before.lanes[0]!.activeCompRegions,
+                replacement: next.lanes[0]!.activeCompRegions,
+            },
+        ]);
+    });
+});

@@ -49,6 +49,11 @@ function createBrowserBoundary() {
         }
         return runInNewContext(`(${script.toString()})(options)`, { window: world, options: structuredClone(arg) });
     };
+    const frameFor = (world: Record<string, unknown>) => ({
+        evaluate: vi
+            .fn<ReturnType<CapturePage['frames']>[number]['evaluate']>()
+            .mockImplementation(async (script, arg) => execute(script, arg, world)),
+    });
     const page: CapturePage = {
         exposeBinding: vi.fn<CapturePage['exposeBinding']>().mockImplementation(async (name, callback) => {
             if (bindings.has(name)) {
@@ -77,18 +82,18 @@ function createBrowserBoundary() {
                 scripts.delete(initialize);
             });
         }),
-        frames: () =>
-            worlds.map((world) => ({
-                evaluate: vi
-                    .fn<ReturnType<CapturePage['frames']>[number]['evaluate']>()
-                    .mockImplementation(async (script, arg) => execute(script, arg, world)),
-            })),
+        frames: () => worlds.map(frameFor),
+        mainFrame: () => frameFor(worldAt(0)),
     };
     return {
         page,
         bindingCount: () => bindings.size,
         installerCount: () => scripts.size,
         hasPicker: (frame = 1) => typeof worldAt(frame).showSaveFilePicker === 'function',
+        pickerAt: (frame: number) => worldAt(frame).showSaveFilePicker,
+        setPicker(picker: () => Promise<string>, frame: number) {
+            worldAt(frame).showSaveFilePicker = picker;
+        },
         navigate() {
             worlds = [{}, {}];
             for (const [name, binding] of bindings) {
@@ -170,11 +175,19 @@ afterEach(async () => {
 });
 
 describe('transactional picker capture with real test-owned files', () => {
-    it('preserves the existing single-capture future-document API and awaited close', async () => {
+    it('covers the current main document, restores its own picker, and captures later documents', async () => {
         const browser = createBrowserBoundary();
+        const pagePicker = async () => 'page-picker';
+        browser.setPicker(pagePicker, 0);
+        const loaded = await installFilePickerCapture(browser.page, join(directory, 'loaded.wav'));
+        expect(browser.hasPicker(0)).toBe(true);
+        expect(browser.pickerAt(0)).not.toBe(pagePicker);
+        expect(browser.hasPicker(1)).toBe(false);
+        await loaded.dispose();
+        expect(browser.pickerAt(0)).toBe(pagePicker);
+
         const capture = await installFilePickerCapture(browser.page, join(directory, 'single.wav'));
         captures.push(capture);
-        expect(browser.hasPicker()).toBe(false);
         browser.navigate();
         const writer = await (await browser.pick()).createWritable();
         await writer.write(new Uint8Array([1, 2, 3]));

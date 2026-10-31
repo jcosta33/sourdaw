@@ -29,9 +29,11 @@ and never offer to file or ask whether to file: file it or do it.
 
 ## Delegation
 
-The orchestrator specifies, dispatches, adjudicates, and organizes; it does not implement, approve,
-or merge. Each delegated agent executes one precise task, returns evidence and a result, and neither
-contacts the user nor owns decisions.
+The orchestrator specifies, dispatches, and organizes; it does not implement. It owns the outcome:
+it adjudicates every finding, reviews each head globally, and decides approval and merge, executing
+those decisions through the trusted scripts — the reviewer App publishes reviews and `deliver` merges
+as the author App. Each delegated agent executes one precise task, returns evidence and a result, and
+neither contacts the user nor owns decisions.
 
 Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
 orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
@@ -143,6 +145,19 @@ words to avoid anchoring the author. Authors never judge findings against their 
 before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and only a head
 addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
 to make.
+
+Every round, the orchestrator also reviews the whole head itself, with no stance and before reading
+any stance report so none anchors it. Does the head do what was asked, fit the architecture and the
+product, and keep the right scope? Do its tests observe their claimed subjects, and is every
+accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
+only the checks and scopes it observed. This global review is not a draw: it is not recorded in
+`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
+to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
+reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
+the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
+new head or respins or closes the PR. That hold is not a review and posts nothing; the
+request-changes rule governs posted findings. The orchestrator never approves a head it judges
+unfit, whatever the draws say.
 
 `review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
 `ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
@@ -589,9 +604,9 @@ style-guide and code-craft violations block, personal style does not. An approva
 its body states what the reviewer attacked and what held.
 
 Give reviewers the bundle and neutral review conditions from the request or governing
-contract, never author transcripts or conclusions; preserve blind dispatch and independently
-inspect the final head before the reviewer approval is published. Bundle, publication, and thread
-procedure: [delivery-orchestration].
+contract, never author transcripts or conclusions; preserve blind dispatch, and give the final head
+the orchestrator's global review under [Review](#review) before any approval is published. Bundle,
+publication, and thread procedure: [delivery-orchestration].
 
 Never fill approvals, delivery summaries, or closing comments with routine
 successful-CI narration, passed-check inventories, or links repeating required-check status;
@@ -617,9 +632,7 @@ current head addresses the finding, then obtain a fresh review. No script writes
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
-Before merge, the orchestrator independently reads the current diff and confirms specified
-behavior, tests observing their claimed subjects, and every accepted finding repaired rather than
-silenced — green `Gate` proves only the checks and scopes it actually observed. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
+Push-lane failures yield required red `Gate`, never softened warnings. Attribute
 every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
 run checks; locally format changed files and stage rewrites.
 

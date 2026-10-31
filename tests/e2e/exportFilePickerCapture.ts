@@ -9,6 +9,7 @@ const WRITE_BINDING = '__sourdawCapturePickerWrite';
 const CLOSE_BINDING = '__sourdawCapturePickerClose';
 const ABORT_BINDING = '__sourdawCapturePickerAbort';
 const WRITABLE_BINDING = '__sourdawCapturePickerWritable';
+const PRIOR_PICKER_KEY = '__sourdawCapturePickerPrior';
 
 type Deferred<TValue> = {
     promise: Promise<TValue>;
@@ -45,23 +46,43 @@ export type FilePickerCapture = {
     dispose: () => Promise<void>;
 };
 
+type CaptureFrame = Pick<Frame, 'evaluate'>;
+
 type CapturePage = Pick<Page, 'addInitScript' | 'exposeBinding'> & {
-    frames: () => Pick<Frame, 'evaluate'>[];
+    frames: () => CaptureFrame[];
+    mainFrame: () => CaptureFrame;
 };
 
-function installPicker({
-    pickerRequestBinding,
-    writableBinding,
-    writeBinding,
-    closeBinding,
-    abortBinding,
-}: {
+type PickerNames = {
+    priorPickerKey: string;
+    owner: string;
     pickerRequestBinding: string;
     writableBinding: string;
     writeBinding: string;
     closeBinding: string;
     abortBinding: string;
-}): void {
+};
+
+type PriorPicker = { descriptor: PropertyDescriptor | null; owner: string };
+
+function installPicker({
+    priorPickerKey,
+    owner,
+    pickerRequestBinding,
+    writableBinding,
+    writeBinding,
+    closeBinding,
+    abortBinding,
+}: PickerNames): void {
+    // A document created after disposal keeps the page's own picker.
+    if (typeof Reflect.get(window, pickerRequestBinding) !== 'function') {
+        return;
+    }
+    const prior = Reflect.get(window, priorPickerKey) as PriorPicker | undefined;
+    const descriptor = prior
+        ? prior.descriptor
+        : (Object.getOwnPropertyDescriptor(window, 'showSaveFilePicker') ?? null);
+    Object.defineProperty(window, priorPickerKey, { configurable: true, value: { descriptor, owner } });
     const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
         const binding = Reflect.get(window, name);
         if (typeof binding !== 'function') {
@@ -87,10 +108,26 @@ function installPicker({
     });
 }
 
+function removePicker({ priorPickerKey, owner }: Pick<PickerNames, 'priorPickerKey' | 'owner'>): void {
+    const prior = Reflect.get(window, priorPickerKey) as PriorPicker | undefined;
+    // A later capture owns the picker now and restores the page's own picker itself.
+    if (!prior || prior.owner !== owner) {
+        return;
+    }
+    if (prior.descriptor) {
+        Object.defineProperty(window, 'showSaveFilePicker', prior.descriptor);
+    } else {
+        Reflect.deleteProperty(window, 'showSaveFilePicker');
+    }
+    Reflect.deleteProperty(window, priorPickerKey);
+}
+
 /**
  * Installs a controlled Save File picker capability whose real writes are serialized into
  * a test-owned file. Each app chunk crosses Playwright as a Uint8Array and is
  * awaited before the next chunk, keeping the capture sink backpressured.
+ * The picker covers the current main document and every later document; retiring the
+ * capture restores the picker the current document had before.
  */
 export async function installFilePickerCapture(
     page: CapturePage,
@@ -121,7 +158,10 @@ export async function installFilePickerCapture(
     let retired = false;
     // An old writable must never find a later attempt's binding after disposal.
     const suffix = randomUUID();
-    const names = {
+    const currentFrames = options.initializeCurrentFrames ? page.frames() : [page.mainFrame()];
+    const names: PickerNames = {
+        priorPickerKey: PRIOR_PICKER_KEY,
+        owner: suffix,
         pickerRequestBinding: `${PICKER_REQUEST_BINDING}_${suffix}`,
         writableBinding: `${WRITABLE_BINDING}_${suffix}`,
         writeBinding: `${WRITE_BINDING}_${suffix}`,
@@ -143,9 +183,17 @@ export async function installFilePickerCapture(
 
     // Keep the binding owner until disposal so late calls poison their original capture.
     const retire = async (): Promise<void> => {
-        if (!retired) {
-            retired = true;
-            await installer?.dispose();
+        if (retired) {
+            return;
+        }
+        retired = true;
+        await installer?.dispose();
+        for (const frame of currentFrames) {
+            try {
+                await frame.evaluate(removePicker, { priorPickerKey: PRIOR_PICKER_KEY, owner: suffix });
+            } catch {
+                // A detached or closing document has no picker left to restore.
+            }
         }
     };
 
@@ -255,18 +303,16 @@ export async function installFilePickerCapture(
             })
         );
         installer = await page.addInitScript(installPicker, names);
-        if (options.initializeCurrentFrames) {
-            for (const frame of page.frames()) {
-                await frame.evaluate(installPicker, names);
-            }
+        for (const frame of currentFrames) {
+            await frame.evaluate(installPicker, names);
         }
     } catch (error) {
         failCapture(error);
         if (!fileClosed) {
             await file.close();
         }
-        await Promise.all(registrations.map((registration) => registration.dispose()));
         await retire();
+        await Promise.all(registrations.map((registration) => registration.dispose()));
         throw error;
     }
 

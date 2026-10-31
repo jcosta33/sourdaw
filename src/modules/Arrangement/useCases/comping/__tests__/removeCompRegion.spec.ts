@@ -1,226 +1,103 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type TakeLaneStoreState } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
 import { removeCompRegion } from '../removeCompRegion';
 
-type MockRegion = { startBeat: number; endBeat: number; takeId: string };
-type MockTake = { id: string; clipId: string; name: string; startBeat: number; endBeat: number; selected: boolean };
-type MockLane = { id: string; trackId: string; takes: MockTake[]; activeCompRegions: MockRegion[] };
-type TakeLaneState = { lanes: MockLane[] };
-type TakeLaneHolder = { value: TakeLaneState | null };
-
-const mocks = vi.hoisted(() => {
-    const holder: TakeLaneHolder = { value: { lanes: [] } };
-    return {
-        takeLaneValue: holder,
-        takeLaneSet: vi.fn<(state: TakeLaneState) => void>(),
-        pushUndoEntry: vi.fn<(label: string, undo: () => void, redo: () => void) => void>(),
-    };
-});
-
+const mocks = vi.hoisted(() => ({
+    state: { value: null as TakeLaneStoreState | null },
+    set: vi.fn(),
+    execute: vi.fn(),
+    pushUndoEntry: vi.fn(),
+}));
 vi.mock('../../../stores/takeLaneStore', () => ({
     takeLaneStore: {
         get value() {
-            return mocks.takeLaneValue.value;
+            return mocks.state.value;
         },
-        set: mocks.takeLaneSet,
+        set: mocks.set,
     },
 }));
-
 vi.mock('#/modules/Command/useCases', () => ({
-    executeUserAppAction: vi.fn(),
+    executeUserAppAction: mocks.execute,
     pushUndoEntry: mocks.pushUndoEntry,
 }));
 
-describe('removeCompRegion', () => {
+function selectedLane(trackId = 't1') {
+    return {
+        id: `lane-${trackId}`,
+        trackId,
+        takes: [
+            {
+                id: `take-${trackId}`,
+                clipId: `clip-${trackId}`,
+                name: 'Take',
+                startBeat: 0,
+                endBeat: 4,
+                selected: false,
+            },
+        ],
+        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: `take-${trackId}` }],
+    };
+}
+
+describe('removeCompRegion user command wrapper', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        // A replayed facet goes back through the lane liveness rule, so the fixtures
-        // need the tracks and clips their take ids stand for.
+        mocks.state.value = { lanes: [selectedLane()] };
         trackStore.set({
-            tracks: [
-                TrackDummy.create({ id: 't1', clips: [ClipDummy.create({ id: 'clip-a', trackId: 't1' })] }),
-                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-other', trackId: 't2' })] }),
-            ],
+            tracks: ['t1', 't2'].map((id) =>
+                TrackDummy.create({ id, clips: [ClipDummy.create({ id: `clip-${id}`, trackId: id })] })
+            ),
             selectedTrackId: 't1',
             ghostClips: [],
         });
     });
 
-    it('removes the matching region from the lane and records an undo entry', () => {
-        mocks.takeLaneValue.value = {
-            lanes: [
-                {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [],
-                    activeCompRegions: [
-                        { startBeat: 0, endBeat: 4, takeId: 'take-a' },
-                        { startBeat: 4, endBeat: 8, takeId: 'take-b' },
-                    ],
-                },
-            ],
-        };
-
-        removeCompRegion('t1', 4);
-
-        expect(mocks.takeLaneSet).toHaveBeenCalledTimes(1);
-        const setCall = mocks.takeLaneSet.mock.calls[0]!;
-        expect(setCall[0].lanes[0]!.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: 'take-a' }]);
-        expect(mocks.pushUndoEntry).toHaveBeenCalledTimes(1);
+    it('dispatches the matching interval and delegates saved Undo ownership to Command', () => {
+        removeCompRegion('t1', 0);
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith({
+            type: 'removeCompRegion',
+            payload: { trackId: 't1', startBeat: 0 },
+        });
+        expect(mocks.set).not.toHaveBeenCalled();
+        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
     });
-
     it('is a no-op when the take-lane store has not loaded', () => {
-        mocks.takeLaneValue.value = null;
-
+        mocks.state.value = null;
         removeCompRegion('t1', 0);
-
-        expect(mocks.takeLaneSet).not.toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
-
     it('is a no-op when the track has no lane', () => {
-        mocks.takeLaneValue.value = { lanes: [{ id: 'lane-1', trackId: 'other', takes: [], activeCompRegions: [] }] };
-
+        mocks.state.value = { lanes: [selectedLane('t2')] };
         removeCompRegion('t1', 0);
-
-        expect(mocks.takeLaneSet).not.toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
-
-    it('is a no-op when the lane has no region at the given start beat', () => {
-        mocks.takeLaneValue.value = {
-            lanes: [
-                {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'a' }],
-                },
-            ],
-        };
-
-        removeCompRegion('t1', 99);
-
-        expect(mocks.takeLaneSet).not.toHaveBeenCalled();
-        expect(mocks.pushUndoEntry).not.toHaveBeenCalled();
+    it('is a no-op when the lane has no region at that exact head', () => {
+        removeCompRegion('t1', 2);
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
-
-    it('leaves unrelated lanes untouched when removing a region from one track', () => {
-        mocks.takeLaneValue.value = {
-            lanes: [
-                {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
-                },
-                {
-                    id: 'lane-2',
-                    trackId: 't2',
-                    takes: [],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'other-take' }],
-                },
-            ],
-        };
-
+    it('does not mutate either lane before Command admits the targeted removal', () => {
+        mocks.state.value = { lanes: [selectedLane(), selectedLane('t2')] };
+        const before = structuredClone(mocks.state.value);
         removeCompRegion('t1', 0);
-
-        const setCall = mocks.takeLaneSet.mock.calls[0]!;
-        // The unrelated t2 lane passes through the map short-circuit unchanged.
-        expect(setCall[0].lanes[1]!.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 8, takeId: 'other-take' }]);
-        expect(setCall[0].lanes[0]!.activeCompRegions).toEqual([]);
-    });
-
-    it('records undo/redo entries that restore the previous and next state', () => {
-        mocks.takeLaneValue.value = {
-            lanes: [
-                {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [
-                        {
-                            id: 'take-a',
-                            clipId: 'clip-a',
-                            name: 'Take A',
-                            startBeat: 0,
-                            endBeat: 4,
-                            selected: false,
-                        },
-                    ],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
-                },
-            ],
-        };
-
-        removeCompRegion('t1', 0);
-
-        const undoCall = mocks.pushUndoEntry.mock.calls[0];
-        if (!undoCall) {
-            throw new Error('expected pushUndoEntry to be called');
-        }
-        const [, undo, redo] = undoCall;
-        // Undo restores the pre-remove region; redo re-applies the empty state.
-        undo();
-        const undoArg = mocks.takeLaneSet.mock.calls.at(-1)![0];
-        expect(undoArg.lanes[0]!.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 4, takeId: 'take-a' }]);
-
-        redo();
-        const redoArg = mocks.takeLaneSet.mock.calls.at(-1)![0];
-        expect(redoArg.lanes[0]!.activeCompRegions).toEqual([]);
-    });
-
-    it('does not bring a region back when the take it names has no clip left', () => {
-        mocks.takeLaneValue.value = {
-            lanes: [
-                {
-                    id: 'lane-1',
-                    trackId: 't1',
-                    takes: [
-                        {
-                            id: 'take-a',
-                            clipId: 'clip-a',
-                            name: 'Take A',
-                            startBeat: 0,
-                            endBeat: 4,
-                            selected: false,
-                        },
-                    ],
-                    activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take-a' }],
-                },
-            ],
-        };
-
-        removeCompRegion('t1', 0);
-        const undoCall = mocks.pushUndoEntry.mock.calls[0];
-        if (!undoCall) {
-            throw new Error('expected pushUndoEntry to be called');
-        }
-        const [, undo] = undoCall;
-        expect(mocks.takeLaneSet).toHaveBeenCalledTimes(1);
-
-        // A projection takes the take's clip out of the project while the removal stands,
-        // so the region the entry captured now names material no track holds.
-        trackStore.set({
-            tracks: [
-                TrackDummy.create({ id: 't1', clips: [] }),
-                TrackDummy.create({ id: 't2', clips: [ClipDummy.create({ id: 'clip-other', trackId: 't2' })] }),
-            ],
-            selectedTrackId: 't1',
-            ghostClips: [],
+        expect(mocks.execute).toHaveBeenCalledExactlyOnceWith({
+            type: 'removeCompRegion',
+            payload: { trackId: 't1', startBeat: 0 },
         });
-
-        undo();
-
-        // The replayed facet goes back through the lane liveness rule — the same rule the
-        // takes facet does. A region left for a take the project no longer holds advances
-        // `resolveClipsWithComping`'s gap cursor over its span, silencing the track's own
-        // material there in live playback and in the offline render. The second store write
-        // is the replay's own, so this reads the state the undo wrote and not the removal's.
-        expect(mocks.takeLaneSet).toHaveBeenCalledTimes(2);
-        const undoArg = mocks.takeLaneSet.mock.calls.at(-1)![0];
-        expect(undoArg.lanes[0]!.activeCompRegions).toEqual([]);
+        expect(mocks.state.value).toEqual(before);
+        expect(mocks.set).not.toHaveBeenCalled();
+    });
+    it('refuses a region whose take owner is absent', () => {
+        mocks.state.value = { lanes: [{ ...selectedLane(), takes: [] }] };
+        removeCompRegion('t1', 0);
+        expect(mocks.execute).not.toHaveBeenCalled();
+    });
+    it('does not dispatch a removed clip owner', () => {
+        trackStore.set({ tracks: [TrackDummy.create({ id: 't1', clips: [] })], selectedTrackId: 't1', ghostClips: [] });
+        removeCompRegion('t1', 0);
+        expect(mocks.execute).not.toHaveBeenCalled();
     });
 });
