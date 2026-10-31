@@ -434,6 +434,7 @@ describe('MIDI loop recordings', () => {
         it('seals the stopped pass on the placement its notes were given when the loop start moves forward', async () => {
             const clip = recordFromLoopStart();
             stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const early = holdNote(8.5, 1);
             const held = holdNote(9, 1);
             transportStore.set({ ...transportStore.value!, loopStart: 9 });
 
@@ -442,8 +443,22 @@ describe('MIDI loop recordings', () => {
             flushAutomergeStorageWrites();
             const take = passTake('Take 1');
             expect(held).toMatchObject({ onsetSourceBeat: 5 });
-            // The note struck at 9 sounds at 9 through the take Stop sealed.
+            // Both notes sound where they were struck, inside the take Stop sealed.
             expect(take.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(9);
+            expect(take.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
+            expect(take.startBeat).toBeLessThanOrEqual(8.5);
+        });
+
+        it('keeps the notes of a wrapped pass inside its take when the loop start moves forward', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const early = holdNote(8.5, 1);
+            transportStore.set({ ...transportStore.value!, loopStart: 9 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 9, endBeat: 12, sourceOffsetBeats: 5, index: 1 });
+
+            const take = passTake('Pass 1');
+            expect(take.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
+            expect(take.startBeat).toBeLessThanOrEqual(8.5);
         });
 
         it('opens a pass take where the pass began when the loop start moves back inside it', () => {

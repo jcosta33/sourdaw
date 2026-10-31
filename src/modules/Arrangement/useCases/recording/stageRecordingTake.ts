@@ -28,10 +28,10 @@ type StageRecordingTakeInput = {
 
 /**
  * A MIDI wrap take reads its pass on the placement its events were given, never
- * the loop the scheduler derived its offset from. A later pass opens no earlier
- * than the beat it entered at: a loop start moved back inside the pass names
- * beats the pass never recorded. Staging the pass also fixes where the next one
- * begins.
+ * the loop the scheduler derived its offset from. A later pass opens at the beat
+ * it entered at, as Stop seals it: a loop start moved back inside the pass names
+ * beats the pass never recorded, and one moved forward would drop what it did.
+ * Staging the pass also fixes where the next one begins.
  */
 function placeMidiPass(track: Track, input: StageRecordingTakeInput): StageRecordingTakeInput {
     const pass = input.recordingPassIndex;
@@ -40,7 +40,7 @@ function placeMidiPass(track: Track, input: StageRecordingTakeInput): StageRecor
         return input;
     }
     const origin = pass === 0 ? null : recordingPassOrigin(pass);
-    const startBeat = origin ? Math.max(input.startBeat, origin.beat) : input.startBeat;
+    const startBeat = origin ? origin.beat : input.startBeat;
     const sourceOffsetBeats = passSourceBeat(clip.startBeat, pass, startBeat);
     closeRecordingPass(pass, input.endBeat, input.nextPassStartBeat ?? input.startBeat);
     return sourceOffsetBeats === null ? input : { ...input, startBeat, sourceOffsetBeats };
