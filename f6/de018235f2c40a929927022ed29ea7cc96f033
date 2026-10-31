@@ -1,0 +1,25 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_1eefa5cb5d9907::t_91bfa67aa4d622 3377-3442
+src/modules/Transport/useCases/transportControls/manualRecordingEnd.ts
+  s_1eefa5cb5d9907::t_3048c37cce9387 1-36
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_1eefa5cb5d9907::t_734bd1f05538f5 15,32-34
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_1eefa5cb5d9907::t_79d7fc3aab5a5c 8,12,17,31,80-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f6de018235f2c40a929927022ed29ea7cc96f033",
+  "prompts": {},
+  "sessions": {
+    "s_1eefa5cb5d9907": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_1eefa5cb5d9907",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
