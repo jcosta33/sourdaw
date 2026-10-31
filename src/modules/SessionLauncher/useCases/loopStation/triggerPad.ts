@@ -1,7 +1,7 @@
 import { getAllTracks } from '#/modules/Arrangement/useCases';
 
 import { loopStationStore } from '../../stores/loopStationStore';
-import { getLaunchableTracks } from '../../transformers/getLaunchableTracks';
+import { getLaunchableTracks } from '../getLaunchableTracks';
 
 import { toggleRecord } from './toggleRecord';
 import { triggerSlot } from './triggerSlot';

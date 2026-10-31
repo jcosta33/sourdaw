@@ -19,7 +19,7 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessionLaunchStore';
-import { getLaunchableTracks } from '../../transformers/getLaunchableTracks';
+import { getLaunchableTracks } from '../../useCases/getLaunchableTracks';
 import { launchSessionScene } from '../../useCases/sessionLaunch/launchSessionScene';
 import { stopAllSessionSlots } from '../../useCases/sessionLaunch/stopAllSessionSlots';
 import { toggleSessionSlot } from '../../useCases/sessionLaunch/toggleSessionSlot';
