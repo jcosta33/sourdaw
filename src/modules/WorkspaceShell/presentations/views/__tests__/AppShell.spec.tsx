@@ -703,7 +703,10 @@ describe('AppShell', () => {
             trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
             rerender(<AppShell>Content</AppShell>);
             expect(screen.getByTestId('takes-tab-button')).toBeInTheDocument();
-            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
         });
 
         it('does not count a folder, whose lanes are never shown', () => {
@@ -728,6 +731,83 @@ describe('AppShell', () => {
             expect(tab).toHaveAttribute('aria-selected', 'true');
             expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(tab.id);
             expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+        });
+
+        it("opens the dock on the Takes tab when a track's lanes are switched on", () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
+
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: true })
+            );
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+        });
+
+        it('does not pop the dock for a project that loads with lanes already on', () => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+            trackStoreState = { tracks: [], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: true })
+            );
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('does not pop the dock when the shell first mounts over lanes that are already on', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({ sidebarOpen: false, inspectorOpen: false, mixerOpen: false })
+            );
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(workspaceStore.value?.mixerOpen).toBe(false);
+        });
+
+        it('lets the user leave the Takes tab while lanes stay on', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'true');
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Mixer' }));
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('leaves the dock where it was when lanes are switched off', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByRole('tab', { name: 'Editor' }));
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
+            expect(workspaceStore.value?.mixerOpen).toBe(true);
         });
 
         it('falls back to the mixer tab when the last lane is switched off while Takes is active', () => {

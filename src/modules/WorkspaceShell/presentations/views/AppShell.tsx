@@ -6,6 +6,7 @@ import {
     Suspense,
     useEffect,
     useLayoutEffect,
+    useRef,
     useState,
 } from 'react';
 
@@ -29,7 +30,7 @@ import {
 } from '#/modules/AiRuntime/presentations/views';
 import { TakeLanesView } from '#/modules/Arrangement/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
-import { hasVariationLanes } from '#/modules/Arrangement/useCases';
+import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -381,6 +382,25 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             unsubscribe();
         };
     }, [project.initialized, alphaDismissed]);
+
+    // Switching a track's variation lanes on reveals the take panel, which lives
+    // in the Takes tab. It acts on that edge only: a project loading with lanes
+    // already on, or lanes switching off, must not move the dock, and the user
+    // can leave the tab while lanes stay on. The first observation only seeds
+    // the comparison.
+    const variationLanesShownRef = useRef<ReadonlyMap<string, boolean> | null>(null);
+    useEffect(() => {
+        const { shown, enabledTrackIds } = detectVariationLaneEnabling(
+            variationLanesShownRef.current,
+            tracksSnapshot.tracks
+        );
+        variationLanesShownRef.current = shown;
+        if (enabledTrackIds.length === 0) {
+            return;
+        }
+        setBottomTabState({ value: 'takes', selectedClipId });
+        openMixer();
+    }, [tracksSnapshot.tracks, selectedClipId]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
