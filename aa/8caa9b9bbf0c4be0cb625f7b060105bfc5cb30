@@ -1,0 +1,135 @@
+src/app/captureCommandBatchPreflightState.ts
+  s_ba80576e6f5cb5::t_17d0f6a6e44a1e 158,164-165,167,169-170,172,174-175,177,179-189
+  s_ba80576e6f5cb5::t_52df9c90bebcf8 521-534
+  s_88fc7e0d05bab6::t_b30c71f518e036 111-115,118,123,125,129-133,141-142,144-150,153-155,157,159-163,166,168,171,173,176,178,190-198,200-204,510-513,517-520,535
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_ba80576e6f5cb5::t_0b207210d4a58d 775,794,825
+  s_88fc7e0d05bab6::t_dff56c03cd22be 553-566,960
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_ba80576e6f5cb5::t_327b92235ab9f6 230,1050-1058,1060-1066,1076,1080,1083,1085-1092
+  s_88fc7e0d05bab6::t_104bcfed241121 211-229,231-250,860-1041
+.agents/skills/review-stances/project-integrity.md
+  s_88fc7e0d05bab6::t_ff42350f368a4d 138-151,1050-1061
+.agents/skills/review-stances/session-lifecycle.md
+  s_88fc7e0d05bab6::t_04d3fbde6aab03 144-156
+.agents/skills/review-stances/test-validity.md
+  s_88fc7e0d05bab6::t_6201feb044a871 495-508
+.github/workflows/health-gates.yml
+  s_88fc7e0d05bab6::t_4b44db57cb3ae7 89-90
+.github/workflows/heavy-gates.yml
+  s_88fc7e0d05bab6::t_130f2559a6a97e 49-50,110-111,174
+.github/workflows/nightly.yml
+  s_88fc7e0d05bab6::t_26421f12c8c9d2 76-77,162-163,200-201,302-303,377-383,385-386,492-493,618-619,678-679,718-719,993-994
+.github/workflows/pr-checks.yml
+  s_88fc7e0d05bab6::t_87335717f4f671 43-44
+.github/workflows/validation.yml
+  s_88fc7e0d05bab6::t_8f9058dee92eed 331-332,436-437,476-477,578-579,625-626,665-666,697-698,966-967
+release/open-source-inventory.json
+  s_88fc7e0d05bab6::t_7408c5789fda09 1211
+scripts/__tests__/exportFilePickerCapture.spec.ts
+  s_88fc7e0d05bab6::t_05e4e1c79017da 1-342
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_88fc7e0d05bab6::t_c10c392b5806ab 114-115,281-282,384-385,454-455,518,721-722,836-837,880-881,994-995,1041-1042,1084-1085,1122-1123,1337-1338,1546-1547,1644-1645,1690-1691,1808-1809,1868-1874,1877-1878,1975-1976,2091-2092,2157-2158,2204-2205,2383-2384
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_88fc7e0d05bab6::t_a9ef307391ef3a 394-396,952-957,967,1771-1773,1782-1855,3876-3925
+scripts/__tests__/productionFaustProbe.spec.ts
+  s_88fc7e0d05bab6::t_4c46867e7dd75e 1-306
+scripts/__tests__/productionTransportInput.spec.ts
+  s_88fc7e0d05bab6::t_4b5c44393e9800 1-578
+scripts/healthGateWorkflowContract.ts
+  s_88fc7e0d05bab6::t_7587159fdc0378 260
+scripts/test-health-gate-scripts.sh
+  s_88fc7e0d05bab6::t_4ddf4435a70623 356,1137-1141,1147-1151,1170-1171
+src/app/__tests__/agentProjectRepairInspection.spec.ts
+  s_88fc7e0d05bab6::t_7b789137c1b20c 4,15,284-309
+src/modules/AudioRendering/models/DeliveryPresets.ts
+  s_88fc7e0d05bab6::t_18409fe577e7c0 1-89
+src/modules/AudioRendering/models/DeliveryTarget.ts
+  s_88fc7e0d05bab6::t_dc9f143378eec3 1-19
+src/modules/AudioRendering/models/__tests__/deliveryPresets.spec.ts
+  s_88fc7e0d05bab6::t_9f602cd9902b05 1-27
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_88fc7e0d05bab6::t_8aafce280ea1e3 42,46,48,77-78,169-191,193-200,304-320,322-323,325,327,329-333,335-341,345-358,360-363,366-375,400-401,403-435,438,452-453,486-489,497-498,511-513,535,609,611-612,617-620,623,658-660,664-670,672,674-675,689,746,779,883-889,1193-1194,1202-1206,1208-1238,1321-1343,1351-1357,1370,1390,1457-1475,1478
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_88fc7e0d05bab6::t_6e44198d142e7a 4,8-9,43,90,101-106,127,183,202-207,597,611,730,869-892,1012,1024,1078-1265,1378-1396,1507,1512,1527-1532,1875,1877,1882,1891-1893,1895-1896,1909-1911,1913-1920,1924-1926,1929-1936,1940-1942,1946-1953,2244,2246-2256,3054-3145
+src/modules/AudioRendering/presentations/views/__tests__/exportSettings.spec.ts
+  s_88fc7e0d05bab6::t_ef8390ebc521bf 248-255
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_88fc7e0d05bab6::t_06c3f291f81127 24-39,776-778,894-1125
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_88fc7e0d05bab6::t_66ffa9c80f6388 36-37,131,147-165
+src/modules/AudioRendering/useCases/__tests__/applyDeliveryPreset.spec.ts
+  s_88fc7e0d05bab6::t_a7760f39fd7ebb 3-4,6-13,15-17,20-23
+src/modules/AudioRendering/useCases/__tests__/resolveDeliveryTargets.spec.ts
+  s_88fc7e0d05bab6::t_52d6574bda5584 1-75
+src/modules/AudioRendering/useCases/applyDeliveryPreset.ts
+  s_88fc7e0d05bab6::t_4fd084208bde5b 1-13
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_88fc7e0d05bab6::t_0df4ab7133fd21 9,20,43,196-595
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_88fc7e0d05bab6::t_e98ffd9443bde6 1,10,14-97,125-127,129-160,162,164-165,167-170,172,188-189,191-218,220-221,223-236
+src/modules/AudioRendering/useCases/getDeliveryPresets.ts
+  s_88fc7e0d05bab6::t_c7d972ebb7d5c6 1-5
+src/modules/AudioRendering/useCases/resolveDeliveryTargets.ts
+  s_88fc7e0d05bab6::t_0f73718bcb1f7b 1-139
+src/modules/ContentBrowser/presentations/components/Sidebar/BrowserRouteBody.tsx
+  s_88fc7e0d05bab6::t_8da1d4f3838287 1-48
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_88fc7e0d05bab6::t_5f9027408bc79b 42
+src/modules/ContentBrowser/presentations/components/Sidebar/SearchSummary.tsx
+  s_88fc7e0d05bab6::t_32f014eb16745c 12
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/BrowserRouteBody.spec.tsx
+  s_88fc7e0d05bab6::t_c3722fc03e7685 1-60
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_88fc7e0d05bab6::t_3d4824be0ef5ce 1,14,249,253-261,264-280,282,284-285,291,307,313-314,316,338,343,347,353,378,380-381,386-387,391,393-398,401-413,417-427,429,431-432
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_88fc7e0d05bab6::t_7d49b014ff9c6d 1,25,334-335,341,360,374,398,408,410-414,459-460,464-470,472-473,502-505,507,511-528,530-566,570-575,577,579-603,605,607,616-617
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_88fc7e0d05bab6::t_0742a990a5df59 1,324-349
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_88fc7e0d05bab6::t_1769b4f23a3df2 1,564-606
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_88fc7e0d05bab6::t_af041d3d751472 158,198
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_88fc7e0d05bab6::t_3ec6a76323b557 534-593,857-877
+tests/e2e/export.spec.ts
+  s_88fc7e0d05bab6::t_ca6969c25569cb 23
+tests/e2e/exportAudioEvidence.spec.ts
+  s_88fc7e0d05bab6::t_8cb3394fb0dcb2 108-111
+tests/e2e/exportFilePickerCapture.ts
+  s_88fc7e0d05bab6::t_b36a369dad1b4f 1,5,11-12,14-16,20-21,23,33-58,60,66-70,72,76-77,81-85,98-105,111-114,117-118,122,126,129-130,132-136,147-149,155-170,177,184-199,202-211,219-229,235-242,269-271,289,305-307,314,335-352,354-355,357-358
+tests/production-e2e/playwright.config.ts
+  s_88fc7e0d05bab6::t_8dcc777f1598cb 1-39
+tests/production-e2e/productionFaustExport.e2e.spec.ts
+  s_88fc7e0d05bab6::t_8c50f596384f7a 1-473
+tests/production-e2e/productionFaustProbe.ts
+  s_88fc7e0d05bab6::t_3a8670a27aa631 1-267
+tests/production-e2e/productionTransportInput.ts
+  s_88fc7e0d05bab6::t_4f66e3de660e9b 1-561
+tsconfig.e2e.json
+  s_88fc7e0d05bab6::t_8e2a059847a3cb 14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aa8caa9b9bbf0c4be0cb625f7b060105bfc5cb30",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
