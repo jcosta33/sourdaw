@@ -14,7 +14,7 @@ import { type Clip } from '../../stores/trackStore';
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
-import { recordingPassOrigin } from './recordingPassOrigin';
+import { passDepthAt, recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 /**
@@ -54,8 +54,8 @@ type FinalMidiPassOffset = { takeId: string; startBeat: number; sourceOffsetBeat
  * Wrap staging finds the original open take by its absent source offset, so its
  * phase is sealed only at Stop. The Stop clock must have entered that pass;
  * a look-ahead seam may have staged its predecessor before the wrap sounded.
- * The take opens where the pass entered and reads the source there, the
- * placement its notes were admitted on, whatever the loop became since.
+ * The take opens where the pass entered, with the depth its notes were admitted
+ * at, whatever the loop became since.
  */
 function finalMidiPassOffsetsAtStop(
     clipIds: readonly string[],
@@ -99,13 +99,11 @@ function finalMidiPassOffsetsAtStop(
             if (open.length !== 1 || previous.length !== 1) {
                 continue;
             }
-            const sourceOffsetBeats = recordingMidiSourceBeatAt(clip.id, {
-                beat: origin.beat,
-                passIndex: stopPassIndex,
+            offsets.set(clip.id, {
+                takeId: open[0]!.id,
+                startBeat: origin.beat,
+                sourceOffsetBeats: passDepthAt(origin),
             });
-            if (sourceOffsetBeats !== null) {
-                offsets.set(clip.id, { takeId: open[0]!.id, startBeat: origin.beat, sourceOffsetBeats });
-            }
         }
     }
     return offsets;

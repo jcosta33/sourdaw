@@ -1,11 +1,11 @@
 import { createTake, createTakeLane, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
 
 import { closeRecordingPass } from './closeRecordingPass';
-import { passSourceBeat } from './passSourceBeat';
-import { recordingPassOrigin } from './recordingPassOrigin';
+import { passDepthAt, recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 type StageRecordingTakeInput = {
@@ -31,19 +31,20 @@ type StageRecordingTakeInput = {
  * the loop the scheduler derived its offset from. A later pass opens at the beat
  * it entered at, as Stop seals it: a loop start moved back inside the pass names
  * beats the pass never recorded, and one moved forward would drop what it did.
- * Staging the pass also fixes where the next one begins.
+ * Its offset is its depth at the clip start, where takes play it from. Staging
+ * the pass also fixes where the next one begins.
  */
 function placeMidiPass(track: Track, input: StageRecordingTakeInput): StageRecordingTakeInput {
     const pass = input.recordingPassIndex;
-    const clip = track.clips.find((candidate) => candidate.id === input.clipId);
-    if (track.kind !== 'midi' || pass === undefined || input.sourceOffsetBeats === undefined || !clip) {
+    if (track.kind !== 'midi' || pass === undefined || input.sourceOffsetBeats === undefined) {
         return input;
     }
     const origin = pass === 0 ? null : recordingPassOrigin(pass);
-    const startBeat = origin ? origin.beat : input.startBeat;
-    const sourceOffsetBeats = passSourceBeat(clip.startBeat, pass, startBeat);
     closeRecordingPass(pass, input.endBeat, input.nextPassStartBeat ?? input.startBeat);
-    return sourceOffsetBeats === null ? input : { ...input, startBeat, sourceOffsetBeats };
+    if (!origin || !activeRecordingRef.startedLooping) {
+        return input;
+    }
+    return { ...input, startBeat: origin.beat, sourceOffsetBeats: passDepthAt(origin) };
 }
 
 function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {

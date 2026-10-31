@@ -2,6 +2,11 @@ import { transportStore } from '#/modules/Transport/stores';
 
 import { activeRecordingRef, type RecordingPassOrigin } from '../../stores/activeRecordingRef';
 
+/** A pass's source beat at the clip start, the offset its take is played with. */
+export function passDepthAt(origin: RecordingPassOrigin): number {
+    return origin.unwrappedBeat - origin.beat;
+}
+
 function latestFixedPass(pass: number): number {
     let fixed = pass;
     while (fixed > 0 && !activeRecordingRef.passOrigins.has(fixed)) {
@@ -29,10 +34,7 @@ export function recordingPassOrigin(pass: number): RecordingPassOrigin | null {
         return null;
     }
     return {
-        unwrappedBeat:
-            origin.unwrappedBeat +
-            Math.max(0, loop.loopEnd - origin.beat) +
-            (pass - fixed - 1) * (loop.loopEnd - loop.loopStart),
+        unwrappedBeat: passDepthAt(origin) + loop.loopEnd + (pass - fixed - 1) * (loop.loopEnd - loop.loopStart),
         beat: loop.loopStart,
     };
 }

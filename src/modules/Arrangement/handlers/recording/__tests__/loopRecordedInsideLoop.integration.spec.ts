@@ -443,9 +443,9 @@ describe('MIDI loop recordings', () => {
             flushAutomergeStorageWrites();
             const take = passTake('Take 1');
             expect(held).toMatchObject({ onsetSourceBeat: 5 });
-            // Both notes sound where they were struck, inside the take Stop sealed.
-            expect(take.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(9);
-            expect(take.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
+            // Takes play a pass from the clip start; both notes sound where they were struck, inside the take.
+            expect(clip.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(9);
+            expect(clip.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
             expect(take.startBeat).toBeLessThanOrEqual(8.5);
         });
 
@@ -457,7 +457,7 @@ describe('MIDI loop recordings', () => {
             stageWrap(clip, { name: 'Pass 1', startBeat: 9, endBeat: 12, sourceOffsetBeats: 5, index: 1 });
 
             const take = passTake('Pass 1');
-            expect(take.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
+            expect(clip.startBeat + early.onsetSourceBeat - take.sourceOffsetBeats!).toBe(8.5);
             expect(take.startBeat).toBeLessThanOrEqual(8.5);
         });
 
@@ -494,7 +494,61 @@ describe('MIDI loop recordings', () => {
             stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 12, sourceOffsetBeats: 4, index: 1 });
 
             const take = passTake('Pass 1');
-            expect(onset).toBe(take.sourceOffsetBeats! + 9.5 - take.startBeat);
+            expect(onset).toBe(take.sourceOffsetBeats! + 9.5 - clip.startBeat);
+        });
+
+        function releaseNote(beat: number, passIndex: number): void {
+            admitRecordingMidiNoteOff({ channel: 0, note: 60, audioTime: 2, position: { beat, passIndex } });
+        }
+
+        it('plays a comped pass a jump entered on the beats it was struck', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 9,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 10,
+            });
+            holdNote(10, 1);
+            releaseNote(10.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11.5);
+            flushAutomergeStorageWrites();
+            await compPass('Take 1');
+
+            expect(heardPitches(8, 12)).toEqual([null, null, 60, null]);
+        });
+
+        it('plays a comped later pass of a recording begun inside the loop on the beats it was struck', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 10,
+            });
+            const [clip] = startRecording(10);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            holdNote(11, 1);
+            releaseNote(11.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11.75);
+            flushAutomergeStorageWrites();
+            await compPass('Take 1');
+
+            expect(heardPitches(10, 12)).toEqual([null, 60]);
         });
 
         it('seals a pass a jump entered where the jump landed', async () => {
@@ -518,7 +572,7 @@ describe('MIDI loop recordings', () => {
             flushAutomergeStorageWrites();
             const take = passTake('Take 1');
             expect(take).toMatchObject({ startBeat: 10, endBeat: 11 });
-            expect(take.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(10.5);
+            expect(clip.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(10.5);
         });
     });
 
