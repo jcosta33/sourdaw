@@ -4,7 +4,7 @@ import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
 
-import { closeRecordingPass } from './recordingPassOrigin';
+import { closeRecordingPass, recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 import { passSourceBeat } from './sourceBeat';
 
@@ -40,14 +40,20 @@ function isOwnedMidiWrapTake(track: Track, input: StageRecordingTakeInput): bool
     );
 }
 
-/** A wrap take of an owned MIDI pass starts where that pass's own events are placed. */
+/**
+ * A wrap take of an owned MIDI pass starts where that pass's own events are
+ * placed. A later pass opens no earlier than the beat it entered at: a loop start
+ * moved back inside the pass names beats the pass never recorded.
+ */
 function placeMidiPassTake(track: Track, input: StageRecordingTakeInput): StageRecordingTakeInput {
     const clip = track.clips.find((candidate) => candidate.id === input.clipId);
     if (!isOwnedMidiWrapTake(track, input) || !clip || input.recordingPassIndex === undefined) {
         return input;
     }
-    const sourceOffsetBeats = passSourceBeat(clip.startBeat, input.recordingPassIndex, input.startBeat);
-    return sourceOffsetBeats === null ? input : { ...input, sourceOffsetBeats };
+    const origin = input.recordingPassIndex === 0 ? null : recordingPassOrigin(input.recordingPassIndex);
+    const startBeat = origin ? Math.max(input.startBeat, origin.beat) : input.startBeat;
+    const sourceOffsetBeats = passSourceBeat(clip.startBeat, input.recordingPassIndex, startBeat);
+    return sourceOffsetBeats === null ? input : { ...input, startBeat, sourceOffsetBeats };
 }
 
 function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {
@@ -148,11 +154,7 @@ export function stageRecordingTake(
         return undefined;
     }
     if (isOwnedMidiWrapTake(track, passInput) && passInput.recordingPassIndex !== undefined) {
-        closeRecordingPass(
-            passInput.recordingPassIndex,
-            passInput.endBeat,
-            passInput.nextPassStartBeat ?? passInput.startBeat
-        );
+        closeRecordingPass(passInput.recordingPassIndex, input.endBeat, input.nextPassStartBeat ?? input.startBeat);
     }
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
@@ -176,7 +178,7 @@ export function stageRecordingTake(
             take = createTake(
                 input.clipId,
                 input.name,
-                recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
+                recordingPassTiming.nextStartBeat(input.clipId) ?? placed.startBeat,
                 input.endBeat,
                 placed.sourceOffsetBeats
             );

@@ -430,6 +430,40 @@ describe('MIDI loop recordings', () => {
         expect(recordingMidiSourceBeatAt(clip.id, { beat: 8.5, passIndex: 2 })).toBe(6.5);
     });
 
+    it('opens a pass take where the pass began when the loop start moves back inside it', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        const wrap = (name: string, startBeat: number, sourceOffsetBeats: number, recordingPassIndex: number) =>
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name,
+                startBeat,
+                endBeat: 12,
+                sourceOffsetBeats,
+                recordingPassIndex,
+            });
+        wrap('Pass 0', 8, 0, 0);
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(5);
+
+        transportStore.set({ ...transportStore.value!, loopStart: 6 });
+        wrap('Pass 1', 6, 6, 1);
+
+        // Pass 1 entered at 8, so beat 9 still reads source 5 through its take.
+        expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 4 });
+        // Pass 2 enters at the moved loop start, a pass length of four on.
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 6, passIndex: 2 })).toBe(8);
+    });
+
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {
         transportStore.set({
             ...defaultTransportState,
