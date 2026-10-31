@@ -1,0 +1,25 @@
+tests/e2e/scriptedToolProvider.ts
+  s_55244eb93b97d1::t_b8e71cf7339086 83-110
+tests/e2e/aiProviderToolAuthority.spec.ts
+  s_55244eb93b97d1::t_934883f259261f 5,183-190,274
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_55244eb93b97d1::t_990d1fca23790b 5,294-299,307,317
+tests/e2e/transientShaperEffect.spec.ts
+  s_55244eb93b97d1::t_1d1b78edf824f7 8,127-132,140,150,218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47901259049158fb30634fb77c5edb036e5db7c4",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
