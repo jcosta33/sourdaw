@@ -40,8 +40,19 @@ import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { TakeLanePanel } from './TakeLanesView';
-import { TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT } from './timelineHorizontalScrollbar';
 import { TrackHeader } from './TrackHeader';
+
+/**
+ * Both columns scroll the same range when the header list ends with exactly the
+ * strip the canvas lacks below it (scrollbar, scratch pad). Until the canvas
+ * has reported a viewport there is nothing to measure against.
+ */
+function getHeaderSpacerHeight(scrollerHeight: number, canvasViewportHeight: number): number {
+    if (canvasViewportHeight <= 0) {
+        return 0;
+    }
+    return Math.max(0, scrollerHeight - canvasViewportHeight);
+}
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
@@ -70,6 +81,8 @@ export const TrackListView = ({
     // re-render this non-virtualised header tree on every pixelsPerBeat /
     // scrollX / autoScrollEnabled change.
     const scrollY = useStoreSelector(timelineViewStore, (state) => state?.scrollY ?? 0);
+    const canvasViewportHeight = useStoreSelector(timelineViewStore, (state) => state?.viewportHeight ?? 0);
+    const [scrollerHeight, setScrollerHeight] = useState(0);
 
     useLayoutEffect(() => {
         const el = scrollRef.current;
@@ -101,11 +114,26 @@ export const TrackListView = ({
                 return;
             }
             // The timeline canvas owns the store's viewport height; the spacer
-            // below gives this list the same scroll range, so scrollTop maps
+            // gives this list the same scroll range, so scrollTop maps
             // straight onto the shared offset.
             setScrollY(el.scrollTop);
         });
     };
+
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            return undefined;
+        }
+        setScrollerHeight(el.clientHeight);
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setScrollerHeight(entry.contentRect.height);
+            }
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
 
     useLayoutEffect(() => {
         return () => {
@@ -377,7 +405,7 @@ export const TrackListView = ({
                     aria-hidden="true"
                     data-testid="track-list-scrollbar-spacer"
                     className="shrink-0"
-                    style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
+                    style={{ height: getHeaderSpacerHeight(scrollerHeight, canvasViewportHeight) }}
                 />
             </div>
         </Stack>

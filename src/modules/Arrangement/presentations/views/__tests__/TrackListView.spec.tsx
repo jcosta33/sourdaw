@@ -1,7 +1,7 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
@@ -9,7 +9,6 @@ import { normalizeTrack } from '../../../models/Track';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
-import { TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT } from '../timelineHorizontalScrollbar';
 import { TrackListView } from '../TrackListView';
 
 type TrackHeaderMockProps = {
@@ -102,9 +101,13 @@ vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {},
 }));
 
+const timelineViewFixture = vi.hoisted(() => ({
+    snapshot: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportHeight: 0 },
+}));
+
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
-        getSnapshot: () => ({ scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true }),
+        getSnapshot: () => timelineViewFixture.snapshot,
         subscribeReact: () => () => {},
     },
     setScrollY: vi.fn(),
@@ -338,13 +341,95 @@ describe('TrackListView', () => {
         expect(scrollEl).not.toHaveClass('flex-1');
     });
 
-    it('ends the scrolled content with a spacer as tall as the timeline horizontal scrollbar', () => {
-        const { container } = renderWithTooltip(<TrackListView />);
-        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
-        const spacer = scrollEl.lastElementChild as HTMLElement;
+    describe('header spacer sized from the measured canvas viewport', () => {
+        const resizeCallbacks: ResizeObserverCallback[] = [];
 
-        expect(spacer).toHaveAttribute('data-testid', 'track-list-scrollbar-spacer');
-        expect(spacer).toHaveStyle({ height: `${TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT}px` });
+        beforeEach(() => {
+            resizeCallbacks.length = 0;
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 0 };
+            vi.stubGlobal(
+                'ResizeObserver',
+                class {
+                    constructor(callback: ResizeObserverCallback) {
+                        resizeCallbacks.push(callback);
+                    }
+                    observe(): void {}
+                    unobserve(): void {}
+                    disconnect(): void {}
+                }
+            );
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 0 };
+        });
+
+        const measureScroller = (height: number): void => {
+            act(() => {
+                for (const callback of resizeCallbacks) {
+                    callback(
+                        [{ contentRect: new DOMRectReadOnly(0, 0, 200, height) } as ResizeObserverEntry],
+                        {} as ResizeObserver
+                    );
+                }
+            });
+        };
+
+        const readSpacerHeight = (): string => screen.getByTestId('track-list-scrollbar-spacer').style.height;
+
+        it('is the scroller height minus the reported canvas viewport height', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(screen.getByTestId('track-list-scrollbar-spacer')).toHaveAttribute('aria-hidden', 'true');
+            expect(readSpacerHeight()).toBe('40px');
+        });
+
+        it('grows when the canvas viewport shrinks, as when the scratch pad opens', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            const { rerender } = renderWithTooltip(<TrackListView />);
+            measureScroller(340);
+            expect(readSpacerHeight()).toBe('40px');
+
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 190 };
+            rerender(
+                <TooltipProvider>
+                    <TrackListView />
+                </TooltipProvider>
+            );
+
+            expect(readSpacerHeight()).toBe('150px');
+        });
+
+        it('follows the scroller when it resizes', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+            measureScroller(500);
+
+            expect(readSpacerHeight()).toBe('200px');
+        });
+
+        it('is zero until the canvas has reported a viewport height', () => {
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(readSpacerHeight()).toBe('0px');
+        });
+
+        it('is zero when the canvas viewport is taller than the scroller', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 400 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(readSpacerHeight()).toBe('0px');
+        });
     });
 
     it('selects the first track on ArrowDown when nothing is selected', () => {
