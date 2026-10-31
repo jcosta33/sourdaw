@@ -1,0 +1,29 @@
+src/modules/AudioEngine/useCases/livePlayback/reconcileNativeAuditionMonitoring.ts
+  s_55244eb93b97d1::t_2b2861acb66629 111-117
+src/modules/AiRuntime/useCases/__tests__/measuredPreviewAudition.spec.ts
+  s_55244eb93b97d1::t_38b7bd75c18955 229-276
+src/modules/AiRuntime/useCases/stopMeasuredPreviewAudition.ts
+  s_55244eb93b97d1::t_3da60d39cdded7 19,43-44,61-63
+src/modules/AudioEngine/repositories/createWebAudioEngine.ts
+  s_55244eb93b97d1::t_c527329b10d6c3 2684-2687,2690-2695
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_55244eb93b97d1::t_1d8570698c250e 9,85,347-400
+src/modules/AudioEngine/useCases/playExclusiveAudioBufferPreview.ts
+  s_55244eb93b97d1::t_45d2b1bd3da69b 46-48,71-75,83-109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4edec9b6ecb0d43524e80530fa69e8b12d86a686",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
