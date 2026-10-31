@@ -69,16 +69,18 @@ const AUTOMERGE_STREAMING_ENTRY = fileURLToPath(
 );
 
 /**
- * Redirects the app's Automerge import from the base64 entry to the streaming
- * entry. Worker bundles keep base64: build workers use `worker.plugins`, and
- * their IIFE format cannot hold the entry's top-level await. Vitest keeps it
- * too, since Node cannot fetch the emitted wasm URL.
+ * Redirects the app build's Automerge import from the base64 entry to the
+ * streaming entry. Worker bundles keep base64: build workers use
+ * `worker.plugins`, and their IIFE format cannot hold the entry's top-level
+ * await. The dev server and Vitest keep it too: dev serves one module URL to
+ * the page and to module workers, and Chromium drops messages posted to a
+ * worker while its top-level await delays the worker's `onmessage`.
  */
 function sourdawAutomergeStreamingEntryPlugin(): Plugin {
     return {
         name: 'sourdaw-automerge-streaming-entry',
         enforce: 'pre',
-        apply: (_config, { mode }) => mode !== 'test',
+        apply: 'build',
         resolveId(id, importer) {
             if (id !== AUTOMERGE_BASE64_ENTRY || importer === AUTOMERGE_STREAMING_ENTRY) {
                 return null;
