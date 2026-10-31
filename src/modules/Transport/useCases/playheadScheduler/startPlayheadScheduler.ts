@@ -206,7 +206,6 @@ function stageLoopWrapTakes(
         endBeat?: number;
         nextPassStartBeat?: number;
         deferredClock?: boolean;
-        supersedesPlannedSeam?: boolean;
     } = {},
     kinds: 'all' | 'audio' | 'midi' = 'all'
 ): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
@@ -279,22 +278,23 @@ function stageLoopWrapTakes(
         };
         if (track.kind === 'midi') {
             stagedTake.recordingPassIndex = passIndex;
-            if (boundary.supersedesPlannedSeam) {
-                // A MIDI pass has no capture clock to cancel its planned end, so
-                // the jump or loop edit closes the pass the wrap count says it
-                // ended: the look-ahead may already have staged that pass's take,
-                // which is then retimed rather than closing the pass twice.
-                const closedPassIndex = playheadWrapCountRef.current - activeRecordingRef.startWrapCount - 1;
-                const plannedTake = lane?.takes.find(
-                    (take) =>
-                        take.clipId === recordingClip.id &&
-                        take.sourceOffsetBeats !== undefined &&
-                        take.recordingPassIndex === closedPassIndex
-                );
-                if (plannedTake) {
-                    stagedTake.replacedTakeId = plannedTake.id;
-                    stagedTake.recordingPassIndex = closedPassIndex;
-                }
+            // A MIDI pass has no capture clock to cancel a planned end, so the
+            // wrap count names the pass each boundary closes: the one still
+            // sounding for a planned seam, which counts its wrap when its
+            // instant arrives, else the one just counted. A seam replanned by
+            // an edit, a jump or a loop edit may close a pass whose take the
+            // look-ahead already staged; that take is retimed, never doubled.
+            const countedPasses = playheadWrapCountRef.current - activeRecordingRef.startWrapCount;
+            const closedPassIndex = boundary.planned ? countedPasses : countedPasses - 1;
+            const stagedPassTake = lane?.takes.find(
+                (take) =>
+                    take.clipId === recordingClip.id &&
+                    take.sourceOffsetBeats !== undefined &&
+                    take.recordingPassIndex === closedPassIndex
+            );
+            if (stagedPassTake) {
+                stagedTake.replacedTakeId = stagedPassTake.id;
+                stagedTake.recordingPassIndex = closedPassIndex;
             }
         }
         const finalizeClock = stageRecordingTake(stagedTake);
@@ -518,8 +518,7 @@ export function startPlayheadScheduler(
         let lateWrap = false;
         let lateWrapSeamAudioTime: number | null = null;
         let editPassEndBeat: number | undefined;
-        let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number; supersedesPlannedSeam: true } | null =
-            null;
+        let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         // Set when an edit's teardown cuts the look-ahead: the window that
         // re-emits it opens where playback stands (or at the loop start), and
         // like a jump's it must restore the stored controllers in force there.
@@ -631,7 +630,6 @@ export function startPlayheadScheduler(
                         capturedEditBoundary = {
                             endBeat: audiblePositionAtEdit,
                             nextPassStartBeat: current.loopStart,
-                            supersedesPlannedSeam: true,
                         };
                     }
                 }
@@ -878,8 +876,7 @@ export function startPlayheadScheduler(
             return;
         }
 
-        let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number; supersedesPlannedSeam: true } | null =
-            null;
+        let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         let jumpClosedRecordingPasses = 0;
         if (jumpToPosition !== null) {
             const pending = schedulerSession.pendingSeam;
@@ -898,11 +895,7 @@ export function startPlayheadScheduler(
                 if (browserCapture) {
                     observeRecordingPassEntry(endingBeat, now, false, true);
                 }
-                capturedJumpBoundary = {
-                    endBeat: endingBeat,
-                    nextPassStartBeat: jumpToPosition,
-                    supersedesPlannedSeam: true,
-                };
+                capturedJumpBoundary = { endBeat: endingBeat, nextPassStartBeat: jumpToPosition };
                 // The relocation ends the pass it interrupts, after the pass the
                 // superseded seam already closed when its instant has passed
                 // uncounted.

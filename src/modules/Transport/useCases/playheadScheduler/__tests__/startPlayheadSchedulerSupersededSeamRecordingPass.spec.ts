@@ -453,6 +453,19 @@ describe('superseded loop seam during MIDI loop recording', () => {
         expect(notePass()).toBe(1);
     });
 
+    it('closes the pass once when a tempo edit replans the seam before it sounds', async () => {
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const editTickSeconds = 0.01;
+        expect(ctxTime.now + editTickSeconds).toBeLessThan(schedulerSession.pendingSeam!.seamAudioTime);
+        transportStoreState.value = { ...transportStoreState.value!, tempo: TEMPO_BPM - 20 };
+
+        await tick(editTickSeconds);
+        await advanceUntil(() => notePass() === 1);
+
+        expect(closedPasses()).toEqual([expect.objectContaining({ recordingPassIndex: 0, endBeat: LOOP_BEATS })]);
+        expect(openTake().recordingPassIndex).toBe(1);
+    });
+
     it('closes the sounded pass and the interrupted one when the seam instant passed uncounted', async () => {
         await advanceUntil(() => schedulerSession.pendingSeam !== null);
         await advanceUntil(() => ctxTime.now + TICK_SECONDS >= schedulerSession.pendingSeam!.seamAudioTime);
