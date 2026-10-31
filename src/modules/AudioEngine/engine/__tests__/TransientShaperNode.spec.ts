@@ -133,11 +133,13 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         expect(Math.ceil(rampTime * 48000)).toBe(3329);
         expect(reset.valueWrites.mock.calls).toEqual([[1], [2]]);
         expect(reset.cancelScheduledValues.mock.calls).toEqual([[0], [0]]);
+        // 896 / 48000 sits above frame 896, so the raw time would land on frame 897.
         node.setParam('sustainGain', 1);
-        expect(fake.parameters.get('sustainGain')?.setValueAtTime).toHaveBeenLastCalledWith(
-            1,
-            exactContext.currentTime
-        );
+        node.setParam('attackGain', 2, 0);
+        const immediateTime = fake.parameters.get('sustainGain')?.setValueAtTime.mock.lastCall?.[1];
+        const reachedTime = fake.parameters.get('attackGain')?.setValueAtTime.mock.lastCall?.[1];
+        expect(immediateTime === undefined ? undefined : Math.ceil(immediateTime * 48000)).toBe(896);
+        expect(reachedTime === undefined ? undefined : Math.ceil(reachedTime * 48000)).toBe(896);
         dispose(node, fake);
     });
     it('queues exact reset epochs synchronously for actual bypass transitions, including coalesced transitions', async () => {

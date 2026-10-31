@@ -38,11 +38,12 @@ function bounded(value: number): number {
 }
 
 function createGainControls(context: BaseAudioContext, param: (name: string) => AudioParam | undefined) {
+    // `currentTime` is a frame count over the sample rate and can sit just above
+    // its frame, which Chromium would apply one sample late. An immediate write
+    // and a frame already reached both land on the current frame exactly.
     const time = (frame?: number): number => {
-        if (frame === undefined) {
-            return context.currentTime;
-        }
-        return Math.max(context.currentTime, frameTime(frame, context.sampleRate));
+        const currentFrame = Math.round(context.currentTime * context.sampleRate);
+        return frameTime(Math.max(currentFrame, frame ?? currentFrame), context.sampleRate);
     };
     return {
         setParam(name: string, value: number, sampleFrame?: number): void {

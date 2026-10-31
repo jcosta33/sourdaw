@@ -111,7 +111,7 @@ export const TrackHeaderSection = ({ track }: TrackHeaderSectionProps): ReactEle
                         isStale && 'border-state-warning/40 text-state-warning hover:bg-state-warning/10'
                     )}
                     onClick={() => {
-                        if (track.frozen || isStale) {
+                        if (track.frozen && !isStale) {
                             void executeUserAppAction({
                                 type: 'unfreezeTrack',
                                 payload: { trackId: track.id },

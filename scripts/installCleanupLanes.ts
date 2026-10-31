@@ -2,7 +2,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -15,6 +15,9 @@ import { BOOTSTRAP_PATH, snapshotImportSpecifiers, trustedLocalImportClosure } f
 export const CLEANUP_LABEL = 'com.sourdaw.lane-cleanup';
 const WORKER = 'scripts/cleanupLanes.ts';
 const PACKAGE = '{"type":"module"}\n';
+export const CLEANUP_LAUNCH_WAIT_MS = 10_000;
+const CLEANUP_LAUNCH_POLL_MS = 500;
+const LAUNCHD_INITIALIZATION_FAILURE = /^78\b/;
 export type CleanupInstallationPort = {
     primaryRoot: string;
     platform: NodeJS.Platform;
@@ -25,6 +28,7 @@ export type CleanupInstallationPort = {
     gh: string;
     capture: (command: string, args: string[]) => string;
     run: (command: string, args: string[]) => void;
+    wait: (milliseconds: number) => void;
 };
 export type CleanupRuntimeBinding = {
     version: 1;
@@ -205,6 +209,55 @@ function cleanupLaunchAgents(home: string): string {
     return agents;
 }
 
+type LaunchObservation = { runs: number; lastExitCode: string; executing: boolean };
+
+/** Top-level `launchctl print` fields sit one tab deep; nested sections repeat names such as `state` deeper. */
+function topLevelField(printed: string, name: string): string | undefined {
+    return new RegExp(`^\\t${name} = (.*?)\\s*$`, 'm').exec(printed)?.[1];
+}
+
+function parseLaunchObservation(printed: string): LaunchObservation {
+    return {
+        runs: Number(topLevelField(printed, 'runs') ?? 0),
+        lastExitCode: topLevelField(printed, 'last exit code') ?? '',
+        executing: topLevelField(printed, 'state') === 'running' && /^\d+$/.test(topLevelField(printed, 'pid') ?? ''),
+    };
+}
+
+function hasExited(observation: LaunchObservation): boolean {
+    return observation.lastExitCode !== '' && observation.lastExitCode !== '(never exited)';
+}
+
+/** launchd counts a run at spawn, before initialization can fail, so a run alone settles nothing. */
+function isSettled(observation: LaunchObservation): boolean {
+    return observation.executing || (observation.runs > 0 && hasExited(observation));
+}
+
+function observeFirstLaunch(port: CleanupInstallationPort, service: string): LaunchObservation {
+    let waited = 0;
+    for (;;) {
+        const observation = parseLaunchObservation(port.capture('/bin/launchctl', ['print', service]));
+        if (isSettled(observation) || waited >= CLEANUP_LAUNCH_WAIT_MS) {
+            return observation;
+        }
+        port.wait(CLEANUP_LAUNCH_POLL_MS);
+        waited += CLEANUP_LAUNCH_POLL_MS;
+    }
+}
+
+function launchFailure(observation: LaunchObservation, node: string, primaryRoot: string): string | undefined {
+    const remediation =
+        `Grant ${node} Full Disk Access (or Removable Volumes access for an external volume) ` +
+        'in System Settings > Privacy & Security, then rerun pnpm lane:cleanup:install.';
+    if (!isSettled(observation)) {
+        return `launchd did not start or finish initializing the cleanup job for ${primaryRoot} within ${CLEANUP_LAUNCH_WAIT_MS / 1000} seconds. ${remediation}`;
+    }
+    if (!observation.executing && LAUNCHD_INITIALIZATION_FAILURE.test(observation.lastExitCode)) {
+        return `launchd could not initialize the cleanup job for ${primaryRoot} (last exit code ${observation.lastExitCode}). ${remediation}`;
+    }
+    return undefined;
+}
+
 export function installCleanupLanes(port: CleanupInstallationPort): { plist: string; runtime: string } {
     if (port.platform !== 'darwin') {
         throw new Error('lane cleanup installation requires macOS launchd');
@@ -290,7 +343,12 @@ export function installCleanupLanes(port: CleanupInstallationPort): { plist: str
         port.run('/bin/launchctl', ['bootout', service]);
     }
     port.run('/bin/launchctl', ['bootstrap', `gui/${port.uid}`, plist]);
-    port.capture('/bin/launchctl', ['print', service]);
+    const failure = launchFailure(observeFirstLaunch(port, service), binding.node, root);
+    if (failure !== undefined) {
+        port.run('/bin/launchctl', ['bootout', service]);
+        rmSync(plist);
+        throw new Error(failure);
+    }
     return { plist, runtime };
 }
 
@@ -330,6 +388,9 @@ function main(): void {
         capture,
         run: (command, args) => {
             capture(command, args);
+        },
+        wait: (milliseconds) => {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
         },
     });
     console.log(`Installed ${result.plist}; verified runtime ${pathToFileURL(result.runtime).pathname}`);

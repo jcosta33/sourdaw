@@ -255,11 +255,14 @@ export async function freezeTrack(trackId: string, freezeIdOverride?: string): P
         }
 
         if (abortController.signal.aborted) {
-            // User cancelled
+            // A cancelled refresh keeps the take it was replacing, so the track stays
+            // frozen on it and can still be unfrozen; a cancelled first freeze is unfrozen.
             scope(() => {
                 updateTrack(trackId, (time) => ({
                     ...time,
-                    freezeState: { status: 'unfrozen' },
+                    frozen: previousFreeze.frozen,
+                    frozenBufferId: previousFreeze.frozenBufferId,
+                    freezeState: previousFreeze.freezeState,
                 }));
             });
             return true;

@@ -19,12 +19,25 @@ import { describe, expect, it } from 'vitest';
 import { githubAuthorizationGitEnv } from '../githubAppIdentity.ts';
 import {
     CLEANUP_LABEL,
+    CLEANUP_LAUNCH_WAIT_MS,
     cleanupRuntimeProgram,
     installCleanupLanes,
     refreshCleanupLauncher,
     type CleanupInstallationPort,
     type CleanupRuntimeBinding,
 } from '../installCleanupLanes.ts';
+
+/** Mirrors `launchctl print`: top-level fields one tab deep, nested sections deeper with their own `state`. */
+function printed(fields: { state?: string; pid?: string; runs: string; exit: string }): string {
+    const top = [
+        fields.state === undefined ? [] : [`\tstate = ${fields.state}`],
+        fields.pid === undefined ? [] : [`\tpid = ${fields.pid}`],
+        [`\truns = ${fields.runs}`, `\tlast exit code = ${fields.exit}`],
+    ].flat();
+    return [`gui/501/${CLEANUP_LABEL} = {`, ...top, '\tevent triggers = {', '\t\tstate = active', '\t}', '}'].join(
+        '\n'
+    );
+}
 
 function fixture() {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'sourdaw-cleanup-install-')));
@@ -67,6 +80,8 @@ function fixture() {
     git(['update-ref', 'refs/remotes/origin/main', commit]);
     const events: string[][] = [];
     let loaded = false;
+    const waits: number[] = [];
+    const launch = { prints: [printed({ state: 'running', pid: '123', runs: '1', exit: '(never exited)' })] };
     const port: CleanupInstallationPort = {
         primaryRoot: root,
         home: root,
@@ -81,7 +96,7 @@ function fixture() {
                 if (!loaded) {
                     throw new Error('Could not find service in domain');
                 }
-                return 'state = waiting';
+                return launch.prints.length > 1 ? (launch.prints.shift() ?? '') : (launch.prints[0] ?? '');
             }
             return git(args);
         },
@@ -90,12 +105,17 @@ function fixture() {
             events.push(args);
             loaded = args[0] === 'bootstrap';
         },
+        wait: (milliseconds) => {
+            waits.push(milliseconds);
+        },
     };
     return {
         root,
         git,
         port,
         events,
+        waits,
+        launch,
         commit,
         dispose: () => rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 50 }),
     };
@@ -517,6 +537,97 @@ describe('cleanup installation', () => {
         } finally {
             f.dispose();
             rmSync(foreign, { recursive: true });
+        }
+    });
+
+    it('rolls back and names the remediation when launchd cannot initialize the job', () => {
+        const f = fixture();
+        try {
+            f.launch.prints = [printed({ runs: '1', exit: '78: EX_CONFIG' })];
+            let message = '';
+            try {
+                installCleanupLanes(f.port);
+            } catch (error) {
+                message = error instanceof Error ? error.message : String(error);
+            }
+            expect(message).toContain(realpathSync(process.execPath));
+            expect(message).toContain(f.root);
+            expect(message).toContain('Full Disk Access');
+            expect(message).toContain('pnpm lane:cleanup:install');
+            expect(f.events.findIndex((args) => args[0] === 'bootstrap')).toBeGreaterThanOrEqual(0);
+            expect(f.events.at(-2)?.[0]).toBe('print');
+            expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
+            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+            expect(f.waits).toHaveLength(0);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('keeps observing a counted run that has not settled and rolls back when it then exits 78', () => {
+        const f = fixture();
+        try {
+            f.launch.prints = [
+                printed({ runs: '1', exit: '(never exited)' }),
+                printed({ state: 'waiting', runs: '1', exit: '(never exited)' }),
+                printed({ runs: '1', exit: '78: EX_CONFIG' }),
+            ];
+            expect(() => installCleanupLanes(f.port)).toThrow(/could not initialize.*Full Disk Access/);
+            expect(f.waits).toHaveLength(2);
+            expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
+            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it.each([
+        ['launchd never counts a run', printed({ state: 'waiting', runs: '0', exit: '(never exited)' })],
+        ['a counted run never settles', printed({ state: 'waiting', runs: '1', exit: '(never exited)' })],
+    ])('rolls back when %s within the bounded wait', (_name, print) => {
+        const f = fixture();
+        try {
+            f.launch.prints = [print];
+            expect(() => installCleanupLanes(f.port)).toThrow(
+                /did not start or finish initializing the cleanup job.*within 10 seconds.*Full Disk Access/
+            );
+            expect(f.waits.length).toBeGreaterThan(0);
+            expect(f.waits.reduce((total, milliseconds) => total + milliseconds, 0)).toBe(CLEANUP_LAUNCH_WAIT_MS);
+            expect(f.events.at(-1)).toEqual(['bootout', `gui/501/${CLEANUP_LABEL}`]);
+            expect(existsSync(join(f.root, 'Library/LaunchAgents', `${CLEANUP_LABEL}.plist`))).toBe(false);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('waits for the first launch and accepts a job that exited for an ordinary reason', () => {
+        const f = fixture();
+        try {
+            f.launch.prints = [
+                printed({ runs: '0', exit: '(never exited)' }),
+                printed({ runs: '0', exit: '(never exited)' }),
+                printed({ runs: '1', exit: '1' }),
+            ];
+            const installed = installCleanupLanes(f.port);
+            expect(f.waits).toHaveLength(2);
+            expect(f.events.some((args) => args[0] === 'bootout')).toBe(false);
+            expect(existsSync(installed.plist)).toBe(true);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('accepts a job that is executing with a pid without waiting', () => {
+        const f = fixture();
+        try {
+            f.launch.prints = [printed({ state: 'running', pid: '123', runs: '1', exit: '(never exited)' })];
+            const installed = installCleanupLanes(f.port);
+            expect(existsSync(installed.plist)).toBe(true);
+            expect(f.events.at(-1)?.[0]).toBe('print');
+            expect(f.events.some((args) => args[0] === 'bootout')).toBe(false);
+            expect(f.waits).toHaveLength(0);
+        } finally {
+            f.dispose();
         }
     });
 
