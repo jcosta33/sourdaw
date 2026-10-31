@@ -5,18 +5,16 @@ import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-import { captureRecordingEnd } from './captureRecordingEnd';
+import { captureManualRecordingEnd, manualClosingBeat, type ManualRecordingEnd } from './manualRecordingEnd';
 import { recordingLifecycle } from './recordingLifecycle';
 
-type RecordingEnd = ReturnType<typeof captureRecordingEnd>;
-
 /** A failed Record start may close only its own capture; flush and clip closure can admit a successor reentrantly. */
-async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: RecordingEnd): Promise<void> {
+async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: ManualRecordingEnd): Promise<void> {
     if (stillOwns?.() === false) {
         return;
     }
     recordingLifecycle.cancelPendingRecordingStart();
-    const ending = gestureEnding ?? captureRecordingEnd();
+    const ending = gestureEnding ?? captureManualRecordingEnd();
     recordingLifecycle.endRecording();
     const recordingFlush = stopAudioRecording();
     if (stillOwns?.() === false) {
@@ -30,11 +28,7 @@ async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: R
     // Pause parks the transport before it stops the recorder, and its parked
     // position is the last tick's beat, not the gesture's.
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
-    const recordingCommit = stopRecording(
-        ending?.rolling ? ending.beatAtContextSeconds(ending.contextSeconds) : undefined,
-        ending,
-        true
-    );
+    const recordingCommit = stopRecording(manualClosingBeat(ending), ending, true);
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
         // know that the project it is leaving gained a take. A stop the root
@@ -83,7 +77,10 @@ async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: R
  * clock answers the stored position, which no longer pairs with the audio
  * clock read beside it.
  */
-export async function stopActiveRecording(stillOwns?: () => boolean, gestureEnding?: RecordingEnd): Promise<void> {
+export async function stopActiveRecording(
+    stillOwns?: () => boolean,
+    gestureEnding?: ManualRecordingEnd
+): Promise<void> {
     const closing = closeActiveRecording(stillOwns, gestureEnding);
     recordingLifecycle.trackClosing(closing);
     try {

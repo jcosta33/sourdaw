@@ -12,7 +12,7 @@ import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
-import { captureRecordingEnd } from './captureRecordingEnd';
+import { captureManualRecordingEnd } from './manualRecordingEnd';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
@@ -29,8 +29,9 @@ export function pausePlayback(): void {
     // rolls. `pausedBeat` is the last tick's beat, up to a tick behind the audio
     // clock, and once the store is parked on it the gesture clock answers that
     // stale beat: read after parking, the ending would pair it with a later
-    // context time and shift the closing pass by the tick's age.
-    const recordingEnd = captureRecordingEnd();
+    // context time and shift the closing pass by the tick's age. It also reads
+    // the pending punch-out before the punch flag below is retired.
+    const recordingEnd = captureManualRecordingEnd();
 
     // #3096: pause halts the engine; it just does not locate it. Established
     // transports separate pause from stop only by where the playhead is left,
