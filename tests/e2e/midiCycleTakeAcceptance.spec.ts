@@ -200,7 +200,21 @@ async function scheduledPitchesInInterval(page: Page, startBeat: number, endBeat
         .map(({ frequency }) => Math.round(69 + 12 * Math.log2(frequency / 440)));
 }
 
+// The take rows live in the bottom dock's Takes tab. Switching lanes on opens it,
+// but a reopened project already has them on, so reach the tab the way a user does.
+async function openTakesPanel(page: Page): Promise<void> {
+    const dockToggle = page.getByTestId('toggle-bottom-dock');
+    if ((await dockToggle.getAttribute('aria-pressed')) !== 'true') {
+        await dockToggle.click();
+    }
+    const takesTab = page.getByRole('tab', { name: 'Takes' });
+    await expect(takesTab).toBeVisible();
+    await takesTab.click();
+    await expect(takesTab).toHaveAttribute('aria-selected', 'true');
+}
+
 async function selectTake(page: Page, take: CapturedTake): Promise<void> {
+    await openTakesPanel(page);
     const promote = page.getByRole('button', { name: `Promote ${take.name} to main take` });
     await expect(promote).toBeVisible();
     await promote.click();
