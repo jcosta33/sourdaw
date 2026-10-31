@@ -1120,7 +1120,17 @@ describe('VirtualKeyboard', () => {
             expect(onClose).toHaveBeenCalledTimes(1);
         });
 
-        it.each(['dialog', 'alertdialog', 'menu', 'listbox'])(
+        it('still closes on Escape beside a persistent listbox such as the sample library', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const library = document.createElement('div');
+            library.setAttribute('role', 'listbox');
+            document.body.append(library);
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(['dialog', 'alertdialog', 'menu'])(
             'leaves Escape alone while a %s is open elsewhere in the document',
             (role) => {
                 const onClose = vi.fn();

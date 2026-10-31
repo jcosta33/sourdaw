@@ -20,8 +20,21 @@ describe('hasOpenModalSurface', () => {
         expect(hasOpenModalSurface()).toBe(false);
     });
 
-    it.each(['dialog', 'alertdialog', 'menu', 'listbox'])('is true while a %s is open anywhere', (role) => {
+    it.each(['dialog', 'alertdialog', 'menu'])('is true while a %s is open anywhere', (role) => {
         addSurface(role);
+        expect(hasOpenModalSurface()).toBe(true);
+    });
+
+    it('ignores a persistent listbox but counts one inside an open popper', () => {
+        addSurface('listbox');
+        expect(hasOpenModalSurface()).toBe(false);
+
+        const popper = document.createElement('div');
+        popper.setAttribute('data-radix-popper-content-wrapper', '');
+        const popupList = document.createElement('div');
+        popupList.setAttribute('role', 'listbox');
+        popper.append(popupList);
+        document.body.append(popper);
         expect(hasOpenModalSurface()).toBe(true);
     });
 
