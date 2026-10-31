@@ -1,11 +1,10 @@
 import { type ReactElement } from 'react';
 
-import { FileText, Film, Guitar, Headphones, Mic, Piano } from 'lucide-react';
-
 import { cn } from '#/utils/Styles/cn';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 
+import { TEMPLATE_CATEGORY_PRESENTATION } from './templateCategories';
 import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 export type TemplateCardTemplate = {
@@ -21,47 +20,11 @@ type TemplateCardProps = {
     disabled?: boolean;
 };
 
-type CategoryTint = { text: string; bg: string; border: string };
-
-const CATEGORY_TINTS: Record<TemplateCategory, CategoryTint> = {
-    empty: { text: 'text-white/50', bg: 'bg-white/5', border: 'border-white/10' },
-    demo: {
-        text: 'text-[var(--color-accent-mint)]',
-        bg: 'bg-[var(--color-accent-mint)]/8',
-        border: 'border-[var(--color-accent-mint)]/25',
-    },
-    music: {
-        text: 'text-[var(--color-accent-lavender)]',
-        bg: 'bg-[var(--color-accent-lavender)]/8',
-        border: 'border-[var(--color-accent-lavender)]/25',
-    },
-    podcast: {
-        text: 'text-[var(--color-accent-peach)]',
-        bg: 'bg-[var(--color-accent-peach)]/8',
-        border: 'border-[var(--color-accent-peach)]/25',
-    },
-    film: {
-        text: 'text-[var(--color-accent-cyan)]',
-        bg: 'bg-[var(--color-accent-cyan)]/8',
-        border: 'border-[var(--color-accent-cyan)]/25',
-    },
-};
-
-const TEMPLATE_ICONS: Record<string, ReactElement> = {
-    empty: <FileText className="size-4" aria-hidden="true" />,
-    'basic-band': <Guitar className="size-4" aria-hidden="true" />,
-    electronic: <Headphones className="size-4" aria-hidden="true" />,
-    podcast: <Mic className="size-4" aria-hidden="true" />,
-    'film-score': <Film className="size-4" aria-hidden="true" />,
-    'singer-songwriter': <Piano className="size-4" aria-hidden="true" />,
-};
-
-const FALLBACK_ICON = <FileText className="size-4" aria-hidden="true" />;
-
 // A native button on purpose: the shared Button primitive sets whitespace-nowrap, which keeps a
 // long description from wrapping and pushes it past the card edge.
 export const TemplateCard = ({ template, onSelect, disabled = false }: TemplateCardProps): ReactElement => {
-    const tint = CATEGORY_TINTS[template.category];
+    const tint = TEMPLATE_CATEGORY_PRESENTATION[template.category];
+    const { Icon } = tint;
 
     return (
         <button
@@ -78,14 +41,16 @@ export const TemplateCard = ({ template, onSelect, disabled = false }: TemplateC
             <div
                 className={cn('mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg', tint.bg, tint.text)}
             >
-                {TEMPLATE_ICONS[template.id] ?? FALLBACK_ICON}
+                <Icon className="size-4" aria-hidden="true" />
             </div>
             <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-semibold text-white/80">{template.name}</p>
+                <p className="truncate text-xs font-semibold text-foreground">{template.name}</p>
                 <p className={cn('mt-0.5 text-[10px] capitalize', tint.text)}>
                     {template.category === 'empty' ? 'Blank' : template.category}
                 </p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-white/30">{template.description}</p>
+                <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
+                    {template.description}
+                </p>
                 <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
                     <TemplatePreviewThumb templateId={template.id} />
                 </div>

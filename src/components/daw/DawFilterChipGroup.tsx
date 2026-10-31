@@ -90,7 +90,7 @@ export const DawFilterChipGroup = <Value extends string>({
                             'flex cursor-pointer items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium outline-none transition-colors focus-visible:ring-1 focus-visible:ring-border-focus/70',
                             isActive
                                 ? option.activeClassName
-                                : 'border-white/[0.06] bg-white/[0.03] text-white/35 hover:bg-white/[0.06] hover:text-white/60'
+                                : 'border-white/[0.06] bg-white/[0.03] text-muted-foreground hover:bg-white/[0.06] hover:text-foreground'
                         )}
                     >
                         {option.icon}

@@ -1,11 +1,10 @@
 import { type ReactElement, useState } from 'react';
 
-import { Film, Layers, Mic, Music, Sparkles } from 'lucide-react';
-
 import { type DawFilterChipOption, DawFilterChipGroup } from '#/components/daw/DawFilterChipGroup';
 import { Grid, Stack } from '#/components/layout';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
+import { ALL_TEMPLATES_FILTER, TEMPLATE_CATEGORY_PRESENTATION } from '../components/templateCategories';
 import { TemplateCard, type TemplateCardTemplate } from '../components/TemplateCard';
 
 type GalleryFilter = TemplateCategory | 'all';
@@ -17,41 +16,24 @@ type TemplateGalleryProps = {
     disabled?: boolean;
 };
 
+const FILTER_ORDER = ['demo', 'music', 'podcast', 'film'] as const satisfies readonly TemplateCategory[];
+
 const FILTER_OPTIONS: readonly DawFilterChipOption<GalleryFilter>[] = [
     {
         value: 'all',
-        label: 'All',
-        icon: <Layers className="size-3" aria-hidden="true" />,
-        activeClassName: 'border-white/10 bg-white/10 text-white/60',
+        label: ALL_TEMPLATES_FILTER.filterLabel,
+        icon: <ALL_TEMPLATES_FILTER.Icon className="size-3" aria-hidden="true" />,
+        activeClassName: ALL_TEMPLATES_FILTER.chipActive,
     },
-    {
-        value: 'demo',
-        label: 'Demos',
-        icon: <Sparkles className="size-3" aria-hidden="true" />,
-        activeClassName:
-            'border-[var(--color-accent-mint)]/25 bg-[var(--color-accent-mint)]/15 text-[var(--color-accent-mint)]',
-    },
-    {
-        value: 'music',
-        label: 'Music',
-        icon: <Music className="size-3" aria-hidden="true" />,
-        activeClassName:
-            'border-[var(--color-accent-lavender)]/25 bg-[var(--color-accent-lavender)]/15 text-[var(--color-accent-lavender)]',
-    },
-    {
-        value: 'podcast',
-        label: 'Podcast',
-        icon: <Mic className="size-3" aria-hidden="true" />,
-        activeClassName:
-            'border-[var(--color-accent-peach)]/25 bg-[var(--color-accent-peach)]/15 text-[var(--color-accent-peach)]',
-    },
-    {
-        value: 'film',
-        label: 'Film',
-        icon: <Film className="size-3" aria-hidden="true" />,
-        activeClassName:
-            'border-[var(--color-accent-cyan)]/25 bg-[var(--color-accent-cyan)]/15 text-[var(--color-accent-cyan)]',
-    },
+    ...FILTER_ORDER.map((category): DawFilterChipOption<GalleryFilter> => {
+        const { filterLabel, Icon, chipActive } = TEMPLATE_CATEGORY_PRESENTATION[category];
+        return {
+            value: category,
+            label: filterLabel,
+            icon: <Icon className="size-3" aria-hidden="true" />,
+            activeClassName: chipActive,
+        };
+    }),
 ];
 
 export const TemplateGallery = ({
