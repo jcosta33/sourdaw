@@ -325,6 +325,61 @@ describe('multi-target actual output', () => {
         expect(close).toHaveBeenCalledTimes(1);
         expect(samples[7]).toBeCloseTo(0.1 * Math.sin((2 * Math.PI * 1000 * 7) / 48000), 7);
     });
+    it('feeds a target Opus pass 48 kHz PCM while its other formats keep the target rate', async () => {
+        useRealOggWorkerTransport();
+        const source = toneSource(96000, 2, 96000);
+        const sink = browserOutput();
+        const targets = resolveDeliveryTargets({
+            targets: [
+                {
+                    id: 'web',
+                    name: 'Web',
+                    settings: {
+                        ...DELIVERY_PRESETS[2].settings,
+                        formats: ['wav', 'opus', 'ogg'],
+                        sampleRate: 44100,
+                        channels: 1,
+                        normalization: 'off',
+                    },
+                    dither: { mode: 'none' },
+                },
+            ],
+        });
+        const output = await streamExport({
+            targets,
+            destination: {
+                kind: 'browser',
+                suggestedName: 'mix.zip',
+                extension: '.zip',
+                mime: 'application/zip',
+                archive: true,
+            },
+            checkCancelled: () => {},
+        });
+        await output.writeAudio({ source, name: 'mix', onProgress: () => {}, onLimited: () => {} });
+        await output.commit(() => {});
+        const entries = unzipSync(joinBytes(sink.chunks));
+        expect(Object.keys(entries)).toEqual(['mix.wav', 'mix.opus', 'mix.ogg']);
+        const decoded = await decoder();
+        for (const format of ['wav', 'ogg']) {
+            const actual = decoded.decode_audio_bytes(entries[`mix.${format}`]!);
+            expect(actual.sample_rate).toBe(44100);
+            expect(actual.channels).toBe(1);
+        }
+        const direct = createDeliveryPcmSource({ source, sampleRate: 48000, channels: 1 });
+        let frames = 0;
+        for (const request of OggCodecTestWorker.instances[0]!.requests) {
+            if (request.kind === 'encode') {
+                expect(request.channels).toEqual(
+                    readExportPcmBlock({ source: direct, start: frames, length: request.channels[0]!.length })
+                );
+                frames += request.channels[0]!.length;
+            }
+        }
+        expect(frames).toBe(48000);
+        const header = new DataView(oggPages(entries['mix.opus']!)[0]!.body.buffer);
+        expect(header.getUint32(12, true)).toBe(48000);
+    });
     it('keeps Unicode episode tags in only the actual MP3 entry and independently decodes its payload', async () => {
         const chunks: Uint8Array[] = [];
         vi.stubGlobal('window', {
