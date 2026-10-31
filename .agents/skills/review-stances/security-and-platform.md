@@ -542,3 +542,16 @@ prove the cache caller still resolves the authenticated target. Before disabling
 validate the whole affected set of leaf symlinks and real targets against that selected Node's
 official distribution. Refuse unrecognized launchers without deleting recognized peers, and
 preserve Node, npm, npx, Yarn and unrelated files.
+
+### A scheduler install must observe its first real launch (introduced by PR #5869)
+
+PR #5869 introduced the cleanup installer, which ended at `launchctl bootstrap` and `launchctl print`.
+That proves only registration. With the primary on an external volume, launchd refused the job before
+it ran (`Unable to open stdout path ... Operation not permitted`), and `print` showed a rising `runs`
+with `last exit code = 78: EX_CONFIG` at every interval while install reported success. Historic
+private stance, prompt and model are unestablished.
+
+Probe a scheduler install by observing the first RunAtLoad launch (`runs`, `last exit code`) on the
+actual volume the job must write to, not a temporary directory. Stub `print` as `runs = 1` with
+`last exit code = 78: EX_CONFIG` and as `runs = 0` for the whole wait; require boot-out, plist removal
+and an error naming the pinned binary and remediation. Delete the launch observation to make both fail.
