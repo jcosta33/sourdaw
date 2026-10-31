@@ -3,9 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { captureProjectIdentity } from '#/modules/CrdtDocument/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
+import { projectLoadFailureStore } from '../../../../stores/projectLoadFailureStore';
 import { saveProjectBeforeReplacement } from '../saveProjectBeforeReplacement';
 
-type OpenProject = { createdAt: number; dirty: boolean; name: string };
+type OpenProject = { createdAt: number; dirty: boolean; loading: boolean; name: string };
 
 const mocks = vi.hoisted(() => ({
     saveProject: vi.fn<() => Promise<boolean>>(),
@@ -23,6 +24,7 @@ vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));
 const openProject = (overrides: Partial<OpenProject> = {}): OpenProject => ({
     createdAt: 1,
     dirty: true,
+    loading: false,
     name: 'Night Session',
     ...overrides,
 });
@@ -32,6 +34,46 @@ describe('saveProjectBeforeReplacement', () => {
         vi.clearAllMocks();
         mocks.projectStoreValue.value = null;
         mocks.identity.value = 'identity-a';
+        projectLoadFailureStore.set(null);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+    });
+
+    // After a failed load the store still names a project whose session is
+    // gone, and saveProject refuses early. Discarding there would compact over
+    // the copy a reload restores, so the refusal stands without a question.
+    it('stays without asking when a project load has failed', async () => {
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.projectStoreValue.value = openProject();
+        projectLoadFailureStore.set({ message: 'session gone', projectName: 'Night Session' });
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
+        expect(confirmUser).not.toHaveBeenCalled();
+    });
+
+    it('stays without asking while a project load is in flight', async () => {
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.projectStoreValue.value = openProject({ loading: true });
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
+        expect(confirmUser).not.toHaveBeenCalled();
+    });
+
+    it('stays without asking when no project is open and the save fails', async () => {
+        mocks.saveProject.mockResolvedValue(false);
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
+        expect(confirmUser).not.toHaveBeenCalled();
+    });
+
+    it('stays when a load starts while the dialog is up', async () => {
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.projectStoreValue.value = openProject();
+        vi.mocked(confirmUser).mockImplementation(() => {
+            mocks.projectStoreValue.value = openProject({ loading: true });
+            return Promise.resolve(true);
+        });
+
+        await expect(saveProjectBeforeReplacement()).resolves.toBe('stay');
     });
 
     it('proceeds saving closed takes, without asking, when the save succeeds and the project is clean', async () => {

@@ -262,6 +262,7 @@ describe('RecentProjectsMenu', () => {
     });
 
     it('keeps the project open when the user cancels after the pre-switch save fails', async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
         vi.mocked(saveProject).mockResolvedValue(false);
         vi.mocked(newProject).mockResolvedValue(true);
 
@@ -279,6 +280,7 @@ describe('RecentProjectsMenu', () => {
     // A project that cannot be saved must not trap the user: Don't Save
     // replaces it as a discard, so nothing saves the outgoing project again.
     it("starts the new project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
         vi.mocked(saveProject).mockResolvedValue(false);
         vi.mocked(confirmUser).mockResolvedValue(true);
         vi.mocked(newProject).mockResolvedValue(true);
@@ -294,6 +296,7 @@ describe('RecentProjectsMenu', () => {
     });
 
     it("opens the recent project as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true, createdAt: 1 };
         vi.mocked(saveProject).mockResolvedValue(false);
         vi.mocked(confirmUser).mockResolvedValue(true);
         vi.mocked(loadRecentProject).mockResolvedValue('committed');

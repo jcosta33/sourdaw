@@ -4,7 +4,9 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '#/components/ui/dialog';
 import { Input } from '#/components/ui/input';
+import { cn } from '#/utils/Styles/cn';
 
+import { DIALOG_SERVICE_LAYER } from './dialogServiceLayer';
 import { usePromptDialog } from './usePromptDialog';
 
 /**
@@ -49,7 +51,11 @@ export const PromptDialog = (): ReactElement => {
                             submit();
                         }
                     }}
-                    className="gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl"
+                    overlayClassName={DIALOG_SERVICE_LAYER}
+                    className={cn(
+                        'gap-0 min-w-[320px] max-w-[480px] sm:max-w-[480px] rounded-lg border border-border bg-surface-raised p-4 shadow-xl',
+                        DIALOG_SERVICE_LAYER
+                    )}
                 >
                     {pending.title ? (
                         <DialogTitle className="mb-2 text-sm font-semibold text-foreground">
