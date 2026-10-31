@@ -1,0 +1,52 @@
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_55244eb93b97d1::t_b84ed61d5df9f1 1839-1842
+  s_55244eb93b97d1::t_4741e710efe98e 1836-1838
+  s_55244eb93b97d1::t_dec03d78efe35e 1843-1845
+  s_ba80576e6f5cb5::t_993d9c2cca904a 1628-1835,1846-1872
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_55244eb93b97d1::t_11749546891bfc 97,112-117
+  s_55244eb93b97d1::t_6599cedb569bea 91-95
+  s_55244eb93b97d1::t_ff410e8e00e601 96
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_ba80576e6f5cb5::t_4faefc61fea126 115-119
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  s_ba80576e6f5cb5::t_a5049bc9306126 10,19,35,48,53,56,109-113,119-144,146,159-160,228,232-235
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_ba80576e6f5cb5::t_550313763ac688 386-391
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_ba80576e6f5cb5::t_9769b3f391ed2d 1442,1943,1964-1968
+src/modules/AiRuntime/useCases/readRequestMetricNumbers.ts
+  s_7a8e1107313040::t_451e8c0af935d5 17-24,28,30-31
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ccd7ed79823c2384e95129dc9c00d33537703cbd",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
