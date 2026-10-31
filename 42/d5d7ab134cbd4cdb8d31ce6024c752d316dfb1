@@ -1,0 +1,19 @@
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorker.spec.ts
+  s_3bb122e91d89a5::t_ffac042655d941 19
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "42d5d7ab134cbd4cdb8d31ce6024c752d316dfb1",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
