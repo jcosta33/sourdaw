@@ -1,0 +1,33 @@
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 371-374,387
+  s_dde1671ba022b8::t_a9ac722e9c4961 375-386
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  h_beb54bf43b47b7 1,2,3-5,6-7,8-13,14-19,20-44,45,46-47,49,50,51,52-54,55-56,57-58,114-117,118,121,126-127,132,136,139-140,145-153,154-218,219-221,222-244,245-257,258,259-270,271-301,302-304,305-356,357-371,372-385,393-394,395,396-405,406-407,408,409-411,412,413-414,415,416,417-422,423,424-427,428-429,431,437,442,452,453,461,464,473,478-479,485,512-515,512,516,517-522,523,524-531,532-534,535-537,538-542,543,544,545-548,549-553,554-557
+  s_dde1671ba022b8::t_fa3baf5e751192 76-82
+  s_dde1671ba022b8::t_81f5a68712b1a4 59-75,83-113,119-120,122-125,128-130,132-134,137-138,141-143,445
+  s_dde1671ba022b8::t_462a9a7c592fb5 144
+  s_dde1671ba022b8::t_b6c8cef1c412c8 443-444
+  s_dde1671ba022b8::t_1ad7473ffcd249 446-448
+  s_dde1671ba022b8::t_e6c2d9a4a9af1c 48,386-392,430,432-436,438-441,449-451,454-460,462-463,465-472,474-477,480-484,486-511
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6455f2953a08e28b31eb0cb9a5be03b6781d2016",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_dde1671ba022b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2e4c42ac-51ff-45eb-b81f-f43601ed01dc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
