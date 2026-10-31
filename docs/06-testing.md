@@ -698,13 +698,13 @@ unchanged into a passing record.
 
 ## 9. Running tests
 
-| Command                                      | Purpose                                                                                                                                        |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:watch`                            | Vitest watch mode for active development                                                                                                       |
-| `pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                                               |
-| `pnpm test:coverage`                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                                         |
-| `pnpm test:e2e <spec>`                       | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only                  |
-| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                                          |
+| Command                                      | Purpose                                                                                                                         |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:watch`                            | Vitest watch mode for active development                                                                                        |
+| `pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                              |
+| `pnpm test:coverage`                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                         |
+| `pnpm test:e2e <spec>`                       | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only |
+| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                           |
 
 Run only checks affected by the changed files. Keep local verification focused on tests and
 formatting; CI owns lint, TypeScript typechecks, module boundaries, barrel-mock coverage, builds,
@@ -914,8 +914,10 @@ The deterministic selector in `scripts/prValidationScope.ts` reads the complete 
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`
 with the selected files and reasons. Product changes run the offline smoke set and complete browser
 suite with hardware admission, including presentation files, shared application code, test helpers,
-dependencies, deleted tests and unknown paths. Changed E2E specs run directly. Documentation and
-known review tooling avoid browser execution. The same affected profile reaches validation: a
+dependencies, deleted browser tests and unknown paths. Changed E2E specs run directly. Documentation and
+known review tooling avoid browser execution. Vitest-collected spec files under `src/` keep broad
+non-browser validation without browser execution, since the browser never loads them; non-spec files
+under `__tests__/` stay on the product route. The same affected profile reaches validation: a
 documentation-only pull request runs the standing static and security jobs; explicitly known review
 tooling also runs script types, lint, the script unit suite and review contracts. Application builds,
 application unit shards, browser jobs and native checks require a product or unclassified change.

@@ -28,6 +28,7 @@ import {
     selectValidationPlan,
     SMOKE_SPEC,
 } from '../prValidationScope';
+import { isVitestCollected } from '../vitestCollectionPatterns';
 
 // Synchronous Git fixture and planner child-process work can exceed Vitest's 5000 ms default on shared CI runners.
 const GIT_PLANNER_CASE_TIMEOUT_MS = 30_000;
@@ -2192,5 +2193,94 @@ describe('repository tooling selects no browser suite', () => {
         const plan = selectValidationPlan(['src/modules/Tuner/notes.md'], INVENTORY);
         expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
         expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+});
+
+const UNIT_SPEC_REASON = 'unit test source; broad non-browser validation without browser execution';
+
+function e2eSourceReferences(): { file: string; reference: string }[] {
+    const references: { file: string; reference: string }[] = [];
+    for (const entry of readdirSync('tests/e2e', { recursive: true, withFileTypes: true })) {
+        if (!entry.isFile()) {
+            continue;
+        }
+        const file = posix.join(entry.parentPath, entry.name);
+        for (const [match] of readFileSync(file, 'utf8').matchAll(/(?<![\w-])(?:src|#)\/[\w./@-]*/g)) {
+            references.push({ file, reference: match.replace(/^#\//, 'src/') });
+        }
+    }
+    return references;
+}
+
+describe('unit test sources select no browser suite', () => {
+    it.each([
+        'src/modules/AudioEngine/repositories/devices/toneShaping/__tests__/createDeEsser.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.integration.spec.tsx',
+        'src/modules/Tuner/useCases/detectPitch.test.ts',
+    ])('keeps a lone %s on broad non-browser validation', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ ...BROAD_WITHOUT_BROWSER, codeql: true });
+        expect(plan.reasons).toEqual([{ path, reason: UNIT_SPEC_REASON }]);
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([]);
+    });
+
+    it.each([
+        'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts',
+        'src/modules/Tuner/presentations/views/__tests__/tunerFixture.ts',
+        'src/modules/Tuner/presentations/views/TunerPanel.e2e.spec.ts',
+        'src/modules/Tuner/presentations/views/__tests__/TunerPanel.SPEC.ts',
+        'electron/main/__tests__/foo.spec.ts',
+    ])('retains full browser coverage for %s', (path) => {
+        const plan = selectValidationPlan([path], INVENTORY);
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        expect(productPathsOf([path], INVENTORY, false)).toEqual([path]);
+    });
+
+    it('lets a shared product path beside a unit spec select full coverage', () => {
+        const plan = selectValidationPlan(
+            ['src/modules/Tuner/useCases/__tests__/detectPitch.spec.ts', 'src/app/bootstrap.ts'],
+            INVENTORY
+        );
+        expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+        expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+    });
+
+    it.each(['R100\0src/a/__tests__/x.spec.ts\0src/a/x.ts\0', 'R100\0src/a/x.ts\0src/a/__tests__/x.spec.ts\0'])(
+        'selects full coverage when a rename crosses between a unit spec and a source: %j',
+        (diff) => {
+            const plan = selectValidationPlan(parseChangedPaths(diff), INVENTORY);
+            expect(plan).toMatchObject({ profile: 'broad', browser: true, browserAi: true });
+            expect(allSelected(plan)).toEqual(fullInventory(INVENTORY));
+        }
+    );
+
+    it('lets the presentation path decide browser selection when its unit spec changes beside it', () => {
+        const unitSpec = 'src/modules/Tuner/presentations/views/__tests__/TunerPanel.spec.tsx';
+        const paths = [unitSpec, TUNER];
+        const productPaths = productPathsOf(paths, INVENTORY, false);
+        expect(productPaths).toEqual([TUNER]);
+        expect(canNarrow({ productPaths, candidateDiff: `M\0${unitSpec}\0M\0${TUNER}\0`, integrationDiff: '' })).toBe(
+            true
+        );
+        const narrow = selectValidationPlan(paths, INVENTORY, new Map(), false, {
+            kind: 'narrow',
+            specs: [...TUNER_SPECS],
+            browserAi: false,
+            owners: ['Tuner'],
+        });
+        expect(narrow).toMatchObject({ profile: 'broad', browser: true, browserAi: false });
+        expect(allSelected(narrow)).toEqual([...TUNER_SPECS].sort());
+    });
+
+    it('holds the premise that no browser harness file references a Vitest-collected source', () => {
+        const references = e2eSourceReferences();
+        expect(references.map(({ reference }) => reference)).toContain(
+            'src/modules/BrowserAi/useCases/__tests__/ddspRenderProbe.ts'
+        );
+        const collected = references.filter(({ reference }) =>
+            ['', '.ts', '.tsx', '.js', '.jsx'].some((extension) => isVitestCollected(`${reference}${extension}`))
+        );
+        expect(collected).toEqual([]);
     });
 });
