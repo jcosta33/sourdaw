@@ -82,6 +82,16 @@ function literalEvaluation(prompt: string, action: AppAction) {
     });
 }
 
+function refinedLiteralEvaluation(prompt: string, refinedRequests: string[], action: AppAction) {
+    const commandBatch = batch(prompt, action);
+    const state = metricGoalStateCodec(configuredLiteralMetricState(commandBatch));
+    return evaluateMetricGoalAdmission({
+        state: state === null ? null : { ...state, refinedRequests },
+        commandBatch,
+        currentRevision: captureProjectRevision(),
+    });
+}
+
 describe('request-number closure through real Command metadata', () => {
     const frequencyAction: AppAction = {
         type: 'setDeviceParameter',
@@ -136,6 +146,15 @@ describe('request-number closure through real Command metadata', () => {
             ).toBe('not-required');
         }
     );
+
+    it('still blocks a restated figure in the refinement the batch does not use', () => {
+        expect(
+            refinedLiteralEvaluation('Normalize Intro clip to -16 LUFS', ['Normalize Intro clip to -14 LUFS'], {
+                type: 'normalizeClip',
+                payload: { clipId: 'intro', mode: 'lufs', targetDb: -14 },
+            })
+        ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining('-16 LUFS') });
+    });
 
     it('preserves exact non-destructive clip normalization', () => {
         expect(

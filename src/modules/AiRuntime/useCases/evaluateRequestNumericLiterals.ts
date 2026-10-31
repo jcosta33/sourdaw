@@ -109,24 +109,39 @@ function numericLiteralWitness(
 /**
  * Every figure a request chain stated is accounted against the text that stated it: a refinement
  * inherits its earlier requests' figures, which only the refined batch or a goal they selected can
- * account for.
+ * account for. A later request stating a figure in the same unit replaces them, and its own figure
+ * is accounted in their place.
  */
 export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
     const nativeRefusal = nativeLiteralUseRefusal(state, envelope);
     if (nativeRefusal !== null) {
         return nativeRefusal;
     }
+    const inherited = state.refinedRequests ?? [];
+    const texts = [...inherited, envelope.intent];
     const statedRequests = [
-        ...(state.refinedRequests ?? []).map((request) => ({ request, goals: goalsSelectedFor(state, request) })),
-        { request: envelope.intent, goals: state.authorities.flatMap((authority) => authority.goals) },
+        ...inherited.map((request, index) => ({
+            request,
+            goals: goalsSelectedFor(state, request),
+            superseded: supersededUnits(texts.slice(index + 1)),
+        })),
+        {
+            request: envelope.intent,
+            goals: state.authorities.flatMap((authority) => authority.goals),
+            superseded: new Set<RequestMetricNumber['unit']>(),
+        },
     ];
-    for (const { request, goals } of statedRequests) {
-        const refusal = unaccountedRequestNumber(request, goals, state, envelope);
+    for (const { request, goals, superseded } of statedRequests) {
+        const refusal = unaccountedRequestNumber(request, goals, superseded, state, envelope);
         if (refusal !== null) {
             return refusal;
         }
     }
     return null;
+}
+
+function supersededUnits(laterTexts: readonly string[]): Set<RequestMetricNumber['unit']> {
+    return new Set(laterTexts.flatMap((text) => readRequestMetricNumbers(text).map((candidate) => candidate.unit)));
 }
 
 function goalsSelectedFor(state: MetricGoalState, request: string): MetricGoal[] {
@@ -139,11 +154,13 @@ function goalsSelectedFor(state: MetricGoalState, request: string): MetricGoal[]
 function unaccountedRequestNumber(
     request: string,
     selected: readonly MetricGoal[],
+    superseded: ReadonlySet<RequestMetricNumber['unit']>,
     state: MetricGoalState,
     envelope: Envelope
 ): Refusal | null {
     const usedArguments = new Set<string>();
-    for (const candidate of readRequestMetricNumbers(request)) {
+    const stated = readRequestMetricNumbers(request).filter((candidate) => !superseded.has(candidate.unit));
+    for (const candidate of stated) {
         const selectedGoal = selected.find(
             (goal) =>
                 goal.source.kind === 'request-number' &&

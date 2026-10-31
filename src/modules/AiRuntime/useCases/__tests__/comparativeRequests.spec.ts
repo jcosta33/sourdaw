@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, normalizeClip } from '#/modules/Arrangement/useCases';
 import {
+    cacheAudioBuffer,
     configureOfflinePpqEndpointProjection,
     type renderTrackSubgraphOffline,
     type renderOfflineInput,
@@ -1634,6 +1635,7 @@ async function proposeLiteralCard(input: {
     runId: string;
     commands: readonly LiteralCommand[];
     refines?: string;
+    targetIds?: readonly string[];
 }): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
     const context = getProjectContext();
     const revision = captureProjectRevision();
@@ -1652,7 +1654,7 @@ async function proposeLiteralCard(input: {
     agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
     const proposalArguments: Record<string, unknown> = {
         commands: input.commands,
-        plan: metricGoalProviderPlan(input.prompt, ['drums']),
+        plan: metricGoalProviderPlan(input.prompt, input.targetIds ?? ['drums']),
     };
     if (input.refines !== undefined) {
         proposalArguments.refines = input.refines;
@@ -1777,6 +1779,53 @@ function drumsGain(): number | undefined {
     return trackStore.value?.tracks.find((track) => track.id === 'drums')?.gain;
 }
 
+function introGain(): number | undefined {
+    return trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === 'intro')?.gain;
+}
+
+/** Drums carrying one audio clip whose cached buffer a LUFS normalization can actually measure. */
+function configureIntroClipProject(label: string): void {
+    configureMetricGoalProject({
+        label,
+        tracks: [
+            {
+                ...createTrack({ id: 'drums', name: 'Drums', kind: 'audio' }),
+                clips: [
+                    {
+                        id: 'intro',
+                        trackId: 'drums',
+                        name: 'Intro',
+                        type: 'audio',
+                        audioBufferId: 'intro-buffer',
+                        startBeat: 0,
+                        endBeat: 4,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#ffffff',
+                        locked: false,
+                        muted: false,
+                    },
+                ],
+            },
+        ],
+        sections: [],
+    });
+    cacheAudioBuffer({ buffer: sine(0.5, 2), bufferId: 'intro-buffer' });
+}
+
+const NORMALIZE_INTRO_14 = 'Normalize Intro clip to -14 LUFS';
+
+function normalizeIntro(targetDb: number): LiteralCommand {
+    return { name: 'normalizeClip', arguments: { clipId: 'intro', mode: 'lufs', targetDb } };
+}
+
+function raiseDrums(deltaDb: number): LiteralCommand {
+    return { name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb } };
+}
+
+const TRUE_PEAK_REQUEST = 'Raise Drums by 1 dB while keeping true peak below -1 dBTP';
+
 describe('request figures across a refinement chain', () => {
     it.each(['-1 dBTP', '-1 dbtp', '-1 DBTP'])(
         'blocks Confirm on an unaccounted %s figure in any case',
@@ -1852,6 +1901,92 @@ describe('request figures across a refinement chain', () => {
         });
         expect(drumsGain()).toBeGreaterThan(0.8);
         expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('lets a restated figure in the same unit replace the refined request’s figure', async () => {
+        configureIntroClipProject('literal figure replaced');
+        const original = await proposeLiteralCard({
+            prompt: NORMALIZE_INTRO_14,
+            runId: 'literal-unit-original',
+            commands: [normalizeIntro(-14)],
+            targetIds: ['intro'],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(true);
+        const refined = await proposeLiteralCard({
+            prompt: 'Normalize Intro clip to -16 LUFS',
+            runId: 'literal-unit-refinement',
+            commands: [normalizeIntro(-16)],
+            refines: original.confirmationId,
+            targetIds: ['intro'],
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([NORMALIZE_INTRO_14]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        const normalizedTo16 = introGain();
+        expect(normalizedTo16).not.toBe(1);
+        expect(normalizeClip('intro', 'lufs', -14)).toBe(true);
+        const normalizedTo14 = introGain();
+        if (normalizedTo16 === undefined || normalizedTo14 === undefined) {
+            throw new Error('Expected the Intro clip to remain in the project.');
+        }
+        expect(normalizedTo16 / normalizedTo14).toBeCloseTo(10 ** (-2 / 20), 6);
+    });
+
+    it('does not let a figure in another unit replace the refined request’s true-peak figure', async () => {
+        configureIntroClipProject('literal figure other unit');
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'literal-other-unit-original',
+            commands: [raiseDrums(1)],
+        });
+        const refined = await proposeLiteralCard({
+            prompt: NORMALIZE_INTRO_14,
+            runId: 'literal-other-unit-refinement',
+            commands: [raiseDrums(1), normalizeIntro(-14)],
+            refines: original.confirmationId,
+            targetIds: ['drums', 'intro'],
+        });
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('carries the true-peak figure across a second refinement', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'literal-chain-original',
+            commands: [raiseDrums(1)],
+        });
+        const first = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'literal-chain-first',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        const second = await proposeLiteralCard({
+            prompt: 'Raise Drums by 3 dB instead',
+            runId: 'literal-chain-second',
+            commands: [raiseDrums(3)],
+            refines: first.confirmationId,
+        });
+        expect(metricGoalStateCodec(second.metricGoalState)?.refinedRequests).toEqual([
+            TRUE_PEAK_REQUEST,
+            'Raise Drums by 2 dB instead',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: second.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: second.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
     });
 
     it('decodes a persisted metric state with or without the refined requests it carries', () => {
