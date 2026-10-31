@@ -1,0 +1,50 @@
+src/modules/AudioEngine/stores/liveAudioBufferReferences.ts
+  s_3bb122e91d89a5::t_6beaacb18d2dcb 1-26
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_3bb122e91d89a5::t_24d13535be8a99 155
+  s_3bb122e91d89a5::t_886ea4bdc7c362 20
+  s_3bb122e91d89a5::t_35cab683409d98 116
+  s_3bb122e91d89a5::t_1c8d8e1f60ddf8 106-107,113-115,117-122,129
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_3bb122e91d89a5::t_f9b4fc0eef8ed9 845-897
+src/modules/AudioEngine/useCases/configureLiveAudioBufferReferences.ts
+  s_55244eb93b97d1::t_dd37515c9c79f5 1-15
+src/modules/AudioEngine/useCases/index.ts
+  s_55244eb93b97d1::t_9c77d0db8578a0 30
+src/modules/Project/useCases/index.ts
+  s_3bb122e91d89a5::t_25e19276854cc9 65
+src/app/initAudioBufferCacheAccess.ts
+  s_3bb122e91d89a5::t_834d7a4c7d0c61 1-3,5-17,19
+  s_3bb122e91d89a5::t_68adb1413e54a7 18
+  s_3bb122e91d89a5::t_06dd7f588746f2 4
+src/app/__tests__/bootstrap.spec.ts
+  s_3bb122e91d89a5::t_6a5cb9cbcc9fcf 198,302,809-811,1192-1194,1196-1199
+src/app/__tests__/initAudioBufferCacheAccess.spec.ts
+  s_3bb122e91d89a5::t_8bd629091a3e4b 1-59
+src/app/bootstrap.ts
+  s_3bb122e91d89a5::t_664506c460ec56 19,246,477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59b8a3c5dd163fc517522bb22932e1f0337dea41",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
