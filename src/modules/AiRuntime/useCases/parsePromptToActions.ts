@@ -1439,6 +1439,7 @@ const planPromptIntent = inject({ logger })(
                         metricProofs,
                         inheritedMetricState,
                         nativeLiteralUses,
+                        refinedRequest: refinedCard?.prompt ?? null,
                     });
 
                 // The adopted compilations and the refined proposal are both read above, so the
@@ -1939,6 +1940,7 @@ function serializePromptMetricState(input: {
     metricProofs: MetricGoalState['proofs'];
     inheritedMetricState: MetricGoalState | null;
     nativeLiteralUses: readonly MetricNativeLiteralUse[];
+    refinedRequest: string | null;
 }): string {
     const { actions, steps, authorities } = input;
     if (
@@ -1959,6 +1961,11 @@ function serializePromptMetricState(input: {
         steps,
         proofs: input.metricProofs,
         nativeLiteralUses: [...(input.inheritedMetricState?.nativeLiteralUses ?? []), ...input.nativeLiteralUses],
+        ...(input.refinedRequest === null
+            ? {}
+            : {
+                  refinedRequests: [...(input.inheritedMetricState?.refinedRequests ?? []), input.refinedRequest],
+              }),
         binding: null,
     };
     return JSON.stringify(metricGoalState);

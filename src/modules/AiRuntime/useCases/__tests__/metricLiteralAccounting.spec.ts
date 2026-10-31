@@ -88,12 +88,13 @@ describe('request-number closure through real Command metadata', () => {
         payload: { deviceId: 'eq', paramId: 'eq-mid-freq', value: 2400, valueUnit: 'Hz' },
     };
 
-    it.each(['Set Drums EQ mid frequency to 2400 Hz', 'Set drums eq mid frequency to 2400 Hz'])(
-        'preserves the exact native-unit parameter edit on its named target: %s',
-        (prompt) => {
-            expect(literalEvaluation(prompt, frequencyAction).status).toBe('not-required');
-        }
-    );
+    it.each([
+        'Set Drums EQ mid frequency to 2400 Hz',
+        'Set drums eq mid frequency to 2400 Hz',
+        'Set Drums EQ mid frequency to 2400 hz',
+    ])('preserves the exact native-unit parameter edit on its named target: %s', (prompt) => {
+        expect(literalEvaluation(prompt, frequencyAction).status).toBe('not-required');
+    });
 
     it('does not spend one parameter argument on a second acoustic obligation with the same figure', () => {
         expect(
@@ -108,9 +109,12 @@ describe('request-number closure through real Command metadata', () => {
         });
     });
 
-    it('does not use a literal on another target to discharge the requested acoustic figure', () => {
-        expect(literalEvaluation('Keep Bass centroid at 2400 Hz', frequencyAction).status).toBe('blocked');
-    });
+    it.each(['Keep Bass centroid at 2400 Hz', 'Keep Bass centroid at 2400 hz', 'Keep Bass centroid at 2400 HZ'])(
+        'does not use a literal on another target to discharge the requested acoustic figure: %s',
+        (prompt) => {
+            expect(literalEvaluation(prompt, frequencyAction).status).toBe('blocked');
+        }
+    );
 
     it('requires the Command argument unit to match the request candidate', () => {
         expect(

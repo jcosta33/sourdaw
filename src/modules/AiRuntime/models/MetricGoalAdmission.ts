@@ -112,6 +112,11 @@ export type MetricGoalState<MetricId extends string> = {
     readonly steps: readonly MetricGoalStep[];
     readonly proofs: readonly MetricGoalProof[];
     readonly nativeLiteralUses?: readonly MetricNativeLiteralUse[];
+    /**
+     * The requests a refinement chain replaced, oldest first. Their figures still need accounting, each
+     * against its own text: thread context is cut by provider budgets and is no card's authority.
+     */
+    readonly refinedRequests?: readonly string[];
     readonly binding: {
         readonly contentHash: string;
         readonly revision: string;

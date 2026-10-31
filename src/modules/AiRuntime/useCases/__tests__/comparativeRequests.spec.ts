@@ -1625,3 +1625,248 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
         }).toEqual(before);
     });
 });
+
+type LiteralCommand = { name: string; arguments: Record<string, unknown> };
+
+/** Plans one literal request through the scripted provider and persists its actual approval card. */
+async function proposeLiteralCard(input: {
+    prompt: string;
+    runId: string;
+    commands: readonly LiteralCommand[];
+    refines?: string;
+}): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    const thread = input.refines === undefined ? undefined : readChatThreadContext();
+    if (input.refines !== undefined) {
+        expect(thread?.pendingProposal?.confirmationId).toBe(input.refines);
+    }
+    expect(
+        agentRunLifecycle.create({
+            runId: input.runId,
+            request: input.prompt,
+            mode: 'apply',
+            createdRevision: revision,
+        })
+    ).toEqual({ status: 'created' });
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
+    let turns = 0;
+    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+        turns += 1;
+        if (turns === 1) {
+            return {
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas).map((call) => ({
+                    ...call,
+                    id: `${input.runId}-intake`,
+                })),
+            };
+        }
+        if (turns === 2) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: `${input.runId}-discovery`,
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: input.commands.map((command) => command.name) },
+                    },
+                ],
+            };
+        }
+        if (turns === 3) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: `${input.runId}-proposal`,
+                        name: 'command.batch.propose',
+                        arguments: {
+                            commands: input.commands,
+                            ...(input.refines === undefined ? {} : { refines: input.refines }),
+                            plan: metricGoalProviderPlan(input.prompt, ['drums']),
+                        },
+                    },
+                ],
+            };
+        }
+        throw new Error('The literal request exceeded its three scripted provider turns.');
+    });
+    const planned = await parsePromptToActions({
+        prompt: input.prompt,
+        context,
+        projectRevision: revision,
+        ...(thread === undefined ? {} : { thread }),
+        streamIdentity: { runId: input.runId, requestId: `${input.runId}-request`, cancellationGeneration: 0 },
+        onMeasurementAttempt: agentWorkBudget.admitMeasurement(input.runId),
+    });
+    expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
+    expect(planned.refines).toBe(input.refines);
+    const assistantMessageId = `${input.runId}-assistant`;
+    const materialized = materializePromptCommandPlan({
+        userText: input.prompt,
+        runId: input.runId,
+        assistantMessageId,
+        interactionMode: 'apply',
+        trustCeiling: undefined,
+        resume: undefined,
+        onResumedPlanAccepted: undefined,
+        projectRevision: revision,
+        context,
+        result: { ...planned, requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+        actionLabels: planned.actions.map((action) => action.type),
+        protectedTargetIds: [],
+    });
+    if (materialized.status !== 'prepared' || materialized.compiledActionExecution.agentApproval === null) {
+        throw new Error('Expected a persisted approval card for the literal request.');
+    }
+    const compiled = materialized.compiledActionExecution;
+    chatStore.set({
+        messages: [
+            {
+                id: `${input.runId}-user`,
+                role: 'user',
+                content: input.prompt,
+                timestamp: 1,
+                projectId: captureProjectIdentity(),
+            },
+            {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: 'Literal plan',
+                timestamp: 2,
+                agentRunId: input.runId,
+                projectId: captureProjectIdentity(),
+            },
+        ],
+        isGenerating: false,
+        enableReasoning: true,
+        chatMode: 'prompt',
+    });
+    const confirmationId = persistPromptActionConfirmation({
+        runId: input.runId,
+        prompt: input.prompt,
+        assistantMessageId,
+        actions: planned.actions,
+        actionLabels: planned.actions.map((action) => action.type),
+        commandEnvelopes: compiled.commandEnvelopes,
+        commandBatch: compiled.commandBatch,
+        agentApproval: compiled.agentApproval,
+        metricGoalState: compiled.metricGoalState,
+        affectedIds: ['drums'],
+        protectedUnchanged: [],
+        groundingBasis: planned.groundingBasis,
+        executionMode: 'atomic',
+        group: materialized.commandGroup,
+        projectRevision: revision,
+        parsedCommandBatch: materialized.parsedCommandBatch,
+        content: input.prompt,
+        ...(input.refines === undefined ? {} : { supersedes: input.refines }),
+    });
+    if (confirmationId === null) {
+        throw new Error('The actual pending confirmation was not persisted.');
+    }
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'waiting-for-approval' });
+    return { confirmationId, metricGoalState: compiled.metricGoalState };
+}
+
+function drumsGain(): number | undefined {
+    return trackStore.value?.tracks.find((track) => track.id === 'drums')?.gain;
+}
+
+describe('request figures across a refinement chain', () => {
+    it.each(['-1 dBTP', '-1 dbtp', '-1 DBTP'])(
+        'blocks Confirm on an unaccounted %s figure in any case',
+        async (token) => {
+            const before = structuredClone(trackStore.value);
+            const card = await proposeLiteralCard({
+                prompt: `Raise Drums by 1 dB while keeping true peak below ${token}`,
+                runId: 'literal-figure-case',
+                commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+            });
+            expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(false);
+            expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toMatchObject({
+                status: 'failed',
+                reason: expect.stringContaining(token),
+            });
+            expect(trackStore.value).toEqual(before);
+            expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps the refined request’s unaccounted true-peak figure blocking the replacement card', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: 'Raise Drums by 1 dB while keeping true peak below -1 dBTP',
+            runId: 'literal-figure-original',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(false);
+        const refined = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'literal-figure-refinement',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 2 } }],
+            refines: original.confirmationId,
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([
+            'Raise Drums by 1 dB while keeping true peak below -1 dBTP',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it('still confirms a refinement whose batch keeps accounting for the refined request’s figure', async () => {
+        configureMetricGoalProject({
+            label: 'literal figure kept',
+            tracks: [createTrack({ id: 'drums', name: 'Drums 100 Hz', kind: 'audio' })],
+            sections: [],
+        });
+        const original = await proposeLiteralCard({
+            prompt: 'Raise "Drums 100 Hz" by 1 dB',
+            runId: 'literal-name-original',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(true);
+        const refined = await proposeLiteralCard({
+            prompt: 'Make it 2 dB',
+            runId: 'literal-name-refinement',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 2 } }],
+            refines: original.confirmationId,
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([
+            'Raise "Drums 100 Hz" by 1 dB',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drumsGain()).toBeGreaterThan(0.8);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('decodes a persisted metric state with or without the refined requests it carries', () => {
+        const persisted = {
+            schemaVersion: 1,
+            authorities: [],
+            steps: [],
+            proofs: [],
+            binding: null,
+        };
+        expect(metricGoalStateCodec(JSON.stringify(persisted))).toEqual(persisted);
+        expect(metricGoalStateCodec(JSON.stringify(persisted))?.refinedRequests).toBeUndefined();
+        const refined = {
+            ...persisted,
+            refinedRequests: ['Raise Drums by 1 dB while keeping true peak below -1 dBTP'],
+        };
+        expect(metricGoalStateCodec(JSON.stringify(refined))).toEqual(refined);
+        expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: [1] }))).toBeNull();
+        expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: 'Raise Drums' }))).toBeNull();
+    });
+});
