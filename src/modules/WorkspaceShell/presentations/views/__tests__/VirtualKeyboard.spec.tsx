@@ -921,6 +921,25 @@ describe('VirtualKeyboard', () => {
             expect(setVelocityMock).toHaveBeenCalledWith(101);
         });
 
+        it('keeps control keys from reaching window listeners while the control still handles them', () => {
+            render(<VirtualKeyboard />);
+            const slider = screen.getByTestId('velocity-slider');
+            fireEvent.keyDown(slider, { code: 'ArrowRight', key: 'ArrowRight' });
+            expect(setVelocityMock).toHaveBeenCalledWith(101);
+            expect(bubbleKeydowns).toHaveLength(0);
+
+            const button = screen.getByLabelText(/Octave up/i);
+            fireEvent.keyDown(button, { code: 'Enter', key: 'Enter' });
+            expect(bubbleKeydowns).toHaveLength(0);
+        });
+
+        it('still lets a Cmd chord on the slider reach window listeners', () => {
+            render(<VirtualKeyboard />);
+            const slider = screen.getByTestId('velocity-slider');
+            fireEvent.keyDown(slider, { code: 'KeyS', key: 's', metaKey: true });
+            expect(bubbleKeydowns).toHaveLength(1);
+        });
+
         it('lets Enter and Space reach a focused button but swallows its other keys', () => {
             render(<VirtualKeyboard />);
             const button = screen.getByLabelText(/Octave up/i);

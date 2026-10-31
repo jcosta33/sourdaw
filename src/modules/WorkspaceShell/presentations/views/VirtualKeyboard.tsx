@@ -216,6 +216,35 @@ const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean =>
     event.target instanceof Element &&
     event.target.closest(INTERACTIVE_CONTROL_SELECTOR) !== null;
 
+/**
+ * What an open virtual keyboard does with a keydown:
+ * - passthrough: the app or the focused surface keeps the key untouched
+ * - close / octave / note: the keyboard acts on it and consumes it
+ * - control: a focused control keeps the key, but nothing past the document may see it
+ * - swallow: consumed with no action
+ */
+type KeydownRule = 'passthrough' | 'close' | 'octave' | 'note' | 'control' | 'swallow';
+
+const classifyKeydown = (event: KeyboardEvent): KeydownRule => {
+    if (event.metaKey || event.ctrlKey || yieldsKeyboardToTarget(event.target)) {
+        return 'passthrough';
+    }
+    if (event.code === 'Escape') {
+        return 'close';
+    }
+    if (event.key === 'Tab') {
+        return 'passthrough';
+    }
+    const isMusicalKey = !event.altKey && !event.shiftKey;
+    if (isMusicalKey && (event.code === OCTAVE_DOWN_CODE || event.code === OCTAVE_UP_CODE)) {
+        return 'octave';
+    }
+    if (isMusicalKey && (event.code in KEYBOARD_WHITE_MAP || event.code in KEYBOARD_BLACK_MAP)) {
+        return 'note';
+    }
+    return isNativeKeyOfFocusedControl(event) ? 'control' : 'swallow';
+};
+
 const consumeKeyEvent = (event: KeyboardEvent): void => {
     event.preventDefault();
     event.stopPropagation();
@@ -472,51 +501,43 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     });
 
     const onKeyDown = (event: KeyboardEvent) => {
-        if (event.metaKey || event.ctrlKey || yieldsKeyboardToTarget(event.target)) {
+        const rule = classifyKeydown(event);
+        if (rule === 'passthrough' || rule === 'control') {
             return;
         }
+        consumeKeyEvent(event);
         const { octave: currentOctave, onClose: close, triggerNoteOn: noteOn } = keyboardInputRef.current;
         const code = event.code;
 
-        if (code === 'Escape') {
-            consumeKeyEvent(event);
+        if (rule === 'close') {
             close?.();
             return;
         }
-        if (event.key === 'Tab') {
-            return;
-        }
-        if (event.altKey || event.shiftKey) {
-            if (!isNativeKeyOfFocusedControl(event)) {
-                consumeKeyEvent(event);
-            }
-            return;
-        }
-
-        if (code === OCTAVE_DOWN_CODE || code === OCTAVE_UP_CODE) {
-            consumeKeyEvent(event);
+        if (rule === 'octave') {
             // Guard OS key-repeat so a held Z/X shifts the octave once per physical press.
             if (!event.repeat) {
                 setVirtualKeyboardOctave(currentOctave + (code === OCTAVE_UP_CODE ? 1 : -1));
             }
             return;
         }
-
-        const semitone = KEYBOARD_WHITE_MAP[code] ?? KEYBOARD_BLACK_MAP[code];
-        if (semitone !== undefined) {
-            consumeKeyEvent(event);
-            if (heldKeys.current.has(code)) {
+        if (rule === 'note') {
+            const semitone = KEYBOARD_WHITE_MAP[code] ?? KEYBOARD_BLACK_MAP[code];
+            if (semitone === undefined || heldKeys.current.has(code)) {
                 return;
             }
             heldKeys.current.add(code);
             const midiNote = (currentOctave + 1) * 12 + semitone;
             heldKeyNotes.current.set(code, midiNote);
             noteOn(midiNote);
-            return;
         }
+    };
 
-        if (!isNativeKeyOfFocusedControl(event)) {
-            consumeKeyEvent(event);
+    // Keys a focused control handles natively reach it, but must not go on to window
+    // listeners. React's root listener sits below `document`, so the control has already
+    // reacted by the time this runs.
+    const onControlKeyDown = (event: KeyboardEvent) => {
+        if (classifyKeydown(event) === 'control') {
+            event.stopPropagation();
         }
     };
 
@@ -540,7 +561,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     useEffect(() => {
         window.addEventListener('keydown', onKeyDown, { capture: true });
         window.addEventListener('keyup', onKeyUp, { capture: true });
+        document.addEventListener('keydown', onControlKeyDown);
         return () => {
+            document.removeEventListener('keydown', onControlKeyDown);
             window.removeEventListener('keydown', onKeyDown, { capture: true });
             window.removeEventListener('keyup', onKeyUp, { capture: true });
         };
