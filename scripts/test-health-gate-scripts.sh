@@ -353,7 +353,7 @@ const lint = validationWorkflow.jobs?.lint;
 const lintPhaseMinutes = [
     ['Checkout', 10],
     ['Set up pnpm', 5],
-    ['Set up Node', 5],
+    ['Set up Node', 3],
     ['Install dependencies', 5],
     ['Lint', 20],
 ];
@@ -1134,12 +1134,18 @@ expect(
 // summary wherever it lands. The single exception is the first changed-paths
 // filter attempt: its softening only hands the question to its retry step and
 // to the Resolve scope verdict guard, which fail the job when neither attempt
-// produced verdicts.
+// produced verdicts. The other exception class is the pnpm store restore: a
+// setup-node step with `cache: pnpm` only speeds the install up, so a refused or
+// stalled restore must fall through to the uncached install instead of hanging
+// the job (#5929). The healthGatesWorkflow spec pins its step cap and segment
+// timeout; here only that step shape may soften.
 expect(
     stepNamed(decide, 'Filter changed paths')?.['continue-on-error'] === true,
     'the first changed-paths filter attempt must continue on error so its retry can absorb a transient API failure'
 );
 const continueOnErrorStepPins = new Set(['validation.ymldecideFilter changed paths']);
+const isPnpmStoreCacheStep = (step) =>
+    typeof step?.uses === 'string' && step.uses.startsWith('actions/setup-node@') && step.with?.cache === 'pnpm';
 for (const [file, parsed] of [
     ['health-gates.yml', workflow],
     ['validation.yml', validationWorkflow],
@@ -1158,7 +1164,8 @@ for (const [file, parsed] of [
                 continue;
             }
             expect(
-                step?.['continue-on-error'] === true && continueOnErrorStepPins.has(`${file}${id}${step?.name}`),
+                step?.['continue-on-error'] === true &&
+                    (continueOnErrorStepPins.has(`${file}${id}${step?.name}`) || isPnpmStoreCacheStep(step)),
                 `${file} job ${id} step ${step?.name ?? '<unnamed>'} must not continue on error, which would report the step green whatever it ran`
             );
         }
