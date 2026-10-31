@@ -2142,10 +2142,10 @@ describe('createWebGpuRenderer MIDI notes follow the shared geometry law', () =>
 
         const rects = with_alpha(await render_midi(model), NOTE_ALPHA_INLINE);
 
-        // One bar per repeat in view: pass k starts k beats into the clip, at (k - 118) * 25 px.
-        expect(rects).toHaveLength(8);
+        // One bar per repeat in view, the one starting on the right edge included: pass k starts k beats in, at (k - 118) * 25 px.
+        expect(rects).toHaveLength(9);
         expect(rects.map((rect) => rect.x1)).toEqual(
-            [118, 119, 120, 121, 122, 123, 124, 125].map((beat) => expect.closeTo((beat - 118) * 25, 3))
+            [118, 119, 120, 121, 122, 123, 124, 125, 126].map((beat) => expect.closeTo((beat - 118) * 25, 3))
         );
     });
 });

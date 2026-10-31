@@ -151,14 +151,18 @@ export type MidiNoteRectStyle = {
 type LoopPasses = { first: number; last: number };
 
 /**
- * The loop passes that can put a note rectangle inside the visible beats. Bounded
- * by the clip's own extent and the view, never a fixed pass count, so a long
- * clip on a short loop is drawn and hit in every repeat.
+ * The loop passes whose bars can touch the visible beats, edges included: a bar
+ * in pass k spans [k * loopLen + earliest, k * loopLen + barEnd], and pass k
+ * stays when that span meets [from, to]. `minBarBeats` is the beat length of the
+ * minimum bar width, since a short note is drawn wider than its duration.
+ * Bounded by the clip's own extent and the view, never a fixed pass count, so a
+ * long clip on a short loop is drawn and hit in every repeat.
  */
 const resolveLoopPasses = (
     clip: InlineMidiGeometryClip,
     clipDuration: number,
     loopLen: number,
+    minBarBeats: number,
     visibleBeats: MidiNoteRectStyle['visibleBeats']
 ): LoopPasses => {
     if (!clip.loopEnabled || loopLen <= 0) {
@@ -169,10 +173,10 @@ const resolveLoopPasses = (
     }
     const midiOffset = clip.midiOffsetBeats ?? 0;
     let earliest = Infinity;
-    let latestEnd = -Infinity;
+    let barEnd = -Infinity;
     for (const note of clip.midiNotes) {
         earliest = Math.min(earliest, note.startBeat - midiOffset);
-        latestEnd = Math.max(latestEnd, note.startBeat - midiOffset + note.duration);
+        barEnd = Math.max(barEnd, note.startBeat - midiOffset + Math.max(note.duration, minBarBeats));
     }
     const lastInClip = Math.ceil(clipDuration / loopLen) - 1;
     if (!visibleBeats) {
@@ -180,9 +184,8 @@ const resolveLoopPasses = (
     }
     const from = visibleBeats.from - clip.startBeat;
     const to = visibleBeats.to - clip.startBeat;
-    // Pass k puts notes in [k * loopLen + earliest, k * loopLen + latestEnd].
-    const first = Math.max(0, Math.floor((from - latestEnd) / loopLen) + 1);
-    const last = Math.min(lastInClip, Math.ceil((to - earliest) / loopLen) - 1);
+    const first = Math.max(0, Math.ceil((from - barEnd) / loopLen));
+    const last = Math.min(lastInClip, Math.floor((to - earliest) / loopLen));
     return { first, last: Math.min(last, first + MAX_VISIBLE_LOOP_PASSES - 1) };
 };
 
@@ -216,7 +219,8 @@ export const forEachMidiNoteRect = (
     const minWidth = (style.inline ? INLINE_NOTE_MIN_WIDTH : PREVIEW_NOTE_MIN_WIDTH) * pixelScale;
     const heightInset = (style.inline ? 1 : 0) * pixelScale;
 
-    const { first, last } = resolveLoopPasses(clip, clipDuration, loopLen, style.visibleBeats);
+    const minBarBeats = clipW > 0 ? (minWidth * clipDuration) / clipW : 0;
+    const { first, last } = resolveLoopPasses(clip, clipDuration, loopLen, minBarBeats, style.visibleBeats);
     for (let pass = first; pass <= last; pass++) {
         const loopOffset = pass * loopLen;
         if (loopOffset >= clipDuration) {

@@ -217,6 +217,17 @@ describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => 
         expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
     });
 
+    it('hits a grid-aligned note on a looped clip at the exact edge of its bar', () => {
+        world.clip = { startBeat: 8, endBeat: 24, loopEnabled: true, loopLength: 4, midiNotes: [] };
+
+        // 12 is the start of the second pass, and the click lands on the cell start itself.
+        clickAt(12, rowY(3));
+        clickAt(12, rowY(3));
+
+        expect(commitInlineMidiNoteCreate).toHaveBeenCalledTimes(1);
+        expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
+    });
+
     describe('a clip that starts off the grid', () => {
         beforeEach(() => {
             world.clip = { startBeat: 8.25, endBeat: 16.25, midiNotes: [] };

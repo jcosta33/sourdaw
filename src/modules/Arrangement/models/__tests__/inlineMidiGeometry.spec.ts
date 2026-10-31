@@ -241,7 +241,64 @@ describe('inline MIDI geometry law', () => {
                 }
             );
 
-            expect(starts).toEqual([128, 129, 130]);
+            // The repeat starting exactly on the view's right edge touches the view, so it is drawn.
+            expect(starts).toEqual([128, 129, 130, 131]);
+        });
+    });
+
+    describe('a looped clip, queried exactly on a bar edge', () => {
+        // 16 beats at 40 px/beat on a 4-beat loop; a one-beat note at the start of every pass.
+        const loopedClip = (duration: number): InlineMidiGeometryClip => ({
+            startBeat: 0,
+            endBeat: 16,
+            loopEnabled: true,
+            loopLength: 4,
+            midiNotes: [note('a', 60, 0, duration)],
+        });
+        const frame: InlineMidiFrame = { x: 0, width: 640, contentTop: 2, contentHeight: 76 };
+        const bottomRowY = frame.contentTop + (76 / 12) * 11.5;
+
+        it.each([
+            ['the start of pass 0', 0],
+            ['the end of pass 0', 40],
+            ['the start of pass 1', 160],
+            ['the end of pass 1', 200],
+            ['the start of the last pass', 480],
+            ['the end of the last pass', 520],
+        ])('hits the note at %s', (_label, x) => {
+            expect(findInlineMidiNoteAt(loopedClip(1), frame, x, bottomRowY)?.noteId).toBe('a');
+        });
+
+        it('misses just past the end of a bar', () => {
+            expect(findInlineMidiNoteAt(loopedClip(1), frame, 200.5, bottomRowY)).toBeNull();
+        });
+
+        it('hits the widened part of a note shorter than the minimum bar width, in pass 0 and a later pass', () => {
+            // 0.01 beat is 0.4px, drawn 2px wide (0.05 beat).
+            const clip = loopedClip(0.01);
+
+            expect(findInlineMidiNoteAt(clip, frame, 1.6, bottomRowY)?.noteId).toBe('a');
+            expect(findInlineMidiNoteAt(clip, frame, 161.6, bottomRowY)?.noteId).toBe('a');
+            expect(findInlineMidiNoteAt(clip, frame, 481.6, bottomRowY)?.noteId).toBe('a');
+        });
+
+        it('draws a repeat whose widened bar reaches into the view edge', () => {
+            const clip = loopedClip(0.01);
+            const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+            const starts: number[] = [];
+
+            // The view starts inside pass 1's widened bar (4..4.05 beat), past its 0.01-beat duration.
+            forEachMidiNoteRect(
+                clip,
+                frame,
+                window,
+                { inline: true, visibleBeats: { from: 4.04, to: 4.5 } },
+                (_n, x) => {
+                    starts.push(x / 40);
+                }
+            );
+
+            expect(starts).toEqual([4]);
         });
     });
 
