@@ -79,6 +79,21 @@ actual child entry separately and preserve the host's time origin; share one per
 across host and child, never replenishing it on successful startup. Storage failure requires
 manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
+### 2026-10-27 — unsupported NAM replacement needs sounding-model preservation (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) introduced the real NAM runtime
+with an admitted stacked-wide LSTM shape whose deeper input width contradicts its render buffer.
+The missing coverage obligation is replacement refusal while an existing capture is sounding;
+historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Activate Capture mode and advance two identical loaded engines with identical input. Attempt the
+unsupported replacement on one only, then require its subsequent PCM to equal the continuing
+reference without a reset. Require nonzero output separated from a matched unloaded/dry control.
+`has_loaded_neural_model` plus finite output can pass while Circuit mode bypasses the capture.
+Pair empty-engine refusal with both supported topology boundaries; preserve the selected library
+entry at the real import UI. This proves the exercised shared/WASM route, not native transport or
+physical playback acceptance.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
