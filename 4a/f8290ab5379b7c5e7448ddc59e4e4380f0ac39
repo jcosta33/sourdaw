@@ -1,0 +1,35 @@
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_3c05a4acf0a764::t_d27e9595d7bd83 47-49,357-470
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_3c05a4acf0a764::t_fcdae5c89989d8 40-42,49-50,58
+src/modules/Arrangement/useCases/recording/closeRecordingPass.ts
+  s_3c05a4acf0a764::t_5e17789338b917 1-15
+src/modules/Arrangement/useCases/recording/passSourceBeat.ts
+  s_3c05a4acf0a764::t_b7ddd6993b8bd7 1-21
+src/modules/Arrangement/useCases/recording/recordingPassOrigin.ts
+  s_3c05a4acf0a764::t_e45d4ba03c6fa6 1-38
+src/modules/Arrangement/useCases/recording/sourceBeat.ts
+  s_3c05a4acf0a764::t_884dffbccf9bc2 1,6-9,12
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_3c05a4acf0a764::t_77f2ce248e8838 4,6-8,29-48,138,161,163
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_3c05a4acf0a764::t_c458b72b12bed4 142
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_3c05a4acf0a764::t_6b6a0b1f24abcc 66-67,98,297
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4af8290ab5379b7c5e7448ddc59e4e4380f0ac39",
+  "prompts": {},
+  "sessions": {
+    "s_3c05a4acf0a764": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_3c05a4acf0a764",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
