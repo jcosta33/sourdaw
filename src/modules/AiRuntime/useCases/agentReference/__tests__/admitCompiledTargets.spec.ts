@@ -132,33 +132,36 @@ describe('compiled target admission across one batch', () => {
         ]);
     });
 
-    it('reads a restriction against the owner track each call names, never one an earlier call named', () => {
+    it('reads the owner track each call depends on, never the owner an earlier call depended on', () => {
+        // The selector picks devices by "EQ"; the request names the Vocals track as their owner.
+        const equalizers: CompiledSelectorTerms = {
+            targetArgument: 'deviceId',
+            match: { all: [{ nameIncludes: 'EQ' }] },
+        };
         const eqTrack = (id: string, name: string) =>
             createTrack(id, name, {
                 devices: [{ id: `${id}-eq`, name: 'EQ', type: 'builtin-eq', bypassed: false }],
             });
-        const context = createProjectContext([
-            eqTrack('track-vocals', 'Vocals'),
-            eqTrack('track-keys', 'Keys'),
-            eqTrack('track-bass', 'Bass'),
-        ]);
-        const call = (trackId: string): CompiledTargetCallTerms => ({
+        const context = createProjectContext([eqTrack('track-vocals', 'Vocals'), eqTrack('track-keys', 'Keys')]);
+        const call = (dependencyId: string | undefined): CompiledTargetCallTerms => ({
             argument: 'deviceId',
             capability: 'device',
             context,
-            dependencyId: trackId,
-            referenceResolved: true,
-            targetIds: [`${trackId}-eq`],
+            dependencyId,
+            referenceResolved: false,
+            selectorTerms: equalizers,
+            targetIds: ['track-keys-eq'],
         });
-        const prompt = 'Bypass the EQ on every track; leave the EQ on Keys alone';
+        const prompt = 'Bypass the EQ on Vocals';
 
-        expect(admitInOneBatch(prompt, [call('track-keys'), call('track-bass')])).toEqual([
-            { batch: UNAUTHORIZED, fresh: UNAUTHORIZED },
+        // A dependency fixes the owner, so the request's owner track no longer narrows the pick.
+        expect(admitInOneBatch(prompt, [call('track-keys'), call(undefined)])).toEqual([
             { batch: ADMITTED, fresh: ADMITTED },
+            { batch: UNAUTHORIZED, fresh: UNAUTHORIZED },
         ]);
-        expect(admitInOneBatch(prompt, [call('track-vocals'), call('track-keys')])).toEqual([
-            { batch: ADMITTED, fresh: ADMITTED },
+        expect(admitInOneBatch(prompt, [call(undefined), call('track-keys')])).toEqual([
             { batch: UNAUTHORIZED, fresh: UNAUTHORIZED },
+            { batch: ADMITTED, fresh: ADMITTED },
         ]);
     });
 });
