@@ -299,6 +299,7 @@ export async function stopRecording(
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
+    activeRecordingRef.passOrigins = new Map();
 
     if (clipIds.length === 0) {
         return 'closed';

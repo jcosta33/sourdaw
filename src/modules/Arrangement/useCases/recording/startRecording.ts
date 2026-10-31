@@ -140,6 +140,7 @@ function stageRecording(
         activeRecordingRef.passIdentityLost = false;
         activeRecordingRef.startBeat = recordBeat;
         activeRecordingRef.startedLooping = transportState.isLooping;
+        activeRecordingRef.passOrigins = new Map();
         activeRecordingRef.midiAdmissions = [];
         // The take belongs to the root it is opened on (#5517): the Stop
         // finaliser compares against this witness before closing or committing.

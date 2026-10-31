@@ -44,6 +44,7 @@ import { type Take } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
 import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
 import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
@@ -382,6 +383,51 @@ describe('MIDI loop recordings', () => {
 
         // Pass 1 of the loop [8, 10) is staged at source offset 2, so beat 9 is 3.
         expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(3);
+    });
+
+    it('keeps a pass on one placement when the loop is edited inside it', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+        // Each wrap take carries the offset the scheduler derives from the live loop.
+        const wrap = (name: string, endBeat: number, sourceOffsetBeats: number, recordingPassIndex: number) =>
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name,
+                startBeat: 8,
+                endBeat,
+                sourceOffsetBeats,
+                recordingPassIndex,
+            });
+        wrap('Pass 0', 12, 0, 0);
+        const held = admitRecordingMidiNoteOn({
+            trackId: TRACK_ID,
+            channel: 0,
+            note: 60,
+            velocity: 100,
+            audioTime: 1,
+            position: { beat: 9, passIndex: 1 },
+        });
+
+        transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+        admitRecordingMidiNoteOff({ channel: 0, note: 60, audioTime: 1.25, position: { beat: 9.5, passIndex: 1 } });
+
+        expect(held).toMatchObject({ onsetSourceBeat: 5, releaseSourceBeat: 5.5 });
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 9.2, passIndex: 1 })).toBeCloseTo(5.2);
+        wrap('Pass 1', 10, 2, 1);
+        expect(passTake('Pass 1')).toMatchObject({ sourceOffsetBeats: 4, endBeat: 10 });
+        // Pass 1 ran [8, 10) from source 4, so pass 2 opens at source 6.
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 8.5, passIndex: 2 })).toBe(6.5);
     });
 
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {

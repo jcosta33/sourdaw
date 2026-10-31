@@ -2,8 +2,11 @@ import { createTake, createTakeLane, type Take, type TakeLane } from '../../mode
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { type Track } from '../../stores/trackStore';
 
+import { closeRecordingPass } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
+import { passSourceBeat } from './sourceBeat';
 
 type StageRecordingTakeInput = {
     trackId: string;
@@ -26,6 +29,25 @@ type StageRecordingTakeInput = {
 function withoutPassIdentity(input: StageRecordingTakeInput): StageRecordingTakeInput {
     const { recordingPassIndex, ...unowned } = input;
     return recordingPassIndex === undefined ? input : unowned;
+}
+
+function isOwnedMidiWrapTake(track: Track, input: StageRecordingTakeInput): boolean {
+    return (
+        track.kind === 'midi' &&
+        !activeRecordingRef.passIdentityLost &&
+        input.recordingPassIndex !== undefined &&
+        input.sourceOffsetBeats !== undefined
+    );
+}
+
+/** A wrap take of an owned MIDI pass starts where that pass's own events are placed. */
+function placeMidiPassTake(track: Track, input: StageRecordingTakeInput): StageRecordingTakeInput {
+    const clip = track.clips.find((candidate) => candidate.id === input.clipId);
+    if (!isOwnedMidiWrapTake(track, input) || !clip || input.recordingPassIndex === undefined) {
+        return input;
+    }
+    const sourceOffsetBeats = passSourceBeat(clip.startBeat, input.recordingPassIndex, input.startBeat);
+    return sourceOffsetBeats === null ? input : { ...input, sourceOffsetBeats };
 }
 
 function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {
@@ -110,19 +132,27 @@ export function stageRecordingTake(
     ) {
         throw new Error('Invalid MIDI recording pass identity');
     }
+    const placed = placeMidiPassTake(track, input);
     if (input.interruptsPass && track.kind === 'midi') {
         // Takes count staged passes and notes count loop wraps. A pass ended by an
         // edit or a jump is staged without a wrap, so from here neither names the
         // other and later notes and takes stay unowned, sounding in every take.
         activeRecordingRef.passIdentityLost = true;
     }
-    const passInput = activeRecordingRef.passIdentityLost ? withoutPassIdentity(input) : input;
+    const passInput = activeRecordingRef.passIdentityLost ? withoutPassIdentity(placed) : placed;
     const state = takeLaneStore.value;
     if (!state) {
         if (input.provisionalTakeId !== undefined) {
             throw new Error('Recording provisional take is not available');
         }
         return undefined;
+    }
+    if (isOwnedMidiWrapTake(track, passInput) && passInput.recordingPassIndex !== undefined) {
+        closeRecordingPass(
+            passInput.recordingPassIndex,
+            passInput.endBeat,
+            passInput.nextPassStartBeat ?? passInput.startBeat
+        );
     }
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
@@ -148,7 +178,7 @@ export function stageRecordingTake(
                 input.name,
                 recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
                 input.endBeat,
-                input.sourceOffsetBeats
+                placed.sourceOffsetBeats
             );
         }
     }
