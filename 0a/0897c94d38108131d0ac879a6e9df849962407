@@ -1,0 +1,54 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_55244eb93b97d1::t_2a7398d4031bf0 1-6,9,12,15-40,43-44,47-53,58-59,61-68,73,75-108,125-126,131-134,187-188,195-198,200-207,211-213,216-224,442
+  s_55244eb93b97d1::t_2468a663b22b8f 7-8,10-11,13-14,41-42,45-46,60,109-124,127-130,135-143,174-186,189-194,225-231,233-234,236-244,246-254,256-257,259-266,288-307,346-441,443
+  s_55244eb93b97d1::t_777166ad3c7613 54-57
+  s_55244eb93b97d1::t_2176ce78e0ea23 69-72
+  s_55244eb93b97d1::t_dee5e1d2045dd5 74
+  s_55244eb93b97d1::t_75cf632a4297c8 199
+  s_55244eb93b97d1::t_50ce3f892b0f3a 208-210
+  s_55244eb93b97d1::t_bf73f744f7b51a 214-215
+  s_55244eb93b97d1::t_68a4a2306dacec 444-445
+  s_55244eb93b97d1::t_24aef94a3fa125 311-345
+  s_55244eb93b97d1::t_1d53b3f8059e71 308-310
+  s_88fc7e0d05bab6::t_2da613bb3cda08 144-173,232,235,245,255,258,267-287
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_55244eb93b97d1::t_bc4f88706882c1 27,59,65-68,80-81,83,87-90
+  s_55244eb93b97d1::t_33168d0e5f7586 12
+  s_55244eb93b97d1::t_ce12a7dca50c41 72-74
+  s_55244eb93b97d1::t_968132b434b1d0 41-49,51-54,194-195
+  s_ba80576e6f5cb5::t_73b2d310e58143 34-40,50,55-58,193
+  s_55244eb93b97d1::t_a2e5352ed1b98a 69,71,75-76
+  s_88fc7e0d05bab6::t_0d79cdf540f2b1 26,60-64,70,77-79,82,84-86,91,114,119,251,262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a0897c94d38108131d0ac879a6e9df849962407",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
