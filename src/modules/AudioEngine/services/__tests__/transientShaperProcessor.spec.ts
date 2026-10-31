@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
@@ -15,6 +15,7 @@ type Processor = {
 };
 const { registry } = installWorkletGlobals<Processor>();
 const module = new WebAssembly.Module(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm')));
+afterEach(() => vi.stubGlobal('currentFrame', 0));
 afterAll(() => vi.unstubAllGlobals());
 async function processor(initialize = true) {
     await import('../transientShaperProcessor');
