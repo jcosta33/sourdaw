@@ -64,6 +64,7 @@ function pullRequest(overrides: Partial<PullRequest> = {}): PullRequest {
         headRefName: 'feat/work',
         headRefOid: 'head',
         headRepository: 'jcosta33/sourdaw',
+        baseRefName: 'main',
         mergedAt: '2026-08-12T00:00:00Z',
         ...overrides,
     };
@@ -125,6 +126,7 @@ function fakePort(input: FakeInput = {}) {
             return {
                 number,
                 state: 'MERGED',
+                baseRefName: 'main',
                 mergedAt: '2026-08-20T00:00:00Z',
                 ...input.replacement,
             };
@@ -422,6 +424,9 @@ describe('isExpectedReviewLaneName', () => {
 
 describe('isExpectedReviewLanePath', () => {
     it.each([
+        ['/repo/.agents/review-worktrees/1976-probe', true],
+        ['/repo/.agents/review-worktrees', false],
+        ['/repo/.agents/review-worktrees/nested/probe', false],
         ['/repo/.agents/worktrees/review', true],
         ['/repo/.agents/worktrees/review-1976', true],
         ['/repo/.agents/worktrees/review_1976', true],
@@ -688,6 +693,88 @@ describe('lane removal', () => {
         ]);
     });
 
+    it.each(['feature/still-open', null, undefined])(
+        'requires explicit main-base proof on every removal route: %s',
+        (baseRefName) => {
+            const author = fakePort({ pullRequests: [pullRequest({ baseRefName })] });
+            expect(() => removeLane(target, author.port)).toThrow('not proven merged into main');
+            expect(author.calls).not.toContain(`remove:${target}`);
+            const review = fakePort({
+                lane: worktree({ path: reviewTarget, detached: true, branch: undefined }),
+                commitPullRequests: [pullRequest({ number: 1976, baseRefName })],
+            });
+            expect(() => removeLane(reviewTarget, review.port)).toThrow('not proven merged into main');
+            expect(review.calls).not.toContain(`remove:${reviewTarget}`);
+            const superseded = fakePort({
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt()],
+                replacement: { baseRefName },
+            });
+            expect(() => removeLane(target, superseded.port)).toThrow('not proven merged into main');
+            expect(superseded.calls).not.toContain(`remove:${target}`);
+        }
+    );
+
+    it.each([undefined, null, '', ' ', 'not-a-timestamp', '2026-13-01T00:00:00Z', '2026-02-30T00:00:00Z'])(
+        'requires a valid merge timestamp on every removal route: %s',
+        (mergedAt) => {
+            const author = fakePort({ pullRequests: [pullRequest({ mergedAt })] });
+            expect(() => removeLane(target, author.port)).toThrow();
+            expect(author.calls).not.toContain(`remove:${target}`);
+            const review = fakePort({
+                lane: worktree({ path: reviewTarget, detached: true, branch: undefined }),
+                commitPullRequests: [pullRequest({ number: 1976, mergedAt })],
+            });
+            expect(() => removeLane(reviewTarget, review.port)).toThrow('not merged');
+            expect(review.calls).not.toContain(`remove:${reviewTarget}`);
+            const superseded = fakePort({
+                pullRequests: [supersededPullRequest()],
+                comments: [supersessionReceipt()],
+                replacement: { mergedAt },
+            });
+            expect(() => removeLane(target, superseded.port)).toThrow('which is not merged');
+            expect(superseded.calls).not.toContain(`remove:${target}`);
+        }
+    );
+
+    it.each(['author', 'review', 'replacement'])(
+        'refuses a main-base transition between ownership reads for %s',
+        (route) => {
+            const targetPath = route === 'review' ? reviewTarget : target;
+            const fake = fakePort({
+                lane: worktree({
+                    path: targetPath,
+                    ...(route === 'review' ? { detached: true, branch: undefined } : {}),
+                }),
+                comments: [supersessionReceipt()],
+            });
+            let reads = 0;
+            const baseRefName = () => (++reads === 1 ? 'main' : 'feature/still-open');
+            fake.port.pullRequests = () => [
+                route === 'replacement' ? supersededPullRequest() : pullRequest({ baseRefName: baseRefName() }),
+            ];
+            fake.port.commitPullRequests = () => [pullRequest({ number: 1976, baseRefName: baseRefName() })];
+            fake.port.replacement = (number) => ({
+                number,
+                state: 'MERGED',
+                baseRefName: baseRefName(),
+                mergedAt: '2026-08-20T00:00:00Z',
+            });
+            expect(() => removeLane(targetPath, fake.port)).toThrow('not proven merged into main');
+            expect(fake.calls).not.toContain(`remove:${targetPath}`);
+        }
+    );
+
+    it('binds the merge timestamp across both ownership reads', () => {
+        const fake = fakePort();
+        let reads = 0;
+        fake.port.pullRequests = () => [
+            pullRequest({ mergedAt: ++reads === 1 ? '2026-08-20T00:00:00Z' : '2026-08-21T00:00:00Z' }),
+        ];
+        expect(() => removeLane(target, fake.port)).toThrow('worktree authority changed during removal');
+        expect(fake.calls).not.toContain(`remove:${target}`);
+    });
+
     it('accepts a pruned remote branch when local and merged GitHub heads agree', () => {
         const { port, calls } = fakePort({ remoteHead: null });
 
@@ -859,7 +946,7 @@ describe('lane removal', () => {
      */
     it('removes a superseded lane whose replacement merged', () => {
         const { port, calls } = fakePort({
-            pullRequests: [supersededPullRequest()],
+            pullRequests: [supersededPullRequest({ baseRefName: 'feature/old-parent' })],
             comments: [supersessionReceipt(99)],
         });
 
@@ -1148,7 +1235,12 @@ describe('lane removal', () => {
                     }),
                 ],
                 comments: () => [],
-                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                replacement: (number) => ({
+                    number,
+                    state: 'MERGED',
+                    baseRefName: 'main',
+                    mergedAt: '2026-08-20T00:00:00Z',
+                }),
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },
@@ -1405,7 +1497,12 @@ describe('lane stranding', () => {
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head, state: 'CLOSED', mergedAt: null })],
                 comments: () => [],
-                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                replacement: (number) => ({
+                    number,
+                    state: 'MERGED',
+                    baseRefName: 'main',
+                    mergedAt: '2026-08-20T00:00:00Z',
+                }),
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },
@@ -1489,10 +1586,13 @@ describe('lane-removal shell boundary', () => {
             symlinkSync(repository, alias, 'dir');
             const port = shellPort({
                 capture: (command) => {
+                    if (command === 'ps') {
+                        return `${process.pid} ${process.getuid?.()}`;
+                    }
                     if (command !== 'lsof') {
                         throw new Error(`unexpected capture: ${command}`);
                     }
-                    return `p999999\nfcwd\nn${join(alias, '.agents/worktrees/feature')}`;
+                    return `p${process.pid}\0\nfcwd\0tDIR\0n${join(alias, '.agents/worktrees/feature')}\0\n`;
                 },
                 run: () => undefined,
             });
@@ -1510,8 +1610,11 @@ describe('lane-removal shell boundary', () => {
         const shell: ShellRunner = {
             capture: (command, args) => {
                 captures.push({ command, args });
+                if (command === 'ps') {
+                    return `${process.pid} ${process.getuid?.()}`;
+                }
                 if (command === 'lsof') {
-                    return `p999\nfcwd\nn${target}`;
+                    return `p${process.pid}\0\nfcwd\0tDIR\0n${target}\0\n`;
                 }
                 if (args.includes('nameWithOwner')) {
                     return 'jcosta33/sourdaw';
@@ -1528,6 +1631,7 @@ describe('lane-removal shell boundary', () => {
                                     sha: 'head',
                                     repo: { full_name: 'jcosta33/sourdaw' },
                                 },
+                                base: { ref: 'main' },
                                 merged_at: '2026-08-12T00:00:00Z',
                             },
                         ],
@@ -1582,7 +1686,12 @@ describe('lane-removal shell boundary', () => {
                     ]);
                 }
                 if (args.includes('repos/jcosta33/sourdaw/pulls/99')) {
-                    return JSON.stringify({ number: 99, state: 'closed', merged_at: '2026-08-20T00:00:00Z' });
+                    return JSON.stringify({
+                        number: 99,
+                        state: 'closed',
+                        base: { ref: 'main' },
+                        merged_at: '2026-08-20T00:00:00Z',
+                    });
                 }
                 throw new Error(`unexpected capture: ${command} ${args.join(' ')}`);
             },
@@ -1600,12 +1709,125 @@ describe('lane-removal shell boundary', () => {
             { body: 'drive by', authorNodeId: null, authorLogin: null, authorType: null },
         ]);
         // GitHub reports a merged pull request as `closed`; only `merged_at` says it landed.
-        expect(port.replacement(99)).toEqual({ number: 99, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' });
+        expect(port.replacement(99)).toEqual({
+            number: 99,
+            state: 'MERGED',
+            baseRefName: 'main',
+            mergedAt: '2026-08-20T00:00:00Z',
+        });
         expect(
             captures.some(
                 (entry) => entry.command === 'gh' && entry.args.includes('--paginate') && entry.args.includes('--slurp')
             )
         ).toBe(true);
+    });
+
+    it.each([
+        {
+            name: 'invalid calendar timestamp',
+            state: 'closed',
+            merged_at: '2026-02-30T00:00:00Z',
+            base: { ref: 'main' },
+            expectedState: 'CLOSED',
+            expectedBase: 'main',
+        },
+        {
+            name: 'explicit MERGED missing timestamp',
+            state: 'MERGED',
+            merged_at: undefined,
+            base: { ref: 'main' },
+            expectedState: 'UNKNOWN',
+            expectedBase: 'main',
+        },
+        {
+            name: 'missing timestamp',
+            state: 'closed',
+            merged_at: undefined,
+            base: { ref: 'main' },
+            expectedState: 'CLOSED',
+            expectedBase: 'main',
+        },
+        {
+            name: 'blank timestamp',
+            state: 'closed',
+            merged_at: ' ',
+            base: { ref: 'main' },
+            expectedState: 'CLOSED',
+            expectedBase: 'main',
+        },
+        {
+            name: 'invalid timestamp',
+            state: 'closed',
+            merged_at: 'invalid',
+            base: { ref: 'main' },
+            expectedState: 'CLOSED',
+            expectedBase: 'main',
+        },
+        {
+            name: 'missing state',
+            state: undefined,
+            merged_at: '2026-08-20T00:00:00Z',
+            base: { ref: 'main' },
+            expectedState: 'UNKNOWN',
+            expectedBase: 'main',
+        },
+        {
+            name: 'open despite timestamp',
+            state: 'open',
+            merged_at: '2026-08-20T00:00:00Z',
+            base: { ref: 'main' },
+            expectedState: 'OPEN',
+            expectedBase: 'main',
+        },
+        {
+            name: 'missing base',
+            state: 'closed',
+            merged_at: '2026-08-20T00:00:00Z',
+            base: undefined,
+            expectedState: 'MERGED',
+            expectedBase: null,
+        },
+        {
+            name: 'non-main base',
+            state: 'closed',
+            merged_at: '2026-08-20T00:00:00Z',
+            base: { ref: 'feature/still-open' },
+            expectedState: 'MERGED',
+            expectedBase: 'feature/still-open',
+        },
+        {
+            name: 'valid main merge',
+            state: 'closed',
+            merged_at: '2026-08-20T00:00:00Z',
+            base: { ref: 'main' },
+            expectedState: 'MERGED',
+            expectedBase: 'main',
+        },
+    ])('preserves explicit completion proof through every REST reader: $name', (input) => {
+        const raw = {
+            number: 42,
+            state: input.state,
+            merged_at: input.merged_at,
+            base: input.base,
+            draft: false,
+            head: { ref: 'feat/work', sha: 'head', repo: { full_name: 'jcosta33/sourdaw' } },
+        };
+        const port = shellPort({
+            capture: (_command, args) => {
+                if (args.includes('nameWithOwner')) {
+                    return 'jcosta33/sourdaw';
+                }
+                return JSON.stringify(args.includes('--slurp') ? [[raw]] : raw);
+            },
+            run: () => {},
+        });
+        const records = [port.pullRequests('feat/work')[0], port.commitPullRequests?.('head')[0], port.replacement(42)];
+        for (const record of records) {
+            expect(record).toMatchObject({ state: input.expectedState, baseRefName: input.expectedBase });
+            if (input.name.includes('timestamp') && input.name !== 'open despite timestamp') {
+                expect(record?.mergedAt).toBeNull();
+            }
+        }
     });
 
     it('queries commit pull requests and handles SHA not found', () => {
@@ -1632,6 +1854,7 @@ describe('lane-removal shell boundary', () => {
                                     sha: 'head-sha',
                                     repo: { full_name: 'jcosta33/sourdaw' },
                                 },
+                                base: { ref: 'main' },
                                 merged_at: '2026-08-12T00:00:00Z',
                             },
                         ],
@@ -1697,7 +1920,12 @@ describe('lane-removal shell boundary', () => {
                 remoteHead: () => undefined,
                 pullRequests: () => [pullRequest({ headRefOid: head })],
                 comments: () => [],
-                replacement: (number) => ({ number, state: 'MERGED', mergedAt: '2026-08-20T00:00:00Z' }),
+                replacement: (number) => ({
+                    number,
+                    state: 'MERGED',
+                    baseRefName: 'main',
+                    mergedAt: '2026-08-20T00:00:00Z',
+                }),
                 lock: (path) => {
                     git(['worktree', 'lock', '--reason', 'test', path]);
                 },

@@ -1,5 +1,20 @@
 # Lesson library: test and evidence validity
 
+### 2026-10-30 — a forced-GC ownership bound counted the JIT's references (#5924, introduced by #5829)
+
+PR #5829's stem-export ownership case samples every observed buffer still live after `gc()` and
+bounds it at two renders. On a starved CI runner it failed with the previous stem's PCM and encoder
+state still live at the next stem's first WAV write. An in-flight background Maglev/Turbofan job
+holds its closure, and so that closure's context, as a strong root `gc()` does not drain; the
+retained objects were exactly what finished encoder and PCM-reader closures captured. The
+measurement child now runs with `--no-concurrent-recompilation` and refuses to measure without it.
+Synchronous tiering removes background-compile roots. It does not limit `gc()` to program
+references: concurrent Sparkplug and other engine roots remain. The flag also moves compile work
+onto the measuring thread, so the case's deadline must be budgeted from CI timing. Probe it
+under engine delay: `--concurrent-recompilation-delay=300` must fail the case without the flag
+and pass with it, and keeping the previous render's channels reachable must still fail the bound.
+A local green run proves nothing about a measurement whose roots depend on background thread speed.
+
 ### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
 
 PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
@@ -1404,6 +1419,12 @@ PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback
 
 Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
 
+### Split gain admission needs the real history round trip (#5157)
+
+The global collector in #1857 and curve-preserving split copies in #2842 were not joined by a production admission and saved-history oracle; #5812 made gain-point identity clip-local. Historical private review prompts and tiers are unknown.
+
+Split an audio envelope with points before, at and after the cut. Assert admission, raw and projected fragments, an independent gain-curve oracle, edge-extension material, and real Undo/Redo before and after authenticated session and binary hydration. Restore the old global gain-point census: the unchanged combined split case must fail. Also require same-envelope and non-gain global duplicates to refuse, and a merged peer gain edit to preserve state, heads and history when Undo refuses.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
@@ -2320,3 +2341,14 @@ loopEnd click and the incoming loopStart click are indistinguishable. Pin incomi
 with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
 incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
 the real scheduler, for the seam and a later pass.
+
+### 2026-10-31 — a spec read a remote ref the shallow tooling job never fetches (introduced by PR #5917)
+
+PR #5917 introduced `laneAdoption.spec.ts`, whose fixture ran `git show origin/main:...`.
+The review-tooling unit job checks out only the shallow merge ref, so `origin/main` does not
+exist there. The full-history unit shards passed, #5917's own runs skipped the tooling job, and
+the failure surfaced on the next tooling-profile PR (#5935). The value equalled the working-tree
+file once #5917 merged. A spec must not read refs, history or remotes that a CI job collecting it
+does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
+the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
+`tooling-unit` uses the default shallow checkout.
