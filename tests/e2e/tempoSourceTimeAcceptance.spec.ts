@@ -458,7 +458,8 @@ async function createComp(page: Page, snapshot: Snapshot): Promise<Snapshot> {
     expect(lane?.activeCompRegions[0]?.takeId).toBe(lane?.takes[0]?.id);
     expect(lane?.activeCompRegions[0]?.startBeat).toBeGreaterThan(1.72);
     expect(lane?.activeCompRegions[0]?.startBeat).toBeLessThan(1.78);
-    expect(lane?.activeCompRegions[0]?.endBeat).toBeGreaterThan(2);
+    // The swipe overshoots the clip end; the committed region is clamped to the part that can sound.
+    expect(lane?.activeCompRegions[0]?.endBeat).toBe(onlyClip(snapshot).endBeat);
     return after;
 }
 
