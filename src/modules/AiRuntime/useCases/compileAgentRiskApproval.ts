@@ -8,7 +8,9 @@ import {
 import { type AppAction } from '#/utils/handlerContract';
 
 import { resolveAgentDomainPreviewSupport } from './agentDomainPreview/resolveAgentDomainPreviewSupport';
+import { evaluateMetricGoalAdmission } from './evaluateMetricGoalAdmission';
 import { getExactAgentActionHash } from './getExactAgentActionHash';
+import { metricGoalStateCodec } from './metricGoalStateCodec';
 
 // Thrown when the active project no longer matches the batch's project, which
 // is the project-changed event class, not an execution failure: the revalidator
@@ -23,6 +25,7 @@ type PendingCommandBatch = {
 type CompileAgentRiskApprovalInput = {
     commandBatch: PendingCommandBatch;
     requireExplicitApproval?: boolean;
+    metricGoalState?: string | null;
     signals?: Parameters<typeof getAgentActionRiskPolicy>[0]['signals'];
 };
 
@@ -89,7 +92,21 @@ export function compileAgentRiskApproval(input: CompileAgentRiskApprovalInput) {
             reasons: [...registryPolicy.reasons, 'The planning workflow requires explicit confirmation.'],
         };
     }
+    const metricAdmission = evaluateMetricGoalAdmission({
+        state: metricGoalStateCodec(input.metricGoalState),
+        commandBatch: input.commandBatch,
+    });
+    if (metricAdmission.status === 'blocked') {
+        policy = {
+            ...policy,
+            decision: 'confirm',
+            reasons: [...policy.reasons, metricAdmission.reason ?? 'Metric goal verification is required.'],
+        };
+    }
+    // Optional only for decoding legacy approval snapshots; omission never authorizes a fresh write.
+    const metricFields: { metricGoalState?: string | null } = { metricGoalState: input.metricGoalState ?? null };
     return {
+        ...metricFields,
         schemaVersion: 1 as const,
         actionHashes: envelope.commands.map((command) =>
             getExactAgentActionHash({ operation: command.operation, arguments: command.arguments })

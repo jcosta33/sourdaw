@@ -5,6 +5,7 @@ import {
     createAutomergeStorage,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
+import { trackStore } from '#/modules/Arrangement/stores';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -23,26 +24,42 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 import { type AppAction } from '#/utils/handlerContract';
 
+import { type AgentResourceLimits, DEFAULT_AGENT_RESOURCE_LIMITS } from '../../models/AgentResourceLimits';
+import { agentResourceLimitsStore } from '../../stores/agentResourceLimitsStore';
 import { persistAgentRunState, readAgentRunState } from '../../stores/agentRunStore';
 import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
+    pendingActionConfirmationStore,
 } from '../../stores/pendingActionConfirmationStore';
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
 import { getProjectContext } from '../getProjectContext';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { submitAdmittedPromptRequest } from '../submitAdmittedPromptRequest';
+
+import {
+    assertDiscoveredCommandSchemas,
+    catalogDiscoveryCall,
+    getApplicationToolReceipts,
+    isRecord,
+} from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const mocks = vi.hoisted(() => ({
     executionOverride: 'none' as 'ambiguous-before-commit' | 'none',
     obscureCommittedResult: false,
     promotionState: new Map<string, 'prepared' | 'committed' | 'completed'>(),
     observedCommandResult: { value: null as null | { status: string; reason?: string } },
-    describePlannedAction: vi.fn(() => 'Prompt action'),
-    getProjectContext: vi.fn(() => ({ tracks: [] })),
-    planPromptActions: vi.fn(),
+    generateWebLlmCompletion: vi.fn(),
+    importStemSetExecute: vi.fn(),
+    pickFiles: vi.fn(),
+    decodeAudioFile: vi.fn(),
+    detectTempo: vi.fn(() => 120),
+    stageDurableAsset: vi.fn(),
     prepareDurablePromotionRecovery: vi.fn(),
     commitDurablePromotionRecovery: vi.fn(),
     completeDurablePromotionRecovery: vi.fn(),
@@ -55,9 +72,24 @@ const mocks = vi.hoisted(() => ({
     releaseStagedAsset: vi.fn(),
 }));
 
-vi.mock('../getProjectContext', () => ({ getProjectContext: mocks.getProjectContext }));
-vi.mock('../planPromptActions', () => ({ planPromptActions: mocks.planPromptActions }));
-vi.mock('../describePlannedAction', () => ({ describePlannedAction: mocks.describePlannedAction }));
+vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({
+    getBackendChain: () => ['webllm'],
+}));
+vi.mock('../llmOrchestration/backendResolution/helpers', () => ({
+    resolveBackend: () => 'webllm',
+}));
+vi.mock('../../repositories/webLlm/generateWebLlmCompletion', () => ({
+    generateWebLlmCompletion: mocks.generateWebLlmCompletion,
+}));
+vi.mock('../../repositories/webLlm/isWebLlmLoaded', () => ({ isWebLlmLoaded: () => true }));
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
+    pickFiles: mocks.pickFiles,
+}));
+vi.mock('#/modules/AudioAnalysis/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/AudioAnalysis/useCases')>()),
+    detectTempo: mocks.detectTempo,
+}));
 vi.mock('#/modules/Command/useCases', async () => {
     const original = await vi.importActual<typeof import('#/modules/Command/useCases')>('#/modules/Command/useCases');
     async function observeUncommittedBatch<TStatus extends 'ambiguous' | 'failed'>(
@@ -126,6 +158,7 @@ vi.mock('#/modules/Command/useCases', async () => {
 });
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
+    decodeAudioFile: mocks.decodeAudioFile,
     releasePreviewAudioBuffer: mocks.releasePreviewAudioBuffer,
 }));
 // discardPreparedStemImportResources and createStemImportConfirmationResourceLease import getAssetTransfer.
@@ -139,6 +172,7 @@ vi.mock('#/modules/Collaboration/useCases', () => ({
         prepareDurableCleanupRecovery: mocks.prepareDurableCleanupRecovery,
         promoteStagedAsset: mocks.promoteStagedAsset,
         releaseStagedAsset: mocks.releaseStagedAsset,
+        stageDurableAsset: mocks.stageDurableAsset,
     }),
 }));
 
@@ -190,14 +224,160 @@ const legacyStemAction = {
     ...stemAction,
     payload: { ...stemAction.payload, stems: [legacyBoundStem, legacyUnboundStem] },
 } satisfies AppAction;
-const discardStemAction = {
-    type: 'discardImportedStemSet',
-    payload: {
-        folderId: stemAction.payload.folderId,
-        stemTrackIds: stemAction.payload.stems.map((stem) => stem.trackId),
-        guards: [],
-    },
-} satisfies AppAction;
+const selectedStemNames = ['Drums_120.wav', 'Bass_120.wav'] as const;
+const durableBindings = selectedStemNames.map((name) => ({
+    leaseId: `lease-${name}`,
+    expectedHash: `hash-${name}`,
+}));
+
+function assertStemBudgetReservedBeforeLocalWork() {
+    const run = readAgentRunState().runs.find((candidate) => candidate.request === 'Import the selected stems');
+    const totalSourceBytes = selectedStemNames.reduce((sum, name) => sum + new File([name], name).size, 0);
+    expect(run?.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith('stem-preparation:'))).toMatchObject([
+        { attemptId: 'stem-preparation:localAnalysis', category: 'localAnalysis', reserved: 2 },
+        {
+            attemptId: 'stem-preparation:downloadBytes',
+            category: 'downloadBytes',
+            reserved: totalSourceBytes,
+        },
+        {
+            attemptId: 'stem-preparation:storageBytes',
+            category: 'storageBytes',
+            reserved: totalSourceBytes,
+        },
+    ]);
+    expect(run?.budgets.consumed).toMatchObject({ downloadBytes: totalSourceBytes, storageBytes: totalSourceBytes });
+}
+
+function getStemImportCapability(userMessage: string) {
+    const section = /^capability_schemas:\n(?<payload>.+)$/mu.exec(userMessage)?.groups?.payload;
+    if (!section) {
+        throw new TypeError('Expected the published capability schemas.');
+    }
+    const schemas: unknown = JSON.parse(section);
+    if (!isRecord(schemas) || typeof schemas.availableCapabilities !== 'string') {
+        throw new TypeError('Expected the published available capabilities.');
+    }
+    const capabilities: unknown = JSON.parse(schemas.availableCapabilities);
+    if (!isRecord(capabilities)) {
+        throw new TypeError('Expected the published stem-import capability.');
+    }
+    return capabilities.stemImportCapability;
+}
+
+function stemImportProviderTurn(systemPrompt: string, userMessage: string) {
+    const receipts = userMessage.includes('application-tool-loop') ? getApplicationToolReceipts(userMessage) : [];
+    if (!receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'selectCreativeInterpretation')) {
+        return literalMetricIntakeTurn(userMessage, systemPrompt);
+    }
+    const selection = withWorkflowCapabilitySelection('stem-import-starting-mix', []);
+    const capability = getStemImportCapability(userMessage);
+    if (capability === undefined) {
+        return selection;
+    }
+    if (!isRecord(capability) || typeof capability.selectionId !== 'string' || !Array.isArray(capability.stems)) {
+        throw new TypeError('Expected the exact prepared stems in the published capability.');
+    }
+    const stems = capability.stems.map((stem, index) => {
+        if (!isRecord(stem) || typeof stem.stemId !== 'string' || stem.sourceName !== selectedStemNames[index]) {
+            throw new TypeError('Expected the exact prepared stems in the published capability.');
+        }
+        return { stemId: stem.stemId, role: index === 0 ? 'kick' : 'bass' };
+    });
+    if (stems.length !== selectedStemNames.length) {
+        throw new TypeError('Expected every selected stem in the published capability.');
+    }
+    if (!receipts.some((receipt) => isRecord(receipt) && receipt.toolName === 'agent.catalog.discover')) {
+        return [catalogDiscoveryCall(['importStemSet'])];
+    }
+    assertDiscoveredCommandSchemas(userMessage, ['importStemSet']);
+    return withWorkflowCapabilitySelection('stem-import-starting-mix', [
+        {
+            name: 'command.batch.propose',
+            arguments: {
+                commands: [
+                    {
+                        name: 'importStemSet',
+                        arguments: {
+                            selectionId: capability.selectionId,
+                            groupName: 'Imported Stems',
+                            stems,
+                        },
+                    },
+                ],
+                plan: {
+                    semantic: { classification: 'simple', uncertainty: [] },
+                    objective: 'Import the exact selected stem set.',
+                    constraints: ['Preserve existing project content and let the application assign project IDs.'],
+                    scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
+                    capabilityIds: ['importStemSet'],
+                    assetIds: [],
+                    alternatives: [],
+                    validationStrategy: ['Verify the revision, selection, complete roles, and staged assets.'],
+                    stoppingConditions: ['Stop when selection, assets, or project revision changes.'],
+                },
+            },
+        },
+    ]);
+}
+
+async function submitPreparedStemImport() {
+    const submission = await submitAdmittedPromptRequest({
+        prompt: 'Import the selected stems',
+        source: 'prompt-bar',
+    });
+    if (submission.status !== 'awaiting-approval') {
+        throw new TypeError(`Expected approval preview, received ${submission.status}`);
+    }
+    const confirmation = getPendingActionConfirmation(submission.confirmationId);
+    const action = confirmation?.actions[0];
+    if (!confirmation || action?.type !== 'importStemSet') {
+        throw new TypeError('Expected one planned stem-import confirmation.');
+    }
+    expect(pendingActionConfirmationStore.value?.confirmations).toHaveLength(1);
+    expect(mocks.pickFiles).toHaveBeenCalledOnce();
+    expect(mocks.decodeAudioFile).toHaveBeenCalledTimes(2);
+    expect(mocks.stageDurableAsset).toHaveBeenCalledTimes(2);
+    expect(confirmation.actions).toHaveLength(1);
+    expect(action.payload.folderId).toMatch(/^folder-ai-/u);
+    expect(action.payload.stems.map((stem) => stem.trackId)).toEqual([
+        expect.stringMatching(/^track-ai-/u),
+        expect.stringMatching(/^track-ai-/u),
+    ]);
+    expect(action.payload.stems.map((stem) => stem.clipId)).toEqual([
+        expect.stringMatching(/^clip-ai-/u),
+        expect.stringMatching(/^clip-ai-/u),
+    ]);
+    expect(
+        action.payload.stems.map((stem) => ({
+            sourceName: stem.sourceName,
+            role: stem.role,
+            assetHash: stem.assetHash,
+            assetLeaseId: stem.assetLeaseId,
+        }))
+    ).toEqual([
+        {
+            sourceName: selectedStemNames[0],
+            role: 'kick',
+            assetHash: durableBindings[0]!.expectedHash,
+            assetLeaseId: durableBindings[0]!.leaseId,
+        },
+        {
+            sourceName: selectedStemNames[1],
+            role: 'bass',
+            assetHash: durableBindings[1]!.expectedHash,
+            assetLeaseId: durableBindings[1]!.leaseId,
+        },
+    ]);
+    expect(metricGoalStateCodec(confirmation.approvalSnapshot.metricGoalState)?.authorities).toMatchObject([
+        { kind: 'literal' },
+    ]);
+    expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+    expect(mocks.importStemSetExecute).not.toHaveBeenCalled();
+    expect(mocks.prepareDurablePromotionRecovery).not.toHaveBeenCalled();
+    expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+    return { submission, action };
+}
 
 function retainLegacyStemRecovery() {
     const runId = `legacy-stem-run-${crypto.randomUUID()}`;
@@ -226,6 +406,25 @@ function retainLegacyStemRecovery() {
 describe('prompt stem import recovery', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
+        mocks.pickFiles.mockResolvedValue(
+            selectedStemNames.map((name) => new File([name], name, { type: 'audio/wav' }))
+        );
+        mocks.decodeAudioFile.mockImplementation((file: File) => {
+            assertStemBudgetReservedBeforeLocalWork();
+            return Promise.resolve({
+                id: `buffer-${file.name}`,
+                buffer: { duration: 8, length: 8 * 48_000, numberOfChannels: 2, sampleRate: 48_000 },
+            });
+        });
+        mocks.stageDurableAsset.mockImplementation((_file: File, name: string) => {
+            assertStemBudgetReservedBeforeLocalWork();
+            return Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` });
+        });
+        mocks.promoteStagedAsset.mockResolvedValue({ status: 'promoted' });
+        mocks.generateWebLlmCompletion.mockImplementation((systemPrompt: string, userMessage: string) =>
+            Promise.resolve(JSON.stringify(stemImportProviderTurn(systemPrompt, userMessage)))
+        );
         mocks.executionOverride = 'none';
         mocks.obscureCommittedResult = false;
         mocks.promotionState.clear();
@@ -265,17 +464,29 @@ describe('prompt stem import recovery', () => {
         createCrdtDoc('root');
         createCrdtDoc('owned');
         registerCrdtStorageRuntime();
+        trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         clearHandlerRegistry();
         let targetsCreated = false;
         const ownedStorage = createAutomergeStorage<{ imported: boolean }>('owned', 'stemImport');
         registerHandlerMap({
             importStemSet: {
-                execute: () => {
+                execute: (action) => {
+                    mocks.importStemSetExecute(action);
                     targetsCreated = true;
                     ownedStorage.set({ imported: true });
                 },
                 canReapplyAfterDivergence: () => true,
-                describe: () => ({ label: 'Import prompt stems', inverseAction: discardStemAction }),
+                describe: (action) => ({
+                    label: 'Import prompt stems',
+                    inverseAction: {
+                        type: 'discardImportedStemSet',
+                        payload: {
+                            folderId: action.payload.folderId,
+                            stemTrackIds: action.payload.stems.map((stem) => stem.trackId),
+                            guards: [],
+                        },
+                    },
+                }),
                 requiresAbortCompensation: false,
                 undoable: true,
                 validate: () => true,
@@ -310,6 +521,7 @@ describe('prompt stem import recovery', () => {
     });
 
     afterEach(() => {
+        agentResourceLimitsStore.set(DEFAULT_AGENT_RESOURCE_LIMITS);
         commandBatchPreflightPort.setProvider(null);
         commandProjectRevisionPort.setProvider(null);
         clearHandlerRegistry();
@@ -322,15 +534,7 @@ describe('prompt stem import recovery', () => {
     });
 
     it('keeps exact durable stem promotion recovery pending when shared approval loses command commit truth', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [stemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new TypeError(`Expected approval preview, received ${submission.status}`);
-        }
+        const { submission, action } = await submitPreparedStemImport();
         const runId = submission.runId;
         const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
         if (!batchId) {
@@ -348,11 +552,12 @@ describe('prompt stem import recovery', () => {
 
         expect(getPendingActionConfirmation(confirmationId)?.status).toBe('failed');
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
+        expect(mocks.importStemSetExecute).toHaveBeenCalledExactlyOnceWith(action);
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
         expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
             `stem-promotion:${submission.confirmationId}`,
-            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            durableBindings,
             expect.objectContaining({ runId, batchId })
         );
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
@@ -367,20 +572,12 @@ describe('prompt stem import recovery', () => {
     });
 
     it('commits the document and durable promotion through shared approval exactly once', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [stemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new Error(`Expected approval: ${submission.status}`);
-        }
-        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        const { submission, action } = await submitPreparedStemImport();
         await expect(confirmPendingChatActions({ confirmationId: submission.confirmationId })).resolves.toEqual({
             status: 'executed',
         });
         expect(getCrdtDoc<Record<string, unknown>>('owned')).toMatchObject({ stemImport: { imported: true } });
+        expect(mocks.importStemSetExecute).toHaveBeenCalledExactlyOnceWith(action);
         expect(getPendingActionConfirmation(submission.confirmationId)?.status).toBe('executed');
         expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
             `stem-promotion:${submission.confirmationId}`
@@ -394,20 +591,13 @@ describe('prompt stem import recovery', () => {
             currentStatus: 'executed',
         });
         expect(mocks.commitDurablePromotionRecovery).toHaveBeenCalledTimes(1);
+        expect(mocks.importStemSetExecute).toHaveBeenCalledTimes(1);
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('keeps durable stem promotion recovery pending when command commit truth is unavailable before reload', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [stemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new TypeError(`Expected approval preview, received ${submission.status}`);
-        }
+        const { submission } = await submitPreparedStemImport();
         const runId = submission.runId;
         const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
         if (!batchId) {
@@ -420,11 +610,13 @@ describe('prompt stem import recovery', () => {
             status: 'failed',
             reason: 'Commit truth is not available yet.',
         });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(mocks.importStemSetExecute).not.toHaveBeenCalled();
         expect(agentRunLifecycle.get(runId)?.temporaryAssets).toEqual([]);
         expect(agentRunLifecycle.get(runId)?.preparedStemImports).toEqual([]);
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
             `stem-promotion:${submission.confirmationId}`,
-            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            durableBindings,
             expect.objectContaining({ runId, batchId })
         );
         expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
@@ -439,15 +631,7 @@ describe('prompt stem import recovery', () => {
     });
 
     it('retains exact durable prepared-stem promotion recovery after ordinary run history evicts its owner', async () => {
-        const submission = await submitAdmittedPromptRequest({
-            prompt: 'Import the selected stems',
-            source: 'prompt-bar',
-            actions: [stemAction],
-            requiresConfirmation: true,
-        });
-        if (submission.status !== 'awaiting-approval') {
-            throw new TypeError(`Expected approval preview, received ${submission.status}`);
-        }
+        const { submission } = await submitPreparedStemImport();
         const runId = submission.runId;
         const batchId = agentRunLifecycle.get(runId)?.batches[0]?.batchId;
         if (!batchId) {
@@ -460,6 +644,8 @@ describe('prompt stem import recovery', () => {
             status: 'failed',
             reason: 'Commit truth is not available yet.',
         });
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(mocks.importStemSetExecute).not.toHaveBeenCalled();
         for (let index = 0; index < 50; index += 1) {
             agentRunLifecycle.create({
                 runId: `later-stem-run-${String(index)}`,
@@ -475,7 +661,7 @@ describe('prompt stem import recovery', () => {
         expect(readAgentRunState()).not.toHaveProperty('preparedStemImportRecoveryLedger');
         expect(mocks.prepareDurablePromotionRecovery).toHaveBeenCalledExactlyOnceWith(
             `stem-promotion:${submission.confirmationId}`,
-            [{ leaseId: 'lease-prompt-recovery', expectedHash: 'hash-prompt-recovery' }],
+            durableBindings,
             expect.objectContaining({ runId, batchId })
         );
         // Shared settlement tried to complete the still-prepared journal; the
@@ -489,47 +675,94 @@ describe('prompt stem import recovery', () => {
         expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+
+        vi.resetModules();
+        const { recoverInterruptedAgentRuns } = await import('../agentRunRecovery');
+        await recoverInterruptedAgentRuns({ recoveredAt: 550 });
+
+        expect(mocks.promotionState.get(`stem-promotion:${submission.confirmationId}`)).toBe('prepared');
+        expect(mocks.commitDurablePromotionRecovery).not.toHaveBeenCalled();
+        expect(mocks.transitionDurablePromotionRecoveryToCleanup).not.toHaveBeenCalled();
+        expect(mocks.completeDurableCleanupRecovery).not.toHaveBeenCalled();
+        expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
     });
 
     it('refuses new canonical approval with incomplete durable stem identities', async () => {
-        mocks.planPromptActions.mockImplementationOnce(
-            (input: Parameters<typeof import('../planPromptActions').planPromptActions>[0]) => {
-                if (!input.streamIdentity) {
-                    throw new Error('Expected admitted planning identity');
-                }
-                preparedStemImportResources.register({
-                    runId: input.streamIdentity.runId,
-                    stems: legacyStemAction.payload.stems,
-                });
-                return Promise.resolve({
-                    context: getProjectContext(),
-                    projectRevision: captureProjectRevision(),
-                    result: {
-                        actions: [legacyStemAction],
-                        rawText: input.prompt,
-                        requiresConfirmation: true,
-                        planningOutcome: { kind: 'proposal' },
-                    },
-                });
-            }
+        mocks.stageDurableAsset.mockImplementationOnce((_file: File, name: string) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId: `lease-${name}` })
+        );
+        mocks.stageDurableAsset.mockImplementationOnce((_file: File, name: string) =>
+            Promise.resolve({ hash: `hash-${name}`, leaseId: '' })
         );
         await expect(
             submitAdmittedPromptRequest({
-                prompt: 'Import incomplete stems',
+                prompt: 'Import the selected stems',
                 source: 'prompt-bar',
             })
         ).rejects.toThrow('Prepared stem durable asset binding is incomplete');
         expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
         expect(mocks.prepareDurablePromotionRecovery).not.toHaveBeenCalled();
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledTimes(2);
         expect(mocks.prepareDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
-            'stem-cleanup:["lease-prompt-recovery-bound"]',
-            [{ leaseId: 'lease-prompt-recovery-bound', expectedHash: 'hash-prompt-recovery-bound' }]
+            `stem-cleanup:["${durableBindings[0]!.leaseId}"]`,
+            [durableBindings[0]]
         );
         expect(mocks.completeDurableCleanupRecovery).toHaveBeenCalledExactlyOnceWith(
-            'stem-cleanup:["lease-prompt-recovery-bound"]'
+            `stem-cleanup:["${durableBindings[0]!.leaseId}"]`
         );
         expect(mocks.releaseStagedAsset).not.toHaveBeenCalled();
+    });
+
+    it('refuses an over-budget selected stem set before decoding or staging either file', async () => {
+        const limits: AgentResourceLimits = { ...DEFAULT_AGENT_RESOURCE_LIMITS, storageBytes: 1 };
+        agentResourceLimitsStore.set(limits);
+        const beforeRevision = captureProjectRevision();
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Import the selected stems', source: 'prompt-bar' })
+        ).rejects.toThrow('The selected stem preparation exceeds the user budget.');
+
+        const run = readAgentRunState().runs.find((candidate) => candidate.request === 'Import the selected stems');
+        if (!run) {
+            throw new TypeError('Expected the admitted Prompt Bar run.');
+        }
+        expect(mocks.pickFiles).toHaveBeenCalledOnce();
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.stageDurableAsset).not.toHaveBeenCalled();
+        expect(run.budgetAttempts.filter((attempt) => attempt.attemptId.startsWith('stem-preparation:'))).toEqual([]);
+        expect(run.budgets.consumed.downloadBytes).toBeUndefined();
+        expect(run.budgets.consumed.storageBytes).toBeUndefined();
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(captureProjectRevision()).toBe(beforeRevision);
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
+    });
+
+    it('leaves the project unchanged when the selected-stem picker is cancelled', async () => {
+        mocks.pickFiles.mockResolvedValueOnce(null);
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Import the selected stems', source: 'prompt-bar' })
+        ).resolves.toMatchObject({ status: 'no-op' });
+
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.stageDurableAsset).not.toHaveBeenCalled();
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
+    });
+
+    it('rejects an invalid one-file selection before decoding or staging', async () => {
+        mocks.pickFiles.mockResolvedValueOnce([new File(['drums'], selectedStemNames[0], { type: 'audio/wav' })]);
+
+        await expect(
+            submitAdmittedPromptRequest({ prompt: 'Import the selected stems', source: 'prompt-bar' })
+        ).rejects.toThrow('Select between 2 and 32 audio stems.');
+
+        expect(mocks.decodeAudioFile).not.toHaveBeenCalled();
+        expect(mocks.stageDurableAsset).not.toHaveBeenCalled();
+        expect(getCrdtDoc<Record<string, unknown>>('owned')).not.toHaveProperty('stemImport');
+        expect(pendingActionConfirmationStore.value?.confirmations).toEqual([]);
     });
 
     it('reconstructs an evicted prepared-stem capsule after reload and discards it on proven noncommit', async () => {

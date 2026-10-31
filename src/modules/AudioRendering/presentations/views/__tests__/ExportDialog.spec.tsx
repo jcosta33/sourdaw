@@ -2965,6 +2965,191 @@ describe('ExportDialog', () => {
         }
     });
 
+    describe('the timers an export session arms', () => {
+        const startFakeTimerSession = (): void => {
+            vi.useFakeTimers();
+        };
+
+        const finishFakeTimerSession = (): void => {
+            vi.clearAllTimers();
+            vi.useRealTimers();
+        };
+
+        // Flushes React inside act on every poll, so the awaited update is never an unwrapped one.
+        const waitForUnderFakeTimers = (assertion: () => void): Promise<void> =>
+            vi.waitFor(async () => {
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(0);
+                });
+                assertion();
+            });
+
+        const findTextUnderFakeTimers = (text: string | RegExp): Promise<void> =>
+            waitForUnderFakeTimers(() => expect(screen.getByText(text)).toBeInTheDocument());
+
+        const completeExport = async (): Promise<void> => {
+            fireEvent.click(screen.getByRole('button', { name: /start baking/i }));
+            await findTextUnderFakeTimers(/Ding! Baking Complete/);
+        };
+
+        it('leaves no pending auto-close and never closes after the open dialog unmounts', async () => {
+            startFakeTimerSession();
+            try {
+                const onClose = vi.fn();
+                const view = render(<ExportDialog open onClose={onClose} />);
+                await completeExport();
+                expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+                view.unmount();
+                expect(vi.getTimerCount()).toBe(0);
+
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(2600);
+                });
+                expect(onClose).not.toHaveBeenCalled();
+            } finally {
+                finishFakeTimerSession();
+            }
+        });
+
+        it('leaves no pending Render to Clip auto-close and never closes after the open dialog unmounts', async () => {
+            startFakeTimerSession();
+            try {
+                const onClose = vi.fn();
+                vi.mocked(renderToClip).mockReturnValue({
+                    trackId: 'track-1',
+                    clipId: 'clip-new',
+                    audioBufferId: 'rendered-1',
+                });
+                const view = render(<ExportDialog open onClose={onClose} />);
+                fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+                fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+                await waitForUnderFakeTimers(() =>
+                    expect(mocks.notifyUser).toHaveBeenCalledWith('Rendered audio placed as a new clip', 'success')
+                );
+                expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+                view.unmount();
+                expect(vi.getTimerCount()).toBe(0);
+
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(1600);
+                });
+                expect(onClose).not.toHaveBeenCalled();
+            } finally {
+                finishFakeTimerSession();
+            }
+        });
+
+        it('drops the pending auto-close when the dialog closes, and keeps a reopened session open', async () => {
+            startFakeTimerSession();
+            try {
+                const onClose = vi.fn();
+                const view = render(<ExportDialog open onClose={onClose} />);
+                await completeExport();
+                expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+                view.rerender(<ExportDialog open={false} onClose={onClose} />);
+                expect(vi.getTimerCount()).toBe(0);
+                view.rerender(<ExportDialog open onClose={onClose} />);
+
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(2600);
+                });
+                expect(onClose).not.toHaveBeenCalled();
+                expect(screen.getByRole('button', { name: /start baking/i })).toBeEnabled();
+            } finally {
+                finishFakeTimerSession();
+            }
+        });
+
+        it('still auto-closes a session that stays open for the full success window', async () => {
+            startFakeTimerSession();
+            try {
+                const onClose = vi.fn();
+                render(<ExportDialog open onClose={onClose} />);
+                await completeExport();
+
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(2400);
+                });
+                expect(onClose).not.toHaveBeenCalled();
+                await act(async () => {
+                    await vi.advanceTimersByTimeAsync(200);
+                });
+                expect(onClose).toHaveBeenCalledTimes(1);
+            } finally {
+                finishFakeTimerSession();
+            }
+        });
+
+        it.each([
+            ['Render to Clip', /to clip/i, 'Render to Clip'],
+            ['mixdown', /whole loaf/i, /start baking/i],
+        ])(
+            'leaves no pending unlock when the dialog unmounts in the cancelled %s window',
+            async (_mode, modeButton, startButton) => {
+                startFakeTimerSession();
+                const rendering = createDeferred<AudioBuffer>();
+                const renderStarted = createDeferred<void>();
+                mocks.renderOffline.mockImplementationOnce(() => {
+                    renderStarted.resolve();
+                    return rendering.promise;
+                });
+                const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+                try {
+                    const view = render(<ExportDialog open onClose={vi.fn()} />);
+                    fireEvent.click(screen.getByRole('button', { name: modeButton }));
+                    fireEvent.click(screen.getByRole('button', { name: startButton }));
+                    await act(async () => renderStarted.promise);
+                    fireEvent.click(screen.getByRole('button', { name: /turn off oven/i }));
+                    await act(async () => {
+                        rendering.reject(new Error('Export cancelled'));
+                        await rendering.promise.catch(() => undefined);
+                    });
+                    await findTextUnderFakeTimers('Oven turned off.');
+                    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+                    view.unmount();
+                    expect(vi.getTimerCount()).toBe(0);
+
+                    await act(async () => {
+                        await vi.advanceTimersByTimeAsync(1600);
+                    });
+                    expect(consoleError).not.toHaveBeenCalled();
+                } finally {
+                    consoleError.mockRestore();
+                    finishFakeTimerSession();
+                }
+            }
+        );
+
+        it('arms no unlock when the dialog unmounts while the cancelled render is still unwinding', async () => {
+            startFakeTimerSession();
+            const rendering = createDeferred<AudioBuffer>();
+            const renderStarted = createDeferred<void>();
+            mocks.renderOffline.mockImplementationOnce(() => {
+                renderStarted.resolve();
+                return rendering.promise;
+            });
+            try {
+                const view = render(<ExportDialog open onClose={vi.fn()} />);
+                fireEvent.click(screen.getByRole('button', { name: /to clip/i }));
+                fireEvent.click(screen.getByRole('button', { name: 'Render to Clip' }));
+                await act(async () => renderStarted.promise);
+
+                view.unmount();
+                await act(async () => {
+                    rendering.reject(new Error('Export cancelled'));
+                    await rendering.promise.catch(() => undefined);
+                });
+                expect(vi.getTimerCount()).toBe(0);
+            } finally {
+                finishFakeTimerSession();
+            }
+        });
+    });
+
     it('retires a pending browser destination when the dialog closes and reopens', async () => {
         vi.mocked(isNativeProjectRuntimeAvailable).mockReturnValue(false);
         const destination = createDeferred<FileSystemFileHandle>();

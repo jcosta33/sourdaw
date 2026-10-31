@@ -6,6 +6,8 @@ export type ApplicationToolReceipt = {
     callId: string;
     toolName: string;
     turn: number;
+    /** Explicit application Re-preview reads use turn zero, independently of provider turns. */
+    origin?: 'application-verification';
     status: 'success' | 'failure';
     revision: string | null;
     data: unknown;

@@ -1,92 +1,71 @@
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { analyzePcmWav } from './analyzePcmWav';
 import { LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
+import {
+    expectNebulaMixQuality,
+    MANUAL_TAIL_SECONDS,
+    watchExportRun,
+    WAV_BYTES_PER_SECOND,
+} from './exportAudioEvidenceHarness';
 import { installFilePickerCapture } from './exportFilePickerCapture';
 
-const ALLOWED_WARNING_FRAGMENTS = [
-    'using deprecated parameters for `initSync()`',
-    '[MIDI] Web MIDI failed',
-    'No available adapters.',
-] as const;
-// #4895: on a contended runner (PR #4884 approval run 36450903232, shard 9) the engine's device
-// deadline expired during the 12-minute export, emitting one loading-timeout warning followed by
-// the promotion rollbacks of its expired loads in the same synchronous pass. That is the
-// runner-pressure fragility class of #2180 for this spec — the same spec passed the same-day
-// nightly on an idle runner — not the silent device-loss regression #3318 fixed, whose production
-// signature was exactly this cascade. So the rollback tolerance is gated on the cascade itself: a
-// loading-timeout line arms it, and only the promotion rollbacks trailing it are absorbed. An
-// isolated promotion rollback still fails, and the genuine graph-failure route additionally warns
-// `Device graph rebuild failed`, which this gate never covers. Match on the stable fragments only;
-// the pending count, device ids, and rollback causes are volatile.
-const DEVICE_LOADING_TIMEOUT_FRAGMENT = '[AudioEngine] Device loading timed out';
-const DEVICE_PROMOTION_ROLLBACK_SUBJECT_FRAGMENT = 'Async device promotion for ';
-const DEVICE_PROMOTION_ROLLBACK_CAUSE_FRAGMENT = ' rolled back after ';
-const EXPORT_COMPLETION_TIMEOUT_MS = 900_000;
+// #5960: the browser OfflineAudioContext renders on one CPU-bound thread at roughly 1.5x realtime
+// locally and 0.5x on a CI runner, so a 30 s loop region keeps PR shards short while still
+// rendering the opening through its tracks and buses. exportAudioEvidenceFullLength.spec.ts
+// holds the whole-project proof for nightly and local runs. The budget covers a ~60 s render on a
+// runner about three times slower than a development machine, with headroom for first-paint load.
+const EXPORT_COMPLETION_TIMEOUT_MS = 300_000;
 
-test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, testInfo) => {
+// A bounded render starts at timeline zero so stateful devices hear the same history as a full
+// playthrough (resolveHistoryAwareRenderContext), so a loop starting later pays for its whole
+// lead-in. Beats 0-39 are the demo's opening, which keeps the render at the loop's own length. The
+// ruler floors the drag start and ceils its end to whole beats.
+const LOOP_START_BEAT = 0;
+const LOOP_END_BEAT = 39;
+// The demo holds 76 BPM until its first tempo change at beat 148, past the loop's end.
+const DEMO_BPM = 76;
+const LOOP_SECONDS = ((LOOP_END_BEAT - LOOP_START_BEAT) * 60) / DEMO_BPM;
+const DURATION_TOLERANCE_SECONDS = 1;
+// Share of the loop's own bytes the written data must reach; the tail only adds to it.
+const BYTE_FLOOR_RATIO = 0.95;
+// "Zoom to fit" leaves the 1280 px viewport at two pixels per beat, so these x offsets inside the
+// beat ruler land at beats 0.5 and 38.5. The loop label asserted below fails loudly if the zoom
+// ever changes.
+const PIXELS_PER_BEAT_AFTER_FIT = 2;
+const DRAG_START_X = (LOOP_START_BEAT + 0.5) * PIXELS_PER_BEAT_AFTER_FIT;
+const DRAG_END_X = (LOOP_END_BEAT - 0.5) * PIXELS_PER_BEAT_AFTER_FIT;
+
+async function setLoopRegionOnRuler(page: Page): Promise<void> {
+    const ruler = page.getByLabel('Beat ruler');
+    await expect(ruler).toBeVisible();
+    const unzoomed = await ruler.screenshot();
+    await page.keyboard.press('f');
+    await expect.poll(async () => (await ruler.screenshot()).equals(unzoomed)).toBe(false);
+
+    const box = await ruler.boundingBox();
+    if (box === null) {
+        throw new Error('Beat ruler has no bounding box');
+    }
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + DRAG_START_X, y);
+    await page.keyboard.down('Shift');
+    await page.mouse.down();
+    await page.mouse.move(box.x + DRAG_END_X, y, { steps: 12 });
+    await page.mouse.up();
+    await page.keyboard.up('Shift');
+}
+
+test('exports a 30 s loop region of the Nebula Drift mix as a stereo WAV', async ({ page }, testInfo) => {
     test.setTimeout(EXPORT_COMPLETION_TIMEOUT_MS + 60_000);
     const configuredBaseUrl = testInfo.project.use.baseURL;
     if (typeof configuredBaseUrl !== 'string') {
         throw new TypeError('Audio export E2E requires a configured Playwright baseURL');
     }
-    const appOrigin = new URL(configuredBaseUrl).origin;
-    const consoleErrors: string[] = [];
-    const unexpectedWarnings: string[] = [];
-    const pageErrors: string[] = [];
-    const failedRequests: string[] = [];
-    const externalRequests: string[] = [];
-    const httpErrors: string[] = [];
-
-    let deviceLoadTimedOut = false;
-    page.on('console', (message) => {
-        const text = message.text();
-        if (message.type() === 'error') {
-            consoleErrors.push(text);
-        }
-        if (message.type() !== 'warning') {
-            return;
-        }
-        if (ALLOWED_WARNING_FRAGMENTS.some((fragment) => text.includes(fragment))) {
-            return;
-        }
-        // #4895 pressure cascade: the deadline line arms the gate; only the rollbacks it triggers
-        // are absorbed. Every other unexpected warning still fails the assertion below.
-        if (text.includes(DEVICE_LOADING_TIMEOUT_FRAGMENT)) {
-            deviceLoadTimedOut = true;
-            return;
-        }
-        if (
-            deviceLoadTimedOut &&
-            text.includes(DEVICE_PROMOTION_ROLLBACK_SUBJECT_FRAGMENT) &&
-            text.includes(DEVICE_PROMOTION_ROLLBACK_CAUSE_FRAGMENT)
-        ) {
-            return;
-        }
-        unexpectedWarnings.push(text);
-    });
-    page.on('pageerror', (error) => pageErrors.push(error.message));
-    page.on('requestfailed', (request) => {
-        const failure = request.failure()?.errorText ?? 'unknown request failure';
-        if (failure === 'net::ERR_ABORTED') {
-            return;
-        }
-        failedRequests.push(`${failure} ${request.method()} ${request.url()}`);
-    });
-    page.on('request', (request) => {
-        const url = new URL(request.url());
-        if (url.protocol !== 'data:' && url.protocol !== 'blob:' && url.origin !== appOrigin) {
-            externalRequests.push(`${request.method()} ${request.url()}`);
-        }
-    });
-    page.on('response', (response) => {
-        if (response.status() >= 400) {
-            httpErrors.push(`${response.status()} ${response.request().method()} ${response.url()}`);
-        }
-    });
+    const findings = watchExportRun(page, new URL(configuredBaseUrl).origin);
     const capture = await installFilePickerCapture(page, testInfo.outputPath('nebula-drift-mix.wav'));
     try {
         await setupWorkspace(page);
@@ -100,6 +79,8 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         await wait_for_workspace_ready(page);
         await expect(page.getByRole('button', { name: 'Nebula Drift' })).toBeVisible();
 
+        await setLoopRegionOnRuler(page);
+
         const isMac = await page.evaluate(() => navigator.platform.toUpperCase().includes('MAC'));
         await page.keyboard.press(isMac ? 'Meta+Shift+E' : 'Control+Shift+E');
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
@@ -111,6 +92,14 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         );
         await expect(dialog.getByRole('checkbox', { name: /FLAC/i })).toHaveAttribute('aria-checked', 'false');
         await expect(dialog.getByRole('radio', { name: 'Whole project' })).toBeChecked();
+        const loopRegion = dialog.getByRole('radio', {
+            name: `Loop region (beat ${LOOP_START_BEAT}.00 → ${LOOP_END_BEAT}.00)`,
+            exact: true,
+        });
+        await expect(loopRegion).toBeEnabled();
+        await loopRegion.check();
+        await expect(loopRegion).toBeChecked();
+        await expect(dialog.getByRole('radio', { name: 'Whole project' })).not.toBeChecked();
         // Auto-detect tail defaults on, so the manual Tail-seconds field is disabled
         // and empty until it is toggled off. Toggling exposes the default (2s).
         const autoTail = dialog.getByLabel('Auto-detect');
@@ -120,38 +109,34 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         await expect(tailInput).toHaveValue('');
         await autoTail.uncheck();
         await expect(tailInput).toBeEnabled();
-        await expect(tailInput).toHaveValue('2');
+        await expect(tailInput).toHaveValue(String(MANUAL_TAIL_SECONDS));
 
+        const byteFloor = LOOP_SECONDS * WAV_BYTES_PER_SECOND * BYTE_FLOOR_RATIO;
         const pickerFilename = capture.pickerFilename;
         await dialog.getByRole('button', { name: 'Start Baking' }).click();
-        await expect(dialog.getByRole('button', { name: 'Close Bakery' })).toBeVisible({
-            timeout: EXPORT_COMPLETION_TIMEOUT_MS,
-        });
+        // A failed bake leaves the dialog without a Close Bakery button, so wait on either ending
+        // and fail at once on the refusal instead of burning the whole budget.
+        const closeBakery = dialog.getByRole('button', { name: 'Close Bakery' });
+        const refusal = dialog.getByText(/The bread burned/);
+        await expect
+            .poll(async () => (await closeBakery.isVisible()) || (await refusal.isVisible()), {
+                timeout: EXPORT_COMPLETION_TIMEOUT_MS,
+            })
+            .toBe(true);
+        await expect(refusal).toBeHidden();
+        await expect(closeBakery).toBeVisible();
         await capture.waitForClose();
 
         expect(await pickerFilename).toMatch(/^Sourdaw_Bake_\d+\.wav$/);
         expect(capture.writeCount()).toBeGreaterThan(0);
-        expect(capture.bytesWritten()).toBeGreaterThan(78_000_000);
+        expect(capture.bytesWritten()).toBeGreaterThan(byteFloor);
         expect(capture.abortCount()).toBe(0);
         const wavBytes = await readFile(capture.path);
         const wav = analyzePcmWav(wavBytes);
-        expect(wav.audioFormat).toBe(1);
-        expect(wav.channels).toBe(2);
-        expect(wav.sampleRate).toBe(44_100);
-        expect(wav.bitsPerSample).toBe(24);
-        expect(wav.dataBytes).toBeGreaterThan(78_000_000);
-        expect(wav.durationSeconds).toBeGreaterThan(298);
-        expect(wav.durationSeconds).toBeLessThan(303);
-        expect(wav.samplePeak).toBeGreaterThan(0.05);
-        expect(wav.samplePeak).toBeLessThan(0.99);
-        expect(wav.clippedSampleCount).toBe(0);
-        expect(wav.integratedLufs).toBeGreaterThanOrEqual(-30);
-        expect(wav.integratedLufs).toBeLessThanOrEqual(-6);
-        expect(wav.truePeakDbTp).toBeLessThanOrEqual(0);
-        expect(Math.max(...wav.dcOffsets.map(Math.abs))).toBeLessThan(0.005);
-        expect(wav.lowMonoCompatibilityDb).toBeGreaterThan(-3);
-        expect(wav.lowCorrelation).toBeGreaterThan(0);
-        expect(wav.activeBlockRatio).toBeGreaterThan(0.5);
+        expect(wav.dataBytes).toBeGreaterThan(byteFloor);
+        expect(wav.durationSeconds).toBeGreaterThan(LOOP_SECONDS + MANUAL_TAIL_SECONDS - DURATION_TOLERANCE_SECONDS);
+        expect(wav.durationSeconds).toBeLessThan(LOOP_SECONDS + MANUAL_TAIL_SECONDS + DURATION_TOLERANCE_SECONDS);
+        expectNebulaMixQuality(wav);
         const wavSha256 = createHash('sha256').update(wavBytes).digest('hex');
         expect(wavSha256).toMatch(/^[0-9a-f]{64}$/);
         await testInfo.attach('nebula-drift-wav-evidence', {
@@ -162,12 +147,7 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
             path: capture.path,
             contentType: 'audio/wav',
         });
-        expect(consoleErrors).toEqual([]);
-        expect(unexpectedWarnings).toEqual([]);
-        expect(pageErrors).toEqual([]);
-        expect(failedRequests).toEqual([]);
-        expect(externalRequests).toEqual([]);
-        expect(httpErrors).toEqual([]);
+        findings.expectClean();
     } finally {
         if (!page.isClosed()) {
             await page.close();

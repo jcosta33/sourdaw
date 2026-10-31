@@ -1,6 +1,9 @@
 import { type ToolSchema } from './ToolDefinitions';
 
+export const WORKFLOW_METRIC_CAPABILITY_IDS = ['sidechain-routing', 'whole-project-vibe-mix'] as const;
+
 export const WORKFLOW_CAPABILITY_IDS = [
+    ...WORKFLOW_METRIC_CAPABILITY_IDS,
     'drum-routing',
     'drum-render-comparison',
     'backing-vocal-plate',
@@ -54,6 +57,9 @@ export const WORKFLOW_ACTION_TOOL_NAMES: ReadonlySet<string> = new Set([
 ]);
 
 const workflowCapabilityDescriptions: Readonly<Record<WorkflowCapabilityId, string>> = {
+    'sidechain-routing': 'Connect the exact application-published Kick to eligible Bass compressor sidechain inputs.',
+    'whole-project-vibe-mix':
+        'Preview the existing bounded section gain trajectory while preserving its protected objects.',
     'drum-routing': 'Route the complete semantic drum set to its existing drum bus while preserving its return.',
     'drum-render-comparison':
         'Build the bounded drum and parallel-compression routing graph, preserve the room route, apply the fixed gain change, and render the comparison sections.',
@@ -76,9 +82,10 @@ export function isWorkflowCapabilityId(value: unknown): value is WorkflowCapabil
 }
 
 export function createWorkflowCapabilityToolSchema(
-    availableCapabilityIds: readonly WorkflowCapabilityId[]
+    availableCapabilityIds: readonly WorkflowCapabilityId[],
+    intake?: { catalogId: unknown; metricIntent: unknown }
 ): ToolSchema {
-    return {
+    const schema: ToolSchema = {
         type: 'function',
         function: {
             name: WORKFLOW_CAPABILITY_TOOL_NAME,
@@ -89,10 +96,16 @@ export function createWorkflowCapabilityToolSchema(
                 properties: {
                     capabilityId: {
                         type: 'string',
-                        oneOf: availableCapabilityIds.map((capabilityId) => ({
-                            const: capabilityId,
-                            description: workflowCapabilityDescriptions[capabilityId],
-                        })),
+                        oneOf: availableCapabilityIds
+                            .filter(
+                                (capabilityId) =>
+                                    intake !== undefined ||
+                                    !WORKFLOW_METRIC_CAPABILITY_IDS.some((id) => id === capabilityId)
+                            )
+                            .map((capabilityId) => ({
+                                const: capabilityId,
+                                description: workflowCapabilityDescriptions[capabilityId],
+                            })),
                         description: 'The application-provided workflow capability to use.',
                     },
                 },
@@ -101,4 +114,12 @@ export function createWorkflowCapabilityToolSchema(
             },
         },
     };
+    if (intake !== undefined) {
+        schema.function.parameters.properties.catalogId = intake.catalogId;
+        schema.function.parameters.properties.metricIntent = intake.metricIntent;
+        schema.function.parameters.required.push('catalogId', 'metricIntent');
+        schema.function.description +=
+            ' For initial whole-request intake, call alone with the published metric intent before any proposal. After generic intake, select execution with capabilityId alone; never replace its frozen intent.';
+    }
+    return schema;
 }

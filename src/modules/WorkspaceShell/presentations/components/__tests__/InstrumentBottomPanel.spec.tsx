@@ -25,6 +25,27 @@ describe('InstrumentBottomPanel', () => {
     });
 });
 
+describe('InstrumentBottomPanel — height under pressure', () => {
+    it('requests its height but can shrink to the 160px resize floor', () => {
+        render(
+            <InstrumentBottomPanel
+                label="Sampler"
+                labelColor="text-primary"
+                borderColor="border-primary/20"
+                height={300}
+                onResize={vi.fn()}
+                onClose={vi.fn()}
+            >
+                <span />
+            </InstrumentBottomPanel>
+        );
+
+        const panel = screen.getByRole('button', { name: 'Close Sampler' }).closest('.contain-strict');
+        expect(panel).toHaveStyle({ height: '300px', minHeight: '160px' });
+        expect(panel).not.toHaveClass('shrink-0');
+    });
+});
+
 describe('InstrumentBottomPanel — aria-label and callbacks', () => {
     it('uses the label in the close button aria-label', () => {
         render(

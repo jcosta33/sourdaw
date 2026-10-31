@@ -1178,7 +1178,7 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
             ).toBeGreaterThan(0.3);
         }
         await page.evaluate(() => {
-            const events: { type: string; phase: string; stripTarget: boolean; rowDraggable: boolean }[] = [];
+            const events: { type: string; phase: string; stripTarget: boolean; inDraggableAncestor: boolean }[] = [];
             Reflect.set(window, '__punchCompGestureEvents', events);
             for (const type of ['mousedown', 'mousemove', 'mouseup', 'dragstart', 'drag', 'dragend', 'drop']) {
                 for (const capture of [true, false]) {
@@ -1189,15 +1189,16 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                                 return;
                             }
                             const target = event.target instanceof Element ? event.target : null;
-                            const row = target?.closest('[role="row"]');
-                            if (!row) {
+                            const strip = target?.closest('[role="presentation"]');
+                            const draggable = target?.closest('[draggable="true"]');
+                            if (!strip && !draggable) {
                                 return;
                             }
                             events.push({
                                 type,
                                 phase: capture ? 'capture' : 'bubble',
-                                stripTarget: Boolean(target?.closest('[role="presentation"]')),
-                                rowDraggable: row.getAttribute('draggable') === 'true',
+                                stripTarget: Boolean(strip),
+                                inDraggableAncestor: Boolean(draggable),
                             });
                         },
                         capture
@@ -1214,11 +1215,11 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                     type: string;
                     phase: string;
                     stripTarget: boolean;
-                    rowDraggable: boolean;
+                    inDraggableAncestor: boolean;
                 }[]
         );
         await writeFile(testInfo.outputPath('comp-gesture-events.json'), JSON.stringify(compEvents, null, 2));
-        expect(compEvents.filter((event) => event.type === 'dragstart' && event.rowDraggable)).toHaveLength(0);
+        expect(compEvents.filter((event) => event.type === 'dragstart' && event.inDraggableAncestor)).toHaveLength(0);
         expect(
             compEvents.filter((event) => event.type === 'mouseup' && event.phase === 'bubble' && event.stripTarget)
         ).toHaveLength(3);

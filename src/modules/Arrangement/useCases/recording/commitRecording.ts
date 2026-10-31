@@ -7,10 +7,12 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Clip } from '../../stores/trackStore';
 import { liveTempoTimeline } from '../liveTempoTimeline';
 
+import { fitFlatTakesToClip } from './fitFlatTakesToClip';
 import { placeRecordingClipStart } from './placeRecordingClipStart';
 import { placeRecordingTakes } from './placeRecordingTakes';
 import { recordingPassTiming } from './recordingPassTiming';
 import { stageRecordingTake } from './stageRecordingTake';
+import { withMinimumRecordingLength } from './withMinimumRecordingLength';
 
 /** Where a captured recording's media truly begins, as the capture terminal measured it. */
 type RecordedCapture = {
@@ -127,7 +129,8 @@ function coverRecordedPasses(clip: Clip, capture: RecordedCapture): Clip {
  * An audio capture terminal hands in where its media truly begins. The clip is
  * placed against its loop passes first, then the staged takes are placed
  * against that committed clip's media origin, both before the dispatch so they
- * land in the one entry, which captures the live lane state. A MIDI recording
+ * land in the one entry, which captures the live lane state; a flat take then
+ * takes the committed clip's final extent. A MIDI recording
  * keeps the clip it opened, its passes bounded by that clip's start, and
  * commits without a capture.
  *
@@ -170,9 +173,9 @@ export async function commitRecording(
             readSecondsAtBeat({ beat: placed.startBeat }) -
             clipEntrySeconds(liveTempoTimeline, placed.startBeat, placed.audioOffsetBeats ?? 0),
     });
-    await executeAppAction(
-        { type: 'commitRecording', payload: { clip: coverRecordedPasses(placed, capture) } },
-        dispatchOptions
-    );
+    // The flat take follows the clip the handler will write, one-beat floor included.
+    const committed = withMinimumRecordingLength(coverRecordedPasses(placed, capture));
+    fitFlatTakesToClip(committed);
+    await executeAppAction({ type: 'commitRecording', payload: { clip: committed } }, dispatchOptions);
     recordingPassTiming.retireIfOwner(clip.id, passOwner);
 }
