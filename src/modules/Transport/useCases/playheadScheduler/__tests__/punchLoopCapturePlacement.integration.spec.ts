@@ -3316,6 +3316,35 @@ describe('punch audio capture loop placement', () => {
         }
     );
 
+    it.each(['stop', 'pause'] as const)(
+        '%s between scheduler ticks ends the closing pass on its last captured frame',
+        async (ending) => {
+            toggleRecording();
+            await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            await advanceUntil(() => playheadWrapCountRef.current >= 2 && playheadClockRef.beat >= 9);
+            // The gesture lands part-way to the next tick: the published beat
+            // is the last tick's, and the audio clock has moved on since.
+            hardware.now += TICK_SECONDS / 2;
+            const gestureBeat = playheadClockRef.beat + (hardware.now - playheadClockRef.audioTimeSeconds) * 2;
+            if (ending === 'stop') {
+                await stopPlayback();
+            } else {
+                pausePlayback();
+            }
+            await vi.waitFor(() => expect(recordedClips()[0]?.audioBufferId).toBeTruthy(), { interval: 1 });
+            await recordingLifecycle.waitForCommits();
+            const closing = lane().takes.reduce((latest, take) =>
+                (take.passDepthSeconds ?? -1) > (latest.passDepthSeconds ?? -1) ? take : latest
+            );
+            // Capture stops at the gesture, so its last frame sounds one
+            // recording latency before the gesture beat.
+            expect(closing.startBeat).toBe(8);
+            expect(closing.endBeat).toBeCloseTo(gestureBeat - hardware.latencySeconds * 2, 6);
+            expect(closing.passSourceEndSeconds).toBeCloseTo(hardware.buffer!.duration, 10);
+            expectProjectProjection();
+        }
+    );
+
     it('bounds uncomped ordinary Stop playback before any planned seam despite excess drain', async () => {
         toggleRecording();
         await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
