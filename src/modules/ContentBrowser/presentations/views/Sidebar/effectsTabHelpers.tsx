@@ -155,7 +155,7 @@ export const NavCard = ({
     <DawChooserCard
         compact
         dimmed={dimmed}
-        className="group relative overflow-hidden bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay hover:to-surface-raised px-2 py-3 mb-1.5 rounded-lg shadow-sm"
+        className="group relative overflow-hidden bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay hover:to-surface-raised px-2 py-3 rounded-lg shadow-sm"
         title={label}
         description={description}
         badge={badge}
@@ -195,7 +195,7 @@ export const EffectItem = ({
 }): ReactElement => (
     <Stack
         justify="center"
-        className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden mb-1.5 shadow-sm"
+        className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay transition-all cursor-grab active:cursor-grabbing relative overflow-hidden shadow-sm"
         draggable
         onDragStart={(event) => {
             event.dataTransfer.setData(PLUGIN_DRAG_MIME_TYPE, JSON.stringify({ name: plugin.name, id: plugin.id }));
