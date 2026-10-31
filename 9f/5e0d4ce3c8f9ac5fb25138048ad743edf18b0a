@@ -1,0 +1,36 @@
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_ba80576e6f5cb5::t_fbf78eead30b1f 143
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_ba80576e6f5cb5::t_70568054d2932c 302
+src/modules/Arrangement/useCases/recording/sourceBeat.ts
+  s_ba80576e6f5cb5::t_44673e45a8c8e9 4,8-10,14-17,19-20,23-29
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_06f92790000476 388-432
+  s_ba80576e6f5cb5::t_003c3696eedbad 47
+src/modules/Arrangement/useCases/recording/recordingPassOrigin.ts
+  s_ba80576e6f5cb5::t_26da210d55970e 1-50
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_ba80576e6f5cb5::t_82a9c49994d662 5,7,9
+  s_ba80576e6f5cb5::t_7d2446d9763895 181
+  s_ba80576e6f5cb5::t_e704763ab84b7b 34-52,156
+  s_ba80576e6f5cb5::t_e960e24e4afb97 135
+  s_ba80576e6f5cb5::t_8b26830231c740 142,150-155
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_ba80576e6f5cb5::t_cec2501b65445d 40-42,51-52,61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9f5e0d4ce3c8f9ac5fb25138048ad743edf18b0a",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
