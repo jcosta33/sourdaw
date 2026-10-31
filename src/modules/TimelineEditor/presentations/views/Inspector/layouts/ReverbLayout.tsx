@@ -4,11 +4,13 @@
 import { type ReactElement } from 'react';
 
 import { ReverbDecay } from '#/components/daw/visualizers/ReverbDecay';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { FitWidth } from '../FitWidth';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
@@ -32,32 +34,34 @@ const ReverbLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
     return (
         <Stack gap={3}>
             <SectionHeader title="Impulse Response" />
-            <Row align="stretch" justify="center">
-                <ReverbDecay
-                    size={pv['rev-size'] ?? 0.5}
-                    decay={pv['rev-decay'] ?? 2}
-                    damping={pv['rev-damping'] ?? 0.5}
-                    predelay={pv['rev-predelay'] ?? 10}
-                    width={240}
-                    height={70}
-                />
-            </Row>
+            <FitWidth fallbackWidth={240}>
+                {(width) => (
+                    <ReverbDecay
+                        size={pv['rev-size'] ?? 0.5}
+                        decay={pv['rev-decay'] ?? 2}
+                        damping={pv['rev-damping'] ?? 0.5}
+                        predelay={pv['rev-predelay'] ?? 10}
+                        width={width}
+                        height={70}
+                    />
+                )}
+            </FitWidth>
             <SectionHeader title="Controls" />
-            <Grid cols={2} gap={2}>
+            <ParamCardGrid>
                 {filterParams(parameters, ['rev-size', 'rev-decay']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
-            <Grid cols={2} gap={2}>
+            </ParamCardGrid>
+            <ParamCardGrid>
                 {filterParams(parameters, ['rev-damping', 'rev-predelay']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
-            <Grid cols={2} gap={2}>
+            </ParamCardGrid>
+            <ParamCardGrid>
                 {filterParams(parameters, ['rev-lowcut', 'rev-mix']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
+            </ParamCardGrid>
         </Stack>
     );
 };

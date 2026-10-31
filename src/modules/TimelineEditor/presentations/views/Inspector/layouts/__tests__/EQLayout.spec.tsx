@@ -22,6 +22,11 @@ vi.mock('#/components/daw/visualizers/EQCurve', () => ({
     EQCurve: (props: unknown) => mockEQCurve(props),
 }));
 
+const mockUseElementWidth = vi.hoisted(() => vi.fn((_ref: unknown, fallback: number) => fallback));
+vi.mock('../../../../hooks/useElementWidth', () => ({
+    useElementWidth: (ref: unknown, fallback: number) => mockUseElementWidth(ref, fallback),
+}));
+
 const mockSetDeviceParameter = vi.fn();
 vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: (...args: unknown[]) => mockSetDeviceParameter(...args),
@@ -112,6 +117,22 @@ describe('EQLayout', () => {
                 highQ: 2,
             })
         );
+    });
+
+    it('draws the curve at the measured container width instead of a fixed 240px', () => {
+        mockUseElementWidth.mockReturnValueOnce(172);
+        render(<Layout device={makeDevice()} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
+
+        expect(mockEQCurve).toHaveBeenCalledWith(expect.objectContaining({ width: 172, height: 100 }));
+    });
+
+    it('stacks the gain and frequency cards of a band until the container fits two', () => {
+        render(<Layout device={makeDevice()} trackId="track-1" parameters={PARAM_IDS.map(makeParam)} />);
+
+        const gain = screen.getByText('eq-low-gain');
+        const grid = gain.closest('.grid');
+        expect(grid).toHaveClass('grid-cols-1', '@sm:grid-cols-2');
+        expect(grid).toContainElement(screen.getByText('eq-low-freq'));
     });
 
     it('forwards EQCurve parameter changes to setDeviceParameter scoped to the device', () => {

@@ -583,7 +583,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         step={mappedStep}
                         defaultValue={mappedDefaultValue}
                         aria-label={param.name}
-                        formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                        showValue={false}
                         className="w-full"
                     />
                 </div>
@@ -633,110 +633,77 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         );
     };
 
+    const parameterActions = (
+        <>
+            <MidiLearnButton targetType="deviceParam" trackId={trackId} deviceId={device.id} paramId={param.id} />
+            {param.automatable ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className={cn(
+                                'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
+                                hasAutomation
+                                    ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
+                                    : 'border-muted-foreground/30 hover:bg-muted'
+                            )}
+                            onClick={() => {
+                                if (activeLane) {
+                                    removeAutomationLane(activeLane.id);
+                                } else {
+                                    addAutomationLane(trackId, targetId, param.name);
+                                }
+                            }}
+                            aria-label={
+                                hasAutomation ? `Remove automation for ${param.name}` : `Automate ${param.name}`
+                            }
+                            aria-pressed={hasAutomation}
+                        />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
+                    </TooltipContent>
+                </Tooltip>
+            ) : null}
+        </>
+    );
+
     return (
         <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
             {isSlider ? (
-                <Row justify="between" className="w-full">
-                    <label className="text-[10px] font-medium text-foreground truncate" title={param.name}>
+                <Row justify="between" wrap gap={1} className="w-full">
+                    <label
+                        className="min-w-0 flex-1 truncate text-[10px] font-medium text-foreground"
+                        title={param.name}
+                    >
                         {param.name}
                     </label>
-                    <Row gap={1.5} className="mt-0.5">
-                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                    <Row gap={1.5} shrink={false} className="ml-auto mt-0.5">
+                        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
-                        <MidiLearnButton
-                            targetType="deviceParam"
-                            trackId={trackId}
-                            deviceId={device.id}
-                            paramId={param.id}
-                        />
-                        {param.automatable ? (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className={cn(
-                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                            hasAutomation
-                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                                : 'border-muted-foreground/30 hover:bg-muted'
-                                        )}
-                                        onClick={() => {
-                                            if (activeLane) {
-                                                removeAutomationLane(activeLane.id);
-                                            } else {
-                                                addAutomationLane(trackId, targetId, param.name);
-                                            }
-                                        }}
-                                        aria-label={
-                                            hasAutomation
-                                                ? `Remove automation for ${param.name}`
-                                                : `Automate ${param.name}`
-                                        }
-                                        aria-pressed={hasAutomation}
-                                    />
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                                </TooltipContent>
-                            </Tooltip>
-                        ) : null}
+                        {parameterActions}
                     </Row>
                 </Row>
             ) : (
                 <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
-                    <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
+                    <label
+                        className="w-full min-w-0 truncate text-[10px] font-medium text-foreground"
+                        title={param.name}
+                    >
                         {param.name}
                     </label>
                     {!isDiscrete ? (
-                        <span className="text-[10px] font-mono text-muted-foreground">
+                        <span className="min-w-0 truncate font-mono text-[10px] tabular-nums text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                     ) : null}
-                    <Row gap={1.5} className="mt-0.5">
-                        <MidiLearnButton
-                            targetType="deviceParam"
-                            trackId={trackId}
-                            deviceId={device.id}
-                            paramId={param.id}
-                        />
-                        {param.automatable ? (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className={cn(
-                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                            hasAutomation
-                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                                : 'border-muted-foreground/30 hover:bg-muted'
-                                        )}
-                                        onClick={() => {
-                                            if (activeLane) {
-                                                removeAutomationLane(activeLane.id);
-                                            } else {
-                                                addAutomationLane(trackId, targetId, param.name);
-                                            }
-                                        }}
-                                        aria-label={
-                                            hasAutomation
-                                                ? `Remove automation for ${param.name}`
-                                                : `Automate ${param.name}`
-                                        }
-                                        aria-pressed={hasAutomation}
-                                    />
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                                </TooltipContent>
-                            </Tooltip>
-                        ) : null}
+                    <Row gap={1.5} wrap className="mt-0.5">
+                        {parameterActions}
                     </Row>
                 </Stack>
             )}
