@@ -95,6 +95,31 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         expect(terminal.output.map((channel) => Array.from(channel))).toEqual([Array(17).fill(0), Array(17).fill(0)]);
         expect(instance.port.postMessage).toHaveBeenCalledTimes(messages);
     });
+    it('applies a posted reset and immediate gains on the resume frame while the AudioParams still lag it', async () => {
+        const { instance } = await processor();
+        for (let block = 0; block < 375; block++) {
+            render(instance, 128);
+        }
+        vi.stubGlobal('currentFrame', 48000);
+        for (const data of [
+            { type: 'gain', name: 'attackGain', value: 2, frame: 48000 },
+            { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 },
+            { type: 'gain', name: '_resetEpoch', value: 9, frame: 48000 },
+            { type: 'gain', name: 'attackGain', value: Number.NaN, frame: 48000 },
+            { type: 'reset', epoch: 2 },
+        ]) {
+            instance.port.onmessage?.({ data });
+        }
+        // Chromium's lagging events: the gains move one frame late, the k-rate epoch a quantum late.
+        const attack = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 2));
+        const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
+        const resumed = render(instance, 128, undefined, attack, sustain, 0).output[0];
+        expect([resumed[0], resumed[1], resumed[127]]).toEqual([1, 1, 1]);
+        vi.stubGlobal('currentFrame', 48128);
+        const caughtUp = render(instance, 128, undefined, new Float32Array([0]), new Float32Array([0]), 2).output[0];
+        expect(caughtUp[0]).toBe(0);
+        vi.stubGlobal('currentFrame', 0);
+    });
     it('scrubs nonfinite PCM and gains without poisoning later audio, fills missing channels and disposes once', async () => {
         const { instance } = await processor();
         const source = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, 0.5]);
