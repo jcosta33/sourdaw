@@ -77,18 +77,25 @@ export type CompiledSelectorTerms = {
     match?: SemanticCommandListMatch;
 };
 
-export type CompiledTargetAuthorityInput = {
-    /** The target argument the targets are compiled for. */
-    argument: string;
-    capability: Capability;
+/** What every compiled call of one batch shares: one request, read against one catalog. */
+export type CompiledTargetBatchTerms = {
     catalog: GroundingCatalog;
     /** Every id the compiled list's own selectors excluded or protected. */
     compilerExcludedIds: ReadonlySet<string>;
-    context: ProjectContext;
-    dependencyId?: string;
     /** The whole original request, where protections, exclusions and naming evidence are read. */
     prompt: string;
     requestProtections?: BoundRequestProtections;
+    /** The text values every call of the batch writes ("Bass Drum" for a rename). */
+    valueTexts: readonly string[];
+};
+
+/** What one compiled call of the batch adds to the batch's terms. */
+export type CompiledTargetCallTerms = {
+    /** The target argument the targets are compiled for. */
+    argument: string;
+    capability: Capability;
+    context: ProjectContext;
+    dependencyId?: string;
     /**
      * Set when each target already resolved against the request the way a direct call does; that
      * resolution is the naming evidence, so only the request's protections remain to apply.
@@ -97,9 +104,15 @@ export type CompiledTargetAuthorityInput = {
     /** The selector the call's targets came from, absent when the compiler named every one literally. */
     selectorTerms?: CompiledSelectorTerms;
     targetIds: readonly string[];
-    /** The text values every call of the batch writes ("Bass Drum" for a rename). */
-    valueTexts: readonly string[];
 };
+
+type CompiledTargetAuthorityInput = CompiledTargetBatchTerms & CompiledTargetCallTerms;
+
+/** Everything the request is read by, short of the targets a call asks it to authorize. */
+type RequestReadingInput = Omit<CompiledTargetAuthorityInput, 'referenceResolved' | 'targetIds'>;
+
+/** Whether the request authorizes every target a compiled call resolved for one argument. */
+export type CompiledTargetAdmission = (call: CompiledTargetCallTerms) => CompiledTargetAuthority;
 
 export type CompiledTargetAuthority =
     { status: 'admitted' } | { status: 'refused'; reason: 'protected-or-excluded' | 'unauthorized' };
@@ -317,7 +330,7 @@ function picksByNameAlone(terms: CompiledSelectorTerms | undefined): boolean {
  * when the selector also picks by something other than a name fragment, or when the text names and
  * selects no track, which leaves every owner open.
  */
-function readReachableOwnedIds(text: string, input: CompiledTargetAuthorityInput): ReadonlySet<string> | null {
+function readReachableOwnedIds(text: string, input: RequestReadingInput): ReadonlySet<string> | null {
     const { context, dependencyId } = input;
     if (dependencyId !== undefined || !picksByNameAlone(input.selectorTerms)) {
         return null;
@@ -383,7 +396,7 @@ function maskWrittenValues(text: string, values: readonly string[], context: Pro
 
 /** Keeps proven whole protections separate from conservative generic restriction matches. */
 function getProtectedIds(
-    input: CompiledTargetAuthorityInput,
+    input: RequestReadingInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): { protectedIds: ReadonlySet<string>; genericRestrictionIds: ReadonlySet<string> } {
@@ -441,7 +454,7 @@ function getProtectedIds(
  * read as picking a target.
  */
 function getEvidenceText(
-    input: CompiledTargetAuthorityInput,
+    input: RequestReadingInput,
     request: MaskedRequest,
     restrictionRanges: readonly AgentReferenceTextRange[]
 ): string {
@@ -452,7 +465,7 @@ function getEvidenceText(
 /** The whole names, name fragments and owner tracks a selector picks its targets by. */
 type NamePicks = { names: string[]; fragments: string[]; trackIds: string[] };
 
-function getNamePicks(input: CompiledTargetAuthorityInput): NamePicks {
+function getNamePicks(input: RequestReadingInput): NamePicks {
     const picks: NamePicks = { names: [], fragments: [], trackIds: [] };
     const terms = input.selectorTerms;
     // A literal target is not a selector pick; it is admitted as the compiler resolved it.
@@ -508,17 +521,15 @@ function extendsBeyond(range: AgentReferenceTextRange, inner: AgentReferenceText
  * on Keys.
  */
 function statesFragment(
-    text: string,
-    fragment: string,
-    input: CompiledTargetAuthorityInput,
-    nameRanges: readonly AgentReferenceNamedRange[],
-    reachableIds: ReadonlySet<string> | null
+    { fragment, occurrences }: FragmentReading,
+    evidence: EvidenceReading,
+    input: CompiledTargetAuthorityInput
 ): boolean {
-    const occurrences = findAgentReferenceNameSpans(text, fragment, NAME_FORMS, getProjectObjectNames(input.context));
     const pickedIds = input.targetIds.filter((targetId) => {
         const name = getObjectName(targetId, input.context);
         return name === undefined || name.toLowerCase().includes(fragment.toLowerCase());
     });
+    const { nameRanges, reachableIds } = evidence;
     return pickedIds.every(
         (targetId) =>
             (reachableIds === null || !isTrackOwned(targetId, input.context) || reachableIds.has(targetId)) &&
@@ -529,17 +540,11 @@ function statesFragment(
 }
 
 /** Whether the text states every whole name and fragment the selector picks its targets by. */
-function statesNamePicks(text: string, picks: NamePicks, input: CompiledTargetAuthorityInput): boolean {
-    const { capability, context, dependencyId } = input;
-    if (picks.names.length > 0) {
-        const statedIds = readWithNamedOwners(readStatedIds, text, capability, context, dependencyId);
-        if (!input.targetIds.every((targetId) => statedIds.includes(targetId))) {
-            return false;
-        }
+function statesNamePicks(picks: NamePicks, evidence: EvidenceReading, input: CompiledTargetAuthorityInput): boolean {
+    if (picks.names.length > 0 && !input.targetIds.every((targetId) => evidence.statedIds.includes(targetId))) {
+        return false;
     }
-    const { nameRanges } = readNaming(text, capability, context, dependencyId);
-    const reachableIds = readReachableOwnedIds(text, input);
-    return picks.fragments.every((fragment) => statesFragment(text, fragment, input, nameRanges, reachableIds));
+    return evidence.fragments.every((fragment) => statesFragment(fragment, evidence, input));
 }
 
 /**
@@ -565,10 +570,10 @@ function namesObjectByName(text: string, capability: Capability, context: Projec
  * selector picks them by; once the request names an object of that kind, it stands for nothing unless
  * the request lists it beside that name ("add an EQ to Vocals and this track").
  */
-function selectsEveryTarget(text: string, input: CompiledTargetAuthorityInput): boolean {
+function selectsEveryTarget(evidence: EvidenceReading, input: CompiledTargetAuthorityInput): boolean {
     return (
-        readsSelectionReference(text, input.capability, input.context) &&
-        input.targetIds.every((targetId) => selectsObject(text, targetId, input.capability, input.context))
+        evidence.readsSelectionReference() &&
+        input.targetIds.every((targetId) => selectsObject(evidence.text, targetId, input.capability, input.context))
     );
 }
 
@@ -592,28 +597,119 @@ function statesTrack(text: string, trackId: string, context: ProjectContext): bo
     return readsSelectionReference(text, 'track', context) && selectsObject(text, trackId, 'track', context);
 }
 
-/** Whether the request authorizes every target a compiled list resolved for one argument. */
-export function admitsCompiledTargets(input: CompiledTargetAuthorityInput): CompiledTargetAuthority {
+/** A name fragment a selector picks by, and every place the text states it as a whole word. */
+type FragmentReading = { fragment: string; occurrences: readonly AgentReferenceTextRange[] };
+
+/** What the request states for a selector's picks, whichever targets they resolved to. */
+type EvidenceReading = {
+    text: string;
+    /** The ids the text states by whole name, the objects on the tracks it names included; none without a whole-name pick. */
+    statedIds: readonly string[];
+    nameRanges: readonly AgentReferenceNamedRange[];
+    reachableIds: ReadonlySet<string> | null;
+    fragments: readonly FragmentReading[];
+    statesTrackPicks: boolean;
+    readsSelectionReference: () => boolean;
+};
+
+/** What the request says about a call's targets before they are known, read once per call terms. */
+type RequestReading = {
+    protectedIds: ReadonlySet<string>;
+    genericRestrictionIds: ReadonlySet<string>;
+    picks: NamePicks;
+    /** Read only for a call that must prove its selector's picks. */
+    evidence: () => EvidenceReading;
+};
+
+function readOnce<T>(read: () => T): () => T {
+    let result: { value: T } | undefined;
+    return () => {
+        result ??= { value: read() };
+        return result.value;
+    };
+}
+
+function readEvidence(
+    input: RequestReadingInput,
+    picks: NamePicks,
+    request: MaskedRequest,
+    restrictionRanges: readonly AgentReferenceTextRange[]
+): EvidenceReading {
+    const { capability, context, dependencyId } = input;
+    const text = getEvidenceText(input, request, restrictionRanges);
+    const objectNames = getProjectObjectNames(context);
+    return {
+        text,
+        statedIds:
+            picks.names.length > 0 ? readWithNamedOwners(readStatedIds, text, capability, context, dependencyId) : [],
+        nameRanges: readNaming(text, capability, context, dependencyId).nameRanges,
+        reachableIds: readReachableOwnedIds(text, input),
+        fragments: picks.fragments.map((fragment) => ({
+            fragment,
+            occurrences: findAgentReferenceNameSpans(text, fragment, NAME_FORMS, objectNames),
+        })),
+        statesTrackPicks:
+            picks.trackIds.every((trackId) => statesTrack(text, trackId, context)) || !refersToAnyTrack(text, context),
+        readsSelectionReference: readOnce(() => readsSelectionReference(text, capability, context)),
+    };
+}
+
+function readRequest(input: RequestReadingInput): RequestReading {
     const request = maskRequest(input.prompt, input.context);
     const restrictionRanges = getRestrictionRanges(request, input.catalog);
-    const { protectedIds, genericRestrictionIds } = getProtectedIds(input, request, restrictionRanges);
-    if (input.targetIds.some((targetId) => protectedIds.has(targetId))) {
+    const picks = getNamePicks(input);
+    return {
+        ...getProtectedIds(input, request, restrictionRanges),
+        picks,
+        evidence: readOnce(() => readEvidence(input, picks, request, restrictionRanges)),
+    };
+}
+
+function admitTargets(input: CompiledTargetAuthorityInput, reading: RequestReading): CompiledTargetAuthority {
+    if (input.targetIds.some((targetId) => reading.protectedIds.has(targetId))) {
         return PROTECTED;
     }
-    if (input.targetIds.some((targetId) => genericRestrictionIds.has(targetId))) {
+    if (input.targetIds.some((targetId) => reading.genericRestrictionIds.has(targetId))) {
         return UNAUTHORIZED;
     }
     if (input.referenceResolved) {
         return ADMITTED;
     }
-    const picks = getNamePicks(input);
+    const { picks } = reading;
     if (picks.names.length === 0 && picks.fragments.length === 0 && picks.trackIds.length === 0) {
         return ADMITTED;
     }
-    const text = getEvidenceText(input, request, restrictionRanges);
-    const statesSelectorNames = statesNamePicks(text, picks, input) || selectsEveryTarget(text, input);
-    const statesTrackPicks =
-        picks.trackIds.every((trackId) => statesTrack(text, trackId, input.context)) ||
-        !refersToAnyTrack(text, input.context);
-    return statesSelectorNames && statesTrackPicks ? ADMITTED : UNAUTHORIZED;
+    const evidence = reading.evidence();
+    const statesSelectorNames = statesNamePicks(picks, evidence, input) || selectsEveryTarget(evidence, input);
+    return statesSelectorNames && evidence.statesTrackPicks ? ADMITTED : UNAUTHORIZED;
+}
+
+/** Whether two calls' terms read the request alike: only their targets differ. */
+function readsAlike(left: CompiledTargetCallTerms, right: CompiledTargetCallTerms): boolean {
+    return (
+        left.context === right.context &&
+        left.selectorTerms === right.selectorTerms &&
+        left.argument === right.argument &&
+        left.capability === right.capability &&
+        left.dependencyId === right.dependencyId
+    );
+}
+
+/**
+ * The compiled target authority for one batch. Every call of a compiled set reads the same request
+ * against the same project, and only the targets it asks about differ, so the reading is taken once
+ * per call terms and each call's targets are checked against it.
+ */
+export function createCompiledTargetAdmission(batch: CompiledTargetBatchTerms): CompiledTargetAdmission {
+    const readings: Array<{ terms: CompiledTargetCallTerms; reading: RequestReading }> = [];
+    const readingFor = (call: CompiledTargetCallTerms): RequestReading => {
+        const cached = readings.find(({ terms }) => readsAlike(terms, call));
+        if (cached !== undefined) {
+            return cached.reading;
+        }
+        const reading = readRequest({ ...batch, ...call });
+        readings.push({ terms: call, reading });
+        return reading;
+    };
+    return (call) => admitTargets({ ...batch, ...call }, readingFor(call));
 }
