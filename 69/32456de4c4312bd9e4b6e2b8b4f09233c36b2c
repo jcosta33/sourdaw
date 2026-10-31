@@ -1,0 +1,27 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_88fc7e0d05bab6::t_fe29e7c9b224d0 3319-3347
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_88fc7e0d05bab6::t_e5eb4b17b86e7d 1525-1534
+  s_88fc7e0d05bab6::t_855b1fc3209149 1524
+  s_88fc7e0d05bab6::t_0b2370e7aec838 956-958,961,982-983,1122-1126
+src/modules/Transport/useCases/transportControls/pausePlayback.ts
+  s_88fc7e0d05bab6::t_849069cfbeb58d 15,28-33,115
+src/modules/Transport/useCases/transportControls/stopActiveRecording.ts
+  s_88fc7e0d05bab6::t_13b48a9ad8a8fe 12-13,15,20,79-83,85-86
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6932456de4c4312bd9e4b6e2b8b4f09233c36b2c",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
