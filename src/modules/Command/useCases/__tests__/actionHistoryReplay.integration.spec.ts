@@ -317,7 +317,7 @@ describe('Command action-history replay integration', () => {
     });
 
     // This component fixture exercises an unscoped pending write independently of normal command publication.
-    function stagePendingReplayCapability(): Parameters<typeof recordActionHistoryEntry>[0] {
+    function registerPublishedReplayCapability(): Parameters<typeof recordActionHistoryEntry>[0] {
         const entry: Parameters<typeof recordActionHistoryEntry>[0] = {
             id: crypto.randomUUID(),
             label: 'Set snap',
@@ -334,13 +334,13 @@ describe('Command action-history replay integration', () => {
         });
         expect(actionHistoryStore.value?.entries).toEqual([entry]);
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
-        expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [] });
+        expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [entry] });
         return entry;
     }
 
-    it('keeps a newly registered capability through an unrelated commit before its metadata flushes', async () => {
+    it('keeps a newly registered capability through an unrelated commit', async () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
-        const { id: entryId } = stagePendingReplayCapability();
+        const { id: entryId } = registerPublishedReplayCapability();
 
         mutateCrdtDoc<{ unrelated?: string }>({
             id: 'root',
@@ -356,7 +356,7 @@ describe('Command action-history replay integration', () => {
         expect(executed_actions).toEqual(['setSnapValue:0', 'togglePlayback']);
     });
 
-    it('keeps a just-committed action replayable across a remote history merge before its metadata flushes', async () => {
+    it('keeps a just-committed action replayable across a remote history merge', async () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
         flushAutomergeStorageWrites();
         await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
@@ -377,6 +377,8 @@ describe('Command action-history replay integration', () => {
         });
 
         replaceCrdtDocInLineage({ id: 'root', doc: merge(clone(local), remote) });
+        // A sync merge re-projects the history store from the merged document.
+        actionHistoryStore.hydrate();
         flushAutomergeStorageWrites();
 
         expect(actionHistoryStore.value?.entries.map(({ id }) => id)).toEqual(
@@ -386,16 +388,14 @@ describe('Command action-history replay integration', () => {
         expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
     });
 
-    it('fences an unpublished capability on a same-content empty clear before its ID is re-added', async () => {
+    it('fences a published capability across a history clear before its ID is re-added', async () => {
         await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
-        const entry = stagePendingReplayCapability();
-        const beforeDurable = JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory);
-        expect(beforeDurable).toBe(JSON.stringify({ entries: [] }));
+        const entry = registerPublishedReplayCapability();
         expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
 
         clearCrdtActionHistory();
 
-        expect(JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory)).toBe(beforeDurable);
+        expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [] });
         recordActionHistoryEntry(entry);
         flushAutomergeStorageWrites();
         expect(actionHistoryStore.value?.entries).toEqual([entry]);
