@@ -37,22 +37,24 @@ export type RecordingMidiAdmission = {
     }>;
 };
 
+/** Where a pass begins: its beat on the unwrapped recording timeline, and the loop beat it enters at. */
+export type RecordingPassOrigin = { unwrappedBeat: number; beat: number };
+
 export const activeRecordingRef: {
     current: string[];
     capturedRootIdentity: string | null;
     startWrapCount: number;
     startBeat: number;
-    loopStart: number;
-    loopEnd: number;
     startedLooping: boolean;
+    /** Origins of later passes, keyed by pass, each fixed when the pass before it is staged. */
+    passOrigins: Map<number, RecordingPassOrigin>;
     midiAdmissions: RecordingMidiAdmission[];
 } = {
     current: [],
     capturedRootIdentity: null,
     startWrapCount: 0,
     startBeat: 0,
-    loopStart: 0,
-    loopEnd: 0,
     startedLooping: false,
+    passOrigins: new Map(),
     midiAdmissions: [],
 };

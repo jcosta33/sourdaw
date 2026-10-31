@@ -13,7 +13,9 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
+import { passDepthAt } from './passDepthAt';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
+import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 /**
@@ -47,13 +49,14 @@ function closeTakeAt(take: Take, endBeat: number): Take {
     return { ...take, endBeat: Math.max(take.startBeat + 1, endBeat) };
 }
 
-type FinalMidiPassOffset = { takeId: string; sourceOffsetBeats: number };
+type FinalMidiPassOffset = { takeId: string; startBeat: number; sourceOffsetBeats: number };
 
 /**
  * Wrap staging finds the original open take by its absent source offset, so its
  * phase is sealed only at Stop. The Stop clock must have entered that pass;
  * a look-ahead seam may have staged its predecessor before the wrap sounded.
- * Read the same unwrapped source coordinate that admitted its notes.
+ * The take opens where the pass entered, with the depth its notes were admitted
+ * at, whatever the loop became since.
  */
 function finalMidiPassOffsetsAtStop(
     clipIds: readonly string[],
@@ -64,6 +67,10 @@ function finalMidiPassOffsetsAtStop(
     const lanes = takeLaneStore.value?.lanes ?? [];
     const relativePassIndex = stopPassIndex - activeRecordingRef.startWrapCount;
     if (!activeRecordingRef.startedLooping || relativePassIndex <= 0) {
+        return offsets;
+    }
+    const origin = recordingPassOrigin(relativePassIndex);
+    if (!origin) {
         return offsets;
     }
     for (const track of tracks) {
@@ -93,13 +100,11 @@ function finalMidiPassOffsetsAtStop(
             if (open.length !== 1 || previous.length !== 1) {
                 continue;
             }
-            const sourceOffsetBeats = recordingMidiSourceBeatAt(clip.id, {
-                beat: activeRecordingRef.loopStart,
-                passIndex: stopPassIndex,
+            offsets.set(clip.id, {
+                takeId: open[0]!.id,
+                startBeat: origin.beat,
+                sourceOffsetBeats: passDepthAt(origin),
             });
-            if (sourceOffsetBeats !== null) {
-                offsets.set(clip.id, { takeId: open[0]!.id, sourceOffsetBeats });
-            }
         }
     }
     return offsets;
@@ -166,13 +171,21 @@ function closeRecordedTakes(input: {
                     return take;
                 }
                 const pendingEnd = input.pendingEnds.get(take.clipId);
-                let closed = closeTakeAt(take, input.endBeat);
+                const finalMidiPass = input.finalMidiPassOffsets.get(take.clipId);
+                const sealsFinalMidiPass = finalMidiPass !== undefined && finalMidiPass.takeId === take.id;
+                let closed = closeTakeAt(
+                    sealsFinalMidiPass ? { ...take, startBeat: finalMidiPass.startBeat } : take,
+                    input.endBeat
+                );
                 if (pendingEnd && pendingEnd.takeId === take.id) {
                     closed = { ...take, endBeat: Math.min(take.endBeat, pendingEnd.endBeat) };
                 }
-                const finalMidiPass = input.finalMidiPassOffsets.get(take.clipId);
-                if (finalMidiPass && finalMidiPass.takeId === take.id) {
-                    closed = { ...closed, sourceOffsetBeats: finalMidiPass.sourceOffsetBeats };
+                if (sealsFinalMidiPass) {
+                    closed = {
+                        ...closed,
+                        startBeat: finalMidiPass.startBeat,
+                        sourceOffsetBeats: finalMidiPass.sourceOffsetBeats,
+                    };
                 }
                 const recordPointBeat = midiRecordPointBeats.get(take.clipId);
                 return recordPointBeat === undefined ? closed : startFirstPassAtRecordPoint(closed, recordPointBeat);
@@ -293,6 +306,7 @@ export async function stopRecording(
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
+    activeRecordingRef.passOrigins = new Map();
 
     if (clipIds.length === 0) {
         return 'closed';

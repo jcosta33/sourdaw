@@ -138,9 +138,8 @@ function stageRecording(
         activeRecordingRef.current = newClips.map((context) => context.id);
         activeRecordingRef.startWrapCount = playheadWrapCountRef.current;
         activeRecordingRef.startBeat = recordBeat;
-        activeRecordingRef.loopStart = transportState.loopStart;
-        activeRecordingRef.loopEnd = transportState.loopEnd;
         activeRecordingRef.startedLooping = transportState.isLooping;
+        activeRecordingRef.passOrigins = new Map();
         activeRecordingRef.midiAdmissions = [];
         // The take belongs to the root it is opened on (#5517): the Stop
         // finaliser compares against this witness before closing or committing.

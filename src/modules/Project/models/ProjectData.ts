@@ -357,6 +357,8 @@ export type ProjectMidiNote = {
     articulation?: string;
     /** Expression changes after note-on, per dimension; offsets are beats after `startBeat`. */
     expression?: ProjectMidiNoteExpression;
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 export type ProjectMidiExpressionPoint = {
