@@ -30,6 +30,7 @@ import {
     loadRecentProject,
 } from '#/modules/Project/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
+import { cn } from '#/utils/Styles/cn';
 
 import { importDroppedLaunchFiles } from '../../useCases/importDroppedLaunchFiles';
 import { SourdawLogo } from '../components/SourdawLogo';
@@ -367,12 +368,11 @@ export const LaunchScreen = ({ exiting }: LaunchScreenProps): ReactElement => {
             role="dialog"
             aria-modal="true"
             aria-label="Sourdaw — start a project"
-            className="fixed inset-0 z-[9999] overflow-hidden"
+            className={cn(
+                'fixed inset-0 z-[9999] overflow-hidden transition-[opacity,scale] duration-650 ease-in-out motion-reduce:transition-none',
+                exiting && 'pointer-events-none scale-[1.03] opacity-0 motion-reduce:scale-100'
+            )}
             style={{
-                transition: 'opacity 0.65s cubic-bezier(0.4,0,0.2,1), transform 0.65s cubic-bezier(0.4,0,0.2,1)',
-                opacity: exiting ? 0 : 1,
-                transform: exiting ? 'scale(1.03)' : 'scale(1)',
-                pointerEvents: exiting ? 'none' : undefined,
                 background:
                     'radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.10) 0%, rgba(0,0,0,0) 65%), hsl(220,14%,5%)',
             }}

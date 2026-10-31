@@ -133,7 +133,9 @@ export async function wait_for_workspace_ready(page: Page): Promise<void> {
     // full-suite worker contention a heavy template (e.g. the full demo project)
     // can take well past the 5s default poll bound; match the panel-open bound
     // so a slow-but-healthy boot is not mistaken for a hang.
-    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000 }).toBe('exited');
+    // Every test boots through here; the default poll backoff (100, 250, 500, 1000 ms)
+    // would add up to a second of slack after the overlay has already exited.
+    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000, intervals: [50] }).toBe('exited');
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 

@@ -69,6 +69,27 @@ test.describe('Launch Screen & Project Entry', () => {
             await page.getByRole('button', { name: 'Back to home' }).click();
             await expect(page.locator('#launch-new-project')).toBeVisible();
         });
+
+        test('Reduced motion drops the launch overlay exit transition', async ({ page }) => {
+            const launch_screen = page.getByLabel('Sourdaw — start a project');
+            await launch_screen.waitFor({ state: 'visible' });
+            await expect(launch_screen).toHaveCSS('transition-property', 'none');
+
+            await launch_new_project(page);
+        });
+
+        test.describe('with full motion', () => {
+            test.use({ reducedMotion: 'no-preference' });
+
+            test('Launch overlay fades out into the workspace', async ({ page }) => {
+                const launch_screen = page.getByLabel('Sourdaw — start a project');
+                await launch_screen.waitFor({ state: 'visible' });
+                await expect(launch_screen).toHaveCSS('transition-property', 'opacity, scale');
+                await expect(launch_screen).toHaveCSS('transition-duration', '0.65s');
+
+                await launch_new_project(page);
+            });
+        });
     });
 
     test.describe('Project menu', () => {
