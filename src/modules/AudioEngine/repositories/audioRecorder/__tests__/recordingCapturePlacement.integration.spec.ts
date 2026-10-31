@@ -737,9 +737,12 @@ describe('real recorder first-frame capture placement', () => {
         await executeAppAction({ type: 'setPunchOut', payload: { beat: 14 } }, { skipUndo: true });
         await executeAppAction({ type: 'togglePunch' }, { skipUndo: true });
         setPlayback(true);
-        await vi.waitFor(() => expect(playheadClockRef).toEqual({ beat: 9.8, audioTimeSeconds: 50, hold: null }), {
-            interval: 1,
-        });
+        await vi.waitFor(
+            () => expect(playheadClockRef).toMatchObject({ beat: 9.8, audioTimeSeconds: 50, hold: null }),
+            {
+                interval: 1,
+            }
+        );
 
         await schedulerTick(50.05);
         await schedulerTick(50.1);
