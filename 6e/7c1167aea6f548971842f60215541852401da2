@@ -1,0 +1,20 @@
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_3bb122e91d89a5::t_e9de2f447071b0 1,4-8
+  s_3bb122e91d89a5::t_a739ae14c9b473 1378-1526
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e7c1167aea6f548971842f60215541852401da2",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
