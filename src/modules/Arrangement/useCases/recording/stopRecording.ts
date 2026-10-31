@@ -63,7 +63,7 @@ function finalMidiPassOffsetsAtStop(
     const tracks = getTrackState()?.tracks ?? [];
     const lanes = takeLaneStore.value?.lanes ?? [];
     const relativePassIndex = stopPassIndex - activeRecordingRef.startWrapCount;
-    if (!activeRecordingRef.startedLooping || relativePassIndex <= 0) {
+    if (!activeRecordingRef.startedLooping || activeRecordingRef.passIdentityLost || relativePassIndex <= 0) {
         return offsets;
     }
     for (const track of tracks) {

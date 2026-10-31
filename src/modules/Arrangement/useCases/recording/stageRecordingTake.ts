@@ -1,5 +1,6 @@
 import { createTake, createTakeLane, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
+import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { recordingPassTiming } from './recordingPassTiming';
@@ -18,7 +19,14 @@ type StageRecordingTakeInput = {
     passEndContextSeconds?: number;
     plannedPassEnd?: boolean;
     nextPassStartBeat?: number;
+    /** This pass ends at an edit or a jump rather than at a loop wrap. */
+    interruptsPass?: boolean;
 };
+
+function withoutPassIdentity(input: StageRecordingTakeInput): StageRecordingTakeInput {
+    const { recordingPassIndex, ...unowned } = input;
+    return recordingPassIndex === undefined ? input : unowned;
+}
 
 function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {
     if (
@@ -102,6 +110,13 @@ export function stageRecordingTake(
     ) {
         throw new Error('Invalid MIDI recording pass identity');
     }
+    if (input.interruptsPass && track.kind === 'midi') {
+        // Takes count staged passes and notes count loop wraps. A pass ended by an
+        // edit or a jump is staged without a wrap, so from here neither names the
+        // other and later notes and takes stay unowned, sounding in every take.
+        activeRecordingRef.passIdentityLost = true;
+    }
+    const passInput = activeRecordingRef.passIdentityLost ? withoutPassIdentity(input) : input;
     const state = takeLaneStore.value;
     if (!state) {
         if (input.provisionalTakeId !== undefined) {
@@ -137,8 +152,8 @@ export function stageRecordingTake(
             );
         }
     }
-    if (input.recordingPassIndex !== undefined) {
-        take.recordingPassIndex = input.recordingPassIndex;
+    if (passInput.recordingPassIndex !== undefined) {
+        take.recordingPassIndex = passInput.recordingPassIndex;
     }
     recordingPassTiming.ownTake(input.clipId, take.id);
     recordingPassTiming.stage(take, input.passEndContextSeconds, input.plannedPassEnd);
@@ -152,6 +167,8 @@ export function stageRecordingTake(
         });
         return finalizeClock;
     }
-    takeLaneStore.set({ lanes: state.lanes.map((existing) => stageTakeInLane(existing, input, take, replacement)) });
+    takeLaneStore.set({
+        lanes: state.lanes.map((existing) => stageTakeInLane(existing, passInput, take, replacement)),
+    });
     return finalizeClock;
 }

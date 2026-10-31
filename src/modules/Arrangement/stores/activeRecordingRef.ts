@@ -41,6 +41,8 @@ export const activeRecordingRef: {
     current: string[];
     capturedRootIdentity: string | null;
     startWrapCount: number;
+    /** A pass ended without a loop wrap; later MIDI notes and takes carry no pass. */
+    passIdentityLost: boolean;
     startBeat: number;
     loopStart: number;
     loopEnd: number;
@@ -50,6 +52,7 @@ export const activeRecordingRef: {
     current: [],
     capturedRootIdentity: null,
     startWrapCount: 0,
+    passIdentityLost: false,
     startBeat: 0,
     loopStart: 0,
     loopEnd: 0,

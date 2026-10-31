@@ -44,6 +44,7 @@ import { type Take } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { recordingPassIndex } from '../../../useCases/recording/recordingPassIndex';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -309,6 +310,44 @@ describe('MIDI loop recordings', () => {
 
         expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1, endBeat: 11 });
         expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+    });
+
+    it('leaves notes and takes unowned after an edit ends a pass without a wrap', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        const pass = (name: string, sourceOffsetBeats: number, recordingPassIndex: number, interruptsPass?: true) =>
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name,
+                startBeat: 8,
+                endBeat: 12,
+                sourceOffsetBeats,
+                recordingPassIndex,
+                ...(interruptsPass ? { interruptsPass } : {}),
+            });
+        pass('Planned pass 0', 0, 0);
+        expect(recordingPassIndex({ beat: 11.9, passIndex: 0 })).toBe(0);
+
+        // The edit cancels the seam the planned stage expected; the scheduler
+        // stages the pass it ends as one more take.
+        pass('Edited pass', 4, 1, true);
+        pass('Next wrap', 8, 2);
+
+        expect(passTake('Planned pass 0')).toMatchObject({ recordingPassIndex: 0 });
+        expect(passTake('Edited pass')).not.toHaveProperty('recordingPassIndex');
+        expect(passTake('Next wrap')).not.toHaveProperty('recordingPassIndex');
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1 });
+        expect(recordingPassIndex({ beat: 9, passIndex: 1 })).toBeNull();
     });
 
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {

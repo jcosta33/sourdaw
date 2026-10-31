@@ -1,13 +1,34 @@
 import { describe, it, expect } from 'vitest';
 
 import { type MidiStoreState } from '#/modules/MIDI/stores';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 import { joinNotes } from '#/modules/MIDI/useCases';
 
 import { hydrateProjectMidi } from '../hydrateProjectMidi';
 import { serializeProjectMidi } from '../serializeProjectMidi';
 
 describe('serializeProjectMidi', () => {
+    it('keeps each recorded note in its own loop pass through save and reopen', () => {
+        const recorded: MidiStoreState = {
+            probabilitySeed: 1,
+            notesByClipId: {
+                'clip-1': [
+                    { id: 'pass-0', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: 0 },
+                    { id: 'pass-1', pitch: 62, startBeat: 1, duration: 1, velocity: 100, recordingPassIndex: 1 },
+                    { id: 'pass-2', pitch: 64, startBeat: 2, duration: 1, velocity: 100, recordingPassIndex: 2 },
+                    { id: 'drawn', pitch: 67, startBeat: 3, duration: 1, velocity: 100 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        };
+
+        const reopened = hydrateProjectMidi(serializeProjectMidi(recorded)).notesByClipId['clip-1'] ?? [];
+
+        expect(selectMidiNotesForRecordingPass(reopened, 2).map((note) => note.id)).toEqual(['pass-2', 'drawn']);
+        expect(reopened.find((note) => note.id === 'drawn')).not.toHaveProperty('recordingPassIndex');
+    });
+
     it('keeps an absent recorded slide onset distinct from explicit minimum through save and join', () => {
         const recorded: MidiStoreState = {
             probabilitySeed: 1,

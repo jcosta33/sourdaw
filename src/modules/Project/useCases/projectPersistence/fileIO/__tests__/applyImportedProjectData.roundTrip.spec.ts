@@ -1029,6 +1029,47 @@ describe('applyImportedProjectData round-trip hydration', () => {
         expect(midiStore.value).toEqual(before.midi);
     });
 
+    it.each(['top-level', 'inactive saved arrangement'])(
+        'rejects a malformed note recording pass in %s MIDI before replacement',
+        async (route) => {
+            hydrateArrangementStoreFromProjectData({ data: makeProject() });
+            const before = {
+                project: structuredClone(projectStore.value),
+                tracks: structuredClone(trackStore.value),
+                midi: structuredClone(midiStore.value),
+                epoch: crdtAuthority.epoch,
+            };
+            const project = makeProject();
+            const midi = {
+                notesByClipId: {
+                    'clip-a': [
+                        { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: -1 },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            if (route === 'top-level') {
+                project.midi = { ...project.midi, notesByClipId: midi.notesByClipId };
+            } else {
+                project.arrangements = [
+                    { id: 'first', name: 'First' },
+                    { id: 'saved', name: 'Saved', midi },
+                ];
+                project.activeArrangementId = 'first';
+            }
+            const serialized: unknown = JSON.parse(JSON.stringify(project));
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(clearUndoHistory).not.toHaveBeenCalled();
+            expect(crdtAuthority.epoch).toBe(before.epoch);
+            expect(projectStore.value).toEqual(before.project);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(midiStore.value).toEqual(before.midi);
+        }
+    );
+
     it.each(
         ['top-level', 'saved arrangement', 'inactive saved arrangement'].flatMap((route) =>
             [

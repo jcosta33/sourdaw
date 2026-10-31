@@ -201,7 +201,13 @@ const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
 function stageLoopWrapTakes(
     current: TransportState,
     passEndContextSeconds: number,
-    boundary: { planned?: boolean; endBeat?: number; nextPassStartBeat?: number; deferredClock?: boolean } = {},
+    boundary: {
+        planned?: boolean;
+        endBeat?: number;
+        nextPassStartBeat?: number;
+        deferredClock?: boolean;
+        interruptsPass?: boolean;
+    } = {},
     kinds: 'all' | 'audio' | 'midi' = 'all'
 ): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
     const finalizeClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
@@ -273,6 +279,9 @@ function stageLoopWrapTakes(
         };
         if (track.kind === 'midi') {
             stagedTake.recordingPassIndex = passIndex;
+            if (boundary.interruptsPass) {
+                stagedTake.interruptsPass = true;
+            }
         }
         const finalizeClock = stageRecordingTake(stagedTake);
         if (boundary.deferredClock && finalizeClock) {
@@ -1405,10 +1414,10 @@ export function startPlayheadScheduler(
             stageLoopWrapTakes(current, schedulerSession.pendingSeam.seamAudioTime, { planned: true }, 'audio');
         }
         if (capturedJumpBoundary !== null) {
-            stageLoopWrapTakes(current, now, capturedJumpBoundary, browserCaptureKinds);
+            stageLoopWrapTakes(current, now, { ...capturedJumpBoundary, interruptsPass: true }, browserCaptureKinds);
         }
         if (capturedEditBoundary !== null) {
-            stageLoopWrapTakes(current, now, capturedEditBoundary, browserCaptureKinds);
+            stageLoopWrapTakes(current, now, { ...capturedEditBoundary, interruptsPass: true }, browserCaptureKinds);
         }
         if (seam) {
             // Staged here rather than in the detection branch, after the punch

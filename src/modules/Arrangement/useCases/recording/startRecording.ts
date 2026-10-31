@@ -137,6 +137,7 @@ function stageRecording(
         // grow them visually using the live playhead position.
         activeRecordingRef.current = newClips.map((context) => context.id);
         activeRecordingRef.startWrapCount = playheadWrapCountRef.current;
+        activeRecordingRef.passIdentityLost = false;
         activeRecordingRef.startBeat = recordBeat;
         activeRecordingRef.loopStart = transportState.loopStart;
         activeRecordingRef.loopEnd = transportState.loopEnd;
