@@ -1,0 +1,31 @@
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_ba80576e6f5cb5::t_5f518d76055f05 3,8,34-35,39,44
+  s_ba80576e6f5cb5::t_235b8853aeb327 45-47
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_ba80576e6f5cb5::t_5f518d76055f05 17,57-58
+  s_ba80576e6f5cb5::t_a4a9313d1cff6b 102-105
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_52921d0cbd2e6f 498,500-551
+  s_ba80576e6f5cb5::t_a4a9313d1cff6b 446-448,460,497,575
+  s_ba80576e6f5cb5::t_3b0afbcd810bf3 499
+src/modules/Arrangement/useCases/recording/closeRecordingPass.ts
+  s_ba80576e6f5cb5::t_cca21d9a027a25 3,5-10,17
+src/modules/Arrangement/useCases/recording/recordingPassOrigin.ts
+  s_ba80576e6f5cb5::t_3af487368eaa99 5-9,37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f8f9f6e80059ced319db7837796e53ebb2b647d2",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
