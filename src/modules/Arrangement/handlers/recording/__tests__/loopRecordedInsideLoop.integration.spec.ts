@@ -431,6 +431,21 @@ describe('MIDI loop recordings', () => {
             expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 2, sourceOffsetBeats: 6 });
         });
 
+        it('seals the stopped pass on the placement its notes were given when the loop start moves forward', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const held = holdNote(9, 1);
+            transportStore.set({ ...transportStore.value!, loopStart: 9 });
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(10);
+            flushAutomergeStorageWrites();
+            const take = passTake('Take 1');
+            expect(held).toMatchObject({ onsetSourceBeat: 5 });
+            // The note struck at 9 sounds at 9 through the take Stop sealed.
+            expect(take.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(9);
+        });
+
         it('opens a pass take where the pass began when the loop start moves back inside it', () => {
             const clip = recordFromLoopStart();
             stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
@@ -465,6 +480,30 @@ describe('MIDI loop recordings', () => {
 
             const take = passTake('Pass 1');
             expect(onset).toBe(take.sourceOffsetBeats! + 9.5 - take.startBeat);
+        });
+
+        it('seals a pass a jump entered where the jump landed', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 9,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 10,
+            });
+            const held = holdNote(10.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11);
+            flushAutomergeStorageWrites();
+            const take = passTake('Take 1');
+            expect(take).toMatchObject({ startBeat: 10, endBeat: 11 });
+            expect(take.startBeat + held.onsetSourceBeat - take.sourceOffsetBeats!).toBe(10.5);
         });
     });
 
