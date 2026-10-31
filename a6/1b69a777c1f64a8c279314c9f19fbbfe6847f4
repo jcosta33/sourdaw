@@ -1,0 +1,21 @@
+src/infra/automerge/automergeStreamingEntry.ts
+  s_3bb122e91d89a5::t_fd864c426666c9 9
+.dependency-cruiser.cjs
+  s_3bb122e91d89a5::t_fd864c426666c9 828-829
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a61b69a777c1f64a8c279314c9f19fbbfe6847f4",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
