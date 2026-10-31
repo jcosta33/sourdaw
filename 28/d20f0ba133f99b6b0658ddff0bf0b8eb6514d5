@@ -1,0 +1,25 @@
+src/modules/Arrangement/presentations/views/timelineHorizontalScrollbar.ts
+  s_88fc7e0d05bab6::t_cff704ed1048fb 3-4
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_88fc7e0d05bab6::t_30e16dd8e0d57a 3-4,104-107,110,344-395,397-432
+src/modules/Arrangement/AGENTS.md
+  s_88fc7e0d05bab6::t_cff704ed1048fb 27
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_88fc7e0d05bab6::t_cff704ed1048fb 45-56,84-85,117,123-137,408
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28d20f0ba133f99b6b0658ddff0bf0b8eb6514d5",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
