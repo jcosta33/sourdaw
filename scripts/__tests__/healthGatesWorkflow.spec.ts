@@ -391,6 +391,10 @@ type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
+// The pnpm store cache step may soften because its failure only costs the
+// cache; the caps keep a refused restore inside the deliberate 5-minute step cap.
+const PNPM_CACHE_STEP_MAX_MINUTES = 5;
+const SEGMENT_TIMEOUT_ENV = 'SEGMENT_DOWNLOAD_TIMEOUT_MINS';
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
 // The census walks production sources once per train, outside the unit shards,
@@ -946,7 +950,12 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
     if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
         throw new Error('lint checkout must have a ten-minute timeout');
     }
-    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
+    // The pnpm store restore is capped well below the other setup steps because
+    // a refused restore falls through to the install step.
+    if (stepNamed(lint, 'Set up Node')['timeout-minutes'] !== 3) {
+        throw new Error('lint step Set up Node must have a three-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -956,7 +965,7 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = 10 + prep.length * 5 + 20;
+    const stepTotal = 10 + 3 + prep.length * 5 + 20;
     if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
@@ -1760,11 +1769,61 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 }
                 const label = stepLabel(file, jobId, step);
                 const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (isPnpmStoreCacheStep(step) && step['continue-on-error'] === true) {
+                    continue;
+                }
                 if (pin === undefined || step['continue-on-error'] !== true) {
                     throw new Error(`${label} must not continue on error`);
                 }
             }
         }
+    }
+}
+
+// The pnpm store restore is a speed-up, never a proof: the install step after it
+// is correct uncached. When the Actions cache refuses or stalls the restore
+// ("Failed to restore: Egress is over the account limit."), the step must fall
+// through to that install instead of hanging in setup-node until the job dies
+// (#5929). The step is therefore the one place softening is allowed, and only
+// with a short step cap and a segment-download timeout that aborts a stalled
+// download before the cap does.
+function isPnpmStoreCacheStep(step: UnknownRecord): boolean {
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@')) {
+        return false;
+    }
+    return step.with !== undefined && recordAt(step, 'with').cache === 'pnpm';
+}
+
+function assertPnpmStoreRestoreFallsThrough(set: WorkflowSet): void {
+    let cacheSteps = 0;
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            for (const step of jobSteps(file, jobId, asRecord(jobValue, `${file} job ${jobId}`))) {
+                if (!isPnpmStoreCacheStep(step)) {
+                    continue;
+                }
+                cacheSteps += 1;
+                const label = stepLabel(file, jobId, step);
+                if (step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must continue on error so a refused cache restore falls through`);
+                }
+                const stepMinutes = step['timeout-minutes'];
+                if (typeof stepMinutes !== 'number' || stepMinutes < 1 || stepMinutes > PNPM_CACHE_STEP_MAX_MINUTES) {
+                    throw new Error(
+                        `${label} must cap the cache restore at ${PNPM_CACHE_STEP_MAX_MINUTES} minutes or fewer`
+                    );
+                }
+                const segmentMinutes = step.env === undefined ? undefined : recordAt(step, 'env')[SEGMENT_TIMEOUT_ENV];
+                if (typeof segmentMinutes !== 'number' || segmentMinutes < 1 || segmentMinutes >= stepMinutes) {
+                    throw new Error(
+                        `${label} must set ${SEGMENT_TIMEOUT_ENV} below its step cap so a stalled download aborts first`
+                    );
+                }
+            }
+        }
+    }
+    if (cacheSteps === 0) {
+        throw new Error('no pnpm store cache step found; the fall-through sweep would assert nothing');
     }
 }
 
@@ -3786,6 +3845,30 @@ describe('health gates workflow contract', () => {
             SOURDAW_LINT_CONCURRENCY: 'auto',
             SOURDAW_LINT_THREADS: '0',
         });
+    });
+
+    it('lets a refused or stalled pnpm store restore fall through to an uncached install', () => {
+        expect(() => assertPnpmStoreRestoreFallsThrough(workflowSet())).not.toThrow();
+        expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
+
+        const hardened = cloneWorkflows('hardened pnpm cache step');
+        const hardenedStep = stepNamed(jobAt(hardened.validation, 'lint'), 'Set up Node');
+        delete hardenedStep['continue-on-error'];
+        expect(() => assertPnpmStoreRestoreFallsThrough(hardened)).toThrow(
+            'validation.yml job lint step Set up Node must continue on error so a refused cache restore falls through'
+        );
+
+        const unbounded = cloneWorkflows('unbounded pnpm cache step');
+        delete stepNamed(jobAt(unbounded.health, 'scope'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertPnpmStoreRestoreFallsThrough(unbounded)).toThrow(
+            'health-gates.yml job scope step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        const unabortable = cloneWorkflows('pnpm cache step without segment timeout');
+        delete recordAt(stepNamed(jobAt(unabortable.nightly, 'build'), 'Set up Node'), 'env')[SEGMENT_TIMEOUT_ENV];
+        expect(() => assertPnpmStoreRestoreFallsThrough(unabortable)).toThrow(
+            `nightly.yml job build step Set up Node must set ${SEGMENT_TIMEOUT_ENV} below its step cap so a stalled download aborts first`
+        );
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
