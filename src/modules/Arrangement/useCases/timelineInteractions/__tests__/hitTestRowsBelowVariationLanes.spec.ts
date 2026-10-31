@@ -33,6 +33,17 @@ function makeClip(id: string): ClipRenderModel {
     };
 }
 
+function makeVariationLanes(id: string, laneCount: number): TrackRenderModel['variationLanes'] {
+    if (laneCount === 0) {
+        return undefined;
+    }
+    return Array.from({ length: laneCount }, (_, lane) => ({
+        id: `${id}-lane-${lane}`,
+        name: `Alt ${lane + 1}`,
+        clips: [makeClip(`${id}-lane-${lane}-clip`)],
+    }));
+}
+
 function makeTrack(id: string, index: number, laneCount: number): TrackRenderModel {
     return {
         id,
@@ -44,14 +55,7 @@ function makeTrack(id: string, index: number, laneCount: number): TrackRenderMod
         soloed: false,
         height: 64,
         clips: [makeClip(`${id}-clip`)],
-        variationLanes:
-            laneCount > 0
-                ? Array.from({ length: laneCount }, (_, lane) => ({
-                      id: `${id}-lane-${lane}`,
-                      name: `Alt ${lane + 1}`,
-                      clips: [makeClip(`${id}-lane-${lane}-clip`)],
-                  }))
-                : undefined,
+        variationLanes: makeVariationLanes(id, laneCount),
         automationMode: 'read',
     };
 }

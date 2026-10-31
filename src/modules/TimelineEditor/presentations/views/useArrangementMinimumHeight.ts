@@ -10,6 +10,14 @@ import { useWorkspaceState } from '../hooks/useWorkspaceState';
 import { getArrangementMinimumHeight } from './arrangementLayout';
 import { getScratchPadRenderedHeight } from './Timeline/scratchPadHeight';
 
+/** A live resize preview wins over the stored minimap height while it lasts. */
+function getRenderedMinimapHeight(showMinimap: boolean, previewHeight: number | null, storedHeight: number): number {
+    if (!showMinimap) {
+        return 0;
+    }
+    return previewHeight ?? normalizeTimelineMinimapHeight(storedHeight);
+}
+
 /**
  * The least height the shell must leave the arrangement, so a crowded bottom
  * dock can never squeeze the lanes below one visible track. Zero where the
@@ -34,9 +42,11 @@ export const useArrangementMinimumHeight = (): number => {
     return getArrangementMinimumHeight({
         adjustmentLayerCount: adjustmentState.layers.length,
         hasMarkers: markerState.markers.length > 0,
-        minimapHeight: preferences.showMinimap
-            ? (timelineMinimapPreviewHeight ?? normalizeTimelineMinimapHeight(preferences.timelineMinimapHeight))
-            : 0,
+        minimapHeight: getRenderedMinimapHeight(
+            preferences.showMinimap,
+            timelineMinimapPreviewHeight,
+            preferences.timelineMinimapHeight
+        ),
         hasChords: chordState.events.length > 0 || chordState.enabled,
         surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(tracks, selectedTrackId),
         scratchPadHeight: scratchPadOpen ? getScratchPadRenderedHeight(scratchPadCollapsed, scratchPadHeight) : 0,
