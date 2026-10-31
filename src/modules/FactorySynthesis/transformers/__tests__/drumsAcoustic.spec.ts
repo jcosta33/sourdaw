@@ -1,21 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
-
-const mock_ctx = {
-    sampleRate: 48000,
-    createBuffer: vi.fn((channels: number, length: number, sampleRate: number) => ({
-        numberOfChannels: channels,
-        length,
-        sampleRate,
-        duration: length / sampleRate,
-        getChannelData: () => new Float32Array(length),
-    })),
-} as unknown as AudioContext;
+import { describe, it, expect } from 'vitest';
 
 import { generateAcousticKit } from '../drumsAcoustic';
 
 describe('generateAcousticKit', () => {
     it('generates 8 acoustic drum samples with correct ids and categories', () => {
-        const samples = generateAcousticKit(mock_ctx);
+        const samples = generateAcousticKit();
         expect(samples).toHaveLength(8);
         const ids = samples.map((s) => s.id);
         expect(ids).toEqual([
@@ -34,7 +23,7 @@ describe('generateAcousticKit', () => {
     });
 
     it('assigns the correct display names', () => {
-        const samples = generateAcousticKit(mock_ctx);
+        const samples = generateAcousticKit();
         const names = samples.map((s) => s.name);
         expect(names).toEqual([
             'Acoustic Kick',
@@ -49,7 +38,7 @@ describe('generateAcousticKit', () => {
     });
 
     it('tags every sample with the acoustic kit base tags plus instrument-specific tags', () => {
-        const samples = generateAcousticKit(mock_ctx);
+        const samples = generateAcousticKit();
         for (const sample of samples) {
             expect(sample.tags).toContain('acoustic');
             expect(sample.tags).toContain('natural');
@@ -69,12 +58,12 @@ describe('generateAcousticKit', () => {
         expect(tambourine.tags).toContain('percussion');
     });
 
-    it('produces a non-null AudioBuffer for each sample', () => {
-        const samples = generateAcousticKit(mock_ctx);
+    it('renders one mono channel at 44.1 kHz for each sample', () => {
+        const samples = generateAcousticKit();
         for (const sample of samples) {
-            expect(sample.buffer).toBeTruthy();
-            expect(sample.buffer.numberOfChannels).toBe(1);
-            expect(sample.buffer.sampleRate).toBe(44100);
+            expect(sample.channels).toHaveLength(1);
+            expect(sample.channels[0]!.length).toBeGreaterThan(0);
+            expect(sample.sampleRate).toBe(44100);
         }
     });
 });

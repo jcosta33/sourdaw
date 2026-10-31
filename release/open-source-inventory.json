@@ -1560,8 +1560,8 @@
                 "src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/OnlineSampleBrowser.tsx",
-                "src/modules/FactorySynthesis/useCases/bass.ts",
-                "src/modules/FactorySynthesis/useCases/keys.ts",
+                "src/modules/FactorySynthesis/transformers/bass.ts",
+                "src/modules/FactorySynthesis/transformers/keys.ts",
                 "src/modules/Fermenter/models/FermenterPatch.ts",
                 "src/modules/Fermenter/presentations/components/FilterSection.tsx",
                 "src/modules/Fermenter/presentations/components/PresetBrowser.tsx",
@@ -2509,7 +2509,7 @@
         {
             "value": "TB-303",
             "paths": [
-                "src/modules/FactorySynthesis/useCases/bass.ts",
+                "src/modules/FactorySynthesis/transformers/bass.ts",
                 "src/modules/Fermenter/repositories/fermenterPresets.ts"
             ]
         },
@@ -2536,7 +2536,7 @@
                 "src/modules/Arrangement/repositories/presets/expandedPresets.ts",
                 "src/modules/Arrangement/repositories/presets/faustInstrumentPresets.ts",
                 "src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx",
-                "src/modules/FactorySynthesis/useCases/keys.ts",
+                "src/modules/FactorySynthesis/transformers/keys.ts",
                 "src/modules/PluginHost/useCases/faustEngine/builtinDSP.ts",
                 "src/modules/Project/useCases/projectTemplates/templateDefinitions/helpers.ts",
                 "src/modules/Project/useCases/projectTemplates/templateFiles/hipHopTrap.ts",

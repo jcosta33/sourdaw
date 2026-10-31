@@ -1,4 +1,5 @@
-import { createMono, toAudioBufferMono } from '../services/bufferCreation';
+import { type RenderedFactorySample } from '../models/RenderedFactorySample';
+import { createMono, monoPcm } from '../services/bufferCreation';
 import { SAMPLE_RATE } from '../services/constants';
 import { normalize, softClip } from '../services/dynamics';
 import { feedbackDelay } from '../services/effects';
@@ -6,8 +7,6 @@ import { applyEnvelope, renderEnvelope } from '../services/envelopes';
 import { biquad } from '../services/filters';
 import { mixMono } from '../services/mixing';
 import { renderNoise, renderSine, renderTriangle } from '../services/oscillators';
-
-import { type FactorySample } from './types';
 
 // Acoustic kick = two layered transients (beater click + shell resonance) plus
 // a tuned low-mid thump. Pitch envelope depth is shallower than 909.
@@ -175,65 +174,65 @@ function renderAcousticTom(pitchHz: number, dur: number): Float32Array {
     return out;
 }
 
-export function generateAcousticKit(ctx: AudioContext): FactorySample[] {
+export function generateAcousticKit(): RenderedFactorySample[] {
     const base = 'factory-acoustic';
     const tags = ['acoustic', 'natural', 'organic', 'drum'];
-    const samples: FactorySample[] = [
+    const samples: RenderedFactorySample[] = [
         {
             id: `${base}-kick`,
             name: 'Acoustic Kick',
             category: 'drums',
             tags: [...tags, 'kick'],
-            buffer: toAudioBufferMono(ctx, renderAcousticKick()),
+            ...monoPcm(renderAcousticKick()),
         },
         {
             id: `${base}-snare`,
             name: 'Acoustic Snare',
             category: 'drums',
             tags: [...tags, 'snare'],
-            buffer: toAudioBufferMono(ctx, renderAcousticSnare()),
+            ...monoPcm(renderAcousticSnare()),
         },
         {
             id: `${base}-brush-hat`,
             name: 'Acoustic Brush Hat',
             category: 'drums',
             tags: [...tags, 'hat', 'brush'],
-            buffer: toAudioBufferMono(ctx, renderAcousticBrushHat()),
+            ...monoPcm(renderAcousticBrushHat()),
         },
         {
             id: `${base}-tambourine`,
             name: 'Acoustic Tambourine',
             category: 'drums',
             tags: [...tags, 'tambourine', 'percussion'],
-            buffer: toAudioBufferMono(ctx, renderTambourine()),
+            ...monoPcm(renderTambourine()),
         },
         {
             id: `${base}-ride`,
             name: 'Acoustic Ride',
             category: 'drums',
             tags: [...tags, 'ride', 'cymbal'],
-            buffer: toAudioBufferMono(ctx, renderAcousticRide()),
+            ...monoPcm(renderAcousticRide()),
         },
         {
             id: `${base}-tom-high`,
             name: 'Acoustic Tom High',
             category: 'drums',
             tags: [...tags, 'tom', 'high'],
-            buffer: toAudioBufferMono(ctx, renderAcousticTom(200, 0.55)),
+            ...monoPcm(renderAcousticTom(200, 0.55)),
         },
         {
             id: `${base}-tom-mid`,
             name: 'Acoustic Tom Mid',
             category: 'drums',
             tags: [...tags, 'tom', 'mid'],
-            buffer: toAudioBufferMono(ctx, renderAcousticTom(140, 0.65)),
+            ...monoPcm(renderAcousticTom(140, 0.65)),
         },
         {
             id: `${base}-tom-low`,
             name: 'Acoustic Tom Low',
             category: 'drums',
             tags: [...tags, 'tom', 'low'],
-            buffer: toAudioBufferMono(ctx, renderAcousticTom(95, 0.75)),
+            ...monoPcm(renderAcousticTom(95, 0.75)),
         },
     ];
     return samples;
