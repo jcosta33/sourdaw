@@ -1,0 +1,37 @@
+.agents/skills/review-stances/project-integrity.md
+  s_88fc7e0d05bab6::t_d0aaa433fdc41c 1050-1061
+src/app/captureCommandBatchPreflightState.ts
+  s_88fc7e0d05bab6::t_4982b008075412 178
+  s_88fc7e0d05bab6::t_1cd290126d5ca5 500-503,507-523
+  s_88fc7e0d05bab6::t_f10e0d0ea2815f 160-161,163
+  s_88fc7e0d05bab6::t_6613075fb2a398 191-192
+  s_88fc7e0d05bab6::t_0dd372a01ddd2f 111-115,118,123,125,129-133,141-159,164-177,179-188,190,193-194
+  s_88fc7e0d05bab6::t_10426327152fb7 162
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_88fc7e0d05bab6::t_6f2d01981a4633 211-250
+  s_88fc7e0d05bab6::t_d0aaa433fdc41c 906-908
+  s_88fc7e0d05bab6::t_763a19d2b224ac 860-889,917-973,1030-1040
+  s_88fc7e0d05bab6::t_ce47eb85db449b 890-905,909-916
+  s_88fc7e0d05bab6::t_cd33d5b9e582b1 859
+  s_88fc7e0d05bab6::t_d013c02fa55da9 974-1029
+src/app/__tests__/agentProjectRepairInspection.spec.ts
+  s_88fc7e0d05bab6::t_a77eb580b6a956 297,301-304
+  s_88fc7e0d05bab6::t_9c1d64336a30cd 4,15,284-296,298-300,305-308
+  s_88fc7e0d05bab6::t_135204130e8c21 309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eff242d8454da66e930ea09e0e9f96c0439dacf7",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
