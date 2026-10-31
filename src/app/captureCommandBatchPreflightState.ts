@@ -163,6 +163,17 @@ function collectClipGainEnvelopePoints(
     return points;
 }
 
+function collectFrozenMidiTakeSources(document: Readonly<Record<string, unknown>>): object[] {
+    const lanes = asRecord(document.takeLanes)?.lanes;
+    return (Array.isArray(lanes) ? lanes : []).flatMap((lane) => {
+        const takes = asRecord(lane)?.takes;
+        return (Array.isArray(takes) ? takes : []).flatMap((take) => {
+            const source = asRecord(asRecord(take)?.midiSource);
+            return source ? [source] : [];
+        });
+    });
+}
+
 /**
  * The live projection's own fingerprint for every target the document backs,
  * reported beside the document fingerprint rather than folded into it. Approval
@@ -483,6 +494,9 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * repeated point within one envelope is still reported.
  * Warp-marker ids are local to each clip's warp state; repeated ids within one
  * state remain invalid.
+ * A take's frozen MIDI source is an exact copy of the rows it was cut from, so
+ * it repeats live note ids and the ids of every take re-keyed from the same
+ * cut; each source is scanned in its own namespace.
  *
  * Other collisions within the live project, or within one snapshot, are still
  * reported. So is a repeated arrangement `id`: it is the
@@ -497,7 +511,12 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
     const duplicateIds = new Set<string>();
     const { arrangements, warpStates, ...liveDocument } = document;
     const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
-    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>(), clipGainEnvelopePoints);
+    const takeSources = collectFrozenMidiTakeSources(document);
+    for (const source of takeSources) {
+        findDuplicateIds(source, new Set<string>(), duplicateIds, new WeakSet<object>());
+    }
+    // Seeding the live scan's visited set with the sources leaves them out of it.
+    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet(takeSources), clipGainEnvelopePoints);
     const snapshots = asRecord(arrangements)?.arrangements;
     const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {

@@ -817,6 +817,52 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.projectInvariantsValid).toBe(false);
     });
 
+    describe('frozen MIDI take sources', () => {
+        const note = (id: string) => ({ id, pitch: 60, startBeat: 0.5, duration: 0.5, velocity: 100 });
+        const source = (...ids: string[]) => ({ rows: { notes: { present: true, value: ids.map(note) } } });
+        const project = (takes: unknown[]) => ({
+            tracks: { tracks: [] },
+            midi: { notesByClipId: { left: [note('n-a')], right: [note('n-b')] } },
+            takeLanes: { lanes: [{ id: 'lane-1', trackId: 'track-1', takes, activeCompRegions: [] }] },
+        });
+
+        it('admits sources repeating live note ids and one another, the cut copy contract', () => {
+            // Delete Time and split freeze the cut rows into every re-keyed take,
+            // so each source repeats the live notes and its sibling's rows.
+            mocks.getCrdtDoc.mockReturnValue(
+                project([
+                    { id: 'take-1', clipId: 'left', midiSource: source('n-a', 'n-b') },
+                    { id: 'take-1:right', clipId: 'right', midiSource: source('n-a', 'n-b') },
+                ])
+            );
+
+            const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+            expect(state.projectInvariantsValid).toBe(true);
+        });
+
+        it.each([
+            [
+                'a note id repeated inside one source',
+                [{ id: 'take-1', clipId: 'left', midiSource: source('n-a', 'n-a') }],
+            ],
+            [
+                'a take id repeated across takes carrying sources',
+                [
+                    { id: 'take-1', clipId: 'left', midiSource: source('n-a') },
+                    { id: 'take-1', clipId: 'right', midiSource: source('n-b') },
+                ],
+            ],
+            ['a take id repeating a live note id', [{ id: 'n-a', clipId: 'left', midiSource: source('n-b') }]],
+        ])('still fails %s', (_case, takes) => {
+            mocks.getCrdtDoc.mockReturnValue(project(takes));
+
+            const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+            expect(state.projectInvariantsValid).toBe(false);
+        });
+    });
+
     it('fails closed when there is no project document at all', () => {
         mocks.getCrdtDoc.mockReturnValue(undefined);
         // Bind projectId to the identity mock alone: both mocks return 'document-identity-a' by
