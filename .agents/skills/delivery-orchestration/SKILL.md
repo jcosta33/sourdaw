@@ -219,9 +219,11 @@ matching base and merge-base context. Bundle internals and the risk-plan format:
 [review records](references/review-records.md).
 
 `review:prepare` does not go through the trusted launcher, so run it only from the protected primary
-checkout: it evaluates the executing checkout's script closure before its `origin/main` check and
-then authenticates the reviewer role from the primary's `.env.sourdaw-reviewer`, so launching it
-elsewhere would run that checkout's code with the reviewer credential. When the primary's closure
+checkout. It reads the primary's `.env.sourdaw-reviewer` only after its `origin/main` blob check
+passes, but that check covers only the script's relative-import closure and runs after the module
+graph is evaluated: the executing checkout's import-time code runs before it, and the
+`node_modules` it resolves are never checked. Launched from another checkout, that code runs
+unverified beside the reviewer credential. When the primary's closure
 differs from `origin/main` it refuses with `<path> does not match origin/main; refusing to run a
 mutated copy` or `<path> has no blob on origin/main; refusing to run an unverifiable copy`. A primary
 checkout lagging `origin/main` is a blocker to report to the owner; never work around it from a lane
@@ -248,18 +250,29 @@ A plan of several classes needs three distinct stances, or every stance its clas
 earn fewer. Specialist classes keep those stance and evidence obligations within the same reviewer
 cost ceiling.
 
+Before reading any stance report, review the whole head yourself under AGENTS.md
+[Review](../../../AGENTS.md#review): no stance, against the request and the author brief. Read the
+full lane diff and the code it touches. This global review is not a draw and is not recorded in
+`draws`.
+
 Give each blind reviewer exactly one stance with the [reviewer brief](#reviewer-brief) below; a
 stance may take several draws on different permitted models.
 
 ### g. Validate findings
 
-- Check every finding against the live head and surrounding code, not the diff alone.
+You adjudicate every finding; nothing reaches the author or the public record unvalidated.
+
+- Check every finding against the live head and surrounding code, not the diff alone, and against
+  your own global reading.
 - Reproduce each merge-blocking finding: its input, state, or mutation and the observed result.
   Baseline-probe findings name the mutation that should have failed the check but did not.
 - Discard incorrect, out-of-scope, or personal-style findings; record each as a `discarded` entry
   and never forward or post it. File out-of-scope defects instead of growing the PR.
 - Merge duplicate findings into one comment whose `sources` names every draw that independently
   detected it.
+- A blocker your global review found that no draw reported: dispatch a fresh blind draw whose
+  stance names that failure mode, never your finding, and post the blocker once a draw reproduces
+  it. Do not approve the head meanwhile.
 
 ### h. Write `review.json`
 
@@ -404,8 +417,8 @@ A minimal `APPROVE` on the same plan:
   writing anything, because an approval over open threads can never authorize its head and its
   persisted publication would replay without one (#5436). Clear threads through
   [repair](#k-repair), never by approving over them.
-- You have independently read the final head's diff and confirmed specified behavior, tests
-  observing their claimed subjects, and every accepted finding repaired rather than silenced.
+- Your [global review](#f-review-round) of this exact head holds, and you would merge it; never
+  approve a head you judge unfit, whatever the draws say.
 - The document carries no inline comments and its body fits 600 Unicode code points; observations go
   in the body as `Nit:` or `Optional:`, or are filed.
 
@@ -453,9 +466,9 @@ clarify code, not threads. Full eligibility, ancestry, and crash-recovery mechan
 
 ### l. Gate and deliver
 
-Wait for the approval-triggered `Gate`. Then `pnpm deliver <pr>` runs from the protected primary
-checkout and squash-merges as the immutable author App after the reviewer APPROVE and a green
-`Gate`.
+Wait for the approval-triggered `Gate`. The merge is your decision: run `pnpm deliver <pr>` from the
+protected primary checkout, and the script squash-merges as the immutable author App after the
+reviewer APPROVE and a green `Gate`.
 
 #### Validation order
 
