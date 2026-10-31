@@ -1,0 +1,34 @@
+scripts/__tests__/viteAutomergeStreamingEntry.spec.ts
+  s_3bb122e91d89a5::t_937f117a484361 6,11,13-15,19-46,74-82,85-86,89-90,92
+  s_3bb122e91d89a5::t_e0ea275852d140 2
+src/modules/Collaboration/AGENTS.md
+  s_88fc7e0d05bab6::t_5141b382c007e0 23
+src/modules/CrdtDocument/AGENTS.md
+  s_88fc7e0d05bab6::t_3126a3143efb9d 37
+vite.config.ts
+  s_88fc7e0d05bab6::t_9ccf4184c8bb9c 72-77,83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1778a96ce899685c829425b6d5a1667a8e12bc6d",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
