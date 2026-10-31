@@ -1,0 +1,27 @@
+src/modules/Arrangement/useCases/__tests__/detectVariationLaneEnabling.spec.ts
+  s_88fc7e0d05bab6::t_3ade321dcdd25d 1-55
+src/modules/Arrangement/useCases/detectVariationLaneEnabling.ts
+  s_88fc7e0d05bab6::t_b77e936e79d4fc 1-29
+src/modules/Arrangement/useCases/index.ts
+  s_88fc7e0d05bab6::t_97e748b079f6e9 246
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_88fc7e0d05bab6::t_8ee5541fc8da22 9,33,386-404
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_88fc7e0d05bab6::t_ce7287a671404a 706-709,736-812
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c99be484feaffee407d2dc91c63dd69a560ef63",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
