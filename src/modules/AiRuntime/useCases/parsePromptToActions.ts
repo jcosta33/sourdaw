@@ -1933,6 +1933,8 @@ export async function parsePromptToActions(input: ParsePromptToActionsInput): Pr
     return { ...result, planningOutcome: classifyPlannedIntentResult(result) };
 }
 
+type SerializedMetricGoalState = { -readonly [Key in keyof MetricGoalState]: MetricGoalState[Key] };
+
 function serializePromptMetricState(input: {
     actions: IntentResult['actions'];
     steps: MetricGoalState['steps'][number][];
@@ -1955,18 +1957,19 @@ function serializePromptMetricState(input: {
             recipePrefixHash: null,
         });
     }
-    const metricGoalState: MetricGoalState = {
+    const metricGoalState: SerializedMetricGoalState = {
         schemaVersion: 1,
         authorities,
         steps,
         proofs: input.metricProofs,
         nativeLiteralUses: [...(input.inheritedMetricState?.nativeLiteralUses ?? []), ...input.nativeLiteralUses],
-        ...(input.refinedRequest === null
-            ? {}
-            : {
-                  refinedRequests: [...(input.inheritedMetricState?.refinedRequests ?? []), input.refinedRequest],
-              }),
         binding: null,
     };
+    if (input.refinedRequest !== null) {
+        metricGoalState.refinedRequests = [
+            ...(input.inheritedMetricState?.refinedRequests ?? []),
+            input.refinedRequest,
+        ];
+    }
     return JSON.stringify(metricGoalState);
 }

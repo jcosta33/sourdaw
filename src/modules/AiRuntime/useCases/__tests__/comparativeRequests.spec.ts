@@ -1637,7 +1637,7 @@ async function proposeLiteralCard(input: {
 }): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
     const context = getProjectContext();
     const revision = captureProjectRevision();
-    const thread = input.refines === undefined ? undefined : readChatThreadContext();
+    const thread = input.refines === undefined ? null : readChatThreadContext();
     if (input.refines !== undefined) {
         expect(thread?.pendingProposal?.confirmationId).toBe(input.refines);
     }
@@ -1650,6 +1650,13 @@ async function proposeLiteralCard(input: {
         })
     ).toEqual({ status: 'created' });
     agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
+    const proposalArguments: Record<string, unknown> = {
+        commands: input.commands,
+        plan: metricGoalProviderPlan(input.prompt, ['drums']),
+    };
+    if (input.refines !== undefined) {
+        proposalArguments.refines = input.refines;
+    }
     let turns = 0;
     vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
         turns += 1;
@@ -1681,11 +1688,7 @@ async function proposeLiteralCard(input: {
                     {
                         id: `${input.runId}-proposal`,
                         name: 'command.batch.propose',
-                        arguments: {
-                            commands: input.commands,
-                            ...(input.refines === undefined ? {} : { refines: input.refines }),
-                            plan: metricGoalProviderPlan(input.prompt, ['drums']),
-                        },
+                        arguments: proposalArguments,
                     },
                 ],
             };
@@ -1696,7 +1699,7 @@ async function proposeLiteralCard(input: {
         prompt: input.prompt,
         context,
         projectRevision: revision,
-        ...(thread === undefined ? {} : { thread }),
+        thread,
         streamIdentity: { runId: input.runId, requestId: `${input.runId}-request`, cancellationGeneration: 0 },
         onMeasurementAttempt: agentWorkBudget.admitMeasurement(input.runId),
     });
@@ -1761,7 +1764,7 @@ async function proposeLiteralCard(input: {
         projectRevision: revision,
         parsedCommandBatch: materialized.parsedCommandBatch,
         content: input.prompt,
-        ...(input.refines === undefined ? {} : { supersedes: input.refines }),
+        supersedes: input.refines ?? null,
     });
     if (confirmationId === null) {
         throw new Error('The actual pending confirmation was not persisted.');
