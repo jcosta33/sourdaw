@@ -141,6 +141,36 @@ async function startSaveHeldInPreflight(
     return { release, saving };
 }
 
+const SERIAL_SNAPSHOT_WORK = ['capture', 'build', 'first save settled', 'capture', 'build'];
+
+/** Records each save's plugin capture and snapshot build, in order, through the real implementations. */
+async function traceSnapshotWork(): Promise<{ events: string[]; markSettled: (save: Promise<boolean>) => void }> {
+    const [buildModule, captureModule] = await Promise.all([
+        import('../../fileIO/buildProjectData'),
+        import('../captureExternalPluginStates'),
+    ]);
+    const events: string[] = [];
+    const buildProjectData = buildModule.buildProjectData;
+    vi.spyOn(buildModule, 'buildProjectData').mockImplementation((...args) => {
+        events.push('build');
+        return buildProjectData(...args);
+    });
+    const captureExternalPluginStates = captureModule.captureExternalPluginStates;
+    vi.spyOn(captureModule, 'captureExternalPluginStates').mockImplementation((...args) => {
+        events.push('capture');
+        return captureExternalPluginStates(...args);
+    });
+    return {
+        events,
+        markSettled: (save) => {
+            void save.then(
+                () => events.push('first save settled'),
+                () => events.push('first save settled')
+            );
+        },
+    };
+}
+
 /** Holds the named-project snapshot write, the last durable step after both durability receipts. */
 async function startSaveHeldAtSnapshotWrite(
     opened: OpenedProject,
@@ -199,10 +229,10 @@ describe('saveProject snapshot continuation', () => {
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
-            const buildProjectDataModule = await import('../../fileIO/buildProjectData');
-            const buildProjectData = vi.spyOn(buildProjectDataModule, 'buildProjectData');
+            const trace = await traceSnapshotWork();
 
             const requested = await startSaveHeldInPreflight(opened);
+            trace.markSettled(requested.saving);
             const autosave = opened.project.saveProject();
             requested.release();
 
@@ -212,7 +242,7 @@ describe('saveProject snapshot continuation', () => {
             });
             expect(opened.persistenceFailures()).toEqual([]);
             expect(opened.projectStore.value?.dirty).toBe(false);
-            expect(buildProjectData).toHaveBeenCalledTimes(1);
+            expect(trace.events).toEqual(SERIAL_SNAPSHOT_WORK);
         },
         CASE_TIMEOUT_MS
     );
@@ -222,8 +252,10 @@ describe('saveProject snapshot continuation', () => {
         async () => {
             installMultiDatabaseIndexedDb();
             const opened = await openProjectWithCachedStereoClip();
+            const trace = await traceSnapshotWork();
 
             const autosave = await startSaveHeldInPreflight(opened);
+            trace.markSettled(autosave.saving);
             const requested = opened.project.saveProject();
             autosave.release();
 
@@ -232,6 +264,27 @@ describe('saveProject snapshot continuation', () => {
                 requested: true,
             });
             expect(opened.persistenceFailures()).toEqual([]);
+            expect(trace.events).toEqual(SERIAL_SNAPSHOT_WORK);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
+        'captures plugin state again for a save queued after a dirty mark during the earlier save',
+        async () => {
+            installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const trace = await traceSnapshotWork();
+
+            const first = await startSaveHeldInPreflight(opened);
+            trace.markSettled(first.saving);
+            opened.project.markDirty();
+            const queued = opened.project.saveProject();
+            first.release();
+
+            expect({ first: await first.saving, queued: await queued }).toEqual({ first: true, queued: true });
+            expect(opened.persistenceFailures()).toEqual([]);
+            expect(trace.events).toEqual(SERIAL_SNAPSHOT_WORK);
         },
         CASE_TIMEOUT_MS
     );

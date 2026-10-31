@@ -23,22 +23,7 @@ type AudioDurabilityReceipt = {
     release: () => void;
 };
 
-/** The exact project state one successful save made durable. */
-type DurableSnapshot = {
-    createdAt: number;
-    projectId: string | undefined;
-    revision: string;
-    settledTakes: number;
-};
-
-type SaveOutcome = {
-    saved: boolean;
-    durableSnapshot?: DurableSnapshot;
-};
-
-const unsavedOutcome: SaveOutcome = { saved: false };
-
-let latestSave: Promise<SaveOutcome> | undefined;
+let latestSave: Promise<boolean> | undefined;
 
 function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
@@ -72,56 +57,38 @@ function describeSnapshotChange(
 }
 
 /**
- * Saves run one at a time. Every save publishes a fresh `updatedAt` into the
- * project before it builds its snapshot, so a second save overlapping the
- * first (the 30 s autosave firing during a Save the user asked for) moves the
- * first one's revision and the first save refuses itself (#5984). A save that
- * waited behind another is already satisfied when that save made exactly the
- * current state durable; otherwise it persists its own snapshot.
+ * Saves run one at a time, and each persists its own snapshot. Every save
+ * publishes a fresh `updatedAt` into the project before it builds its
+ * snapshot, so a second save overlapping the first (the 30 s autosave firing
+ * during a Save the user asked for) moved the first one's revision and the
+ * first save refused itself (#5984).
  */
 export function saveProject(): Promise<boolean> {
     const save = runSaveAfter(latestSave);
     latestSave = save;
     // Only a save still in flight is waited on: once it settles, fulfilled or
-    // rejected, the next save starts at once and persists its own snapshot.
+    // rejected, the next save starts at once.
     const releaseQueueSlot = (): void => {
         if (latestSave === save) {
             latestSave = undefined;
         }
     };
     void save.then(releaseQueueSlot, releaseQueueSlot);
-    return save.then((outcome) => outcome.saved);
+    // The caller gets its own promise, which nothing here handles, so a
+    // rejection it ignores still reports as unhandled, as it did before the queue.
+    return save.then((saved) => saved);
 }
 
-async function runSaveAfter(predecessor: Promise<SaveOutcome> | undefined): Promise<SaveOutcome> {
+async function runSaveAfter(predecessor: Promise<boolean> | undefined): Promise<boolean> {
     if (predecessor) {
-        // A predecessor that threw made nothing durable; its own caller still
-        // receives that rejection through the promise it was handed.
-        const outcome = await predecessor.catch(() => unsavedOutcome);
-        if (isCurrentStateDurableIn(outcome)) {
-            return outcome;
-        }
+        // Only the order matters here; the predecessor's own caller receives
+        // its result, rejection included, through the promise it was handed.
+        await predecessor.catch(() => undefined);
     }
     return persistProjectSnapshot();
 }
 
-function isCurrentStateDurableIn({ durableSnapshot }: SaveOutcome): boolean {
-    if (!durableSnapshot || projectLoadFailureStore.value !== null || agentProjectRepairStateStore.value !== null) {
-        return false;
-    }
-    flushAutomergeStorageWrites();
-    const project = projectStore.value;
-    return (
-        project !== null &&
-        !project.dirty &&
-        project.createdAt === durableSnapshot.createdAt &&
-        project.projectId === durableSnapshot.projectId &&
-        countSettledTakes() === durableSnapshot.settledTakes &&
-        captureProjectRevision() === durableSnapshot.revision
-    );
-}
-
-async function persistProjectSnapshot(): Promise<SaveOutcome> {
+async function persistProjectSnapshot(): Promise<boolean> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -144,12 +111,12 @@ async function persistProjectSnapshot(): Promise<SaveOutcome> {
     // function as "the user has been told" — several comments below say
     // "already notified", and that only holds for the catch.
     if (projectLoadFailureStore.value !== null) {
-        return unsavedOutcome;
+        return false;
     }
 
     const project = projectStore.value;
     if (!project) {
-        return { saved: true };
+        return true;
     }
 
     const updatedAt = Date.now();
@@ -281,21 +248,7 @@ async function persistProjectSnapshot(): Promise<SaveOutcome> {
                         identityPersistencePending: false,
                     });
                     unsavedClosedTakes.markSavedThrough(settledTakesAtSnapshot);
-                    // Publishing the transient flags rewrites the project slot
-                    // with the same durable content, which still advances the
-                    // revision. Read the revision after that write, in the same
-                    // synchronous turn as the last continuation check, so it
-                    // names exactly the state this save made durable.
-                    flushAutomergeStorageWrites();
-                    return {
-                        saved: true,
-                        durableSnapshot: {
-                            createdAt: persistedProject.createdAt,
-                            projectId: persistedProject.projectId,
-                            revision: captureProjectRevision(),
-                            settledTakes: settledTakesAtSnapshot,
-                        },
-                    };
+                    return true;
                 } finally {
                     audioDurabilityReceipt?.release();
                 }
@@ -306,6 +259,6 @@ async function persistProjectSnapshot(): Promise<SaveOutcome> {
     } catch (error) {
         logger.warn('[saveProject] Project persistence failed:', error);
         notifyUser('Save failed — your latest changes could not be persisted.', 'error');
-        return unsavedOutcome;
+        return false;
     }
 }
