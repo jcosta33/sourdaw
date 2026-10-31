@@ -8,10 +8,12 @@ function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+// String keys only: a source read back from the project document carries the
+// CRDT's own symbol-keyed object metadata, which is not content.
 function hasExactSourceKeys(value: object): boolean {
-    const keys = Reflect.ownKeys(value);
+    const keys = Object.keys(value);
     const allowed = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
-    return keys.length === allowed.length && keys.every((key) => typeof key === 'string' && allowed.includes(key));
+    return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
 }
 
 /** Presence is authoritative: an absent legacy source is handled by the caller. */

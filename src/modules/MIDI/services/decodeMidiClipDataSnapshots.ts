@@ -11,11 +11,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return prototype === Object.prototype || prototype === null;
 }
 
+// String keys only: rows read back from the project document carry the CRDT's
+// own symbol-keyed object metadata, which is not content.
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-    return (
-        keys.every((key) => Object.hasOwn(value, key)) &&
-        Reflect.ownKeys(value).every((key) => typeof key === 'string' && keys.includes(key))
-    );
+    return keys.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => keys.includes(key));
 }
 
 function isFiniteNumber(value: unknown): value is number {
