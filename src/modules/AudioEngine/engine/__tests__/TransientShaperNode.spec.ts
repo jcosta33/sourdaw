@@ -150,7 +150,52 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         node.setBypass(true);
         expect(fake.parameters.get('_resetEpoch')?.valueWrites.mock.calls).toEqual([[1], [2], [3]]);
         expect(fake.parameters.get('_resetEpoch')?.cancelScheduledValues.mock.calls).toEqual([[0], [0], [0]]);
-        expect(fake.port.postMessage.mock.calls).toEqual([[{ type: 'init' }]]);
+        expect(fake.port.postMessage.mock.calls).toEqual([
+            [{ type: 'init' }],
+            [{ type: 'reset', epoch: 1 }],
+            [{ type: 'reset', epoch: 2 }],
+            [{ type: 'reset', epoch: 3 }],
+        ]);
+        dispose(node, fake);
+    });
+    it('posts immediate and already reached gains for the resume frame Chromium cannot reach through the AudioParam', async () => {
+        // 193024 / 48000 * 48000 sits above 193024, so Chromium lands an event
+        // at this currentTime on frame 193025 whatever time the write names.
+        const pausedContext = { currentTime: 193024 / 48000, sampleRate: 48000 } as BaseAudioContext;
+        const node = await createTransientShaperNode(pausedContext);
+        void node.ready.catch(() => undefined);
+        const fake = instances[0];
+        if (!fake) {
+            throw new Error('No worklet');
+        }
+        node.setParam('attackGain', 2);
+        node.setParam('sustainGain', 0.25, 0);
+        node.setParam('attackGain', 9, 193024);
+        node.setParam('sustainGain', 0.5, 193025);
+        node.setParam('attackGain', Number.NaN);
+        node.setParam('_resetEpoch', 4);
+        node.setBypass(true);
+        expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
+            [{ type: 'gain', name: 'attackGain', value: 2, frame: 193024 }],
+            [{ type: 'gain', name: 'sustainGain', value: 0.25, frame: 193024 }],
+            [{ type: 'gain', name: 'attackGain', value: 2, frame: 193024 }],
+            [{ type: 'reset', epoch: 1 }],
+        ]);
+        expect(fake.parameters.get('sustainGain')?.setValueAtTime).toHaveBeenLastCalledWith(0.5, 193025 / 48000);
+        dispose(node, fake);
+        node.setParam('attackGain', 1);
+        expect(fake.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'gain', value: 1 }));
+    });
+    it('clears a posted gain only when valid automation reaches the frame it was posted for', async () => {
+        const { node, fake } = await create();
+        node.setParam('attackGain', 0.5);
+        node.scheduleParam('attackGain', [{ startFrame: 12001, endFrame: 24000, startValue: 1, endValue: 2 }]);
+        node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 12000, startValue: Number.NaN, endValue: 2 }]);
+        node.scheduleParam('attackGain', [{ startFrame: 12000, endFrame: 24000, startValue: 2, endValue: 2 }]);
+        expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
+            [{ type: 'gain', name: 'attackGain', value: 0.5, frame: 12000 }],
+            [{ type: 'clear-gain', name: 'attackGain' }],
+        ]);
         dispose(node, fake);
     });
     it('uses the final exact Float32 value as terminal failure and never wraps', async () => {
