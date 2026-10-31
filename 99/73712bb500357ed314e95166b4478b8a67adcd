@@ -1,0 +1,71 @@
+src/modules/Arrangement/AGENTS.md
+  s_88fc7e0d05bab6::t_ae9c3efe165729 27
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_88fc7e0d05bab6::t_de447e6806bf94 15-21,339-341
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_ba80576e6f5cb5::t_0fd4e1f7210275 36,43,103-105,321,376-381
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_88fc7e0d05bab6::t_fb935e715048f6 10,146,300-330
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_88fc7e0d05bab6::t_e37741b620c075 12,306-309,318,322-324,329-349
+src/modules/Arrangement/presentations/views/index.ts
+  s_88fc7e0d05bab6::t_ef5163eb63f6e3 13
+src/modules/Arrangement/presentations/views/timelineHorizontalScrollbar.ts
+  s_88fc7e0d05bab6::t_7431c9f2a2e048 1-6
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_88fc7e0d05bab6::t_6836a3d2abf151 130-146,166-170,204-208,210-215,219-220,222
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_88fc7e0d05bab6::t_8789dd4a0fd8a3 3-4,13-14,101-105,112-124,128-129,155
+src/modules/Arrangement/transformers/__tests__/getTimelineContentHeight.spec.ts
+  s_88fc7e0d05bab6::t_ad7068726d4dc6 1-71
+src/modules/Arrangement/transformers/getTimelineContentHeight.ts
+  s_88fc7e0d05bab6::t_1d3c85a7d0020b 1-13
+src/modules/Arrangement/useCases/index.ts
+  s_88fc7e0d05bab6::t_5f9c6abc803026 245
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_88fc7e0d05bab6::t_de71b913df3dc6 24,53-54,231,251-256,267,315,325-326,328-336,396,398
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_88fc7e0d05bab6::t_59230a267fc711 53-70,78,185,604-655
+src/modules/TimelineEditor/presentations/views/__tests__/arrangementLayout.spec.ts
+  s_88fc7e0d05bab6::t_99349123edfe2d 1-59
+src/modules/TimelineEditor/presentations/views/__tests__/useArrangementMinimumHeight.spec.tsx
+  s_88fc7e0d05bab6::t_f7bbfbf58c5970 1-132
+src/modules/TimelineEditor/presentations/views/arrangementLayout.ts
+  s_88fc7e0d05bab6::t_46bae50844236c 1-49
+src/modules/TimelineEditor/presentations/views/index.ts
+  s_88fc7e0d05bab6::t_c6a0bf1d56db01 10
+src/modules/TimelineEditor/presentations/views/useArrangementMinimumHeight.ts
+  s_88fc7e0d05bab6::t_e882774ecc095c 1-39
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_88fc7e0d05bab6::t_d91507b6efa3e9 9-10,33-36,38-39
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_88fc7e0d05bab6::t_1ecc03a1615878 28-48
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_88fc7e0d05bab6::t_ce1ed85d1e6a8a 59-64,186-187,209,715-720,727-731,939,947,1036-1039,1043-1047
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_88fc7e0d05bab6::t_1b7656a661d651 42,102,743-792
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9973712bb500357ed314e95166b4478b8a67adcd",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
