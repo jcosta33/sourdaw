@@ -2060,7 +2060,7 @@ describe('createWebGpuRenderer MIDI notes follow the shared geometry law', () =>
             expected.push([x, y, width]);
         });
 
-        const { notes: _unused, ...timing } = clip;
+        const { midiNotes: _clipNotes, ...timing } = clip;
         const notes = with_alpha(
             await render_midi(midi_model({ ...timing, isInlineEditing: true, notes: clip.midiNotes })),
             NOTE_ALPHA_INLINE

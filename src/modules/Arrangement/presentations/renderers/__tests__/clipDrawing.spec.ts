@@ -192,7 +192,7 @@ describe('drawClip (Coordinate Conventions)', () => {
 
             // The grid backdrop covers the note area (padding 2 inside an 80px track) and the 12 rows of the octave from middle C are ruled by 13 lines.
             expect(mockCtx.fillRect).toHaveBeenCalledWith(200, 2, 100, 76);
-            expect(mockCtx.moveTo.mock.calls.filter((args: number[]) => args[0] === 200 && args[1] >= 2)).toHaveLength(
+            expect(mockCtx.moveTo.mock.calls.filter(([x, y]: [number, number]) => x === 200 && y >= 2)).toHaveLength(
                 13
             );
         });
