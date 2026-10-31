@@ -44,8 +44,6 @@ export const activeRecordingRef: {
     /** A pass ended without a loop wrap; later MIDI notes and takes carry no pass. */
     passIdentityLost: boolean;
     startBeat: number;
-    loopStart: number;
-    loopEnd: number;
     startedLooping: boolean;
     midiAdmissions: RecordingMidiAdmission[];
 } = {
@@ -54,8 +52,6 @@ export const activeRecordingRef: {
     startWrapCount: 0,
     passIdentityLost: false,
     startBeat: 0,
-    loopStart: 0,
-    loopEnd: 0,
     startedLooping: false,
     midiAdmissions: [],
 };

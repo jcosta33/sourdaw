@@ -139,8 +139,6 @@ function stageRecording(
         activeRecordingRef.startWrapCount = playheadWrapCountRef.current;
         activeRecordingRef.passIdentityLost = false;
         activeRecordingRef.startBeat = recordBeat;
-        activeRecordingRef.loopStart = transportState.loopStart;
-        activeRecordingRef.loopEnd = transportState.loopEnd;
         activeRecordingRef.startedLooping = transportState.isLooping;
         activeRecordingRef.midiAdmissions = [];
         // The take belongs to the root it is opened on (#5517): the Stop

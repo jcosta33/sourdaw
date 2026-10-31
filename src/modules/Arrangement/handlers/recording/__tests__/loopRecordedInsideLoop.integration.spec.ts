@@ -366,6 +366,24 @@ describe('MIDI loop recordings', () => {
         expect(unowned).not.toHaveProperty('onsetPassIndex');
     });
 
+    it('places a later pass on the edited loop its take is staged on', () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+
+        // Pass 1 of the loop [8, 10) is staged at source offset 2, so beat 9 is 3.
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(3);
+    });
+
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {
         transportStore.set({
             ...defaultTransportState,
