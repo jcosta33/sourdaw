@@ -16,7 +16,7 @@ describe('factory synthesis worker entry', () => {
     });
     afterAll(() => vi.unstubAllGlobals());
 
-    it('binds its message handler during module evaluation', () => {
+    it('installs a message handler on the worker global', () => {
         expect(endpoint.onmessage).toBeTypeOf('function');
     });
 
