@@ -7,6 +7,8 @@ const PICKER_REQUEST_BINDING = '__sourdawCapturePickerRequest';
 const WRITE_BINDING = '__sourdawCapturePickerWrite';
 const CLOSE_BINDING = '__sourdawCapturePickerClose';
 const ABORT_BINDING = '__sourdawCapturePickerAbort';
+const ORIGINAL_PICKER_DESCRIPTOR = '__sourdawCapturePickerOriginalDescriptor';
+const pagesWithPickerInitScript = new WeakSet<Page>();
 
 type Deferred<T> = {
     promise: Promise<T>;
@@ -26,6 +28,66 @@ function createDeferred<T>(): Deferred<T> {
 }
 
 type BindingRegistration = { dispose: () => Promise<void> | void };
+
+type PickerShimOptions = {
+    originalDescriptorKey: string;
+    pickerRequestBinding: string;
+    writeBinding: string;
+    closeBinding: string;
+    abortBinding: string;
+};
+
+function installPickerShim({
+    originalDescriptorKey,
+    pickerRequestBinding,
+    writeBinding,
+    closeBinding,
+    abortBinding,
+}: PickerShimOptions): void {
+    if (typeof Reflect.get(window, pickerRequestBinding) !== 'function') {
+        return;
+    }
+    if (!Object.hasOwn(window, originalDescriptorKey)) {
+        const original = Object.getOwnPropertyDescriptor(window, 'showSaveFilePicker') ?? null;
+        Object.defineProperty(window, originalDescriptorKey, {
+            configurable: true,
+            value: original,
+        });
+    }
+    const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
+        const binding = Reflect.get(window, name);
+        if (typeof binding !== 'function') {
+            throw new Error(`Missing test file picker binding: ${name}`);
+        }
+        return (binding as (...values: unknown[]) => Promise<unknown>)(...args);
+    };
+    Object.defineProperty(window, 'showSaveFilePicker', {
+        configurable: true,
+        value: async (options: { suggestedName: string }) => {
+            await callBinding(pickerRequestBinding, options.suggestedName);
+            return {
+                createWritable: async () => ({
+                    write: (bytes: Uint8Array) => callBinding(writeBinding, bytes),
+                    close: () => callBinding(closeBinding),
+                    abort: () => callBinding(abortBinding),
+                }),
+            };
+        },
+    });
+}
+
+function removePickerShim(originalDescriptorKey: string): void {
+    if (!Object.hasOwn(window, originalDescriptorKey)) {
+        return;
+    }
+    const original = Reflect.get(window, originalDescriptorKey) as PropertyDescriptor | null;
+    if (original) {
+        Object.defineProperty(window, 'showSaveFilePicker', original);
+    } else {
+        Reflect.deleteProperty(window, 'showSaveFilePicker');
+    }
+    Reflect.deleteProperty(window, originalDescriptorKey);
+}
 
 export type FilePickerCapture = {
     path: string;
@@ -58,6 +120,7 @@ export async function installFilePickerCapture(page: Page, path: string): Promis
     let writableAborted = false;
     let writeInProgress = false;
     let captureFailed = false;
+    let pickerShimActive = false;
 
     const failCapture = (error: unknown): void => {
         if (captureFailed) {
@@ -150,38 +213,28 @@ export async function installFilePickerCapture(page: Page, path: string): Promis
                 }
             })
         );
-        await page.addInitScript(
-            ({ pickerRequestBinding, writeBinding, closeBinding, abortBinding }) => {
-                const callBinding = (name: string, ...args: unknown[]): Promise<unknown> => {
-                    const binding = Reflect.get(window, name);
-                    if (typeof binding !== 'function') {
-                        throw new Error(`Missing test file picker binding: ${name}`);
-                    }
-                    return (binding as (...values: unknown[]) => Promise<unknown>)(...args);
-                };
-                Object.defineProperty(window, 'showSaveFilePicker', {
-                    configurable: true,
-                    value: async (options: { suggestedName: string }) => {
-                        await callBinding(pickerRequestBinding, options.suggestedName);
-                        return {
-                            createWritable: async () => ({
-                                write: (bytes: Uint8Array) => callBinding(writeBinding, bytes),
-                                close: () => callBinding(closeBinding),
-                                abort: () => callBinding(abortBinding),
-                            }),
-                        };
-                    },
-                });
-            },
-            {
-                pickerRequestBinding: PICKER_REQUEST_BINDING,
-                writeBinding: WRITE_BINDING,
-                closeBinding: CLOSE_BINDING,
-                abortBinding: ABORT_BINDING,
-            }
-        );
+        const pickerShimOptions = {
+            originalDescriptorKey: ORIGINAL_PICKER_DESCRIPTOR,
+            pickerRequestBinding: PICKER_REQUEST_BINDING,
+            writeBinding: WRITE_BINDING,
+            closeBinding: CLOSE_BINDING,
+            abortBinding: ABORT_BINDING,
+        };
+        if (!pagesWithPickerInitScript.has(page)) {
+            await page.addInitScript(installPickerShim, pickerShimOptions);
+            pagesWithPickerInitScript.add(page);
+        }
+        await page.evaluate(installPickerShim, pickerShimOptions);
+        pickerShimActive = true;
     } catch (error) {
         failCapture(error);
+        if (pickerShimActive && !page.isClosed()) {
+            try {
+                await page.evaluate(removePickerShim, ORIGINAL_PICKER_DESCRIPTOR);
+            } catch {
+                // Preserve the original installation failure if the document is already tearing down.
+            }
+        }
         if (!fileClosed) {
             await file.close();
         }
@@ -206,6 +259,13 @@ export async function installFilePickerCapture(page: Page, path: string): Promis
         writeCount: () => writes,
         abortCount: () => aborts,
         async dispose() {
+            if (!page.isClosed()) {
+                try {
+                    await page.evaluate(removePickerShim, ORIGINAL_PICKER_DESCRIPTOR);
+                } catch {
+                    // Do not replace the export result with a document teardown error.
+                }
+            }
             await Promise.all(registrations.map((registration) => registration.dispose()));
             if (!fileClosed) {
                 await file.close();

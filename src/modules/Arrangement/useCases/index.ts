@@ -140,6 +140,9 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
+export { prepareTempoAudioSources } from './prepareTempoAudioSources';
+export { applyTempoAudioSources } from './applyTempoAudioSources';
+export { canApplyTempoAudioSources } from './canApplyTempoAudioSources';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 
@@ -205,6 +208,9 @@ export { armTrack } from './recording/armTrack';
 export { commitRecording } from './recording/commitRecording';
 export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
+export { observeRecordingPassEntry } from './recording/observeRecordingPassEntry';
+export { admitRecordingCaptureClock } from './recording/admitRecordingCaptureClock';
+export { prepareRecoveredRecording } from './recording/prepareRecoveredRecording';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';

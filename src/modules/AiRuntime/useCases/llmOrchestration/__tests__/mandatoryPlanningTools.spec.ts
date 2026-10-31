@@ -14,6 +14,7 @@ import {
 } from '../../../models/LocalPlanningBudget';
 import { DEFAULT_WEBLLM_MODEL_ID } from '../../../models/ModelInfo';
 import { type ModelProviderResult } from '../../../models/ModelProviderProtocol';
+import { type PlanningContextBinding } from '../../../models/PlanningContextBinding';
 import { type ProjectContext } from '../../../models/ProjectContext';
 import { THREAD_CONTEXT_MAX_BYTES, type ThreadContext } from '../../../models/ThreadContext';
 import { type ToolSchema } from '../../../models/ToolDefinitions';
@@ -52,9 +53,12 @@ import {
 } from '../../agentToolCatalog';
 import { runApplicationOwnedToolLoop } from '../../applicationOwnedToolLoop';
 import { buildAgentContext } from '../../buildAgentContext';
+import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
+import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
 const mocks = vi.hoisted(() => ({
@@ -99,23 +103,32 @@ vi.mock('../../../repositories/cloudLlm/cloudInference/requestOpenAiProvider', (
 const MAX_RECEIPT_BYTES_PER_CALL = 16_384;
 const NO_REVISION_REJECTION = 'Provider requested an unavailable application tool.';
 
-const creativeCatalog: CreativeInterpretationCatalog = {
-    schemaVersion: 1,
-    catalogId: 'creative-catalog-1',
-    revision: 'revision-1',
-    requestDigest: 'digest-1',
-    selection: { trackId: null, clipId: null, clipIds: [], activeView: 'arrange' },
-    unresolvedExplicitReferences: [],
-    modes: ['edit'],
-    targets: [],
-    dimensions: [],
-    constraints: [],
-    creationSlots: [],
-};
+const RETENTION_PROMPT = 'Describe project';
+const creativeCatalog = prepareCreativeInterpretationCatalog({
+    prompt: RETENTION_PROMPT,
+    context: getProjectContext(),
+    projectRevision: 'revision-1',
+});
 
 /** The list production sends to every backend: the planning schemas plus the creative interpretation tool. */
-function productionToolSchemas(catalog: CreativeInterpretationCatalog = creativeCatalog): ToolSchema[] {
-    return [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
+function productionToolSchemas(
+    catalog: CreativeInterpretationCatalog = creativeCatalog,
+    context: ProjectContext = getProjectContext(),
+    binding?: PlanningContextBinding,
+    prompt = RETENTION_PROMPT
+): ToolSchema[] {
+    const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: catalog.revision });
+    const actualBinding =
+        binding ??
+        buildAgentContext({ fixedPolicy: 'policy', prompt, context, projectRevision: catalog.revision })
+            .planningBinding;
+    return projectPlanningProviderToolSchemas(
+        [
+            ...getPlanningProviderToolSchemas(),
+            createPlanningInterpretationToolSchema({ creative: catalog, answer, binding: actualBinding }),
+        ],
+        'planning'
+    );
 }
 
 function namesOf(tools: readonly ToolSchema[]): string[] {
@@ -316,7 +329,16 @@ describe('mandatory planning tools', () => {
         ): Promise<string[]> {
             mocks.backendChain.value = ['webllm'];
             mocks.generateWebLlmToolCalls.mockResolvedValue({ status: 'complete', toolCalls: [] });
-            await generateToolPlanningOutcome('system', prompt, productionToolSchemas(catalog));
+            await generateToolPlanningOutcome(
+                'system',
+                prompt,
+                productionToolSchemas(
+                    catalog,
+                    getProjectContext(),
+                    undefined,
+                    catalog === creativeCatalog ? RETENTION_PROMPT : prompt
+                )
+            );
             return namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
         }
 
@@ -343,9 +365,10 @@ describe('mandatory planning tools', () => {
                 ...WORKFLOW_ACTION_TOOL_NAMES,
             ]);
 
-            expect(WEBLLM_TOOL_BUDGET).toBe(mandatory.size + 1);
+            expect(WEBLLM_TOOL_BUDGET).toBe(37);
+            expect(WEBLLM_TOOL_BUDGET).toBeGreaterThanOrEqual(mandatory.size + 1);
             expect(advertised.filter((name) => !mandatory.has(name))).toHaveLength(1);
-            expect(advertised).toHaveLength(WEBLLM_TOOL_BUDGET);
+            expect(advertised).toHaveLength(mandatory.size + 1);
         });
 
         it('does not advertise analysis.compareReference with a reference loaded, even ahead of the free slot', async () => {
@@ -415,8 +438,9 @@ describe('mandatory planning tools', () => {
                     context,
                     projectRevision: 'revision-1',
                 });
-                const tools = productionToolSchemas(catalog);
-                const systemPrompt = buildPlanningSystemPrompt();
+                const phase = transientOnsetsDiscovered ? 'answer' : 'planning';
+                const names = [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
+                const systemPrompt = buildPlanningSystemPrompt(undefined, phase);
                 const built = buildAgentContext({
                     fixedPolicy: systemPrompt,
                     prompt: REQUEST,
@@ -424,10 +448,18 @@ describe('mandatory planning tools', () => {
                     projectRevision: 'revision-1',
                     receipts:
                         receiptSummary === undefined ? [] : [{ id: 'application-tool-loop', summary: receiptSummary }],
-                    capabilitySchemas: tools.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
-                    capabilityData: { creativeInterpretationCatalog: catalog },
+                    capabilitySchemas: projectPlanningProviderToolSchemas(names, phase).map((tool) => ({
+                        name: tool.function.name,
+                        schemaVersion: 1,
+                    })),
                     thread,
                 });
+                let tools: readonly ToolSchema[];
+                if (phase === 'answer') {
+                    tools = projectPlanningProviderToolSchemas(getPlanningProviderToolSchemas(), 'answer');
+                } else {
+                    tools = productionToolSchemas(catalog, context, built.planningBinding, REQUEST);
+                }
                 const { generateWebLlmToolCalls } = await vi.importActual<
                     typeof import('../../../repositories/webLlm/toolCalling')
                 >('../../../repositories/webLlm/toolCalling');
@@ -481,7 +513,7 @@ describe('mandatory planning tools', () => {
 
                 const { built, outcome, sent } = await sendLocalRequest(project(), receipts?.());
 
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText, options] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('Expected the local request to reach the engine.');
@@ -506,7 +538,7 @@ describe('mandatory planning tools', () => {
 
                 const { built, outcome, sent } = await sendLocalRequest(fiveTrackProject(), receiptEvidence(), thread);
 
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('Expected the local request to reach the engine.');
@@ -629,14 +661,16 @@ describe('mandatory planning tools', () => {
                     createFullThreadContext(),
                     true
                 );
-                expect(outcome).toMatchObject({ status: 'complete' });
+                expect(outcome, JSON.stringify(outcome)).toMatchObject({ status: 'complete' });
                 const [systemText, userText] = sent ?? [];
                 if (typeof systemText !== 'string' || typeof userText !== 'string') {
                     throw new TypeError('The discovered receipt request must reach the local engine.');
                 }
                 const selected = namesOf((mocks.generateWebLlmToolCalls.mock.calls[0]?.[2] ?? []) as ToolSchema[]);
-                expect(selected).toHaveLength(WEBLLM_TOOL_BUDGET);
+                expect(selected).toHaveLength(8);
                 expect(selected).toContain('analysis.detectTransients');
+                expect(selected).not.toContain(CREATIVE_INTERPRETATION_TOOL_NAME);
+                expect(selected).not.toContain(COMMAND_BATCH_PROPOSAL_TOOL_NAME);
                 expect(userText).toBe(built.localMessage);
                 expect(userText).toContain('transient-onset-read');
                 const evidenceSection = JSON.parse(

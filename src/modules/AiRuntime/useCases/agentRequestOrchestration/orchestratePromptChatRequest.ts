@@ -391,7 +391,28 @@ async function completeAnsweredRun(input: {
         });
         return;
     }
+    if (settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+        throw new AiProposalInvalidatedError();
+    }
     request.options?.onResumedPlanAccepted?.();
+    if (aborter.signal.aborted) {
+        await agentRunCancellation.cancel({
+            runId: admission.runId,
+            reason: 'User cancelled the run before planning completed.',
+        });
+        return;
+    }
+    const run = agentRunLifecycle.get(admission.runId);
+    if (
+        !run ||
+        AGENT_RUN_TERMINAL_PHASES.has(run.phase) ||
+        run.cancellation.generation !== admission.planningLease.cancellationGeneration
+    ) {
+        return;
+    }
+    if (settlePendingProjectWritesAndCaptureRevision() !== projectRevision) {
+        throw new AiProposalInvalidatedError();
+    }
     agentRunLifecycle.transitionPhase({ runId: admission.runId, phase: 'completed' });
     appendAnswerChatMessages(request.userText, outcome);
 }

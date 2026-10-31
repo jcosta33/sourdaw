@@ -1,10 +1,12 @@
+import { type Clip } from '../../models/Track';
+
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { collectTakeReKeyWindows } from './collectTakeReKeyWindows';
 import { type TakeReKeyClipGeometry, type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type TakeReKeyOwnerProjection = {
     id: string;
-    clips: readonly { source: TakeReKeyClipGeometry }[];
+    clips: readonly { source: Clip }[];
 };
 
 type TakeReKeyTrackProjection = {
@@ -52,6 +54,7 @@ export function captureTrackTakeReKeyTransitions(input: {
         deleteEndBeat: input.deleteEndBeat,
     });
     return captureTakeReKeyTransitions({
+        sourceClips: input.owners.flatMap((owner) => owner.clips.map((clip) => clip.source)),
         windowsByTrackId,
         removedClipIds: input.removedClipIds,
         deleteStartBeat: input.deleteStartBeat,

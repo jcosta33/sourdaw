@@ -1,5 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { createLoopbackAnswerIntake } from '../../scripts/loopbackOpenAiProvider';
+
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
@@ -48,22 +50,27 @@ function toolWith(request: ScriptedToolRequest, properties: string[]): string {
 
 function receipt(request: ScriptedToolRequest, callId: string): Record<string, unknown> {
     const wire = request.messages.find((message) => message.role === 'tool' && message.tool_call_id === callId);
-    if (typeof wire?.content !== 'string') throw new Error(`Missing correlated receipt ${callId}`);
+    if (typeof wire?.content !== 'string') {
+        throw new Error(`Missing correlated receipt ${callId}`);
+    }
     const value: unknown = JSON.parse(wire.content);
-    if (!isRecord(value) || value.status !== 'success' || !isRecord(value.data))
+    if (!isRecord(value) || value.status !== 'success' || !isRecord(value.data)) {
         throw new Error(`Read ${callId} was not successful`);
+    }
     return value.data;
 }
 
 function numericHits(data: Record<string, unknown>) {
     expect(data.kind).toBe('transient-onset-read');
     expect(data.timeAxis).toBe('source-buffer');
-    if (typeof data.sampleRate !== 'number' || !Array.isArray(data.hits))
+    if (typeof data.sampleRate !== 'number' || !Array.isArray(data.hits)) {
         throw new Error('Source geometry or numeric page is absent');
+    }
     let previous = -1;
     for (const hit of data.hits as unknown[]) {
-        if (!isRecord(hit) || typeof hit.sourceSeconds !== 'number' || typeof hit.confidence !== 'number')
+        if (!isRecord(hit) || typeof hit.sourceSeconds !== 'number' || typeof hit.confidence !== 'number') {
             throw new Error('Onset hit is not numeric');
+        }
         expect(Object.keys(hit).sort()).toEqual(['confidence', 'sourceSeconds']);
         expect(hit.sourceSeconds).toBeGreaterThan(previous);
         const sourceFrame = hit.sourceSeconds * data.sampleRate;
@@ -143,8 +150,52 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
     let firstPage: Record<string, unknown> | undefined;
     let secondPage: Record<string, unknown> | undefined;
     const provider = await startScriptedToolProvider((request, turn) => {
-        expect(turn).toBeLessThan(4);
-        if (turn === 0)
+        expect(turn).toBeLessThan(5);
+        if (turn === 0) {
+            const schema = request.tools.find((tool) => tool.function.name === 'selectCreativeInterpretation');
+            expect(schema).toBeDefined();
+            const catalog = schema?.function.parameters.properties.catalogId as { const: string };
+            expect(catalog.const).toMatch(/^creative-/);
+            const view = JSON.parse(
+                schema?.function.description?.slice(schema.function.description.indexOf('View: {') + 6) ?? 'null'
+            ) as {
+                scopes: Array<[string, string[]]>;
+            };
+            const properties = schema?.function.parameters.properties.answer as {
+                anyOf: Array<{ properties?: { scopeCandidateIds: { items: { enum: string[] } } } }>;
+            };
+            const ids = properties.anyOf.find((branch) => branch.properties !== undefined)!.properties!
+                .scopeCandidateIds.items.enum;
+            const dataText = request.messages
+                .map((message) => message.content)
+                .find((content) => content?.includes('untrusted_project_data:\n'))!;
+            const data = JSON.parse(dataText.split('untrusted_project_data:\n')[1]!.split('\n')[0]!).data as {
+                selectableTargets: Array<{ clips: Array<{ id: string }> }>;
+            };
+            const trackIndex = data.selectableTargets.findIndex((track) =>
+                track.clips.some((clip) => clip.id === imported.clips[0].id)
+            );
+            expect(trackIndex).toBeGreaterThanOrEqual(0);
+            const clipIndex = data.selectableTargets[trackIndex]!.clips.findIndex(
+                (clip) => clip.id === imported.clips[0].id
+            );
+            const reference = `c${String(trackIndex)}.${String(clipIndex)}`;
+            const index = view.scopes.findIndex((row) => row[0] === 'clips' && row[1].includes(reference));
+            const scopeId = ids[index];
+            expect(view.scopes[index]?.[1]).toEqual([reference]);
+            if (scopeId === undefined) {
+                throw new Error('Imported source clip was not advertised.');
+            }
+            return [
+                createLoopbackAnswerIntake(request, {
+                    kind: 'source-onsets',
+                    topicIds: [],
+                    scopeCandidateIds: [scopeId],
+                    rangeCandidateId: null,
+                }),
+            ];
+        }
+        if (turn === 1) {
             return [
                 {
                     id: 'onset-catalog',
@@ -152,7 +203,8 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
                     arguments: { category: 'analysis', names: [READ] },
                 },
             ];
-        if (turn === 1) {
+        }
+        if (turn === 2) {
             const readTool = toolWith(request, ['clipId', 'sensitivity', 'cursor']);
             const catalog = receipt(request, 'onset-catalog');
             expect(catalog.category).toBe('analysis');
@@ -166,7 +218,7 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
             ]);
             return [{ id: 'onsets-1', name: readTool, arguments: { clipId: imported.clips[0].id } }];
         }
-        if (turn === 2) {
+        if (turn === 3) {
             firstPage = receipt(request, 'onsets-1');
             expect(numericHits(firstPage)).toBe(64);
             expect(firstPage.sampleRate).toBe(imported.sampleRate);
@@ -189,10 +241,13 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
         return [
             {
                 id: 'onset-answer',
-                name: toolWith(request, ['text', 'evidenceCallIds']),
+                name: toolWith(request, ['intakeCallId', 'statements']),
                 arguments: {
-                    text: 'The source-buffer onset pages report seconds and confidence without changing markers.',
-                    evidenceCallIds: ['onsets-1', 'onsets-2'],
+                    intakeCallId: 'intake',
+                    statements: [
+                        { kind: 'source-onsets', callId: 'onsets-1' },
+                        { kind: 'source-onsets', callId: 'onsets-2' },
+                    ],
                 },
             },
         ];
@@ -211,11 +266,9 @@ test('source-onset read crosses the real chat planner and Worker with numeric pa
         await composer.press('Enter');
         await expect
             .poll(() => ({ requests: provider.requests.length, failures: provider.failures }), { timeout: 30_000 })
-            .toEqual({ requests: 4, failures: [] });
+            .toEqual({ requests: 5, failures: [] });
         expect(provider.failures).toEqual([]);
-        await expect(page.getByRole('log', { name: 'Chat conversation' })).toContainText(
-            'The source-buffer onset pages report seconds and confidence without changing markers.'
-        );
+        await expect(page.getByRole('log', { name: 'Chat conversation' })).toContainText('Source-buffer onsets for');
         await expect(composer).toBeEnabled();
         await expect(page.getByRole('button', { name: 'Confirm pending actions', exact: true })).toHaveCount(0);
         const after = await sourceState(page);

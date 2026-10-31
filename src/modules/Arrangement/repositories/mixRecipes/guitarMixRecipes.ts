@@ -409,4 +409,32 @@ export const guitarMixRecipes: readonly MixRecipe[] = [
         ],
         source: 'A short single repeat under 150 ms with a band-limited tail is the classic period ambience, and filtering the repeat above 4 kHz and below 200 Hz keeps it behind the dry part rather than beside it. Low-order drive supplies the harmonic character without the sustain of modern high-gain distortion.',
     },
+    {
+        id: 'guitar-controlled',
+        descriptor: 'controlled',
+        roles: ['guitar'],
+        title: 'Even unwanted rhythmic-guitar strum and pick levels',
+        steps: [
+            {
+                kind: 'insert',
+                deviceType: 'builtin-compressor',
+                parameters: [
+                    { paramId: 'comp-threshold', minimum: -22, maximum: -14 },
+                    { paramId: 'comp-ratio', minimum: 3, maximum: 5 },
+                    { paramId: 'comp-attack', minimum: 5, maximum: 15 },
+                    { paramId: 'comp-release', minimum: 60, maximum: 120 },
+                ],
+            },
+        ],
+        prerequisites: [
+            'A clean or lightly processed rhythmic guitar has unintended strum or pick level swings.',
+            'Low-frequency shoulder does not dominate the detector.',
+        ],
+        contraindications: [
+            'Skip already saturated or limited sustain and wanted contrast between picked and strummed passages.',
+            'Skip when catching pick attack removes the articulation the part needs.',
+        ],
+        metrics: [{ metric: 'dynamicRangeEstimate', direction: 'decrease' }],
+        source: 'The existing rhythm-guitar compressor component uses this threshold, ratio, and timing window. Isolating it controls level variation without the low-shelf trim and makes no claim to shorten decay or add punch.',
+    },
 ];

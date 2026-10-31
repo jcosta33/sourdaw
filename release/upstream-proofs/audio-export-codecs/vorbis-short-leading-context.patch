@@ -1,0 +1,16 @@
+--- a/lib/block.c
++++ b/lib/block.c
+@@ -450,6 +450,13 @@
+       for(j=0;j<v->pcm_current;j++)
+         v->pcm[i][v->pcm_current-j-1]=work[j];
+ 
++    }
++  }else if(v->pcm_current>v->centerW){
++    /* Very short input has no LPC history; extend only its virtual lead-in. */
++    for(i=0;i<v->vi->channels;i++){
++      float first=v->pcm[i][v->centerW];
++      for(j=0;j<v->centerW;j++)
++        v->pcm[i][j]=first*(.5-.5*cos(M_PI*(j+1)/v->centerW));
+     }
+   }
+ }

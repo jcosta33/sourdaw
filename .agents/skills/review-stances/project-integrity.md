@@ -87,6 +87,21 @@ Keep a valid commit control and require removal
 of the state comparison to fail these cases; call counts, unchanged history and lossy JSON snapshots
 cannot establish preservation.
 
+## Lesson from nullable write-metadata admission
+
+PR #4071 (`436bfbd49e40f63080c7638f42f822bd005066a8`) introduced nullable metadata capture but
+exempted every hook-equipped adapter from ordinary unscoped-write supersession. Optional source-time
+and tempo intents exposed that inherited contract gap in an author-lane reproduction; this does not
+establish a previous user incident on main. The missing integrity case was an installed hook whose
+current write carries no journal.
+
+Review actual captured intent rather than hook presence: `null` keeps ordinary supersession, while
+every nonnull journal, including `[]`, retains its owner's replay semantics. Hold a scoped write,
+queue an ordinary unscoped value, advance the same scoped owner again, commit, then flush the older
+unscoped value. Raw truth and projection must keep the newer commit. Repeat with a null-capturing
+hook, an empty journal whose owner applies no operation, and a real journal rebased over peer truth;
+neither array length nor truthiness may substitute for the nullable contract.
+
 ## 2026-10-25 — restored heads can revive stale confirmation authority (caught in PR #5677 review)
 
 An approval may tolerate a mutation-epoch advance when the active project heads are unchanged,
@@ -159,6 +174,17 @@ then release it and require unchanged successor raw/projected state, history and
 An ordinary same-project snapshot must still permit the gesture. This successor case was caught
 in #5789 review before merge, not established as a main escape.
 
+## Recovery owner results must reach the continuation (PR #4496)
+
+PR #4496 (`b88383cb221f`) added the strip-ready result check before input
+monitoring rearm. The import roundtrip's void strip mock then threw inside
+recovery and was caught as a restoration failure while the spec stayed green.
+The missed integrity observable was the continuation after successful graph
+restoration; private review prompts and tiers are unavailable. Require owner
+mocks to satisfy the live callable result contract, and inspect logged recovery
+failures before using a passing import spec as proof. See test-validity's stale
+owner-result escape for the discriminating mock contract.
+
 ## Lesson from the PR #964 escape
 
 PR #964 (`8a96bdafd6605daa098c2851bdfab2fdeb8a1db3`) removed embedded PCM from live project
@@ -186,6 +212,12 @@ project and document identity. Require refusal to leave raw CRDT, projected stor
 unchanged. On success, one Undo removes every generated clip and note, and one Redo restores
 exact content. Direct writers inside a per-pad loop can leave partial music even when each writer
 is valid.
+
+## Split gain copies must remain admissible through history (#5157)
+
+PR #1857 (`83be56e84ee3f1720ac3a787b52d089923b3841d`) counted all nested IDs globally. PR #2842 (`b208f272e4d5d4bef0a594cfb9560e6c058745a8`) retained authored gain points on both split fragments for non-destructive extension, so the collector could mark a valid split repair-required and block Undo. PR #5812 corrected the namespace: gain-point IDs are clip-envelope local, while duplicates within one envelope and unrelated global duplicates remain invalid. Historical private review prompts and tiers are unknown.
+
+Drive the real audio split through production inspection and projection, Undo and Redo, and authenticated session plus binary hydration. Require raw and projected owners, history movement, the original gain curve and extended-edge material to survive. A same-envelope duplicate or unrelated global duplicate must still require repair; a peer gain edit must leave refused history and peer state intact.
 
 ## Lesson from the PR #1077 and PR #2822 escape
 
@@ -949,6 +981,25 @@ then require unchanged project identity, exact raw and projected owners, full-ch
 durable witness-bound history, and successful Undo/Redo after recovery. Confirm a changed
 `performance.timeOrigin`; a same-URL fragment navigation is not a new document. Playback controls
 and mirror existence alone are insufficient.
+
+### 2026-10-30 — a timeline reader retained the pre-insert meter basis (#5247)
+
+The meter carry fixed by #5440 and the clip moved by Insert Time can be correct in both
+the CRDT and projections while the stopped top ruler remains on its old basis. Capture
+complete raw and projected map/track figures before and after the real registered
+Command, then run its recorded Undo and Redo with the same mounted ruler. Require each
+history transition to restore the captured owner figures and emit a fresh drawing at the
+corresponding bar positions; a previously matching frame is not a fresh read. Keep the
+owner validators and saved restore plans real. Do not manufacture history or substitute
+a new forward insert for Redo.
+
+The earliest tracked flat ruler is `e415a55cc406ba264dffbc229f4ac86f3e5caaab`; its
+introducing PR, review prompts and tiers are unverified. The earlier missing-carry
+introducer is also unestablished; #5440's repaired pre-merge intermediate is not a main
+escape. The missed stance is connected owner-state restoration through the live reader.
+A probe replacing only the map subscription with an imperative read must fail stopped
+map-change and history fresh-paint checks. This is a prescribed probe, not completed
+mutation evidence.
 
 ### 2026-10-30 — checkpoint descendants lost the captured sibling frontier (#5681)
 

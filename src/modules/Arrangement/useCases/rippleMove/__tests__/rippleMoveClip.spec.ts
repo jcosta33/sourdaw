@@ -73,6 +73,60 @@ describe('rippleMoveClip', () => {
         expect(shiftClipAutomation).not.toHaveBeenCalledWith('c4', expect.anything());
     });
 
+    it('relocates a physical loop pass origin with a ripple neighbor while retaining its source seconds', () => {
+        const source = {
+            id: 'source',
+            startBeat: 20,
+            endBeat: 24,
+        };
+        const neighbor = {
+            id: 'neighbor',
+            startBeat: 10,
+            endBeat: 18,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 8,
+            loopOriginBeat: 6,
+        };
+        const ordinary = { id: 'ordinary', startBeat: 14, endBeat: 18 };
+        vi.mocked(getTrackStoreState).mockReturnValue({
+            tracks: [{ id: 't1', clips: [source, neighbor, ordinary] }],
+        } as any);
+
+        expect(
+            rippleMoveClip({
+                trackId: 't1',
+                clipId: 'source',
+                newStartBeat: 20,
+                clipDuration: 4,
+                plan: {
+                    gapClosedClips: [
+                        { clipId: 'neighbor', origStartBeat: 10, origEndBeat: 18 },
+                        { clipId: 'ordinary', origStartBeat: 14, origEndBeat: 18 },
+                    ],
+                    destinationOpenedClips: [],
+                },
+            })
+        ).toBe(true);
+
+        const shifted = vi.mocked(setTrackState).mock.calls[0]?.[0].tracks[0]?.clips;
+        expect(shifted?.find((clip) => clip.id === 'neighbor')).toMatchObject({
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+        });
+        const shiftedOrdinary = shifted?.find((clip) => clip.id === 'ordinary');
+        expect(shiftedOrdinary).toMatchObject({ startBeat: 10, endBeat: 14 });
+        expect(Object.hasOwn(shiftedOrdinary!, 'audioLoopPassOriginBeat')).toBe(false);
+    });
+
     it('should call moveClip and shift surrounding clips', () => {
         const initialState = {
             tracks: [

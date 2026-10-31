@@ -24,6 +24,7 @@ import {
     removeCrdtDoc,
     sessionUndoWitnessStampPort,
 } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
@@ -206,17 +207,17 @@ describe('Command undo witness persistence stamp integration (#3331)', () => {
 
         await executeAppAction({ type: 'setTempo', payload: { bpm: 130 } });
 
-        // The undo store's own microtask flush races the action-history
-        // entry's rAF-deferred CRDT write (executeAppAction fires it, then
-        // synchronously commits the undo entry, before that frame runs) — the
-        // witness it captures can be stale relative to what later becomes
-        // durable. Assert that race is live here rather than assumed.
+        // Capture the mirror before an independent storage owner queues a
+        // deferred write, without adding another undo entry.
         await flushPendingMicrotask();
         const witnessBeforeFrame = captureDurableDocumentWitness();
         const staleMirroredWitness = readMirroredWitness();
         expect(staleMirroredWitness).toBe(witnessBeforeFrame);
 
+        chordTrackStore.set({ enabled: true, events: [] });
+        expect(getCrdtDoc<{ chordTrack?: { enabled: boolean } }>('root')?.chordTrack).toBeUndefined();
         await flushPendingFrame();
+        expect(getCrdtDoc<{ chordTrack?: { enabled: boolean } }>('root')?.chordTrack?.enabled).toBe(true);
         const witnessAfterFrame = captureDurableDocumentWitness();
         expect(witnessAfterFrame).not.toBe(witnessBeforeFrame);
         // The microtask flush already ran and is not re-triggered by the

@@ -23,10 +23,9 @@ import { loadInstrument } from './loadPreset';
  * A device with no session record is skipped: nothing live holds a stale
  * identity, and registration rehydrates from the document anyway.
  *
- * The identity comparison is the GB hydrate's diff gate and also the loop
- * stop — the persistence subscriber mirrors a reconciled identity back into
- * the document (an identical chunk), that write re-fires the sweep, and the
- * comparison reads equal and leaves everything untouched.
+ * Tier projection precedes the identity gate so peer layout choices never touch
+ * samples or DSP parameters. The identity mirror checks project truth before
+ * committing, suppressing an echo of an already authoritative identity.
  */
 export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
     const tracks = trackStore.value?.tracks;
@@ -34,7 +33,9 @@ export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
         return;
     }
 
-    const device = tracks.flatMap((track) => track.devices).find((candidate) => candidate.id === deviceId);
+    const device = tracks
+        .flatMap((track) => track.devices)
+        .find((candidate) => candidate.id === deviceId && candidate.type === 'levain');
     if (!device) {
         return;
     }
@@ -47,6 +48,12 @@ export function reconcileLevainDeviceStateFromProject(deviceId: string): void {
     const identity = fromLevainDeviceState(device.deviceState);
     if (!identity) {
         return;
+    }
+
+    const uiLevel = identity.disclosureTier === 'expert' ? 6 : 1;
+    if (state.uiLevel !== uiLevel) {
+        const instances = levainStore.value ?? {};
+        levainStore.set({ ...instances, [deviceId]: { ...state, uiLevel } });
     }
 
     if (

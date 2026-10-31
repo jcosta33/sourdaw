@@ -150,6 +150,7 @@ export { nativeLiveGraphSessionSplice } from './livePlayback/nativeLiveGraphSess
 export { recordNativeChainReleases } from './livePlayback/recordNativeChainReleases';
 export { syncNativeTimelineSamples } from './livePlayback/syncNativeTimelineSamples';
 export { readNativeEnginePlayheadSeconds } from './livePlayback/readNativeEnginePlayheadSeconds';
+export { createNativeRecordingCaptureClock } from './livePlayback/nativeRecordingCaptureClock';
 export { repositionNativeLiveGraphSession } from './livePlayback/repositionNativeLiveGraphSession';
 export { sendNativeLiveMidiControl } from './livePlayback/sendNativeLiveMidiControl';
 export { sendNativeLiveMidiNote } from './livePlayback/sendNativeLiveMidiNote';
@@ -180,6 +181,8 @@ export { configureOfflineYeastMidiProcessing } from './configureOfflineYeastMidi
 export { getOfflineYeastRackReader } from './getOfflineYeastRackReader';
 export { projectOfflineYeastTrackNotes } from './offlineRender/projectOfflineYeastTrackNotes';
 export { renderTrackSubgraphOffline } from './offlineRender/renderTrackSubgraphOffline';
+export { projectOfflineAudioClipPlaybacks } from './offlineRender/projectOfflineAudioClipPlaybacks';
+export { resolveTrackClipsWithComping } from './offlineRender/resolveTrackClipsWithComping';
 // Audio encoders (audioBufferToWav/Mp3/Flac) moved to AudioRendering (ADR 0011 W4).
 
 export { scheduleAdjustmentLayers } from './adjustmentLayer/scheduleAdjustmentLayers';

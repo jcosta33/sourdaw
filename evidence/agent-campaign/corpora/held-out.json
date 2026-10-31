@@ -19,8 +19,7 @@
             "sealed": true
         },
         "bulk-by-role": {
-            "sealed": false,
-            "pendingContract": "canonical track roles and selector predicates in transform.compile"
+            "sealed": true
         },
         "comparative-by-measurement": {
             "sealed": false,
@@ -2699,6 +2698,311 @@
                     "gainDb": -15
                 }
             ]
+        },
+        {
+            "id": "AC054-HOLD-BULK-1",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set the volume of the three vocal tracks to -4 dB.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -4
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "all": [
+                                        {
+                                            "roleFamily": "vocal"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 3
+                                }
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set the volume of the three vocal tracks to -4 dB.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-lead-vocal", "track-backing-vocal-left", "track-backing-vocal-right"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-kick",
+                                "track-snare",
+                                "track-hi-hat",
+                                "track-overheads",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-lead-vocal",
+                            "gainDb": -4
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "gainDb": -4
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "gainDb": -4
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-lead-vocal", "track-backing-vocal-left", "track-backing-vocal-right"],
+                    "protectedIds": ["track-kick", "track-snare", "track-hi-hat", "track-overheads", "track-bass-di"],
+                    "maxCommands": 3
+                }
+            }
+        },
+        {
+            "id": "AC054-HOLD-BULK-2",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set the gain of drum tracks to -5 dB; leave the Snare track unchanged.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -5
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "all": [
+                                        {
+                                            "roleFamily": "drums"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 3
+                                },
+                                "excludeIds": ["track-snare"]
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set the gain of drum tracks to -5 dB; leave the Snare track unchanged.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-kick", "track-hi-hat", "track-overheads"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-snare",
+                                "track-lead-vocal",
+                                "track-backing-vocal-left",
+                                "track-backing-vocal-right",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "gainDb": -5
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "gainDb": -5
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "gainDb": -5
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-hi-hat", "track-overheads"],
+                    "protectedIds": [
+                        "track-snare",
+                        "track-lead-vocal",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 3
+                }
+            }
+        },
+        {
+            "id": "AC054-HOLD-BULK-3",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set the gain of the two backing vocals to -8 dB; leave the Lead Vocal track unchanged.",
+            "providerTurns": [
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -8
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "all": [
+                                        {
+                                            "role": "backing vocal"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 2
+                                }
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set the gain of the two backing vocals to -8 dB; leave the Lead Vocal track unchanged.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-backing-vocal-left", "track-backing-vocal-right"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-kick",
+                                "track-snare",
+                                "track-hi-hat",
+                                "track-overheads",
+                                "track-lead-vocal",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "gainDb": -8
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "gainDb": -8
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left", "track-backing-vocal-right"],
+                    "protectedIds": [
+                        "track-kick",
+                        "track-snare",
+                        "track-hi-hat",
+                        "track-overheads",
+                        "track-lead-vocal",
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 2
+                }
+            }
         }
     ]
 }
