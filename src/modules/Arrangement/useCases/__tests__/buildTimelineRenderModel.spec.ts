@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
+import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
@@ -945,6 +946,39 @@ describe('buildTimelineRenderModel — track visibility', () => {
         const model = buildTimelineRenderModel();
         expect(model.tracks.find((t) => t.id === 'f')?.height).toBe(26);
         expect(model.tracks.find((t) => t.id === 'm')?.height).toBe(48);
+    });
+});
+
+describe('buildTimelineRenderModel — variation lane rows', () => {
+    const laneTrack = (id: string, kind: 'audio' | 'folder', showVariationLanes: boolean) => ({
+        ...createTrack({ id, name: id, kind }),
+        clips: [],
+        color: '#000',
+        height: 64,
+        alternatives: [
+            { id: `${id}-a`, name: `${id} A`, clips: [] },
+            { id: `${id}-b`, name: `${id} B`, clips: [] },
+        ],
+        showVariationLanes,
+    });
+
+    it('gives a lane-enabled track one lane per alternative, so the row below starts after them', () => {
+        seedStores({ tracks: [laneTrack('upper', 'audio', true), laneTrack('lower', 'audio', false)] });
+
+        const { tracks } = buildTimelineRenderModel();
+
+        expect(tracks[0]!.variationLanes?.map((lane) => lane.name)).toEqual(['upper A', 'upper B']);
+        expect(tracks[1]!.variationLanes).toBeUndefined();
+        expect(getRenderedTrackTops(tracks)).toEqual([0, 64 + 2 * VARIATION_LANE_HEIGHT]);
+    });
+
+    it('gives a folder row no lanes even when its toggle is on', () => {
+        seedStores({ tracks: [laneTrack('f', 'folder', true), laneTrack('after', 'audio', false)] });
+
+        const { tracks } = buildTimelineRenderModel();
+
+        expect(tracks[0]!.variationLanes).toBeUndefined();
+        expect(getRenderedTrackTops(tracks)).toEqual([0, 26]);
     });
 });
 

@@ -409,6 +409,8 @@ describe('stopPlayheadScheduler', () => {
             release_commit = resolve;
         });
         harness.stop_recording.mockImplementationOnce(() => held_commit);
+        // A teardown punch-out closes a punch the rolling transport opened.
+        harness.transport_store.value = { ...playingTransport };
         schedulerSession.punchRecordingActive = true;
         playheadPositionRef.current = 1.5;
         // The teardown registers the punch take on the lifecycle only while a
@@ -420,6 +422,7 @@ describe('stopPlayheadScheduler', () => {
         // The ref, not the store, is the live boundary on every teardown route.
         expect(harness.stop_recording).toHaveBeenCalledWith(1.5, {
             contextSeconds: 0,
+            rolling: true,
             beatAtContextSeconds: expect.any(Function),
         });
 

@@ -4,6 +4,42 @@ import { describe, it, expect, vi } from 'vitest';
 import { BipolarSlider } from '../bipolar-slider';
 
 describe('BipolarSlider', () => {
+    it('renders its own value readout by default', () => {
+        render(<BipolarSlider value={-13} onValueChange={vi.fn()} min={-24} max={24} formatValue={(v) => `${v} dB`} />);
+        expect(screen.getByText('-13 dB')).toBeInTheDocument();
+    });
+
+    it('renders no readout when showValue is false', () => {
+        render(
+            <BipolarSlider
+                value={-13}
+                onValueChange={vi.fn()}
+                min={-24}
+                max={24}
+                showValue={false}
+                formatValue={(v) => `${v} dB`}
+            />
+        );
+        expect(screen.queryByText('-13 dB')).not.toBeInTheDocument();
+        expect(screen.getByRole('slider', { name: 'Bipolar value' })).toBeInTheDocument();
+    });
+
+    it('hides the labelled readout too when showValue is false', () => {
+        render(
+            <BipolarSlider
+                value={-13}
+                onValueChange={vi.fn()}
+                min={-24}
+                max={24}
+                label="Gain"
+                showValue={false}
+                formatValue={(v) => `${v} dB`}
+            />
+        );
+        expect(screen.getByText('Gain')).toBeInTheDocument();
+        expect(screen.queryByText('-13 dB')).not.toBeInTheDocument();
+    });
+
     it('maps a typed numeric final value into domain units and commits once', () => {
         const onValueChange = vi.fn();
         const onValueCommit = vi.fn();

@@ -3,6 +3,7 @@ import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import { getRenderedTrackExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
 import { computeClipLabelLayout } from './clipLabel';
@@ -474,7 +475,13 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                 addRect(0, trackY, w, trackY + th, bg);
                 // Row separator line
                 addRect(0, trackY + th - dpr, w, trackY + th, '#000000', 0.6);
-                trackY += th;
+                // Variation lanes sit under the row, each one lane tall.
+                const laneCount = track.variationLanes?.length ?? 0;
+                for (let lane = 0; lane < laneCount; lane++) {
+                    const laneTop = trackY + th + lane * VARIATION_LANE_HEIGHT * dpr;
+                    addRect(0, laneTop, w, laneTop + VARIATION_LANE_HEIGHT * dpr, '#000000', 0.15);
+                }
+                trackY += getRenderedTrackExtent(track) * dpr;
             }
 
             // 2. Clips
@@ -637,7 +644,7 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                     // also uses, so switching backends loses no information.
                     addClipLabel(clip.name, cx1, cx2, trackY);
                 }
-                trackY += track.height * dpr;
+                trackY += getRenderedTrackExtent(track) * dpr;
             }
 
             // 3. Bar / beat grid lines

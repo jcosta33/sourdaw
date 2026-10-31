@@ -169,6 +169,7 @@ const {
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
+    setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
@@ -195,6 +196,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initTimelineScrollClampMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
     initLevainDeviceStatePersistenceMock,
@@ -299,6 +301,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initTimelineScrollClampMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
         initLevainDeviceStatePersistenceMock: vi.fn(),
@@ -313,6 +316,7 @@ const {
         ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setRecordingMidiAdmissionPortMock: vi.fn(),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
@@ -376,6 +380,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOn: noop,
+    admitRecordingMidiNoteOff: noop,
+    admitRecordingMidiExpression: noop,
+    findOpenRecordingMidiAdmission: noop,
+    findOpenRecordingMidiMemberAdmission: noop,
+    getRecordingMidiAdmission: noop,
+    retireRecordingMidiAdmission: noop,
+    takeOwnsRecordingRoot: noop,
+    recordingMidiSourceBeatAt: noop,
     getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
@@ -400,6 +413,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
+    initTimelineScrollClamp: initTimelineScrollClampMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -634,6 +648,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
+    setRecordingMidiAdmissionPort: setRecordingMidiAdmissionPortMock,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
     destroyWebMidi: noop,
 }));
@@ -1061,6 +1076,17 @@ describe('bootstrap', () => {
             captureAgentProjectInspectionState
         );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+        expect(setRecordingMidiAdmissionPortMock).toHaveBeenCalledExactlyOnceWith({
+            admitRecordingMidiNoteOn: noop,
+            admitRecordingMidiNoteOff: noop,
+            admitRecordingMidiExpression: noop,
+            findOpenRecordingMidiAdmission: noop,
+            findOpenRecordingMidiMemberAdmission: noop,
+            getRecordingMidiAdmission: noop,
+            retireRecordingMidiAdmission: noop,
+            takeOwnsRecordingRoot: noop,
+            recordingMidiSourceBeatAt: noop,
+        });
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);
         const projectRevisionValidatorCall = configureRuntimeGraphProjectRevisionValidatorMock.mock.calls.at(0);
@@ -1493,6 +1519,13 @@ describe('bootstrap', () => {
         // edit commits that stale store over the peer's change (#4764). Pinned
         // by reference like the Grand Boule registration above.
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the timeline scroll clamp as an explicit boot step', () => {
+        // Deleting a track or collapsing a folder shrinks the timeline's
+        // content; without this registration the scroll offset stays past the
+        // last row and leaves blank canvas until the next wheel event.
+        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {
