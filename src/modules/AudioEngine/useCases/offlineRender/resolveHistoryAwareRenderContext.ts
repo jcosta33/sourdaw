@@ -1,4 +1,5 @@
-import { countRenderFrames, MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
+import { MAX_OFFLINE_FRAMES } from '../../repositories/clampRenderFrameCount';
+import { countRenderFrames } from '../../repositories/countRenderFrames';
 
 import { type OfflineRenderProjectSource } from './OfflineRenderSource';
 import { resolveRenderContext, type ResolveRenderContextInput } from './resolveRenderContext';
