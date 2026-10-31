@@ -3,12 +3,14 @@
  */
 import { type ReactElement } from 'react';
 
-import { Grid, Row, Stack } from '#/components/layout';
+import { Stack } from '#/components/layout';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { ModulationLFO } from '../../../components/ModulationLFO';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { FitWidth } from '../FitWidth';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
@@ -37,20 +39,20 @@ const ChorusLayout = ({ device, trackId, parameters }: DeviceLayoutProps): React
             pairs.push(all.slice(index, index + 2));
         }
         return pairs.map((pair, idx) => (
-            <Grid cols={2} gap={2} key={idx}>
+            <ParamCardGrid key={idx}>
                 {pair.map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
+            </ParamCardGrid>
         ));
     };
 
     return (
         <Stack gap={3}>
             <SectionHeader title="Modulation" />
-            <Row align="stretch" justify="center">
-                <ModulationLFO rate={rate} depth={depth} shape="sine" width={240} height={50} />
-            </Row>
+            <FitWidth fallbackWidth={240}>
+                {(width) => <ModulationLFO rate={rate} depth={depth} shape="sine" width={width} height={50} />}
+            </FitWidth>
             <SectionHeader title="Controls" />
             {/* Show all params in pairs of 2 */}
             {renderPairedParamRows()}

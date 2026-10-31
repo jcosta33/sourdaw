@@ -8,12 +8,14 @@ import { ADSREnvelope } from '#/components/daw/visualizers/ADSREnvelope';
 import { CompressorCurve } from '#/components/daw/visualizers/CompressorCurve';
 import { FilterResponse } from '#/components/daw/visualizers/FilterResponse';
 import { OscillatorWaveform } from '#/components/daw/visualizers/OscillatorWaveform';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, registerPrefixLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { FitWidth } from '../FitWidth';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
@@ -158,65 +160,75 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
             {hasEnvelope ? (
                 <div>
                     <SectionHeader title="Envelope" />
-                    <Row align="stretch" justify="center" className="mb-2">
-                        <ADSREnvelope
-                            attack={attackParam ? (pv[attackParam.id] ?? attackParam.defaultValue ?? 0.01) : 0.01}
-                            decay={decayParam ? (pv[decayParam.id] ?? decayParam.defaultValue ?? 0.2) : 0.2}
-                            sustain={sustainParam ? (pv[sustainParam.id] ?? sustainParam.defaultValue ?? 0.7) : 0.7}
-                            release={releaseParam ? (pv[releaseParam.id] ?? releaseParam.defaultValue ?? 0.3) : 0.3}
-                            width={200}
-                            height={70}
-                            onParamChange={handleEnvelopeChange}
-                        />
-                    </Row>
+                    <FitWidth fallbackWidth={200} className="mb-2">
+                        {(width) => (
+                            <ADSREnvelope
+                                attack={attackParam ? (pv[attackParam.id] ?? attackParam.defaultValue ?? 0.01) : 0.01}
+                                decay={decayParam ? (pv[decayParam.id] ?? decayParam.defaultValue ?? 0.2) : 0.2}
+                                sustain={sustainParam ? (pv[sustainParam.id] ?? sustainParam.defaultValue ?? 0.7) : 0.7}
+                                release={releaseParam ? (pv[releaseParam.id] ?? releaseParam.defaultValue ?? 0.3) : 0.3}
+                                width={width}
+                                height={70}
+                                onParamChange={handleEnvelopeChange}
+                            />
+                        )}
+                    </FitWidth>
                 </div>
             ) : null}
             {hasFilter ? (
                 <div>
                     <SectionHeader title="Filter" />
-                    <Row align="stretch" justify="center" className="mb-2">
-                        <FilterResponse
-                            cutoff={cutoffParam ? (pv[cutoffParam.id] ?? cutoffParam.defaultValue ?? 5000) : 5000}
-                            resonance={resonanceParam ? (pv[resonanceParam.id] ?? resonanceParam.defaultValue ?? 1) : 1}
-                            filterType={0}
-                            width={200}
-                            height={60}
-                            onParamChange={handleFilterChange}
-                        />
-                    </Row>
+                    <FitWidth fallbackWidth={200} className="mb-2">
+                        {(width) => (
+                            <FilterResponse
+                                cutoff={cutoffParam ? (pv[cutoffParam.id] ?? cutoffParam.defaultValue ?? 5000) : 5000}
+                                resonance={
+                                    resonanceParam ? (pv[resonanceParam.id] ?? resonanceParam.defaultValue ?? 1) : 1
+                                }
+                                filterType={0}
+                                width={width}
+                                height={60}
+                                onParamChange={handleFilterChange}
+                            />
+                        )}
+                    </FitWidth>
                 </div>
             ) : null}
             {hasCompressor ? (
                 <div>
                     <SectionHeader title="Compression" />
-                    <Row align="stretch" justify="center" className="mb-2">
-                        <CompressorCurve
-                            threshold={
-                                thresholdParam ? (pv[thresholdParam.id] ?? thresholdParam.defaultValue ?? -20) : -20
-                            }
-                            ratio={ratioParam ? (pv[ratioParam.id] ?? ratioParam.defaultValue ?? 4) : 4}
-                            knee={kneeParam ? (pv[kneeParam.id] ?? kneeParam.defaultValue ?? 6) : 6}
-                            makeup={makeupParam ? (pv[makeupParam.id] ?? makeupParam.defaultValue ?? 0) : 0}
-                            width={200}
-                            height={120}
-                            onParamChange={handleCompressorChange}
-                        />
-                    </Row>
+                    <FitWidth fallbackWidth={200} className="mb-2">
+                        {(width) => (
+                            <CompressorCurve
+                                threshold={
+                                    thresholdParam ? (pv[thresholdParam.id] ?? thresholdParam.defaultValue ?? -20) : -20
+                                }
+                                ratio={ratioParam ? (pv[ratioParam.id] ?? ratioParam.defaultValue ?? 4) : 4}
+                                knee={kneeParam ? (pv[kneeParam.id] ?? kneeParam.defaultValue ?? 6) : 6}
+                                makeup={makeupParam ? (pv[makeupParam.id] ?? makeupParam.defaultValue ?? 0) : 0}
+                                width={width}
+                                height={120}
+                                onParamChange={handleCompressorChange}
+                            />
+                        )}
+                    </FitWidth>
                 </div>
             ) : null}
             {hasOscillator ? (
                 <div>
                     <SectionHeader title="Oscillator" />
-                    <Row align="stretch" justify="center" className="mb-2">
-                        <OscillatorWaveform
-                            waveform="sawtooth"
-                            osc2Waveform="sawtooth"
-                            osc2Mix={pv.osc2_mix ?? pv.mix ?? 0}
-                            detune={pv.detune ?? pv.Detune ?? 0}
-                            width={200}
-                            height={50}
-                        />
-                    </Row>
+                    <FitWidth fallbackWidth={200} className="mb-2">
+                        {(width) => (
+                            <OscillatorWaveform
+                                waveform="sawtooth"
+                                osc2Waveform="sawtooth"
+                                osc2Mix={pv.osc2_mix ?? pv.mix ?? 0}
+                                detune={pv.detune ?? pv.Detune ?? 0}
+                                width={width}
+                                height={50}
+                            />
+                        )}
+                    </FitWidth>
                 </div>
             ) : null}
             {/* Parameter sections — all fully visible */}
@@ -224,11 +236,11 @@ const FaustInstrumentLayout = ({ device, trackId, parameters }: DeviceLayoutProp
                 return (
                     <div key={title} className="mb-4">
                         <SectionHeader title={title} />
-                        <Grid cols={2} gap={2} className="mt-1">
+                        <ParamCardGrid className="mt-1">
                             {params.map((param) => (
                                 <Param key={param.id} param={param} device={device} trackId={trackId} />
                             ))}
-                        </Grid>
+                        </ParamCardGrid>
                     </div>
                 );
             })}

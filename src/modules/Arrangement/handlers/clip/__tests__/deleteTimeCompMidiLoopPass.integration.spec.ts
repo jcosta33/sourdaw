@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    findAutomergeStorageRawProjectionLosses,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
@@ -266,6 +267,51 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
             [62, 10.5],
         ]);
         expectAuthority();
+    });
+
+    it('leaves the raw take-lane slot readable after freezing each fragment its original rows', async () => {
+        // The persisted document is inspected before any store hydrates, so a
+        // frozen source the take-lane sanitizer cannot read back from the
+        // CRDT document holds the reopened project in repair-required.
+        const clip = ClipDummy.create({ id: 'source', trackId: 'track-1', type: 'midi', startBeat: 0, endBeat: 8 });
+        const take = createTake('source', 'Take 1', 0, 8);
+        trackStore.set({
+            tracks: [TrackDummy.create({ id: 'track-1', kind: 'midi', clips: [clip] })],
+            selectedTrackId: 'track-1',
+            ghostClips: [],
+        });
+        takeLaneStore.set({
+            lanes: [
+                {
+                    ...createTakeLane('track-1'),
+                    takes: [take],
+                    activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: take.id }],
+                },
+            ],
+        });
+        midiStore.set({
+            ...defaultMidiStoreState,
+            notesByClipId: { source: [{ id: 'held', pitch: 60, startBeat: 0, duration: 8, velocity: 100 }] },
+            ccByClipId: {
+                source: [
+                    { id: 'cc-a', controller: 1, value: 20, beat: 1, channel: 0 },
+                    { id: 'cc-b', controller: 1, value: 100, beat: 3, channel: 0 },
+                ],
+            },
+        });
+        flushAutomergeStorageWrites();
+
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 2, endBeat: 4 } });
+        flushAutomergeStorageWrites();
+
+        const document = getCrdtDoc<Project>('root');
+        if (!document) {
+            throw new Error('Expected the project document');
+        }
+        // Both fragments carry the frozen source; the right one enters its
+        // pass before its own window, which the source contract admits.
+        expect(document.takeLanes.lanes[0]?.takes.map((entry) => entry.midiSource?.phaseHeadBeat)).toEqual([0, -2]);
+        expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document })).toEqual([]);
     });
 
     it('undo restores the exact pre-delete notes and redo re-distributes them', async () => {

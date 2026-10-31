@@ -1047,3 +1047,20 @@ and real App together, trace each owning module's emitted identity, and retain e
 project-ID, witness, exact material, commit callback and two-cycle Undo/Redo assertion.
 A served inspection entry exporting a separate Project store must fail the same oracle;
 an export census or configured inspection port alone does not prove all live identities.
+
+## 2026-10-31 — chord migration base copies locked every chorded project (PR #1857 walker, chord base from #606)
+
+Commit `83be56e84e` (PR #1857, `feat(command): enforce batch preflight`) made the global project
+ID walk part of the save gate. The chord slot's `migrationBase` predated it (#606): its first write
+copies every live chord event, ids included, so a demo, template, import or agent edit that wrote
+chords reloaded repair-required with every edit and save refused. This was the fourth escape of one
+class after arrangement snapshots (#3032), gain points (#5064) and warp markers (#5570), each
+patched as a special case. The missed stance clause: every persisted copy-by-design subtree is an
+owning namespace, now declared once in `INDEPENDENT_ID_SCOPES`. Probe by loading each shipped demo
+and template, saving, reloading, and requiring the repair gate to stay clear; and require an
+undeclared slot that copies live rows to stay repair-required, so the walker remains fail-closed.
+An id-scope exclusion keyed on object identity holds on plain documents but not inside an
+Automerge change, where every list read returns a fresh proxy: #5967's table excluded arrangement
+snapshots that way, and PR #5891's frozen MIDI take sources escaped the same way, failing every
+agent command batch at its in-change postcondition check. Exclude scopes by their path from the
+namespace root, and give every scope check an in-change case run inside a real `change(from(doc))`.

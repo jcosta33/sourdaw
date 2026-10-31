@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-import { launch_new_project, setupWorkspace } from './e2eUtils';
+import { add_midi_track, launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('Bottom Dock — Setlist & Loop Station', () => {
     test.beforeEach(async ({ page }) => {
@@ -24,7 +24,17 @@ test.describe('Bottom Dock — Setlist & Loop Station', () => {
             await expect(page.getByRole('button', { name: /Arm loop station/i })).toBeVisible({ timeout: 5000 });
         });
 
+        test('Arming a project with no launchable track shows the empty state and no slots grid', async ({ page }) => {
+            const arm = page.getByRole('button', { name: /Arm loop station/i });
+            await arm.click();
+            await expect(page.getByRole('button', { name: /Disarm loop station/i })).toBeVisible({ timeout: 5000 });
+
+            await expect(page.getByText('No tracks to loop')).toBeVisible();
+            await expect(page.getByRole('grid', { name: 'Loop slots' })).toHaveCount(0);
+        });
+
         test('Arming reveals the loop slots grid with a Create-row control', async ({ page }) => {
+            await add_midi_track(page);
             const arm = page.getByRole('button', { name: /Arm loop station/i });
             await arm.click();
             await expect(page.getByRole('button', { name: /Disarm loop station/i })).toBeVisible({ timeout: 5000 });

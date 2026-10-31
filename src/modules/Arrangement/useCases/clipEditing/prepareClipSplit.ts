@@ -300,6 +300,7 @@ export function prepareClipSplit({
                     clipEndBeat: clip.endBeat,
                     lanes: owners?.takeLanes,
                     timeline,
+                    sourceMidi: midiPlan.previousSource,
                 })
             ),
         };

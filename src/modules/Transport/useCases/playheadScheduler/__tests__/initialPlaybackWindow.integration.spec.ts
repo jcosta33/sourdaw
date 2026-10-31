@@ -525,11 +525,23 @@ describe('initial browser playback window', () => {
                 { pitch: 62, frame: 488_400 },
                 { pitch: 67, frame: 484_800 },
             ]);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: anchor,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: null,
+                hold: null,
+            });
             ctxTime.now = 10.05;
             deliverWorkerTick();
             await vi.waitFor(() => expect(schedulerSession.tickInFlight).toBe(false));
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: anchor, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: anchor,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: null,
+                hold: null,
+            });
             expect(captureGestureBeat()).toBe(1.5);
             ctxTime.now = 10.15;
             deliverWorkerTick();
@@ -664,7 +676,23 @@ describe('initial browser playback window', () => {
             expect(sources[1]!.start.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
             expect(scheduleClickSpy).toHaveBeenCalledTimes(1);
             expect(scheduleClickSpy.mock.calls[0]?.[0]).toBeCloseTo(10.175, 12);
-            expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
+            expect(playheadClockRef).toEqual({
+                beat: 1.5,
+                audioTimeSeconds: 10.1,
+                generation: schedulerSession.generation,
+                pendingLoopSeam: {
+                    generation: schedulerSession.generation,
+                    anchorBeat: 1.5,
+                    anchorAudioTimeSeconds: 10.1,
+                    tempo: 120,
+                    tempoMapChanges: [],
+                    audioTimeSeconds: expect.closeTo(10.175, 12),
+                    loopStart: 0,
+                    loopEnd: 1.65,
+                    passIndex: 1,
+                },
+                hold: null,
+            });
             expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 1.5);
         } finally {
             ready.resolve();
@@ -757,7 +785,13 @@ describe('initial browser playback window', () => {
                 expect(notes).toHaveLength(change === 'unchanged' ? 3 : 0);
                 expect(sources).toHaveLength(change === 'unchanged' ? 1 : 0);
                 if (change === 'unchanged') {
-                    expect(playheadClockRef).toEqual({ beat: 1.5, audioTimeSeconds: 10.1, hold: null });
+                    expect(playheadClockRef).toEqual({
+                        beat: 1.5,
+                        audioTimeSeconds: 10.1,
+                        generation: schedulerSession.generation,
+                        pendingLoopSeam: null,
+                        hold: null,
+                    });
                     expect(vi.mocked(startRecording).mock.calls[0]?.[1]?.()).toBe(10.1);
                 }
             } finally {
