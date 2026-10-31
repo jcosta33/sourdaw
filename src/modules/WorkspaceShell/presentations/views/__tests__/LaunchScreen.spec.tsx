@@ -18,15 +18,18 @@ const mocks = vi.hoisted(() => ({
     pickAndImportDawProject: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: mocks.executeUserAppAction,
 }));
 
-vi.mock('#/modules/DawInterchange/useCases', () => ({
+vi.mock('#/modules/DawInterchange/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/DawInterchange/useCases')>()),
     pickAndImportDawProject: mocks.pickAndImportDawProject,
 }));
 
-vi.mock('#/modules/Project/useCases', () => ({
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     createFromTemplate: mocks.createFromTemplate,
     getRecentProjects: mocks.getRecentProjects,
     getPreviewLoop: mocks.getPreviewLoop,
@@ -113,6 +116,21 @@ describe('LaunchScreen', () => {
         fireEvent.click(screen.getByRole('button', { name: /Basic Band/ }));
 
         await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('basic-band'));
+    });
+
+    it('creates the template of a card that is not the first one', async () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'podcast-1', name: 'Podcast One', description: 'A podcast', category: 'podcast' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Podcast One/ }));
+
+        await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('podcast-1'));
+        expect(mocks.createFromTemplate).not.toHaveBeenCalledWith('basic-band');
     });
 
     it('restores the home view when template project activation fails', async () => {
@@ -310,7 +328,7 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
 
         // Switch to Podcast category
-        fireEvent.click(screen.getByRole('button', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
         expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
     });

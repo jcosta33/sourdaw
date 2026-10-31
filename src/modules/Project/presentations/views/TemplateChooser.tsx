@@ -1,30 +1,21 @@
 import { type ReactElement, useState, useEffect, useRef } from 'react';
 
-import { Music, Mic, Film, FileText, Layers, Guitar, Piano, Headphones, Sparkles } from 'lucide-react';
-
-import { Grid, Row, Stack } from '#/components/layout';
-import { Button } from '#/components/ui/button';
+import { Row, Stack } from '#/components/layout';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '#/components/ui/dialog';
 
+import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 import { pendingProjectReplacements } from '../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProjectBeforeReplacement } from '../../useCases/projectPersistence/saveProject/saveProjectBeforeReplacement';
 import { createFromTemplate } from '../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
 import { getTemplates } from '../../useCases/projectTemplates/templateDefinitions/getTemplates';
+
+import { TemplateGallery } from './TemplateGallery';
 
 // Inlined from WorkspaceShell/presentations/components/SourdawLogo to avoid
 // cross-module private-presentation import.
 type SourdawLogoProps = {
     className?: string;
     paused?: boolean;
-};
-
-type TemplateCategory = 'empty' | 'music' | 'podcast' | 'film' | 'demo';
-
-type ProjectTemplate = {
-    id: string;
-    name: string;
-    description: string;
-    category: TemplateCategory;
 };
 
 type ParticleDef = {
@@ -147,57 +138,6 @@ type TemplateChooserProps = {
     initialCategory?: TemplateCategory | 'all';
 };
 
-const CATEGORY_LABELS: Record<TemplateCategory, string> = {
-    empty: 'All',
-    music: 'Music',
-    podcast: 'Podcast',
-    film: 'Film',
-    demo: 'Demos',
-};
-
-const CATEGORY_ORDER: TemplateCategory[] = ['empty', 'demo', 'music', 'podcast', 'film'];
-
-const TEMPLATE_ICONS: Record<string, ReactElement> = {
-    empty: <FileText className="size-5" aria-hidden="true" />,
-    'basic-band': <Guitar className="size-5" aria-hidden="true" />,
-    electronic: <Headphones className="size-5" aria-hidden="true" />,
-    podcast: <Mic className="size-5" aria-hidden="true" />,
-    'film-score': <Film className="size-5" aria-hidden="true" />,
-    'singer-songwriter': <Piano className="size-5" aria-hidden="true" />,
-};
-
-const CATEGORY_ICONS: Record<TemplateCategory, ReactElement> = {
-    empty: <Layers className="size-3.5" aria-hidden="true" />,
-    demo: <Sparkles className="size-3.5" aria-hidden="true" />,
-    music: <Music className="size-3.5" aria-hidden="true" />,
-    podcast: <Mic className="size-3.5" aria-hidden="true" />,
-    film: <Film className="size-3.5" aria-hidden="true" />,
-};
-
-const CATEGORY_COLORS: Record<TemplateCategory, { text: string; bg: string; border: string }> = {
-    empty: { text: 'text-muted-foreground', bg: 'bg-muted/30', border: 'border-border' },
-    demo: {
-        text: 'text-[var(--color-accent-mint)]',
-        bg: 'bg-[var(--color-accent-mint)]/10',
-        border: 'border-[var(--color-accent-mint)]/20',
-    },
-    music: {
-        text: 'text-[var(--color-accent-lavender)]',
-        bg: 'bg-[var(--color-accent-lavender)]/10',
-        border: 'border-[var(--color-accent-lavender)]/20',
-    },
-    podcast: {
-        text: 'text-[var(--color-accent-peach)]',
-        bg: 'bg-[var(--color-accent-peach)]/10',
-        border: 'border-[var(--color-accent-peach)]/20',
-    },
-    film: {
-        text: 'text-[var(--color-accent-cyan)]',
-        bg: 'bg-[var(--color-accent-cyan)]/10',
-        border: 'border-[var(--color-accent-cyan)]/20',
-    },
-};
-
 // Bread-themed loading messages that rotate
 const LOADING_MESSAGES = [
     'Preheating the oven...',
@@ -213,55 +153,6 @@ const LOADING_MESSAGES = [
     'The aroma is incredible...',
     'Just a few more minutes...',
 ];
-
-const TemplateCard = ({
-    template,
-    onSelect,
-    disabled,
-}: {
-    template: ProjectTemplate;
-    onSelect: (id: string) => void;
-    disabled?: boolean;
-}): ReactElement => {
-    const icon = TEMPLATE_ICONS[template.id] ?? <FileText className="size-5" aria-hidden="true" />;
-    const colors = CATEGORY_COLORS[template.category] ?? CATEGORY_COLORS.empty;
-    const isDemo = template.category === 'demo';
-
-    return (
-        <Button
-            variant="bare"
-            size="bare"
-            type="button"
-            disabled={disabled}
-            className={`group relative flex flex-col items-start gap-2.5 rounded-xl border p-4 text-left transition-all hover:scale-[1.01] hover:shadow-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 disabled:pointer-events-none cursor-pointer ${colors.border} hover:${colors.border.replace('/20', '/40')} bg-surface-base/50 hover:bg-surface-raised/80`}
-            onClick={() => onSelect(template.id)}
-        >
-            <Row gap={3} className="w-full">
-                <div
-                    className={`shrink-0 size-9 rounded-lg ${colors.bg} flex items-center justify-center ${colors.text} transition-colors`}
-                >
-                    {icon}
-                </div>
-                <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-foreground truncate group-hover:text-foreground/90">
-                        {template.name}
-                    </div>
-                    <div className={`text-[10px] font-medium capitalize ${colors.text}/70`}>
-                        {template.category === 'empty' ? 'Blank' : template.category}
-                    </div>
-                </div>
-                {isDemo ? (
-                    <span
-                        className={`text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${colors.bg} ${colors.text}`}
-                    >
-                        Demo
-                    </span>
-                ) : null}
-            </Row>
-            <p className="text-[11px] text-muted-foreground/70 leading-relaxed line-clamp-2">{template.description}</p>
-        </Button>
-    );
-};
 
 const LoadingState = ({ name }: { name: string }): ReactElement => {
     const [msgIndex, setMsgIndex] = useState(() => Math.floor(Math.random() * LOADING_MESSAGES.length));
@@ -323,8 +214,8 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
 };
 
 export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: TemplateChooserProps): ReactElement => {
-    const [activeFilter, setActiveFilter] = useState<TemplateCategory | 'all'>(initialCategory);
     const [isLoading, setIsLoading] = useState(false);
+    const [openSession, setOpenSession] = useState(0);
     const [loadingName, setLoadingName] = useState('');
     const templates = getTemplates();
 
@@ -332,12 +223,10 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
     if (prevOpen !== open) {
         setPrevOpen(open);
         if (open) {
-            setActiveFilter(initialCategory);
+            setOpenSession((session) => session + 1);
             setIsLoading(false);
         }
     }
-
-    const filtered = activeFilter === 'all' ? templates : templates.filter((time) => time.category === activeFilter);
 
     const handleSelect = (templateId: string) => {
         const template = templates.find((time) => time.id === templateId);
@@ -394,46 +283,13 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                     <LoadingState name={loadingName} />
                 ) : (
                     <>
-                        {/* Category filter pills */}
-                        <Row align="stretch" gap={1.5} className="border-b border-border/50 pb-3">
-                            <Button
-                                variant={activeFilter === 'all' ? 'secondary' : 'ghost'}
-                                size="xs"
-                                onClick={() => setActiveFilter('all')}
-                                className="gap-1"
-                            >
-                                <Layers className="size-3" aria-hidden="true" />
-                                All
-                            </Button>
-                            {CATEGORY_ORDER.filter((context) => context !== 'empty').map((category) => {
-                                const colors = CATEGORY_COLORS[category];
-                                const isActive = activeFilter === category;
-                                return (
-                                    <Button
-                                        key={category}
-                                        variant={isActive ? 'secondary' : 'ghost'}
-                                        size="xs"
-                                        onClick={() => setActiveFilter(category)}
-                                        className={`gap-1 ${isActive ? colors.text : ''}`}
-                                    >
-                                        {CATEGORY_ICONS[category]}
-                                        <span>{CATEGORY_LABELS[category]}</span>
-                                    </Button>
-                                );
-                            })}
-                        </Row>
-
-                        {/* Template grid */}
-                        <Grid cols={2} gap={2.5} className="max-h-[420px] overflow-y-auto pr-1 py-1">
-                            {filtered.map((template) => (
-                                <TemplateCard
-                                    key={template.id}
-                                    template={template}
-                                    onSelect={handleSelect}
-                                    disabled={isLoading}
-                                />
-                            ))}
-                        </Grid>
+                        <TemplateGallery
+                            key={openSession}
+                            templates={templates}
+                            initialCategory={initialCategory}
+                            onSelect={handleSelect}
+                            disabled={isLoading}
+                        />
 
                         {/* Footer hint */}
                         <p className="text-[9px] text-muted-foreground/40 text-center pt-1">
