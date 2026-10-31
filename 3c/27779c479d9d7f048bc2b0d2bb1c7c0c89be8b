@@ -1,0 +1,77 @@
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/EQLayout.spec.tsx
+  s_88fc7e0d05bab6::t_506416e0eef479 25-29,122-128,130-136
+  s_88fc7e0d05bab6::t_f8df6ae73eedd1 129
+  s_88fc7e0d05bab6::t_47913e046f74dd 137
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/CompressorLayout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 7
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 13,82,86-87,91-92,96
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceInspector.tsx
+  s_88fc7e0d05bab6::t_e0c20cdcac4a54 114
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/ChorusLayout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 6,12,53-55
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 13,42,46
+src/components/ui/__tests__/bipolar-slider.spec.tsx
+  s_88fc7e0d05bab6::t_689898c9d24f10 7-42
+src/components/ui/bipolar-slider.tsx
+  s_88fc7e0d05bab6::t_b66229ce6dce19 24-25,167,215
+  s_88fc7e0d05bab6::t_689898c9d24f10 193-195
+src/modules/TimelineEditor/presentations/views/Inspector/FitWidth.tsx
+  s_88fc7e0d05bab6::t_d0747b9ff69a63 1-2,5-9,11-14,16-18,20-23
+  s_88fc7e0d05bab6::t_3f2a54edebf069 3-4,10,15,19
+src/modules/TimelineEditor/presentations/views/Inspector/ParamCardGrid.tsx
+  s_88fc7e0d05bab6::t_d0747b9ff69a63 2-5,11-16,19-21
+  s_88fc7e0d05bab6::t_1e251d15740cc9 1,6-10,17-18
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/DeviceParameterControl.spec.tsx
+  s_88fc7e0d05bab6::t_341e4011d5f1c2 547-554
+  s_88fc7e0d05bab6::t_020edd14d56168 88-89,94-95,98-107,546,555-592
+src/modules/TimelineEditor/presentations/views/Inspector/GenericDeviceLayout.tsx
+  s_88fc7e0d05bab6::t_e0c20cdcac4a54 17,23,138,147
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/ReverbLayout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 7,12,37-48
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 13,50,54-55,59-60,64
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/FaustInstrumentLayout.tsx
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 18,239,243
+  s_88fc7e0d05bab6::t_fbad3d34e01f5b 11,17,163-175,181-194,200-214,220-231
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/BuiltinSynthLayout.tsx
+  s_88fc7e0d05bab6::t_3f2a54edebf069 15,23,103-107,120,146,151-158,178-189,195-206,211,213,215
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 24,56,60
+  s_88fc7e0d05bab6::t_383650c97d5dcb 134,212,214
+src/modules/TimelineEditor/presentations/hooks/useElementWidth.ts
+  s_88fc7e0d05bab6::t_d0747b9ff69a63 1-24
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/GenericDeviceLayout.spec.tsx
+  s_88fc7e0d05bab6::t_506416e0eef479 89-94
+src/modules/TimelineEditor/presentations/views/Inspector/DeviceParameterControl.tsx
+  s_88fc7e0d05bab6::t_b66229ce6dce19 586,636-672,676-680,683-684,688,693-696,700,705-706
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DistortionLayout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 7
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 13,80,84-85,89
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/DelayLayout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 7,13,41-52
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 14,54,58-59,63
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/EQLayout.tsx
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 15,61,65,70,74,79,83
+  s_88fc7e0d05bab6::t_81471b4307e79b 8,14,42-59
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/HammondB3Layout.tsx
+  s_88fc7e0d05bab6::t_81471b4307e79b 3
+  s_88fc7e0d05bab6::t_67b6a32f4ce33a 10,80,86
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/deviceParameterGestureUndo.integration.spec.tsx
+  s_88fc7e0d05bab6::t_c291f78dd1e700 384-385,406,432,437,446
+src/modules/TimelineEditor/presentations/views/Inspector/layouts/__tests__/compressorCurveGestureUndo.integration.spec.tsx
+  s_88fc7e0d05bab6::t_fa858fc3b5d989 269,277-278
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c27779c479d9d7f048bc2b0d2bb1c7c0c89be8b",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
