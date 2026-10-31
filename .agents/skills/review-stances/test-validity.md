@@ -1419,6 +1419,12 @@ PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback
 
 Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
 
+### Split gain admission needs the real history round trip (#5157)
+
+The global collector in #1857 and curve-preserving split copies in #2842 were not joined by a production admission and saved-history oracle; #5812 made gain-point identity clip-local. Historical private review prompts and tiers are unknown.
+
+Split an audio envelope with points before, at and after the cut. Assert admission, raw and projected fragments, an independent gain-curve oracle, edge-extension material, and real Undo/Redo before and after authenticated session and binary hydration. Restore the old global gain-point census: the unchanged combined split case must fail. Also require same-envelope and non-gain global duplicates to refuse, and a merged peer gain edit to preserve state, heads and history when Undo refuses.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
