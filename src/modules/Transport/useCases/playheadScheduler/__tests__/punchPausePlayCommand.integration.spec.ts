@@ -128,7 +128,7 @@ const mocks = vi.hoisted(() => {
             return recorder.heldFlushes.length;
         },
         recordingSessions(): number {
-            return [...recorder.sessions.values()].filter((session) => session.status === 'recording').length;
+            return Array.from(recorder.sessions.values()).filter((session) => session.status === 'recording').length;
         },
         refusedStarts(): number {
             return recorder.refusedStarts;
