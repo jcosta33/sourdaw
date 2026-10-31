@@ -5,8 +5,8 @@
  * off the main thread. The top-level await keeps the package contract that the
  * API is ready once the import resolves.
  */
-import { initializeWasm } from '@automerge/automerge/slim';
 import automergeWasmUrl from '@automerge/automerge/automerge.wasm?url';
+import { initializeWasm } from '@automerge/automerge/slim';
 
 await initializeWasm(automergeWasmUrl);
 
