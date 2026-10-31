@@ -1,0 +1,91 @@
+src/modules/Arrangement/presentations/helpers/timelineMouse.ts
+  s_88fc7e0d05bab6::t_3f412e53b86a5d 7,37
+src/modules/Arrangement/transformers/getTimelineContentHeight.ts
+  s_88fc7e0d05bab6::t_fd13cd072d34be 1,7-10,13-16
+src/modules/Arrangement/presentations/helpers/__tests__/timelineMouse.spec.ts
+  s_88fc7e0d05bab6::t_3d1565f7ab662a 7-8,56-65
+  s_88fc7e0d05bab6::t_94168111eb209a 66-67
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestRowsBelowVariationLanes.spec.ts
+  s_88fc7e0d05bab6::t_19f1a3697fad5b 1-91,93-97,99-119
+  s_88fc7e0d05bab6::t_1857554a1f821a 92,98
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_88fc7e0d05bab6::t_914f22730d0273 431
+  s_88fc7e0d05bab6::t_fd3369d8e5de31 12
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_88fc7e0d05bab6::t_66155f0642252c 6,478-484,647
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_88fc7e0d05bab6::t_c9e20536a183d2 389-432
+  s_88fc7e0d05bab6::t_c541f977646c08 27
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_88fc7e0d05bab6::t_8caafea0ada78b 3,8,432-440,448-468,476-483,485-492,500-513,521-529
+  s_88fc7e0d05bab6::t_7aee257830a5b2 441-447,469-475,484,493-499,514-520
+  s_88fc7e0d05bab6::t_9e5c57c4080b52 530-531
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestAutomationSubLane.spec.ts
+  s_88fc7e0d05bab6::t_0fb268ee4f5a93 245-246,337-338
+  s_88fc7e0d05bab6::t_f74facdcfd255b 292-336,339
+src/modules/Arrangement/useCases/hasVariationLanes.ts
+  s_88fc7e0d05bab6::t_4ae21989bd2b6a 1-7
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts
+  s_88fc7e0d05bab6::t_a6ba370894cb63 1,37-38,40,90-91
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_88fc7e0d05bab6::t_7aee257830a5b2 36,385-400
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_88fc7e0d05bab6::t_3d1565f7ab662a 512-530
+  s_88fc7e0d05bab6::t_8c09e42d4f4613 103-105,458-461,463-466,488-502,504-511,531-535,545,551-552,556
+src/modules/Arrangement/models/TimelineTrackExtent.ts
+  s_88fc7e0d05bab6::t_5e83e00c2d4832 1-44
+src/modules/Arrangement/useCases/__tests__/hasVariationLanes.spec.ts
+  s_88fc7e0d05bab6::t_4ae21989bd2b6a 1-32
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClipEdge.ts
+  s_88fc7e0d05bab6::t_3f412e53b86a5d 1,32-33
+  s_88fc7e0d05bab6::t_7f349cba607d89 34-36
+src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts
+  s_88fc7e0d05bab6::t_c541f977646c08 5
+  s_88fc7e0d05bab6::t_247a48b66d2484 121,213,274
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_88fc7e0d05bab6::t_83f454d324cbbf 30,32,180,257,268-274,276,667-668,1015-1018
+  s_88fc7e0d05bab6::t_f2997e34024fec 1019
+src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts
+  s_88fc7e0d05bab6::t_3f412e53b86a5d 4,71
+src/modules/Arrangement/AGENTS.md
+  s_88fc7e0d05bab6::t_c9e20536a183d2 27
+src/modules/Arrangement/presentations/renderers/__tests__/createCanvasRenderer.spec.ts
+  s_88fc7e0d05bab6::t_cf356346fc3c8c 315-341,343-344
+  s_88fc7e0d05bab6::t_1857554a1f821a 342
+src/modules/Arrangement/useCases/timelineInteractions/getTrackAtY.ts
+  s_88fc7e0d05bab6::t_a6ba370894cb63 1-2,4,9-10,13
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_88fc7e0d05bab6::t_4ae21989bd2b6a 112-116,682-745
+  s_88fc7e0d05bab6::t_f065a2aa271dcc 746-747
+src/modules/Arrangement/transformers/__tests__/getTimelineContentHeight.spec.ts
+  s_88fc7e0d05bab6::t_ef1fa2136eb80a 3,64,66-75,79-88
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_88fc7e0d05bab6::t_58977206c07e5a 7,952-982
+  s_88fc7e0d05bab6::t_0e4139c472cf52 983-984
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_88fc7e0d05bab6::t_059321c58929a8 14,533-535,810
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_88fc7e0d05bab6::t_30153612f35bd6 11,91-98,100-101,103,107,111
+  s_88fc7e0d05bab6::t_0371ee00a126eb 112
+src/modules/Arrangement/models/__tests__/TimelineTrackExtent.spec.ts
+  s_88fc7e0d05bab6::t_c541f977646c08 10
+  s_88fc7e0d05bab6::t_5e83e00c2d4832 1-9,11-71
+src/modules/Arrangement/useCases/index.ts
+  s_88fc7e0d05bab6::t_4ae21989bd2b6a 246
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8ac1b00090614c837a3a0f6b328bf89ae2d40374",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
