@@ -26,7 +26,7 @@ import {
 import { getSettledProjectId } from '#/modules/Project/stores';
 import { newProject, setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import { readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
-import { addTempoChange } from '#/modules/Transport/useCases';
+import { addTempoChange, getTransportHandlers } from '#/modules/Transport/useCases';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -252,6 +252,7 @@ describe('legacy version timeline snapshot round trip', () => {
         clearHandlerRegistry();
         registerHandlerMap(getArrangementHandlers());
         registerHandlerMap(getVersionControlHandlers());
+        registerHandlerMap(getTransportHandlers());
         clearUndoHistory();
         resetActionReplayAuthority();
         setActionHistoryMetadataPort({
@@ -299,18 +300,47 @@ describe('legacy version timeline snapshot round trip', () => {
         expect(captured.tempoMap).toEqual({ changes: [] });
         const capturedLanes = (captured.takeLanes as TakeLaneStoreState).lanes;
         expect(capturedLanes[0]?.takes.find((take) => take.id === takeAId)?.selected).toBe(true);
-        expect(capturedLanes[0]?.activeCompRegions).toEqual([{ startBeat: 0, endBeat: 8, takeId: takeAId }]);
+        expect(capturedLanes[0]?.activeCompRegions).toEqual([
+            {
+                startBeat: 0,
+                endBeat: 8,
+                takeId: takeAId,
+                audioSource: {
+                    startBeat: 0,
+                    audioOffsetSeconds: 0,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0,
+                    audioLoopPassOriginBeat: 0,
+                    loopOriginBeat: 0,
+                    loopLength: 8,
+                },
+            },
+        ]);
 
-        // Later edits: a beat-0 60 BPM event (the write route the tempo editor
-        // calls — no Command action creates tempo-map events) and a take change
-        // (both through the production Command actions).
-        addTempoChange(0, 60);
+        // Later edits: a beat-0 60 BPM event through the tempo editor's command
+        // route, followed by the take-selection command.
+        await addTempoChange(0, 60);
         await selectTakeAndComp(takeBId);
 
         // The mutation landed before restoring.
         expect(tempoMapStore.value?.changes).toEqual([expect.objectContaining({ beat: 0, tempo: 60 })]);
         expect(currentLane().takes.find((take) => take.id === takeBId)?.selected).toBe(true);
-        expect(currentLane().activeCompRegions).toEqual([{ startBeat: 0, endBeat: 8, takeId: takeBId }]);
+        expect(currentLane().activeCompRegions).toEqual([
+            {
+                startBeat: 0,
+                endBeat: 8,
+                takeId: takeBId,
+                audioSource: {
+                    startBeat: 0,
+                    audioOffsetSeconds: 0,
+                    audioLoopStartSeconds: 0,
+                    audioLoopPassEntrySeconds: 0,
+                    audioLoopPassOriginBeat: 0,
+                    loopOriginBeat: 0,
+                    loopLength: 8,
+                },
+            },
+        ]);
         expect(readSecondsAtBeat({ beat: 4 })).toBe(4);
 
         const outcome = await dispatchRestore(versionId);
@@ -336,7 +366,7 @@ describe('legacy version timeline snapshot round trip', () => {
 
         stripTimelineSlotsFromVersion(versionId);
 
-        addTempoChange(0, 60);
+        await addTempoChange(0, 60);
         await selectTakeAndComp(takeBId);
         expect(readSecondsAtBeat({ beat: 4 })).toBe(4);
 

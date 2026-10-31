@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import { trackStore } from '#/modules/Arrangement/stores';
-import { createTrack } from '#/modules/Arrangement/useCases';
+import { createTrack, normalizeClip } from '#/modules/Arrangement/useCases';
 import {
+    cacheAudioBuffer,
     configureOfflinePpqEndpointProjection,
     type renderTrackSubgraphOffline,
     type renderOfflineInput,
@@ -1623,5 +1624,503 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
             transport: transportStore.value,
             revision: captureProjectRevision(),
         }).toEqual(before);
+    });
+});
+
+type LiteralCommand = { name: string; arguments: Record<string, unknown> };
+
+type LiteralRequest = {
+    prompt: string;
+    runId: string;
+    commands: readonly LiteralCommand[];
+    refines?: string;
+    targetIds?: readonly string[];
+};
+
+/** Plans one literal request through the scripted provider, persisting nothing. */
+async function planLiteralRequest(input: LiteralRequest) {
+    const context = getProjectContext();
+    const revision = captureProjectRevision();
+    const thread = input.refines === undefined ? null : readChatThreadContext();
+    if (input.refines !== undefined) {
+        expect(thread?.pendingProposal?.confirmationId).toBe(input.refines);
+    }
+    expect(
+        agentRunLifecycle.create({
+            runId: input.runId,
+            request: input.prompt,
+            mode: 'apply',
+            createdRevision: revision,
+        })
+    ).toEqual({ status: 'created' });
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
+    const proposalArguments: Record<string, unknown> = {
+        commands: input.commands,
+        plan: metricGoalProviderPlan(input.prompt.trim(), input.targetIds ?? ['drums']),
+    };
+    if (input.refines !== undefined) {
+        proposalArguments.refines = input.refines;
+    }
+    let turns = 0;
+    vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_system, userMessage, schemas) => {
+        turns += 1;
+        if (turns === 1) {
+            return {
+                status: 'complete',
+                toolCalls: literalMetricIntakeTurn(userMessage, schemas).map((call) => ({
+                    ...call,
+                    id: `${input.runId}-intake`,
+                })),
+            };
+        }
+        if (turns === 2) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: `${input.runId}-discovery`,
+                        name: 'agent.catalog.discover',
+                        arguments: { category: 'command', names: input.commands.map((command) => command.name) },
+                    },
+                ],
+            };
+        }
+        if (turns === 3) {
+            return {
+                status: 'complete',
+                toolCalls: [
+                    {
+                        id: `${input.runId}-proposal`,
+                        name: 'command.batch.propose',
+                        arguments: proposalArguments,
+                    },
+                ],
+            };
+        }
+        throw new Error('The literal request exceeded its three scripted provider turns.');
+    });
+    const planned = await parsePromptToActions({
+        prompt: input.prompt,
+        context,
+        projectRevision: revision,
+        thread,
+        streamIdentity: { runId: input.runId, requestId: `${input.runId}-request`, cancellationGeneration: 0 },
+        onMeasurementAttempt: agentWorkBudget.admitMeasurement(input.runId),
+    });
+    return { planned, context, revision };
+}
+
+function persistedMetricGoalState(stored: string | null | undefined, compiled: string | undefined): string | undefined {
+    if (stored === undefined) {
+        return compiled;
+    }
+    if (stored === null) {
+        return undefined;
+    }
+    return stored;
+}
+
+/**
+ * Plans one literal request and persists its actual approval card. `storedMetricGoalState` replaces
+ * the record the card persists (`null` persists none), standing in for one an earlier build wrote.
+ */
+async function proposeLiteralCard(
+    input: LiteralRequest & { storedMetricGoalState?: string | null }
+): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
+    const { planned, context, revision } = await planLiteralRequest(input);
+    expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
+    expect(planned.refines).toBe(input.refines);
+    const assistantMessageId = `${input.runId}-assistant`;
+    const materialized = materializePromptCommandPlan({
+        userText: input.prompt,
+        runId: input.runId,
+        assistantMessageId,
+        interactionMode: 'apply',
+        trustCeiling: undefined,
+        resume: undefined,
+        onResumedPlanAccepted: undefined,
+        projectRevision: revision,
+        context,
+        result: { ...planned, requiresConfirmation: true, planningOutcome: { kind: 'proposal' } },
+        actionLabels: planned.actions.map((action) => action.type),
+        protectedTargetIds: [],
+    });
+    if (materialized.status !== 'prepared' || materialized.compiledActionExecution.agentApproval === null) {
+        throw new Error('Expected a persisted approval card for the literal request.');
+    }
+    const compiled = materialized.compiledActionExecution;
+    chatStore.set({
+        messages: [
+            {
+                id: `${input.runId}-user`,
+                role: 'user',
+                content: input.prompt,
+                timestamp: 1,
+                projectId: captureProjectIdentity(),
+            },
+            {
+                id: assistantMessageId,
+                role: 'assistant',
+                content: 'Literal plan',
+                timestamp: 2,
+                agentRunId: input.runId,
+                projectId: captureProjectIdentity(),
+            },
+        ],
+        isGenerating: false,
+        enableReasoning: true,
+        chatMode: 'prompt',
+    });
+    const confirmationId = persistPromptActionConfirmation({
+        runId: input.runId,
+        prompt: input.prompt,
+        assistantMessageId,
+        actions: planned.actions,
+        actionLabels: planned.actions.map((action) => action.type),
+        commandEnvelopes: compiled.commandEnvelopes,
+        commandBatch: compiled.commandBatch,
+        agentApproval: compiled.agentApproval,
+        metricGoalState: persistedMetricGoalState(input.storedMetricGoalState, compiled.metricGoalState),
+        affectedIds: ['drums'],
+        protectedUnchanged: [],
+        groundingBasis: planned.groundingBasis,
+        executionMode: 'atomic',
+        group: materialized.commandGroup,
+        projectRevision: revision,
+        parsedCommandBatch: materialized.parsedCommandBatch,
+        content: input.prompt,
+        supersedes: input.refines ?? null,
+    });
+    if (confirmationId === null) {
+        throw new Error('The actual pending confirmation was not persisted.');
+    }
+    agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'waiting-for-approval' });
+    return { confirmationId, metricGoalState: compiled.metricGoalState };
+}
+
+function drumsGain(): number | undefined {
+    return trackStore.value?.tracks.find((track) => track.id === 'drums')?.gain;
+}
+
+function introGain(): number | undefined {
+    return trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === 'intro')?.gain;
+}
+
+/** Drums carrying one audio clip whose cached buffer a LUFS normalization can actually measure. */
+function configureIntroClipProject(label: string): void {
+    configureMetricGoalProject({
+        label,
+        tracks: [
+            {
+                ...createTrack({ id: 'drums', name: 'Drums', kind: 'audio' }),
+                clips: [
+                    {
+                        id: 'intro',
+                        trackId: 'drums',
+                        name: 'Intro',
+                        type: 'audio',
+                        audioBufferId: 'intro-buffer',
+                        startBeat: 0,
+                        endBeat: 4,
+                        fadeInBeats: 0,
+                        fadeOutBeats: 0,
+                        gain: 1,
+                        color: '#ffffff',
+                        locked: false,
+                        muted: false,
+                    },
+                ],
+            },
+        ],
+        sections: [],
+    });
+    cacheAudioBuffer({ buffer: sine(0.5, 2), bufferId: 'intro-buffer' });
+}
+
+const NORMALIZE_INTRO_14 = 'Normalize Intro clip to -14 LUFS';
+
+function normalizeIntro(targetDb: number): LiteralCommand {
+    return { name: 'normalizeClip', arguments: { clipId: 'intro', mode: 'lufs', targetDb } };
+}
+
+function raiseDrums(deltaDb: number): LiteralCommand {
+    return { name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb } };
+}
+
+const TRUE_PEAK_REQUEST = 'Raise Drums by 1 dB while keeping true peak below -1 dBTP';
+
+describe('request figures across a refinement chain', () => {
+    it.each(['-1 dBTP', '-1 dbtp', '-1 DBTP'])(
+        'blocks Confirm on an unaccounted %s figure in any case',
+        async (token) => {
+            const before = structuredClone(trackStore.value);
+            const card = await proposeLiteralCard({
+                prompt: `Raise Drums by 1 dB while keeping true peak below ${token}`,
+                runId: 'literal-figure-case',
+                commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+            });
+            expect(getAgentApprovalView({ confirmationId: card.confirmationId })?.canConfirm).toBe(false);
+            expect(await confirmPendingChatActions({ confirmationId: card.confirmationId })).toMatchObject({
+                status: 'failed',
+                reason: expect.stringContaining(token),
+            });
+            expect(trackStore.value).toEqual(before);
+            expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        }
+    );
+
+    it('keeps the refined request’s unaccounted true-peak figure blocking the replacement card', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: 'Raise Drums by 1 dB while keeping true peak below -1 dBTP',
+            runId: 'literal-figure-original',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(false);
+        const refined = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'literal-figure-refinement',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 2 } }],
+            refines: original.confirmationId,
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([
+            'Raise Drums by 1 dB while keeping true peak below -1 dBTP',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it('still confirms a refinement whose batch keeps accounting for the refined request’s figure', async () => {
+        configureMetricGoalProject({
+            label: 'literal figure kept',
+            tracks: [createTrack({ id: 'drums', name: 'Drums 100 Hz', kind: 'audio' })],
+            sections: [],
+        });
+        const original = await proposeLiteralCard({
+            prompt: 'Raise "Drums 100 Hz" by 1 dB',
+            runId: 'literal-name-original',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 1 } }],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(true);
+        const refined = await proposeLiteralCard({
+            prompt: 'Make it 2 dB',
+            runId: 'literal-name-refinement',
+            commands: [{ name: 'setTrackGain', arguments: { trackId: 'drums', deltaDb: 2 } }],
+            refines: original.confirmationId,
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([
+            'Raise "Drums 100 Hz" by 1 dB',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drumsGain()).toBeGreaterThan(0.8);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('lets a restated figure in the same unit replace the refined request’s figure', async () => {
+        configureIntroClipProject('literal figure replaced');
+        const original = await proposeLiteralCard({
+            prompt: NORMALIZE_INTRO_14,
+            runId: 'literal-unit-original',
+            commands: [normalizeIntro(-14)],
+            targetIds: ['intro'],
+        });
+        expect(getAgentApprovalView({ confirmationId: original.confirmationId })?.canConfirm).toBe(true);
+        const refined = await proposeLiteralCard({
+            prompt: 'Normalize Intro clip to -16 LUFS',
+            runId: 'literal-unit-refinement',
+            commands: [normalizeIntro(-16)],
+            refines: original.confirmationId,
+            targetIds: ['intro'],
+        });
+        expect(metricGoalStateCodec(refined.metricGoalState)?.refinedRequests).toEqual([NORMALIZE_INTRO_14]);
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        const normalizedTo16 = introGain();
+        expect(normalizedTo16).not.toBe(1);
+        expect(normalizeClip('intro', 'lufs', -14)).toBe(true);
+        const normalizedTo14 = introGain();
+        if (normalizedTo16 === undefined || normalizedTo14 === undefined) {
+            throw new Error('Expected the Intro clip to remain in the project.');
+        }
+        expect(normalizedTo16 / normalizedTo14).toBeCloseTo(10 ** (-2 / 20), 6);
+    });
+
+    it('does not let a figure in another unit replace the refined request’s true-peak figure', async () => {
+        configureIntroClipProject('literal figure other unit');
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'literal-other-unit-original',
+            commands: [raiseDrums(1)],
+        });
+        const refined = await proposeLiteralCard({
+            prompt: NORMALIZE_INTRO_14,
+            runId: 'literal-other-unit-refinement',
+            commands: [raiseDrums(1), normalizeIntro(-14)],
+            refines: original.confirmationId,
+            targetIds: ['drums', 'intro'],
+        });
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('carries the true-peak figure across a second refinement', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'literal-chain-original',
+            commands: [raiseDrums(1)],
+        });
+        const first = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'literal-chain-first',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        const second = await proposeLiteralCard({
+            prompt: 'Raise Drums by 3 dB instead',
+            runId: 'literal-chain-second',
+            commands: [raiseDrums(3)],
+            refines: first.confirmationId,
+        });
+        expect(metricGoalStateCodec(second.metricGoalState)?.refinedRequests).toEqual([
+            TRUE_PEAK_REQUEST,
+            'Raise Drums by 2 dB instead',
+        ]);
+        expect(getAgentApprovalView({ confirmationId: second.confirmationId })?.canConfirm).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: second.confirmationId })).toMatchObject({
+            status: 'failed',
+            reason: expect.stringContaining('-1 dBTP'),
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('refuses to extend a chain whose verification record would no longer decode', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'unreadable-chain-original',
+            commands: [raiseDrums(1)],
+        });
+        const oversized = await proposeLiteralCard({
+            prompt: `Raise Drums by 2 dB instead${' '.repeat(9000)}`,
+            runId: 'unreadable-chain-oversized',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        expect(getAgentApprovalView({ confirmationId: oversized.confirmationId })?.canConfirm).toBe(false);
+        const refused = await planLiteralRequest({
+            prompt: 'Raise Drums by 3 dB instead',
+            runId: 'unreadable-chain-refused',
+            commands: [raiseDrums(3)],
+            refines: oversized.confirmationId,
+        });
+        expect(refused.planned).toMatchObject({
+            actions: [],
+            rejectionReason: expect.stringContaining('start a fresh request'),
+        });
+        expect(refused.planned.metricGoalState).toBeUndefined();
+        expect(
+            pendingActionConfirmationStore.value?.confirmations.some(
+                (confirmation) => confirmation.runId === 'unreadable-chain-refused'
+            )
+        ).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: oversized.confirmationId })).toMatchObject({
+            status: 'failed',
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it('refuses to refine a card whose stored verification record is unreadable', async () => {
+        const before = structuredClone(trackStore.value);
+        const corrupted = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'corrupted-record-original',
+            commands: [raiseDrums(1)],
+            storedMetricGoalState: '{"schemaVersion":1,"authorities":[',
+        });
+        expect(getAgentApprovalView({ confirmationId: corrupted.confirmationId })).toMatchObject({
+            canConfirm: false,
+            metricGoals: {
+                status: 'blocked',
+                reason: expect.stringContaining('no positive metric intent admission'),
+            },
+        });
+        const refused = await planLiteralRequest({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'corrupted-record-refinement',
+            commands: [raiseDrums(2)],
+            refines: corrupted.confirmationId,
+        });
+        expect(refused.planned).toMatchObject({
+            actions: [],
+            rejectionReason: expect.stringContaining('start a fresh request'),
+        });
+        expect(
+            pendingActionConfirmationStore.value?.confirmations.some(
+                (confirmation) => confirmation.runId === 'corrupted-record-refinement'
+            )
+        ).toBe(false);
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('still refines and confirms a card that persisted no verification record', async () => {
+        const original = await proposeLiteralCard({
+            prompt: 'Raise Drums by 1 dB',
+            runId: 'recordless-original',
+            commands: [raiseDrums(1)],
+            storedMetricGoalState: null,
+        });
+        const refined = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'recordless-refinement',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drumsGain()).toBeGreaterThan(0.8);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+    });
+
+    it('decodes a persisted metric state with or without the refined requests it carries', () => {
+        const persisted = {
+            schemaVersion: 1,
+            authorities: [],
+            steps: [],
+            proofs: [],
+            binding: null,
+        };
+        expect(metricGoalStateCodec(JSON.stringify(persisted))).toEqual(persisted);
+        expect(metricGoalStateCodec(JSON.stringify(persisted))?.refinedRequests).toBeUndefined();
+        const refined = {
+            ...persisted,
+            refinedRequests: ['Raise Drums by 1 dB while keeping true peak below -1 dBTP'],
+        };
+        expect(metricGoalStateCodec(JSON.stringify(refined))).toEqual(refined);
+        expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: [1] }))).toBeNull();
+        expect(metricGoalStateCodec(JSON.stringify({ ...persisted, refinedRequests: 'Raise Drums' }))).toBeNull();
     });
 });

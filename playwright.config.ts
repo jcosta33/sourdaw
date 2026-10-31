@@ -125,6 +125,10 @@ export default defineConfig({
     use: {
         baseURL: e2eOrigin(port),
         trace: 'retain-on-failure',
+        // Decorative motion would otherwise put a fixed wait into every boot:
+        // the launch overlay's exit fade alone is 650 ms. tests/e2e/launchFlows.spec.ts
+        // keeps the full-motion path covered under 'no-preference'.
+        reducedMotion: 'reduce',
     },
     projects: builtShardRun ? builtShardProjects() : devServerProjects,
     webServer: builtShardRun ? builtShardWebServers() : devServerWebServer,

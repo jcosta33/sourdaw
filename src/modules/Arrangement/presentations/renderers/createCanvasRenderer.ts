@@ -2,6 +2,7 @@ import { transportStore, timeSignatureMapStore } from '#/modules/Transport/store
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
+import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 
 import { drawClip } from './clipDrawing';
@@ -115,19 +116,9 @@ const TRACK_KIND_LABELS: Record<string, string> = {
     folder: 'FOLDER',
 };
 
-function getTrackYOffsets(tracks: { height: number }[]): number[] {
-    const offsets: number[] = [];
-    let y = 0;
-    for (const track of tracks) {
-        offsets.push(y);
-        y += track.height;
-    }
-    return offsets;
-}
-
 function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, width: number): void {
     const { tracks, selectedTrackId, pixelsPerBeat, viewportStartBeat } = model;
-    const yOffsets = getTrackYOffsets(tracks);
+    const yOffsets = getRenderedTrackTops(tracks);
 
     // Horizontal viewport cull — mirrors the WebGPU renderer
     // (createWebGpuRenderer.ts:316). Off-screen clips still allocate gradients
@@ -219,7 +210,7 @@ function drawTracks(ctx: CanvasRenderingContext2D, model: TimelineRenderModel, w
 
             // H3: Render variation lanes below main clips if expanded
             if (track.variationLanes && track.variationLanes.length > 0) {
-                const varLaneHeight = 24;
+                const varLaneHeight = VARIATION_LANE_HEIGHT;
                 for (const [index, lane] of track.variationLanes.entries()) {
                     const ly = y + h + index * varLaneHeight;
 
@@ -280,7 +271,7 @@ function drawTakeLanes(ctx: CanvasRenderingContext2D, model: TimelineRenderModel
     }
 
     const { pixelsPerBeat, viewportStartBeat, tracks } = model;
-    const yOffsets = getTrackYOffsets(tracks);
+    const yOffsets = getRenderedTrackTops(tracks);
 
     for (const lane of takeState.lanes) {
         const trackIndex = tracks.findIndex((time) => time.id === lane.trackId);

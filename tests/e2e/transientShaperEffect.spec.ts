@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
-import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
+import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
 function record(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -124,8 +124,12 @@ for (const recipe of [
         expect(dry.energy).toBeGreaterThan(0);
         expect(dry.warnings).toEqual([]);
         const provider = await startScriptedToolProvider((request, turn) => {
-            expect(turn).toBeLessThan(4);
-            if (turn === 0)
+            expect(turn).toBeLessThan(5);
+            if (turn === 0) {
+                return [literalWholeRequestIntake(request)];
+            }
+            const step = turn - 1;
+            if (step === 0)
                 return [
                     {
                         id: 'project',
@@ -133,7 +137,7 @@ for (const recipe of [
                         arguments: { type: 'object', page: { limit: 50 } },
                     },
                 ];
-            if (turn === 1) {
+            if (step === 1) {
                 receipt(request, 'project');
                 return [
                     {
@@ -143,7 +147,7 @@ for (const recipe of [
                     },
                 ];
             }
-            if (turn === 2) {
+            if (step === 2) {
                 const discovered = receipt(request, 'discover');
                 expect(discovered.candidates).toEqual(
                     expect.arrayContaining([
@@ -211,7 +215,7 @@ for (const recipe of [
             const confirm = page.getByRole('button', { name: 'Confirm pending actions', exact: true });
             await expect(confirm).toBeVisible({ timeout: 45000 });
             expect(provider.failures).toEqual([]);
-            expect(provider.requests).toHaveLength(4);
+            expect(provider.requests).toHaveLength(5);
             const proposed = await sourceState(page);
             expect(proposed.document).toBe(before.document);
             expect(proposed.revision).toBe(before.revision);

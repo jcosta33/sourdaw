@@ -82,18 +82,29 @@ function literalEvaluation(prompt: string, action: AppAction) {
     });
 }
 
+function refinedLiteralEvaluation(prompt: string, refinedRequests: string[], action: AppAction) {
+    const commandBatch = batch(prompt, action);
+    const state = metricGoalStateCodec(configuredLiteralMetricState(commandBatch));
+    return evaluateMetricGoalAdmission({
+        state: state === null ? null : { ...state, refinedRequests },
+        commandBatch,
+        currentRevision: captureProjectRevision(),
+    });
+}
+
 describe('request-number closure through real Command metadata', () => {
     const frequencyAction: AppAction = {
         type: 'setDeviceParameter',
         payload: { deviceId: 'eq', paramId: 'eq-mid-freq', value: 2400, valueUnit: 'Hz' },
     };
 
-    it.each(['Set Drums EQ mid frequency to 2400 Hz', 'Set drums eq mid frequency to 2400 Hz'])(
-        'preserves the exact native-unit parameter edit on its named target: %s',
-        (prompt) => {
-            expect(literalEvaluation(prompt, frequencyAction).status).toBe('not-required');
-        }
-    );
+    it.each([
+        'Set Drums EQ mid frequency to 2400 Hz',
+        'Set drums eq mid frequency to 2400 Hz',
+        'Set Drums EQ mid frequency to 2400 hz',
+    ])('preserves the exact native-unit parameter edit on its named target: %s', (prompt) => {
+        expect(literalEvaluation(prompt, frequencyAction).status).toBe('not-required');
+    });
 
     it('does not spend one parameter argument on a second acoustic obligation with the same figure', () => {
         expect(
@@ -108,9 +119,12 @@ describe('request-number closure through real Command metadata', () => {
         });
     });
 
-    it('does not use a literal on another target to discharge the requested acoustic figure', () => {
-        expect(literalEvaluation('Keep Bass centroid at 2400 Hz', frequencyAction).status).toBe('blocked');
-    });
+    it.each(['Keep Bass centroid at 2400 Hz', 'Keep Bass centroid at 2400 hz', 'Keep Bass centroid at 2400 HZ'])(
+        'does not use a literal on another target to discharge the requested acoustic figure: %s',
+        (prompt) => {
+            expect(literalEvaluation(prompt, frequencyAction).status).toBe('blocked');
+        }
+    );
 
     it('requires the Command argument unit to match the request candidate', () => {
         expect(
@@ -132,6 +146,59 @@ describe('request-number closure through real Command metadata', () => {
             ).toBe('not-required');
         }
     );
+
+    it.each([['Keep integrated loudness at -14 LUFS', 'Normalize Intro clip to -18 LUFS', '-14 LUFS', -18]] as const)(
+        'keeps a refined figure whose clause the refinement does not restate: %s',
+        (refinedRequest, prompt, token, targetDb) => {
+            expect(
+                refinedLiteralEvaluation(prompt, [refinedRequest], {
+                    type: 'normalizeClip',
+                    payload: { clipId: 'intro', mode: 'lufs', targetDb },
+                })
+            ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining(token) });
+        }
+    );
+
+    it('keeps a refined figure whose restated clause names it in another unit', () => {
+        expect(
+            refinedLiteralEvaluation('Normalize Intro clip to -14 LUFS', ['Normalize Intro clip to -1 dBTP'], {
+                type: 'normalizeClip',
+                payload: { clipId: 'intro', mode: 'lufs', targetDb: -14 },
+            })
+        ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining('-1 dBTP') });
+    });
+
+    it('keeps a refined frequency limit beside a frequency edit in another clause', () => {
+        expect(
+            refinedLiteralEvaluation(
+                'Set Drums EQ mid frequency to 2400 Hz',
+                ['Keep Drums centroid above 4000 Hz'],
+                frequencyAction
+            )
+        ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining('4000 Hz') });
+    });
+
+    it.each([
+        'Normalize Intro clip to -16 LUFS',
+        'normalize intro clip to  -16 lufs',
+        'NORMALIZE Intro clip to -16 Lufs',
+    ])('lets a restatement of the refined clause replace its figure: %s', (prompt) => {
+        expect(
+            refinedLiteralEvaluation(prompt, ['Normalize Intro clip to -14 LUFS'], {
+                type: 'normalizeClip',
+                payload: { clipId: 'intro', mode: 'lufs', targetDb: -16 },
+            }).status
+        ).toBe('not-required');
+    });
+
+    it('still blocks a restated figure in the refinement the batch does not use', () => {
+        expect(
+            refinedLiteralEvaluation('Normalize Intro clip to -16 LUFS', ['Normalize Intro clip to -14 LUFS'], {
+                type: 'normalizeClip',
+                payload: { clipId: 'intro', mode: 'lufs', targetDb: -14 },
+            })
+        ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining('-16 LUFS') });
+    });
 
     it('preserves exact non-destructive clip normalization', () => {
         expect(

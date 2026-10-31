@@ -407,6 +407,9 @@ function lstmWeightCount(config: UnknownRecord): number {
             `Invalid NAM model: multi-channel LSTM output (${out_channels} channels) is not supported; Grinder captures are mono`
         );
     }
+    if (num_layers > 1 && hidden_size > 1) {
+        throw new Error('Invalid NAM model: stacked wide LSTM unsupported by current runtime');
+    }
     let count = 0;
     for (let index = 0; index < num_layers; index++) {
         const layer_input = index === 0 ? input_size : hidden_size;

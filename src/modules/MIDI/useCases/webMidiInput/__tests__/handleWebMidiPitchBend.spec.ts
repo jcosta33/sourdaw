@@ -11,6 +11,12 @@ const mpe_enabled = vi.hoisted(() => ({ value: true }));
 const target_track_id = vi.hoisted(() => ({ value: 'track-1' }));
 const audio_clock = vi.hoisted(() => ({ currentTime: 2, sampleRate: 48000, baseLatency: 0, outputLatency: 0 }));
 
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 vi.mock('../../../repositories/webMidi/getMpeEnabled', () => ({
     getMpeEnabled: () => mpe_enabled.value,
 }));
@@ -22,6 +28,7 @@ vi.mock('../../../repositories/webMidi/getTargetTrackId', () => ({
 const apply_note_expression = vi.hoisted(() => vi.fn());
 
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    writeNativeBuiltinParameters: vi.fn(),
     soundsNativeNotes: vi.fn(() => false),
     audioEngine: {
         context: audio_clock,

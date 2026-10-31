@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -320,5 +320,31 @@ describe('EffectsTab', () => {
             expect(screen.queryByRole('button', { name: /scoring/i })).not.toBeInTheDocument();
             expect(screen.getByText('Empty category.')).toBeInTheDocument();
         });
+    });
+
+    describe('route spacing', () => {
+        it.each([
+            { routeId: 'effects', searchQuery: '', text: 'Seeds & Spores' },
+            { routeId: 'effects-audiofx', searchQuery: '', text: 'EQ & Filter' },
+            { routeId: 'effects-audiofx-eq-filter', searchQuery: '', text: 'Parametric EQ' },
+            { routeId: 'effects-fxpresets', searchQuery: '', text: 'Vocal Chain' },
+            { routeId: 'effects-midifx', searchQuery: '', text: 'No native MIDI effects available yet.' },
+            { routeId: 'effects', searchQuery: 'eq', text: 'Parametric EQ' },
+        ])(
+            'renders $routeId (search "$searchQuery") inside the shared route body with no route animation',
+            ({ routeId, searchQuery, text }) => {
+                const { container } = renderWithTooltip(
+                    <EffectsTab
+                        {...defaultProps}
+                        plugins={[createPlugin({ id: 'builtin-eq', name: 'Parametric EQ', category: 'effect' })]}
+                        searchQuery={searchQuery}
+                        currentRoute={{ id: routeId, title: routeId }}
+                    />
+                );
+
+                expect(within(screen.getByTestId('browser-route-body')).getAllByText(text).length).toBeGreaterThan(0);
+                expect(container.querySelectorAll('[class*="animate-in"]')).toHaveLength(0);
+            }
+        );
     });
 });

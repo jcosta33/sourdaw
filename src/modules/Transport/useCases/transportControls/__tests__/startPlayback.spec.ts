@@ -71,6 +71,7 @@ vi.mock('../../../repositories/transport/getTransportState', () => ({
 vi.mock('../../../repositories/transport/updateTransportState', () => ({
     updateTransportState: vi.fn(),
 }));
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-fixture-root' }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
     audioEngine: {
         beginAudioPreviewIntent: previewIntents.beginOrdinary,
@@ -94,7 +95,6 @@ vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'playback-root' }));
 vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
@@ -466,6 +466,26 @@ describe('startPlayback', () => {
             vi.mocked(updateTransportState).mockImplementation((patch) => {
                 transportState = { ...transportState, ...patch };
             });
+        });
+
+        it('receipts the actual admitted roll beat after a position changes during the hold', async () => {
+            let settle!: (result: Awaited<ReturnType<typeof startNativeLiveGraphSession>>) => void;
+            vi.mocked(startNativeLiveGraphSession).mockReturnValue(
+                new Promise((resolve) => {
+                    settle = resolve;
+                })
+            );
+            const onRoll = vi.fn();
+            const starting = startPlayback(onRoll);
+            transportState = { ...transportState, playheadPosition: 12 };
+            audioClock.currentTime = 51;
+            vi.mocked(startPlayheadScheduler).mockImplementationOnce(() => {
+                playheadClockRef.beat = transportState.playheadPosition;
+                playheadClockRef.audioTimeSeconds = audioClock.currentTime;
+            });
+            settle({ outcome: 'started', runtimeRevision: 1, reports: [] });
+            await starting;
+            expect(onRoll).toHaveBeenCalledExactlyOnceWith(51, 12);
         });
 
         it('does not start the scheduler until the native session has answered', async () => {

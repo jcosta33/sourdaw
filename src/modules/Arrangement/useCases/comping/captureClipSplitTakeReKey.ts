@@ -1,9 +1,16 @@
+import { type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
+
+import { type TakeLane } from '../../models/TakeLane';
+import { type TempoTimeline } from '../../models/TempoTimeline';
+import { type Clip } from '../../models/Track';
+
 import { captureTakeReKeyTransitions } from './captureTakeReKeyTransitions';
 import { type TakeReKeyLaneTransition } from './takeReKeyTransition';
 
 type CaptureClipSplitTakeReKeyInput = {
     /** The track whose lane holds the split clip's takes. */
     trackId: string;
+    sourceClip: Clip;
     clipId: string;
     /** The fresh id the right fragment carries — the plan's committed id. */
     rightClipId: string;
@@ -11,6 +18,9 @@ type CaptureClipSplitTakeReKeyInput = {
     splitBeat: number;
     clipStartBeat: number;
     clipEndBeat: number;
+    lanes?: readonly TakeLane[];
+    timeline?: TempoTimeline;
+    sourceMidi?: MidiClipDataActionSnapshot;
 };
 
 /**
@@ -28,6 +38,10 @@ export function captureClipSplitTakeReKeyTransitions(
     input: CaptureClipSplitTakeReKeyInput
 ): readonly TakeReKeyLaneTransition[] {
     return captureTakeReKeyTransitions({
+        sourceClips: [input.sourceClip],
+        sourceMidiByClipId: input.sourceMidi === undefined ? undefined : new Map([[input.clipId, input.sourceMidi]]),
+        lanes: input.lanes,
+        timeline: input.timeline,
         windowsByTrackId: new Map([
             [
                 input.trackId,

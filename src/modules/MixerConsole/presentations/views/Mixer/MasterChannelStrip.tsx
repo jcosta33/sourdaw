@@ -1,8 +1,11 @@
 import { type ReactElement, useEffect, useRef, useState } from 'react';
 
 import { DawChannelStripShell } from '#/components/daw/DawChannelStripShell';
+import { LatchButton } from '#/components/daw/LatchButton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { selectTrack } from '#/modules/Arrangement/useCases';
 import { undoHistoryStore } from '#/modules/Command/stores';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
@@ -13,11 +16,17 @@ import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
+import { type Track } from '../../../models/TrackViewTypes';
+import { useChannelStripActions } from '../../hooks/useChannelStripActions';
+
 import { MasterGainControl } from './MasterGainControl';
 import { MixerLevelReadout } from './MixerLevelReadout';
 
 type MasterChannelStripProps = {
     widthClass: string;
+    /** The master's track row; the strip selects and mutes it. Absent until a project has one. */
+    track?: Track;
+    isSelected?: boolean;
 };
 
 type MasterChannelSurfaceProps = MasterChannelStripProps & {
@@ -397,8 +406,35 @@ function createMasterGainClipboardActions(
     return { copyMasterGain, pasteMasterGain };
 }
 
+const MasterMuteButton = ({ track }: { track: Track }): ReactElement => {
+    const actions = useChannelStripActions(track);
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <LatchButton
+                    active={track.muted}
+                    variant="amber"
+                    size="icon-sm"
+                    aria-label={track.muted ? 'Unmute' : 'Mute'}
+                    data-testid={`channel-mute-${track.id}`}
+                    className="font-bold text-[10px]"
+                    onClick={(event) => {
+                        event.stopPropagation();
+                        actions.toggleMute();
+                    }}
+                >
+                    M
+                </LatchButton>
+            </TooltipTrigger>
+            <TooltipContent>{track.muted ? 'Unmute' : 'Mute'}</TooltipContent>
+        </Tooltip>
+    );
+};
+
 const MasterChannelSurface = ({
     widthClass,
+    track,
+    isSelected = false,
     displayGain,
     onChange,
     onEnterValue,
@@ -407,9 +443,16 @@ const MasterChannelSurface = ({
     onPasteValue,
     onInvalidatePendingValue,
 }: MasterChannelSurfaceProps): ReactElement => (
-    <DawChannelStripShell className={cn('ml-2', widthClass)} aria-label="Master channel" data-testid="channel-master">
+    <DawChannelStripShell
+        className={cn('ml-2', widthClass)}
+        aria-label="Master channel"
+        data-testid="channel-master"
+        selected={isSelected}
+        onClick={track ? () => selectTrack(track.id) : undefined}
+    >
         <div className="h-1 w-full rounded-full bg-border-active" />
         <span className="text-[10px] font-bold text-text-primary uppercase tracking-wider">Master</span>
+        {track ? <MasterMuteButton track={track} /> : null}
         <MixerLevelReadout
             trackId={null}
             clusterClassName="mt-1"
@@ -429,7 +472,7 @@ const MasterChannelSurface = ({
     </DawChannelStripShell>
 );
 
-export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): ReactElement => {
+export const MasterChannelStrip = ({ widthClass, track, isSelected }: MasterChannelStripProps): ReactElement => {
     const masterGain = useStore(transportStore, defaultTransportState).masterGain;
     const state = useMasterGainInteractionState();
     const commits = useMasterGainCommitHandlers(state);
@@ -440,6 +483,8 @@ export const MasterChannelStrip = ({ widthClass }: MasterChannelStripProps): Rea
     return (
         <MasterChannelSurface
             widthClass={widthClass}
+            track={track}
+            isSelected={isSelected}
             displayGain={displayGain}
             onChange={handlers.handleFaderChange}
             onEnterValue={handlers.enterGain}

@@ -14,6 +14,7 @@ import {
     clearUndoHistory,
     commandTrackDefaultsPort,
     executeAppAction,
+    executeAppActionBatch,
     resetActionReplayAuthority,
     setActionHistoryMetadataPort,
     undo,
@@ -1689,8 +1690,12 @@ function layerNames(count: number): string[] {
 }
 
 async function seedTracks(names: readonly string[]): Promise<string[]> {
-    for (const name of names) {
-        await executeAppAction({ type: 'addTrack', payload: { name, kind: 'audio' } });
+    const seedResult = await executeAppActionBatch(
+        names.map((name) => ({ type: 'addTrack' as const, payload: { name, kind: 'audio' as const } })),
+        { requireCompensation: true }
+    );
+    if (seedResult.status !== 'committed') {
+        throw new Error(`Expected the fixture tracks to commit, got ${seedResult.status}`);
     }
     return (trackStore.value?.tracks ?? []).map((track) => track.id);
 }
@@ -2189,12 +2194,17 @@ describe('a bulk request confirmed one batch at a time', () => {
                 events: [],
             };
             markReceiptTimeoutStage('seedTracks', 'begin');
-            const trackIds = await seedTracks([
-                'Intro',
-                ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1),
-                'Outro',
-                'Vocals',
-            ]);
+            const trackNames = ['Intro', ...layerNames(MAX_LLM_ACTIONS_PER_BATCH - 1), 'Outro', 'Vocals'];
+            const seedResult = await executeAppActionBatch(
+                trackNames.map((name) => ({ type: 'addTrack' as const, payload: { name, kind: 'audio' as const } })),
+                { requireCompensation: true }
+            );
+            if (seedResult.status !== 'committed') {
+                throw new Error(`Expected the receipt fixture tracks to commit, got ${seedResult.status}`);
+            }
+            const tracks = trackStore.value?.tracks ?? [];
+            expect(tracks.map((track) => track.name)).toEqual(trackNames);
+            const trackIds = tracks.map((track) => track.id);
             markReceiptTimeoutStage('seedTracks', 'end');
             const vocalsId = trackIds.at(-1)!;
             const commandNames = ['muteTrack', 'createBus', 'addSend', 'setTrackPan'];

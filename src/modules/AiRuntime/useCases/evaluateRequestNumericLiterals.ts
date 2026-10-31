@@ -7,7 +7,7 @@ import { type MetricGoalEvaluation, type MetricNativeLiteralUse } from '../model
 import { escapeRegExp } from './agentReference/groundingStrategies/escapeRegExp';
 import { getPromptClauses } from './agentReference/groundingStrategies/getPromptClauses';
 import { normalizeAgentReferenceText } from './agentReference/normalizeAgentReferenceText';
-import { type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
+import { type MetricGoal, type MetricGoalState, type MetricRequestAuthority } from './metricGoalContractTypes';
 import { readNativeLiteralCommandBinding } from './readNativeLiteralCommandBinding';
 import { readRequestMetricNumbers, type RequestMetricNumber } from './readRequestMetricNumbers';
 
@@ -16,7 +16,7 @@ type Failure = NonNullable<MetricGoalEvaluation['failure']>;
 type Refusal = { failure: Failure; reason: string };
 
 function coversToken(request: string, name: string, candidate: RequestMetricNumber): boolean {
-    if (name.length === 0 || !name.includes(candidate.token)) {
+    if (name.length === 0 || !name.toLowerCase().includes(candidate.token.toLowerCase())) {
         return false;
     }
     for (const match of request.matchAll(new RegExp(escapeRegExp(name), 'giu'))) {
@@ -32,6 +32,7 @@ function coversToken(request: string, name: string, candidate: RequestMetricNumb
 
 function numericLiteralWitness(
     candidate: RequestMetricNumber,
+    request: string,
     envelope: Envelope,
     usedArguments: Set<string>
 ): boolean {
@@ -44,17 +45,15 @@ function numericLiteralWitness(
     for (const command of envelope.commands) {
         const referencedIds = new Set(command.objectReferences.map((reference) => reference.id));
         if (
-            namedObjects.some(
-                (object) => referencedIds.has(object.id) && coversToken(envelope.intent, object.name, candidate)
-            )
+            namedObjects.some((object) => referencedIds.has(object.id) && coversToken(request, object.name, candidate))
         ) {
             return true;
         }
         const newName = command.arguments.name;
-        if (typeof newName === 'string' && coversToken(envelope.intent, newName, candidate)) {
+        if (typeof newName === 'string' && coversToken(request, newName, candidate)) {
             return true;
         }
-        const clause = getPromptClauses(envelope.intent, envelope.intent).find(
+        const clause = getPromptClauses(request, request).find(
             (entry) => candidate.start >= entry.start && candidate.start < entry.end
         );
         const names = tracks.flatMap((track) => {
@@ -107,14 +106,92 @@ function numericLiteralWitness(
     return false;
 }
 
+/**
+ * Every figure a request chain stated is accounted against the text that stated it: a refinement
+ * inherits its earlier requests' figures, which only the refined batch or a goal they selected can
+ * account for. A later request that restates a figure's clause with only its figures changed (case
+ * and spacing aside) replaces that figure, and its own figure is accounted in its place.
+ */
 export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Envelope): Refusal | null {
     const nativeRefusal = nativeLiteralUseRefusal(state, envelope);
     if (nativeRefusal !== null) {
         return nativeRefusal;
     }
-    const selected = state.authorities.flatMap((authority) => authority.goals);
+    const inherited = state.refinedRequests ?? [];
+    const texts = [...inherited, envelope.intent];
+    const statedRequests = [
+        ...inherited.map((request, index) => ({
+            request,
+            goals: goalsSelectedFor(state, request),
+            superseded: restatedClauses(texts.slice(index + 1)),
+        })),
+        {
+            request: envelope.intent,
+            goals: state.authorities.flatMap((authority) => authority.goals),
+            superseded: new Set<string>(),
+        },
+    ];
+    for (const { request, goals, superseded } of statedRequests) {
+        const refusal = unaccountedRequestNumber(request, goals, superseded, state, envelope);
+        if (refusal !== null) {
+            return refusal;
+        }
+    }
+    return null;
+}
+
+type MaskedClause = { start: number; end: number; masked: string };
+
+/** Each clause stating a figure, with every figure folded to its unit so only the number can differ. */
+function maskedFigureClauses(text: string): MaskedClause[] {
+    const numbers = readRequestMetricNumbers(text);
+    return getPromptClauses(text, text).flatMap((clause) => {
+        const inside = numbers.filter((candidate) => candidate.start >= clause.start && candidate.start < clause.end);
+        if (inside.length === 0) {
+            return [];
+        }
+        let masked = '';
+        let cursor = clause.start;
+        for (const candidate of inside) {
+            masked += `${text.slice(cursor, candidate.start)} figure${candidate.unit} `;
+            cursor = candidate.start + candidate.token.length;
+        }
+        masked += text.slice(cursor, clause.end);
+        return [{ start: clause.start, end: clause.end, masked: normalizeAgentReferenceText(masked) }];
+    });
+}
+
+function restatedClauses(laterTexts: readonly string[]): Set<string> {
+    return new Set(laterTexts.flatMap((text) => maskedFigureClauses(text).map((clause) => clause.masked)));
+}
+
+function isRestated(
+    candidate: RequestMetricNumber,
+    clauses: readonly MaskedClause[],
+    restated: ReadonlySet<string>
+): boolean {
+    const clause = clauses.find((entry) => candidate.start >= entry.start && candidate.start < entry.end);
+    return clause !== undefined && restated.has(clause.masked);
+}
+
+function goalsSelectedFor(state: MetricGoalState, request: string): MetricGoal[] {
+    const requestDigest = digest(request.trim());
+    return state.authorities
+        .filter((authority) => authority.requestDigest === requestDigest)
+        .flatMap((authority) => authority.goals);
+}
+
+function unaccountedRequestNumber(
+    request: string,
+    selected: readonly MetricGoal[],
+    superseded: ReadonlySet<string>,
+    state: MetricGoalState,
+    envelope: Envelope
+): Refusal | null {
     const usedArguments = new Set<string>();
-    for (const candidate of readRequestMetricNumbers(envelope.intent)) {
+    const clauses = maskedFigureClauses(request);
+    const stated = readRequestMetricNumbers(request).filter((candidate) => !isRestated(candidate, clauses, superseded));
+    for (const candidate of stated) {
         const selectedGoal = selected.find(
             (goal) =>
                 goal.source.kind === 'request-number' &&
@@ -127,8 +204,8 @@ export function unaccountedNumericRefusal(state: MetricGoalState, envelope: Enve
         );
         if (
             selectedGoal === undefined &&
-            !workflowNativeLiteralWitness(candidate, state, usedArguments) &&
-            !numericLiteralWitness(candidate, envelope, usedArguments)
+            !workflowNativeLiteralWitness(candidate, request, state, usedArguments) &&
+            !numericLiteralWitness(candidate, request, envelope, usedArguments)
         ) {
             return {
                 failure: 'missing',
@@ -196,10 +273,14 @@ function nativeLiteralCandidateMatches(use: MetricNativeLiteralUse, matches: rea
 
 function workflowNativeLiteralWitness(
     candidate: RequestMetricNumber,
+    request: string,
     state: MetricGoalState,
     usedArguments: Set<string>
 ): boolean {
-    const use = state.nativeLiteralUses?.find((entry) => entry.candidateId === candidate.candidateId);
+    const requestDigest = digest(request.trim());
+    const use = state.nativeLiteralUses?.find(
+        (entry) => entry.candidateId === candidate.candidateId && entry.requestDigest === requestDigest
+    );
     if (use?.binding === undefined || use.binding === null) {
         return false;
     }

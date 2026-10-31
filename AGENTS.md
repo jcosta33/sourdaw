@@ -29,9 +29,11 @@ and never offer to file or ask whether to file: file it or do it.
 
 ## Delegation
 
-The orchestrator specifies, dispatches, adjudicates, and organizes; it does not implement, approve,
-or merge. Each delegated agent executes one precise task, returns evidence and a result, and neither
-contacts the user nor owns decisions.
+The orchestrator specifies, dispatches, and organizes; it does not implement. It owns the outcome:
+it adjudicates every finding, reviews each head globally, and decides approval and merge, executing
+those decisions through the trusted scripts — the reviewer App publishes reviews and `deliver` merges
+as the author App. Each delegated agent executes one precise task, returns evidence and a result, and
+neither contacts the user nor owns decisions.
 
 Use the cheapest adequate economy, standard, or strongest tier for each task, independent of the
 orchestrator's model. Judge ambiguity, scope, failure consequence, reversibility, and the strength of
@@ -66,7 +68,11 @@ acceptance observable (event, counter, or caller-read figure) to its producing l
 prescribed mechanism to every required code route. Unemitted observables and partially covered routes
 are orchestrator defects. Derive the concise PR what/why from the bounded outcome; do not copy path,
 check, or dispatch inventories into it, and do not require another plan file or issue for work the
-session owns. Require back only status, changed paths, decisive evidence, and blockers.
+session owns. Require back only status, changed paths, decisive evidence, and blockers. Author and
+repair dispatches also say how to do the work, as a senior engineer briefs a junior and never as
+pseudo-code: the approach and rejected alternative, where to work and the code to follow, step order,
+area traps and generated artifacts, per-step verification, and stop-and-report conditions. Reviewer
+dispatches never carry that reasoning; the templates live in [delivery-orchestration].
 
 Default to one PR for a cohesive change; keep its implementation, required caller changes, and tests
 together. Split distinct outcomes when separate review materially helps, provided each slice can land
@@ -140,6 +146,19 @@ before posting: `deliver` refuses `CHANGES_REQUESTED` or unresolved threads, and
 addressing the finding can resolve it, so a wrongly posted finding blocks delivery without a repair
 to make.
 
+Every round, the orchestrator also reviews the whole head itself, with no stance and before reading
+any stance report so none anchors it. Does the head do what was asked, fit the architecture and the
+product, and keep the right scope? Do its tests observe their claimed subjects, and is every
+accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
+only the checks and scopes it observed. This global review is not a draw: it is not recorded in
+`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
+to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
+reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
+the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
+new head or respins or closes the PR. That hold is not a review and posts nothing; the
+request-changes rule governs posted findings. The orchestrator never approves a head it judges
+unfit, whatever the draws say.
+
 `review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
 `ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
 derived from the same path classification as the size report beside it so the two cannot disagree.
@@ -204,7 +223,7 @@ one motion: the public record must retain the reviewer identity's findings again
 head and the author identity's fixing pushes and repair records. Orchestrator judgement lives in its
 exclusive script calls and `review.json`. One blind reviewer-App APPROVE on the current head is the
 delivery gate: the reviewer App records the independent review, its APPROVE publication records the
-delivery authorization, and the author then merges through `deliver` as the immutable author App.
+delivery authorization, and `deliver` then merges as the immutable author App.
 
 For defects reaching `main`, fix under Ownership AND trace the introducing PR and missed stance
 (missing, mis-tiered, or mis-prompted). Attach the escape to every standing file under
@@ -255,20 +274,20 @@ locally at other lanes' expense.
 
 ## Checks
 
-| Need                                              | Command or evidence                                  |
-| ------------------------------------------------- | ---------------------------------------------------- |
-| Focused tests                                     | `pnpm test:run <changed-spec>`                       |
-| Focused E2E diagnostic                            | `pnpm test:e2e <spec>`                               |
-| Focused format                                    | `pnpm format <changed-files>`                        |
-| Focused Rust tests                                | `pnpm cargo:test --package <crate> <filter>`         |
-| Focused Rust format                               | `pnpm cargo:fmt --package <crate>`                   |
-| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI |
-| Generate one affected WASM package                | that package's own `wasm:*` script                   |
-| Rewrite WASM manifest after generation            | `pnpm wasm:manifest`                                 |
-| Verify generated WASM surface                     | `pnpm wasm:verify` after generation                  |
-| Restamp the wasm surface                          | `pnpm release:restamp:wasm`                          |
-| Restamp a tracked set                             | `pnpm release:restamp:tracked-set`                   |
-| Restamp a dependency bump                         | `pnpm release:restamp`                               |
+| Need                                                                                     | Command or evidence                          |
+| ---------------------------------------------------------------------------------------- | -------------------------------------------- |
+| Focused tests                                                                            | `pnpm test:run <changed-spec>`               |
+| Focused E2E diagnostic                                                                   | `pnpm test:e2e <spec>`                       |
+| Focused format                                                                           | `pnpm format <changed-files>`                |
+| Focused Rust tests                                                                       | `pnpm cargo:test --package <crate> <filter>` |
+| Focused Rust format                                                                      | `pnpm cargo:fmt --package <crate>`           |
+| Broad unit/Rust suites, lint, types, builds, boundaries, barrel mocks, release inventory | Pull request CI                              |
+| Generate one affected WASM package                                                       | that package's own `wasm:*` script           |
+| Rewrite WASM manifest after generation                                                   | `pnpm wasm:manifest`                         |
+| Verify generated WASM surface                                                            | `pnpm wasm:verify` after generation          |
+| Restamp the wasm surface                                                                 | `pnpm release:restamp:wasm`                  |
+| Restamp a tracked set                                                                    | `pnpm release:restamp:tracked-set`           |
+| Restamp a dependency bump                                                                | `pnpm release:restamp`                       |
 
 Structural code search uses the pinned read-only `ast-grep` (`pnpm exec ast-grep run`) per [`.agents/skills/ast-grep/`](./.agents/skills/ast-grep/); rewrite modes are forbidden.
 
@@ -393,6 +412,32 @@ global or destructive operations from any lane affect all lanes. Lanes running b
 export `SOURDAW_E2E_PORT` with a lane-unique value (derive it from the lane slug), and the
 warmup and ui-scripts identity assertions refuse a dev server belonging to another checkout.
 
+Successful delivery queues local cleanup after merge, receipt and tracker bookkeeping and after the
+delivery lock is released. A delivered PR stays delivered when its lane is protected or cleanup is
+pending. The deterministic `pnpm lane:cleanup` worker also discovers missed deliveries and merged
+legacy detached lanes under `.agents/review-worktrees/`; it never creates review worktrees.
+It reuses `lane:remove` with fresh exact-head merge or native supersession proof, a directory identity
+fence, clean/untracked/ignored-data checks, no active Git operation, and a complete open-file/process
+inspection. Unknown activity, unavailable GitHub inspection, foreign locks and changed identities
+retain work. Safety refusals recheck on the normal schedule; unavailable inspection uses capped
+backoff. Successful delivery wakes its matching head without bypassing shared inspection backoff.
+An old queued identity never authorizes a replacement
+lane; discovery gives the replacement its own record and fresh proof after a delay.
+
+Install or refresh the macOS user job with `pnpm lane:cleanup:install` from an approved current
+checkout. It runs at login and periodically, using a verified `origin/main` runtime under the primary
+checkout's gitignored `.agents/lane-cleanup/`, independent of removed author lanes and primary
+working-tree drift. Installation may refresh only the protected primary
+`scripts/trustedGithubWriteBootstrap.ts` from approved Git objects when it matches HEAD/index or the
+exact previously installed approved blob; local launcher edits and staged changes refuse. This is
+the sole tracked-primary installation exception; every other primary edit survives. The installed
+job performs no dependency install. The worker preserves common Git `info/exclude` entries while
+excluding only its operational namespace when the primary's tracked ignore rules are older. Inspect
+`pnpm lane:cleanup --status` from a current checkout,
+the records and `worker*.log` in that directory, and
+`launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for job status. The worker can run directly
+where process inspection is available; the scheduler installer explicitly requires macOS.
+
 Run `pnpm lane:remove <path>` outside the lane; its author lock remains until removal succeeds.
 Removal requires a clean lane holding exactly one PR's head whose work reached `main`, either
 merged directly or through `pr:supersede`'s receipt naming a merged replacement. Other closed PRs
@@ -465,8 +510,8 @@ login selects it, and an isolated API session must verify actor type `User` and 
 workers; receipt and tracker writes retain their author App identities, and the merge itself runs
 as the author App. Lock, recovery, and receipt procedure: [delivery-orchestration].
 
-Run `lane:publish`, `deliver`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; `review:accept` remains only for legacy pre-policy heads.
+Run every trusted GitHub-write script through the protected primary checkout's package route; the
+[delivery-orchestration] skill lists them, and `review:accept` remains only for legacy pre-policy heads.
 Lane files are data, never executable delivery code. Launcher snapshot mechanics:
 [delivery-orchestration].
 
@@ -559,9 +604,9 @@ style-guide and code-craft violations block, personal style does not. An approva
 its body states what the reviewer attacked and what held.
 
 Give reviewers the bundle and neutral review conditions from the request or governing
-contract, never author transcripts or conclusions; preserve blind dispatch and independently
-inspect the final head before the reviewer approval is published. Bundle, publication, and thread
-procedure: [delivery-orchestration].
+contract, never author transcripts or conclusions; preserve blind dispatch, and give the final head
+the orchestrator's global review under [Review](#review) before any approval is published. Bundle,
+publication, and thread procedure: [delivery-orchestration].
 
 Never fill approvals, delivery summaries, or closing comments with routine
 successful-CI narration, passed-check inventories, or links repeating required-check status;
@@ -587,9 +632,7 @@ current head addresses the finding, then obtain a fresh review. No script writes
 findings have no discussion route. Clarify code, not threads. File out-of-scope feedback; do not
 grow the PR.
 
-Before merge, the orchestrator independently reads the current diff and confirms specified
-behavior, tests observing their claimed subjects, and every accepted finding repaired rather than
-silenced — green `Gate` proves only the checks and scopes it actually observed. Push-lane failures yield required red `Gate`, never softened warnings. Attribute
+Push-lane failures yield required red `Gate`, never softened warnings. Attribute
 every unexplained failure to the change or a named, filed pre-existing defect. Let the pipeline
 run checks; locally format changed files and stage rewrites.
 

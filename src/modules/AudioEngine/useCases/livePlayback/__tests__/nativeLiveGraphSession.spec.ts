@@ -28,6 +28,7 @@ import {
     type AudioGraphCommandBatch,
 } from '../../../models/AudioGraphBackend';
 import { type EngineTransportMaps, type EngineTransportPosition } from '../../../models/EngineTransportPosition';
+import { getEngineTransportPosition } from '../../../repositories/engineTransport/getEngineTransportPosition';
 import { type SetEngineTransportMapsResult } from '../../../repositories/engineTransport/setEngineTransportMaps';
 import { withNativeTimelineMaterialTransport } from '../../../repositories/nativeGraph/__tests__/withNativeTimelineMaterialTransport';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
@@ -63,6 +64,8 @@ const mocks = vi.hoisted(() => ({
     availability: null as unknown,
     /** Runs when the probe is awaited, which is before the project is read. */
     onProbe: vi.fn(),
+    onProgrammeRead: vi.fn<() => void>(),
+    onTopologyProjection: vi.fn<(input: LiveGraphTopologyInput) => void>(),
     applyGraphCommands: vi.fn<(input: { batch: unknown }) => Promise<unknown>>(),
     /**
      * The engine's own answer about the pair it installed, `loopEnabled`
@@ -157,6 +160,9 @@ vi.mock('../../../repositories/nativeGraph/probeNativeGraphTransport', () => ({
         return Promise.resolve(mocks.availability as NativeGraphAvailability);
     },
 }));
+vi.mock('../../../repositories/engineTransport/getEngineTransportPosition', () => ({
+    getEngineTransportPosition: vi.fn(),
+}));
 vi.mock('../../../repositories/engineTransport/setEngineTransportMaps', () => ({
     setEngineTransportMaps: (maps: unknown) => mocks.setEngineTransportMaps(maps),
 }));
@@ -188,9 +194,13 @@ vi.mock('#/modules/PluginHost/useCases', async (importOriginal) => {
 vi.mock('../readLiveGraphProgramme', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../readLiveGraphProgramme')>();
     return {
-        readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) =>
-            (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
-            actual.readLiveGraphProgramme(input),
+        readLiveGraphProgramme: (input: Parameters<typeof actual.readLiveGraphProgramme>[0]) => {
+            mocks.onProgrammeRead();
+            return (
+                (mocks.programmeOverride as ReturnType<typeof actual.readLiveGraphProgramme> | null) ??
+                actual.readLiveGraphProgramme(input)
+            );
+        },
     };
 });
 vi.mock('../readLiveMidiProgramme', () => ({
@@ -252,6 +262,9 @@ vi.mock('../../../repositories/nativeGraph/createNativeLiveGraphBackend', async 
             mocks.openedBackends.push(handle);
             return {
                 ...backend,
+                get disposed(): boolean {
+                    return backend.disposed ?? true;
+                },
                 dispose: () => {
                     handle.disposed = true;
                     backend.dispose();
@@ -275,8 +288,13 @@ vi.mock('../../../repositories/createWebAudioEngine', () => ({
 vi.mock('../projectLiveGraphTopology', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../projectLiveGraphTopology')>();
     return {
-        projectLiveGraphTopology: (input: LiveGraphTopologyInput): readonly AudioGraphCommand[] =>
-            (mocks.topologyOverride as readonly AudioGraphCommand[] | null) ?? actual.projectLiveGraphTopology(input),
+        projectLiveGraphTopology: (input: LiveGraphTopologyInput): readonly AudioGraphCommand[] => {
+            mocks.onTopologyProjection(input);
+            return (
+                (mocks.topologyOverride as readonly AudioGraphCommand[] | null) ??
+                actual.projectLiveGraphTopology(input)
+            );
+        },
     };
 });
 
@@ -647,6 +665,8 @@ beforeEach(async () => {
     disarmNativeLiveAutomationWriter();
     mocks.availability = { available: true, transport };
     mocks.onProbe.mockReset();
+    mocks.onProgrammeRead.mockReset();
+    mocks.onTopologyProjection.mockReset();
     mocks.applyGraphCommands.mockReset();
     mocks.applyGraphCommands.mockResolvedValue(APPLIED);
     mocks.setEngineTransportMaps.mockClear();
@@ -760,6 +780,62 @@ describe('startNativeLiveGraphSession', () => {
         expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
     });
 
+    it('rejects preparation failures unchanged and settles the synchronous pending count without opening a backend', async () => {
+        const failure = new Error('programme snapshot failed');
+        mocks.onProgrammeRead.mockImplementation(() => {
+            throw failure;
+        });
+        const epoch = nativeLiveGraphSession.rearmEpoch;
+        const pendingCount = nativeLiveGraphSession.startsPending;
+
+        const pending = startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.rearmEpoch).toBe(epoch + 1);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount + 1);
+        await expect(pending).rejects.toBe(failure);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount);
+        expect(mocks.openedBackends).toEqual([]);
+        expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(mocks.carriedClaims).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+    });
+
+    it('disposes only the newly prepared backend when its first projection fails before any claim or apply', async () => {
+        await startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+        const previous = nativeLiveGraphSession.backend;
+        const chains = nativeLiveGraphSession.nativeChainByStripId;
+        expect(previous).not.toBeNull();
+        const failure = new Error('first topology projection failed');
+        mocks.onTopologyProjection.mockImplementation(() => {
+            throw failure;
+        });
+        mocks.applyGraphCommands.mockClear();
+        mocks.setEngineTransportMaps.mockClear();
+        mocks.carriedClaims = [];
+        const epoch = nativeLiveGraphSession.rearmEpoch;
+        const pendingCount = nativeLiveGraphSession.startsPending;
+
+        const pending = startHeldSession({ positionSeconds: 0, transportMaps: FLAT_MAPS, sampleRate: SAMPLE_RATE });
+
+        expect(nativeLiveGraphSession.rearmEpoch).toBe(epoch + 1);
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount + 1);
+        await expect(pending).resolves.toEqual({ outcome: 'declined', reason: failure.message });
+        expect(nativeLiveGraphSession.startsPending).toBe(pendingCount);
+        expect(mocks.openedBackends).toEqual([{ disposed: false }, { disposed: true }]);
+        expect(previous?.disposed).toBe(false);
+        expect(nativeLiveGraphSession.backend).toBe(previous);
+        expect(nativeLiveGraphSession.nativeChainByStripId).toBe(chains);
+        expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+        expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+        expect(mocks.carriedClaims).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledExactlyOnceWith(
+            'Native audio engine did not start: first topology projection failed. ' +
+                'Playing through Web Audio; external plugins are silent until it starts.',
+            'warning'
+        );
+    });
+
     // This batch is what starts the native engine, so it is also what takes over
     // every plugin instance loaded before there was one. Those instances were
     // reported to their devices as loaded but processing no audio, and this
@@ -853,6 +929,36 @@ describe('startNativeLiveGraphSession', () => {
         ]);
         // The second batch replaced every strip the first built, so its reports
         // are the only ones describing the graph the engine now holds.
+        expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
+    });
+
+    it('reads the current master level again when the real start rebinds a newly attached plugin', async () => {
+        attachReportedInstancesInStore();
+        trackStore.set({
+            tracks: [createTrack({ id: 'audio-1', devices: [externalPluginDevice('i1')] })],
+            selectedTrackId: null,
+            ghostClips: [],
+        });
+        const boundReports = [{ kind: 'track' as const, id: 'audio-1', deviceIds: ['device-i1'] }];
+        mocks.applyGraphCommands
+            .mockImplementationOnce(async () => {
+                masterGainState.gain = 0.25;
+                return { ...APPLIED, attachedPlugins: [{ instanceId: 'i1' }] };
+            })
+            .mockResolvedValueOnce({ ...APPLIED, runtimeRevision: 2, reports: boundReports });
+
+        const result = await startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+        });
+
+        const [first, second] = topologyBatches();
+        expect(topologyBatches()).toHaveLength(2);
+        expect(first?.commands).toContainEqual({ kind: 'set-master-gain', gain: 0.8 });
+        expect(second?.commands).toContainEqual({ kind: 'set-master-gain', gain: 0.25 });
+        expect(stripCreation(first, 'audio-1')).toMatchObject({ contributesAudio: false });
+        expect(stripCreation(second, 'audio-1')).toMatchObject({ contributesAudio: true });
         expect(result).toEqual({ outcome: 'started', runtimeRevision: 2, reports: boundReports });
     });
 
@@ -1361,6 +1467,96 @@ describe('startNativeLiveGraphSession', () => {
         // re-arm read the playhead.
         expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.58, 9);
     });
+
+    it.each(['rolling', 'released-held'] as const)(
+        'refreshes the no-NAM %s join after roll material preparation while preserving optimistic ownership',
+        async (join) => {
+            mocks.topologyOverride = [
+                CARRIED_STRIP,
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            let materialEntered!: () => void;
+            const preparingRoll = new Promise<void>((resolve) => {
+                materialEntered = resolve;
+            });
+            let releaseMaterial!: () => void;
+            const materialAnswer = new Promise<void>((resolve) => {
+                releaseMaterial = resolve;
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let preparations = 0;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
+                const answer = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    preparations += 1;
+                    if (preparations === 2) {
+                        materialEntered();
+                        await materialAnswer;
+                    }
+                }
+                return answer;
+            });
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            let sentRollPosition: number | undefined;
+            mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+                const wire = batch as NativeGraphWireBatch;
+                const roll = wire.commands.find((command) => command.kind === 'set-transport' && command.playing);
+                if (roll?.kind === 'set-transport') {
+                    sentRollPosition = roll.positionSeconds;
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                }
+                return APPLIED;
+            });
+            const release = { contextSeconds: null as number | null };
+            const webAudioRollingSince = vi.fn(() => release.contextSeconds);
+            mocks.contextSeconds = 10;
+            let joinTransport: Parameters<typeof startNativeLiveGraphSession>[0]['transport'];
+            if (join === 'rolling') {
+                joinTransport = { kind: 'rolling', anchoredAtContextSeconds: 10 };
+            } else {
+                joinTransport = { kind: 'held', webAudioRollingSince };
+            }
+            const starting = startNativeLiveGraphSession({
+                positionSeconds: 2.5,
+                transport: joinTransport,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            try {
+                await preparingRoll;
+                expect(preparations).toBe(2);
+                expect(sentRollPosition).toBeUndefined();
+                expect(mocks.applyGraphCommands).toHaveBeenCalledTimes(1);
+                expect(mocks.carriedClaims[0]).toEqual({ ids: ['audio-1'], appliesBefore: 0 });
+                expect(mocks.carriedClaims.at(-1)).toEqual({ ids: ['audio-1'], appliesBefore: 1 });
+                expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                expect(nativeLiveGraphSession.audibleCarrier).toBe(true);
+                expect(webAudioRollingSince).not.toHaveBeenCalled();
+                const claimsBeforeRoll = mocks.carriedClaims.length;
+                release.contextSeconds = 10;
+                mocks.contextSeconds = 10.4;
+                releaseMaterial();
+                await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+                expect(sentRollPosition).toBeCloseTo(2.9, 9);
+                expect(nativeLiveAutomationWriter.pass?.entrySeconds).toBeCloseTo(2.9, 9);
+                expect(mocks.carriedClaims).toHaveLength(claimsBeforeRoll);
+                expect(nativeLiveGraphSession.rolling).toBe(true);
+                if (join === 'released-held') {
+                    expect(webAudioRollingSince).toHaveBeenCalledTimes(1);
+                }
+            } finally {
+                releaseMaterial();
+                await starting;
+            }
+        }
+    );
 
     it('wraps the roll position inside the loop region the maps installed', async () => {
         // Web Audio wrapped at the seam during the start, so an engine rolled
@@ -2204,6 +2400,68 @@ describe('startNativeLiveGraphSession', () => {
 });
 
 describe('updateNativeLiveGraphSessionTransportMaps', () => {
+    it('retains capture geometry at real start, tempo-only maps and locate fences without an automation pass', async () => {
+        const owner = { identity: 'native-session-fixture-root', isCurrent: () => true };
+        const geometry = {
+            secondsAtBeat: (beat: number) => beat / 2,
+            beatAtSeconds: (seconds: number) => seconds * 2,
+            isLooping: false,
+            loopStart: 0,
+            loopEnd: 0,
+        };
+        mocks.applyGraphCommands.mockResolvedValueOnce(APPLIED).mockResolvedValueOnce({ ...APPLIED, admittedBatch: 6 });
+        await startHeldSession({
+            positionSeconds: 2.5,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            recordingGeometry: geometry,
+            recordingOwner: owner,
+        });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toMatchObject({
+            admittedBatch: 6,
+            located: true,
+            geometry,
+        });
+        nativeLiveAutomationWriter.pass = null;
+        const edited = {
+            ...geometry,
+            secondsAtBeat: (beat: number) => beat,
+            beatAtSeconds: (seconds: number) => seconds,
+        };
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({
+            outcome: 'applied',
+            applied: {
+                sampleRate: SAMPLE_RATE,
+                tempoSegments: 1,
+                timeSignatureSegments: 1,
+                loopEnabled: false,
+                admittedBatch: 7,
+            },
+        });
+        expect(
+            await updateNativeLiveGraphSessionTransportMaps({
+                transportMaps: { ...FLAT_MAPS, tempo: [{ startSeconds: 0, beatsPerMinute: 60 }] },
+                recordingGeometry: edited,
+                recordingOwner: owner,
+            })
+        ).toEqual({ outcome: 'updated', admittedBatch: 7 });
+        const admitted = nativeLiveGraphSession.captureAdmissions.at(-1)!;
+        expect(admitted).toMatchObject({ admittedBatch: 7, located: false, geometry: edited });
+        expect(admitted.geometry!.secondsAtBeat(12)).toBe(12);
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
+        mocks.setEngineTransportMaps.mockResolvedValueOnce({ outcome: 'declined', reason: 'queue full' });
+        await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS, recordingGeometry: geometry });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toBe(admitted);
+        mocks.applyGraphCommands.mockResolvedValueOnce({ ...APPLIED, admittedBatch: 9 });
+        await repositionNativeLiveGraphSession({ positionSeconds: 3 });
+        expect(nativeLiveGraphSession.captureAdmissions.at(-1)).toMatchObject({
+            admittedBatch: 9,
+            located: true,
+            geometry: edited,
+        });
+        expect(nativeLiveAutomationWriter.pass).toBeNull();
+    });
+
     it('declines when no session ever started, which is the browser-build answer', async () => {
         const result = await updateNativeLiveGraphSessionTransportMaps({ transportMaps: LOOPED_MAPS });
 
@@ -2998,5 +3256,472 @@ describe('an edit issued while the start apply is pending (#4785)', () => {
             });
         });
         expect(mocks.wireCalls).toEqual(['apply', 'apply', 'apply']);
+    });
+});
+
+describe('native NAM initial ownership requires actual model drain', () => {
+    const rollingJoinCheckpoints = [
+        'maps',
+        'roll-material',
+        'roll-position',
+        'roll-admission',
+        'project-retirement',
+        'epoch-retirement',
+        'backend-retirement',
+        'backend-disposal',
+    ] as const;
+    it.each(rollingJoinCheckpoints)(
+        'keeps the NAM rolling join honest at %s after matching model readback',
+        async (checkpoint) => {
+            const receipt = {
+                trackId: 'audio-1',
+                deviceId: 'd-nam',
+                engineId: '1',
+                targetGeneration: '42',
+                requestId: 'rolling-join',
+                contentHash: 'a'.repeat(64),
+            };
+            mocks.topologyOverride = [
+                {
+                    ...CARRIED_STRIP,
+                    devices: [
+                        {
+                            id: receipt.deviceId,
+                            name: 'Grinder',
+                            type: 'grinder',
+                            bypassed: false,
+                            parameterValues: {},
+                            grinderModel: {
+                                requestId: receipt.requestId,
+                                modelJson:
+                                    '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                            },
+                        },
+                    ],
+                },
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            let matchingReadbacks = 0;
+            vi.mocked(getEngineTransportPosition).mockImplementation(async () => {
+                matchingReadbacks += 1;
+                return {
+                    ...rollingReading(0),
+                    playing: false,
+                    engineId: receipt.engineId,
+                    batchesApplied: 7,
+                    grinderModels: [receipt],
+                };
+            });
+            let mapsEntered!: () => void;
+            const installingMaps = new Promise<void>((resolve) => {
+                mapsEntered = resolve;
+            });
+            let releaseMaps!: (value: SetEngineTransportMapsResult) => void;
+            const mapsAnswer = new Promise<SetEngineTransportMapsResult>((resolve) => {
+                releaseMaps = resolve;
+            });
+            const appliedMaps: SetEngineTransportMapsResult = {
+                outcome: 'applied',
+                applied: {
+                    sampleRate: SAMPLE_RATE,
+                    tempoSegments: 1,
+                    timeSignatureSegments: 1,
+                    loopEnabled: false,
+                    admittedBatch: 8,
+                },
+            };
+            mocks.setEngineTransportMaps.mockImplementationOnce(() => {
+                mapsEntered();
+                return mapsAnswer;
+            });
+            let materialEntered!: () => void;
+            const preparingRoll = new Promise<void>((resolve) => {
+                materialEntered = resolve;
+            });
+            let releaseMaterial!: () => void;
+            const materialAnswer = new Promise<void>((resolve) => {
+                releaseMaterial = resolve;
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let preparations = 0;
+            let rollLease: string | undefined;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
+                const answer = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    preparations += 1;
+                    if (preparations === 2) {
+                        if (
+                            typeof answer !== 'object' ||
+                            answer === null ||
+                            !('lease' in answer) ||
+                            typeof answer.lease !== 'string'
+                        ) {
+                            throw new TypeError('the roll must prepare its exact timeline lease');
+                        }
+                        rollLease = answer.lease;
+                        materialEntered();
+                        await materialAnswer;
+                    }
+                }
+                return answer;
+            });
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            let rollEntered!: () => void;
+            const sendingRoll = new Promise<void>((resolve) => {
+                rollEntered = resolve;
+            });
+            let releaseRoll!: (value: unknown) => void;
+            const rollAnswer = new Promise<unknown>((resolve) => {
+                releaseRoll = resolve;
+            });
+            let sentRollPosition: number | undefined;
+            mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+                const wire = batch as NativeGraphWireBatch;
+                if (wire.replaceTopology) {
+                    return {
+                        ...APPLIED,
+                        admittedBatch: 7,
+                        engineId: receipt.engineId,
+                        grinderModels: [receipt],
+                        reports: [{ kind: 'track', id: 'audio-1', deviceIds: [receipt.deviceId] }],
+                    };
+                }
+                const roll = wire.commands.find((command) => command.kind === 'set-transport' && command.playing);
+                if (roll?.kind === 'set-transport') {
+                    sentRollPosition = roll.positionSeconds;
+                    rollEntered();
+                    return rollAnswer;
+                }
+                return APPLIED;
+            });
+            mocks.contextSeconds = 10;
+            const starting = startNativeLiveGraphSession({
+                positionSeconds: 2.5,
+                transport: { kind: 'rolling', anchoredAtContextSeconds: 10 },
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            try {
+                await installingMaps;
+                expect(matchingReadbacks).toBe(1);
+                expect(sentRollPosition).toBeUndefined();
+                if (checkpoint === 'maps') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(false);
+                    expect(mocks.carriedClaims.at(-1)?.ids ?? []).not.toContain('audio-1');
+                    expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+                }
+                releaseMaps(appliedMaps);
+                await preparingRoll;
+                expect(preparations).toBe(2);
+                expect(sentRollPosition).toBeUndefined();
+                if (checkpoint === 'roll-material') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(false);
+                    expect(mocks.carriedClaims.at(-1)?.ids ?? []).not.toContain('audio-1');
+                }
+                if (
+                    checkpoint === 'project-retirement' ||
+                    checkpoint === 'epoch-retirement' ||
+                    checkpoint === 'backend-retirement' ||
+                    checkpoint === 'backend-disposal'
+                ) {
+                    if (checkpoint === 'project-retirement') {
+                        trackStore.set({
+                            tracks: [createTrack({ id: 'successor' })],
+                            selectedTrackId: null,
+                            ghostClips: [],
+                        });
+                    } else if (checkpoint === 'epoch-retirement') {
+                        nativeLiveGraphSession.rearmEpoch += 1;
+                    } else if (checkpoint === 'backend-retirement') {
+                        nativeLiveGraphSession.backend = {
+                            backendId: 'successor',
+                            apply: vi.fn(),
+                            dispose: vi.fn(),
+                        };
+                    } else {
+                        nativeLiveGraphSession.backend?.dispose();
+                    }
+                    releaseMaterial();
+                    await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+                    expect(sentRollPosition).toBeUndefined();
+                    expect(mocks.applyGraphCommands).toHaveBeenCalledTimes(1);
+                    expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+                    expect(nativeLiveGraphSession.audibleCarrier).toBe(false);
+                    expect(nativeLiveGraphSession.rolling).toBe(false);
+                    expect(rollLease).toEqual(expect.any(String));
+                    expect(timelineSampleLifecycle).toHaveBeenCalledWith({ action: 'release', lease: rollLease });
+                    return;
+                }
+                // Web Audio advances while the native roll still cannot be sent.
+                mocks.contextSeconds = 10.4;
+                releaseMaterial();
+                await sendingRoll;
+                if (checkpoint === 'roll-position') {
+                    expect(sentRollPosition).toBeCloseTo(2.9, 9);
+                }
+                if (checkpoint === 'roll-admission') {
+                    expect(nativeLiveGraphSession.carriedStripIds.has('audio-1')).toBe(true);
+                    expect(mocks.carriedClaims.at(-1)?.ids).toContain('audio-1');
+                }
+            } finally {
+                releaseMaps(appliedMaps);
+                releaseMaterial();
+                releaseRoll({ ...APPLIED, admittedBatch: 9 });
+                await starting;
+            }
+        }
+    );
+
+    it.each(['project', 'epoch', 'backend'] as const)(
+        'refuses %s invalidation during PCM preparation before any native admission',
+        async (change) => {
+            const receipt = {
+                trackId: 'audio-1',
+                deviceId: 'd-nam',
+                engineId: '1',
+                targetGeneration: '42',
+                requestId: 'cold',
+                contentHash: 'a'.repeat(64),
+            };
+            mocks.topologyOverride = [
+                {
+                    ...CARRIED_STRIP,
+                    devices: [
+                        {
+                            id: 'd-nam',
+                            name: 'Grinder',
+                            type: 'grinder',
+                            bypassed: false,
+                            parameterValues: {},
+                            grinderModel: {
+                                requestId: receipt.requestId,
+                                modelJson:
+                                    '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                            },
+                        },
+                    ],
+                },
+                {
+                    ...SCHEDULED_CLIP,
+                    playback: { ...SCHEDULED_CLIP.playback, source: { sourceId: 'sample-1', buffer: MATERIAL } },
+                },
+            ];
+            mocks.applyGraphCommands.mockResolvedValue({
+                ...APPLIED,
+                admittedBatch: 7,
+                engineId: receipt.engineId,
+                grinderModels: [receipt],
+            });
+            vi.mocked(getEngineTransportPosition).mockResolvedValue({
+                ...rollingReading(0),
+                engineId: receipt.engineId,
+                batchesApplied: 7,
+                grinderModels: [receipt],
+            });
+            const lifecycle = transport.timelineSampleLifecycle;
+            if (!lifecycle) {
+                throw new Error('the protocol fixture must expose timeline leases');
+            }
+            let entered!: () => void;
+            const preparing = new Promise<void>((resolve) => {
+                entered = resolve;
+            });
+            let release!: () => void;
+            const held = new Promise<void>((resolve) => {
+                release = resolve;
+            });
+            let preparedLease: string | undefined;
+            const timelineSampleLifecycle = vi.fn(async (request: Parameters<typeof lifecycle>[0]) => {
+                const result = await lifecycle(request);
+                if (request.action === 'prepare') {
+                    if (typeof result !== 'object' || result === null || !('lease' in result)) {
+                        throw new Error('the protocol fixture must return its prepared lease');
+                    }
+                    if (typeof result.lease !== 'string') {
+                        throw new TypeError('the protocol fixture must return a string lease');
+                    }
+                    preparedLease = result.lease;
+                    entered();
+                    await held;
+                }
+                return result;
+            });
+            mocks.availability = { available: true, transport: { ...transport, timelineSampleLifecycle } };
+            const starting = startHeldSession({
+                positionSeconds: 0,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            });
+            await preparing;
+            try {
+                if (change === 'project') {
+                    trackStore.set({
+                        tracks: [createTrack({ id: 'successor' })],
+                        selectedTrackId: null,
+                        ghostClips: [],
+                    });
+                } else if (change === 'epoch') {
+                    nativeLiveGraphSession.rearmEpoch += 1;
+                } else {
+                    nativeLiveGraphSession.backend = {
+                        backendId: 'successor',
+                        apply: vi.fn(),
+                        dispose: vi.fn(),
+                    };
+                }
+            } finally {
+                release();
+            }
+            const result = await starting;
+            expect(mocks.applyGraphCommands).not.toHaveBeenCalled();
+            expect(result).toEqual({
+                outcome: 'declined',
+                reason: 'Native NAM project/session changed during material preparation',
+            });
+            expect(preparedLease).toEqual(expect.any(String));
+            expect(timelineSampleLifecycle).toHaveBeenCalledWith({ action: 'release', lease: preparedLease });
+            expect(mocks.setEngineTransportMaps).not.toHaveBeenCalled();
+            expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+        }
+    );
+
+    it('leaves Web Audio audible until the same engine and model target cross the admitted fence', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '9007199254740993',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        const modelJson = '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}';
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: { engineMode: 1 },
+                        grinderModel: { requestId: 'cold', modelJson },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockImplementation(async ({ batch }) => {
+            const wire = batch as NativeGraphWireBatch;
+            if (wire.replaceTopology) {
+                expect(wire.schemaVersion).toBe(2);
+                return {
+                    ...APPLIED,
+                    admittedBatch: 7,
+                    engineId: receipt.engineId,
+                    grinderModels: [receipt],
+                    reports: [{ kind: 'track', id: 'audio-1', deviceIds: ['d-nam'] }],
+                };
+            }
+            return APPLIED;
+        });
+        let observed!: () => void;
+        const firstReading = new Promise<void>((resolve) => {
+            observed = resolve;
+        });
+        let release!: (value: EngineTransportPosition) => void;
+        const matching = new Promise<EngineTransportPosition>((resolve) => {
+            release = resolve;
+        });
+        vi.mocked(getEngineTransportPosition)
+            .mockImplementationOnce(async () => {
+                observed();
+                return { ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 6, grinderModels: [] };
+            })
+            .mockImplementation(() => matching);
+        const starting = startHeldSession({
+            positionSeconds: 0,
+            transportMaps: FLAT_MAPS,
+            sampleRate: SAMPLE_RATE,
+            monitor: 'audible',
+        });
+        await firstReading;
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        release({ ...rollingReading(0), engineId: receipt.engineId, batchesApplied: 7, grinderModels: [receipt] });
+        await expect(starting).resolves.toMatchObject({ outcome: 'started' });
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).toContain('audio-1');
+        expect(nativeLiveGraphSession.backend).not.toBeNull();
+    });
+
+    it('refuses a model result from a successor engine at the same counter and retains the web carrier', async () => {
+        const receipt = {
+            trackId: 'audio-1',
+            deviceId: 'd-nam',
+            engineId: '1',
+            targetGeneration: '42',
+            requestId: 'cold',
+            contentHash: 'a'.repeat(64),
+        };
+        mocks.topologyOverride = [
+            {
+                ...CARRIED_STRIP,
+                kind: 'create-track-strip',
+                trackId: 'audio-1',
+                name: 'Lead',
+                state: { gain: 1, pan: 0, muted: false, soloGated: false, vcaMultiplier: 1 },
+                devices: [
+                    {
+                        id: 'd-nam',
+                        name: 'Grinder',
+                        type: 'grinder',
+                        bypassed: false,
+                        parameterValues: {},
+                        grinderModel: {
+                            requestId: 'cold',
+                            modelJson:
+                                '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}',
+                        },
+                    },
+                ],
+                honorMuted: true,
+                contributesAudio: true,
+            },
+        ];
+        mocks.applyGraphCommands.mockResolvedValue({
+            ...APPLIED,
+            admittedBatch: 7,
+            engineId: '1',
+            grinderModels: [receipt],
+        });
+        vi.mocked(getEngineTransportPosition).mockResolvedValue({
+            ...rollingReading(0),
+            engineId: '2',
+            batchesApplied: 7,
+            grinderModels: [receipt],
+        });
+        await expect(
+            startHeldSession({
+                positionSeconds: 0,
+                transportMaps: FLAT_MAPS,
+                sampleRate: SAMPLE_RATE,
+                monitor: 'audible',
+            })
+        ).resolves.toMatchObject({ outcome: 'declined', reason: expect.stringContaining('engine') });
+        expect(nativeLiveGraphSession.backend).toBeNull();
+        expect(mocks.carriedClaims.flatMap((claim) => claim.ids)).not.toContain('audio-1');
     });
 });

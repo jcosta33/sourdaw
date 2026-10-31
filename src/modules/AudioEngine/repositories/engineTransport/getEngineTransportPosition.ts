@@ -1,9 +1,12 @@
 import { isDesktopRuntime, desktopInvoke } from '#/utils/desktopBridge';
 
+import { type NativeGrinderModelReceipt } from '../../models/AudioGraphBackend';
 import {
     stoppedEngineTransportPosition,
     type EngineTransportPosition,
     type NativeTunerReading,
+    type EngineCaptureClock,
+    type EngineCaptureClockQuery,
 } from '../../models/EngineTransportPosition';
 import { readNativeEngineIncarnation } from '../nativeEngineIncarnation';
 
@@ -67,6 +70,55 @@ function finiteNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+    return typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function positiveEpoch(value: unknown): value is number {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value > 0;
+}
+
+function readCaptureClock(value: unknown): EngineCaptureClock | null {
+    const clock = record(value);
+    if (!clock || !positiveEpoch(clock.epoch) || !positiveEpoch(clock.streamEpoch)) {
+        return null;
+    }
+    const sampleRate = finiteNumber(clock.sampleRate);
+    const presentationSeconds = finiteNumber(clock.presentationSeconds);
+    const uncertaintySeconds = clock.uncertaintySeconds === null ? null : finiteNumber(clock.uncertaintySeconds);
+    if (
+        sampleRate === null ||
+        sampleRate <= 0 ||
+        presentationSeconds === null ||
+        presentationSeconds < 0 ||
+        (clock.quality !== 'estimated' && clock.quality !== 'degraded') ||
+        (clock.uncertaintySeconds !== null && (uncertaintySeconds === null || uncertaintySeconds < 0))
+    ) {
+        return null;
+    }
+    return {
+        epoch: clock.epoch,
+        streamEpoch: clock.streamEpoch,
+        sampleRate,
+        presentationSeconds,
+        quality: clock.quality,
+        uncertaintySeconds,
+    };
+}
+
+function readCaptureClockQuery(value: unknown): EngineCaptureClockQuery | null {
+    const query = record(value);
+    if (!query || !positiveEpoch(query.epoch)) {
+        return null;
+    }
+    const enteredSeconds = finiteNumber(query.enteredSeconds);
+    const leavingSeconds = finiteNumber(query.leavingSeconds);
+    if (enteredSeconds === null || enteredSeconds < 0 || leavingSeconds === null || leavingSeconds < enteredSeconds) {
+        return null;
+    }
+    return { epoch: query.epoch, enteredSeconds, leavingSeconds };
+}
+
 /** One payload entry as a reading, or `null` when any part of it is unusable. */
 function asTunerReading(value: unknown): NativeTunerReading | null {
     if (typeof value !== 'object' || value === null) {
@@ -114,22 +166,72 @@ function readPositionIncarnation(payload: Record<string, unknown>): string | nul
     return readNativeEngineIncarnation(payload.engineIncarnation);
 }
 
+function nativeIdentity(value: unknown): value is string {
+    return (
+        typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
+    );
+}
+function readGrinderReceipts(value: unknown): readonly NativeGrinderModelReceipt[] | undefined {
+    if (!Array.isArray(value) || value.length > 64) {
+        return undefined;
+    }
+    const receipts: NativeGrinderModelReceipt[] = [];
+    for (const raw of value) {
+        if (typeof raw !== 'object' || raw === null) {
+            return undefined;
+        }
+        const row = raw as Record<string, unknown>;
+        if (
+            typeof row.trackId !== 'string' ||
+            typeof row.deviceId !== 'string' ||
+            typeof row.requestId !== 'string' ||
+            !row.requestId ||
+            row.requestId.length > 128 ||
+            !nativeIdentity(row.engineId) ||
+            !nativeIdentity(row.targetGeneration) ||
+            typeof row.contentHash !== 'string' ||
+            !/^[0-9a-f]{64}$/.test(row.contentHash)
+        ) {
+            return undefined;
+        }
+        if (receipts.some((old) => old.deviceId === row.deviceId)) {
+            return undefined;
+        }
+        receipts.push({
+            trackId: row.trackId,
+            deviceId: row.deviceId,
+            requestId: row.requestId,
+            engineId: row.engineId,
+            targetGeneration: row.targetGeneration,
+            contentHash: row.contentHash,
+        });
+    }
+    return receipts;
+}
+
 function toEngineTransportPosition(response: unknown): EngineTransportPosition {
     if (typeof response !== 'object' || response === null) {
         return stoppedEngineTransportPosition;
     }
 
     const payload = response as Record<string, unknown>;
-    const incarnation = readPositionIncarnation(payload);
-    const identity: Pick<EngineTransportPosition, 'engineIncarnation'> = {};
-    if (incarnation !== undefined) {
-        identity.engineIncarnation = incarnation;
-    }
-    return {
-        ...identity,
+    const positionSeconds = finiteNumber(payload.positionSeconds);
+    const captureClockQuery = readCaptureClockQuery(payload.captureClockQuery);
+    const captureClock = readCaptureClock(payload.captureClock);
+    const counterFields = ['playheadFrame', 'loopWraps', 'batchesApplied'] as const;
+    const pairedCountersAvailable = counterFields.every((field) => {
+        const value = payload[field];
+        return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+    });
+    const position: EngineTransportPosition = {
+        captureClock:
+            positionSeconds !== null && pairedCountersAvailable && captureClock?.epoch === captureClockQuery?.epoch
+                ? captureClock
+                : null,
+        captureClockQuery,
         running: payload.running === true,
         playing: payload.playing === true,
-        positionSeconds: readNumber(payload, 'positionSeconds'),
+        positionSeconds: positionSeconds ?? 0,
         playheadFrame: readNumber(payload, 'playheadFrame'),
         loopWraps: readNumber(payload, 'loopWraps'),
         batchesApplied: readNumber(payload, 'batchesApplied'),
@@ -140,6 +242,18 @@ function toEngineTransportPosition(response: unknown): EngineTransportPosition {
         stripPeaks: readStripPeaks(payload),
         tunerTelemetry: readTunerTelemetry(payload),
     };
+    const incarnation = readPositionIncarnation(payload);
+    if (incarnation !== undefined) {
+        position.engineIncarnation = incarnation;
+    }
+    if (nativeIdentity(payload.engineId)) {
+        position.engineId = payload.engineId;
+    }
+    const models = readGrinderReceipts(payload.grinderModels);
+    if (models) {
+        position.grinderModels = models;
+    }
+    return position;
 }
 
 /**
