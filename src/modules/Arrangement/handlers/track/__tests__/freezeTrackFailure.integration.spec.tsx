@@ -242,6 +242,37 @@ describe('registered Freeze failure settlement', () => {
         expect(macroStore.value?.currentRecording).toHaveLength(0);
     });
 
+    it.each([
+        ['while the render runs', () => Promise.reject(new Error('aborted'))],
+        ['after the render resolves', () => Promise.resolve(buffer(1))],
+    ])('keeps the prior stale take when its refresh is cancelled %s', async (_moment, settleRender) => {
+        const prior = TrackDummy.create({
+            id: 'freeze-track',
+            frozen: true,
+            frozenBufferId: 'old-take',
+            freezeState: {
+                status: 'stale',
+                freezeId: 'old-freeze',
+                frozenBufferId: 'old-take',
+                sourceContentHash: 'old-hash',
+                compensationSeconds: 0.02,
+            },
+        });
+        trackStore.set({ tracks: [prior], selectedTrackId: prior.id });
+        flushAutomergeStorageWrites();
+        render.mockImplementation(() => {
+            cancelFreezeTrack('freeze-track');
+            return settleRender();
+        });
+        await freeze();
+        for (const track of [rawTrack(), projectedTrack()]) {
+            expect(track.frozen).toBe(true);
+            expect(track.frozenBufferId).toBe('old-take');
+            expect(track.freezeState).toEqual(prior.freezeState);
+        }
+        expect(activeFreezeTasks.size).toBe(0);
+    });
+
     it('keeps genuine successful Freeze undo and redo bound to the rendered take', async () => {
         render.mockResolvedValue(buffer(0.5));
         await freeze();
