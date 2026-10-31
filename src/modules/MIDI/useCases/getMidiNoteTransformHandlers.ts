@@ -1,6 +1,7 @@
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
 import { handleAddNotes } from '../handlers/noteCrud/handleAddNotes';
+import { handleReplaceOriginalMidiBaseRow } from '../handlers/noteCrud/handleReplaceOriginalMidiBaseRow';
 import { handleCopyMidiArticulations } from '../handlers/noteTransform/handleCopyMidiArticulations';
 import { handleHumanizeNotes } from '../handlers/noteTransform/handleHumanizeNotes';
 import { handleInvertNotes } from '../handlers/noteTransform/handleInvertNotes';
@@ -21,6 +22,7 @@ type MidiNoteTransformAppAction =
     | Extract<AppAction, { type: 'invertNotes' }>
     | Extract<AppAction, { type: 'quantizeNoteLengths' }>
     | Extract<AppAction, { type: 'quantizeNotes' }>
+    | Extract<AppAction, { type: 'replaceOriginalMidiBaseRow' }>
     | Extract<AppAction, { type: 'removeShortMidiOverlaps' }>
     | Extract<AppAction, { type: 'restoreMidiClipNotes' }>
     | Extract<AppAction, { type: 'retrogradeNotes' }>
@@ -44,6 +46,7 @@ export function getMidiNoteTransformHandlers(): MidiNoteTransformHandlersMap {
         invertNotes: handleInvertNotes,
         quantizeNoteLengths: handleQuantizeNoteLengths,
         quantizeNotes: handleQuantizeNotes,
+        replaceOriginalMidiBaseRow: handleReplaceOriginalMidiBaseRow,
         removeShortMidiOverlaps: handleRemoveShortMidiOverlaps,
         restoreMidiClipNotes: handleRestoreMidiClipNotes,
         retrogradeNotes: handleRetrogradeNotes,

@@ -323,6 +323,7 @@ describe('handleRestoreClipSplitState — satellites', () => {
         );
 
         expect(result).toEqual({ status: 'conflict' });
+        expect(mockedRestoreMidi).toHaveBeenCalledTimes(1);
         expect(mockedWriteSatellite).not.toHaveBeenCalled();
     });
 
