@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_4efe59ef77f225::t_97fdd058fbd928 655-657,659-714
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_4efe59ef77f225::t_3e710df9a90669 1841-1849,2100-2101,2140-2141,2159,2221-2226,2248,2263-2333,2884-2897
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "80239eb2043adafc47b0fca6ec5a2b1aa2c35abc",
+  "prompts": {},
+  "sessions": {
+    "s_4efe59ef77f225": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4efe59ef77f225",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
