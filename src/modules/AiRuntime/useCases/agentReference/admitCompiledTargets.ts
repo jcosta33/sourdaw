@@ -621,8 +621,8 @@ type RequestReading = {
     evidence: () => EvidenceReading;
 };
 
-function readOnce<T>(read: () => T): () => T {
-    let result: { value: T } | undefined;
+function readOnce<Reading>(read: () => Reading): () => Reading {
+    let result: { value: Reading } | undefined;
     return () => {
         result ??= { value: read() };
         return result.value;
