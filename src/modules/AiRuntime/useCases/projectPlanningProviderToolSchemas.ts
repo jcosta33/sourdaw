@@ -1,16 +1,33 @@
+import { isExecutableAppActionType } from '#/modules/Command/useCases';
+
+import {
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
+} from '../models/AgentToolCatalogNames';
+import { CREATIVE_INTERPRETATION_TOOL_NAME } from '../models/CreativeInterpretation';
 import { type PlanningProfile, READONLY_ANSWER_TOOL_NAMES } from '../models/PlanningProfile';
 import { type ToolSchema } from '../models/ToolDefinitions';
+import { WORKFLOW_CAPABILITY_TOOL_NAME } from '../models/WorkflowCapability';
 
 import { projectAnswerRespondToolSchema } from './projectAnswerRespondToolSchema';
 import { projectReadonlyAnswerMeasurementToolSchema } from './projectReadonlyAnswerMeasurementToolSchema';
 
 export type PlanningAnswerPhase = 'planning' | 'intake' | 'answer';
+export type WholeRequestIntakePhase = 'pending' | 'admitted' | 'workflow-admitted';
+
+export const WHOLE_REQUEST_PREPARATION_TOOL_NAMES: ReadonlySet<string> = new Set([
+    COMMAND_BATCH_PROPOSAL_TOOL_NAME,
+    TRANSFORM_COMPILE_TOOL_NAME,
+    RECIPE_EXPANSION_TOOL_NAME,
+]);
 
 /** Active permission and terminal grammar, consumed by every actual request. */
 export function projectPlanningProviderToolSchemas(
     schemas: readonly ToolSchema[],
     phase: PlanningAnswerPhase,
-    profile?: PlanningProfile
+    profile?: PlanningProfile,
+    wholeRequestIntake?: WholeRequestIntakePhase
 ): ToolSchema[] {
     const names = new Set(READONLY_ANSWER_TOOL_NAMES);
     if (profile !== 'readonly-answer') {
@@ -19,6 +36,9 @@ export function projectPlanningProviderToolSchemas(
     }
     return schemas
         .filter((schema) => {
+            if (profile === 'readonly-answer' && schema.function.name === WORKFLOW_CAPABILITY_TOOL_NAME) {
+                return false;
+            }
             if (phase === 'planning') {
                 return true;
             }
@@ -30,6 +50,32 @@ export function projectPlanningProviderToolSchemas(
             return names.has(schema.function.name);
         })
         .map((schema) => {
+            const name = schema.function.name;
+            if (phase === 'planning' && wholeRequestIntake !== undefined) {
+                const effectful = isExecutableAppActionType(name) || WHOLE_REQUEST_PREPARATION_TOOL_NAMES.has(name);
+                const consumed =
+                    (wholeRequestIntake !== 'pending' && name === CREATIVE_INTERPRETATION_TOOL_NAME) ||
+                    (wholeRequestIntake === 'workflow-admitted' && name === WORKFLOW_CAPABILITY_TOOL_NAME);
+                if ((wholeRequestIntake === 'pending' && effectful) || consumed) {
+                    let description =
+                        'Unavailable before successful whole-request intake. This empty entry authorizes no preparation, compilation, proposal or action.';
+                    if (consumed) {
+                        description =
+                            'Whole-request intake was consumed. This empty entry cannot repeat or replace its authority.';
+                    }
+                    return {
+                        ...schema,
+                        function: {
+                            ...schema.function,
+                            description,
+                            parameters: { type: 'object', properties: {}, required: [], additionalProperties: false },
+                        },
+                    };
+                }
+                if (wholeRequestIntake === 'pending' && name === 'analysis.measure') {
+                    return projectReadonlyAnswerMeasurementToolSchema(schema);
+                }
+            }
             if (schema.function.name === 'answer.respond') {
                 return projectAnswerRespondToolSchema(schema, phase === 'answer');
             }

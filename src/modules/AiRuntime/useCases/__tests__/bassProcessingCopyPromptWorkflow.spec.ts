@@ -38,6 +38,7 @@ import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -54,6 +55,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const PROMPT =
@@ -314,7 +316,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -481,14 +483,34 @@ function catalogDiscoveryPlan(finalCalls: readonly ProviderPlanCall[]): Provider
     ];
 }
 
-function createTurnTrackedWebLlmResponder(): (systemPrompt: string, userMessage: string) => Promise<string> {
+function createTurnTrackedWebLlmResponder(
+    onCorrection?: (message: string) => void
+): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3 && onCorrection) {
+            onCorrection(userMessage);
+            return Promise.resolve(
+                JSON.stringify([
+                    {
+                        name: 'command.batch.decline',
+                        arguments: {
+                            kind: 'clarify',
+                            reason: 'The submitted copy plan was rejected.',
+                            questions: ['How should the copy be revised?'],
+                        },
+                    },
+                ])
+            );
+        }
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
         }
         if (turn === 1) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
+        }
+        if (turn === 2) {
             return Promise.resolve(
                 JSON.stringify(
                     catalogDiscoveryPlan(
@@ -531,11 +553,15 @@ function createTurnTrackedHostedResponder(): (...args: Parameters<typeof fetch>)
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
         const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(literalMetricIntakeTurn(userMessage, request.tools)));
+        }
+        if (turn === 2) {
             return Promise.resolve(
                 toolCallsResponse(
                     catalogDiscoveryPlan(
@@ -850,7 +876,7 @@ describe('bass-processing section copy workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const confirmationId = getConfirmationId();
         expect(confirmationId).not.toBe('');
         const confirmation = getPendingActionConfirmation(confirmationId);
@@ -1019,7 +1045,7 @@ describe('bass-processing section copy workflow', () => {
 
         await sendChatMessage(PROMPT);
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(confirmation?.actions.map((action) => action.type)).toEqual([
             'addAdjustmentRegion',
@@ -1309,9 +1335,24 @@ describe('bass-processing section copy workflow', () => {
     ])('rejects a provider plan that %s', async (_label, transform) => {
         const originalLayers = structuredClone(adjustmentLayerStore.value);
         runtimeMocks.transformPlan.value = (plan) => transform(plan);
+        const corrections: Record<string, unknown>[] = [];
+        runtimeMocks.generateWebLlmCompletion.mockImplementation(
+            createTurnTrackedWebLlmResponder((message) =>
+                corrections.push(getProviderSection(message, 'validation_failures'))
+            )
+        );
 
         await sendChatMessage(PROMPT);
 
+        expect(corrections).toEqual([
+            expect.objectContaining({
+                correction: expect.objectContaining({
+                    kind: 'constraint',
+                    command: expect.objectContaining({ name: '<batch>' }),
+                    reason: 'Provider plan does not match the complete EX-03 processing copy',
+                }),
+            }),
+        ]);
         expect(getConfirmationId()).toBe('');
         expect(adjustmentLayerStore.value).toEqual(originalLayers);
         expect(undoStore.value?.past).toEqual([]);

@@ -48,16 +48,20 @@ import {
     type PendingAppActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
 import { agentRunLifecycle } from '../agentRunLifecycle';
+import { compileAgentActionExecution } from '../compileAgentActionExecution';
 import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
 import { getProjectContext } from '../getProjectContext';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { sendChatMessage } from '../sendChatMessage';
+import { validateAgentRiskApproval } from '../validateAgentRiskApproval';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     BLUES_CLIP_END_BEAT,
@@ -80,9 +84,11 @@ import {
     selectCreativeInterpretationCall,
 } from './highLevelIntentWorkflowFixture';
 import { landProjectEdit } from './landProjectEdit';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 
 /** A request that describes a sound, names no object and no command, against a selected track. */
 const RADIO_PROMPT = 'make it sound like a radio';
+const EQ_SETTINGS_PROMPT = 'Add an EQ to the selected Guitar track and set its low gain to -24 dB';
 
 /** A question about the project. Nothing in it delegates a change. */
 const READ_ONLY_PROMPT = 'what devices are on the guitar?';
@@ -331,7 +337,7 @@ function expectNoDevicesAnywhere(): void {
 function radioBatchPlan(trackId: string) {
     return {
         semantic: { classification: 'complex', uncertainty: [] },
-        objective: 'Shape the selected track so it reads as a radio.',
+        objective: 'Apply the proposed EQ processing to the selected track.',
         constraints: ['Leave every object the request did not delegate unchanged.'],
         scope: { targetIds: [trackId], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
         capabilityIds: [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME],
@@ -378,6 +384,42 @@ type InterpretationSelection = {
     nestedCreationSlotObjectTypes?: readonly string[];
 };
 
+/** Sound requests keep their creative grant and positively select the published unsupported goal. */
+function creativeMetricIntakeTurn(selection: InterpretationSelection): ScriptedTurn {
+    return (userMessage, providerView) => {
+        const call = selectCreativeInterpretationCall({
+            catalog: readCreativeInterpretationCatalog(userMessage, providerView),
+            ...selection,
+        });
+        const published = advertisedAnswerSchema(providerView);
+        const unsupported = readMetricPublication({ function: published }).find((row) => row.kind === 'unsupported');
+        if (unsupported === undefined) {
+            throw new TypeError('Expected the actual published unsupported objective.');
+        }
+        return [
+            {
+                ...call,
+                arguments: {
+                    ...call.arguments,
+                    answer: null,
+                    metricIntent: {
+                        kind: 'perceptual',
+                        uncertainty: 'none',
+                        objectives: [
+                            {
+                                objectiveId: unsupported.id,
+                                scopeCandidateId: null,
+                                referenceScopeCandidateId: null,
+                                rangeCandidateId: null,
+                            },
+                        ],
+                    },
+                },
+            },
+        ];
+    };
+}
+
 const EDIT_THE_SELECTED_TRACK: InterpretationSelection = {
     modeId: 'edit',
     targetObjectIds: [GUITAR_TRACK_ID],
@@ -402,15 +444,11 @@ const EDIT_THE_SELECTED_TRACK_AND_INVENT: InterpretationSelection = {
 function radioProviderTurns(input: {
     interpretation: InterpretationSelection;
     proposeTrackId?: string;
+    literal?: boolean;
 }): ScriptedTurn[] {
     const turns: ScriptedTurn[] = [
         () => [catalogDiscoveryCall([PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME])],
-        (userMessage, providerView) => [
-            selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
-                ...input.interpretation,
-            }),
-        ],
+        input.literal === true ? literalMetricIntakeTurn : creativeMetricIntakeTurn(input.interpretation),
     ];
     const proposeTrackId = input.proposeTrackId;
     if (proposeTrackId === undefined) {
@@ -434,6 +472,7 @@ function radioProviderTurns(input: {
  */
 /** The stated duration matches the phrase the fixture proposes (`BLUES_CLIP_END_BEAT`), so the numeric evidence is one the treatment proposal may legally carry. */
 const COMBINED_PROMPT = `${BLUES_PROMPT} for 16 beats, and make it sound like a radio`;
+const COMBINED_SETTINGS_PROMPT = `${BLUES_PROMPT} for 16 beats, and add an EQ to Guitar and set its low gain to -24 dB`;
 
 const BEAT_AND_RADIO_PROMPT = 'create a beat on a new MIDI track and make Guitar sound like a radio';
 /** The stated duration matches the beat clip the fixture proposes (`endBeat: 4`). */
@@ -452,19 +491,20 @@ const HYPHENATED_BEAT_AND_RADIO_PROMPT =
 const MEASURE_AND_RADIO_PROMPT = 'create a jazz MIDI track for 2 measures and make Guitar sound like a radio';
 const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME];
 
-function beatAndRadioProviderTurns(): ScriptedTurn[] {
+function beatAndRadioProviderTurns(literal = false): ScriptedTurn[] {
+    let intake: ScriptedTurn = creativeMetricIntakeTurn({
+        modeId: 'create',
+        targetObjectIds: [GUITAR_TRACK_ID],
+        dimensions: ['arrangement', 'midi-content', 'processing'],
+        creationSlotObjectTypes: ['track', 'device'],
+        nestedCreationSlotObjectTypes: ['clip'],
+    });
+    if (literal) {
+        intake = literalMetricIntakeTurn;
+    }
     return [
+        intake,
         () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
-        (userMessage, providerView) => [
-            selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
-                modeId: 'create',
-                targetObjectIds: [GUITAR_TRACK_ID],
-                dimensions: ['arrangement', 'midi-content', 'processing'],
-                creationSlotObjectTypes: ['track', 'device'],
-                nestedCreationSlotObjectTypes: ['clip'],
-            }),
-        ],
         (userMessage) => {
             assertDiscoveredCommandSchemas(userMessage, BEAT_AND_RADIO_COMMAND_NAMES);
             return [
@@ -473,7 +513,7 @@ function beatAndRadioProviderTurns(): ScriptedTurn[] {
                     arguments: {
                         plan: {
                             ...radioBatchPlan(GUITAR_TRACK_ID),
-                            objective: 'Create a beat on a new MIDI track and treat Guitar as a radio.',
+                            objective: 'Create a beat on a new MIDI track and apply the proposed Guitar EQ settings.',
                         },
                         list: {
                             schemaVersion: 1,
@@ -559,15 +599,11 @@ function radioDeviceItems(trackName: string): Record<string, unknown>[] {
 function combinedProviderTurns(input: {
     interpretation: InterpretationSelection;
     deviceTrackName: string;
+    literal?: boolean;
 }): ScriptedTurn[] {
     return [
         () => [catalogDiscoveryCall(COMBINED_COMMAND_NAMES)],
-        (userMessage, providerView) => [
-            selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
-                ...input.interpretation,
-            }),
-        ],
+        input.literal === true ? literalMetricIntakeTurn : creativeMetricIntakeTurn(input.interpretation),
         (userMessage) => {
             assertDiscoveredCommandSchemas(userMessage, COMBINED_COMMAND_NAMES);
             return [proposeCall([...bluesProposalItems(), ...radioDeviceItems(input.deviceTrackName)])];
@@ -577,6 +613,7 @@ function combinedProviderTurns(input: {
 
 /** A request for one track and for processing inside it. Nothing in it names an object that exists. */
 const SYNTH_PROMPT = 'add a synth track with a radio filter';
+const SYNTH_SETTINGS_PROMPT = 'add an audio track named Synth with an EQ and set its low gain to -24 dB';
 
 const SYNTH_TRACK_NAME = 'Synth';
 const SYNTH_TRACK_BINDING = 'synth';
@@ -595,7 +632,7 @@ const CREATE_A_TRACK_AND_TREAT_IT: InterpretationSelection = {
 function synthPlan() {
     return {
         semantic: { classification: 'complex', uncertainty: [] },
-        objective: 'Add one synth track this batch creates and put a radio filter on it.',
+        objective: 'Create the proposed track with its EQ settings.',
         constraints: ['Leave every object the project already holds unchanged.'],
         scope: { targetIds: [], targetRanges: [], protectedTargetIds: [], protectedRanges: [] },
         capabilityIds: [],
@@ -638,15 +675,10 @@ function synthProposalItems(): Record<string, unknown>[] {
     ];
 }
 
-function synthProviderTurns(): ScriptedTurn[] {
+function synthProviderTurns(literal = false): ScriptedTurn[] {
     return [
         () => [catalogDiscoveryCall(SYNTH_COMMAND_NAMES)],
-        (userMessage, providerView) => [
-            selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
-                ...CREATE_A_TRACK_AND_TREAT_IT,
-            }),
-        ],
+        literal ? literalMetricIntakeTurn : creativeMetricIntakeTurn(CREATE_A_TRACK_AND_TREAT_IT),
         (userMessage) => {
             assertDiscoveredCommandSchemas(userMessage, SYNTH_COMMAND_NAMES);
             return [
@@ -712,7 +744,7 @@ function expectNoBluesPhrase(): void {
 }
 
 async function commitCombinedRequest(): Promise<PendingAppActionConfirmation> {
-    await sendChatMessage(COMBINED_PROMPT);
+    await sendChatMessage(COMBINED_SETTINGS_PROMPT);
     const confirmation = requireConfirmation();
     await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
         status: 'executed',
@@ -721,7 +753,7 @@ async function commitCombinedRequest(): Promise<PendingAppActionConfirmation> {
 }
 
 async function commitRadioDevice(): Promise<PendingAppActionConfirmation> {
-    await sendChatMessage(RADIO_PROMPT);
+    await sendChatMessage(EQ_SETTINGS_PROMPT);
     const confirmation = requireConfirmation();
     await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
         status: 'executed',
@@ -740,7 +772,11 @@ describe('creative interpretation execution', () => {
         runtimeMocks.backend.value = 'webllm';
         scriptProviderTurns(
             runtimeMocks.generateWebLlmCompletion,
-            radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID })
+            radioProviderTurns({
+                interpretation: EDIT_THE_SELECTED_TRACK,
+                proposeTrackId: GUITAR_TRACK_ID,
+                literal: true,
+            })
         );
         await cloudSession.clear();
         configureAutomergeStoragePort(null);
@@ -805,8 +841,8 @@ describe('creative interpretation execution', () => {
         vi.unstubAllGlobals();
     });
 
-    it('proposes one addDevice on the admitted track and commits it as one undoable group', async () => {
-        await sendChatMessage(RADIO_PROMPT);
+    it('commits explicit EQ settings on the grounded track as one undoable group', async () => {
+        await sendChatMessage(EQ_SETTINGS_PROMPT);
 
         const confirmation = requireConfirmation();
         expect(confirmation.actions.map((action) => action.type)).toEqual([
@@ -831,7 +867,7 @@ describe('creative interpretation execution', () => {
         expect(undoStore.value?.past ?? []).toHaveLength(confirmation.actions.length);
     });
 
-    it('carries strict hosted argument leaves through confirmation, approval, and undo', async () => {
+    it('retains strict hosted creative leaves and the raw Command approval and undo contract', async () => {
         runtimeMocks.backend.value = 'cloud';
         const turns = radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID });
         let turnIndex = 0;
@@ -892,6 +928,30 @@ describe('creative interpretation execution', () => {
         expectNoDevicesAnywhere();
         expect(undoStore.value?.past ?? []).toEqual([]);
 
+        const agentExecution = compileAgentActionExecution({
+            actions: parsed.actions,
+            metricGoalState: parsed.metricGoalState,
+            actionCommandGraph: parsed.actionCommandGraph,
+            actionLabels: [PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME],
+            context,
+            group: { groupId: 'group-hosted-agent-radio', groupLabel: 'Radio plan' },
+            intent: RADIO_PROMPT,
+            projectRevision: revision,
+            runId: 'run-hosted-agent-radio',
+            mode: 'apply',
+            requiresConfirmation: parsed.requiresConfirmation,
+        });
+        if (agentExecution.agentApproval === null) {
+            throw new TypeError('The unsupported sound plan must retain its pending agent approval.');
+        }
+        expect(
+            validateAgentRiskApproval({
+                approval: agentExecution.agentApproval,
+                commandBatch: agentExecution.commandBatch,
+                currentRevision: revision,
+            })
+        ).toMatchObject({ status: 'invalid', stale: false });
+        // The following manually issued kernel approval tests wire transport, not agent metric admission.
         const commandBatch = compilePlannedActionCommandBatch({
             actions: parsed.actions,
             actionCommandGraph: parsed.actionCommandGraph,
@@ -936,7 +996,7 @@ describe('creative interpretation execution', () => {
     });
 
     it('asks for reapproval instead of committing when an unrelated edit lands after the approval', async () => {
-        await sendChatMessage(RADIO_PROMPT);
+        await sendChatMessage(EQ_SETTINGS_PROMPT);
         const confirmation = requireConfirmation();
 
         // An edit with no relationship to the admitted authority: the other track's name.
@@ -951,6 +1011,76 @@ describe('creative interpretation execution', () => {
         expect(getPendingActionConfirmation(confirmation.id)?.status).toBe('proposed');
         expectNoDevicesAnywhere();
     });
+
+    it.each([
+        {
+            kind: 'selected track',
+            prompt: RADIO_PROMPT,
+            turns: () =>
+                radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID }),
+        },
+        {
+            kind: 'mixed phrase',
+            prompt: COMBINED_PROMPT,
+            turns: () =>
+                combinedProviderTurns({
+                    interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT,
+                    deviceTrackName: 'Guitar',
+                }),
+        },
+        { kind: 'mixed beat', prompt: BEAT_AND_RADIO_PROMPT, turns: () => beatAndRadioProviderTurns() },
+        ...[
+            JAZZ_AND_RADIO_PROMPT,
+            BAR_AND_RADIO_PROMPT,
+            HYPHENATED_BEAT_AND_RADIO_PROMPT,
+            MEASURE_AND_RADIO_PROMPT,
+        ].map((prompt) => ({
+            kind: prompt,
+            prompt,
+            turns: () => beatAndRadioProviderTurns(),
+        })),
+        { kind: 'created track', prompt: SYNTH_PROMPT, turns: () => synthProviderTurns() },
+        {
+            kind: 'project injection',
+            prompt: RADIO_PROMPT,
+            turns: () =>
+                radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID }),
+        },
+    ])(
+        'keeps the original $kind radio request visible and blocked without acoustic proof',
+        async ({ kind, prompt, turns }) => {
+            if (kind === 'project injection') {
+                seedProject(INJECTED_TRACK_NAME);
+            }
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, turns());
+            const before = {
+                revision: captureProjectRevision(),
+                tracks: structuredClone(trackStore.value),
+                midi: structuredClone(midiStore.value),
+                transport: structuredClone(transportStore.value),
+                undo: structuredClone(undoStore.value?.past),
+            };
+            await sendChatMessage(prompt);
+            const confirmation = requireConfirmation();
+            expect(confirmation.actions.length).toBeGreaterThan(0);
+            const view = getAgentApprovalView({ confirmationId: confirmation.id });
+            expect(view?.canConfirm).toBe(false);
+            expect(view?.metricGoals.status).toBe('blocked');
+            expect(view?.metricGoals.criteria[0]?.relation).toBe('unsupported');
+            expect(view?.metricGoals.reason).toBeTruthy();
+            await expect(confirmPendingChatActions({ confirmationId: confirmation.id })).resolves.toEqual({
+                status: 'failed',
+                reason: view?.metricGoals.reason,
+            });
+            expect(captureProjectRevision()).toBe(before.revision);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(midiStore.value).toEqual(before.midi);
+            expect(transportStore.value).toEqual(before.transport);
+            expect(undoStore.value?.past).toEqual(before.undo);
+            expect(aiActionHistoryStore.value?.groups ?? []).toEqual([]);
+            expectNoDevicesAnywhere();
+        }
+    );
 
     it('refuses a device proposed onto a track the admitted authority never covered', async () => {
         cycleProviderAttempt(
@@ -985,13 +1115,16 @@ describe('creative interpretation execution', () => {
     it('compiles, confirms and applies the invented phrase beside the delegated treatment as one batch', async () => {
         scriptProviderTurns(
             runtimeMocks.generateWebLlmCompletion,
-            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT, deviceTrackName: 'Guitar' })
+            combinedProviderTurns({
+                interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT,
+                deviceTrackName: 'Guitar',
+                literal: true,
+            })
         );
 
         const confirmation = await commitCombinedRequest();
 
-        // Both halves ride one batch: the plan-created phrase on the ordinary creation route, the
-        // device on the creative authority that covers the selected track.
+        // Both explicit clauses ride one batch through ordinary grounding after isolated literal intake.
         expect(confirmation.actions.map((action) => action.type)).toEqual([
             'addTrack',
             'addClip',
@@ -1016,9 +1149,12 @@ describe('creative interpretation execution', () => {
     ])(
         'previews and approves the $requestKind new-track beat beside the Guitar treatment as one batch',
         async ({ prompt }) => {
-            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, beatAndRadioProviderTurns());
+            scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, beatAndRadioProviderTurns(true));
 
-            await sendChatMessage(prompt);
+            const settingsPrompt = prompt
+                .replace('create a jazz MIDI track', 'create a jazz beat on a new MIDI track')
+                .replace('make Guitar sound like a radio', 'add an EQ to Guitar and set its low gain to -24 dB');
+            await sendChatMessage(settingsPrompt);
             const confirmation = requireConfirmation();
             expect(confirmation.actions.map((action) => action.type)).toEqual([
                 'addTrack',
@@ -1061,7 +1197,11 @@ describe('creative interpretation execution', () => {
     it('undoes the invented phrase and the delegated device together, then redoes both', async () => {
         scriptProviderTurns(
             runtimeMocks.generateWebLlmCompletion,
-            combinedProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT, deviceTrackName: 'Guitar' })
+            combinedProviderTurns({
+                interpretation: EDIT_THE_SELECTED_TRACK_AND_INVENT,
+                deviceTrackName: 'Guitar',
+                literal: true,
+            })
         );
 
         await commitCombinedRequest();
@@ -1160,9 +1300,9 @@ describe('creative interpretation execution', () => {
     });
 
     it('creates the track the request asks for and lands the treatment inside it as one batch', async () => {
-        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, synthProviderTurns());
+        scriptProviderTurns(runtimeMocks.generateWebLlmCompletion, synthProviderTurns(true));
 
-        await sendChatMessage(SYNTH_PROMPT);
+        await sendChatMessage(SYNTH_SETTINGS_PROMPT);
 
         const confirmation = requireConfirmation();
         expect(confirmation.actions.map((action) => action.type)).toEqual(SYNTH_COMMAND_NAMES);

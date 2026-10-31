@@ -44,6 +44,12 @@ type ProposalChange =
 
 /** The approval-projection fields this section renders, as a leaf-owned structural shape. */
 type AgentApprovalView = {
+    canConfirm: boolean;
+    metricGoals: {
+        status: string;
+        reason: string | null;
+        criteria: readonly { goalId: string; stepId: string; criterionText: string }[];
+    };
     confirmationId: string;
     status: string;
     error: string | null;
@@ -402,6 +408,15 @@ const ApprovalCard = ({
             </ul>
             {renderRecipes(view.recipes)}
             {renderMeasuredPreview(view.measuredPreview)}
+            <div aria-label="Metric goal verification">
+                <p>{`Objective verification: ${view.metricGoals.status}`}</p>
+                {view.metricGoals.reason === null ? null : <p>{view.metricGoals.reason}</p>}
+                <ul>
+                    {view.metricGoals.criteria.map((criterion) => (
+                        <li key={`${criterion.stepId}:${criterion.goalId}`}>{criterion.criterionText}</li>
+                    ))}
+                </ul>
+            </div>
             {renderScope(view.scope)}
             {renderRisk(view.risk)}
             {renderIntentGroups(view, excludedGroupIds, onToggleGroup)}
@@ -426,6 +441,7 @@ const ApprovalCard = ({
                             size="xs"
                             variant="secondary"
                             aria-label="Confirm agent actions"
+                            disabled={!view.canConfirm}
                             className="motion-reduce:transition-none"
                             onClick={() => onConfirm(view.confirmationId)}
                         >

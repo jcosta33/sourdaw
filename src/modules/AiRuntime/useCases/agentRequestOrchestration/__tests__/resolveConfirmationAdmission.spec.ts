@@ -50,7 +50,8 @@ vi.mock('../../../stores/pendingActionConfirmationStore', () => ({
     getPendingActionConfirmation: mocks.getConfirmation,
     refreshPendingActionConfirmationApproval: mocks.reboundApproval,
 }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectRevision: mocks.revision,
     projectRevisionMatchesLiveIgnoringCommandCheckpoint: mocks.revisionMatchesLive,
     settlePendingProjectWritesAndCaptureRevision: mocks.settlePendingWrites,

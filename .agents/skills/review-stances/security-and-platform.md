@@ -523,6 +523,24 @@ and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRC
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
 
+### Control receipt admission must precede semantic authority (introduced by PR #4128)
+
+PR #4128 (`1d1471216e55823296bf84abcb4d2933ab0e3bee`) advanced interpretation after
+bounding its receipt without checking whether bounding had replaced success with failure. The
+parser's staged authority could then survive an unadmitted control. Historical private reviewer
+prompts, models and tiers are unknown. The missed boundary was receipt admission through actual
+authority consumption, beyond schema-valid selector arguments.
+
+Promote authority only after the actual bounded success receipt passes every carrier and byte
+admission. A compacted carrier, failed receipt or oversized raw control cannot substitute for that
+witness: discard unadmitted staged intent and keep effectful schemas and calls closed. Exercise an
+otherwise-valid control selected from the actual published catalog, followed by effectful use
+through the real parser and correction route. Require no continuation, escaped authority or
+proposal, preserving the correlated failure. Keep genuine in-budget local and hosted controls that
+restore the full effectful contracts. In a committed isolated probe, remove only the responsible
+discard/admission edge and require `does not let the actual parser carry failed control authority
+into a following proposal` in `metricIntent.spec.ts` to fail independently of manifest pins.
+
 ### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
 
 PR #5254 (`07182eab40171c11502e287c0da15a808fe09f11`) exposed the numeric Body chooser

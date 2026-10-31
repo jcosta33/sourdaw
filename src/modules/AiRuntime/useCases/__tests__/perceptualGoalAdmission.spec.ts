@@ -8,8 +8,9 @@ import { runApplicationOwnedToolLoop } from '../applicationOwnedToolLoop';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => ({
@@ -147,34 +148,54 @@ describe('perceptual goal admission', () => {
             const revisionBefore = captureProjectRevision();
             const snapshotBefore = structuredClone(planningContext);
             const providerTurn = route === 'local' ? undefined : { provider: route, assistantItems: null };
-            const catalog = prepareCreativeInterpretationCatalog({
-                prompt,
-                context: planningContext,
-                projectRevision: 'snapshot-1',
-            });
             vi.mocked(generateToolPlanningOutcome)
                 .mockResolvedValueOnce({ status: 'complete', toolCalls: [decline], providerTurn })
-                .mockResolvedValueOnce({
-                    status: 'complete',
-                    toolCalls: [
-                        {
-                            id: 'interpret-1',
-                            name: 'selectCreativeInterpretation',
-                            arguments: {
-                                catalogId: catalog.catalogId,
-                                modeId: 'edit',
-                                targetCandidateIds: ['target-1'],
-                                editDimensionCandidateIds: ['dimension-processing'],
-                                constraintCandidateIds: [],
-                                creationSlotIds: catalog.creationSlots
-                                    .filter(
-                                        (slot) => slot.objectType === 'device' && slot.parentCandidateId === 'target-1'
-                                    )
-                                    .map((slot) => slot.candidateId),
-                                uncertainty: 'none',
+                .mockImplementationOnce(async (_system, message, schemas) => {
+                    const base = selectCreativeInterpretationCall({
+                        catalog: readCreativeInterpretationCatalog(message, schemas),
+                        modeId: 'edit',
+                        targetObjectIds: [vocals.id],
+                        dimensions: ['processing'],
+                        creationSlotObjectTypes: ['device'],
+                    });
+                    const schema = schemas.find(
+                        (candidate: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                            candidate.function.name === base.name
+                    );
+                    if (schema === undefined) {
+                        throw new TypeError('Expected the published joint intake schema');
+                    }
+                    const objective = readMetricPublication(schema).find(
+                        (candidate) => candidate.kind === 'unsupported'
+                    );
+                    if (objective === undefined) {
+                        throw new TypeError('Expected the published unsupported objective');
+                    }
+                    return {
+                        status: 'complete',
+                        toolCalls: [
+                            {
+                                ...base,
+                                id: 'interpret-1',
+                                arguments: {
+                                    ...base.arguments,
+                                    answer: null,
+                                    metricIntent: {
+                                        kind: 'perceptual',
+                                        uncertainty: 'none',
+                                        objectives: [
+                                            {
+                                                objectiveId: objective.id,
+                                                scopeCandidateId: null,
+                                                referenceScopeCandidateId: null,
+                                                rangeCandidateId: null,
+                                            },
+                                        ],
+                                    },
+                                },
                             },
-                        },
-                    ],
+                        ],
+                    };
                 })
                 .mockResolvedValueOnce({
                     status: 'complete',
