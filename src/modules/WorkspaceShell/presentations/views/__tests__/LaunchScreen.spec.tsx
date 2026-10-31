@@ -23,11 +23,13 @@ vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
     executeUserAppAction: mocks.executeUserAppAction,
 }));
 
-vi.mock('#/modules/DawInterchange/useCases', () => ({
+vi.mock('#/modules/DawInterchange/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/DawInterchange/useCases')>()),
     pickAndImportDawProject: mocks.pickAndImportDawProject,
 }));
 
-vi.mock('#/modules/Project/useCases', () => ({
+vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Project/useCases')>()),
     createFromTemplate: mocks.createFromTemplate,
     getRecentProjects: mocks.getRecentProjects,
     getPreviewLoop: mocks.getPreviewLoop,
