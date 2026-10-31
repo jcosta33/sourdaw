@@ -1,0 +1,40 @@
+src/modules/Arrangement/models/InlineMidiGeometry.ts
+  s_88fc7e0d05bab6::t_bfc4001625bf81 215
+  s_88fc7e0d05bab6::t_43cddeafdb4ab0 60,86-89,96,109-110
+  s_88fc7e0d05bab6::t_5ece2199cdd461 3-4,6,9-11,38,40,64,67-83,229-230,234,237
+  s_88fc7e0d05bab6::t_04678a890028a1 84-85
+src/modules/Arrangement/presentations/helpers/timelineTools.ts
+  s_88fc7e0d05bab6::t_5ece2199cdd461 12,54-59,66,88
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/__tests__/hitTestClip.spec.ts
+  s_88fc7e0d05bab6::t_51a5b92750108f 181-182,221-227,236
+  s_88fc7e0d05bab6::t_78074e7c991156 145-147
+src/modules/Arrangement/presentations/helpers/__tests__/timelineTools.spec.ts
+  s_88fc7e0d05bab6::t_4f8165b141ff4b 200,221,225,230,233-234,246,267,277
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts
+  s_88fc7e0d05bab6::t_5ece2199cdd461 15-16
+  s_88fc7e0d05bab6::t_4f8165b141ff4b 73-78
+src/modules/Arrangement/presentations/helpers/__tests__/timelineToolsInlineDraw.spec.ts
+  s_88fc7e0d05bab6::t_a0fccf926f2638 22-31,48,50-52,71-73,109-136,157-158,162,169-171,178-189,191,193-205,207-241
+  s_88fc7e0d05bab6::t_4f8165b141ff4b 6-10
+src/modules/Arrangement/presentations/renderers/__tests__/clipDrawing.spec.ts
+  s_88fc7e0d05bab6::t_040096920de1dc 193,196
+src/modules/Arrangement/models/__tests__/inlineMidiGeometry.spec.ts
+  s_88fc7e0d05bab6::t_5cabc32db006d9 7,11,53,56-57,64-65,67,70-80,82-86,96-129,199,204-206,215-216,219-220,227-235
+  s_88fc7e0d05bab6::t_4f8165b141ff4b 224-226
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b099000ac147ac56da71f38a6ceb2e94e40ca1b3",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
