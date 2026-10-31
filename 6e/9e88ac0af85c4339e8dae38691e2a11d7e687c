@@ -1,0 +1,39 @@
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_7a8e1107313040::t_b0bdc014ccc230 716-723,725,730-731,736
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerJumpRecordingPass.spec.ts
+  s_7a8e1107313040::t_8a015e51b16f27 4,52,111,234,237-241,243,245,252,257-261
+  s_7a8e1107313040::t_bdbc7e99732a22 286,288,313,316,405-406,408,432
+  s_7a8e1107313040::t_ab347baeb3ce8e 1-3,5-51,53-110,112-233,235-236,242,244,246-251,253-256,262-285,287,289-312,314-315,317-404,407,409-431,433-439
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_7a8e1107313040::t_f6ac742394ffa9 204-210,282-298,879-881,899-907,964-966
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_7a8e1107313040::t_f6ac742394ffa9 15-16,121
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_7a8e1107313040::t_3b79be45edd2f9 1018,1025-1041
+  s_7a8e1107313040::t_95150fa8425bd4 1012-1017,1019-1024,1042-1057,1059-1063
+  s_7a8e1107313040::t_6ba19699121a94 1058
+src/modules/AudioEngine/useCases/offlineRender/resolveTrackClipsWithComping.ts
+  s_7a8e1107313040::t_c3c95b80e3a046 386-397
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_7a8e1107313040::t_4472ccc6c526a7 314-353
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_7a8e1107313040::t_227e3f79bd3757 750-751
+  s_7a8e1107313040::t_284024e0aae1c2 396-397,422,450-452,747-749,752-806
+  s_7a8e1107313040::t_a7643bfecb5b4d 807
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6e9e88ac0af85c4339e8dae38691e2a11d7e687c",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
