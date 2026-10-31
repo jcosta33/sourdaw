@@ -13,8 +13,9 @@ import { type Clip } from '../../stores/trackStore';
 
 import { commitRecording } from './commitRecording';
 import { discardRecording } from './discardRecording';
+import { passDepthAt } from './passDepthAt';
 import { recordingMidiSourceBeatAt } from './recordingMidiSourceBeatAt';
-import { passDepthAt, recordingPassOrigin } from './recordingPassOrigin';
+import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 /**

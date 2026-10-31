@@ -1,6 +1,7 @@
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 
-import { passDepthAt, recordingPassOrigin } from './recordingPassOrigin';
+import { passDepthAt } from './passDepthAt';
+import { recordingPassOrigin } from './recordingPassOrigin';
 
 /**
  * Fix where the pass after `pass` begins, once `pass` is staged as ending at `endBeat`.

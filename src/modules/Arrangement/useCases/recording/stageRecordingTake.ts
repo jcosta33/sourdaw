@@ -5,7 +5,8 @@ import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
 
 import { closeRecordingPass } from './closeRecordingPass';
-import { passDepthAt, recordingPassOrigin } from './recordingPassOrigin';
+import { passDepthAt } from './passDepthAt';
+import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 type StageRecordingTakeInput = {
