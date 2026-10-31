@@ -1,0 +1,27 @@
+src/app/initAudioBufferCacheAccess.ts
+  s_3bb122e91d89a5::t_834d7a4c7d0c61 1-3,5-17,19
+  s_3bb122e91d89a5::t_68adb1413e54a7 18
+  s_3bb122e91d89a5::t_06dd7f588746f2 4
+src/app/__tests__/bootstrap.spec.ts
+  s_3bb122e91d89a5::t_6a5cb9cbcc9fcf 198,302,809-811,1192-1194,1196-1199
+src/app/__tests__/initAudioBufferCacheAccess.spec.ts
+  s_3bb122e91d89a5::t_8bd629091a3e4b 1-59
+src/app/bootstrap.ts
+  s_3bb122e91d89a5::t_664506c460ec56 19,246,477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "337185f5d4856feae0f5b1f8fc86b069905d0614",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
