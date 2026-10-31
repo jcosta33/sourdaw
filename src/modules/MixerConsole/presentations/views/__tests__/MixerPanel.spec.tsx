@@ -235,6 +235,37 @@ describe('MixerPanel', () => {
         expect(screen.getByText(/Mixer - 1 channels/i)).toBeInTheDocument();
     });
 
+    it('should render the master row only as the dedicated master strip', () => {
+        trackMocks.useTracks.mockReturnValueOnce({
+            tracks: [
+                { id: 'master', kind: 'master', name: 'Master' },
+                { id: 'track-1', kind: 'midi', name: 'MIDI 1' },
+            ],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<MixerPanel />);
+
+        expect(screen.getAllByTestId(/^channel-strip-/).map((strip) => strip.dataset.testid)).toEqual([
+            'channel-strip-track-1',
+        ]);
+        expect(screen.getAllByTestId('master-channel-strip')).toHaveLength(1);
+        expect(screen.getByText(/Mixer - 1 channels/i)).toBeInTheDocument();
+    });
+
+    it('should render the blocked state when only the master row exists', () => {
+        trackMocks.useTracks.mockReturnValueOnce({
+            tracks: [{ id: 'master', kind: 'master', name: 'Master' }],
+            selectedTrackId: null,
+        });
+
+        render(<MixerPanel />);
+
+        expect(screen.getByText('No tracks in the oven yet')).toBeInTheDocument();
+        expect(screen.queryByTestId('channel-strip-master')).not.toBeInTheDocument();
+        expect(screen.getByText(/Mixer - 0 channels/i)).toBeInTheDocument();
+    });
+
     it('should render the blocked state when there are no tracks', () => {
         trackMocks.useTracks.mockReturnValueOnce({ tracks: [], selectedTrackId: null });
 

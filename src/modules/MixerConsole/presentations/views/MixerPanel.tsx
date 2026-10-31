@@ -24,6 +24,7 @@ import { useContextMenuDismiss } from '#/utils/UI/useContextMenuDismiss';
 import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
+import { getMixerChannelTracks } from './getMixerChannelTracks';
 import { ExpandedChannelStrip } from './Mixer/ExpandedChannelStrip';
 import { MasterChannelStrip } from './Mixer/MasterChannelStrip';
 import { MixHealthDialog } from './Mixer/MixHealthDialog';
@@ -43,6 +44,7 @@ const STRIP_WIDTH_CLASS: Record<ChannelStripWidth, string> = {
 };
 export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
+    const channelTracks = getMixerChannelTracks(tracks);
     const { channelStripWidth } = useWorkspaceState();
     const widthClass = STRIP_WIDTH_CLASS[channelStripWidth];
 
@@ -93,7 +95,7 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
         <DawPanelSurface tone="dock" style={style} role="region" aria-label="Mixer panel">
             <DawHeaderBand
                 className="rounded-none px-3 py-1.5"
-                title={`Mixer - ${tracks.filter((time) => time.kind !== 'folder').length} channels`}
+                title={`Mixer - ${channelTracks.length} channels`}
                 titleClassName="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider"
                 actions={
                     <Row gap={1}>
@@ -214,20 +216,18 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
             <MixHealthDialog open={showMixHealth} onOpenChange={setShowMixHealth} />
             <ScrollArea className="flex-1">
                 <Row align="stretch" gap={1} className="h-full p-2">
-                    {tracks
-                        .filter((time) => time.kind !== 'folder')
-                        .map((track) => (
-                            <ExpandedChannelStrip
-                                key={track.id}
-                                track={track}
-                                isSelected={track.id === selectedTrackId}
-                                widthClass={widthClass}
-                            />
-                        ))}
+                    {channelTracks.map((track) => (
+                        <ExpandedChannelStrip
+                            key={track.id}
+                            track={track}
+                            isSelected={track.id === selectedTrackId}
+                            widthClass={widthClass}
+                        />
+                    ))}
 
                     <MasterChannelStrip widthClass={widthClass} />
 
-                    {tracks.length === 0 ? (
+                    {channelTracks.length === 0 ? (
                         <Row grow justify="center">
                             <DawBlockedState
                                 compact

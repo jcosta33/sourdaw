@@ -31,6 +31,7 @@ import { toggleRecord } from '../../useCases/loopStation/toggleRecord';
 import { toggleSync } from '../../useCases/loopStation/toggleSync';
 import { triggerSlot } from '../../useCases/loopStation/triggerSlot';
 import { undoLastLayer } from '../../useCases/loopStation/undoLastLayer';
+import { getLaunchableTracks } from '../helpers/getLaunchableTracks';
 import { formatBarBeat, formatLoopProgress } from '../helpers/loopStationProgress';
 
 const emptyLoopState: LoopStationState = {
@@ -272,7 +273,7 @@ export const LoopStationPanel = (): ReactElement => {
     const loopState = useStore(loopStationStore, emptyLoopState);
     const trackState = useStore(trackStore, defaultTrackState);
     const transport = useStore(transportStore, defaultTransportState);
-    const tracks: TrackRef[] = trackState.tracks.map(toTrackRef);
+    const tracks: TrackRef[] = getLaunchableTracks(trackState.tracks).map(toTrackRef);
     const rowCount = Math.max(8, loopState.sceneCount);
 
     // Whether *any* slot is active, purely to gate the header's own "Bar X.X"

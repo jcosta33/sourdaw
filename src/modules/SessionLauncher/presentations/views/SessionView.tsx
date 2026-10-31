@@ -22,13 +22,15 @@ import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessio
 import { launchSessionScene } from '../../useCases/sessionLaunch/launchSessionScene';
 import { stopAllSessionSlots } from '../../useCases/sessionLaunch/stopAllSessionSlots';
 import { toggleSessionSlot } from '../../useCases/sessionLaunch/toggleSessionSlot';
+import { getLaunchableTracks } from '../helpers/getLaunchableTracks';
 import { useTracks } from '../hooks/useTracks';
 
 const SCENE_COUNT = 8;
 const emptyState: SessionLaunchState = { activeSlots: {} };
 
 export const SessionView = (): ReactElement => {
-    const { tracks } = useTracks();
+    const { tracks: allTracks } = useTracks();
+    const tracks = getLaunchableTracks(allTracks);
     // §83.2 — state lives in a module-level store so panel close/reopen
     // no longer discards which clips are launched.
     const state = useStore(sessionLaunchStore, emptyState);
