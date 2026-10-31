@@ -5,7 +5,8 @@ import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-import { captureManualRecordingEnd, manualClosingBeat, type ManualRecordingEnd } from './manualRecordingEnd';
+import { captureManualRecordingEnd, type ManualRecordingEnd } from './captureManualRecordingEnd';
+import { manualClosingBeat } from './manualClosingBeat';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /** A failed Record start may close only its own capture; flush and clip closure can admit a successor reentrantly. */

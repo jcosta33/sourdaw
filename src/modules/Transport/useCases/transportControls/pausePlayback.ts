@@ -12,7 +12,7 @@ import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
-import { captureManualRecordingEnd } from './manualRecordingEnd';
+import { captureManualRecordingEnd } from './captureManualRecordingEnd';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
