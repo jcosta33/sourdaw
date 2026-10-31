@@ -1,0 +1,68 @@
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_88fc7e0d05bab6::t_21d3f87347fb8e 276
+  s_88fc7e0d05bab6::t_80be1002f64274 24
+src/modules/MixerConsole/presentations/views/MixerPanel.tsx
+  s_88fc7e0d05bab6::t_438f93870ed004 27,47,99,220-227,235
+  s_88fc7e0d05bab6::t_5f4437b824383f 48,229-233
+src/modules/MixerConsole/presentations/views/__tests__/MixerPanel.spec.tsx
+  s_88fc7e0d05bab6::t_ce218029830d87 242-259,279-287,289-292
+  s_88fc7e0d05bab6::t_d5aa2a9e73f62e 59-63,260-278,288
+src/modules/MixerConsole/presentations/views/getMixerChannelTracks.ts
+  s_88fc7e0d05bab6::t_67a9cae72367d5 1-7
+src/modules/SessionLauncher/useCases/getLaunchableTracks.ts
+  s_88fc7e0d05bab6::t_e026ee1909ff56 1-5
+src/modules/SessionLauncher/presentations/views/SessionView.tsx
+  s_88fc7e0d05bab6::t_b0934961a39626 32-33
+  s_88fc7e0d05bab6::t_08ac17f628c191 22
+src/modules/SessionLauncher/presentations/views/__tests__/LoopStationPanel.spec.tsx
+  s_88fc7e0d05bab6::t_7ab2bb0a7d0803 33,155-172
+src/modules/SessionLauncher/presentations/views/__tests__/SessionView.spec.tsx
+  s_88fc7e0d05bab6::t_1ac9e8cbe4d089 117-151
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_88fc7e0d05bab6::t_bb4414407290bc 4-5,8,19-21,27-29,409-433,436-437,446-452,455,475,486-487
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.trackControls.spec.tsx
+  s_88fc7e0d05bab6::t_2d58b8fe5bd868 1-137
+src/modules/SessionLauncher/useCases/loopStation/__tests__/triggerPad.spec.ts
+  s_7a8e1107313040::t_2ef14de454e018 7,77-113
+src/modules/SessionLauncher/useCases/loopStation/triggerPad.ts
+  s_88fc7e0d05bab6::t_a7a503658a7801 21-23,26
+  s_88fc7e0d05bab6::t_7b2c26075ef001 4
+tests/e2e/setlistLoopStation.spec.ts
+  s_88fc7e0d05bab6::t_9f12c513c86213 3,27-35,37
+tests/e2e/panelDeepCoverage.spec.ts
+  s_88fc7e0d05bab6::t_9f12c513c86213 59-66
+tests/e2e/midiModSetlistDeep.spec.ts
+  s_88fc7e0d05bab6::t_9f12c513c86213 117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fdd9050201a7edf9154c31ac8134f65a1c370421",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
