@@ -1,0 +1,78 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  h_beb54bf43b47b7 4-11,16-19,25,29,39,43-44,50-488,492-653
+.agents/skills/delivery-orchestration/references/lane-publication.md
+  h_beb54bf43b47b7 3-4,26,73,75-82
+.agents/skills/delivery-orchestration/references/review-records.md
+  h_beb54bf43b47b7 24-25,37,46,83-86
+.agents/skills/delivery-orchestration/references/trust-boundary.md
+  h_beb54bf43b47b7 3-4
+.agents/skills/review-stances/project-integrity.md
+  h_beb54bf43b47b7 190-195
+.agents/skills/review-stances/security-and-platform.md
+  h_beb54bf43b47b7 38-43,81-104
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 9-23,1428-1433,2398-2408
+AGENTS.md
+  h_beb54bf43b47b7 69-73,211,262-275,400-425,498-499
+docs/06-testing.md
+  h_beb54bf43b47b7 701-707,917-920
+docs/affected-e2e.md
+  h_beb54bf43b47b7 35-39
+package.json
+  h_beb54bf43b47b7 52-53
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 64
+release/open-source-inventory.json
+  h_beb54bf43b47b7 170,1822,2258-2262,2298-2308
+scripts/__tests__/agentDeliveryScripts.spec.ts
+  h_beb54bf43b47b7 998-999,1111-1113,1142-1144,1147-1151,1153,1155-1161,1163,1167,1171,1294-1296,1299-1303,1305,1307-1313,1315,1319,1323
+scripts/__tests__/cleanupLanes.spec.ts
+  h_beb54bf43b47b7 1-1224
+scripts/__tests__/deliverPullRequest.spec.ts
+  h_beb54bf43b47b7 9881-9963
+scripts/__tests__/githubAppIdentity.spec.ts
+  h_beb54bf43b47b7 19,673-725
+scripts/__tests__/installCleanupLanes.spec.ts
+  h_beb54bf43b47b7 1-542
+scripts/__tests__/prValidationScope.spec.ts
+  h_beb54bf43b47b7 31,35-36,1028-1029,1249,1304-1316,2198-2286
+scripts/__tests__/removeLane.spec.ts
+  h_beb54bf43b47b7 67,129,427-429,696-777,949,1238-1243,1500-1505,1589-1591,1595,1613-1615,1617,1634,1689-1694,1712-1717,1725-1832,1857,1923-1928
+scripts/cleanupLaneBookkeeping.ts
+  h_beb54bf43b47b7 1-214
+scripts/cleanupLanes.ts
+  h_beb54bf43b47b7 1-602
+scripts/deliverPullRequest.ts
+  h_beb54bf43b47b7 7,4489-4490,4515-4518,4584,4637,4644-4653
+scripts/githubAppIdentity.ts
+  h_beb54bf43b47b7 82-87,161-162
+scripts/installCleanupLanes.ts
+  h_beb54bf43b47b7 1-345
+scripts/laneActivity.ts
+  h_beb54bf43b47b7 1-74
+scripts/prValidationScope.ts
+  h_beb54bf43b47b7 10,21-23,95-99,133-141,398-402,458,469
+scripts/removeLane.ts
+  h_beb54bf43b47b7 4,14,17,39,53,78,115-118,240-243,305,310-336,354,368-369,372-373,440-441,449,458,477-478,488-495,512-513,518-568,572-574,587-590,593-613,805-825,832-834,856,862,868,889,927-928,942,947-948,961-962,976,981-982,1012-1017,1020-1022
+scripts/reviewRiskPolicy.ts
+  h_beb54bf43b47b7 144-145,154,156,167,170-176,199
+scripts/trustedGithubWriteBootstrap.ts
+  h_beb54bf43b47b7 174-176,179-183,185,187-193,195,199,203
+src/app/__tests__/splitGainPointHistory.integration.spec.ts
+  h_beb54bf43b47b7 1-422
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  h_beb54bf43b47b7 28-35,147,894-896
+tests/e2e/persistedClipEditAcceptance.spec.ts
+  h_beb54bf43b47b7 574-584
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a80e1e0f1a3d9a5db08dbf77900909c417cafd3",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
