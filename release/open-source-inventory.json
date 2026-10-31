@@ -1213,7 +1213,7 @@
                 "tracked-set-sha256:9add2037c2766126e9d3f40d23500167897ae0e2407b680b15cf8818b5078edc:grand-boule-live-runtime",
                 "tracked-set-sha256:f6451f79ee426d51a8b06bb43dfc208fdb006bae7f62ffb8f4bdeeb1704f7c06:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
+                "tracked-set-sha256:5c8a902914cd511ac233d288fb021f4dfb034ddcc8e16f134aa92c3ce59304d5:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1344,13 +1344,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:5754cc83138f63d75533a1a0fd35a0fd2bc7e768bc9bbbf1fec697909e0ae73f",
+                "daw-dsp sha256:7c3f641e01237175f1b43c9b89cca82e91620f28f5f19f342ad941fe96caf13c",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
-                "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
+                "scoring sha256:7c90413817292f19f5eb303cfb5c5323659582a9459586bb4c756cdf9169e376"
             ],
             "digests": [
-                "sha256:3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c:public/wasm/manifest.json"
+                "sha256:8418928795e4d7b1c49af35c6a514a9427596ab432ffd13c9d8f98ccdd60ecd3:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1847,7 +1847,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c"
+            "sha256": "8418928795e4d7b1c49af35c6a514a9427596ab432ffd13c9d8f98ccdd60ecd3"
         }
     ],
     "externalReferences": [
