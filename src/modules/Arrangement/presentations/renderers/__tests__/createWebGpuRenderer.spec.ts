@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    forEachMidiNoteRect,
+    resolveMidiClipFrame,
+    resolveMidiPitchWindow,
+    type InlineMidiGeometryClip,
+} from '../../../models/InlineMidiGeometry';
 import { type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { drawClip } from '../clipDrawing';
 import { CLIP_LABEL_ASCENT_CSS_PX, CLIP_LABEL_INSET_CSS_PX } from '../clipLabel';
-import { computeMidiNoteBeatSpan } from '../createWebGpuRenderer';
 
 type GetCachedAudioBufferMock = (input: { bufferId: string }) => AudioBuffer | null;
 
@@ -368,87 +373,34 @@ afterEach(() => {
     });
 });
 
-// A full WebGPU render is not exercisable under vitest/jsdom (no GPU device),
-// so the regression coverage targets the pure clip-relative coordinate math
-// that was double-offsetting. This mirrors clipDrawing.spec.ts, which pins the
-// Canvas renderer to the same clip-relative convention.
-describe('computeMidiNoteBeatSpan (clip-relative MIDI coordinates)', () => {
-    it('keeps a note.startBeat=0 note at the clip start, regardless of clip.startBeat', () => {
-        // Mirrors clipDrawing.spec.ts: a clip at timeline beat 8 with a single
-        // clip-relative note at beat 0. The note must land at relStartBeat 0
-        // (the clip's left edge) — NOT at -clip.startBeat. Before the fix the
-        // renderer subtracted clip.startBeat, yielding relStartBeat = -8, which
-        // failed the visibility cull (relEndBeat <= 0) and dropped the note.
-        const clipStartBeat = 8;
-        const clipDuration = 12 - clipStartBeat; // clip spans beats 8..12 → 4 beats
-        const note = { startBeat: 0, duration: 1 };
+/** One rect the frame wrote to the vertex buffer, in device pixels, with its alpha. */
+type DecodedRect = { x1: number; y1: number; x2: number; y2: number; alpha: number };
 
-        const span = computeMidiNoteBeatSpan(note, /* midiOffset */ 0, /* loopOffset */ 0, clipDuration);
-
-        expect(span.relStartBeat).toBe(0);
-        expect(span.relEndBeat).toBe(1);
-        expect(span.visible).toBe(true);
-    });
-
-    it('does not depend on clip.startBeat: identical relative span for clips at any timeline position', () => {
-        const clipDuration = 4;
-        const note = { startBeat: 2, duration: 1 };
-
-        // The span is a function of (note, midiOffset, loopOffset, clipDuration)
-        // only — clip.startBeat is not an input, so a clip at beat 0 and a clip
-        // at beat 100 produce the same clip-relative span.
-        const span = computeMidiNoteBeatSpan(note, 0, 0, clipDuration);
-
-        expect(span.relStartBeat).toBe(2);
-        expect(span.relEndBeat).toBe(3);
-        expect(span.visible).toBe(true);
-    });
-
-    it('applies midiOffset by shifting the revealed clip-relative position', () => {
-        const clipDuration = 4;
-        const note = { startBeat: 2, duration: 1 };
-
-        // midiOffset = 1 reveals content one beat earlier in the clip window.
-        const span = computeMidiNoteBeatSpan(note, /* midiOffset */ 1, 0, clipDuration);
-
-        expect(span.relStartBeat).toBe(1);
-        expect(span.relEndBeat).toBe(2);
-        expect(span.visible).toBe(true);
-    });
-
-    it('advances each loop repetition by loopOffset', () => {
-        const clipDuration = 8;
-        const note = { startBeat: 0, duration: 1 };
-
-        const span = computeMidiNoteBeatSpan(note, 0, /* loopOffset */ 4, clipDuration);
-
-        expect(span.relStartBeat).toBe(4);
-        expect(span.relEndBeat).toBe(5);
-        expect(span.visible).toBe(true);
-    });
-
-    it('enforces a minimum visual duration of 0.125 beats', () => {
-        const span = computeMidiNoteBeatSpan({ startBeat: 0, duration: 0 }, 0, 0, 4);
-
-        expect(span.relEndBeat).toBe(0.125);
-    });
-
-    it('culls a note whose tail ends at or before the clip start', () => {
-        // A note pushed fully before the clip window (e.g. by midiOffset) is
-        // not visible.
-        const span = computeMidiNoteBeatSpan({ startBeat: 0, duration: 1 }, /* midiOffset */ 2, 0, 4);
-
-        expect(span.relEndBeat).toBeLessThanOrEqual(0);
-        expect(span.visible).toBe(false);
-    });
-
-    it('culls a note that starts at or past the clip duration', () => {
-        const span = computeMidiNoteBeatSpan({ startBeat: 4, duration: 1 }, 0, 0, /* clipDuration */ 4);
-
-        expect(span.relStartBeat).toBeGreaterThanOrEqual(4);
-        expect(span.visible).toBe(false);
-    });
-});
+function decode_rects(handles: WebGpuMockHandles, canvas: HTMLCanvasElement): DecodedRect[] {
+    const rect_write = handles.writeBuffer.mock.calls.find(
+        (call: unknown[]) => (call[0] as { bufferIndex?: number } | undefined)?.bufferIndex === 0
+    );
+    if (!rect_write) {
+        throw new Error('expected the frame to write the rect vertex buffer');
+    }
+    const data = rect_write[2] as Float32Array;
+    // 6 vertices x 6 floats (xy + rgba) per rect, matching pushRect: vertex 0 is
+    // the top-left corner, vertex 1 the top-right, vertex 2 the bottom-left.
+    const floatsPerRect = 36;
+    const rect_count = (rect_write[4] as number) / floatsPerRect;
+    const rects: DecodedRect[] = [];
+    for (let rect = 0; rect < rect_count; rect++) {
+        const base = rect * floatsPerRect;
+        rects.push({
+            x1: ((data[base]! + 1) / 2) * canvas.width,
+            y1: ((1 - data[base + 1]!) / 2) * canvas.height,
+            x2: ((data[base + 6]! + 1) / 2) * canvas.width,
+            y2: ((1 - data[base + 13]!) / 2) * canvas.height,
+            alpha: data[base + 5]!,
+        });
+    }
+    return rects;
+}
 
 describe('createWebGpuRenderer clip name labels', () => {
     it('rasterises each visible clip name at the shared Canvas2D label geometry', async () => {
@@ -1069,7 +1021,7 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
         expect(handles.draw).toHaveBeenCalled();
     });
 
-    it('caps drawn MIDI notes at MAX_NOTES_PER_CLIP and breaks the non-looped clip after one pass', async () => {
+    it('completes a render of a dense non-looped clip and a clip narrower than its own margins', async () => {
         const canvas = document.createElement('canvas');
         canvas.width = 400;
         canvas.height = 120;
@@ -1080,8 +1032,7 @@ describe('createWebGpuRenderer audio waveform cache reads', () => {
             throw new Error('expected WebGPU renderer');
         }
 
-        // Generate well over 300 notes within an 8-beat clip; only the first
-        // 300 may be drawn (the per-clip cap protects the vertex buffer).
+        // A dense clip: the shared rect budget, not a per-clip note cap, bounds the vertex buffer.
         const manyNotes = Array.from({ length: 400 }, (_, index) => ({
             id: `n${index}`,
             pitch: 60,
@@ -1997,5 +1948,204 @@ describe('audio waveform span parity across renderers (#2519)', () => {
 
         expect(canvasReads).toBe(0);
         expect(mocks.getCachedAudioBufferWaveformPeaks).not.toHaveBeenCalled();
+    });
+});
+
+describe('createWebGpuRenderer MIDI notes follow the shared geometry law', () => {
+    const NOTE_ALPHA_INLINE = 0.8;
+    const NOTE_ALPHA_PREVIEW = 0.22;
+    const GRID_LINE_ALPHA = 0.05;
+    const BACKDROP_ALPHA = 0.2;
+    const TRACK_HEIGHT = 80;
+
+    type MidiClipOptions = Partial<TimelineRenderModel['tracks'][number]['clips'][number]> & {
+        notes: Array<{ id: string; pitch: number; startBeat: number; duration: number }>;
+    };
+
+    const midi_model = (options: MidiClipOptions, view: Partial<TimelineRenderModel> = {}): TimelineRenderModel => {
+        const { notes, ...clipOptions } = options;
+        return {
+            ...create_test_model(),
+            ...view,
+            tracks: [
+                {
+                    id: 'midi-track',
+                    name: 'MIDI',
+                    index: 0,
+                    kind: 'midi',
+                    color: '#335577',
+                    muted: false,
+                    soloed: false,
+                    height: TRACK_HEIGHT,
+                    automationMode: 'read',
+                    clips: [
+                        {
+                            id: 'midi-1',
+                            startBeat: 2,
+                            endBeat: 10,
+                            name: 'MIDI Clip',
+                            color: '#446688',
+                            type: 'midi',
+                            muted: false,
+                            midiNotes: notes,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            ...clipOptions,
+                        },
+                    ],
+                },
+            ],
+        };
+    };
+
+    const render_midi = async (model: TimelineRenderModel): Promise<DecodedRect[]> => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 400;
+        canvas.height = 120;
+        const handles = install_webgpu_mocks(canvas);
+        const { createWebGpuRenderer } = await import('../createWebGpuRenderer');
+        const renderer = await createWebGpuRenderer(canvas);
+        if (!renderer) {
+            throw new Error('expected WebGPU renderer');
+        }
+        renderer.render(model);
+        return decode_rects(handles, canvas);
+    };
+
+    const with_alpha = (rects: DecodedRect[], alpha: number): DecodedRect[] =>
+        rects.filter((rect) => Math.abs(rect.alpha - alpha) < 1e-6);
+
+    it('draws a lone pitch-71 note inline in the row the law assigns 71, the top row', async () => {
+        const clip: InlineMidiGeometryClip = {
+            startBeat: 2,
+            endBeat: 10,
+            midiNotes: [{ id: 'n1', pitch: 71, startBeat: 0, duration: 2 }],
+        };
+        const frame = resolveMidiClipFrame(true, 2 * 25, 8 * 25, 0, TRACK_HEIGHT);
+        const pitch_window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+        let law_y = NaN;
+        forEachMidiNoteRect(clip, frame, pitch_window, { inline: true }, (_note, _x, y) => {
+            law_y = y;
+        });
+
+        const notes = with_alpha(
+            await render_midi(midi_model({ isInlineEditing: true, notes: clip.midiNotes })),
+            NOTE_ALPHA_INLINE
+        );
+
+        // Pitch 71 tops the 60..71 window: the first row, not the bottom one.
+        expect(notes).toHaveLength(1);
+        expect(notes[0]!.y1).toBeCloseTo(law_y, 3);
+        expect(notes[0]!.y1).toBeCloseTo(frame.contentTop, 3);
+        expect(notes[0]!.y2).toBeLessThan(frame.contentTop + pitch_window.rowHeight);
+        expect(notes[0]!.x1).toBeCloseTo(2 * 25, 3);
+    });
+
+    it('places notes of an inline clip off the grid start, offset and loop repeats the way the law does', async () => {
+        const clip: InlineMidiGeometryClip = {
+            startBeat: 2,
+            endBeat: 10,
+            midiOffsetBeats: 1,
+            loopEnabled: true,
+            loopLength: 3,
+            midiNotes: [
+                { id: 'a', pitch: 64, startBeat: 1.5, duration: 1 },
+                { id: 'b', pitch: 55, startBeat: 2.5, duration: 0.5 },
+            ],
+        };
+        const frame = resolveMidiClipFrame(true, 2 * 25, 8 * 25, 0, TRACK_HEIGHT);
+        const pitch_window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+        const expected: Array<[number, number, number]> = [];
+        forEachMidiNoteRect(clip, frame, pitch_window, { inline: true }, (_note, x, y, width) => {
+            expected.push([x, y, width]);
+        });
+
+        const { notes: _unused, ...timing } = clip;
+        const notes = with_alpha(
+            await render_midi(midi_model({ ...timing, isInlineEditing: true, notes: clip.midiNotes })),
+            NOTE_ALPHA_INLINE
+        );
+
+        expect(expected).toHaveLength(6);
+        expect(notes.map((rect) => [rect.x1, rect.y1, rect.x2 - rect.x1])).toEqual(
+            expected.map(([x, y, width]) => [expect.closeTo(x, 3), expect.closeTo(y, 3), expect.closeTo(width, 3)])
+        );
+    });
+
+    it('draws the pitch grid for an inline clip with no notes', async () => {
+        const rects = await render_midi(midi_model({ isInlineEditing: true, notes: [] }));
+        const frame = resolveMidiClipFrame(true, 2 * 25, 8 * 25, 0, TRACK_HEIGHT);
+
+        const backdrop = with_alpha(rects, BACKDROP_ALPHA);
+        expect(backdrop).toHaveLength(1);
+        expect(backdrop[0]!.y1).toBeCloseTo(frame.contentTop, 3);
+        expect(backdrop[0]!.y2).toBeCloseTo(frame.contentTop + frame.contentHeight, 3);
+        // The octave from middle C is twelve rows, ruled by thirteen lines.
+        expect(with_alpha(rects, GRID_LINE_ALPHA)).toHaveLength(13);
+    });
+
+    it('draws no grid for a non-inline clip with no notes', async () => {
+        const rects = await render_midi(midi_model({ notes: [] }));
+
+        expect(with_alpha(rects, BACKDROP_ALPHA)).toHaveLength(0);
+        expect(with_alpha(rects, GRID_LINE_ALPHA)).toHaveLength(0);
+    });
+
+    it('places a non-inline preview note where the law puts it', async () => {
+        const clip: InlineMidiGeometryClip = {
+            startBeat: 2,
+            endBeat: 10,
+            midiNotes: [
+                { id: 'lo', pitch: 50, startBeat: 0, duration: 1 },
+                { id: 'hi', pitch: 70, startBeat: 1, duration: 1 },
+            ],
+        };
+        const frame = resolveMidiClipFrame(false, 2 * 25, 8 * 25, 0, TRACK_HEIGHT);
+        const pitch_window = resolveMidiPitchWindow(clip.midiNotes, false, frame.contentHeight);
+        const expected: Array<[number, number]> = [];
+        forEachMidiNoteRect(clip, frame, pitch_window, { inline: false }, (_note, x, y) => {
+            expected.push([x, y]);
+        });
+
+        const notes = with_alpha(await render_midi(midi_model({ notes: clip.midiNotes })), NOTE_ALPHA_PREVIEW);
+
+        expect(notes.map((rect) => [rect.x1, rect.y1])).toEqual(
+            expected.map(([x, y]) => [expect.closeTo(x, 3), expect.closeTo(y, 3)])
+        );
+    });
+
+    it('draws every note of a dense inline clip rather than the first 300', async () => {
+        const notes = Array.from({ length: 400 }, (_unused, index) => ({
+            id: `n${index}`,
+            pitch: 60 + (index % 12),
+            startBeat: index * 0.02,
+            duration: 0.02,
+        }));
+
+        const rects = await render_midi(midi_model({ isInlineEditing: true, notes }));
+
+        expect(with_alpha(rects, NOTE_ALPHA_INLINE)).toHaveLength(400);
+    });
+
+    it('draws the loop repeats in view of a long clip, past the hundredth', async () => {
+        const model = midi_model(
+            {
+                startBeat: 0,
+                endBeat: 128,
+                isInlineEditing: true,
+                loopEnabled: true,
+                loopLength: 1,
+                notes: [{ id: 'n1', pitch: 60, startBeat: 0, duration: 0.5 }],
+            },
+            { viewportStartBeat: 118, viewportEndBeat: 126 }
+        );
+
+        const rects = with_alpha(await render_midi(model), NOTE_ALPHA_INLINE);
+
+        // One bar per repeat in view: pass k starts k beats into the clip, at (k - 118) * 25 px.
+        expect(rects).toHaveLength(8);
+        expect(rects.map((rect) => rect.x1)).toEqual(
+            [118, 119, 120, 121, 122, 123, 124, 125].map((beat) => expect.closeTo((beat - 118) * 25, 3))
+        );
     });
 });

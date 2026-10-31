@@ -1,6 +1,12 @@
 import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
+import {
+    forEachMidiNoteRect,
+    isMidiFrameDrawable,
+    resolveMidiClipFrame,
+    resolveMidiPitchWindow,
+} from '../../models/InlineMidiGeometry';
 import { type TimelineRenderer } from '../../models/RendererBackend';
 import { type TimelineRenderModel } from '../../models/TimelineRenderModel';
 
@@ -115,42 +121,6 @@ function colorToRgba(color: string, alpha = 1): [number, number, number, number]
     const gain = parseInt(clean.slice(2, 4), 16) / 255;
     const buffer = parseInt(clean.slice(4, 6), 16) / 255;
     return [isNaN(r) ? 0.4 : r, isNaN(gain) ? 0.4 : gain, isNaN(buffer) ? 0.4 : buffer, alpha];
-}
-
-// ─── MIDI note geometry (pure) ────────────────────────────────────────────────
-/** Clip-relative beat span of a single MIDI note occurrence within a clip. */
-export type MidiNoteBeatSpan = {
-    /** Beat of the note's onset, relative to the clip's start (0 = clip start). */
-    relStartBeat: number;
-    /** Beat of the note's tail, relative to the clip's start. */
-    relEndBeat: number;
-    /** False when the occurrence falls entirely outside the clip window. */
-    visible: boolean;
-};
-
-/**
- * Compute a MIDI note occurrence's clip-relative beat span.
- *
- * `note.startBeat` is already clip-relative (0 = the clip's left edge) — the
- * same convention the Canvas renderer (`clipDrawing.ts`), the render-model
- * builder (`buildTimelineRenderModel.ts`), and the playback scheduler
- * (`scheduleMidiNotes.ts`, which adds `clip.startBeat` only at schedule time)
- * all use. `midiOffset` (clip.midiOffsetBeats) shifts which slice of the MIDI
- * content the clip window reveals; `loopOffset` advances each loop repetition.
- *
- * Pure and side-effect-free so the coordinate math is unit-testable without a
- * GPU device (a full WebGPU render is not exercisable under vitest/jsdom).
- */
-export function computeMidiNoteBeatSpan(
-    note: { startBeat: number; duration: number },
-    midiOffset: number,
-    loopOffset: number,
-    clipDuration: number
-): MidiNoteBeatSpan {
-    const relStartBeat = note.startBeat - midiOffset + loopOffset;
-    const relEndBeat = relStartBeat + Math.max(note.duration, 0.125);
-    const visible = relEndBeat > 0 && relStartBeat < clipDuration;
-    return { relStartBeat, relEndBeat, visible };
 }
 
 // ─── Geometry helper ──────────────────────────────────────────────────────────
@@ -512,73 +482,45 @@ export async function createWebGpuRenderer(canvas: HTMLCanvasElement): Promise<T
                         addRect(cx1, clipBottom - bw, cx2, clipBottom, 'oklch(0.62 0.05 55)', 0.75);
                     }
 
-                    // MIDI mini-notes
-                    if (clip.type === 'midi' && clip.midiNotes.length > 0) {
-                        // §70.3 — Single-pass min/max without allocating a
-                        // pitches[] or spreading into Math.min/.max. Per-frame
-                        // per-clip hot path; MIDI clips can have thousands of
-                        // notes and Math.max(...arr) would stack-overflow on
-                        // large spreads.
-                        let minPitch = clip.midiNotes[0]!.pitch;
-                        let maxPitch = minPitch;
-                        for (let index = 1; index < clip.midiNotes.length; index++) {
-                            const param = clip.midiNotes[index]!.pitch;
-                            if (param < minPitch) {
-                                minPitch = param;
-                            } else if (param > maxPitch) {
-                                maxPitch = param;
-                            }
-                        }
-                        const pitchRange = Math.max(maxPitch - minPitch, 12);
-                        const noteAreaH = clipBottom - clipTop - 10 * dpr;
-
-                        const clipDuration = clip.endBeat - clip.startBeat;
-                        const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
-                        const midiOffset = clip.midiOffsetBeats ?? 0;
-
-                        let loopOffset = 0;
-                        let drawnNotes = 0;
-                        const MAX_NOTES_PER_CLIP = 300;
-
-                        while (loopOffset < clipDuration) {
-                            for (const note of clip.midiNotes) {
-                                if (drawnNotes >= MAX_NOTES_PER_CLIP) {
-                                    break;
-                                }
-
-                                // note.startBeat is clip-relative (0 = clip
-                                // start); midiOffset shifts the revealed slice
-                                // and loopOffset advances each loop repeat.
-                                const { relStartBeat, relEndBeat, visible } = computeMidiNoteBeatSpan(
-                                    note,
-                                    midiOffset,
-                                    loopOffset,
-                                    clipDuration
+                    // MIDI notes. The note area, pitch window, repeats and bar sizes come from
+                    // the shared law, so this pass draws what the Canvas renderer draws and
+                    // what a click acts on.
+                    if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
+                        const isInline = clip.isInlineEditing ?? false;
+                        const frame = resolveMidiClipFrame(isInline, cx1, cx2 - cx1, trackY, th, dpr);
+                        if (isMidiFrameDrawable(frame, dpr)) {
+                            const pitchWindow = resolveMidiPitchWindow(clip.midiNotes, isInline, frame.contentHeight);
+                            if (isInline) {
+                                addRect(
+                                    cx1,
+                                    frame.contentTop,
+                                    cx2,
+                                    frame.contentTop + frame.contentHeight,
+                                    '#000000',
+                                    0.2
                                 );
-                                if (!visible) {
-                                    continue;
+                                for (let row = 0; row <= pitchWindow.pitchRange + 1; row++) {
+                                    const lineY = frame.contentTop + row * pitchWindow.rowHeight;
+                                    addRect(cx1, lineY - dpr * 0.25, cx2, lineY + dpr * 0.25, '#ffffff', 0.05);
                                 }
-
-                                const nx1 = beatToX(clip.startBeat + relStartBeat);
-                                const nx2 = beatToX(clip.startBeat + relEndBeat);
-                                if (nx2 < cx1 || nx1 > cx2) {
-                                    continue;
+                            }
+                            const noteAlpha = alpha * (isInline ? 0.8 : 0.22);
+                            forEachMidiNoteRect(
+                                clip,
+                                frame,
+                                pitchWindow,
+                                {
+                                    inline: isInline,
+                                    pixelScale: dpr,
+                                    visibleBeats: { from: model.viewportStartBeat, to: model.viewportEndBeat },
+                                },
+                                (_note, noteX, noteY, noteW, noteH) => {
+                                    if (noteX + noteW < 0 || noteX > w) {
+                                        return;
+                                    }
+                                    addRect(noteX, noteY, noteX + noteW, noteY + noteH, '#ffffff', noteAlpha);
                                 }
-                                const noteY = clipBottom - 5 * dpr - ((note.pitch - minPitch) / pitchRange) * noteAreaH;
-                                const finalX1 = Math.max(nx1, cx1 + 2);
-                                const finalX2 = Math.min(nx2, cx2 - 2);
-                                if (finalX1 < finalX2) {
-                                    addRect(finalX1, noteY - dpr, finalX2, noteY + 2 * dpr, '#ffffff', alpha * 0.35);
-                                }
-                                drawnNotes++;
-                            }
-                            if (drawnNotes >= MAX_NOTES_PER_CLIP) {
-                                break;
-                            }
-                            loopOffset += loopLen;
-                            if (!clip.loopEnabled || loopLen <= 0) {
-                                break;
-                            }
+                            );
                         }
                     }
 

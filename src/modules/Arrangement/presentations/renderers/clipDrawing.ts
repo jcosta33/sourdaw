@@ -6,7 +6,12 @@
 
 import { getCachedAudioBuffer, getCachedAudioBufferWaveformPeaks } from '#/modules/AudioEngine/useCases';
 
-import { forEachMidiNoteRect, MIN_MIDI_CONTENT_HEIGHT, resolveMidiPitchWindow } from '../../models/InlineMidiGeometry';
+import {
+    forEachMidiNoteRect,
+    isMidiFrameDrawable,
+    resolveMidiClipFrame,
+    resolveMidiPitchWindow,
+} from '../../models/InlineMidiGeometry';
 import { type TimelineRenderModel, type ClipRenderModel } from '../../models/TimelineRenderModel';
 
 import { getAudioWaveformOccurrences, getAudioWaveformPeakPositions } from './audioWaveformSpan';
@@ -186,7 +191,7 @@ export const drawClip = (
         clip.type === 'audio' && clip.audioBufferId ? getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : null;
 
     if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
-        drawMidiNotePreview(ctx, clip, model, x, trackY, w, trackHeight, padding);
+        drawMidiNotePreview(ctx, clip, model, x, trackY, w, trackHeight);
     } else if (clip.type === 'audio' && clip.audioBufferId && cachedAudioBuffer) {
         drawWaveformPeaks(ctx, clip, cachedAudioBuffer, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
@@ -350,26 +355,24 @@ const drawMidiNotePreview = (
     clipX: number,
     trackY: number,
     clipW: number,
-    trackHeight: number,
-    padding: number
+    trackHeight: number
 ): void => {
     const isInline = clip.isInlineEditing ?? false;
     if (clip.midiNotes.length === 0 && !isInline) {
         return;
     }
 
-    const contentTop = trackY + (isInline ? padding : 18);
-    const contentHeight = trackHeight - padding - (isInline ? padding : 18);
-    if (contentHeight < MIN_MIDI_CONTENT_HEIGHT) {
+    const frame = resolveMidiClipFrame(isInline, clipX, clipW, trackY, trackHeight);
+    if (!isMidiFrameDrawable(frame)) {
         return;
     }
+    const { contentTop, contentHeight } = frame;
 
     const clipDuration = clip.endBeat - clip.startBeat;
     if (clipDuration <= 0) {
         return;
     }
 
-    const frame = { x: clipX, width: clipW, contentTop, contentHeight };
     const window = resolveMidiPitchWindow(clip.midiNotes, isInline, contentHeight);
 
     if (isInline) {

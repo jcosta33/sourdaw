@@ -1,6 +1,7 @@
 import {
     findInlineMidiNoteAt,
     resolveInlineMidiPointer,
+    resolveMidiClipFrame,
     resolveMidiPitchWindow,
 } from '../../../models/InlineMidiGeometry';
 import { timelineViewStore } from '../../../stores/timelineViewStore';
@@ -49,13 +50,13 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
         if (beat >= clip.startBeat && beat < clip.endBeat) {
             // R-A11: Hit test for individual notes if inline editing is active
             if (clip.isInlineEditing && clip.type === 'midi') {
-                const padding = 2;
-                const frame = {
-                    x: (clip.startBeat - viewportStartBeat) * pixelsPerBeat,
-                    width: (clip.endBeat - clip.startBeat) * pixelsPerBeat,
-                    contentTop: trackYOffset + padding,
-                    contentHeight: track.height - padding * 2,
-                };
+                const frame = resolveMidiClipFrame(
+                    true,
+                    (clip.startBeat - viewportStartBeat) * pixelsPerBeat,
+                    (clip.endBeat - clip.startBeat) * pixelsPerBeat,
+                    trackYOffset,
+                    track.height
+                );
 
                 const note = findInlineMidiNoteAt(clip, frame, canvasX, contentY);
                 if (note) {

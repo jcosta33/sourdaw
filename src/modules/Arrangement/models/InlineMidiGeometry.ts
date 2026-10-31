@@ -55,6 +55,32 @@ export type InlineMidiPointer = {
 /** A note area shorter than this is not drawn, so nothing in it can be hit. */
 export const MIN_MIDI_CONTENT_HEIGHT = 4;
 
+const CLIP_PADDING = 2;
+const PREVIEW_HEADER_HEIGHT = 18;
+
+/**
+ * Where a MIDI clip's note area sits inside its track row: padded on every side
+ * while inline editing, under the clip header otherwise. Every renderer and the
+ * hit test place the area from here. `pixelScale` converts the CSS-pixel insets
+ * for a renderer working in device pixels.
+ */
+export const resolveMidiClipFrame = (
+    inline: boolean,
+    x: number,
+    width: number,
+    trackY: number,
+    trackHeight: number,
+    pixelScale = 1
+): InlineMidiFrame => {
+    const top = (inline ? CLIP_PADDING : PREVIEW_HEADER_HEIGHT) * pixelScale;
+    const bottom = CLIP_PADDING * pixelScale;
+    return { x, width, contentTop: trackY + top, contentHeight: trackHeight - top - bottom };
+};
+
+/** False when the note area is too short to draw, so nothing in it can be hit. */
+export const isMidiFrameDrawable = (frame: InlineMidiFrame, pixelScale = 1): boolean =>
+    frame.contentHeight >= MIN_MIDI_CONTENT_HEIGHT * pixelScale;
+
 /** Backstop for a degenerate loop length; a real loop never has this many passes in view. */
 const MAX_VISIBLE_LOOP_PASSES = 4096;
 const MIDDLE_C = 60;
@@ -116,6 +142,8 @@ export const resolveMidiPitchWindow = (
 
 export type MidiNoteRectStyle = {
     inline: boolean;
+    /** Device pixels per CSS pixel, for renderers that draw in device pixels. Scales the pixel-sized constants. */
+    pixelScale?: number;
     /** Arrangement beats worth drawing; loop passes wholly outside are skipped. Absent means the whole clip. */
     visibleBeats?: { from: number; to: number };
 };
@@ -184,8 +212,9 @@ export const forEachMidiNoteRect = (
     const { minPitch, pitchRange } = window;
     const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
     const midiOffset = clip.midiOffsetBeats ?? 0;
-    const minWidth = style.inline ? INLINE_NOTE_MIN_WIDTH : PREVIEW_NOTE_MIN_WIDTH;
-    const heightInset = style.inline ? 1 : 0;
+    const pixelScale = style.pixelScale ?? 1;
+    const minWidth = (style.inline ? INLINE_NOTE_MIN_WIDTH : PREVIEW_NOTE_MIN_WIDTH) * pixelScale;
+    const heightInset = (style.inline ? 1 : 0) * pixelScale;
 
     const { first, last } = resolveLoopPasses(clip, clipDuration, loopLen, style.visibleBeats);
     for (let pass = first; pass <= last; pass++) {
@@ -218,7 +247,7 @@ export const forEachMidiNoteRect = (
 
 /** The inline note area's pitch window, or null when the area is too short to be drawn. */
 const resolveInlineWindow = (clip: InlineMidiGeometryClip, frame: InlineMidiFrame): MidiPitchWindow | null => {
-    if (frame.contentHeight < MIN_MIDI_CONTENT_HEIGHT || clip.endBeat - clip.startBeat <= 0) {
+    if (!isMidiFrameDrawable(frame) || clip.endBeat - clip.startBeat <= 0) {
         return null;
     }
     return resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
