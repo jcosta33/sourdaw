@@ -300,6 +300,12 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
         // Each fragment's take freezes the cut rows. Read back from the raw
         // document, every source still decodes: no slot is held for repair.
         arrangeLoopCompMidi();
+        const state = midiStore.value ?? defaultMidiStoreState;
+        midiStore.set({
+            ...state,
+            ccByClipId: { source: [{ id: 'cc-1', controller: 1, value: 20, beat: 9, channel: 0 }] },
+            pitchBendByClipId: { source: [{ id: 'pb-1', value: 512, beat: 11, channel: 0 }] },
+        });
 
         await executeAppAction({ type: 'deleteTime', payload: { startBeat: 10, endBeat: 12 } });
         flushAutomergeStorageWrites();
