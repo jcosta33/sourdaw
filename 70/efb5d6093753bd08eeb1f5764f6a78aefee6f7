@@ -1,0 +1,58 @@
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_ba80576e6f5cb5::t_b0b84e5d9fad59 1032-1052,1054-1072
+  s_ba80576e6f5cb5::t_262260006d0eda 1053
+src/modules/Arrangement/useCases/recording/stageRecordingTake.ts
+  s_ba80576e6f5cb5::t_f3e3f807dfd484 3
+  s_ba80576e6f5cb5::t_f50a1942463906 22-23,26-29
+  s_ba80576e6f5cb5::t_13f18f5b84c463 113-119
+  s_ba80576e6f5cb5::t_fdb1e03c7d164f 155-156
+  s_ba80576e6f5cb5::t_7e9d8f7a8b245d 170-172
+  s_ba80576e6f5cb5::t_590e013a192c9c 30
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_ba80576e6f5cb5::t_aa8c832f85294d 204-210
+  s_ba80576e6f5cb5::t_1e5e3e5f6472df 282-284
+  s_ba80576e6f5cb5::t_85c8e8dd66b9a7 1417,1420
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_ba80576e6f5cb5::t_0cad941792a763 4
+  s_ba80576e6f5cb5::t_0471ed0c4ebd7e 11-31
+src/modules/Arrangement/useCases/recording/stopRecording.ts
+  s_ba80576e6f5cb5::t_2bf2ba126333ee 66
+src/modules/Project/models/ProjectData.ts
+  s_ba80576e6f5cb5::t_b7046fe73fe5a0 360-361
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_ba80576e6f5cb5::t_f7443d27f58aee 202-231
+src/modules/Arrangement/useCases/recording/startRecording.ts
+  s_ba80576e6f5cb5::t_355327d7bf5020 140
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidiNote.ts
+  s_ba80576e6f5cb5::t_d5622f923b5a8d 68-71
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_84ef2b73dc506c 316-322,324-326,340,349,351-352
+  s_ba80576e6f5cb5::t_d44ebff7bec59a 315,323,327-339,341-348,350
+  s_ba80576e6f5cb5::t_806509330a0c8f 47
+src/modules/Arrangement/stores/activeRecordingRef.ts
+  s_ba80576e6f5cb5::t_1e60fce2745112 44-45
+  s_ba80576e6f5cb5::t_572b9cba49c717 55
+src/modules/Arrangement/useCases/recording/recordingPassIndex.ts
+  s_ba80576e6f5cb5::t_731ef1bf8c2793 6-8
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_ba80576e6f5cb5::t_25850d6316e900 692
+  s_ba80576e6f5cb5::t_f0c51562860705 264-272,287
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSeamEdit.spec.ts
+  s_ba80576e6f5cb5::t_f90e8eb624bc3f 617-656
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70efb5d6093753bd08eeb1f5764f6a78aefee6f7",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
