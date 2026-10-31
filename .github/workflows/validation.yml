@@ -334,8 +334,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -441,8 +439,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         timeout-minutes: 5
@@ -483,8 +479,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -587,8 +581,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -636,8 +628,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -678,8 +668,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -706,6 +694,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -979,8 +969,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

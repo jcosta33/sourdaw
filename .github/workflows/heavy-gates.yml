@@ -52,8 +52,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -115,8 +113,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -180,8 +176,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         timeout-minutes: 2

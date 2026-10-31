@@ -79,8 +79,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -167,8 +165,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -207,8 +203,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -311,8 +305,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -382,7 +374,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Node installs unsoftened here; only the npm cache restore below may
+      # fall through, so a failed install cannot leave the runner's own Node.
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -494,8 +495,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       # `harness:plugin:install` builds the CLAP harness plugin, and
       # `desktop:build` builds the native addon and the plugin-scan helper, so
@@ -622,8 +621,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -684,8 +681,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -726,8 +721,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -1003,8 +996,6 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
 
       - name: Resolve the current production revision
         id: production

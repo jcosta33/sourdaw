@@ -92,8 +92,6 @@ jobs:
         with:
           node-version: 24.19.0
           cache: pnpm
-        env:
-          SEGMENT_DOWNLOAD_TIMEOUT_MINS: 1
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Plan affected checks

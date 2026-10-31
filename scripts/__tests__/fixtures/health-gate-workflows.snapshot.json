@@ -117,9 +117,6 @@
             "with": {
               "node-version": "24.19.0",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -287,9 +284,6 @@
             "with": {
               "node-version": "24.19.0",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -393,9 +387,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -466,9 +457,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -532,9 +520,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -739,9 +724,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -857,9 +839,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -904,9 +883,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1021,9 +997,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1071,9 +1044,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1117,9 +1087,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1152,6 +1119,8 @@
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1371,9 +1340,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1583,9 +1549,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1684,9 +1647,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1733,9 +1693,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1854,9 +1811,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -1912,7 +1866,16 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
+            "name": "Install Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2015,9 +1978,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -2134,9 +2094,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -2203,9 +2160,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -2253,9 +2207,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
@@ -2435,9 +2386,6 @@
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
               "cache": "pnpm"
-            },
-            "env": {
-              "SEGMENT_DOWNLOAD_TIMEOUT_MINS": 1
             }
           },
           {
