@@ -153,7 +153,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
             throw createExportError(`Invalid export duration: ${durationBeats} beats.`);
         }
 
-        const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext({
+        const { renderContext, historyFrameCount, outputFrameCount } = resolveHistoryAwareRenderContext({
             durationBeats,
             startBeat,
             tailSeconds,
@@ -480,8 +480,8 @@ export const exportStems: ExportStemsFn = async function exportStems(
                             track.id,
                             cropHistoryFromRenderedBuffer({
                                 buffer,
-                                historySeconds,
-                                outputDurationSeconds,
+                                historyFrameCount,
+                                outputFrameCount,
                                 borrowed: true,
                             }),
                             index,
@@ -493,10 +493,7 @@ export const exportStems: ExportStemsFn = async function exportStems(
                     }
                     checkCancel(cancellationSignal);
                 } else {
-                    stems.set(
-                        track.id,
-                        cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds })
-                    );
+                    stems.set(track.id, cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount }));
                 }
                 successful++;
                 done++;
