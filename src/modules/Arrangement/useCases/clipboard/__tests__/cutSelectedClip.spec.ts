@@ -37,7 +37,8 @@ vi.mock('../../../stores/clipSelectionStore', () => ({
     clipSelectionStore: mocks.clipSelectionStore,
 }));
 
-vi.mock('#/modules/MIDI/stores', () => ({
+vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
+    isFrozenMidiTakeSource: (await importOriginal<typeof import('#/modules/MIDI/stores')>()).isFrozenMidiTakeSource,
     midiStore: mocks.midiStore,
 }));
 

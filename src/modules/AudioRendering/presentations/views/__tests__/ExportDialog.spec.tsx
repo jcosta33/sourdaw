@@ -234,9 +234,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const { isValidMidiNoteExpression, sanitizeMidiStoreState } =
+    const { isFrozenMidiTakeSource, isValidMidiNoteExpression, sanitizeMidiStoreState } =
         await importOriginal<typeof import('#/modules/MIDI/stores')>();
     return {
+        isFrozenMidiTakeSource,
         isValidMidiNoteExpression,
         sanitizeMidiStoreState,
         defaultMidiStoreState: { notesByClipId: {} },

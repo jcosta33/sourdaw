@@ -490,11 +490,9 @@ vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
 }));
 
 vi.mock('#/modules/MIDI/stores', async (importOriginal) => {
-    const { isValidMidiNoteExpression, sanitizeMidiStoreState } =
-        await importOriginal<typeof import('#/modules/MIDI/stores')>();
+    const actual = await importOriginal<typeof import('#/modules/MIDI/stores')>();
     return {
-        isValidMidiNoteExpression,
-        sanitizeMidiStoreState,
+        ...actual,
         defaultMidiStoreState: { notesByClipId: {} },
         midiStore: mocks.midiStore,
         // Not exercised by this spec — stubbed only because this spec's module graph
