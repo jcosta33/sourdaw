@@ -325,6 +325,66 @@ describe('multi-target actual output', () => {
         expect(close).toHaveBeenCalledTimes(1);
         expect(samples[7]).toBeCloseTo(0.1 * Math.sin((2 * Math.PI * 1000 * 7) / 48000), 7);
     });
+    it('limits each target to its own true peak ceiling and reports only the limited target', async () => {
+        const samples = Float32Array.from(
+            { length: 96000 },
+            (_, frame) => 0.1 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
+        );
+        const source = {
+            length: samples.length,
+            sampleRate: 48000,
+            numberOfChannels: 2,
+            getChannelData: () => samples,
+        };
+        const { chunks } = browserOutput();
+        const targets = resolveDeliveryTargets({
+            targets: [-1, -10].map((ceilingDbTp, index) => ({
+                id: `ceiling-${index}`,
+                name: `Ceiling ${index}`,
+                settings: {
+                    ...DELIVERY_PRESETS[2].settings,
+                    sampleRate: 48000,
+                    channels: 2 as const,
+                    targetLufs: -6,
+                    ceilingDbTp,
+                },
+                dither: { mode: 'none' as const },
+            })),
+        });
+        const output = await streamExport({
+            targets,
+            destination: {
+                kind: 'browser',
+                suggestedName: 'ceilings.zip',
+                extension: '.zip',
+                mime: 'application/zip',
+                archive: true,
+            },
+            checkCancelled: () => {},
+        });
+        const onLimited = vi.fn();
+        await output.writeAudio({ source, name: 'mix', onProgress: () => {}, onLimited });
+        await output.commit(() => {});
+        const entries = unzipSync(joinBytes(chunks));
+        const peakDb = (id: string) => {
+            const bytes = entries[`mix__${id}.wav`]!;
+            const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+            let peak = 0;
+            for (let offset = 44; offset + 2 < bytes.length; offset += 3) {
+                const sample =
+                    (view.getUint8(offset) | (view.getUint8(offset + 1) << 8) | (view.getInt8(offset + 2) << 16)) /
+                    8388608;
+                peak = Math.max(peak, Math.abs(sample));
+            }
+            return 20 * Math.log10(peak);
+        };
+        // A 1 kHz sine at -6 LUFS peaks near -5 dBFS: under a -1 dBTP ceiling, over a -10 dBTP one.
+        expect(peakDb('ceiling-0')).toBeGreaterThan(-8);
+        expect(peakDb('ceiling-1')).toBeLessThanOrEqual(-10);
+        expect(peakDb('ceiling-1')).toBeGreaterThan(-11);
+        expect(onLimited).toHaveBeenCalledTimes(1);
+        expect(onLimited).toHaveBeenCalledWith(expect.objectContaining({ id: 'ceiling-1', ceilingDbTp: -10 }));
+    });
     it('feeds a target Opus pass 48 kHz PCM while its other formats keep the target rate', async () => {
         useRealOggWorkerTransport();
         const source = toneSource(96000, 2, 96000);

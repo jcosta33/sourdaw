@@ -1463,6 +1463,10 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                                         value={ceilingDbTp}
                                         disabled={exporting}
                                         onChange={(event) => {
+                                            // An emptied field is not 0 dBTP; keep the last ceiling.
+                                            if (event.target.value === '') {
+                                                return;
+                                            }
                                             const value = Number(event.target.value);
                                             if (Number.isFinite(value) && value >= -20 && value <= 0) {
                                                 updateDraft({ ...activeDraft.settings, ceilingDbTp: value });

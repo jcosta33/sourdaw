@@ -3086,6 +3086,16 @@ describe('ExportDialog', () => {
             fireEvent.click(screen.getByRole('checkbox', { name: 'Export Game Audio PCM' }));
             expect(screen.getByRole('checkbox', { name: 'Export Podcast RSS MP3' })).toBeChecked();
         });
+        it('keeps the last true peak ceiling when the field is emptied', () => {
+            render(<ExportDialog open onClose={() => {}} />);
+            const ceiling = screen.getByRole('spinbutton', { name: 'True peak ceiling' });
+            fireEvent.change(ceiling, { target: { value: '-3' } });
+            expect(vi.mocked(saveExportSettings).mock.calls.at(-1)![0]).toMatchObject({ ceilingDbTp: -3 });
+            vi.mocked(saveExportSettings).mockClear();
+            fireEvent.change(ceiling, { target: { value: '' } });
+            expect(saveExportSettings).not.toHaveBeenCalled();
+            expect(screen.getByRole('spinbutton', { name: 'True peak ceiling' })).toHaveValue(-3);
+        });
         it('captures all target overrides before the directory await and renders only once at their maximum rate', async () => {
             const destination = createDeferred<string>();
             mocks.selectNativeAudioExportDirectory.mockReturnValueOnce(destination.promise);
