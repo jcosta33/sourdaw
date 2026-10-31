@@ -5,6 +5,7 @@ import { type AudioGraphApplyResult, type AudioGraphBackend } from '../../models
 import { stoppedEngineTransportPosition } from '../../models/EngineTransportPosition';
 import { createAudioEngine } from '../../repositories/createWebAudioEngine';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
+import { type createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
 import { nativeLiveGraphSessionOffered } from '../livePlayback/nativeLiveGraphSessionOffered';
 import { nativeLiveGraphSession } from '../livePlayback/nativeLiveGraphSessionState';
 import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
@@ -12,7 +13,7 @@ import { playAudioBufferPreview } from '../playAudioBufferPreview';
 import { playExclusiveAudioBufferPreview } from '../playExclusiveAudioBufferPreview';
 
 const fixture = vi.hoisted(() => {
-    const current: { engine: AudioEngine | null; startBackend: AudioGraphBackend | null } = {
+    const current: { engine: AudioEngine | null; startBackend: NativeStartBackend | null } = {
         engine: null,
         startBackend: null,
     };
@@ -184,6 +185,20 @@ function buffer(): AudioBuffer {
     } as unknown as AudioBuffer;
 }
 
+type NativeStartBackend = AudioGraphBackend &
+    Pick<ReturnType<typeof createNativeLiveGraphBackend>, 'rollAtFinalAdmission'>;
+
+/** A start's backend: its final-admission roll reaches `apply` as the one set-transport batch the real backend sends. */
+function nativeStartBackend(apply: AudioGraphBackend['apply']): NativeStartBackend {
+    return {
+        backendId: 'native/live',
+        apply,
+        dispose: vi.fn(),
+        rollAtFinalAdmission: (_positionSeconds, finalize) =>
+            apply({ schemaVersion: 1, commands: [{ kind: 'set-transport', playing: true, ...finalize() }] }),
+    };
+}
+
 const ID = 'dc0f62d1-dc26-4c5c-81db-36130c1466e4:0';
 function applied(fence: number): AudioGraphApplyResult {
     return {
@@ -335,7 +350,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             .fn<AudioGraphBackend['apply']>()
             .mockImplementation(async () => applied(++fence))
             .mockReturnValueOnce(topology.promise);
-        fixture.startBackend = { backendId: 'native/live', apply, dispose: vi.fn() };
+        fixture.startBackend = nativeStartBackend(apply);
         vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
             ...stoppedEngineTransportPosition,
             running: true,
@@ -371,7 +386,7 @@ describe('exclusive retained buffer listening lifetime', () => {
             .fn<AudioGraphBackend['apply']>()
             .mockImplementation(async () => applied(++fence))
             .mockReturnValueOnce(gate.promise);
-        fixture.startBackend = { backendId: 'native/live', apply, dispose: vi.fn() };
+        fixture.startBackend = nativeStartBackend(apply);
         nativeLiveGraphSession.backend = fixture.startBackend;
         vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
             ...stoppedEngineTransportPosition,
@@ -400,7 +415,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         let fence = 0;
         const apply = vi.fn<AudioGraphBackend['apply']>().mockImplementation(async () => applied(++fence));
-        fixture.startBackend = { backendId: 'native/live', apply, dispose: vi.fn() };
+        fixture.startBackend = nativeStartBackend(apply);
         nativeLiveGraphSession.backend = fixture.startBackend;
         vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
             ...stoppedEngineTransportPosition,
@@ -426,7 +441,7 @@ describe('exclusive retained buffer listening lifetime', () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         let fence = 0;
         const apply = vi.fn<AudioGraphBackend['apply']>().mockImplementation(async () => applied(++fence));
-        fixture.startBackend = { backendId: 'native/live', apply, dispose: vi.fn() };
+        fixture.startBackend = nativeStartBackend(apply);
         nativeLiveGraphSession.backend = fixture.startBackend;
         const position = Promise.withResolvers<Awaited<ReturnType<typeof getEngineTransportPosition>>>();
         vi.mocked(getEngineTransportPosition)
