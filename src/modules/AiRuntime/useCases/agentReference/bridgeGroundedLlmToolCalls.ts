@@ -54,10 +54,11 @@ import {
 } from '../validateArbitraryCommandListEvidence';
 
 import {
-    admitsCompiledTargets,
+    createCompiledTargetAdmission,
     type CompiledSelectorTerms,
+    type CompiledTargetAdmission,
     type CompiledTargetAuthority,
-    type CompiledTargetAuthorityInput,
+    type CompiledTargetCallTerms,
 } from './admitCompiledTargets';
 import { admitCreativeCommandBatch, type CreativeCallAdmission } from './admitCreativeCommandBatch';
 import { type BatchLocalActionIdentity } from './BatchLocalActionIdentity';
@@ -201,12 +202,10 @@ type GroundToolCallInput = {
     /** Whether the batch as a whole may take the plan-created object evidence route. */
     admitsPlanCreatedObjects: boolean;
     batchLocalCreationBindings: ReadonlyMap<string, BatchLocalCreationBinding>;
-    /** The text values every call of the batch writes, which never pick a compiled target. */
-    batchWrittenValueTexts: readonly string[];
     call: ToolCallResult;
     catalog: GroundingCatalog;
-    /** Every id the compiled list's own selectors excluded or protected; empty off the compiled route. */
-    compilerExcludedIds: ReadonlySet<string>;
+    /** The batch's compiled target authority, which reads the request once for every call sharing its terms. */
+    compiledTargetAdmission: CompiledTargetAdmission;
     /** The selector this call's compiled targets came from, when the compiler resolved one. */
     compiledSelectorTerms?: CompiledSelectorTerms;
     context: ProjectContext;
@@ -220,7 +219,6 @@ type GroundToolCallInput = {
     declaredBindingsByCallIndex: ReadonlyMap<number, BatchLocalCreationBinding>;
     index: number;
     prompt: string;
-    requestProtections?: BoundRequestProtections;
     plannedActionNames: readonly string[];
     sameActionAssertedArguments: readonly Readonly<Record<string, unknown>>[];
     sameActionCallCount: number;
@@ -4590,11 +4588,10 @@ function groundToolCall({
     actionOrdinal,
     admitsPlanCreatedObjects,
     batchLocalCreationBindings,
-    batchWrittenValueTexts,
     call,
     catalog,
     compiledSelectorTerms,
-    compilerExcludedIds,
+    compiledTargetAdmission,
     context,
     creativeAdmission,
     creativeAuthorityMode,
@@ -4603,7 +4600,6 @@ function groundToolCall({
     declaredBindingsByCallIndex,
     index,
     prompt,
-    requestProtections,
     plannedActionNames,
     resolvedTargetOverrides,
     sameActionAssertedArguments,
@@ -4888,17 +4884,12 @@ function groundToolCall({
                 );
             }
             const setRefusal = compiledTargetRefusalReason(
-                admitsCompiledTargets({
+                compiledTargetAdmission({
                     argument: targetRule.argument,
                     capability: targetRule.capability,
-                    catalog,
-                    compilerExcludedIds,
                     context,
-                    prompt,
-                    requestProtections,
                     referenceResolved: false,
                     selectorTerms: compiledSelectorTerms,
-                    valueTexts: batchWrittenValueTexts,
                     targetIds: compilerTargetOverride.stableIds,
                 }),
                 targetRule.argument
@@ -5021,21 +5012,16 @@ function groundToolCall({
             groundedArguments[targetRule.argument] = assertedValue;
             continue;
         }
-        const compiledTargetAuthority: CompiledTargetAuthorityInput | null =
+        const compiledTargetAuthority: CompiledTargetCallTerms | null =
             compilerTargetOverride !== undefined && 'stableIds' in compilerTargetOverride
                 ? {
                       argument: targetRule.argument,
                       capability: targetRule.capability,
-                      catalog,
-                      compilerExcludedIds,
                       context,
                       dependencyId: typeof dependencyValue === 'string' ? dependencyValue : undefined,
-                      prompt,
-                      requestProtections,
                       referenceResolved: false,
                       selectorTerms: compiledSelectorTerms,
                       targetIds: compilerTargetOverride.stableIds,
-                      valueTexts: batchWrittenValueTexts,
                   }
                 : null;
         if (
@@ -5057,7 +5043,7 @@ function groundToolCall({
                 );
             }
             const compiledRefusal = compiledTargetRefusalReason(
-                admitsCompiledTargets(compiledTargetAuthority),
+                compiledTargetAdmission(compiledTargetAuthority),
                 targetRule.argument
             );
             if (compiledRefusal !== null) {
@@ -5115,7 +5101,7 @@ function groundToolCall({
             compiledTargetAuthority === null
                 ? null
                 : compiledTargetRefusalReason(
-                      admitsCompiledTargets({ ...compiledTargetAuthority, referenceResolved: true }),
+                      compiledTargetAdmission({ ...compiledTargetAuthority, referenceResolved: true }),
                       targetRule.argument
                   );
         if (resolvedRefusal !== null) {
@@ -8007,7 +7993,13 @@ function bridgeUnrefinedLlmToolCalls(
     const acceptedGroundedCalls: ToolCallResult[] = [];
     const visibleBindings = new Map<string, BatchLocalCreationBinding>();
     const visiblePlannedTrackCreations: ToolCallResult[] = [];
-    const batchWrittenValueTexts = getBatchWrittenValueTexts(effectiveCalls);
+    const compiledTargetAdmission = createCompiledTargetAdmission({
+        catalog,
+        compilerExcludedIds,
+        prompt,
+        requestProtections,
+        valueTexts: getBatchWrittenValueTexts(effectiveCalls),
+    });
     let prospectiveContext = context;
     for (const [index, providerCall] of effectiveCalls.entries()) {
         const call = stripBatchLocalBinding(providerCall);
@@ -8084,12 +8076,10 @@ function bridgeUnrefinedLlmToolCalls(
                         createdObjectRequestIndexes.has(index) ||
                         createdTargetIntent === 'matched'),
                 batchLocalCreationBindings: visibleBindings,
-                batchWrittenValueTexts,
                 call,
                 catalog,
                 compiledSelectorTerms: compiledSelectorTermsByCallIndex.get(index),
-                compilerExcludedIds,
-                requestProtections,
+                compiledTargetAdmission,
                 context: prospectiveContext,
                 ...(creativeAdmission === undefined ? {} : { creativeAdmission }),
                 ...(creativeAuthority === undefined ? {} : { creativeAuthorityMode: creativeAuthority.mode }),
