@@ -195,6 +195,7 @@ const {
     setCrumbsEventBusMock,
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
+    initTimelineScrollClampMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
     initLevainDeviceStatePersistenceMock,
@@ -299,6 +300,7 @@ const {
         setCrumbsEventBusMock: vi.fn(),
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
+        initTimelineScrollClampMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
         initLevainDeviceStatePersistenceMock: vi.fn(),
@@ -400,7 +402,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
-    initTimelineScrollClamp: noop,
+    initTimelineScrollClamp: initTimelineScrollClampMock,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,
@@ -1494,6 +1496,13 @@ describe('bootstrap', () => {
         // edit commits that stale store over the peer's change (#4764). Pinned
         // by reference like the Grand Boule registration above.
         expect(initDeviceStateReconciliationMock).toHaveBeenCalledExactlyOnceWith();
+    });
+
+    it('registers the timeline scroll clamp as an explicit boot step', () => {
+        // Deleting a track or collapsing a folder shrinks the timeline's
+        // content; without this registration the scroll offset stays past the
+        // last row and leaves blank canvas until the next wheel event.
+        expect(initTimelineScrollClampMock).toHaveBeenCalledExactlyOnceWith();
     });
 
     it('wires the Crumbs mode push to the shared event bus', () => {
