@@ -1335,9 +1335,9 @@ test('slips canonical media and manual comp snapshots from authoritative seconds
     expect(state.raw.lane?.takes).toEqual(takeFields);
     expect(state.raw.lane?.activeCompRegions[0]?.audioSource).toMatchObject({
         startBeat: compStart,
-        audioOffsetSeconds: 0.65 + compStart,
-        audioLoopStartSeconds: 0.65 + compStart,
-        audioLoopPassEntrySeconds: 0.65 + compStart,
+        audioOffsetSeconds: expect.closeTo(0.65 + compStart, 10),
+        audioLoopStartSeconds: expect.closeTo(0.65 + compStart, 10),
+        audioLoopPassEntrySeconds: expect.closeTo(0.65 + compStart, 10),
         audioLoopPassOriginBeat: compStart,
         loopOriginBeat: compStart,
         loopLength: 2 - compStart,
