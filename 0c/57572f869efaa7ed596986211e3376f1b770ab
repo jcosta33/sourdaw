@@ -1,0 +1,20 @@
+.agents/skills/review-stances/lifecycle-control-routing.md
+  s_9091c7fb2989db::t_9b8d6f5b639717 14-17,19,21-26,28-30
+  s_9091c7fb2989db::t_d00944a314850c 41-49
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0c57572f869efaa7ed596986211e3376f1b770ab",
+  "prompts": {},
+  "sessions": {
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
