@@ -1629,14 +1629,16 @@ describe('compatible three-kind comparison inside the existing turn ceiling', ()
 
 type LiteralCommand = { name: string; arguments: Record<string, unknown> };
 
-/** Plans one literal request through the scripted provider and persists its actual approval card. */
-async function proposeLiteralCard(input: {
+type LiteralRequest = {
     prompt: string;
     runId: string;
     commands: readonly LiteralCommand[];
     refines?: string;
     targetIds?: readonly string[];
-}): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
+};
+
+/** Plans one literal request through the scripted provider, persisting nothing. */
+async function planLiteralRequest(input: LiteralRequest) {
     const context = getProjectContext();
     const revision = captureProjectRevision();
     const thread = input.refines === undefined ? null : readChatThreadContext();
@@ -1654,7 +1656,7 @@ async function proposeLiteralCard(input: {
     agentRunLifecycle.transitionPhase({ runId: input.runId, phase: 'planning' });
     const proposalArguments: Record<string, unknown> = {
         commands: input.commands,
-        plan: metricGoalProviderPlan(input.prompt, input.targetIds ?? ['drums']),
+        plan: metricGoalProviderPlan(input.prompt.trim(), input.targetIds ?? ['drums']),
     };
     if (input.refines !== undefined) {
         proposalArguments.refines = input.refines;
@@ -1705,6 +1707,27 @@ async function proposeLiteralCard(input: {
         streamIdentity: { runId: input.runId, requestId: `${input.runId}-request`, cancellationGeneration: 0 },
         onMeasurementAttempt: agentWorkBudget.admitMeasurement(input.runId),
     });
+    return { planned, context, revision };
+}
+
+function persistedMetricGoalState(stored: string | null | undefined, compiled: string | undefined): string | undefined {
+    if (stored === undefined) {
+        return compiled;
+    }
+    if (stored === null) {
+        return undefined;
+    }
+    return stored;
+}
+
+/**
+ * Plans one literal request and persists its actual approval card. `storedMetricGoalState` replaces
+ * the record the card persists (`null` persists none), standing in for one an earlier build wrote.
+ */
+async function proposeLiteralCard(
+    input: LiteralRequest & { storedMetricGoalState?: string | null }
+): Promise<{ confirmationId: string; metricGoalState: string | undefined }> {
+    const { planned, context, revision } = await planLiteralRequest(input);
     expect(planned.rejectionReason, JSON.stringify(planned.applicationToolReceipts)).toBeUndefined();
     expect(planned.refines).toBe(input.refines);
     const assistantMessageId = `${input.runId}-assistant`;
@@ -1757,7 +1780,7 @@ async function proposeLiteralCard(input: {
         commandEnvelopes: compiled.commandEnvelopes,
         commandBatch: compiled.commandBatch,
         agentApproval: compiled.agentApproval,
-        metricGoalState: compiled.metricGoalState,
+        metricGoalState: persistedMetricGoalState(input.storedMetricGoalState, compiled.metricGoalState),
         affectedIds: ['drums'],
         protectedUnchanged: [],
         groundingBasis: planned.groundingBasis,
@@ -1987,6 +2010,99 @@ describe('request figures across a refinement chain', () => {
         });
         expect(drumsGain()).toBe(0.8);
         expect(trackStore.value).toEqual(before);
+    });
+
+    it('refuses to extend a chain whose verification record would no longer decode', async () => {
+        const before = structuredClone(trackStore.value);
+        const original = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'unreadable-chain-original',
+            commands: [raiseDrums(1)],
+        });
+        const oversized = await proposeLiteralCard({
+            prompt: `Raise Drums by 2 dB instead${' '.repeat(9000)}`,
+            runId: 'unreadable-chain-oversized',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        expect(getAgentApprovalView({ confirmationId: oversized.confirmationId })?.canConfirm).toBe(false);
+        const refused = await planLiteralRequest({
+            prompt: 'Raise Drums by 3 dB instead',
+            runId: 'unreadable-chain-refused',
+            commands: [raiseDrums(3)],
+            refines: oversized.confirmationId,
+        });
+        expect(refused.planned).toMatchObject({
+            actions: [],
+            rejectionReason: expect.stringContaining('start a fresh request'),
+        });
+        expect(refused.planned.metricGoalState).toBeUndefined();
+        expect(
+            pendingActionConfirmationStore.value?.confirmations.some(
+                (confirmation) => confirmation.runId === 'unreadable-chain-refused'
+            )
+        ).toBe(false);
+        expect(await confirmPendingChatActions({ confirmationId: oversized.confirmationId })).toMatchObject({
+            status: 'failed',
+        });
+        expect(drumsGain()).toBe(0.8);
+        expect(trackStore.value).toEqual(before);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(audio.renderOffline).not.toHaveBeenCalled();
+    });
+
+    it('refuses to refine a card whose stored verification record is unreadable', async () => {
+        const before = structuredClone(trackStore.value);
+        const corrupted = await proposeLiteralCard({
+            prompt: TRUE_PEAK_REQUEST,
+            runId: 'corrupted-record-original',
+            commands: [raiseDrums(1)],
+            storedMetricGoalState: '{"schemaVersion":1,"authorities":[',
+        });
+        expect(getAgentApprovalView({ confirmationId: corrupted.confirmationId })).toMatchObject({
+            canConfirm: false,
+            metricGoals: {
+                status: 'blocked',
+                reason: expect.stringContaining('no positive metric intent admission'),
+            },
+        });
+        const refused = await planLiteralRequest({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'corrupted-record-refinement',
+            commands: [raiseDrums(2)],
+            refines: corrupted.confirmationId,
+        });
+        expect(refused.planned).toMatchObject({
+            actions: [],
+            rejectionReason: expect.stringContaining('start a fresh request'),
+        });
+        expect(
+            pendingActionConfirmationStore.value?.confirmations.some(
+                (confirmation) => confirmation.runId === 'corrupted-record-refinement'
+            )
+        ).toBe(false);
+        expect(trackStore.value).toEqual(before);
+    });
+
+    it('still refines and confirms a card that persisted no verification record', async () => {
+        const original = await proposeLiteralCard({
+            prompt: 'Raise Drums by 1 dB',
+            runId: 'recordless-original',
+            commands: [raiseDrums(1)],
+            storedMetricGoalState: null,
+        });
+        const refined = await proposeLiteralCard({
+            prompt: 'Raise Drums by 2 dB instead',
+            runId: 'recordless-refinement',
+            commands: [raiseDrums(2)],
+            refines: original.confirmationId,
+        });
+        expect(getAgentApprovalView({ confirmationId: refined.confirmationId })?.canConfirm).toBe(true);
+        expect(await confirmPendingChatActions({ confirmationId: refined.confirmationId })).toEqual({
+            status: 'executed',
+        });
+        expect(drumsGain()).toBeGreaterThan(0.8);
+        expect(audio.renderTrackSubgraphOffline).not.toHaveBeenCalled();
     });
 
     it('decodes a persisted metric state with or without the refined requests it carries', () => {

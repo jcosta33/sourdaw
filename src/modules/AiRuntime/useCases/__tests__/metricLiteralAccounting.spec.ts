@@ -159,6 +159,15 @@ describe('request-number closure through real Command metadata', () => {
         }
     );
 
+    it('keeps a refined figure whose restated clause names it in another unit', () => {
+        expect(
+            refinedLiteralEvaluation('Normalize Intro clip to -14 LUFS', ['Normalize Intro clip to -1 dBTP'], {
+                type: 'normalizeClip',
+                payload: { clipId: 'intro', mode: 'lufs', targetDb: -14 },
+            })
+        ).toMatchObject({ status: 'blocked', failure: 'missing', reason: expect.stringContaining('-1 dBTP') });
+    });
+
     it('keeps a refined frequency limit beside a frequency edit in another clause', () => {
         expect(
             refinedLiteralEvaluation(

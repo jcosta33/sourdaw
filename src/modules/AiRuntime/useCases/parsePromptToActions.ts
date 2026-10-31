@@ -171,6 +171,9 @@ function isUnknownArray(value: unknown): value is unknown[] {
  */
 const MAX_REJECTED_FRAGMENT_LENGTH = 512;
 
+const UNREADABLE_VERIFICATION_RECORD =
+    "This proposal's verification record can no longer be read; start a fresh request.";
+
 function boundedProviderFragment(value: unknown): string | undefined {
     try {
         const serialized = JSON.stringify(value);
@@ -1413,7 +1416,24 @@ const planPromptIntent = inject({ logger })(
                     compiled.kind === 'recipe' ? [compiled.recipe] : []
                 );
                 const measuredPreview = readAdoptedMeasuredPreview(selectedCompilations);
-                const inheritedMetricState = metricGoalStateCodec(refinedCard?.approvalSnapshot.metricGoalState);
+                const storedMetricState = refinedCard?.approvalSnapshot.metricGoalState;
+                const inheritedMetricState = metricGoalStateCodec(storedMetricState);
+                // A record that no longer decodes would let the refinement restart its chain and drop
+                // every figure the earlier requests stated, so it ends the request instead.
+                if (
+                    typeof storedMetricState === 'string' &&
+                    storedMetricState.length > 0 &&
+                    inheritedMetricState === null
+                ) {
+                    return {
+                        actions: [],
+                        rawText: prompt,
+                        requiresConfirmation: false,
+                        ...applicationToolReceiptFields,
+                        ...creativeAuthorityFields,
+                        rejectionReason: UNREADABLE_VERIFICATION_RECORD,
+                    };
+                }
                 const authorities = [...(inheritedMetricState?.authorities ?? [])];
                 const admittedMetricAuthority = metricAuthority;
                 if (
@@ -1673,8 +1693,19 @@ const planPromptIntent = inject({ logger })(
                             };
                         }
                     }
+                    const stemMetricGoalState = serializeMetricGoalState([stemImport.action]);
+                    if (metricGoalStateCodec(stemMetricGoalState) === null) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: UNREADABLE_VERIFICATION_RECORD,
+                        };
+                    }
                     return {
-                        metricGoalState: serializeMetricGoalState([stemImport.action]),
+                        metricGoalState: stemMetricGoalState,
                         actions: [stemImport.action],
                         rawText: prompt,
                         requiresConfirmation: true,
@@ -1830,17 +1861,29 @@ const planPromptIntent = inject({ logger })(
                             recipePrefixHash: digestCommandBatchContent(prefix.envelope),
                         });
                     }
+                    const groundedMetricGoalState = serializeMetricGoalState(
+                        grounded.actions,
+                        steps,
+                        freezeWorkflowNativeLiteralUses({
+                            uses: grounded.nativeLiteralUses,
+                            actions: grounded.actions,
+                            authority: admittedMetricAuthority,
+                            request: prompt,
+                        })
+                    );
+                    // A record its own codec refuses would leave the next refinement nothing to inherit.
+                    if (metricGoalStateCodec(groundedMetricGoalState) === null) {
+                        return {
+                            actions: [],
+                            rawText: prompt,
+                            requiresConfirmation: false,
+                            ...applicationToolReceiptFields,
+                            ...creativeAuthorityFields,
+                            rejectionReason: UNREADABLE_VERIFICATION_RECORD,
+                        };
+                    }
                     return {
-                        metricGoalState: serializeMetricGoalState(
-                            grounded.actions,
-                            steps,
-                            freezeWorkflowNativeLiteralUses({
-                                uses: grounded.nativeLiteralUses,
-                                actions: grounded.actions,
-                                authority: admittedMetricAuthority,
-                                request: prompt,
-                            })
-                        ),
+                        metricGoalState: groundedMetricGoalState,
                         actions: grounded.actions,
                         ...(grounded.actionCommandGraph === undefined
                             ? {}
