@@ -1,7 +1,7 @@
 type CropHistoryFromRenderedBufferInput = {
     buffer: AudioBuffer;
-    historySeconds: number;
-    outputDurationSeconds: number;
+    historyFrameCount: number;
+    outputFrameCount: number;
     borrowed?: boolean;
 };
 
@@ -14,18 +14,17 @@ export function cropHistoryFromRenderedBuffer(input: CropHistoryFromRenderedBuff
 /** Returns the requested window after a timeline-zero history render. */
 export function cropHistoryFromRenderedBuffer({
     buffer,
-    historySeconds,
-    outputDurationSeconds,
+    historyFrameCount,
+    outputFrameCount,
     borrowed = false,
 }: CropHistoryFromRenderedBufferInput): AudioBuffer | BorrowedRenderWindow {
-    if (historySeconds <= 0) {
+    if (historyFrameCount <= 0) {
         return buffer;
     }
 
-    const startFrame = Math.round(historySeconds * buffer.sampleRate);
-    const outputFrameCount = Math.ceil(outputDurationSeconds * buffer.sampleRate);
+    const startFrame = historyFrameCount;
     const endFrame = startFrame + outputFrameCount;
-    if (startFrame < 0 || endFrame > buffer.length) {
+    if (endFrame > buffer.length) {
         throw new Error('The requested region falls outside the renderer frame limit');
     }
 

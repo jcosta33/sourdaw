@@ -190,7 +190,7 @@ export async function renderTrackSubgraphOffline({
     }
 
     const sampleRate = getAudioContext().sampleRate;
-    const { renderContext, historySeconds, outputDurationSeconds } = resolveHistoryAwareRenderContext(
+    const { renderContext, historySeconds, historyFrameCount, outputFrameCount } = resolveHistoryAwareRenderContext(
         { durationBeats, startBeat, tailSeconds, sampleRate },
         source?.project
     );
@@ -588,7 +588,7 @@ export async function renderTrackSubgraphOffline({
         });
 
         onProgress?.(1);
-        return cropHistoryFromRenderedBuffer({ buffer, historySeconds, outputDurationSeconds });
+        return cropHistoryFromRenderedBuffer({ buffer, historyFrameCount, outputFrameCount });
     } finally {
         destroyOfflineDeviceStrategies(deviceEntriesByTrack);
     }
