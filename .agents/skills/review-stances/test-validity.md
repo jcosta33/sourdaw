@@ -813,6 +813,18 @@ compensation: sample phase stays unchanged, only write times shift, and the zero
 comes from the actual render origin. Revert each origin binding independently on a committed
 private probe and require the unchanged regression to fail.
 
+### Render endpoint checks must observe a one-frame cap shortfall
+
+The capped Render to Clip defect was found during #4986 review and predated that PR; its earliest
+introduction and historical private review prompts and tiers are unestablished. A requested length
+or producer warning alone cannot prove where the consuming clip ends.
+
+Run the existing `renderToClip.spec.ts` case “ends at the returned audio when the request exceeds
+the cap by one frame with %i s tail” for both tail values. Assert the placed end and Redo end use
+the returned frames, and retain the nonzero-start tempo-change case and exact-grid complete-render
+control. Remove the endpoint-shortfall branch and require that unchanged case to fail. The large
+boundary fixture carries buffer metadata; it does not establish a six-hour PCM allocation or audio.
+
 ### 2026-10-11 — tempo integration checks observed an older caller population (#5243)
 
 PR #5243's first-attempt run `38050968596` genuinely checked its author head `ba10195e`
