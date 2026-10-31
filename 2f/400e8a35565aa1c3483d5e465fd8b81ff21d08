@@ -1,0 +1,104 @@
+tests/e2e/macrosPanelRecordingTestId.spec.ts
+  s_88fc7e0d05bab6::t_22138b3c209c01 19
+tests/e2e/levainEngineStatusTestId.spec.ts
+  s_88fc7e0d05bab6::t_978ecd1fd80508 7
+src/modules/ContentBrowser/AGENTS.md
+  s_88fc7e0d05bab6::t_f61806d57fae2a 11
+tests/e2e/browserInstrumentsTestId.spec.ts
+  s_88fc7e0d05bab6::t_96ddd55a7c43d1 34
+  s_88fc7e0d05bab6::t_780ce21ff8bfd0 31
+tests/e2e/levainFamilyFilterTestId.spec.ts
+  s_88fc7e0d05bab6::t_bed1e74c290744 7
+tests/e2e/panelDeepCoverage.spec.ts
+  s_88fc7e0d05bab6::t_9a1600b0b0f10a 165
+  s_88fc7e0d05bab6::t_8c4db826cfc06e 168
+tests/e2e/sampleLibraryFavoritesTestId.spec.ts
+  s_88fc7e0d05bab6::t_6e3e183591fdcf 103
+  s_88fc7e0d05bab6::t_2bff8cdf62b4b6 25
+  s_88fc7e0d05bab6::t_3fc5f530030173 149
+  s_88fc7e0d05bab6::t_f73bbccf80eefd 28
+tests/e2e/library.spec.ts
+  s_88fc7e0d05bab6::t_034181688ad223 30
+  s_88fc7e0d05bab6::t_4b6fa0c07cc2fa 31
+tests/e2e/railTabBarScrollTestId.spec.ts
+  s_88fc7e0d05bab6::t_a59530a13b46e0 34
+  s_88fc7e0d05bab6::t_42947f99746e40 96
+  s_88fc7e0d05bab6::t_531dc368140a49 55
+  s_88fc7e0d05bab6::t_1839ce6a68fc3d 30
+  s_88fc7e0d05bab6::t_4f31ad771b12d6 92
+tests/e2e/e2eUtils.ts
+  s_88fc7e0d05bab6::t_440e042caf184c 220
+tests/e2e/levainArticulationTestId.spec.ts
+  s_88fc7e0d05bab6::t_f58244cdfa6142 7
+src/modules/ContentBrowser/presentations/views/Sidebar.tsx
+  s_88fc7e0d05bab6::t_0cf78832ba7ca4 52-58,69
+  s_88fc7e0d05bab6::t_37e6a7a97800a2 59-61,66-68
+  s_88fc7e0d05bab6::t_737ef0f61255c1 6,62-65,84,226-228,230,232,234,263-265,267-268,270,272,284-286
+src/components/daw/__tests__/DawTabStrip.spec.tsx
+  s_88fc7e0d05bab6::t_0c0c70ae8b1dd4 34
+  s_88fc7e0d05bab6::t_624871bbf3e2f7 54-56
+  s_88fc7e0d05bab6::t_9d4d5b6d866a5b 1-5,7-11,13-33,35-53,57-175,177,187-188,190-195,197-236,238-240,242-293
+  s_88fc7e0d05bab6::t_f7248daf090a86 6
+  s_88fc7e0d05bab6::t_c6c6fcf0cae55e 12
+  s_88fc7e0d05bab6::t_38db6aa9e78ac9 176
+  s_88fc7e0d05bab6::t_194ad34335d5e4 178-180
+  s_88fc7e0d05bab6::t_c9cd497dbbfa96 189
+  s_88fc7e0d05bab6::t_cad31814a0510a 196
+  s_88fc7e0d05bab6::t_0b88cfcdd420a8 237
+  s_88fc7e0d05bab6::t_cdee96f44ebcbb 241
+  s_88fc7e0d05bab6::t_ed8bcc8abf1c98 181-185
+tests/e2e/finalBatch.spec.ts
+  s_88fc7e0d05bab6::t_820779fae42cbd 145
+tests/e2e/instrumentPanelsTestId.spec.ts
+  s_88fc7e0d05bab6::t_6af5824e354fb5 18
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_88fc7e0d05bab6::t_489ef98001981a 726,728
+  s_88fc7e0d05bab6::t_5301b99271d68b 701-703
+  s_88fc7e0d05bab6::t_868db20c687346 1
+  s_88fc7e0d05bab6::t_41fa783f256a2f 682-700,704-725,727,729-731
+tests/e2e/e2eWorkflow.spec.ts
+  s_88fc7e0d05bab6::t_af25778fbb4ff6 107
+tests/e2e/remainingCoverage.spec.ts
+  s_88fc7e0d05bab6::t_a623563bdee596 152
+tests/e2e/levainSearchFilterTestId.spec.ts
+  s_88fc7e0d05bab6::t_c8ffc34238569f 7
+tests/e2e/grooveExtractionCommit.spec.ts
+  s_88fc7e0d05bab6::t_3732007c4c513d 56
+tests/e2e/yeastParamMatrix.spec.ts
+  s_88fc7e0d05bab6::t_9872ef5793d9fe 12
+src/components/daw/DawTabStrip.tsx
+  s_88fc7e0d05bab6::t_a63f79549996b0 1-91,94-226
+  s_88fc7e0d05bab6::t_cb859c6360e208 92-93
+tests/e2e/instrumentPanels.spec.ts
+  s_88fc7e0d05bab6::t_8c4e7f98a2a03f 69
+src/modules/ContentBrowser/presentations/views/__tests__/Sidebar.spec.tsx
+  s_88fc7e0d05bab6::t_4b06cb5a783c56 117-160
+  s_88fc7e0d05bab6::t_7c20a10a84b2a4 1
+tests/e2e/yeastMidiFxDeepTestId.spec.ts
+  s_88fc7e0d05bab6::t_1d875ba4dd98d6 18
+tests/e2e/browserAndDeviceDeep.spec.ts
+  s_88fc7e0d05bab6::t_5a089889672792 34
+  s_88fc7e0d05bab6::t_a6b800e67f6477 28
+tests/e2e/yeast.spec.ts
+  s_88fc7e0d05bab6::t_145fe426ab673f 19
+tests/e2e/grooveAssignRenameDelete.spec.ts
+  s_88fc7e0d05bab6::t_f05be50df1e894 53
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_88fc7e0d05bab6::t_ed141f04cb25fb 15,190-237,680-687,689,1022-1031,1046
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f400e8a35565aa1c3483d5e465fd8b81ff21d08",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
