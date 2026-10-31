@@ -1,0 +1,21 @@
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_76a041360513e9::t_1ece360a8ba6a1 30-41,84,99,546,559,567-587,590,592,603,606-611,620,623
+scripts/installCleanupLanes.ts
+  s_76a041360513e9::t_92973fee4160bb 212-217,221-223,227-235,240,252-253,255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "30550e0f1a96f34b17f01ad21b59078638e5a179",
+  "prompts": {},
+  "sessions": {
+    "s_76a041360513e9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_76a041360513e9",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
