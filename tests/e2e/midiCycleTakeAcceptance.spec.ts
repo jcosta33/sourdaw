@@ -289,14 +289,12 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         await page.getByTestId('transport-loop').click();
         await expect(page.getByTestId('transport-loop')).toHaveAttribute('aria-pressed', 'true');
         await page.getByTestId('toggle-virtual-keyboard').click();
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
-        await expect(keyboard).toBeVisible();
-        await keyboard.focus();
+        // The open keyboard captures the computer keyboard wherever focus is.
+        await expect(page.getByRole('region', { name: 'Virtual Piano Keyboard' })).toBeVisible();
 
         const firstWrap = (await phase(page)).wraps;
         await page.getByTestId('transport-record').click();
         await expect(page.getByTestId('transport-record')).toHaveAttribute('aria-pressed', 'true');
-        await keyboard.focus();
         await keyPhrase(page, 'a', firstWrap, 8.4, 9.0); // C4, pass 1
         await waitForPhase(page, firstWrap, 11.2);
         await page.keyboard.down('g'); // G4 belongs to its onset pass across the seam.
