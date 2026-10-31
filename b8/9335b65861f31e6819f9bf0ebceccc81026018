@@ -1,0 +1,121 @@
+crates/sourdaw-native/src/commands/engine_transport.rs
+  s_ba80576e6f5cb5::t_e042c2a00f6f30 1235-1237
+  s_ba80576e6f5cb5::t_8bde8ea9c7c729 1232-1234
+  s_ba80576e6f5cb5::t_e1401c889b7d33 1238-1240
+  s_88fc7e0d05bab6::t_043466dd16ebea 148-151,294-295,590-591,1136-1137,1196-1231,1241
+src/modules/AudioEngine/repositories/engineTransport/getEngineTransportPosition.ts
+  s_ba80576e6f5cb5::t_79d56e10153197 206
+  s_88fc7e0d05bab6::t_f6681908d4fc25 3,149-191,225-232
+.agents/skills/review-stances/security-and-platform.md
+  s_88fc7e0d05bab6::t_d98d270b66f179 161-174
+.agents/skills/review-stances/session-lifecycle.md
+  s_88fc7e0d05bab6::t_960563a71cbb7d 82-96
+.agents/skills/review-stances/test-validity.md
+  s_88fc7e0d05bab6::t_b39a1bb60195c8 272-285
+crates/daw-dsp/src/grinder/engine.rs
+  s_88fc7e0d05bab6::t_42928ee644d2ce 702-712
+crates/daw-dsp/src/grinder/nam/lstm.rs
+  s_88fc7e0d05bab6::t_cd429ed9b2fcd3 163-168
+crates/daw-dsp/src/grinder/nam/mod.rs
+  s_88fc7e0d05bab6::t_a6115edc4d74ab 22-23,90-94
+crates/daw-dsp/src/grinder/nam/native_admission.rs
+  s_88fc7e0d05bab6::t_af1883cf38a51f 1-1128
+crates/daw-dsp/src/grinder/neural.rs
+  s_88fc7e0d05bab6::t_82b69ad2febb2a 205-206,244-245,335-354,356-359,369-375
+crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs
+  s_88fc7e0d05bab6::t_1798bd23c8fbbe 1-107
+crates/daw-engine/src/lib.rs
+  s_88fc7e0d05bab6::t_6814ed1b833d77 43,97-103,105,241-244,265-267,328,1644-1645,1781-1782,1804-1818
+crates/daw-engine/src/scheduler.rs
+  s_88fc7e0d05bab6::t_578b2e1a640896 34,461-466,996,1100,2638-2654,4596-4616,5283-5284,5306-5307,5365-5366,6606-6630,6632,6641-6642,6654-6658,7401,7415-7429,7431-7435,8029-8034,8076-8079,8103-8109,24190-24456
+crates/sourdaw-native/src/commands/graph.rs
+  s_88fc7e0d05bab6::t_7e04beb412ef7f 158-161,184,186-187,496-503,729-730,766-772,981-984,1122-1123,1163-1164,1186-1187,1208-1209,1357-1633,1660,1678,1691-1717,1905-1908,3555,3557,3561-3564,4265-4310,5173-5210,5384-5392,5395,5416-5498,5559,5607-5615,5617-5622,5624-5629,5835-5842,5962-5964,6103-6415,9083-9248,16344
+src/modules/AudioEngine/models/AudioGraphBackend.ts
+  s_88fc7e0d05bab6::t_33b62ead5ba135 179-189,191,571-578,880,1043-1044,1094-1095
+src/modules/AudioEngine/models/EngineTransportPosition.ts
+  s_88fc7e0d05bab6::t_81778f2ff8684c 11-12,18-21
+src/modules/AudioEngine/repositories/engineTransport/__tests__/getEngineTransportPosition.spec.ts
+  s_88fc7e0d05bab6::t_2d8d08cf546734 392-422
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/createNativeLiveGraphBackend.spec.ts
+  s_88fc7e0d05bab6::t_c7e6a5904f0297 62-90,594-732
+src/modules/AudioEngine/repositories/nativeGraph/__tests__/serializeAudioGraphCommandBatch.spec.ts
+  s_88fc7e0d05bab6::t_bbcf0df90d9053 837-929
+src/modules/AudioEngine/repositories/nativeGraph/createNativeLiveGraphBackend.ts
+  s_88fc7e0d05bab6::t_77f221ed700742 51,71-72,152-256,295,305,323-332,347-385,387-397,401-406,408-411,413-436
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommand.ts
+  s_88fc7e0d05bab6::t_605b433e4a17e9 57,77,152-159,203,210,217-232,386,395-403,435,443
+src/modules/AudioEngine/repositories/nativeGraph/serializeAudioGraphCommandBatch.ts
+  s_88fc7e0d05bab6::t_cb2ea8a7d29d0b 24-41,43,46
+src/modules/AudioEngine/useCases/deviceControls/__tests__/updateDevicePatch.spec.ts
+  s_88fc7e0d05bab6::t_2fa3e23e8b0873 20,37-41,174-205
+src/modules/AudioEngine/useCases/deviceControls/updateDevicePatch.ts
+  s_88fc7e0d05bab6::t_fb57bc991d294a 1-3,7,36-41,49-67
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeBuiltinBodies.spec.ts
+  s_88fc7e0d05bab6::t_283a981b55076a 25-29,1127-1275
+src/modules/AudioEngine/useCases/livePlayback/__tests__/nativeLiveGraphSession.spec.ts
+  s_88fc7e0d05bab6::t_112c3362e2e1df 31,67-68,163-165,197-203,265-267,291-297,668-669,777-832,929-958,1437-1526,3227-3693
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectDeviceForNativeBody.spec.ts
+  s_88fc7e0d05bab6::t_5686fdef1de8c5 13,16-20,314-499
+src/modules/AudioEngine/useCases/livePlayback/__tests__/sendNativeGrinderNeuralPatch.spec.ts
+  s_88fc7e0d05bab6::t_285922e2b5ed02 1-367
+src/modules/AudioEngine/useCases/livePlayback/captureNativeGrinderNeuralPatch.ts
+  s_88fc7e0d05bab6::t_da59b273ec6a50 1-17
+src/modules/AudioEngine/useCases/livePlayback/nativeBuiltinBodies.ts
+  s_88fc7e0d05bab6::t_501f93c0438dc7 50-51,68-69,154-180,183,401
+src/modules/AudioEngine/useCases/livePlayback/prepareNativeSessionStart.ts
+  s_88fc7e0d05bab6::t_860116210f13cf 1-263
+src/modules/AudioEngine/useCases/livePlayback/projectDeviceForNativeBody.ts
+  s_88fc7e0d05bab6::t_ca9499a9a1f23c 51,144-145,147-150,155,158
+src/modules/AudioEngine/useCases/livePlayback/sendNativeGrinderNeuralPatch.ts
+  s_88fc7e0d05bab6::t_f591395fff2b94 1-204
+src/modules/AudioEngine/useCases/offlineRender/__tests__/createWebAudioOfflineBackend.spec.ts
+  s_88fc7e0d05bab6::t_8df074168703a1 574-594
+src/modules/AudioEngine/useCases/offlineRender/createWebAudioOfflineBackend.ts
+  s_88fc7e0d05bab6::t_e2739c18e1359e 94,366-367
+src/modules/Grinder/models/GrinderNeuralModelContent.ts
+  s_88fc7e0d05bab6::t_22973b6dc7293e 1-30
+src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts
+  s_88fc7e0d05bab6::t_29e6f89627d114 226-255
+src/modules/Grinder/services/validateGrinderNamModel.ts
+  s_88fc7e0d05bab6::t_7fd761e26f6daf 410-412
+src/modules/Grinder/stores/__tests__/readGrinderNeuralModelContent.spec.ts
+  s_88fc7e0d05bab6::t_0323d8ef25091b 1-125
+src/modules/Grinder/stores/index.ts
+  s_88fc7e0d05bab6::t_80dba25aa62c93 4
+src/modules/Grinder/stores/readGrinderNeuralModelContent.ts
+  s_88fc7e0d05bab6::t_fd2d9457840613 1-8
+src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts
+  s_88fc7e0d05bab6::t_93872ff466283e 185-221
+src/modules/Grinder/useCases/grinderParamBridge/__tests__/syncGrinderPatchToAudio.spec.ts
+  s_88fc7e0d05bab6::t_2e492807284eab 4,37-53
+tests/e2e/devServerOnlySpecs.ts
+  s_88fc7e0d05bab6::t_252f7e5f638cc6 22
+tests/e2e/grinderStackedLstmAdmission.spec.ts
+  s_88fc7e0d05bab6::t_0108a8819a3765 1-179
+src/modules/AudioEngine/useCases/livePlayback/startNativeLiveGraphSession.ts
+  s_88fc7e0d05bab6::t_b21b91403b6464 20-21,28-29,36-38,85,96,112,114,121,223,225-233,466-467,490-499,642,645,647-650,662,695,762-767,780-794,890,949,953,972,989-1004,1044-1064,1081,1128,1143
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b89335b65861f31e6819f9bf0ebceccc81026018",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
