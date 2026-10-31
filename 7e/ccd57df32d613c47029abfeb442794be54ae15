@@ -1,0 +1,21 @@
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_88fc7e0d05bab6::t_d5144154035805 2968-3152
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_88fc7e0d05bab6::t_06bcf80eede7c0 85-91,217-220,224-238,255-256,481,489-491,753,847,875-877
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7eccd57df32d613c47029abfeb442794be54ae15",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
