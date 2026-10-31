@@ -1502,6 +1502,44 @@ describe('real caller sequential measurement opportunity', () => {
         }
     );
 
+    it('keeps a proposal sent on the measurement step as a visible unverified plan', async () => {
+        const before = captureBefore();
+        scriptTurns(before.revision, [
+            [queryCall()],
+            [recipeExpansionCall()],
+            [proposeCall({ commands: [], compiledCallIds: ['expand-1'] })],
+            [],
+        ]);
+        const planned = await parsePromptToActions({
+            prompt: PROMPT,
+            context: getProjectContext(),
+            projectRevision: before.revision,
+        });
+        expect(planned.rejectionReason).toBeUndefined();
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+            mode: 'required',
+            toolNames: ['analysis.measure'],
+            parallelToolCalls: false,
+        });
+        expect(planned.applicationToolReceipts?.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                toolName: 'analysis.measure',
+                status: 'failure',
+                error: expect.objectContaining({ code: 'measurement-not-requested' }),
+            }),
+        ]);
+        expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+        expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+        const confirmationId = persistForApproval(planned, before.revision);
+        expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+            status: 'proposed',
+            canConfirm: false,
+            metricGoals: { status: 'blocked' },
+        });
+        assertUnchanged(before);
+    });
+
     it.each(['matched', 'contradicted', 'incomparable'] as const)(
         'keeps sequencing separate from actual %s frozen metric proof',
         async (kind) => {

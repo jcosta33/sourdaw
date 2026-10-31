@@ -211,6 +211,7 @@ describe('caller-bound measurement receipt sequence', () => {
             limits?: Parameters<typeof runApplicationOwnedToolLoop>[0]['limits'];
             readPolicy?: () => typeof opportunity;
             onTurn?: (turn: number) => void;
+            terminalToolNames?: readonly string[];
         } = {}
     ) {
         const execute =
@@ -240,7 +241,7 @@ describe('caller-bound measurement receipt sequence', () => {
         }
         const result = runApplicationOwnedToolLoop({
             loopId: 'sequence-loop',
-            terminalToolNames: new Set(['setTempo', 'selectWorkflowCapability']),
+            terminalToolNames: new Set(options.terminalToolNames ?? ['setTempo', 'selectWorkflowCapability']),
             requestTurn,
             interpretation: {
                 toolName: 'selectCreativeInterpretation',
@@ -286,7 +287,6 @@ describe('caller-bound measurement receipt sequence', () => {
         { label: 'a parallel measure', calls: [measure, { ...measure, id: 'measure-2' }], measured: true },
         { label: 'a measure beside a read', calls: [measure, read('also-read')], measured: true },
         { label: 'no call', calls: [], measured: false },
-        { label: 'a terminal', calls: [{ ...terminal, id: 'step-terminal' }], measured: false },
     ])(
         'keeps an unheld run alive to its final turn when the measurement step returns $label',
         async ({ calls, measured }) => {
@@ -331,6 +331,119 @@ describe('caller-bound measurement receipt sequence', () => {
                     error: expect.objectContaining({ code: 'measurement-not-requested' }),
                 }),
             ]);
+        }
+    );
+
+    it('releases a proposal sent on the unheld measurement step unverified, with no further turn', async () => {
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [terminal], []]);
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 4, toolCalls: [terminal] });
+        expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+        expect(run.requestTurn).toHaveBeenCalledTimes(4);
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(result.receipts.filter((entry) => entry.turn === 4)).toEqual([
+            expect.objectContaining({
+                toolName: 'analysis.measure',
+                error: expect.objectContaining({ code: 'measurement-not-requested' }),
+            }),
+        ]);
+    });
+
+    it('measures and then releases a proposal sent beside the measure on the unheld step', async () => {
+        const run = runSequence([[intake], [read('read-2')], [read('read-3')], [terminal, measure]]);
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 4, toolCalls: [terminal] });
+        expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+        expect(run.requestTurn).toHaveBeenCalledTimes(4);
+        expect(run.execute).toHaveBeenCalledOnce();
+        expect(vi.mocked(run.execute).mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 4 });
+        expect(result.receipts.find((entry) => entry.callId === 'measure')?.status).toBe('success');
+        expect(result.receipts.some((entry) => entry.callId === 'terminal')).toBe(false);
+    });
+
+    it.each([
+        { maxTotalCalls: 5, status: 'complete' },
+        { maxTotalCalls: 4, status: 'rejected' },
+    ])(
+        'charges a kept step proposal once beside its measure within $maxTotalCalls calls',
+        async ({ maxTotalCalls, status }) => {
+            const run = runSequence([[intake], [read('read-2')], [read('read-3')], [terminal, measure], [terminal]], {
+                limits: { maxTotalCalls },
+            });
+            const result = await run.result;
+            expect(result.status).toBe(status);
+            if (status === 'rejected') {
+                expect(result).toMatchObject({
+                    turns: 4,
+                    reason: expect.stringContaining('total application tool-call budget'),
+                });
+                expect(run.execute).not.toHaveBeenCalled();
+            }
+        }
+    );
+
+    it.each([
+        { label: 'without a measure', calls: [{ ...terminal, id: 'terminal-2', arguments: { bpm: 90 } }] },
+        {
+            label: 'beside a measure',
+            calls: [measure, { ...terminal, id: 'terminal-2', arguments: { bpm: 90 } }],
+        },
+    ])('keeps the first held proposal over a different one sent on the step $label', async ({ calls }) => {
+        const run = runSequence([[intake], [terminal], calls]);
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(settlementOf(result)).toMatchObject({ deferredCalls: [{ callId: 'terminal', turn: 2 }] });
+        expect(result.receipts.some((entry) => entry.callId === 'terminal-2')).toBe(false);
+    });
+
+    it('does not keep a step proposal that fails terminal validation', async () => {
+        const proposal = (id: string) => ({ id, name: 'command.batch.propose', arguments: { commands: [] } });
+        const run = runSequence(
+            [
+                [intake],
+                [read('read-2')],
+                [read('read-3')],
+                [proposal('proposal-1'), proposal('proposal-2')],
+                [terminal],
+            ],
+            { terminalToolNames: ['setTempo', 'command.batch.propose'] }
+        );
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal] });
+        expect(run.requestTurn).toHaveBeenCalledTimes(5);
+        expect(result.receipts.some((entry) => entry.callId.startsWith('proposal-'))).toBe(false);
+    });
+
+    it.each(['before the reply is admitted', 'during the measure'] as const)(
+        'does not release a step proposal when cancelled %s',
+        async (moment) => {
+            const controller = new AbortController();
+            const execute = vi.fn<MeasurementExecutor>(async (call, identity) => {
+                controller.abort();
+                return executeResult(call, identity);
+            });
+            const run = runSequence(
+                [
+                    [intake],
+                    [read('read-2')],
+                    [read('read-3')],
+                    moment === 'during the measure' ? [terminal, measure] : [terminal],
+                ],
+                {
+                    execute,
+                    signal: controller.signal,
+                    onTurn: (turn) => {
+                        if (turn === 4 && moment === 'before the reply is admitted') {
+                            controller.abort();
+                        }
+                    },
+                }
+            );
+            expect(await run.result).toMatchObject({
+                status: 'rejected',
+                turns: 4,
+                reason: 'Application-owned tool loop was cancelled.',
+            });
         }
     );
 
