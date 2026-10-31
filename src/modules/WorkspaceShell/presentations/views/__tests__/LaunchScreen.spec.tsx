@@ -62,6 +62,16 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('button', { name: /New Project/ })).toBeInTheDocument();
     });
 
+    it('fades out and stops taking pointer input while exiting', () => {
+        const { rerender } = render(<LaunchScreen exiting={false} />);
+        const dialog = screen.getByRole('dialog', { name: /Sourdaw — start a project/ });
+        expect(dialog).not.toHaveClass('opacity-0');
+
+        rerender(<LaunchScreen exiting />);
+
+        expect(dialog).toHaveClass('opacity-0', 'pointer-events-none', 'motion-reduce:transition-none');
+    });
+
     it('starts a new project in the click handler before shortcuts can run', () => {
         render(<LaunchScreen exiting={false} />);
 
