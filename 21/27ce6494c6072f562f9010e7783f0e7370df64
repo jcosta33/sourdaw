@@ -1,0 +1,41 @@
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_55244eb93b97d1::t_2a7398d4031bf0 1-6,9,12,15-40,43-44,47-53,58-59,61-68,73,75-108,125-126,131-134,157-158,165-168,170-177,181-183,186-194,351
+  s_55244eb93b97d1::t_2468a663b22b8f 7-8,10-11,13-14,41-42,45-46,60,109-124,127-130,135-156,159-164,195-350,352
+  s_55244eb93b97d1::t_777166ad3c7613 54-57
+  s_55244eb93b97d1::t_2176ce78e0ea23 69-72
+  s_55244eb93b97d1::t_dee5e1d2045dd5 74
+  s_55244eb93b97d1::t_75cf632a4297c8 169
+  s_55244eb93b97d1::t_50ce3f892b0f3a 178-180
+  s_55244eb93b97d1::t_bf73f744f7b51a 184-185
+  s_55244eb93b97d1::t_68a4a2306dacec 353-354
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_55244eb93b97d1::t_bc4f88706882c1 26-42,74-84,92-121
+  s_55244eb93b97d1::t_33168d0e5f7586 12
+  s_55244eb93b97d1::t_ce12a7dca50c41 85-91
+  s_55244eb93b97d1::t_968132b434b1d0 56-64,66-69,224-225
+  s_ba80576e6f5cb5::t_73b2d310e58143 49-55,65,70-73,144,149,223,281-295,306
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2127ce6494c6072f562f9010e7783f0e7370df64",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
