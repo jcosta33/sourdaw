@@ -1,0 +1,71 @@
+src/modules/Arrangement/transformers/__tests__/getTimelineContentHeight.spec.ts
+  s_3bb122e91d89a5::t_367297b0d0ad65 63
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_3bb122e91d89a5::t_919320ea2b0d0e 9,136,191-200,202-204,781-832
+src/modules/WorkspaceShell/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
+  s_55244eb93b97d1::t_8fca1e9be6270b 42-50,75-82
+src/modules/WorkspaceShell/handlers/scratchPad/handleCaptureScratchPad.ts
+  s_55244eb93b97d1::t_1773f576626375 12
+src/modules/WorkspaceShell/handlers/scratchPad/handleToggleScratchPad.ts
+  s_55244eb93b97d1::t_0f3ec141a4604a 9
+src/modules/WorkspaceShell/models/WorkspaceState.ts
+  s_55244eb93b97d1::t_4c6b43db4aa6d3 46-53,105-106
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/closeScratchPad.spec.ts
+  s_55244eb93b97d1::t_0170d6e2233f4e 18,21
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/panelToggles.spec.ts
+  s_55244eb93b97d1::t_8df488503997c0 20-21
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/closeScratchPad.ts
+  s_55244eb93b97d1::t_862cd883d4b697 4
+src/app/__tests__/bootstrap.spec.ts
+  s_3bb122e91d89a5::t_88fe7a584d5f9e 403
+src/app/bootstrap.ts
+  s_3bb122e91d89a5::t_cab7fc7395364c 36,713
+src/modules/Arrangement/AGENTS.md
+  s_3bb122e91d89a5::t_793a7fc5c429c3 27
+src/modules/Arrangement/transformers/getTimelineContentHeight.ts
+  s_3bb122e91d89a5::t_65125a612eebc3 6-9
+src/modules/Arrangement/useCases/__tests__/initTimelineScrollClamp.spec.ts
+  s_3bb122e91d89a5::t_75423ba9174f56 1-98
+src/modules/Arrangement/useCases/index.ts
+  s_3bb122e91d89a5::t_6a983f42d1b82b 245
+src/modules/Arrangement/useCases/initTimelineScrollClamp.ts
+  s_3bb122e91d89a5::t_2a5b9eb2d2ed4b 1-14
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_3bb122e91d89a5::t_f3f9ab19d19b6b 36-41,70-78,210-219,319-326
+src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx
+  s_3bb122e91d89a5::t_80f2cb6002ea37 36-37,68-70,74-79,126,131,203
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ScratchPadView.spec.tsx
+  s_3bb122e91d89a5::t_604f5b55dd1489 40,47,54,67,74-78,80,82,84-92,94-97,102,109,124,135,145,157,167,179,189,197,211
+src/modules/TimelineEditor/presentations/views/Timeline/scratchPadHeight.ts
+  s_3bb122e91d89a5::t_8d0d2b20b5c163 1-7
+src/modules/TimelineEditor/presentations/views/__tests__/useArrangementMinimumHeight.spec.tsx
+  s_3bb122e91d89a5::t_77eaf597f0b41f 111-146
+src/modules/TimelineEditor/presentations/views/useArrangementMinimumHeight.ts
+  s_3bb122e91d89a5::t_697323cd5e8974 11,16-18,21-22,37-39,42
+src/modules/WorkspaceShell/useCases/togglePanel/__tests__/panelToggles.spec.ts
+  s_3bb122e91d89a5::t_72c51a7f9232f7 68-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41b149b12f90ae84564a4fffd26a7fc980d5c7a4",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
