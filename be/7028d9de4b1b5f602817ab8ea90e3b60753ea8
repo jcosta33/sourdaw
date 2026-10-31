@@ -1,0 +1,41 @@
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_55244eb93b97d1::t_4ec2afa6a3c44b 117-118
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_7a8e1107313040::t_b9a22a8a39c898 5,7,1638,1657,1782-1828,1906-1991
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_7a8e1107313040::t_8c52b5c804e7a1 85-94,150-158
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  s_ba80576e6f5cb5::t_dea193a7b54339 112-113,120-121,123-132,134-135,143-146,157,162-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be7028d9de4b1b5f602817ab8ea90e3b60753ea8",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
