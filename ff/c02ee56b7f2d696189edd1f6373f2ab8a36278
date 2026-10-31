@@ -1,0 +1,33 @@
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_88fc7e0d05bab6::t_b7ceb660511890 34
+  s_88fc7e0d05bab6::t_caba086614c8b7 254
+  s_55244eb93b97d1::t_fab14af74fd661 255
+src/modules/Arrangement/presentations/views/__tests__/TakeLanesView.spec.tsx
+  s_55244eb93b97d1::t_621290ba37ed4e 258-291
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_55244eb93b97d1::t_06a481bb3a7cde 205,221,232
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ffc02ee56b7f2d696189edd1f6373f2ab8a36278",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
