@@ -1,0 +1,23 @@
+src/modules/SessionLauncher/presentations/views/SessionView.tsx
+  s_88fc7e0d05bab6::t_08ac17f628c191 22
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_88fc7e0d05bab6::t_80be1002f64274 24
+src/modules/SessionLauncher/useCases/loopStation/triggerPad.ts
+  s_88fc7e0d05bab6::t_7b2c26075ef001 4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9258db237e07482e04fa997af9395bde096cf00a",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
