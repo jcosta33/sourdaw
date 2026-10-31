@@ -1,0 +1,19 @@
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_55244eb93b97d1::t_bb473675e2f37f 8,16,188-201,353,389,418,444
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "abafc63d866cbf7e6ea04528e8ba0c262dfd6aa3",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
