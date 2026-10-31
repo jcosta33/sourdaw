@@ -1,0 +1,29 @@
+src/modules/Project/models/ProjectData.ts
+  s_6ef1c40a4d24fb::t_f169ab4beee07f 360-361
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/applyImportedProjectData.roundTrip.spec.ts
+  s_6ef1c40a4d24fb::t_3a333d09999c63 5,21,888-960
+src/modules/Project/useCases/projectPersistence/fileIO/__tests__/serializeProjectMidi.spec.ts
+  s_6ef1c40a4d24fb::t_a8844dfaf42d79 4,11-31
+src/modules/Project/useCases/projectPersistence/fileIO/serializeProjectMidiNote.ts
+  s_6ef1c40a4d24fb::t_0e71a6f3111b59 68-71
+src/modules/Project/useCases/projectPersistence/helpers/__tests__/isHydratableProjectData.spec.ts
+  s_6ef1c40a4d24fb::t_63a9a95e275838 202-232
+src/modules/Project/useCases/projectPersistence/helpers/isHydratableProjectData.ts
+  s_6ef1c40a4d24fb::t_968bf708e63c9b 264-273,288,693
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb2c31c3b9fcd7b2bf87b5323b1cd9a58cf5ecdb",
+  "prompts": {},
+  "sessions": {
+    "s_6ef1c40a4d24fb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_6ef1c40a4d24fb",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
