@@ -469,6 +469,20 @@ retain the journaled owner, print recovery, and send zero unverified deletes; in
 marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
 read-only release controls. The original comment-ID set alone is not proof of compensation.
 
+### Cold frozen PCM needs a byte-producing restoration oracle
+
+`57b7349f7864eca0bd177333d720a50186bd33e9` narrowed export hydration to clip IDs;
+`ab5a579209b5e02a035e123380b5ceaf9c922250` (associated with PR #187) preserved that
+selection through the owner use case. The narrowing commit has no associated PR in the lookup;
+historical private reviewer prompts and tiers are unverified. A request/order mock cannot
+observe whether a cold frozen print became usable PCM.
+
+Seed distinct ordinary, active frozen, and stale PCM in controlled IndexedDB, clear runtime
+cache, run actual owner restoration, and inspect actual WAV samples from mixdown and stems.
+The renderer may remain a named controlled boundary; do not describe this as browser or audible
+acceptance. Remove the active frozen ID from the production request and require the cold source
+oracle to fail before encoding, while keeping the empty-clip fallback and stale-print exclusion.
+
 ### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
 
 PR #5624's retarget planner fixture paused the parent pipe reader and observed buffered bytes, but
