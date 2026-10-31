@@ -187,6 +187,8 @@ const {
     registerReleasedStripReportSinkMock,
     configureDurableAudioBufferOwnershipMock,
     collectDurableOwnedAudioBufferIdsMock,
+    configureLiveAudioBufferReferencesMock,
+    collectTrackStateAudioBufferIdsMock,
     clearAgentMeasurementArtifactsMock,
     setAgentMeasurementArtifactsClearerMock,
     clearAgentSectionRenderArtifactsMock,
@@ -285,6 +287,8 @@ const {
         setTrackPanMock: vi.fn(),
         configureDurableAudioBufferOwnershipMock: vi.fn(),
         collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
+        configureLiveAudioBufferReferencesMock: vi.fn<(reader: (() => readonly string[]) | null) => void>(),
+        collectTrackStateAudioBufferIdsMock: vi.fn<(value: unknown) => string[]>(() => ['referenced-take']),
         // Distinguishable from the shared noop for the same reason as the
         // durable audio ownership provider above: the assertion pins this
         // exact reference, so rewiring or dropping the registration fails here.
@@ -452,6 +456,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
     configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
+    configureLiveAudioBufferReferences: configureLiveAudioBufferReferencesMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
     startMainThreadLongTaskObservation: noop,
 }));
@@ -663,6 +668,7 @@ vi.mock('#/modules/Project/useCases', () => ({
     agentCapabilityDiscoveryPort: { setProvider: noop },
     getProjectProtocolContracts: noop,
     collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
+    collectTrackStateAudioBufferIds: collectTrackStateAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
@@ -1201,6 +1207,25 @@ describe('bootstrap', () => {
         expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
             collectDurableOwnedAudioBufferIdsMock
         );
+    });
+
+    /**
+     * The runtime audio cache keeps resident every buffer the open arrangement
+     * references, and only the composition root can hand it a reader over the
+     * live track store. Dropping the registration, or reading anything but the
+     * current track state, lets unrelated cache writes evict a session take.
+     */
+    it('wires the live audio buffer references to the current track state', () => {
+        expect(configureLiveAudioBufferReferencesMock).toHaveBeenCalledOnce();
+        const reader = configureLiveAudioBufferReferencesMock.mock.calls[0]?.[0];
+        const trackState = { tracks: [] };
+        Object.assign(trackStoreMock, { value: trackState });
+        try {
+            expect(reader?.()).toEqual(['referenced-take']);
+            expect(collectTrackStateAudioBufferIdsMock).toHaveBeenLastCalledWith(trackState);
+        } finally {
+            Reflect.deleteProperty(trackStoreMock, 'value');
+        }
     });
 
     /**
