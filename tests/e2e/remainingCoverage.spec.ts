@@ -149,7 +149,7 @@ test.describe('Browser Instruments tab', () => {
 
     test('Instruments tab lists the built-in devices', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
 
         const devices = browser.getByRole('button', { name: /Fermenter|Toaster|Levain|Crumbs/i });
         await expect(devices.first()).toBeVisible();

@@ -3,6 +3,7 @@ import { type CSSProperties, type ReactElement, useState, useRef } from 'react';
 import { Search, Music, FileAudio, Waves, Upload, X, Zap, FolderSync, Settings } from 'lucide-react';
 
 import { DawSearchInput } from '#/components/daw/DawSearchInput';
+import { DawTabStrip, getDawTabId } from '#/components/daw/DawTabStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { ScrollArea } from '#/components/ui/scroll-area';
@@ -15,7 +16,6 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 import { loadSidebarFavorites } from '../../useCases/sidebar-favorites/load-sidebar-favorites';
 import { saveSidebarFavorites } from '../../useCases/sidebar-favorites/save-sidebar-favorites';
 import { RailBackBar } from '../components/Sidebar/RailBackBar';
-import { RailTabBar } from '../components/Sidebar/RailTabBar';
 import { usePreviewAudio } from '../hooks/usePreviewAudio';
 import { useTracks } from '../hooks/useTracks';
 
@@ -49,17 +49,24 @@ type SidebarProps = {
 /** User-imported samples only — no placeholder data */
 const SAMPLE_LIBRARY: { id: string; name: string; category: string; duration: string }[] = [];
 
-const TAB_ITEMS: {
-    id: 'instruments' | 'effects' | 'library' | 'macros' | 'project';
-    label: string;
-    Icon: typeof Music;
-}[] = [
-    { id: 'instruments', label: 'Instruments', Icon: Music },
-    { id: 'effects', label: 'Effects', Icon: Waves },
-    { id: 'library', label: 'Library', Icon: FileAudio },
-    { id: 'macros', label: 'Macros', Icon: Zap },
-    { id: 'project', label: 'Project', Icon: Settings },
-];
+const TAB_ITEMS = [
+    { id: 'instruments', label: 'Instruments', icon: Music },
+    { id: 'effects', label: 'Effects', icon: Waves },
+    { id: 'library', label: 'Library', icon: FileAudio },
+    { id: 'macros', label: 'Macros', icon: Zap },
+    { id: 'project', label: 'Project', icon: Settings },
+] as const;
+
+const MAIN_TAB_ID_PREFIX = 'browser-tab';
+const LIBRARY_SUB_TAB_ID_PREFIX = 'browser-library-tab';
+const MAIN_TAB_CLASS_NAME = 'h-7 gap-1 px-2 text-[10px]';
+const LIBRARY_SUB_TAB_CLASS_NAME = 'h-6 flex-1 gap-1 min-w-[88px] text-[10px]';
+
+const LIBRARY_SUB_TAB_ITEMS = [
+    { id: 'folders', label: 'Folders', icon: FolderSync },
+    { id: 'mine', label: 'Imported', icon: FileAudio },
+    { id: 'find', label: 'Find', icon: Search },
+] as const;
 
 export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactElement => {
     const [activeTab, setActiveTab] = useState<'library' | 'instruments' | 'effects' | 'macros' | 'project'>(
@@ -74,6 +81,7 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
         project: [{ id: 'project', title: 'Project' }],
     });
 
+    const browserPanelId = `browser-panel-${activeTab}`;
     const currentStack = navStacks[activeTab] ?? [];
     const currentRoute = currentStack[currentStack.length - 1] as SidebarRoute;
 
@@ -215,18 +223,15 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
         return (
             <>
                 {/* Sub-tabs: Folders | My Samples | Find Samples */}
-                <RailTabBar
+                <DawTabStrip
+                    label="Library sections"
+                    idPrefix={LIBRARY_SUB_TAB_ID_PREFIX}
                     activeId={libSubTab}
-                    items={[
-                        { id: 'folders', label: 'Folders', icon: FolderSync },
-                        { id: 'mine', label: 'Imported', icon: FileAudio },
-                        { id: 'find', label: 'Find', icon: Search },
-                    ]}
+                    items={LIBRARY_SUB_TAB_ITEMS}
                     onChange={setLibSubTab}
-                    size="sub"
-                    className="px-2 pb-2"
+                    className="shrink-0 px-2 pb-2"
                     scrollerClassName="gap-1"
-                    buttonClassName="min-w-[88px]"
+                    tabClassName={LIBRARY_SUB_TAB_CLASS_NAME}
                 />
                 {renderLibrarySubTab()}
             </>
@@ -255,12 +260,16 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
                     <X className="size-3.5" />
                 </Button>
             </Row>
-            <RailTabBar
+            <DawTabStrip
+                label="Browser sections"
+                idPrefix={MAIN_TAB_ID_PREFIX}
                 activeId={activeTab}
-                items={TAB_ITEMS.map(({ id, label, Icon }) => ({ id, label, icon: Icon }))}
+                items={TAB_ITEMS}
+                panelId={browserPanelId}
                 onChange={setActiveTab}
-                className="border-b border-border/20 bg-surface-base/80"
+                className="shrink-0 border-b border-border/20 bg-surface-base/80"
                 scrollerClassName="w-full px-1 py-1.5"
+                tabClassName={MAIN_TAB_CLASS_NAME}
             />
             {currentStack.length > 1 ? (
                 <RailBackBar
@@ -272,9 +281,10 @@ export const Sidebar = ({ style, onClose, panelActions }: SidebarProps): ReactEl
             ) : null}
             <ScrollArea className="flex-1">
                 <div
-                    id={`browser-panel-${currentRoute.id}`}
+                    role="tabpanel"
+                    id={browserPanelId}
+                    aria-labelledby={getDawTabId(MAIN_TAB_ID_PREFIX, activeTab)}
                     className="p-1 h-full"
-                    aria-label={`${currentRoute.title} browser`}
                 >
                     {renderLibraryTab()}
 

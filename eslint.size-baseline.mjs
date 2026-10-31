@@ -318,7 +318,6 @@ export const sizeBaselineFiles = [
     'src/modules/Command/useCases/refreshVersionedCommandBatchForApproval.ts',
     'src/modules/Command/useCases/versionedCommandArgumentKeys.ts',
     'src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown.ts',
-    'src/modules/ContentBrowser/presentations/components/Sidebar/RailTabBar.tsx',
     'src/modules/ContentBrowser/presentations/views/Sidebar.tsx',
     'src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx',
     'src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx',

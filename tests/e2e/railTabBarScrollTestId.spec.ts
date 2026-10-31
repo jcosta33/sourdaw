@@ -27,11 +27,11 @@ async function ensureBrowserOpen(page: Page): Promise<void> {
  * and both scroll buttons live in the same relative wrapper one level above
  * that scroller, so the tab button's parent chain pins the trio without
  * relying on CSS classes or a global aria-label match (the Library sub-rail
- * mounts a second RailTabBar with its own scroll buttons).
+ * mounts a second DawTabStrip with its own scroll buttons).
  */
 async function getMainRail(page: Page): Promise<MainRail> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    const instrumentsTab = browser.getByRole('button', { name: 'Instruments', exact: true });
+    const instrumentsTab = browser.getByRole('tab', { name: 'Instruments', exact: true });
     await expect(instrumentsTab).toBeVisible({ timeout: 10_000 });
 
     const scroller = instrumentsTab.locator('..');
@@ -52,7 +52,7 @@ async function getMainRail(page: Page): Promise<MainRail> {
  * is the honest gate: if the tabs ever fit, it fails and says so instead of
  * pretending the buttons were exercised.
  */
-test.describe('RailTabBar scroll buttons — browser sidebar', () => {
+test.describe('DawTabStrip scroll buttons — browser sidebar', () => {
     test.beforeEach(async ({ page }) => {
         await setupWorkspace(page);
         await launch_new_project(page);
@@ -89,11 +89,11 @@ test.describe('RailTabBar scroll buttons — browser sidebar', () => {
 
     test('library sub-rail scroll button scrolls the Folders | Imported | Find strip', async ({ page }) => {
         const { scroller: mainScroller } = await getMainRail(page);
-        await mainScroller.getByRole('button', { name: 'Library', exact: true }).click();
+        await mainScroller.getByRole('tab', { name: 'Library', exact: true }).click();
 
         // The sub-rail mounts inside the library view; find it via its own tab button.
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
-        const foldersTab = browser.getByRole('button', { name: 'Folders', exact: true });
+        const foldersTab = browser.getByRole('tab', { name: 'Folders', exact: true });
         await expect(foldersTab).toBeVisible({ timeout: 10_000 });
 
         const subScroller = foldersTab.locator('..');

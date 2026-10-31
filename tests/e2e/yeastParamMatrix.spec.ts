@@ -9,7 +9,7 @@ async function openYeastPanel(page: Page): Promise<void> {
     // yeast.spec.ts does ('Browser'-named buttons resolve to both the toggle
     // and the closer).
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
     await browser.getByRole('button', { name: 'MIDI FX' }).click();
 
     const yeastCard = browser.getByRole('button', { name: 'Yeast' });

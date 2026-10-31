@@ -27,8 +27,8 @@ test.describe('Sample Library', () => {
 
         // Navigate to the Library tab, then the "Imported" samples sub-tab (the
         // Samples surface — it renders the SamplesTab list).
-        await browserPanel.getByRole('button', { name: 'Library', exact: true }).click();
-        const importedSubTab = browserPanel.getByRole('button', { name: 'Imported', exact: true });
+        await browserPanel.getByRole('tab', { name: 'Library', exact: true }).click();
+        const importedSubTab = browserPanel.getByRole('tab', { name: 'Imported', exact: true });
         await expect(importedSubTab).toBeVisible();
         await importedSubTab.click();
 

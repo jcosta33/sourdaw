@@ -12,6 +12,7 @@ import {
 
 import { X } from 'lucide-react';
 
+import { DawTabStrip, getDawTabId, type DawTabStripItem } from '#/components/daw/DawTabStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
@@ -185,6 +186,54 @@ type BottomTabState = {
     value: BottomTabValue;
     selectedClipId: string | null;
 };
+
+// The dock tabs in display order. Elastic and Takes are conditional; see `isBottomTabVisible`.
+const BOTTOM_TABS: readonly DawTabStripItem<BottomTabValue>[] = [
+    { id: 'mixer', label: 'Mixer', activeClassName: 'text-primary' },
+    { id: 'editor', label: 'Editor', activeClassName: 'text-[var(--color-accent-cyan)]' },
+    { id: 'automation', label: 'Automation', activeClassName: 'text-[var(--color-accent-lavender)]' },
+    { id: 'session', label: 'Session', activeClassName: 'text-[var(--color-accent-mint)]' },
+    { id: 'routing', label: 'Routing', activeClassName: 'text-[var(--color-accent-peach)]' },
+    { id: 'analysis', label: 'Analysis', activeClassName: 'text-[var(--color-accent-lavender)]' },
+    {
+        id: 'setlist',
+        label: 'Setlist',
+        activeClassName: 'text-[var(--color-accent-amber)]',
+        attributes: { 'data-onboarding': 'setlist-tab' },
+    },
+    {
+        id: 'loopStation',
+        label: 'Loop Station',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-onboarding': 'loop-station-tab' },
+    },
+    {
+        id: 'modulation',
+        label: 'Modulation',
+        activeClassName: 'text-[var(--color-accent-cyan)]',
+        attributes: { 'data-onboarding': 'modulation-tab' },
+    },
+    {
+        id: 'agent',
+        label: 'Agent',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-testid': 'agent-tab-button' },
+    },
+    {
+        id: 'elastic',
+        label: 'Elastic',
+        activeClassName: 'text-[var(--color-accent-peach)]',
+        attributes: { 'data-testid': 'elastic-tab-button' },
+    },
+    {
+        id: 'takes',
+        label: 'Takes',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-testid': 'takes-tab-button' },
+    },
+];
+const BOTTOM_TAB_ID_PREFIX = 'bottom-dock-tab';
+const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
 
 const EDITOR_MIN_HEIGHT = 280;
 const MIXER_MIN_HEIGHT = 120;
@@ -628,37 +677,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         return () => clearTimeout(timer);
     }, [launchExiting]);
 
-    // Bottom-dock tab id helpers. `id`/`aria-controls`/`aria-labelledby` wire
-    // each tab to the single shared tabpanel so AT announces the dock as one
-    // tablist instead of N unrelated buttons.
-    const bottomTabButtonId = (value: BottomTabValue): string => `bottom-dock-tab-${value}`;
-    const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
-
-    // Renders one dock tab with the `role="tab"` / `aria-selected` semantics,
-    // preserving each tab's existing variant, accent colour and data-* hooks.
-    const renderBottomTab = (
-        value: BottomTabValue,
-        label: string,
-        activeClassName: string,
-        extraProps: Record<string, string> = {}
-    ): ReactNode => {
-        const selected = activeBottomTab === value;
-        return (
-            <Button
-                role="tab"
-                id={bottomTabButtonId(value)}
-                aria-selected={selected}
-                aria-controls={BOTTOM_TABPANEL_ID}
-                variant={selected ? 'secondary' : 'ghost'}
-                size="xs"
-                className={selected ? activeClassName : ''}
-                onClick={() => setBottomTab(value)}
-                {...extraProps}
-            >
-                {label}
-            </Button>
-        );
+    const isBottomTabVisible = (value: BottomTabValue): boolean => {
+        if (value === 'elastic') {
+            return isAudioClipSelected;
+        }
+        if (value === 'takes') {
+            return takesTabAvailable;
+        }
+        return true;
     };
+    const visibleBottomTabs = BOTTOM_TABS.filter((tab) => isBottomTabVisible(tab.id));
 
     // Bottom-dock tab content. `routing` renders the same RoutingMatrix branch
     // the original ternary chain used for its final fallback.
@@ -991,55 +1019,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             borderBottom: '1px solid rgba(0,0,0,0.4)',
                                         }}
                                     >
-                                        <Row gap={0.5} role="tablist" aria-label="Bottom dock">
-                                            {renderBottomTab('mixer', 'Mixer', 'text-primary')}
-                                            {renderBottomTab('editor', 'Editor', 'text-[var(--color-accent-cyan)]')}
-                                            {renderBottomTab(
-                                                'automation',
-                                                'Automation',
-                                                'text-[var(--color-accent-lavender)]'
-                                            )}
-                                            {renderBottomTab('session', 'Session', 'text-[var(--color-accent-mint)]')}
-                                            {renderBottomTab('routing', 'Routing', 'text-[var(--color-accent-peach)]')}
-                                            {renderBottomTab(
-                                                'analysis',
-                                                'Analysis',
-                                                'text-[var(--color-accent-lavender)]'
-                                            )}
-                                            {renderBottomTab('setlist', 'Setlist', 'text-[var(--color-accent-amber)]', {
-                                                'data-onboarding': 'setlist-tab',
-                                            })}
-                                            {renderBottomTab(
-                                                'loopStation',
-                                                'Loop Station',
-                                                'text-[var(--color-accent-mint)]',
-                                                { 'data-onboarding': 'loop-station-tab' }
-                                            )}
-                                            {renderBottomTab(
-                                                'modulation',
-                                                'Modulation',
-                                                'text-[var(--color-accent-cyan)]',
-                                                { 'data-onboarding': 'modulation-tab' }
-                                            )}
-                                            {renderBottomTab('agent', 'Agent', 'text-[var(--color-accent-mint)]', {
-                                                'data-testid': 'agent-tab-button',
-                                            })}
-                                            {isAudioClipSelected
-                                                ? renderBottomTab(
-                                                      'elastic',
-                                                      'Elastic',
-                                                      'text-[var(--color-accent-peach)]',
-                                                      { 'data-testid': 'elastic-tab-button' }
-                                                  )
-                                                : null}
-                                            {takesTabAvailable
-                                                ? renderBottomTab('takes', 'Takes', 'text-[var(--color-accent-mint)]', {
-                                                      'data-testid': 'takes-tab-button',
-                                                  })
-                                                : null}
-                                        </Row>
-
-                                        <div className="flex-1" />
+                                        <DawTabStrip
+                                            label="Bottom dock"
+                                            idPrefix={BOTTOM_TAB_ID_PREFIX}
+                                            items={visibleBottomTabs}
+                                            activeId={activeBottomTab}
+                                            panelId={BOTTOM_TABPANEL_ID}
+                                            onChange={setBottomTab}
+                                            className="flex-1"
+                                            scrollerClassName="gap-0.5 py-px"
+                                        />
 
                                         <Button
                                             variant="ghost"
@@ -1054,7 +1043,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <div
                                         role="tabpanel"
                                         id={BOTTOM_TABPANEL_ID}
-                                        aria-labelledby={bottomTabButtonId(activeBottomTab)}
+                                        aria-labelledby={getDawTabId(BOTTOM_TAB_ID_PREFIX, activeBottomTab)}
                                         tabIndex={0}
                                         className="flex-1 overflow-hidden"
                                     >

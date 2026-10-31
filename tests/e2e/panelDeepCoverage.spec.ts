@@ -162,10 +162,10 @@ test.describe('Browser tab switching', () => {
     test('Switching tabs updates the browser route title', async ({ page }) => {
         const browser = page.getByRole('complementary', { name: 'Browser panel' });
 
-        await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
         await expect(browser.getByText(/Effects/i).first()).toBeVisible();
 
-        await browser.getByRole('button', { name: 'Project', exact: true }).click();
+        await browser.getByRole('tab', { name: 'Project', exact: true }).click();
         await expect(browser.getByText(/Project/i).first()).toBeVisible();
     });
 });

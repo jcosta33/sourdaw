@@ -8,7 +8,7 @@ Workspace sidebar presentation container and navigation tabs (Project, Instrumen
 
 ## Key Subsystems
 
-- **Sidebar Shell**: Multi-tab rail navigation container (`presentations/views/Sidebar.tsx`, `RailTabBar`, `RailBackBar`).
+- **Sidebar Shell**: Multi-tab rail navigation container (`presentations/views/Sidebar.tsx`, shared `DawTabStrip` from `#/components/daw` for its main and Library tab rows, `RailBackBar`).
 - **Browser Tabs**: Specialized tab views in `presentations/views/Sidebar/` (`ProjectTab`, `InstrumentsTab`, `EffectsTab`, `SamplesTab`, `OnlineSampleBrowser`, `MacrosPanel`).
 - **Sidebar Components**: `presentations/components/Sidebar/` (`ChoiceCard`, `PresetItem`, `InstrumentCard`, `PreviewButton`, `SearchSummary`, `SectionHeader`, `EmptyState`).
 - **Favorites Persistence**: Local storage persistence for favorited instruments, effects, and samples (`useCases/sidebar-favorites/`, `repositories/sidebar-favorites/`).

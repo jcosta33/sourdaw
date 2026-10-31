@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { Container } from '#/infra/di/Container';
@@ -676,6 +676,56 @@ describe('AppShell', () => {
             expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
             expect(screen.queryByTestId('elastic-panel')).not.toBeInTheDocument();
             expect(elasticEditorPanelMock).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Bottom dock tablist', () => {
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                })
+            );
+        });
+
+        it('keeps only the selected tab in the tab order and wires it to the shared panel', () => {
+            render(<AppShell>Content</AppShell>);
+
+            const tabs = within(screen.getByRole('tablist', { name: 'Bottom dock' })).getAllByRole('tab');
+            expect(tabs.filter((tab) => tab.getAttribute('tabindex') === '0').map((tab) => tab.textContent)).toEqual([
+                'Mixer',
+            ]);
+            const panel = screen.getByRole('tabpanel');
+            for (const tab of tabs) {
+                expect(tab).toHaveAttribute('aria-controls', panel.id);
+            }
+        });
+
+        it('moves focus along the dock tabs with arrow keys and activates only on click', () => {
+            render(<AppShell>Content</AppShell>);
+            screen.getByRole('tab', { name: 'Mixer' }).focus();
+
+            fireEvent.keyDown(screen.getByRole('tab', { name: 'Mixer' }), { key: 'ArrowRight' });
+            expect(screen.getByRole('tab', { name: 'Editor' })).toHaveFocus();
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
+
+            fireEvent.keyDown(screen.getByRole('tab', { name: 'Editor' }), { key: 'End' });
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveFocus();
+
+            fireEvent.click(screen.getByRole('tab', { name: 'Agent' }));
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tab', { name: 'Agent' })).toHaveAttribute('tabindex', '0');
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('tabindex', '-1');
+        });
+
+        it('keeps the onboarding hooks on the tabs the tour targets', () => {
+            const { container } = render(<AppShell>Content</AppShell>);
+
+            for (const hook of ['setlist-tab', 'loop-station-tab', 'modulation-tab']) {
+                expect(container.querySelector(`[role="tab"][data-onboarding="${hook}"]`)).not.toBeNull();
+            }
         });
     });
 

@@ -22,10 +22,10 @@ async function openLibraryTab(page: Page): Promise<void> {
         await page.getByRole('button', { name: /Toggle browser/i }).click();
         await expect(browserPanel).toBeVisible();
     }
-    await browserPanel.getByRole('button', { name: 'Library', exact: true }).click();
+    await browserPanel.getByRole('tab', { name: 'Library', exact: true }).click();
     // The Folders sub-tab is the default; its presence confirms the Library tab
     // is mounted.
-    await expect(browserPanel.getByRole('button', { name: 'Folders', exact: true })).toBeVisible();
+    await expect(browserPanel.getByRole('tab', { name: 'Folders', exact: true })).toBeVisible();
 }
 
 test.describe('Sample Library favorites', () => {
@@ -100,7 +100,7 @@ test.describe('Sample Library favorites', () => {
 
         // The "Imported" sub-tab renders the SamplesTab list. Import a real WAV
         // through the hidden file input so exactly one sample row exists.
-        await browserPanel.getByRole('button', { name: 'Imported', exact: true }).click();
+        await browserPanel.getByRole('tab', { name: 'Imported', exact: true }).click();
         const fileInput = browserPanel.locator('input[type="file"]');
         await fileInput.setInputFiles(SAMPLE_FIXTURE);
 
@@ -146,7 +146,7 @@ test.describe('Sample Library favorites', () => {
         // Instruments is the Browser's default tab. Searching from its root
         // flattens matching factory presets into PresetItem rows, each with a
         // favorite star.
-        await browserPanel.getByRole('button', { name: 'Instruments', exact: true }).click();
+        await browserPanel.getByRole('tab', { name: 'Instruments', exact: true }).click();
         await browserPanel.getByLabel('Search browser').fill('synth');
 
         const addFavorite = browserPanel.getByRole('button', { name: 'Add to favorites' });

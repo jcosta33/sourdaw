@@ -50,7 +50,7 @@ async function stampEligibleGrooveClip(page: Page): Promise<void> {
 async function openYeastPanel(page: Page): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
     await expect(browser).toBeVisible();
-    await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
     await browser.getByRole('button', { name: 'MIDI FX' }).click();
     await browser.getByRole('button', { name: 'Yeast' }).click();
     await expect(page.getByRole('button', { name: 'Close Yeast' })).toBeVisible();
