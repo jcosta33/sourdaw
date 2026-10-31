@@ -178,6 +178,16 @@ type BottomTabState = {
 };
 
 const EDITOR_MIN_HEIGHT = 280;
+// Outlasts LaunchScreen's 650 ms exit fade.
+const LAUNCH_EXIT_UNMOUNT_MS = 700;
+
+/**
+ * Under reduced motion the launch overlay drops its exit transition, so it is
+ * unmounted at once rather than left as a transparent aria-modal dialog.
+ */
+function launchExitUnmountDelayMs(): number {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : LAUNCH_EXIT_UNMOUNT_MS;
+}
 
 /**
  * The shell proper. `MobileGate` sits *above* this component, in the root route, so on
@@ -515,7 +525,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). New-user loading completion
     // shows the launch screen; initialization derives the exit animation and the
-    // existing timer unmounts it after 700ms.
+    // existing timer unmounts it after the fade (at once under reduced motion).
     const [showLaunch, setShowLaunch] = useState(false);
     // The launch-overlay exit must be MONOTONIC. `project.initialized` is a
     // transient projectStore flag (stripped from the CRDT, reconstructed on
@@ -576,7 +586,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
         const timer = setTimeout(() => {
             setShowLaunch(false);
-        }, 700);
+        }, launchExitUnmountDelayMs());
         return () => clearTimeout(timer);
     }, [launchExiting]);
 
