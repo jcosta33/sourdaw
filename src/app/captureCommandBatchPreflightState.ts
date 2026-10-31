@@ -163,8 +163,8 @@ function collectClipGainEnvelopePoints(
     return points;
 }
 
-function collectFrozenMidiTakeSources(document: Readonly<Record<string, unknown>>): object[] {
-    const lanes = asRecord(document.takeLanes)?.lanes;
+function collectFrozenMidiTakeSources(container: Readonly<Record<string, unknown>>): object[] {
+    const lanes = asRecord(container.takeLanes)?.lanes;
     return (Array.isArray(lanes) ? lanes : []).flatMap((lane) => {
         const takes = asRecord(lane)?.takes;
         return (Array.isArray(takes) ? takes : []).flatMap((take) => {
@@ -172,6 +172,22 @@ function collectFrozenMidiTakeSources(document: Readonly<Record<string, unknown>
             return source ? [source] : [];
         });
     });
+}
+
+/**
+ * Scans each frozen MIDI take source of a document or arrangement snapshot in
+ * its own namespace, and returns them as the visited set that keeps the
+ * enclosing scan out of them.
+ */
+function scanFrozenMidiTakeSources(
+    container: Readonly<Record<string, unknown>>,
+    duplicates: Set<string>
+): WeakSet<object> {
+    const sources = collectFrozenMidiTakeSources(container);
+    for (const source of sources) {
+        findDuplicateIds(source, new Set<string>(), duplicates, new WeakSet<object>());
+    }
+    return new WeakSet(sources);
 }
 
 /**
@@ -495,8 +511,9 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * Warp-marker ids are local to each clip's warp state; repeated ids within one
  * state remain invalid.
  * A take's frozen MIDI source is an exact copy of the rows it was cut from, so
- * it repeats live note ids and the ids of every take re-keyed from the same
- * cut; each source is scanned in its own namespace.
+ * it repeats the note ids beside it, live or in the arrangement snapshot that
+ * saving writes, and the ids of every take re-keyed from the same cut; each
+ * source is scanned in its own namespace.
  *
  * Other collisions within the live project, or within one snapshot, are still
  * reported. So is a repeated arrangement `id`: it is the
@@ -511,17 +528,23 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
     const duplicateIds = new Set<string>();
     const { arrangements, warpStates, ...liveDocument } = document;
     const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
-    const takeSources = collectFrozenMidiTakeSources(document);
-    for (const source of takeSources) {
-        findDuplicateIds(source, new Set<string>(), duplicateIds, new WeakSet<object>());
-    }
-    // Seeding the live scan's visited set with the sources leaves them out of it.
-    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet(takeSources), clipGainEnvelopePoints);
+    findDuplicateIds(
+        liveDocument,
+        new Set<string>(),
+        duplicateIds,
+        scanFrozenMidiTakeSources(document, duplicateIds),
+        clipGainEnvelopePoints
+    );
     const snapshots = asRecord(arrangements)?.arrangements;
     const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
         recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
-        findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+        findDuplicateIds(
+            snapshot,
+            new Set<string>(),
+            duplicateIds,
+            scanFrozenMidiTakeSources(asRecord(snapshot) ?? {}, duplicateIds)
+        );
     }
     // Warp-marker identity is clip-local (#5570): duplication, paste and Strip
     // Silence deliberately copy marker ids into independent states under

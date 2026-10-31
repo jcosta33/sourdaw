@@ -861,6 +861,36 @@ describe('captureCommandBatchPreflightState', () => {
 
             expect(state.projectInvariantsValid).toBe(false);
         });
+
+        // Saving snapshots the current arrangement, sources and the notes they copy included.
+        const snapshotted = (takes: unknown[]) => {
+            const { tracks, ...arranged } = project(takes);
+            return { tracks, arrangements: { arrangements: [{ id: 'arrangement-1', tracks, ...arranged }] } };
+        };
+
+        it('admits an arrangement snapshot whose sources repeat its own note ids', () => {
+            mocks.getCrdtDoc.mockReturnValue(
+                snapshotted([
+                    { id: 'take-1', clipId: 'left', midiSource: source('n-a', 'n-b') },
+                    { id: 'take-1:right', clipId: 'right', midiSource: source('n-a', 'n-b') },
+                ])
+            );
+
+            const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+            expect(state.projectInvariantsValid).toBe(true);
+        });
+
+        it.each([
+            ['a note id repeated inside one snapshot source', [{ id: 'take-1', midiSource: source('n-a', 'n-a') }]],
+            ['a snapshot take id repeating its own note id', [{ id: 'n-a', midiSource: source('n-b') }]],
+        ])('still fails %s', (_case, takes) => {
+            mocks.getCrdtDoc.mockReturnValue(snapshotted(takes));
+
+            const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+            expect(state.projectInvariantsValid).toBe(false);
+        });
     });
 
     it('fails closed when there is no project document at all', () => {
