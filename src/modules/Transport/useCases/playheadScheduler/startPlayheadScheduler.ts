@@ -521,10 +521,17 @@ export function startPlayheadScheduler(
         // a tick. Each is a wrap the audio played and a pass the recorder took.
         let lateWrapSeams = 1;
         let lateWrapPassSeconds = 0;
-        // A seam the look-ahead had already scheduled, sounded before the late
-        // wrap's first one: its pass take was staged at detection, so the late
-        // wrap only counts it.
-        let lateWrapSupersededSeams = 0;
+        // A scheduled seam whose instant passed before this tick's late wrap or
+        // newly scheduled seam replaced it: the audio wrapped there, and its pass
+        // take was staged at detection, so the replacement only counts it. The
+        // follow-action jump counts the seam it supersedes itself.
+        let supersededSoundedSeams = 0;
+        function supersedePendingSeam(): void {
+            const pending = schedulerSession.pendingSeam;
+            if (pending !== null && now >= pending.seamAudioTime) {
+                supersededSoundedSeams = 1;
+            }
+        }
         let editPassEndBeat: number | undefined;
         let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
         // Set when an edit's teardown cuts the look-ahead: the window that
@@ -814,9 +821,7 @@ export function startPlayheadScheduler(
             stopActiveSources(schedulerSession.activeAudioSources, ctx, seamAudioTime);
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
-            if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
-                lateWrapSupersededSeams = 1;
-            }
+            supersedePendingSeam();
             schedulerSession.pendingSeam = null;
             playheadClockRef.pendingLoopSeam = null;
         } else if (projectedSeam) {
@@ -855,6 +860,7 @@ export function startPlayheadScheduler(
             // its own dedup keys first. Only then are the sources fenced at
             // the seam instant, the dedup keys cleared for the incoming pass,
             // and the metronome re-anchored at loopStart.
+            supersedePendingSeam();
             schedulerSession.pendingSeam = {
                 seamAudioTime,
                 destinationBeat: current.loopStart,
@@ -1015,7 +1021,7 @@ export function startPlayheadScheduler(
         // destination is the first position of the pass the count now names.
         // A loop edit that cancelled the seam ends one pass too, which a late
         // wrap at the edit has already counted.
-        playheadWrapCountRef.current += jumpClosedRecordingPasses;
+        playheadWrapCountRef.current += supersededSoundedSeams + jumpClosedRecordingPasses;
         if (capturedEditBoundary !== null && !lateWrap) {
             playheadWrapCountRef.current += 1;
         }
@@ -1101,11 +1107,11 @@ export function startPlayheadScheduler(
             playheadPositionRef.current = nativeCaptureBeat ?? publishedBeat;
             // A late wrap (or the seam-edit re-anchor) commits its wrapped position
             // this tick, so the published beat above is the first wrapped one and
-            // the wrap count moves with it, with any scheduled seam it superseded.
-            // A scheduled seam otherwise counts where its instant arrives — see
-            // the pendingSeam clear above.
+            // the wrap count moves with it. A scheduled seam counts where its
+            // instant arrives, or where a later branch supersedes it — see the
+            // pendingSeam clear above.
             if (lateWrap) {
-                playheadWrapCountRef.current += lateWrapSupersededSeams + lateWrapSeams;
+                playheadWrapCountRef.current += lateWrapSeams;
             }
 
             // Sync to AudioEngine for real-time DSP (SAB-backed).
