@@ -1,0 +1,23 @@
+.agents/skills/review-stances/correctness.md
+  s_7cb2ded68f530d::t_14735892788524 237-248
+.agents/skills/review-stances/session-lifecycle.md
+  s_7cb2ded68f530d::t_7960a529035d53 252-269
+.agents/skills/review-stances/test-validity.md
+  s_7cb2ded68f530d::t_10d823a8885737 816-827
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6fb141b20ee1e38ed4600c23d578af8e8f80799c",
+  "prompts": {},
+  "sessions": {
+    "s_7cb2ded68f530d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_7cb2ded68f530d",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
