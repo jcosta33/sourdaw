@@ -186,7 +186,7 @@ export const drawClip = (
         clip.type === 'audio' && clip.audioBufferId ? getCachedAudioBuffer({ bufferId: clip.audioBufferId }) : null;
 
     if (clip.type === 'midi' && (clip.midiNotes.length > 0 || clip.isInlineEditing)) {
-        drawMidiNotePreview(ctx, clip, x, trackY, w, trackHeight, padding);
+        drawMidiNotePreview(ctx, clip, model, x, trackY, w, trackHeight, padding);
     } else if (clip.type === 'audio' && clip.audioBufferId && cachedAudioBuffer) {
         drawWaveformPeaks(ctx, clip, cachedAudioBuffer, model, x, trackY, w, trackHeight, padding);
     } else if (w > 20) {
@@ -346,6 +346,7 @@ const drawFadeCurves = (
 const drawMidiNotePreview = (
     ctx: CanvasRenderingContext2D,
     clip: ClipRenderModel,
+    model: TimelineRenderModel,
     clipX: number,
     trackY: number,
     clipW: number,
@@ -394,19 +395,25 @@ const drawMidiNotePreview = (
         ctx.shadowColor = 'rgba(0,0,0,0.3)';
     }
 
-    forEachMidiNoteRect(clip, frame, window, { inline: isInline }, (_note, x, y, width, height) => {
-        if (isInline) {
-            ctx.beginPath();
-            ctx.roundRect(x, y, width, height, 1);
-            ctx.fill();
-            // Note border when inline
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-        } else {
-            ctx.fillRect(x, y, width, height);
+    forEachMidiNoteRect(
+        clip,
+        frame,
+        window,
+        { inline: isInline, visibleBeats: { from: model.viewportStartBeat, to: model.viewportEndBeat } },
+        (_note, x, y, width, height) => {
+            if (isInline) {
+                ctx.beginPath();
+                ctx.roundRect(x, y, width, height, 1);
+                ctx.fill();
+                // Note border when inline
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            } else {
+                ctx.fillRect(x, y, width, height);
+            }
         }
-    });
+    );
 
     if (isInline) {
         ctx.shadowBlur = 0;

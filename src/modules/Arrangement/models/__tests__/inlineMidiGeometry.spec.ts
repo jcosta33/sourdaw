@@ -190,6 +190,61 @@ describe('inline MIDI geometry law', () => {
         expect(findInlineMidiNoteAt(clip, frame, 175, rowCentre(84))?.noteId).toBe('high');
     });
 
+    describe('a long clip on a short loop', () => {
+        // 128 beats on a 1-beat loop: 128 passes, more than a fixed pass count may draw.
+        const longLoopClip = (): InlineMidiGeometryClip => ({
+            startBeat: 8,
+            endBeat: 136,
+            loopEnabled: true,
+            loopLength: 1,
+            midiNotes: [note('a', 60, 0, 0.5)],
+        });
+
+        it('draws and hits the note in a repeat beyond the hundredth', () => {
+            const clip = longLoopClip();
+            const frame = frameFor(clip);
+
+            // Pass 120 puts the note at clip beat 120..120.5, arrangement beat 128..128.5, in the bottom row.
+            const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+            const bottomRowY = frame.contentTop + window.rowHeight * 11.5;
+
+            expect(findInlineMidiNoteAt(clip, frame, 128.25 * PIXELS_PER_BEAT, bottomRowY)?.noteId).toBe('a');
+            expect(resolveInlineMidiPointer(clip, frame, 128.25 * PIXELS_PER_BEAT, bottomRowY)?.noteBeat).toBeCloseTo(
+                0.25
+            );
+        });
+
+        it('draws every repeat of the clip when no view bounds it', () => {
+            const clip = longLoopClip();
+            const frame = frameFor(clip);
+            const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+            let drawn = 0;
+            forEachMidiNoteRect(clip, frame, window, { inline: true }, () => {
+                drawn++;
+            });
+
+            expect(drawn).toBe(128);
+        });
+
+        it('draws only the repeats in view when the view bounds the pass', () => {
+            const clip = longLoopClip();
+            const frame = frameFor(clip);
+            const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+            const starts: number[] = [];
+            forEachMidiNoteRect(
+                clip,
+                frame,
+                window,
+                { inline: true, visibleBeats: { from: 128, to: 131 } },
+                (_n, x) => {
+                    starts.push(x / PIXELS_PER_BEAT);
+                }
+            );
+
+            expect(starts).toEqual([128, 129, 130]);
+        });
+    });
+
     it('does not find a note at the position its absolute beat would give', () => {
         const clip = offsetLoopedClip();
         const frame = frameFor(clip);

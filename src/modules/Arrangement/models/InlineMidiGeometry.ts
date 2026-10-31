@@ -55,7 +55,8 @@ export type InlineMidiPointer = {
 /** A note area shorter than this is not drawn, so nothing in it can be hit. */
 export const MIN_MIDI_CONTENT_HEIGHT = 4;
 
-const MAX_LOOP_ITERATIONS = 100;
+/** Backstop for a degenerate loop length; a real loop never has this many passes in view. */
+const MAX_VISIBLE_LOOP_PASSES = 4096;
 const MIDDLE_C = 60;
 const OCTAVE = 12;
 const MAX_MIDI_PITCH = 127;
@@ -113,8 +114,48 @@ export const resolveMidiPitchWindow = (
     return { minPitch, maxPitch, pitchRange, rowHeight: contentHeight / (pitchRange + 1) };
 };
 
-type NoteRectStyle = {
+export type MidiNoteRectStyle = {
     inline: boolean;
+    /** Arrangement beats worth drawing; loop passes wholly outside are skipped. Absent means the whole clip. */
+    visibleBeats?: { from: number; to: number };
+};
+
+type LoopPasses = { first: number; last: number };
+
+/**
+ * The loop passes that can put a note rectangle inside the visible beats. Bounded
+ * by the clip's own extent and the view, never a fixed pass count, so a long
+ * clip on a short loop is drawn and hit in every repeat.
+ */
+const resolveLoopPasses = (
+    clip: InlineMidiGeometryClip,
+    clipDuration: number,
+    loopLen: number,
+    visibleBeats: MidiNoteRectStyle['visibleBeats']
+): LoopPasses => {
+    if (!clip.loopEnabled || loopLen <= 0) {
+        return { first: 0, last: 0 };
+    }
+    if (clip.midiNotes.length === 0) {
+        return { first: 0, last: -1 };
+    }
+    const midiOffset = clip.midiOffsetBeats ?? 0;
+    let earliest = Infinity;
+    let latestEnd = -Infinity;
+    for (const note of clip.midiNotes) {
+        earliest = Math.min(earliest, note.startBeat - midiOffset);
+        latestEnd = Math.max(latestEnd, note.startBeat - midiOffset + note.duration);
+    }
+    const lastInClip = Math.ceil(clipDuration / loopLen) - 1;
+    if (!visibleBeats) {
+        return { first: 0, last: Math.min(lastInClip, MAX_VISIBLE_LOOP_PASSES - 1) };
+    }
+    const from = visibleBeats.from - clip.startBeat;
+    const to = visibleBeats.to - clip.startBeat;
+    // Pass k puts notes in [k * loopLen + earliest, k * loopLen + latestEnd].
+    const first = Math.max(0, Math.floor((from - latestEnd) / loopLen) + 1);
+    const last = Math.min(lastInClip, Math.ceil((to - earliest) / loopLen) - 1);
+    return { first, last: Math.min(last, first + MAX_VISIBLE_LOOP_PASSES - 1) };
 };
 
 /**
@@ -126,7 +167,7 @@ export const forEachMidiNoteRect = (
     clip: InlineMidiGeometryClip,
     frame: InlineMidiFrame,
     window: MidiPitchWindow,
-    style: NoteRectStyle,
+    style: MidiNoteRectStyle,
     visit: (
         note: InlineMidiGeometryClip['midiNotes'][number],
         x: number,
@@ -146,9 +187,12 @@ export const forEachMidiNoteRect = (
     const minWidth = style.inline ? INLINE_NOTE_MIN_WIDTH : PREVIEW_NOTE_MIN_WIDTH;
     const heightInset = style.inline ? 1 : 0;
 
-    let loopOffset = 0;
-    let iterations = 0;
-    while (loopOffset < clipDuration && iterations < MAX_LOOP_ITERATIONS) {
+    const { first, last } = resolveLoopPasses(clip, clipDuration, loopLen, style.visibleBeats);
+    for (let pass = first; pass <= last; pass++) {
+        const loopOffset = pass * loopLen;
+        if (loopOffset >= clipDuration) {
+            break;
+        }
         for (const note of clip.midiNotes) {
             const relStart = note.startBeat - midiOffset + loopOffset;
             if (relStart >= clipDuration) {
@@ -168,11 +212,6 @@ export const forEachMidiNoteRect = (
                     visit(note, finalX, ny, finalW, nh);
                 }
             }
-        }
-        loopOffset += loopLen;
-        iterations++;
-        if (!clip.loopEnabled || loopLen <= 0) {
-            break;
         }
     }
 };
@@ -212,11 +251,14 @@ export const findInlineMidiNoteAt = (
         return null;
     }
     const pitch = resolvePitchRowAt(window, frame, pointerY);
-    if (pitch === null) {
+    if (pitch === null || frame.width <= 0) {
         return null;
     }
+    const clipDuration = clip.endBeat - clip.startBeat;
+    const pointerBeat = clip.startBeat + ((pointerX - frame.x) / frame.width) * clipDuration;
+    const visibleBeats = { from: pointerBeat, to: pointerBeat };
     let found: MidiNoteRect | null = null;
-    forEachMidiNoteRect(clip, frame, window, { inline: true }, (note, x, y, width, height) => {
+    forEachMidiNoteRect(clip, frame, window, { inline: true, visibleBeats }, (note, x, y, width, height) => {
         if (found) {
             return;
         }

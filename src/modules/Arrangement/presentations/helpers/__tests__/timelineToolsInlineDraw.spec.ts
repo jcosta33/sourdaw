@@ -206,6 +206,17 @@ describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => 
         expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
     });
 
+    it('stamps in a loop repeat beyond the hundredth and hits it there on a second click', () => {
+        // 128 beats on a 1-beat loop: pass 120 is far past any fixed repeat count.
+        world.clip = { startBeat: 8, endBeat: 136, loopEnabled: true, loopLength: 1, midiNotes: [] };
+
+        clickAt(128.4, rowY(3));
+        clickAt(128.4, rowY(3));
+
+        expect(commitInlineMidiNoteCreate).toHaveBeenCalledTimes(1);
+        expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
+    });
+
     describe('a clip that starts off the grid', () => {
         beforeEach(() => {
             world.clip = { startBeat: 8.25, endBeat: 16.25, midiNotes: [] };
