@@ -25,16 +25,18 @@ Two more defects of the same class surfaced while repairing it in PR #5912:
   `frozen` and the old buffer in place. Unfreeze then returned early on that status, so no control
   could leave the state.
 
-The blind spot was the state space, not any single branch. The specs pinned labels per status but
-not the action each status dispatched, and no case covered a status combined with the frozen flag
-it does not usually carry.
+The blind spot was the state space, not any single branch. The menu spec pinned the stale label but
+not its action. The Inspector spec pinned the stale action, but asserted `unfreezeTrack`, so it
+encoded the defect as correct behaviour. An action assertion protects only when its expected value
+comes from what the label promises the user.
 
 Probes:
 
 - List every reachable pair of the coarse flag and the lifecycle status, including the transient
   states an operation writes before it settles (`freezing` with either flag, `error` with either
   flag). For each pair, assert the label and the dispatched action in every control that offers
-  them; the track menu and the Inspector are separate routes.
+  them; the track menu and the Inspector are separate routes. Derive each expected action from the
+  label, never from the code's current behaviour.
 - Narrow each routing branch to a single status, for example `frozen && !stale` to
   `status === 'frozen'`. Some per-state case must fail.
 - Cancel an operation that replaced a settled state, at each await it crosses. Assert the full prior
