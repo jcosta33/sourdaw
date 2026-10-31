@@ -37,7 +37,7 @@ const makeDevice = (overrides: Partial<Device>): Device => ({
 // that makes the cascade work: a container-query variant resolves against the nearest
 // `@container` ancestor, and with none the variant silently never applies.
 const containerQueryUsers = (root: HTMLElement): HTMLElement[] =>
-    [...root.querySelectorAll<HTMLElement>('*')].filter((element) =>
+    Array.from(root.querySelectorAll<HTMLElement>('*')).filter((element) =>
         CONTAINER_QUERY_VARIANT.test(element.getAttribute('class') ?? '')
     );
 
@@ -52,7 +52,7 @@ describe('DeviceInspector container queries', () => {
         const users = containerQueryUsers(inspectorRoot);
         expect(users.length).toBeGreaterThan(0);
         for (const user of users) {
-            const queryContainer = user.parentElement?.closest('.\\@container');
+            const queryContainer = user.parentElement?.closest('.\\@container') ?? null;
             expect(queryContainer, `no @container above <${user.tagName} class="${user.className}">`).not.toBeNull();
             expect(inspectorRoot.contains(queryContainer)).toBe(true);
         }
