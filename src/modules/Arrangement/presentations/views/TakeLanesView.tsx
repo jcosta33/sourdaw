@@ -87,12 +87,24 @@ type TakeRowProps = {
     take: Take;
     minBeat: number;
     maxBeat: number;
+    /** The part of the take that can sound: its extent within its source clip. A swipe commits only this part. */
+    soundingStartBeat: number;
+    soundingEndBeat: number;
     isActive: boolean;
     onPromote: () => void;
     onCreateRegion: (startBeat: number, endBeat: number) => void;
 };
 
-const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }: TakeRowProps): ReactElement => {
+const TakeRow = ({
+    take,
+    minBeat,
+    maxBeat,
+    soundingStartBeat,
+    soundingEndBeat,
+    isActive,
+    onPromote,
+    onCreateRegion,
+}: TakeRowProps): ReactElement => {
     const rowRef = useRef<HTMLDivElement>(null);
     const [drag, setDrag] = useState<TakeRowDragState | null>(null);
     const gestureRef = useRef<TakeRowGesture | null>(null);
@@ -126,9 +138,33 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
         }
     };
 
+    // The one release path: a primary-button pointerup and a pointermove that reports the primary button gone
+    // (a chorded release, where pointerup waits for the last button) both end the swipe here.
+    const releaseSwipe = (gesture: TakeRowGesture, clientX: number): void => {
+        gestureRef.current = null;
+        setDrag(null);
+        const releaseBeat = beatFromPointer(clientX);
+        const startBeat = Math.min(gesture.startBeat, releaseBeat);
+        const endBeat = Math.max(gesture.startBeat, releaseBeat);
+        const minimumSpan = Math.max(0.1, (maxBeat - minBeat) * 0.02);
+        if (endBeat - startBeat < minimumSpan) {
+            return;
+        }
+        const soundingStart = Math.max(startBeat, soundingStartBeat);
+        const soundingEnd = Math.min(endBeat, soundingEndBeat);
+        if (soundingEnd <= soundingStart) {
+            return;
+        }
+        onCreateRegion(soundingStart, soundingEnd);
+    };
+
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>): void => {
         const gesture = gestureRef.current;
         if (!gesture || event.pointerId !== gesture.pointerId) {
+            return;
+        }
+        if ((event.buttons & 1) === 0) {
+            releaseSwipe(gesture, event.clientX);
             return;
         }
         setDrag({ startBeat: gesture.startBeat, endBeat: beatFromPointer(event.clientX) });
@@ -139,18 +175,12 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
         if (!gesture || event.pointerId !== gesture.pointerId) {
             return;
         }
-        gestureRef.current = null;
-        setDrag(null);
         if (event.button !== 0) {
+            gestureRef.current = null;
+            setDrag(null);
             return;
         }
-        const releaseBeat = beatFromPointer(event.clientX);
-        const startBeat = Math.min(gesture.startBeat, releaseBeat);
-        const endBeat = Math.max(gesture.startBeat, releaseBeat);
-        const minimumSpan = Math.max(0.1, (maxBeat - minBeat) * 0.02);
-        if (endBeat - startBeat >= minimumSpan) {
-            onCreateRegion(startBeat, endBeat);
-        }
+        releaseSwipe(gesture, event.clientX);
     };
 
     // Covers pointercancel and lostpointercapture; after a normal release the gesture is already cleared.
@@ -427,17 +457,22 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                         </div>
                     ) : null}
 
-                    {takes.map((take) => (
-                        <TakeRow
-                            key={take.id}
-                            take={take}
-                            minBeat={minBeat}
-                            maxBeat={maxBeat}
-                            isActive={take.selected}
-                            onPromote={() => handlePromote(take)}
-                            onCreateRegion={(startBeat, endBeat) => handleCreateRegion(take, startBeat, endBeat)}
-                        />
-                    ))}
+                    {takes.map((take) => {
+                        const sourceClip = clips.find((clip) => clip.id === take.clipId);
+                        return (
+                            <TakeRow
+                                key={take.id}
+                                take={take}
+                                minBeat={minBeat}
+                                maxBeat={maxBeat}
+                                soundingStartBeat={Math.max(take.startBeat, sourceClip?.startBeat ?? take.startBeat)}
+                                soundingEndBeat={Math.min(take.endBeat, sourceClip?.endBeat ?? take.endBeat)}
+                                isActive={take.selected}
+                                onPromote={() => handlePromote(take)}
+                                onCreateRegion={(startBeat, endBeat) => handleCreateRegion(take, startBeat, endBeat)}
+                            />
+                        );
+                    })}
                 </div>
             )}
         </div>
