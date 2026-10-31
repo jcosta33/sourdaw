@@ -159,6 +159,37 @@ describe('inline MIDI geometry law', () => {
         }
     });
 
+    it('hits a note anywhere in its row band, including the strip the bar leaves under itself', () => {
+        const clip: InlineMidiGeometryClip = { startBeat: 0, endBeat: 4, midiNotes: [note('a', 64, 0, 2)] };
+        const frame = frameFor(clip);
+        const bar = collectRects(clip, frame)[0]!;
+        const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+
+        // The bar is one pixel shorter than its row; its bottom edge and the strip below it are both in the row.
+        expect(bar.height).toBeCloseTo(window.rowHeight - 1);
+        const inStrip = bar.y + bar.height + 0.5;
+        expect(findInlineMidiNoteAt(clip, frame, 25, inStrip)?.noteId).toBe('a');
+        expect(resolveInlineMidiPointer(clip, frame, 25, inStrip)?.pitch).toBe(64);
+        // One row below belongs to the pitch below.
+        expect(findInlineMidiNoteAt(clip, frame, 25, bar.y + window.rowHeight + 0.5)).toBeNull();
+    });
+
+    it('still hits notes when the rows are thinner than the bar inset', () => {
+        const clip: InlineMidiGeometryClip = {
+            startBeat: 0,
+            endBeat: 4,
+            midiNotes: [note('low', 24, 0, 2), note('high', 84, 2, 2)],
+        };
+        const frame = frameFor(clip);
+        const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
+        const rowCentre = (pitch: number) => frame.contentTop + window.rowHeight * (window.maxPitch - pitch + 0.5);
+
+        // 24..95 is six octaves in 76px: rows barely over a pixel, bars collapsed to nothing.
+        expect(window.rowHeight).toBeLessThan(1.1);
+        expect(findInlineMidiNoteAt(clip, frame, 25, rowCentre(24))?.noteId).toBe('low');
+        expect(findInlineMidiNoteAt(clip, frame, 175, rowCentre(84))?.noteId).toBe('high');
+    });
+
     it('does not find a note at the position its absolute beat would give', () => {
         const clip = offsetLoopedClip();
         const frame = frameFor(clip);

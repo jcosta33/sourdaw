@@ -60,11 +60,15 @@ const stampInlineMidiNote = (hit: ClipHitResult, clip: InlineMidiTimingClip): vo
         return;
     }
     const snap = getGridSnap();
+    const cellStart = floorToGridCell(hit.pointerBeat, snap);
+    // A cell that begins before the clip is cut at the clip start, and the note
+    // ends where the cell does so it cannot overhang into the next one.
+    const stampStart = Math.max(cellStart, clip.startBeat);
     commitInlineMidiNoteCreate({
         clipId: hit.clipId,
         pitch: hit.pitch,
-        startBeat: resolveInlineNoteBeat(clip, floorToGridCell(hit.pointerBeat, snap)),
-        duration: snap,
+        startBeat: resolveInlineNoteBeat(clip, stampStart),
+        duration: cellStart + snap - stampStart,
         velocity: 100,
     });
 };

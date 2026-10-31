@@ -195,6 +195,17 @@ describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => 
         expect(vi.mocked(commitInlineMidiNoteCreate).mock.calls.map(([input]) => input.pitch)).toEqual([71, 60]);
     });
 
+    it('deletes a note clicked in the strip a bar leaves under itself instead of stacking another', () => {
+        clickAt(10.4, rowY(3));
+        const bar = drawnRectOf('n0')!;
+
+        // Inside the row, below the one-pixel inset: the bar is not drawn there, the note is still under the pointer.
+        clickAt(10.4, bar.y + bar.height + 0.5);
+
+        expect(commitInlineMidiNoteCreate).toHaveBeenCalledTimes(1);
+        expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
+    });
+
     describe('a clip that starts off the grid', () => {
         beforeEach(() => {
             world.clip = { startBeat: 8.25, endBeat: 16.25, midiNotes: [] };
@@ -229,6 +240,19 @@ describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => 
             clickAt(8.3, rowY(3));
 
             expect(stampedStartBeats()).toEqual([0]);
+        });
+
+        it('stamps the next cell on a later click instead of hitting an overhang of the cut cell', () => {
+            preferencesStore.set({ ...defaultPreferences, snapToGrid: true, gridSubdivision: 'beat' });
+            world.clip = { ...world.clip!, startBeat: 8.3, endBeat: 12.3 };
+
+            clickAt(8.5, rowY(3));
+            clickAt(9.1, rowY(3));
+
+            // The first note ends at beat 9, so the click at 9.1 is empty space and stamps the cell 9..10.
+            expect(commitInlineMidiNoteDelete).not.toHaveBeenCalled();
+            expect(stampedStartBeats()[0]).toBeCloseTo(0);
+            expect(stampedStartBeats()[1]).toBeCloseTo(0.7);
         });
 
         it('stamps the unsnapped pointer beat, mapped the same way, with the grid off', () => {

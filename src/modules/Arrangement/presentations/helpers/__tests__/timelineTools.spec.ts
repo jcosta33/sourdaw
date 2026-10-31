@@ -238,6 +238,19 @@ describe('timelineTools', () => {
             expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 1.25 }));
         });
 
+        it('ends a note stamped in a cell the clip start cuts at the cell end, not a full step later', () => {
+            vi.mocked(getGridSnap).mockReturnValue(1);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(8.3)] };
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 8.5 });
+
+            handleDrawTool(0, 10, 8.5, { current: null });
+
+            // The cell 8..9 begins before the clip: the note starts at the clip start and runs 0.7 beat to beat 9.
+            const stamped = vi.mocked(commitInlineMidiNoteCreate).mock.calls[0]![0];
+            expect(stamped.startBeat).toBeCloseTo(0);
+            expect(stamped.duration).toBeCloseTo(0.7);
+        });
+
         it('stamps at the pitch the hit test reports for the pointer row, never a fixed pitch', () => {
             vi.mocked(getGridSnap).mockReturnValue(0.25);
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };

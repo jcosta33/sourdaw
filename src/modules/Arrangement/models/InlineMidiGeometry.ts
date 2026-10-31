@@ -185,7 +185,22 @@ const resolveInlineWindow = (clip: InlineMidiGeometryClip, frame: InlineMidiFram
     return resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
 };
 
-/** The inline note whose drawn rectangle contains the point, or null. */
+/**
+ * The pitch of the row at `pointerY`, or null above or below the note area. A
+ * pointer click and a note hit both read the row from here, so the whole row
+ * band belongs to its pitch; the gap a drawn bar leaves under itself is a
+ * drawing detail, not a place a click can fall between rows.
+ */
+const resolvePitchRowAt = (window: MidiPitchWindow, frame: InlineMidiFrame, pointerY: number): number | null => {
+    const depth = pointerY - frame.contentTop;
+    if (depth < 0 || depth >= frame.contentHeight) {
+        return null;
+    }
+    const row = Math.min(Math.floor(depth / window.rowHeight), window.pitchRange);
+    return window.maxPitch - row;
+};
+
+/** The inline note drawn at the point, or null: a note of the pointer's pitch row whose bar spans the point in time. */
 export const findInlineMidiNoteAt = (
     clip: InlineMidiGeometryClip,
     frame: InlineMidiFrame,
@@ -196,12 +211,16 @@ export const findInlineMidiNoteAt = (
     if (!window) {
         return null;
     }
+    const pitch = resolvePitchRowAt(window, frame, pointerY);
+    if (pitch === null) {
+        return null;
+    }
     let found: MidiNoteRect | null = null;
     forEachMidiNoteRect(clip, frame, window, { inline: true }, (note, x, y, width, height) => {
         if (found) {
             return;
         }
-        if (pointerX >= x && pointerX <= x + width && pointerY >= y && pointerY <= y + height) {
+        if (note.pitch === pitch && pointerX >= x && pointerX <= x + width) {
             found = { noteId: note.id, pitch: note.pitch, x, y, width, height };
         }
     });
@@ -229,10 +248,5 @@ export const resolveInlineMidiPointer = (
     const pointerBeat = clip.startBeat + clipBeat;
     const noteBeat = resolveInlineNoteBeat(clip, pointerBeat);
 
-    const depth = pointerY - frame.contentTop;
-    if (depth < 0 || depth >= frame.contentHeight) {
-        return { pointerBeat, noteBeat, pitch: null };
-    }
-    const row = Math.min(Math.floor(depth / window.rowHeight), window.pitchRange);
-    return { pointerBeat, noteBeat, pitch: window.maxPitch - row };
+    return { pointerBeat, noteBeat, pitch: resolvePitchRowAt(window, frame, pointerY) };
 };
