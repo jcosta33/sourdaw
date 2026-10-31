@@ -1445,9 +1445,17 @@ describe('real caller sequential measurement opportunity', () => {
         }
     );
 
-    it.each([{ calls: [] }, { calls: [queryCall()] }, { calls: [recipePreviewCall(), queryCall()] }])(
-        'rejects a nonconforming constrained caller turn before dispatch: $calls',
-        async ({ calls }) => {
+    it.each([
+        { label: 'no call', calls: [], measured: false },
+        { label: 'a read', calls: [{ ...queryCall(), id: 'step-query' }], measured: false },
+        {
+            label: 'a measure beside a read',
+            calls: [recipePreviewCall(), { ...queryCall(), id: 'step-query' }],
+            measured: true,
+        },
+    ])(
+        'keeps a visible unverified plan when the constrained caller turn returns $label',
+        async ({ calls, measured }) => {
             const before = captureBefore();
             scriptOpportunity(before.revision, calls);
             const planned = await parsePromptToActions({
@@ -1455,10 +1463,41 @@ describe('real caller sequential measurement opportunity', () => {
                 context: getProjectContext(),
                 projectRevision: before.revision,
             });
-            expect(planned.actions).toEqual([]);
-            expect(planned.rejectionReason).toMatch(/required|single-call/);
-            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
-            expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            expect(planned.rejectionReason).toBeUndefined();
+            expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(5);
+            expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[8]).toEqual({
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            const stepReceipts = planned.applicationToolReceipts?.filter((entry) => entry.turn === 4) ?? [];
+            expect(stepReceipts.some((entry) => entry.callId === 'step-query')).toBe(false);
+            if (measured) {
+                expect(stepReceipts).toEqual([
+                    expect.objectContaining({
+                        callId: 'measure-recipe',
+                        toolName: 'analysis.measure',
+                        status: 'success',
+                    }),
+                ]);
+                expect(engine.renderTrackSubgraphOffline).toHaveBeenCalled();
+            } else {
+                expect(stepReceipts).toEqual([
+                    expect.objectContaining({
+                        toolName: 'analysis.measure',
+                        status: 'failure',
+                        error: expect.objectContaining({ code: 'measurement-not-requested' }),
+                    }),
+                ]);
+                expect(engine.renderTrackSubgraphOffline).not.toHaveBeenCalled();
+            }
+            expect(planned.actions.some((action) => action.type === 'addDevice')).toBe(true);
+            const confirmationId = persistForApproval(planned, before.revision);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                status: 'proposed',
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
             assertUnchanged(before);
         }
     );

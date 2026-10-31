@@ -282,23 +282,71 @@ describe('caller-bound measurement receipt sequence', () => {
 
     const intake = { id: 'intake', name: 'selectCreativeInterpretation', arguments: {} };
 
-    it.each([
-        { label: 'zero', calls: [], reason: 'no tool call' },
-        { label: 'multiple', calls: [measure, read('also-read')], reason: 'multiple tool calls' },
-        { label: 'wrong name', calls: [terminal], reason: 'outside the required' },
-    ])('refuses $label before any member executes on the constrained step', async ({ calls, reason }) => {
-        const queriesBefore = vi.mocked(querySemanticProject).mock.calls.length;
-        const run = runSequence([[intake], [read('read-2')], [candidate], calls]);
+    it.each<{ label: string; calls: ToolCallResult[]; measured: boolean }>([
+        { label: 'a parallel measure', calls: [measure, { ...measure, id: 'measure-2' }], measured: true },
+        { label: 'a measure beside a read', calls: [measure, read('also-read')], measured: true },
+        { label: 'no call', calls: [], measured: false },
+        { label: 'a terminal', calls: [{ ...terminal, id: 'step-terminal' }], measured: false },
+    ])(
+        'keeps an unheld run alive to its final turn when the measurement step returns $label',
+        async ({ calls, measured }) => {
+            const queriesBefore = vi.mocked(querySemanticProject).mock.calls.length;
+            const run = runSequence([[intake], [read('read-2')], [read('read-3')], calls, [terminal]], {
+                history: true,
+            });
+            const result = await run.result;
+            expect(result).toMatchObject({ status: 'complete', turns: 5, toolCalls: [terminal] });
+            expect(result).not.toHaveProperty('terminalMeasurementSettlement');
+            expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', {
+                mode: 'required',
+                toolNames: ['analysis.measure'],
+                parallelToolCalls: false,
+            });
+            expect(run.requestTurn.mock.calls[4]?.[0]).toMatchObject({
+                directive: { mode: 'required', toolNames: expect.arrayContaining(['setTempo']) },
+                history: expect.arrayContaining([
+                    expect.objectContaining({
+                        turn: 4,
+                        calls,
+                        receipts: calls.map((call) => expect.objectContaining({ callId: call.id })),
+                    }),
+                ]),
+            });
+            expect(vi.mocked(querySemanticProject).mock.calls.length - queriesBefore).toBe(2);
+            const stepReceipts = result.receipts.filter((entry) => entry.turn === 4);
+            const refused = calls.filter((call) => call.name !== 'analysis.measure').map((call) => call.id);
+            expect(stepReceipts.some((entry) => refused.includes(entry.callId))).toBe(false);
+            if (measured) {
+                expect(run.execute).toHaveBeenCalledOnce();
+                expect(vi.mocked(run.execute).mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 4 });
+                expect(stepReceipts.find((entry) => entry.callId === 'measure')?.status).toBe('success');
+                return;
+            }
+            expect(run.execute).not.toHaveBeenCalled();
+            expect(stepReceipts).toEqual([
+                expect.objectContaining({
+                    toolName: 'analysis.measure',
+                    status: 'failure',
+                    revision: null,
+                    error: expect.objectContaining({ code: 'measurement-not-requested' }),
+                }),
+            ]);
+        }
+    );
+
+    it('answers a parallel measure on the unheld step with the per-turn limit', async () => {
+        const run = runSequence([
+            [intake],
+            [read('read-2')],
+            [read('read-3')],
+            [measure, { ...measure, id: 'measure-2' }],
+            [terminal],
+        ]);
         const result = await run.result;
-        expect(result).toMatchObject({ status: 'rejected', reason: expect.stringContaining(reason), turns: 4 });
-        expect(run.execute).not.toHaveBeenCalled();
-        expect(vi.mocked(querySemanticProject).mock.calls.length - queriesBefore).toBe(1);
-        expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', {
-            mode: 'required',
-            toolNames: ['analysis.measure'],
-            parallelToolCalls: false,
-        });
-        expect(result.receipts.map((receipt) => receipt.callId)).toEqual(['intake', 'read-2', 'candidate']);
+        expect(result).toMatchObject({ status: 'complete', turns: 5 });
+        expect(result.receipts.find((entry) => entry.callId === 'measure-2')?.error?.code).toBe(
+            'measure-per-turn-limit'
+        );
     });
 
     it.each(['success', 'refusal', 'throw', 'oversized'] as const)(
@@ -364,11 +412,9 @@ describe('caller-bound measurement receipt sequence', () => {
         const run = runSequence([[measure], [{ ...intake, id: 'intake-later' }], [candidate], [], [terminal]], {
             policy: { ...opportunity, callId: 'intake-later', turn: 2 },
         });
-        expect(await run.result).toMatchObject({
-            status: 'rejected',
-            reason: expect.stringContaining('no tool call'),
-            turns: 4,
-        });
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 5 });
+        expect(result.receipts.find((entry) => entry.turn === 4)?.error?.code).toBe('measurement-not-requested');
         expect(run.execute).toHaveBeenCalledOnce();
         expect(run.requestTurn.mock.calls[3]?.[0]).toHaveProperty('directive', {
             mode: 'required',
@@ -663,14 +709,25 @@ describe('caller-bound measurement receipt sequence', () => {
         { label: 'a parallel measure', extra: { ...measure, id: 'measure-2' }, receipt: 'measure-per-turn-limit' },
         { label: 'a read', extra: read('extra-read'), receipt: null },
     ])('admits the first measure and keeps the held proposal beside $label', async ({ extra, receipt }) => {
+        const queriesBefore = vi.mocked(querySemanticProject).mock.calls.length;
         const run = runSequence([[intake], [terminal], [measure, extra]]);
         const result = await run.result;
         expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
         expect(run.execute).toHaveBeenCalledOnce();
+        expect(vi.mocked(querySemanticProject).mock.calls.length).toBe(queriesBefore);
+        expect(result.receipts.some((entry) => entry.callId === extra.id && entry.status === 'success')).toBe(false);
         expect(vi.mocked(run.execute).mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 3 });
         expect(settlementOf(result)).toMatchObject({ measurement: { callId: 'measure', turn: 3 } });
         expect(result.receipts.find((entry) => entry.callId === 'measure')?.status).toBe('success');
         expect(result.receipts.find((entry) => entry.callId === extra.id)?.error?.code).toBe(receipt ?? undefined);
+    });
+
+    it('spends no call budget on calls the held measurement step refuses', async () => {
+        const run = runSequence([[intake], [terminal], [measure, read('extra-read')]], {
+            limits: { maxTotalCalls: 3 },
+        });
+        expect(await run.result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(run.execute).toHaveBeenCalledOnce();
     });
 
     it.each([
