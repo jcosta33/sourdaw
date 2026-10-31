@@ -1,0 +1,44 @@
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_ba80576e6f5cb5::t_3aada75dabea78 3870
+  s_ba80576e6f5cb5::t_980435174858ed 957,1772-1774,1783-1828
+  s_ba80576e6f5cb5::t_f63259ba4fde14 3868
+  s_ba80576e6f5cb5::t_98410a9e921b99 3850-3861,3863,3865-3867,3869,3871-3873
+  s_ba80576e6f5cb5::t_6d2c8c307aec21 394-397
+  s_ba80576e6f5cb5::t_e35b5523a76990 953-956,958,968,1829,3862,3864
+.github/workflows/health-gates.yml
+  s_55244eb93b97d1::t_ffd0ce377bdba1 89-90,95-96
+.github/workflows/heavy-gates.yml
+  s_55244eb93b97d1::t_fbb35b2e50f4f0 49-50,55-56,112-113,118-119,178,183-184
+.github/workflows/nightly.yml
+  s_55244eb93b97d1::t_414937bc04a11f 76-77,82-83,164-165,170-171,204-205,210-211,308-309,314-315,491-492,497-498,619-620,625-626,681-682,687-688,723-724,729-730,1000-1001,1006-1007
+.github/workflows/pr-checks.yml
+  s_ba80576e6f5cb5::t_914deb4fa2c48d 43-44,49-50
+.github/workflows/validation.yml
+  s_55244eb93b97d1::t_4401cb77d546da 331-332,337-338,438-439,444-445,480-481,486-487,584-585,590-591,633-634,639-640,675-676,681-682,976-977,982-983
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_ba80576e6f5cb5::t_ff48c8ad42bb33 114-115,120-122,284-285,290-292,390-391,396-398,463-464,469-471,530,535-537,736-737,742-744,854-855,860-862,901-902,907-909,1018-1019,1024-1026,1068-1069,1074-1076,1114-1115,1120-1122,1368-1369,1374-1376,1580-1581,1586-1588,1681-1682,1687-1689,1730-1731,1736-1738,1851-1852,1857-1859,2012-2013,2018-2020,2131-2132,2137-2139,2200-2201,2206-2208,2250-2251,2256-2258,2432-2433,2438-2440
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1725c6553974d70f13a7293bbad3804f3ce01496",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
