@@ -81,6 +81,12 @@ function takeEndsFor(clipId: string): number[] {
     );
 }
 
+function takeBoundsFor(clipId: string): number[][] {
+    return (takeLaneStore.value?.lanes ?? []).flatMap((lane) =>
+        lane.takes.filter((take) => take.clipId === clipId).map((take) => [take.startBeat, take.endBeat])
+    );
+}
+
 function laneIds(): string[] {
     return (takeLaneStore.value?.lanes ?? []).map((lane) => lane.id);
 }
@@ -982,5 +988,43 @@ describe('recording gesture commit (issue #4439)', () => {
         expect(takeLaneStore.value).toEqual(takesBefore);
         expect(JSON.stringify(getCrdtDoc('root'))).toBe(rootBefore);
         expect(undoHistoryStore.value?.past).toEqual([]);
+    });
+
+    // The live stop closes the take on the gesture beat; the audio capture
+    // terminal commits a clip whose window is latency-compensated. The flat
+    // take plays the clip's own media, so it takes the committed extent.
+    it.each([
+        { name: 'a compensated window', clipStart: 9.99, clipEnd: 12.0425, committedEnd: 12.0425 },
+        { name: 'a capture inside the one-beat minimum', clipStart: 10, clipEnd: 10.25, committedEnd: 11 },
+    ])('fits the flat take to the committed clip for $name, through undo and redo', async (scenario) => {
+        const [provisional] = startRecording(10);
+        if (!provisional) {
+            throw new Error('expected a provisional recording clip');
+        }
+        flushAutomergeStorageWrites();
+        await stopRecording(12.0625);
+        flushAutomergeStorageWrites();
+        expect(takeBoundsFor(provisional.id)).toEqual([[10, 12.0625]]);
+
+        await commitRecording(
+            { ...provisional, audioBufferId: 'rec-buffer-1', startBeat: scenario.clipStart, endBeat: scenario.clipEnd },
+            { provisionalStartBeat: 10, mediaOriginSeconds: scenario.clipStart / 2 }
+        );
+        flushAutomergeStorageWrites();
+        const committed = [[scenario.clipStart, scenario.committedEnd]];
+        expect(findClip(provisional.id)).toMatchObject({
+            startBeat: scenario.clipStart,
+            endBeat: scenario.committedEnd,
+        });
+        expect(takeBoundsFor(provisional.id)).toEqual(committed);
+        expect(undoHistoryStore.value?.past ?? []).toHaveLength(1);
+
+        await undo();
+        flushAutomergeStorageWrites();
+        expect(takeBoundsFor(provisional.id)).toEqual([]);
+
+        await redo();
+        flushAutomergeStorageWrites();
+        expect(takeBoundsFor(provisional.id)).toEqual(committed);
     });
 });

@@ -459,6 +459,13 @@ function recordedClips() {
     return trackStore.value!.tracks.find((track) => track.id === TRACK_ID)!.clips;
 }
 
+function expectFlatTakesOnClip(clip: { id: string; startBeat: number; endBeat: number }): void {
+    const flat = lane().takes.filter((take) => take.clipId === clip.id && take.sourceOffsetBeats === undefined);
+    expect(flat).toHaveLength(1);
+    expect(flat[0]!.startBeat).toBe(clip.startBeat);
+    expect(flat[0]!.endBeat).toBe(clip.endBeat);
+}
+
 async function expectUncompedSourceEnding(endBeat: number): Promise<void> {
     const { scheduleAudioClips } = await vi.importActual<typeof import('../../scheduling/scheduleAudioClips')>(
         '../../scheduling/scheduleAudioClips'
@@ -3370,6 +3377,34 @@ describe('punch audio capture loop placement', () => {
             const capturedEndBeat = gestureBeat - hardware.latencySeconds * 2;
             expect(recordedClips()).toHaveLength(1);
             expect(recordedClips()[0]!.endBeat).toBeCloseTo(capturedEndBeat, 6);
+            expectFlatTakesOnClip(recordedClips()[0]!);
+            expectProjectProjection();
+        }
+    );
+
+    it.each(['stop', 'pause'] as const)(
+        'an ordinary %s between scheduler ticks leaves the flat take on the latency-compensated clip',
+        async (ending) => {
+            hardware.latencySeconds = 0.01;
+            transportStore.set({ ...transportStore.value!, isLooping: false });
+            toggleRecording();
+            await vi.waitFor(() => expect(schedulerSession.worker?.onmessage).toBeTruthy(), { interval: 1 });
+            await advanceUntil(() => hardware.starts === 1 && playheadClockRef.beat >= 9.5);
+            hardware.now += TICK_SECONDS / 2;
+            const gestureBeat = playheadClockRef.beat + (hardware.now - playheadClockRef.audioTimeSeconds) * 2;
+            if (ending === 'stop') {
+                await stopPlayback();
+            } else {
+                pausePlayback();
+            }
+            await vi.waitFor(() => expect(recordedClips()[0]?.audioBufferId).toBeTruthy(), { interval: 1 });
+            await recordingLifecycle.waitForCommits();
+            const clip = recordedClips()[0]!;
+            // The recorder opened the take on the record point, beat 8; the
+            // compensated clip starts elsewhere, so an unfitted take would show it.
+            expect(clip.startBeat).not.toBeCloseTo(8, 3);
+            expect(clip.endBeat).toBeCloseTo(gestureBeat - hardware.latencySeconds * 2, 6);
+            expectFlatTakesOnClip(clip);
             expectProjectProjection();
         }
     );
@@ -3435,6 +3470,7 @@ describe('punch audio capture loop placement', () => {
                 expect(clips[0]!.audioBufferId).toBeTruthy();
                 const capturedEndBeat = gestureBeat - hardware.latencySeconds * 2;
                 expect(clips[0]!.endBeat).toBeCloseTo(Math.min(capturedEndBeat, punchOutBeat), 6);
+                expectFlatTakesOnClip(clips[0]!);
             }
             expectProjectProjection();
         }
