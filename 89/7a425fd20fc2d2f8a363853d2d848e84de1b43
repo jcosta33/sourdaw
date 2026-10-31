@@ -1,0 +1,31 @@
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/getPromptClauses.spec.ts
+  s_55244eb93b97d1::t_7507bfcc48dc8a 11
+  s_55244eb93b97d1::t_009f3e697808d6 13-17
+  s_55244eb93b97d1::t_c6f1c3c07c5027 1-10,12,18-27
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getPromptClauses.ts
+  s_55244eb93b97d1::t_400a67d5aa3639 53
+  s_55244eb93b97d1::t_7b9aff627bfbbf 47-52,54,58
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_55244eb93b97d1::t_7b9aff627bfbbf 3,17-18,21
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_55244eb93b97d1::t_ac54f031945b13 18
+  s_55244eb93b97d1::t_7b9aff627bfbbf 153
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_55244eb93b97d1::t_2ac62ad316351e 66-67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "897a425fd20fc2d2f8a363853d2d848e84de1b43",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
