@@ -1,0 +1,46 @@
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_88fc7e0d05bab6::t_634b8cdcd9335f 178
+  s_3bb122e91d89a5::t_b090e07746fadf 10,15,132-133,176-177,179
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_ba80576e6f5cb5::t_2290d0e82671d4 84-89,992-1029
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_ba80576e6f5cb5::t_d6e28faadca3c5 13
+src/modules/Arrangement/useCases/recording/fitFlatTakesToClip.ts
+  s_ba80576e6f5cb5::t_d152cef0c8f297 1-35
+src/modules/Arrangement/useCases/recording/withMinimumRecordingLength.ts
+  s_ba80576e6f5cb5::t_da33ea3e049b9d 1-14
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_ba80576e6f5cb5::t_f6017d2f1a85dd 462-468,3380-3407,3473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bdc4028b09f6d58ea2ccb97e6fc775a29e163fde",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
