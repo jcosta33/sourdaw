@@ -228,20 +228,23 @@ const LOOP_START_BEAT = 8;
 const LOOP_END_BEAT = 12;
 const PUNCH_IN_BEAT = 10;
 const PUNCH_OUT_BEAT = 14;
-/** The roll starts at the loop start on audio time 0, so pass N ends at 2N s. */
-const FIRST_SEAM_MS = 2000;
+/**
+ * The roll starts at the loop start on audio time 0, so pass N ends at 2N s.
+ * The issue's stall came after the first wrap, before the second seam.
+ */
+const SECOND_SEAM_MS = 4000;
 const GRAIN_MS = 10;
 /** Where the timer's tick grid sits after the Worker's first deadline. */
 const TIMER_PHASE_MS = 2;
 /** Ordinary wake latency past a grid slot: every ordinary tick is 3 ms late. */
 const STEADY_WAKE_MS = 1;
 /**
- * The one slow wake, about ten milliseconds before the first seam. It lands
+ * The one slow wake, about ten milliseconds before the second seam. It lands
  * past the Worker's next deadline (phase + wake > grain) yet before the timer's
  * next grid slot (wake + grain / 20 <= grain), so the timer keeps that slot.
  */
 const SLOW_WAKE_MS = 8.5;
-const SLOW_WAKE_GRID_MS = FIRST_SEAM_MS - 2 * GRAIN_MS + TIMER_PHASE_MS;
+const SLOW_WAKE_GRID_MS = SECOND_SEAM_MS - 2 * GRAIN_MS + TIMER_PHASE_MS;
 /** Run on past the second seam, into the third pass. */
 const DRIVE_END_MS = 4500;
 
