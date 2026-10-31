@@ -1,0 +1,26 @@
+src/modules/MIDI/services/isExactMidiClipDataActionSnapshot.ts
+  s_ba80576e6f5cb5::t_35674978c1e41c 7
+src/modules/Arrangement/handlers/clip/__tests__/deleteTimeCompMidiLoopPass.integration.spec.ts
+  s_ba80576e6f5cb5::t_ae5a421986dc56 5,298-312
+  s_ba80576e6f5cb5::t_136517422a7395 313
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_ba80576e6f5cb5::t_1fd6c6965ea566 11,13,15
+src/modules/MIDI/services/decodeMidiClipDataSnapshots.ts
+  s_ba80576e6f5cb5::t_35674978c1e41c 15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28d6bc284bb4795a2ab49c2eaf9de20e48d370b3",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
