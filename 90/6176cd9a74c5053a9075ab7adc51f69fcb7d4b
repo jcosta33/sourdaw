@@ -1,0 +1,23 @@
+src/modules/TimelineEditor/presentations/views/useArrangementMinimumHeight.ts
+  s_88fc7e0d05bab6::t_1fffde26ae2947 45-49
+  s_88fc7e0d05bab6::t_276494993d2fc1 13-20
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestRowsBelowVariationLanes.spec.ts
+  s_88fc7e0d05bab6::t_5b77c8635a2a9d 36-46
+  s_88fc7e0d05bab6::t_1067036aa33691 58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "906176cd9a74c5053a9075ab7adc51f69fcb7d4b",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
