@@ -1838,6 +1838,15 @@ function normalizeTerminalProposalCall(call: ToolCallResult): ToolCallResult {
 
 /** One accepted call of a turn, under the identity the loop resolved for it. */
 type IdentifiedToolCall = { call: ToolCallResult; callId: string };
+/** What native history records for a turn whose executed calls are only part of its reply. */
+type NativeTurnRecord = { calls: readonly IdentifiedToolCall[]; receipts: readonly ApplicationToolReceipt[] };
+
+function orderReceiptsByCalls(
+    calls: readonly IdentifiedToolCall[],
+    receipts: readonly ApplicationToolReceipt[]
+): ApplicationToolReceipt[] {
+    return calls.flatMap(({ callId }) => receipts.filter((receipt) => receipt.callId === callId));
+}
 
 function resolveCallId(call: ToolCallResult, loopId: string, turn: number, index: number): string | null {
     if (call.id === undefined) {
@@ -2088,7 +2097,8 @@ export async function runApplicationOwnedToolLoop(
         turn: number,
         outcome: Extract<ApplicationToolPlanningOutcome, { status: 'complete' }>,
         identifiedCalls: readonly IdentifiedToolCall[],
-        selectedAnswerAuthority?: Parameters<typeof projectAnswerProviderReceipt>[1]
+        selectedAnswerAuthority?: Parameters<typeof projectAnswerProviderReceipt>[1],
+        nativeRecord?: NativeTurnRecord
     ): { reason: string; receipts: ApplicationToolReceipt[] } | null => {
         const overBudget = 'Application tool receipts exceeded the bounded context budget.';
         const turnBytes = byteLength(serializeReceiptContext(turnReceipts, turn));
@@ -2127,8 +2137,8 @@ export async function runApplicationOwnedToolLoop(
                 turn,
                 provider: outcome.providerTurn.provider,
                 assistantItems: outcome.providerTurn.assistantItems,
-                calls: toHostedTurnCalls(identifiedCalls),
-                receipts: [...turnReceipts],
+                calls: toHostedTurnCalls(nativeRecord?.calls ?? identifiedCalls),
+                receipts: [...(nativeRecord?.receipts ?? turnReceipts)],
             });
         }
         return null;
@@ -2146,7 +2156,7 @@ export async function runApplicationOwnedToolLoop(
         const isFinalTurn = turn === maxTurns();
         // A held candidate can still receive the real executor's stale-snapshot refusal. Snapshot
         // movement itself is neither an invocation nor a receipt and cannot settle its control.
-        const measurementOpportunity =
+        const measurementOpportunity: MeasurementOpportunity | null =
             readCurrentMeasurementOpportunity(input, receipts, measurementIntake, turn) ??
             heldTerminal?.opportunity ??
             null;
@@ -2208,7 +2218,12 @@ export async function runApplicationOwnedToolLoop(
         if (input.signal?.aborted) {
             return { status: 'rejected', reason: 'Application-owned tool loop was cancelled.', receipts, turns: turn };
         }
-        const directiveRefusal = toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn);
+        // A held complete proposal outlives a measurement step its provider did not honour: some
+        // providers cannot disable parallel calls or ignore the directive outright.
+        const heldMeasurementToolName =
+            needsMeasurementStep && heldTerminal !== null ? input.measurement?.toolName : undefined;
+        const directiveRefusal =
+            heldMeasurementToolName === undefined ? toolChoiceRefusal(outcome.toolCalls, directive, isFinalTurn) : null;
         if (directiveRefusal !== null) {
             return { status: 'rejected', reason: directiveRefusal, receipts, turns: turn };
         }
@@ -2230,7 +2245,7 @@ export async function runApplicationOwnedToolLoop(
             };
         }
 
-        const identifiedCalls: IdentifiedToolCall[] = [];
+        let identifiedCalls: IdentifiedToolCall[] = [];
         for (const [index, call] of outcome.toolCalls.entries()) {
             const callId = resolveCallId(call, input.loopId, turn, index);
             if (callId === null || seenCallIds.has(callId)) {
@@ -2243,6 +2258,77 @@ export async function runApplicationOwnedToolLoop(
             }
             seenCallIds.add(callId);
             identifiedCalls.push({ call, callId });
+        }
+
+        let measurementStepRecord: NativeTurnRecord | undefined;
+        if (heldMeasurementToolName !== undefined && heldTerminal !== null && measurementOpportunity !== null) {
+            const measureCalls: IdentifiedToolCall[] = identifiedCalls.filter(
+                ({ call }) => call.name === heldMeasurementToolName
+            );
+            measurementStepRecord = {
+                calls: identifiedCalls,
+                receipts: identifiedCalls
+                    .filter(({ call }) => call.name !== heldMeasurementToolName)
+                    .map(({ call, callId }) =>
+                        boundReceipt(
+                            failureReceipt({
+                                callId,
+                                toolName: call.name,
+                                turn,
+                                code: 'measurement-step-refused',
+                                safeMessage: 'Only the required measurement runs on this step; this call did not run.',
+                                retryable: false,
+                            }),
+                            limits.maxReceiptBytesPerCall
+                        )
+                    ),
+            };
+            if (measureCalls.length === 0) {
+                const unmeasured = boundReceipt(
+                    failureReceipt({
+                        callId: `${input.loopId}-${String(turn)}-measurement-step`,
+                        toolName: heldMeasurementToolName,
+                        turn,
+                        code: 'measurement-not-requested',
+                        safeMessage:
+                            'The provider did not request the required measurement; the proposal is unverified.',
+                        retryable: false,
+                    }),
+                    limits.maxReceiptBytesPerCall
+                );
+                if (seenCallIds.has(unmeasured.callId)) {
+                    return {
+                        status: 'rejected',
+                        reason: 'Provider returned an invalid or duplicate tool-call identity.',
+                        receipts,
+                        turns: turn,
+                    };
+                }
+                seenCallIds.add(unmeasured.callId);
+                const unmeasuredOverBudget = admitTurnReceipts(
+                    [unmeasured],
+                    turn,
+                    outcome,
+                    identifiedCalls,
+                    undefined,
+                    measurementStepRecord
+                );
+                if (unmeasuredOverBudget !== null) {
+                    return {
+                        status: 'rejected',
+                        reason: unmeasuredOverBudget.reason,
+                        receipts: unmeasuredOverBudget.receipts,
+                        turns: turn,
+                    };
+                }
+                measurementWitness = {
+                    opportunity: structuredClone(measurementOpportunity),
+                    receipt: structuredClone(unmeasured),
+                };
+                return releaseHeldTerminal(heldTerminal, turn);
+            }
+            identifiedCalls = measureCalls;
+            outcome = { ...outcome, toolCalls: measureCalls.map(({ call }) => call) };
         }
 
         if (
@@ -2795,7 +2881,20 @@ export async function runApplicationOwnedToolLoop(
         });
         recordDisclosedCommandSchemas(safeReadCalls, turnReceipts, disclosedCommandSchemas);
         recordSearchedIntents(safeReadCalls, turnReceipts, searchedIntents);
-        const overBudget = admitTurnReceipts(turnReceipts, turn, outcome, safeReadCalls);
+        const overBudget = admitTurnReceipts(
+            turnReceipts,
+            turn,
+            outcome,
+            safeReadCalls,
+            undefined,
+            measurementStepRecord && {
+                calls: measurementStepRecord.calls,
+                receipts: orderReceiptsByCalls(measurementStepRecord.calls, [
+                    ...turnReceipts,
+                    ...measurementStepRecord.receipts,
+                ]),
+            }
+        );
         if (overBudget !== null) {
             return { status: 'rejected', reason: overBudget.reason, receipts: overBudget.receipts, turns: turn };
         }

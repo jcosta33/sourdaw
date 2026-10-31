@@ -652,14 +652,66 @@ describe('caller-bound measurement receipt sequence', () => {
         expect(run.requestTurn).toHaveBeenCalledTimes(3);
     });
 
-    it.each([{ calls: [] }, { calls: [terminal] }, { calls: [measure, read('extra-read')] }])(
-        'never releases held calls after a nonconforming required response: $calls',
-        async ({ calls }) => {
-            const run = runSequence([[intake], [terminal], calls]);
-            expect(await run.result).toMatchObject({ status: 'rejected', turns: 3 });
-            expect(run.execute).not.toHaveBeenCalled();
+    function settlementOf(result: Awaited<ReturnType<typeof runSequence>['result']>): unknown {
+        if (result.status !== 'complete' || result.terminalMeasurementSettlement === undefined) {
+            throw new Error(`Expected a settled held release, got ${JSON.stringify(result)}`);
         }
-    );
+        return JSON.parse(result.terminalMeasurementSettlement);
+    }
+
+    it.each([
+        { label: 'a parallel measure', extra: { ...measure, id: 'measure-2' }, receipt: 'measure-per-turn-limit' },
+        { label: 'a read', extra: read('extra-read'), receipt: null },
+    ])('admits the first measure and keeps the held proposal beside $label', async ({ extra, receipt }) => {
+        const run = runSequence([[intake], [terminal], [measure, extra]]);
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(run.execute).toHaveBeenCalledOnce();
+        expect(run.execute.mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 3 });
+        expect(settlementOf(result)).toMatchObject({ measurement: { callId: 'measure', turn: 3 } });
+        expect(result.receipts.find((entry) => entry.callId === 'measure')?.status).toBe('success');
+        expect(result.receipts.find((entry) => entry.callId === extra.id)?.error?.code).toBe(receipt ?? undefined);
+    });
+
+    it.each([
+        { label: 'no call', calls: [] },
+        { label: 'the held terminal again', calls: [{ ...terminal, id: 'terminal-again' }] },
+        { label: 'a read', calls: [read('step-read')] },
+    ])('releases the held proposal unverified when the measurement step returns $label', async ({ calls }) => {
+        const queriesBefore = vi.mocked(querySemanticProject).mock.calls.length;
+        const run = runSequence([[intake], [terminal], calls]);
+        const result = await run.result;
+        expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
+        expect(run.execute).not.toHaveBeenCalled();
+        expect(vi.mocked(querySemanticProject).mock.calls.length).toBe(queriesBefore);
+        const unmeasured = result.receipts.find((entry) => entry.error?.code === 'measurement-not-requested');
+        expect(unmeasured).toMatchObject({ toolName: 'analysis.measure', turn: 3, status: 'failure', revision: null });
+        expect(settlementOf(result)).toMatchObject({
+            measurement: { callId: unmeasured?.callId, toolName: 'analysis.measure', turn: 3 },
+            deferredCalls: [{ callId: 'terminal', turn: 2 }],
+        });
+        expect(
+            result.receipts.some((entry) => entry.toolName === 'analysis.measure' && entry.status === 'success')
+        ).toBe(false);
+        expect(result.receipts.map((entry) => entry.callId)).toEqual(['intake', 'terminal', unmeasured?.callId]);
+    });
+
+    it('does not release a held proposal when cancelled before an unmeasured step is admitted', async () => {
+        const controller = new AbortController();
+        const run = runSequence([[intake], [terminal], []], {
+            signal: controller.signal,
+            onTurn: (turn) => {
+                if (turn === 3) {
+                    controller.abort();
+                }
+            },
+        });
+        expect(await run.result).toMatchObject({
+            status: 'rejected',
+            turns: 3,
+            reason: 'Application-owned tool loop was cancelled.',
+        });
+    });
 
     it('requires the primary fallback without any retained compilation', async () => {
         const run = runSequence([[intake], [read('read-2')], [read('read-3')], [measure], [terminal]]);
