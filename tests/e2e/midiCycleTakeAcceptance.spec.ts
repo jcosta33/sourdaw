@@ -320,7 +320,7 @@ test.describe.serial('recorded MIDI cycle take acceptance', () => {
         ]);
         expect(recorded.notes.find((note) => note.pitch === 67)?.duration).toBeGreaterThan(0.5);
         expect(recorded.notes.find((note) => note.pitch === 62)?.duration).toBeGreaterThan(3);
-        expect(recorded.notes.find((note) => note.pitch === 64)?.duration).toBeGreaterThan(0);
+        expect(recorded.notes.find((note) => note.pitch === 64)?.duration).toBeGreaterThan(0.3);
         expect(await synthPitches(page), 'the browser Web Audio observer must see the live D4 voice').toContain(62);
         expect(recorded.takes.map((take) => take.recordingPassIndex).sort()).toEqual([0, 1, 2]);
         expect(recorded.takes.find((take) => take.recordingPassIndex === 2)?.endBeat).toBeLessThan(LOOP_END);
