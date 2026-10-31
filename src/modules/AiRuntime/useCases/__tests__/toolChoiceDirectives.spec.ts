@@ -667,7 +667,7 @@ describe('caller-bound measurement receipt sequence', () => {
         const result = await run.result;
         expect(result).toMatchObject({ status: 'complete', turns: 3, toolCalls: [terminal] });
         expect(run.execute).toHaveBeenCalledOnce();
-        expect(run.execute.mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 3 });
+        expect(vi.mocked(run.execute).mock.calls[0]?.[1]).toMatchObject({ callId: 'measure', turn: 3 });
         expect(settlementOf(result)).toMatchObject({ measurement: { callId: 'measure', turn: 3 } });
         expect(result.receipts.find((entry) => entry.callId === 'measure')?.status).toBe('success');
         expect(result.receipts.find((entry) => entry.callId === extra.id)?.error?.code).toBe(receipt ?? undefined);
