@@ -1,0 +1,29 @@
+src/modules/Transport/AGENTS.md
+  s_55244eb93b97d1::t_8b39f0de5cbeeb 30
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_55244eb93b97d1::t_c1193e7ad9f0cc 3157-3216
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_55244eb93b97d1::t_52e0aed3c956de 7-8,487-512
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotesYeastGrooveWindowAdmission.spec.ts
+  s_55244eb93b97d1::t_74e25127e4a7c1 293,324-326,562-617
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_55244eb93b97d1::t_809f3330aba4d3 536-542,544
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_55244eb93b97d1::t_fa5304c5776f26 279-282,524-527,817-819,1104-1106,1108
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "215f1f1a21eb610b1fe0180c0e1982c6cc698899",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
