@@ -185,10 +185,6 @@ const {
     executeUserAppActionBinding,
     recordNativeChainReleasesMock,
     registerReleasedStripReportSinkMock,
-    configureDurableAudioBufferOwnershipMock,
-    collectDurableOwnedAudioBufferIdsMock,
-    configureLiveAudioBufferReferencesMock,
-    collectTrackStateAudioBufferIdsMock,
     clearAgentMeasurementArtifactsMock,
     setAgentMeasurementArtifactsClearerMock,
     clearAgentSectionRenderArtifactsMock,
@@ -199,6 +195,7 @@ const {
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
     initTimelineScrollClampMock,
+    initAudioBufferCacheAccessMock,
     initInputMonitoringProjectAccessMock,
     initLevainDeviceStateProjectAccessMock,
     initLevainDeviceStatePersistenceMock,
@@ -285,10 +282,6 @@ const {
         toasterGrooveExecutorMock: vi.fn(),
         executeUserAppActionBinding: vi.fn(),
         setTrackPanMock: vi.fn(),
-        configureDurableAudioBufferOwnershipMock: vi.fn(),
-        collectDurableOwnedAudioBufferIdsMock: vi.fn<() => Promise<readonly string[]>>(() => Promise.resolve([])),
-        configureLiveAudioBufferReferencesMock: vi.fn<(reader: (() => readonly string[]) | null) => void>(),
-        collectTrackStateAudioBufferIdsMock: vi.fn<(value: unknown) => string[]>(() => ['referenced-take']),
         // Distinguishable from the shared noop for the same reason as the
         // durable audio ownership provider above: the assertion pins this
         // exact reference, so rewiring or dropping the registration fails here.
@@ -306,6 +299,7 @@ const {
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
         initTimelineScrollClampMock: vi.fn(),
+        initAudioBufferCacheAccessMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
         initLevainDeviceStateProjectAccessMock: vi.fn(),
         initLevainDeviceStatePersistenceMock: vi.fn(),
@@ -455,8 +449,6 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     configureRuntimeGraphProjectRevisionValidator: configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidator: configureRuntimeGraphTopologyValidatorMock,
     recordNativeChainReleases: recordNativeChainReleasesMock,
-    configureDurableAudioBufferOwnership: configureDurableAudioBufferOwnershipMock,
-    configureLiveAudioBufferReferences: configureLiveAudioBufferReferencesMock,
     isTunerTelemetryNativelyOwned: isTunerTelemetryNativelyOwnedMock,
     startMainThreadLongTaskObservation: noop,
 }));
@@ -667,8 +659,6 @@ vi.mock('#/modules/PluginHost/useCases', () => ({
 vi.mock('#/modules/Project/useCases', () => ({
     agentCapabilityDiscoveryPort: { setProvider: noop },
     getProjectProtocolContracts: noop,
-    collectDurableOwnedAudioBufferIds: collectDurableOwnedAudioBufferIdsMock,
-    collectTrackStateAudioBufferIds: collectTrackStateAudioBufferIdsMock,
     productionBriefActionBatchAdmission: { capture: () => ({ allowsCurrent: () => true }) },
     getProjectHandlers: sentinelHandlers('Project'),
     initGrooveTemplateDirtyTracking: noop,
@@ -815,6 +805,9 @@ vi.mock('../initCrumbsModePush', () => ({
 
 vi.mock('../initDeviceStateReconciliation', () => ({
     initDeviceStateReconciliation: initDeviceStateReconciliationMock,
+}));
+vi.mock('../initAudioBufferCacheAccess', () => ({
+    initAudioBufferCacheAccess: initAudioBufferCacheAccessMock,
 }));
 vi.mock('../initInputMonitoringProjectAccess', () => ({
     initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
@@ -1196,36 +1189,15 @@ describe('bootstrap', () => {
     });
 
     /**
-     * AudioEngine's cache collectors must ask Project's persisted snapshots for
-     * the durable owned-id set at collection time (#3777), and AudioEngine
-     * cannot import Project, so the composition root is the only place that
-     * binding can be made. Pinned by reference like the other seam wirings:
-     * dropping the registration, or handing the seam some other function,
-     * leaves the collectors sweeping saved projects' PCM as if it were orphans.
+     * The audio cache's durable-ownership and live-reference reads can only be
+     * bound by the composition root; `initAudioBufferCacheAccess.spec.ts` pins
+     * what each binding reads.
      */
-    it('wires the durable audio ownership provider to the persisted-project enumeration', () => {
-        expect(configureDurableAudioBufferOwnershipMock).toHaveBeenCalledExactlyOnceWith(
-            collectDurableOwnedAudioBufferIdsMock
+    it('binds the audio cache ownership and residency reads during bootstrap', () => {
+        expect(initAudioBufferCacheAccessMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initAudioBufferCacheAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
+            initInputMonitoringProjectAccessMock.mock.invocationCallOrder[0] ?? 0
         );
-    });
-
-    /**
-     * The runtime audio cache keeps resident every buffer the open arrangement
-     * references, and only the composition root can hand it a reader over the
-     * live track store. Dropping the registration, or reading anything but the
-     * current track state, lets unrelated cache writes evict a session take.
-     */
-    it('wires the live audio buffer references to the current track state', () => {
-        expect(configureLiveAudioBufferReferencesMock).toHaveBeenCalledOnce();
-        const reader = configureLiveAudioBufferReferencesMock.mock.calls[0]?.[0];
-        const trackState = { tracks: [] };
-        Object.assign(trackStoreMock, { value: trackState });
-        try {
-            expect(reader?.()).toEqual(['referenced-take']);
-            expect(collectTrackStateAudioBufferIdsMock).toHaveBeenLastCalledWith(trackState);
-        } finally {
-            Reflect.deleteProperty(trackStoreMock, 'value');
-        }
     });
 
     /**

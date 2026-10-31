@@ -16,7 +16,7 @@ import {
     recoverRetainedSectionRenderEffects,
     setVoiceToggleEventBus,
 } from '#/modules/AiRuntime/useCases';
-import { persistDeviceParam, resolveEligibleDeviceWriteTarget, trackStore } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, resolveEligibleDeviceWriteTarget } from '#/modules/Arrangement/stores';
 import {
     acceptsExternalPluginAutomationParameter,
     clampDeviceParameterValue,
@@ -68,8 +68,6 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
-    configureDurableAudioBufferOwnership,
-    configureLiveAudioBufferReferences,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
     stopAllScheduled,
@@ -183,8 +181,6 @@ import {
 } from '#/modules/PluginHost/useCases';
 import {
     agentCapabilityDiscoveryPort,
-    collectDurableOwnedAudioBufferIds,
-    collectTrackStateAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -247,6 +243,7 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
@@ -477,15 +474,7 @@ setProjectIdentityTransitionDependencies({
     },
 });
 
-// The audio-cache collectors pull the durable owned-id set at collection time
-// (issue #3777), so ordinary PCM a saved project still references survives the
-// age/budget sweeps while it is inactive. Enumeration stays a pull from the
-// persisted snapshots — no second ownership table to drift.
-configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
-// The runtime cache never evicts PCM the open arrangement references, so a take
-// recorded or a file imported after the project loaded keeps playing and
-// exporting while unrelated buffers (the first-launch factory seed) fill the LRU.
-configureLiveAudioBufferReferences(() => collectTrackStateAudioBufferIds(trackStore.value));
+initAudioBufferCacheAccess();
 initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
