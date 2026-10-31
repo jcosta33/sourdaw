@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getPluginById } from '#/modules/Arrangement/useCases';
 
@@ -15,6 +15,7 @@ type Processor = {
 };
 const { registry } = installWorkletGlobals<Processor>();
 const module = new WebAssembly.Module(readFileSync(resolve(process.cwd(), 'public/wasm/daw-dsp/daw_dsp_bg.wasm')));
+afterEach(() => vi.stubGlobal('currentFrame', 0));
 afterAll(() => vi.unstubAllGlobals());
 async function processor(initialize = true) {
     await import('../transientShaperProcessor');
@@ -94,6 +95,54 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         expect(terminal.running).toBe(false);
         expect(terminal.output.map((channel) => Array.from(channel))).toEqual([Array(17).fill(0), Array(17).fill(0)]);
         expect(instance.port.postMessage).toHaveBeenCalledTimes(messages);
+    });
+    it('applies a posted reset and immediate gains on the resume frame while the AudioParams still lag it', async () => {
+        const { instance } = await processor();
+        for (let block = 0; block < 375; block++) {
+            render(instance, 128);
+        }
+        vi.stubGlobal('currentFrame', 48000);
+        for (const data of [
+            { type: 'gain', name: 'attackGain', value: 2, frame: 48000 },
+            { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 },
+            { type: 'gain', name: '_resetEpoch', value: 9, frame: 48000 },
+            { type: 'gain', name: 'attackGain', value: Number.NaN, frame: 48000 },
+            { type: 'reset', epoch: 2 },
+        ]) {
+            instance.port.onmessage?.({ data });
+        }
+        // Chromium's lagging events: the gains move one frame late, the k-rate epoch a quantum late.
+        const attack = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 2));
+        const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
+        const resumed = render(instance, 128, undefined, attack, sustain, 0).output[0];
+        expect([resumed[0], resumed[1], resumed[127]]).toEqual([1, 1, 1]);
+        vi.stubGlobal('currentFrame', 48128);
+        const caughtUp = render(instance, 128, undefined, new Float32Array([0]), new Float32Array([0]), 2).output[0];
+        expect(caughtUp[0]).toBe(0);
+        vi.stubGlobal('currentFrame', 0);
+    });
+    it('applies a posted sustain change on the resume frame of a settled, non-transient input', async () => {
+        const { instance } = await processor();
+        for (let block = 0; block < 375; block++) {
+            render(instance, 128);
+        }
+        vi.stubGlobal('currentFrame', 48000);
+        instance.port.onmessage?.({ data: { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 } });
+        const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
+        const resumed = render(instance, 128, undefined, new Float32Array([1]), sustain).output[0];
+        expect([resumed[0], resumed[1], resumed[127]]).toEqual([0.125, 0.125, 0.125]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+    it('lets automation scheduled after a posted gain decide that frame once the post is cleared', async () => {
+        const { instance } = await processor();
+        for (const data of [
+            { type: 'gain', name: 'attackGain', value: 0.5, frame: 0 },
+            { type: 'clear-gain', name: '_resetEpoch' },
+            { type: 'clear-gain', name: 'attackGain' },
+        ]) {
+            instance.port.onmessage?.({ data });
+        }
+        expect(render(instance, 1, undefined, new Float32Array([2])).output[0][0]).toBe(1);
     });
     it('scrubs nonfinite PCM and gains without poisoning later audio, fills missing channels and disposes once', async () => {
         const { instance } = await processor();
