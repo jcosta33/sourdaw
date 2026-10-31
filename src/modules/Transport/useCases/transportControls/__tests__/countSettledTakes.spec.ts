@@ -70,4 +70,13 @@ describe('countSettledTakes', () => {
 
         expect(countSettledTakes()).toBe(before + 1);
     });
+
+    it('does not count an audio terminal refused after its recording root moved', async () => {
+        const before = countSettledTakes();
+
+        recordingLifecycle.trackCommit(Promise.resolve('refused' as const));
+        await recordingLifecycle.waitForCommits();
+
+        expect(countSettledTakes()).toBe(before);
+    });
 });

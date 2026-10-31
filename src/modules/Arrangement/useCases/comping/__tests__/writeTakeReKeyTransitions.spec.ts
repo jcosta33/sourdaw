@@ -177,6 +177,7 @@ describe('writeTakeReKeyTransitions', () => {
     it.each([
         { field: 'anchor', moved: { passAnchorSeconds: -2 } },
         { field: 'depth', moved: { passDepthSeconds: 3 } },
+        { field: 'exclusive end', moved: { passSourceEndSeconds: 4 } },
     ])('moves a pass whose placement $field alone the transition changed, both ways', ({ moved }) => {
         // The two facets differ only in where the pass sounds against its
         // clip's media, or what it plays, so that field alone must mark the

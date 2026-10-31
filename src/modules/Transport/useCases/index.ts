@@ -16,6 +16,7 @@ export { disableLooping } from './setLooping';
 export { setMasterGain } from './setMasterGain';
 export { replaceMasterGain } from './replaceMasterGain';
 export { setTempo } from './setTempo';
+export { getTempoWriteTarget } from './transportQueries/getTempoWriteTarget';
 export { setTimeSignature } from './setTimeSignature';
 export { secondsBetweenBeats } from './secondsBetweenBeats';
 export { restoreTransportSnapshot } from './restoreTransportSnapshot';

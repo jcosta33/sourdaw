@@ -360,37 +360,53 @@ describe('executeAppActionBatch', () => {
         expect(execute).not.toHaveBeenCalled();
     });
 
-    it('gives admission materializers the full ordered raw batch before the snapshot wait', async () => {
-        const events: string[] = [];
-        const actions: SetEditingToolAction[] = [
-            { type: 'setEditingTool', payload: { tool: 'select' } },
-            { type: 'setEditingTool', payload: { tool: 'marquee' } },
-        ];
-        configureAutomergeStoragePort({
-            getDoc: () => ({}),
-            getSemanticMessage: () => undefined,
-            hasDoc: () => true,
-            mutateDoc: vi.fn(),
-            waitForSnapshotTransaction: () => {
-                events.push('wait');
-                return Promise.resolve();
-            },
-        });
-        registerHandlerMap({
-            setEditingTool: createHandler<SetEditingToolAction>({
-                execute: () => ({ status: 'written' }),
-                materializeCommandArguments: (_action, context) => {
-                    expect(context?.actions).toBe(actions);
-                    events.push(`materialize:${String(context?.actionIndex)}`);
+    it.each(['admission', 'after wait'] as const)(
+        'gives materializers the full ordered raw batch and a separate prepared prefix: %s',
+        async (phase) => {
+            const events: string[] = [];
+            const actions: SetEditingToolAction[] = [
+                { type: 'setEditingTool', payload: { tool: 'select' } },
+                { type: 'setEditingTool', payload: { tool: 'marquee' } },
+            ];
+            configureAutomergeStoragePort({
+                getDoc: () => ({}),
+                getSemanticMessage: () => undefined,
+                hasDoc: () => true,
+                mutateDoc: vi.fn(),
+                waitForSnapshotTransaction: () => {
+                    events.push('wait');
+                    return Promise.resolve();
                 },
-                materializeCommandArgumentsAt: 'admission',
-            }),
-        });
+            });
+            registerHandlerMap({
+                setEditingTool: createHandler<SetEditingToolAction>({
+                    execute: () => ({ status: 'written' }),
+                    materializeCommandArguments: (action, context) => {
+                        expect(context?.actions).toBe(actions);
+                        expect(context?.actions.map((raw) => raw.payload)).toEqual([
+                            { tool: 'select' },
+                            { tool: 'marquee' },
+                        ]);
+                        expect(context?.preparedPrefix).toHaveLength(context?.actionIndex ?? 0);
+                        if (context?.actionIndex === 1) {
+                            expect(context.preparedPrefix?.[0]?.payload).toEqual({ tool: 'marquee' });
+                        }
+                        action.payload.tool = 'marquee';
+                        events.push(`materialize:${String(context?.actionIndex)}`);
+                    },
+                    materializeCommandArgumentsAt: phase === 'admission' ? 'admission' : undefined,
+                }),
+            });
 
-        await expect(executeAppActionBatch(actions)).resolves.toMatchObject({ status: 'committed' });
+            await expect(executeAppActionBatch(actions)).resolves.toMatchObject({ status: 'committed' });
 
-        expect(events).toEqual(['materialize:0', 'materialize:1', 'wait']);
-    });
+            expect(events).toEqual(
+                phase === 'admission'
+                    ? ['materialize:0', 'materialize:1', 'wait']
+                    : ['wait', 'materialize:0', 'materialize:1']
+            );
+        }
+    );
 
     it('authenticates supplied envelopes against admission-captured arguments', async () => {
         const execute = vi.fn();
@@ -605,7 +621,7 @@ describe('executeAppActionBatch', () => {
             expect(document).toHaveProperty('tracks.tracks.0.clips', [initialClip]);
             expect(afterCommit).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledOnce();
             expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
         } finally {
             releaseHandler?.();

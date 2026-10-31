@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { clipSelectionStore, defaultClipSelectionState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { clearUndoHistory } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
@@ -71,8 +72,9 @@ const {
         onAuthorityReplaced?.();
         return Promise.resolve({ status: 'replaced', finalize: () => Promise.resolve('finalized') });
     });
-    const restoreOldAudioGraph = vi.fn(() => {
+    const restoreOldAudioGraph = vi.fn<(typeof import('#/modules/Transport/useCases'))['ensureTrackStrips']>(() => {
         engineGraph.value = 'old-project';
+        return { status: 'ready', externalPluginActivations: [] };
     });
     return {
         audioContext: {},
@@ -359,6 +361,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         stopAudioRecording.mockClear();
         stopRecording.mockClear();
         vi.mocked(resetModuleStoresToDefault).mockClear();
+        vi.mocked(clearUndoHistory).mockClear();
         transportStore.set({ ...transportStore.value!, tempo: 120, isLooping: false });
         midiStore.set({ notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} });
     });
@@ -371,6 +374,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
         trackStore.set({ tracks: [], selectedTrackId: null });
         arrangementStore.set(structuredClone(defaultArrangementStoreState));
         takeLaneStore.set({ lanes: [] });
+        clipSelectionStore.set(structuredClone(defaultClipSelectionState));
     });
 
     it('resolves clip bufferIds and stages them before project publication', async () => {
@@ -832,8 +836,80 @@ describe('applyImportedProjectData round-trip hydration', () => {
     });
 
     it.each(['top-level', 'saved arrangement'])(
-        'rejects incomplete take placement in %s before replacing the open project',
+        'imports selected canonical and legacy material unchanged from a %s JSON file',
         async (route) => {
+            const project = makeProject();
+            const legacy = { id: 'legacy', clipId: 'clip-a', name: 'Legacy', startBeat: 0, endBeat: 4, selected: true };
+            const canonical = {
+                ...legacy,
+                id: 'canonical',
+                sourceOffsetBeats: 4,
+                sourceOffsetSeconds: 0.5,
+                passAnchorSeconds: -2,
+                passDepthSeconds: 2,
+                passSourceEndSeconds: 4,
+                passOriginBeat: 0,
+                passOriginSourceSeconds: -1,
+            };
+            const takeLanes = {
+                lanes: [
+                    {
+                        id: 'lane-1',
+                        trackId: 'track-audio',
+                        takes: [legacy, canonical],
+                        activeCompRegions: [
+                            { startBeat: 0, endBeat: 2, takeId: legacy.id },
+                            { startBeat: 2, endBeat: 4, takeId: canonical.id },
+                        ],
+                    },
+                ],
+            };
+            if (route === 'top-level') {
+                project.takeLanes = takeLanes;
+            } else {
+                project.arrangements = [
+                    {
+                        id: 'saved',
+                        name: 'Saved',
+                        tracks: { tracks: project.arrangement.tracks, selectedTrackId: 'track-audio' },
+                        takeLanes,
+                    },
+                ];
+                project.activeArrangementId = 'saved';
+            }
+            const fileContent = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(fileContent);
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+            expect(resetCrdtProject).toHaveBeenCalledOnce();
+            expect(takeLaneStore.value).toEqual(takeLanes);
+            const active = arrangementStore.value?.arrangements.find(
+                (item) => item.id === arrangementStore.value?.activeArrangementId
+            );
+            expect(active?.takeLanes).toEqual(takeLanes);
+            expect(trackStore.value?.tracks[0]?.clips[0]?.id).toBe(legacy.clipId);
+            expect(prepareCachedAudioBuffersFromIdb).toHaveBeenCalledOnce();
+        }
+    );
+
+    it.each(
+        ['top-level', 'saved arrangement', 'inactive saved arrangement'].flatMap((route) =>
+            [
+                { passAnchorSeconds: 1 },
+                {
+                    sourceOffsetSeconds: -1,
+                    passAnchorSeconds: -2,
+                    passDepthSeconds: 2,
+                    passSourceEndSeconds: 4,
+                    passOriginBeat: 0,
+                    passOriginSourceSeconds: -1,
+                },
+                { passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+                { passAnchorSeconds: -2, passDepthSeconds: 2, passOriginBeat: 0 },
+            ].map((placement) => ({ route, placement }))
+        )
+    )(
+        'rejects malformed take placement $placement in $route before replacing the open project',
+        async ({ route, placement }) => {
             const previousData = makeProject();
             previousData.takeLanes = {
                 lanes: [
@@ -856,6 +932,13 @@ describe('applyImportedProjectData round-trip hydration', () => {
             };
             hydrateArrangementStoreFromProjectData({ data: previousData });
             expect(takeLaneStore.value).toEqual(previousData.takeLanes);
+            clipSelectionStore.set({
+                ...defaultClipSelectionState,
+                selectedClipIds: ['clip-a'],
+                selectedClipId: 'clip-a',
+            });
+            const previousSelection = structuredClone(clipSelectionStore.value);
+            const previousEpoch = crdtAuthority.epoch;
             const previousProject = structuredClone(projectStore.value);
             const previousTracks = structuredClone(trackStore.value);
             const previousArrangement = structuredClone(arrangementStore.value);
@@ -875,7 +958,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
                                 endBeat: 4,
                                 selected: true,
                                 sourceOffsetBeats: 0,
-                                passAnchorSeconds: 1,
+                                ...placement,
                             },
                         ],
                         activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected-take' }],
@@ -885,8 +968,11 @@ describe('applyImportedProjectData round-trip hydration', () => {
             if (route === 'top-level') {
                 project.takeLanes = takeLanes;
             } else {
-                project.arrangements = [{ id: 'saved', name: 'Saved', takeLanes }];
-                project.activeArrangementId = 'saved';
+                project.arrangements = [
+                    { id: 'first', name: 'First' },
+                    { id: 'saved', name: 'Saved', takeLanes },
+                ];
+                project.activeArrangementId = route === 'inactive saved arrangement' ? 'first' : 'saved';
             }
             const content = JSON.stringify(project);
             const serialized: unknown = JSON.parse(content);
@@ -898,12 +984,82 @@ describe('applyImportedProjectData round-trip hydration', () => {
             expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
             expect(prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
             expect(crdtAuthority.value).toBe('Old Project');
+            expect(crdtAuthority.epoch).toBe(previousEpoch);
+            expect(clearUndoHistory).not.toHaveBeenCalled();
+            expect(persistCrdtProject).not.toHaveBeenCalled();
+            expect(clipSelectionStore.value).toEqual(previousSelection);
             expect(projectStore.value).toEqual(previousProject);
             expect(trackStore.value).toEqual(previousTracks);
             expect(arrangementStore.value).toEqual(previousArrangement);
             expect(takeLaneStore.value).toEqual(previousTakes);
         }
     );
+
+    it('rejects a MIDI clip carrying canonical audio source seconds in a JSON file without replacing the open project', async () => {
+        hydrateArrangementStoreFromProjectData({ data: makeProject() });
+        clipSelectionStore.set({
+            ...defaultClipSelectionState,
+            selectedClipIds: ['clip-a'],
+            selectedClipId: 'clip-a',
+        });
+        const previousProject = structuredClone(projectStore.value);
+        const previousTracks = structuredClone(trackStore.value);
+        const previousArrangement = structuredClone(arrangementStore.value);
+        const previousTakes = structuredClone(takeLaneStore.value);
+        const previousSelection = structuredClone(clipSelectionStore.value);
+        const previousMidi = structuredClone(midiStore.value);
+        const previousTransport = structuredClone(transportStore.value);
+        const previousEpoch = crdtAuthority.epoch;
+        const project = makeProject();
+        const clip = project.arrangement.tracks[0]?.clips[0];
+        if (!clip) {
+            throw new Error('Expected the project fixture to contain its first audio clip');
+        }
+        clip.type = 'midi';
+        clip.audioOffsetSeconds = 0;
+        const file = new File([JSON.stringify(project)], 'song.sourdaw', { type: 'application/json' });
+        const serialized: unknown = JSON.parse(await file.text());
+
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+
+        expect(resetCrdtProject).not.toHaveBeenCalled();
+        expect(resetAudioGraph).not.toHaveBeenCalled();
+        expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+        expect(prepareCachedAudioBuffersFromIdb).not.toHaveBeenCalled();
+        expect(importCachedAudioBuffers).not.toHaveBeenCalled();
+        expect(clearUndoHistory).not.toHaveBeenCalled();
+        expect(persistCrdtProject).not.toHaveBeenCalled();
+        expect(engineGraph.value).toBe('old-project');
+        expect(crdtAuthority.value).toBe('Old Project');
+        expect(crdtAuthority.epoch).toBe(previousEpoch);
+        expect(projectStore.value).toEqual(previousProject);
+        expect(trackStore.value).toEqual(previousTracks);
+        expect(arrangementStore.value).toEqual(previousArrangement);
+        expect(takeLaneStore.value).toEqual(previousTakes);
+        expect(clipSelectionStore.value).toEqual(previousSelection);
+        expect(midiStore.value).toEqual(previousMidi);
+        expect(transportStore.value).toEqual(previousTransport);
+    });
+
+    it('imports the equivalent MIDI clip without canonical audio source seconds from a JSON file', async () => {
+        const project = makeProject();
+        const clip = project.arrangement.tracks[0]?.clips[0];
+        if (!clip) {
+            throw new Error('Expected the project fixture to contain its first audio clip');
+        }
+        clip.type = 'midi';
+        expect(clip).not.toHaveProperty('audioOffsetSeconds');
+        const file = new File([JSON.stringify(project)], 'song.sourdaw', { type: 'application/json' });
+        const serialized: unknown = JSON.parse(await file.text());
+
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+
+        expect(resetCrdtProject).toHaveBeenCalledOnce();
+        expect(resetAudioGraph).toHaveBeenCalledOnce();
+        expect(crdtAuthority.value).toBe('Round Trip');
+        expect(trackStore.value?.tracks[0]?.clips[0]).toMatchObject({ id: 'clip-a', type: 'midi' });
+        expect(trackStore.value?.tracks[0]?.clips[0]).not.toHaveProperty('audioOffsetSeconds');
+    });
 
     it('rejects malformed hydration data without resetting the live project', async () => {
         const malformedMidi = makeProject();

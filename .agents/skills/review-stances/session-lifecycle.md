@@ -141,6 +141,19 @@ the next sweep to destroy it before another wait. Independently hold the owner a
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
 
+### Cold frozen export restoration must finish before rendering
+
+The clip-only restoration set introduced by `57b7349f7864eca0bd177333d720a50186bd33e9`
+survived the owner-use-case routing in `ab5a579209b5e02a035e123380b5ceaf9c922250`
+(associated with PR #187); no PR is associated with the narrowing commit, and historical
+review dispatch is unknown. The missed lifecycle input is a fresh runtime whose active frozen
+print is durable but absent from memory alongside an ordinary clip.
+
+Hold restoration and require no render or encode; release it through the real cache owner and
+require active frozen PCM in both mixdown and stems. Remove only its requested ID and require
+failure before encoding. Preserve stale-print exclusion, the empty-clip fallback, cancellation,
+and the current dialog session fence; a late older callback must not paint a reopened dialog.
+
 ### VCA membership must reach committed runtime gain
 
 The Inspector's direct calls introduced in `22a84b216658f593391e7e141d90f7c84d13648b`
@@ -616,3 +629,21 @@ evaluation/effect boundary. If App fulfillment owns bootstrap, require effects i
 to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
 quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
 case; preserve the distinct cold-stylesheet lesson in test-validity.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.

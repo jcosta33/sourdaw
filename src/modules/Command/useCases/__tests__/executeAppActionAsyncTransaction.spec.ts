@@ -10,7 +10,11 @@ import {
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 
 import { AppActionCommittedError } from '../../errors/AppActionExecutionError';
-import { clearActionReplayCapabilities } from '../../stores/actionReplayCapabilities';
+import {
+    clearActionReplayCapabilities,
+    hasActionReplayCapability,
+    registerActionReplayCapability,
+} from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { executeAppAction } from '../executeAppAction';
 
@@ -70,6 +74,55 @@ vi.mock('../commitUndoEntry', () => ({ commitUndoEntry: mocks.commitUndoEntry })
 vi.mock('../macro/recording/recordAction', () => ({ recordAction: mocks.recordAction }));
 
 type StorageValue = { tool: string };
+type HistoryValue = { entries: ActionHistoryMetadata[] };
+
+const EVICTED_ENTRY = {
+    id: 'evicted-entry',
+    label: 'Older edit',
+    actionKind: 'setEditingTool',
+    source: 'manual',
+    timestamp: 1,
+    reverted: false,
+} satisfies ActionHistoryMetadata;
+
+/**
+ * Stands in for the production history port: it stages the entry in the root
+ * document's history slot through whatever storage transaction is active,
+ * and reports one eviction whose replay authority the command must keep
+ * unless its history actually commits.
+ */
+function stageHistoryInRootDocument(): ReturnType<typeof createAutomergeStorage<HistoryValue>> {
+    const history = createAutomergeStorage<HistoryValue>('root', 'actionHistory');
+    history.hydrate?.();
+    mocks.recordActionHistoryMetadata.mockImplementation((entry) => {
+        const stagedEntries = history.get()?.entries ?? [];
+        history.set({ entries: [...stagedEntries, entry] });
+        return [EVICTED_ENTRY.id];
+    });
+    registerActionReplayCapability({
+        entryId: EVICTED_ENTRY.id,
+        inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+        metadata: EVICTED_ENTRY,
+    });
+    return history;
+}
+
+function stagedHistoryEntryId(): string {
+    const staged = mocks.recordActionHistoryMetadata.mock.calls[0]?.[0];
+    if (!staged) {
+        throw new Error('Expected the command to stage its history entry');
+    }
+    return staged.id;
+}
+
+/** Nothing of the action's history is durable, and no session authority moved. */
+function expectNoCommittedHistory(doc: Record<string, unknown>): void {
+    flushAutomergeStorageWrites();
+    expect(doc).not.toHaveProperty('actionHistory');
+    expect(hasActionReplayCapability(stagedHistoryEntryId())).toBe(false);
+    expect(hasActionReplayCapability(EVICTED_ENTRY.id)).toBe(true);
+    expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
+}
 
 type Harness = {
     doc: Record<string, unknown>;
@@ -100,7 +153,11 @@ function registerExecute(execute: ActionHandler<SetEditingToolAction>['execute']
     registerHandlerMap({
         [action.type]: {
             undoable: true,
-            describe: () => ({ label: 'Set editing tool' }),
+            requiresAbortCompensation: false,
+            describe: () => ({
+                label: 'Set editing tool',
+                inverseAction: { type: 'setEditingTool', payload: { tool: 'select' } },
+            }),
             execute,
         } satisfies ActionHandler<SetEditingToolAction>,
     });
@@ -145,6 +202,7 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
         'vetoes a staged %s write at its own commit without history or observers',
         async (mode) => {
             const { doc, mutations, storage } = createHarness();
+            stageHistoryInRootDocument();
             const staged = Promise.withResolvers<void>();
             const authorityLost = Promise.withResolvers<void>();
             let authorized = true;
@@ -177,7 +235,8 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
             expect(doc.editingTool).toEqual({ tool: 'select' });
             expect(storage.get()).toEqual({ tool: 'select' });
             expect(onCommitted).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expectNoCommittedHistory(doc);
+            expect(mutations).toEqual([]);
             expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
             expect(mocks.clearSemanticContext).toHaveBeenCalledTimes(1);
@@ -272,6 +331,7 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
             const second = createAutomergeStorage<StorageValue>('child', 'editingTool');
             first.hydrate?.();
             second.hydrate?.();
+            stageHistoryInRootDocument();
             const afterCommit = vi.fn();
             const afterAmbiguousCommit = vi.fn();
             registerExecute(() => {
@@ -286,6 +346,7 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
                 expect(firstDoc.editingTool).toEqual({ tool: 'select' });
                 expect(afterCommit).not.toHaveBeenCalled();
                 expect(afterAmbiguousCommit).not.toHaveBeenCalled();
+                expectNoCommittedHistory(firstDoc);
             } else {
                 const received = await execution.catch((error: unknown) => error);
                 expect(received).toBeInstanceOf(AppActionCommittedError);
@@ -293,11 +354,20 @@ describe('executeAppAction — async handler transaction scope (audit CC-10)', (
                 expect(firstDoc.editingTool).toEqual({ tool: 'draw' });
                 expect(afterCommit).not.toHaveBeenCalled();
                 expect(afterAmbiguousCommit).toHaveBeenCalledTimes(1);
+                // History shares the first document's change, so it is durable
+                // exactly as far as the command's own write to that document;
+                // the ambiguous command still earns no Undo or replay authority.
+                flushAutomergeStorageWrites();
+                expect(firstDoc.actionHistory).toEqual({
+                    entries: [expect.objectContaining({ id: stagedHistoryEntryId(), reverted: false })],
+                });
+                expect(hasActionReplayCapability(stagedHistoryEntryId())).toBe(false);
+                expect(mocks.commitUndoEntry).not.toHaveBeenCalled();
             }
             expect(secondDoc.editingTool).toEqual({ tool: 'select' });
             expect(onCommitted).not.toHaveBeenCalled();
             expect(mocks.recordAction).not.toHaveBeenCalled();
-            expect(mocks.recordActionHistoryMetadata).not.toHaveBeenCalled();
+            expect(mocks.recordActionHistoryMetadata).toHaveBeenCalledTimes(1);
         }
     );
 
