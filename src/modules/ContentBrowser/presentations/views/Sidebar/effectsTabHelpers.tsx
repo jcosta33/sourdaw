@@ -155,7 +155,7 @@ export const NavCard = ({
     <DawChooserCard
         compact
         dimmed={dimmed}
-        className="group relative overflow-hidden bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay hover:to-surface-raised px-2 py-3 rounded-lg shadow-sm"
+        className="group relative overflow-hidden bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 hover:border-border/40 hover:from-surface-overlay hover:to-surface-raised px-3 py-3 rounded-lg shadow-sm"
         title={label}
         description={description}
         badge={badge}
