@@ -8,15 +8,18 @@ import { normalizeTimelineMinimapHeight } from '#/utils/TimelineMinimap/timeline
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { getArrangementMinimumHeight } from './arrangementLayout';
+import { getScratchPadRenderedHeight } from './Timeline/scratchPadHeight';
 
 /**
  * The least height the shell must leave the arrangement, so a crowded bottom
  * dock can never squeeze the lanes below one visible track. Zero where the
- * arrangement is not what the workspace shows. The minimap is read at its
- * persisted height; a live resize preview inside ArrangeView is not reflected.
+ * arrangement is not what the workspace shows. It sums the heights actually
+ * rendered: the minimap's live resize preview, and a collapsed scratch pad's
+ * header strip.
  */
 export const useArrangementMinimumHeight = (): number => {
-    const { mode, scratchPadOpen, scratchPadHeight } = useWorkspaceState();
+    const { mode, scratchPadOpen, scratchPadHeight, scratchPadCollapsed, timelineMinimapPreviewHeight } =
+        useWorkspaceState();
     const { tracks, selectedTrackId } = useStore(trackStore, { tracks: [], selectedTrackId: null });
     const markerState = useStore(markerStore, { markers: [], sections: [] });
     const chordState = useStore(chordTrackStore, { enabled: false, events: [] });
@@ -31,9 +34,11 @@ export const useArrangementMinimumHeight = (): number => {
     return getArrangementMinimumHeight({
         adjustmentLayerCount: adjustmentState.layers.length,
         hasMarkers: markerState.markers.length > 0,
-        minimapHeight: preferences.showMinimap ? normalizeTimelineMinimapHeight(preferences.timelineMinimapHeight) : 0,
+        minimapHeight: preferences.showMinimap
+            ? (timelineMinimapPreviewHeight ?? normalizeTimelineMinimapHeight(preferences.timelineMinimapHeight))
+            : 0,
         hasChords: chordState.events.length > 0 || chordState.enabled,
         surfaceMinimumHeight: getTimelineSurfaceMinimumHeight(tracks, selectedTrackId),
-        scratchPadHeight: scratchPadOpen ? scratchPadHeight : 0,
+        scratchPadHeight: scratchPadOpen ? getScratchPadRenderedHeight(scratchPadCollapsed, scratchPadHeight) : 0,
     });
 };

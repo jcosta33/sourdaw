@@ -33,7 +33,12 @@ import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
-import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
+import {
+    closeScratchPad,
+    setSessionViewWidth,
+    setTrackListWidth,
+    updateWorkspaceState,
+} from '#/modules/WorkspaceShell/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import {
     allocateMainFirstWidths,
@@ -62,8 +67,15 @@ const SESSION_VIEW_MAX = 800;
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
-    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } =
-        useWorkspaceState();
+    const {
+        trackListOpen,
+        trackListWidth,
+        scratchPadOpen,
+        scratchPadHeight,
+        scratchPadCollapsed,
+        dualViewOpen,
+        sessionViewWidth,
+    } = useWorkspaceState();
 
     const hasUserTracks = tracks.filter((time) => time.kind !== 'master' && time.kind !== 'folder').length > 0;
 
@@ -195,6 +207,16 @@ export const ArrangeView = (): ReactElement => {
         }));
     };
 
+    // The shell floors the arrangement from the minimap height that is
+    // rendered, which during a resize drag is the preview, not the persisted one.
+    const minimapPreviewHeight = minimapResizeState.previewHeight;
+    useLayoutEffect(() => {
+        updateWorkspaceState({ timelineMinimapPreviewHeight: minimapPreviewHeight });
+    }, [minimapPreviewHeight]);
+    useLayoutEffect(() => {
+        return () => updateWorkspaceState({ timelineMinimapPreviewHeight: null });
+    }, []);
+
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
     const adjustmentLayerCount = adjustmentState?.layers.length ?? 0;
@@ -294,7 +316,14 @@ export const ArrangeView = (): ReactElement => {
                     tracks={tracks}
                     viewportWidth={viewportWidth}
                 />
-                {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
+                {scratchPadOpen ? (
+                    <ScratchPadView
+                        height={scratchPadHeight}
+                        collapsed={scratchPadCollapsed}
+                        onCollapsedChange={(collapsed) => updateWorkspaceState({ scratchPadCollapsed: collapsed })}
+                        onToggle={closeScratchPad}
+                    />
+                ) : null}
             </Stack>
         </Row>
     );

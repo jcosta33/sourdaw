@@ -60,7 +60,7 @@ describe('getTimelineContentHeight', () => {
         expect(getTimelineContentHeight(tracks)).toBe(90);
     });
 
-    it('adds no height for tracks that show variation lanes, because the renderer lays out none', () => {
+    it('does not advance past the variation lanes the canvas paints over the next row', () => {
         const tracks = [
             makeTrack({ id: 'lanes', kind: 'audio', height: 64, showVariationLanes: true }),
             makeTrack({ id: 'plain', kind: 'audio', height: 64 }),

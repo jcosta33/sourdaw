@@ -33,6 +33,8 @@ import {
 } from '#/modules/Arrangement/useCases';
 import { cn } from '#/utils/Styles/cn';
 
+import { getScratchPadRenderedHeight, SCRATCH_PAD_COLLAPSED_HEIGHT } from './scratchPadHeight';
+
 type ScratchPadSectionView = {
     id: string;
     name: string;
@@ -63,17 +65,24 @@ type EditingState = { sectionId: string; name: string } | null;
 
 type ScratchPadViewProps = {
     height: number;
+    /** Owned by the workspace, so the shell's arrangement floor sees the rendered height. */
+    collapsed: boolean;
+    onCollapsedChange: (collapsed: boolean) => void;
     onToggle: () => void;
 };
 
-export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): ReactElement => {
+export const ScratchPadView = ({
+    height,
+    collapsed,
+    onCollapsedChange,
+    onToggle,
+}: ScratchPadViewProps): ReactElement => {
     const state = useStore<ScratchPadViewState>(scratchPadStore, defaultState);
 
     const sections = [...state.sections].sort((alpha, b) => alpha.order - b.order);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState>({ kind: 'none' });
     const [editing, setEditing] = useState<EditingState>(null);
-    const [collapsed, setCollapsed] = useState(false);
     const menuRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
@@ -114,12 +123,12 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
         setEditing(null);
     };
 
-    const effectiveHeight = collapsed ? 30 : height;
+    const effectiveHeight = getScratchPadRenderedHeight(collapsed, height);
 
     return (
         <Stack
             className="relative border-t border-border/40 bg-surface-base/80 select-none overflow-hidden"
-            style={{ height: effectiveHeight, minHeight: 30 }}
+            style={{ height: effectiveHeight, minHeight: SCRATCH_PAD_COLLAPSED_HEIGHT }}
         >
             {/* ── Header strip ── */}
             <Row gap={1.5} shrink={false} className="px-2 h-[30px] bg-surface-base border-b border-border/30">
@@ -191,7 +200,7 @@ export const ScratchPadView = ({ height, onToggle }: ScratchPadViewProps): React
                     type="button"
                     className="size-5 rounded flex items-center justify-center text-muted-foreground/40 hover:text-muted-foreground/60 hover:bg-white/5 transition-colors"
                     aria-label={collapsed ? 'Expand scratch pad' : 'Collapse scratch pad'}
-                    onClick={() => setCollapsed(!collapsed)}
+                    onClick={() => onCollapsedChange(!collapsed)}
                 >
                     {collapsed ? <ChevronUp className="size-3" /> : <ChevronDown className="size-3" />}
                 </Button>

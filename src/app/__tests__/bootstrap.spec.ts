@@ -400,6 +400,7 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     setDeviceParameter: noop,
     getArrangementHandlers: sentinelHandlers('Arrangement'),
     initStalenessDetection: noop,
+    initTimelineScrollClamp: noop,
     setArrangementEventBus: setArrangementEventBusMock,
     setOfflineRenderDependencies: noop,
     setTimeOperationDependencies: setTimeOperationDependenciesMock,

@@ -108,6 +108,42 @@ describe('useArrangementMinimumHeight', () => {
         expect(open.current - closed.current).toBe(150);
     });
 
+    it('reserves only the 30px header strip for a collapsed scratch pad', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            scratchPadOpen: true,
+            scratchPadCollapsed: true,
+            scratchPadHeight: 150,
+        });
+
+        const { result } = renderHook(() => useArrangementMinimumHeight());
+
+        expect(result.current).toBe(22 + 18 + 64 + 10 + 30);
+    });
+
+    it('follows the live minimap resize preview over the persisted height', () => {
+        storeValues.set(preferencesStore, { showMinimap: true, timelineMinimapHeight: 40 });
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            timelineMinimapPreviewHeight: 96,
+        });
+
+        const { result } = renderHook(() => useArrangementMinimumHeight());
+
+        expect(result.current).toBe(22 + 18 + 96 + 64 + 10);
+    });
+
+    it('ignores a minimap preview while the minimap is hidden', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            timelineMinimapPreviewHeight: 96,
+        });
+
+        const { result } = renderHook(() => useArrangementMinimumHeight());
+
+        expect(result.current).toBe(22 + 18 + 64 + 10);
+    });
+
     it('is zero in the automation workspace, which does not mount the arrangement', () => {
         vi.mocked(useWorkspaceState).mockReturnValue({ ...defaultWorkspaceState, mode: 'automation' });
 

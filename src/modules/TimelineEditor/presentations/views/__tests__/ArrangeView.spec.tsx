@@ -6,6 +6,7 @@ import { importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules
 import { decodeAudioFile, discardDecodedAudioFile } from '#/modules/AudioEngine/useCases';
 import { executeAppActionBatch } from '#/modules/Command/useCases';
 import { defaultWorkspaceState } from '#/modules/WorkspaceShell/stores';
+import { updateWorkspaceState } from '#/modules/WorkspaceShell/useCases';
 import { ARRANGE_RESIZE_HANDLE_WIDTH, MIN_TIMELINE_COLUMN_WIDTH } from '#/utils/Layout/allocateMainFirstWidths';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -132,6 +133,7 @@ vi.mock('../../hooks/useWorkspaceState', () => ({
 
 vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     closeScratchPad: vi.fn(),
+    updateWorkspaceState: vi.fn(),
     setSessionViewWidth: vi.fn(),
     setTrackListWidth: vi.fn(),
     closeCollaborationPanel: vi.fn(),
@@ -186,9 +188,20 @@ vi.mock('../Timeline/ChordTrackLane', () => ({
 }));
 
 vi.mock('../Timeline/ScratchPadView', () => ({
-    ScratchPadView: ({ height }: { height: number }) => (
-        <div data-testid="scratch-pad-view" style={{ height }}>
+    ScratchPadView: ({
+        height,
+        collapsed,
+        onCollapsedChange,
+    }: {
+        height: number;
+        collapsed: boolean;
+        onCollapsedChange: (collapsed: boolean) => void;
+    }) => (
+        <div data-testid="scratch-pad-view" data-collapsed={collapsed} style={{ height }}>
             Scratch Pad
+            <button type="button" onClick={() => onCollapsedChange(!collapsed)}>
+                Toggle scratch pad collapse
+            </button>
         </div>
     ),
 }));
@@ -763,6 +776,58 @@ describe('ArrangeView', () => {
         fireEvent.pointerUp(handle);
         expect(preferencesMocks.setTimelineMinimapHeight).toHaveBeenCalledTimes(1);
         expect(preferencesMocks.setTimelineMinimapHeight).toHaveBeenCalledWith(96);
+    });
+
+    it('publishes the live minimap preview height to the workspace and clears it when the preview ends', () => {
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 72,
+        };
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        const { rerender, unmount } = render(<ArrangeView />);
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+
+        fireEvent.pointerMove(screen.getByTestId('timeline-minimap-resize-handle'));
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: 96 });
+
+        preferencesMocks.store.value = {
+            preferencesSchemaVersion: 1,
+            showMinimap: true,
+            timelineMinimapHeight: 88,
+        };
+        rerender(<ArrangeView />);
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+
+        fireEvent.pointerMove(screen.getByTestId('timeline-minimap-resize-handle'));
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: 96 });
+        unmount();
+        expect(updateWorkspaceState).toHaveBeenLastCalledWith({ timelineMinimapPreviewHeight: null });
+    });
+
+    it('keeps the scratch pad collapsed state in the workspace rather than in the pad', () => {
+        vi.mocked(useWorkspaceState).mockReturnValue({
+            ...defaultWorkspaceState,
+            trackListOpen: true,
+            trackListWidth: 200,
+            scratchPadOpen: true,
+            scratchPadCollapsed: true,
+            scratchPadHeight: 150,
+        });
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 32 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        expect(screen.getByTestId('scratch-pad-view')).toHaveAttribute('data-collapsed', 'true');
+        fireEvent.click(screen.getByRole('button', { name: 'Toggle scratch pad collapse' }));
+        expect(updateWorkspaceState).toHaveBeenCalledWith({ scratchPadCollapsed: false });
     });
 
     it('drops a stale local preview when a newer persisted height arrives', () => {
