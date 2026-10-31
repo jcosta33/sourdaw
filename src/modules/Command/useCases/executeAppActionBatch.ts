@@ -666,6 +666,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                                 .slice(0, actionIndex)
                                 .map((prior, index) => admissionMaterializedActions[index]?.action ?? prior),
                             actionIndex,
+                            ...(options?.undoEntryIds?.[actionIndex] !== undefined
+                                ? { undoEntryId: options.undoEntryIds[actionIndex] }
+                                : {}),
+                            ...(recordedRedos.get(action) !== undefined
+                                ? { recordedRedo: recordedRedos.get(action) }
+                                : {}),
                         }),
                         handler,
                     });
@@ -748,6 +754,12 @@ export const executeAppActionBatch: ExecuteAppActionBatch = inject({ logger })(
                             actions,
                             preparedPrefix: canonicalizedActions.map((prior) => prior.action),
                             actionIndex: index,
+                            ...(options?.undoEntryIds?.[index] !== undefined
+                                ? { undoEntryId: options.undoEntryIds[index] }
+                                : {}),
+                            ...(recordedRedos.get(requestedAction) !== undefined
+                                ? { recordedRedo: recordedRedos.get(requestedAction) }
+                                : {}),
                         });
                     }
                     if (

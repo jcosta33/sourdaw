@@ -20,7 +20,8 @@ vi.mock('../../../stores/takeLaneStore', () => ({
         set: mocks.set,
     },
 }));
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: mocks.execute,
     pushUndoEntry: mocks.pushUndoEntry,
 }));

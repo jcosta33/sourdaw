@@ -3,19 +3,19 @@ import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useC
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
-import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
-import { captureRecordingEnd } from './captureRecordingEnd';
+import { captureManualRecordingEnd, type ManualRecordingEnd } from './captureManualRecordingEnd';
+import { manualClosingBeat } from './manualClosingBeat';
 import { recordingLifecycle } from './recordingLifecycle';
 
 /** A failed Record start may close only its own capture; flush and clip closure can admit a successor reentrantly. */
-async function closeActiveRecording(stillOwns?: () => boolean): Promise<void> {
+async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: ManualRecordingEnd): Promise<void> {
     if (stillOwns?.() === false) {
         return;
     }
     recordingLifecycle.cancelPendingRecordingStart();
-    const ending = captureRecordingEnd();
+    const ending = gestureEnding ?? captureManualRecordingEnd();
     recordingLifecycle.endRecording();
     const recordingFlush = stopAudioRecording();
     if (stillOwns?.() === false) {
@@ -25,13 +25,11 @@ async function closeActiveRecording(stillOwns?: () => boolean): Promise<void> {
     // A manual ending belongs to its synchronous receipt, between ticks too.
     // The last published playhead can precede captured PCM; passing it as an
     // intended cap would discard the tail before a pending seam sounds.
-    const rolling = getTransportState()?.isPlaying === true;
+    // Whether the receipt dates a rolling transport is read with the receipt:
+    // Pause parks the transport before it stops the recorder, and its parked
+    // position is the last tick's beat, not the gesture's.
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
-    const recordingCommit = stopRecording(
-        rolling ? ending?.beatAtContextSeconds(ending.contextSeconds) : undefined,
-        ending,
-        true
-    );
+    const recordingCommit = stopRecording(manualClosingBeat(ending), ending, true);
     if (closesTake) {
         // Counted as a settled take commit, which a project replacement reads to
         // know that the project it is leaving gained a take. A stop the root
@@ -74,9 +72,17 @@ async function closeActiveRecording(stillOwns?: () => boolean): Promise<void> {
  * stopped and its own flush resolves at once, yet the first stop's terminal may
  * not have registered its commit yet, so only the first stop can say when the
  * take has landed.
+ *
+ * A gesture that parks the transport before it stops the recorder passes the
+ * ending it read while the transport still rolled: once parked, the gesture
+ * clock answers the stored position, which no longer pairs with the audio
+ * clock read beside it.
  */
-export async function stopActiveRecording(stillOwns?: () => boolean): Promise<void> {
-    const closing = closeActiveRecording(stillOwns);
+export async function stopActiveRecording(
+    stillOwns?: () => boolean,
+    gestureEnding?: ManualRecordingEnd
+): Promise<void> {
+    const closing = closeActiveRecording(stillOwns, gestureEnding);
     recordingLifecycle.trackClosing(closing);
     try {
         await closing;

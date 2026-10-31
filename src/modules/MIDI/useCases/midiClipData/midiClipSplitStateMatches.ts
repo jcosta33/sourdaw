@@ -2,9 +2,9 @@ import { type AppAction } from '#/utils/handlerContract';
 import { isRecord, valuesEqual } from '#/utils/structuralEquality';
 
 import { type MidiCC, type MidiNote, type MidiPitchBend } from '../../models/MidiNote';
+import { isExactMidiClipDataActionSnapshot } from '../../services/isExactMidiClipDataActionSnapshot';
 import { midiStore, type MidiStoreState } from '../../stores/midiStore';
 
-import { isExactMidiClipDataActionSnapshot } from './isExactMidiClipDataActionSnapshot';
 import { snapshotMidiClipData } from './snapshotMidiClipData';
 
 type MidiClipDataSlotSnapshot<Row> = {

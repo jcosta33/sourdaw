@@ -257,6 +257,7 @@ export const STEP_INVENTORY: Readonly<Record<string, Readonly<Record<string, rea
         ],
         'collab-server': [
             'Checkout',
+            'Install Node',
             'Set up Node',
             'Install server dependencies',
             'Collaboration server health gates',

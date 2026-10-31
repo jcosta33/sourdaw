@@ -160,6 +160,12 @@ impl LstmModel {
                 "multi-channel LSTM output ({out_channels} channels) is not supported; Grinder captures are mono"
             )));
         }
+        if num_layers > 1 && hidden_size > 1 {
+            // The inter-layer input holds one scalar; wider stacked cells cannot prewarm safely.
+            return Err(NamModelError::InvalidConfig(
+                "stacked wide LSTM unsupported by current runtime".into(),
+            ));
+        }
 
         let mut layers = Vec::with_capacity(num_layers);
         for index in 0..num_layers {

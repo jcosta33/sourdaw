@@ -13,6 +13,7 @@ import { type Clip } from '../../../models/Track';
 import { __resetGainEnvelopesForTest, setEnvelope } from '../../../stores/gainEnvelopeStore';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import * as clipGlueState from '../../clipEditing/restoreClipGlueState';
 import { restoreClipGlueState } from '../../clipEditing/restoreClipGlueState';
 import { resolveClipsWithComping } from '../../resolveComping';
 import { flattenComp } from '../flattenComp';
@@ -20,15 +21,6 @@ import { flattenComp } from '../flattenComp';
 const notifyUserMock = vi.hoisted(() => vi.fn());
 
 vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: notifyUserMock }));
-
-// The real transaction, kept observable: the refusal tests have to prove a
-// guard fired BEFORE the clip replacement was attempted, which no store reading
-// can show — the transaction refuses on the same input and leaves the same
-// stores behind.
-vi.mock('../../clipEditing/restoreClipGlueState', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('../../clipEditing/restoreClipGlueState')>();
-    return { restoreClipGlueState: vi.fn(actual.restoreClipGlueState) };
-});
 
 const TRACK_ID = 'track-1';
 const EMPTY_MIDI = { notesByClipId: {}, ccByClipId: {}, pitchBendByClipId: {} };
@@ -158,6 +150,7 @@ describe('flattenComp', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(clipGlueState, 'restoreClipGlueState');
         clearUndoHistory();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         takeLaneStore.set({ lanes: [] });
@@ -506,6 +499,7 @@ describe('flattenComp', () => {
         vi.mocked(restoreClipGlueState).mockReturnValueOnce(false);
 
         expect(flattenComp(TRACK_ID)).toBe(false);
+        expect(restoreClipGlueState).toHaveBeenCalledTimes(1);
 
         // The lane comes off before the replacement is attempted, so a refused
         // apply has to put it back — at its own index — rather than leave the

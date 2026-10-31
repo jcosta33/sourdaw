@@ -25,7 +25,10 @@ import { captureCompAudioSourceAuthorizations } from './captureCompAudioSourceAu
 import { compRegionIntervalValidation } from './compRegionIntervalValidation';
 import { liveCompAudioSourceInputs } from './liveCompAudioSourceInputs';
 import { prepareCompAudioSourcePatch } from './prepareCompAudioSourcePatch';
+import { originalMidiTakeRowReplacement } from './prepareOriginalMidiTakeRowReplacement';
 import { takeLaneSelection } from './takeLaneSelection';
+
+const { captureOriginalMidiTakeRowCopies, prepareOriginalMidiTakeRowReplacement } = originalMidiTakeRowReplacement;
 
 const {
     isValidInterval,
@@ -205,42 +208,30 @@ function prefixCompPatch(
     actionIndex: number,
     mode: 'capture' | 'validate'
 ): CompRegionIntervalPatch | null | undefined {
-    let patch: CompRegionIntervalPatch | null;
     if (action.type === 'setCompRegion') {
         if (mode === 'capture') {
-            patch = captureCompRegionIntervalPatchFromState(
+            return captureCompRegionIntervalPatchFromState(
                 state,
                 action.payload,
                 sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
             );
-        } else {
-            if (!isCompleteSetCompRegionPayload(action.payload)) {
-                return null;
-            }
-            patch = action.payload;
         }
-    } else if (action.type === 'removeCompRegion') {
-        if (mode === 'capture') {
-            patch = captureRemovedCompRegionPatchFromState(
-                state,
-                action.payload,
-                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
-            );
-        } else {
-            if (!isCompleteRemoveCompRegionPayload(action.payload)) {
-                return null;
-            }
-            patch = action.payload;
-        }
-    } else if (action.type === 'restoreCompRegionInterval') {
-        if (!isCompleteRestoreCompRegionIntervalPayload(action.payload)) {
-            return null;
-        }
-        patch = action.payload;
-    } else {
-        return undefined;
+        return isCompleteSetCompRegionPayload(action.payload) ? action.payload : null;
     }
-    return patch;
+    if (action.type === 'removeCompRegion') {
+        if (mode === 'capture') {
+            return captureRemovedCompRegionPatchFromState(
+                state,
+                action.payload,
+                sourceInputsAfterPrefix(action.payload.trackId, context, actionIndex)
+            );
+        }
+        return isCompleteRemoveCompRegionPayload(action.payload) ? action.payload : null;
+    }
+    if (action.type === 'restoreCompRegionInterval') {
+        return isCompleteRestoreCompRegionIntervalPayload(action.payload) ? action.payload : null;
+    }
+    return undefined;
 }
 
 function projectTakeLaneStateThroughActionPrefix(
@@ -261,6 +252,18 @@ function projectTakeLaneStateThroughActionPrefix(
                 return null;
             }
             state = selected;
+            continue;
+        }
+        if (action.type === 'replaceOriginalMidiTakeRow') {
+            let copyScope: typeof action.payload.copyScope | null = action.payload.copyScope;
+            if (copyScope === 'capture') {
+                copyScope = captureOriginalMidiTakeRowCopies(action.payload, state);
+            }
+            const next = copyScope && prepareOriginalMidiTakeRowReplacement({ ...action.payload, copyScope }, state);
+            if (!next) {
+                return null;
+            }
+            state = next;
             continue;
         }
         if (action.type === 'removeTrack') {

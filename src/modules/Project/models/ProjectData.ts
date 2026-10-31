@@ -7,6 +7,7 @@
  */
 
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
 import { type ProductionBrief } from './ProductionBrief';
 
@@ -356,6 +357,8 @@ export type ProjectMidiNote = {
     articulation?: string;
     /** Expression changes after note-on, per dimension; offsets are beats after `startBeat`. */
     expression?: ProjectMidiNoteExpression;
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 export type ProjectMidiExpressionPoint = {
@@ -814,6 +817,8 @@ export type ProjectTake = {
     passSourceEndSeconds?: number;
     passOriginBeat?: number;
     passOriginSourceSeconds?: number;
+    recordingPassIndex?: number;
+    midiSource?: MidiTakeSourceSnapshot;
 };
 
 export type ProjectTakeLane = {

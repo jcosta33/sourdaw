@@ -79,6 +79,21 @@ actual child entry separately and preserve the host's time origin; share one per
 across host and child, never replenishing it on successful startup. Storage failure requires
 manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
+### 2026-10-27 — unsupported NAM replacement needs sounding-model preservation (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) introduced the real NAM runtime
+with an admitted stacked-wide LSTM shape whose deeper input width contradicts its render buffer.
+The missing coverage obligation is replacement refusal while an existing capture is sounding;
+historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Activate Capture mode and advance two identical loaded engines with identical input. Attempt the
+unsupported replacement on one only, then require its subsequent PCM to equal the continuing
+reference without a reset. Require nonzero output separated from a matched unloaded/dry control.
+`has_loaded_neural_model` plus finite output can pass while Circuit mode bypasses the capture.
+Pair empty-engine refusal with both supported topology boundaries; preserve the selected library
+entry at the real import UI. This proves the exercised shared/WASM route, not native transport or
+physical playback acceptance.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
@@ -140,6 +155,19 @@ owner through the first retirement sweep, release it inside the first 2 ms poll 
 the next sweep to destroy it before another wait. Independently hold the owner across a synthetic
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
+
+### Cold frozen export restoration must finish before rendering
+
+The clip-only restoration set introduced by `57b7349f7864eca0bd177333d720a50186bd33e9`
+survived the owner-use-case routing in `ab5a579209b5e02a035e123380b5ceaf9c922250`
+(associated with PR #187); no PR is associated with the narrowing commit, and historical
+review dispatch is unknown. The missed lifecycle input is a fresh runtime whose active frozen
+print is durable but absent from memory alongside an ordinary clip.
+
+Hold restoration and require no render or encode; release it through the real cache owner and
+require active frozen PCM in both mixdown and stems. Remove only its requested ID and require
+failure before encoding. Preserve stale-print exclusion, the empty-clip fallback, cancellation,
+and the current dialog session fence; a late older callback must not paint a reopened dialog.
 
 ### VCA membership must reach committed runtime gain
 
@@ -220,6 +248,24 @@ arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.s
 `CARRIER_GATE_LANDING_SEC`; a native-hosted instrument has no Web Audio voice). Material nothing
 delivers is the finding; a claim that "the other carrier covers it" without those two traces is
 discarded.
+
+### A refused monitoring Off must retain the admitted capture
+
+The setter's eager Off release first appears in `e21d1877c780a083dc704054ba7455476cf35c92`.
+The toggle already released eagerly in `4f410257b212bbbd2210fa6553f7aaa3394f69bc`;
+`e415a55cc406ba264dffbc229f4ac86f3e5caaab` later moved it from Track to Arrangement. GitHub
+reports no associated PR for the setter commit or the earlier toggle commit. PR #4255 narrowed
+the setter's global stop to a per-track stop but retained its
+pre-commit release. Review of #5091 exposed the rollback gap; it did not introduce it. Historical
+private review prompts and tiers are unknown.
+
+Start with committed and admitted On for two tracks sharing capture. Invoke a real Off gesture
+inside the actual CRDT transaction; while projection is Off and committed state remains On, reject
+and abort the write. Both original source edges must remain connected, with no stop or reacquisition,
+and projection must return to On. A committed Off releases only its owner; final Off stops the
+shared stream once. Pair a pending grant with committed Off and a stored-but-unadmitted On control.
+Reintroduce eager release in each setter and toggle route: the unchanged refused-Off integration
+cases must fail. Controlled media and a programmatic DOM click do not establish physical audibility.
 
 ### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
 

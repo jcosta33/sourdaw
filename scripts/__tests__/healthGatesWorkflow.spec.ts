@@ -391,6 +391,9 @@ type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
+// A setup-node cache step may soften because its failure only costs the
+// cache; the cap keeps a refused restore inside the deliberate 5-minute step cap.
+const CACHE_RESTORE_STEP_MAX_MINUTES = 5;
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
 // The census walks production sources once per train, outside the unit shards,
@@ -946,7 +949,12 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
     if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
         throw new Error('lint checkout must have a ten-minute timeout');
     }
-    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
+    // The pnpm store restore is capped well below the other setup steps because
+    // a refused restore falls through to the install step.
+    if (stepNamed(lint, 'Set up Node')['timeout-minutes'] !== 3) {
+        throw new Error('lint step Set up Node must have a three-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -956,7 +964,7 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = 10 + prep.length * 5 + 20;
+    const stepTotal = 10 + 3 + prep.length * 5 + 20;
     if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
@@ -1760,11 +1768,88 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 }
                 const label = stepLabel(file, jobId, step);
                 const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (isSetupNodeCacheStep(step) && step['continue-on-error'] === true) {
+                    continue;
+                }
                 if (pin === undefined || step['continue-on-error'] !== true) {
                     throw new Error(`${label} must not continue on error`);
                 }
             }
         }
+    }
+}
+
+// A setup-node package-manager cache restore is a speed-up, never a proof: the
+// install step after it is correct uncached. When the Actions cache refuses or
+// stalls the restore ("Failed to restore: Egress is over the account limit."),
+// the step must fall through to that install instead of hanging in setup-node
+// until the job dies (#5929). setup-node's restore takes no download timeout of
+// its own, so the step cap is the bound. The step is the one place softening is
+// allowed, and only after an earlier unsoftened step has installed Node, so the
+// softening can cost the cache and never the runtime.
+function isSetupNodeCacheStep(step: UnknownRecord): boolean {
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@')) {
+        return false;
+    }
+    if (step.with === undefined) {
+        return false;
+    }
+    const cache = recordAt(step, 'with').cache;
+    return typeof cache === 'string' && cache.length > 0;
+}
+
+// The setup-pnpm composite installs the verified bootstrap runtime, which
+// assertVerifiedPnpmCallers pins its following setup-node to; a plain install
+// must name the very node-version the softened step asks for.
+function installsNodeUnsoftened(step: UnknownRecord, nodeVersion: unknown): boolean {
+    if (step['continue-on-error'] !== undefined) {
+        return false;
+    }
+    if (step.uses === './.github/actions/setup-pnpm') {
+        return true;
+    }
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@') || step.with === undefined) {
+        return false;
+    }
+    const options = recordAt(step, 'with');
+    return options.cache === undefined && options['node-version'] === nodeVersion;
+}
+
+function assertCacheRestoreFallsThrough(set: WorkflowSet): void {
+    let cacheSteps = 0;
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            const steps = jobSteps(file, jobId, asRecord(jobValue, `${file} job ${jobId}`));
+            for (const [index, step] of steps.entries()) {
+                if (!isSetupNodeCacheStep(step)) {
+                    continue;
+                }
+                cacheSteps += 1;
+                const label = stepLabel(file, jobId, step);
+                if (step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must continue on error so a refused cache restore falls through`);
+                }
+                const stepMinutes = step['timeout-minutes'];
+                if (
+                    typeof stepMinutes !== 'number' ||
+                    stepMinutes < 1 ||
+                    stepMinutes > CACHE_RESTORE_STEP_MAX_MINUTES
+                ) {
+                    throw new Error(
+                        `${label} must cap the cache restore at ${CACHE_RESTORE_STEP_MAX_MINUTES} minutes or fewer`
+                    );
+                }
+                const nodeVersion = recordAt(step, 'with')['node-version'];
+                if (!steps.slice(0, index).some((earlier) => installsNodeUnsoftened(earlier, nodeVersion))) {
+                    throw new Error(
+                        `${label} must follow an unsoftened install of the same Node so softening costs only the cache`
+                    );
+                }
+            }
+        }
+    }
+    if (cacheSteps === 0) {
+        throw new Error('no setup-node cache step found; the fall-through sweep would assert nothing');
     }
 }
 
@@ -3786,6 +3871,56 @@ describe('health gates workflow contract', () => {
             SOURDAW_LINT_CONCURRENCY: 'auto',
             SOURDAW_LINT_THREADS: '0',
         });
+    });
+
+    it('lets a refused or stalled setup-node cache restore fall through to an uncached install', () => {
+        expect(() => assertCacheRestoreFallsThrough(workflowSet())).not.toThrow();
+        expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
+
+        const hardened = cloneWorkflows('hardened pnpm cache step');
+        const hardenedStep = stepNamed(jobAt(hardened.validation, 'lint'), 'Set up Node');
+        delete hardenedStep['continue-on-error'];
+        expect(() => assertCacheRestoreFallsThrough(hardened)).toThrow(
+            'validation.yml job lint step Set up Node must continue on error so a refused cache restore falls through'
+        );
+
+        const unbounded = cloneWorkflows('unbounded pnpm cache step');
+        delete stepNamed(jobAt(unbounded.health, 'scope'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unbounded)).toThrow(
+            'health-gates.yml job scope step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        // The rule follows any package-manager cache, not only pnpm.
+        const unboundedNpm = cloneWorkflows('unbounded npm cache step');
+        delete stepNamed(jobAt(unboundedNpm.validation, 'rust'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unboundedNpm)).toThrow(
+            'validation.yml job rust step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        const softenedInstall = cloneWorkflows('cache step without an unsoftened Node install');
+        const collabSteps = arrayAt(jobAt(softenedInstall.nightly, 'collab-server'), 'steps');
+        collabSteps.splice(
+            collabSteps.indexOf(stepNamed(jobAt(softenedInstall.nightly, 'collab-server'), 'Install Node')),
+            1
+        );
+        expect(() => assertCacheRestoreFallsThrough(softenedInstall)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // An install of another Node would leave that runtime in place when the cache step fails.
+        const otherRuntime = cloneWorkflows('cache step after an install of another Node');
+        recordAt(stepNamed(jobAt(otherRuntime.nightly, 'collab-server'), 'Install Node'), 'with')['node-version'] =
+            '22';
+        expect(() => assertCacheRestoreFallsThrough(otherRuntime)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // Only setup-node itself may soften for a cache; another action naming a cache may not.
+        const foreignCache = cloneWorkflows('non-setup-node cache step');
+        stepNamed(jobAt(foreignCache.health, 'scope'), 'Set up Node').uses = 'example/actions/setup-node@v1';
+        expect(() => assertNoContinueOnError(foreignCache)).toThrow(
+            'health-gates.yml job scope step Set up Node must not continue on error'
+        );
     });
 
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {

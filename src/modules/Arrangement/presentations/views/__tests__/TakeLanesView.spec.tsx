@@ -105,6 +105,17 @@ describe('TakeLanesView', () => {
         expect(screen.getByText(/toggle "variation lanes"/i)).toBeInTheDocument();
     });
 
+    it('opens the panel for a track whose toggle is on but that has no alternatives yet, so a first take can be added', () => {
+        state.trackState = {
+            tracks: [makeTrack({ id: 't1', name: 'Bass', kind: 'midi', showVariationLanes: true, alternatives: [] })],
+            selectedTrackId: null,
+        };
+        render(<TakeLanesView />);
+        expect(screen.getByText('Takes · Bass')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add take' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Initialize take lane' })).toBeInTheDocument();
+    });
+
     it('renders one panel per eligible track and excludes master/folder tracks even when toggled on', () => {
         state.trackState = {
             tracks: [
@@ -254,5 +265,39 @@ describe('TakeLanePanel', () => {
         rerender(<TakeLanePanel trackId="t1" trackName="Vox" trackColor="#4de" />);
         fireEvent.click(screen.getByRole('button', { name: 'Remove comp region Take A' }));
         expect(mocks.removeCompRegion).toHaveBeenCalledWith('t1', 2);
+    });
+
+    it('keeps the drag preview and take extent pointer-transparent so a release always targets the strip', () => {
+        state.trackState = {
+            tracks: [
+                makeTrack({
+                    id: 't1',
+                    name: 'Vox',
+                    kind: 'audio',
+                    clips: [makeClip({ id: 'c1', startBeat: 0, endBeat: 8 })],
+                }),
+            ],
+            selectedTrackId: null,
+        };
+        state.laneState = {
+            lanes: [
+                {
+                    id: 'lane1',
+                    trackId: 't1',
+                    takes: [makeTake({ id: 'take1', name: 'Take A' })],
+                    activeCompRegions: [],
+                },
+            ],
+        };
+        const { container } = renderPanel();
+        const strip = container.querySelector('[role="presentation"]')!;
+        fireEvent.mouseDown(strip, { button: 0, clientX: 50 });
+        fireEvent.mouseMove(strip, { clientX: 150 });
+
+        const decorations = Array.from(strip.children);
+        expect(decorations.length).toBeGreaterThanOrEqual(2);
+        for (const decoration of decorations) {
+            expect(decoration.classList.contains('pointer-events-none')).toBe(true);
+        }
     });
 });

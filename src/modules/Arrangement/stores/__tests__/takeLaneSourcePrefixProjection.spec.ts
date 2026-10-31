@@ -35,6 +35,37 @@ const lane = {
 };
 
 describe('exact and source-prefix take-lane projections', () => {
+    it('canonicalizes frozen MIDI phase and row numbers only in the source prefix without dropping optional presence', () => {
+        const midiTake = {
+            ...take,
+            midiSource: {
+                sourceClipId: 'clip',
+                rows: {
+                    notes: {
+                        present: true,
+                        value: [
+                            { id: 'note', pitch: 60, startBeat: -0, duration: 1, velocity: 90, pitchBend: undefined },
+                        ],
+                    },
+                    controlChanges: { present: true, value: [] },
+                    pitchBends: { present: true, value: [] },
+                },
+                sourceEntryBeat: -0,
+                sourceEndBeat: 4,
+                phaseHeadBeat: -0,
+                passLengthBeats: 4,
+            },
+        };
+        const midiLane = { ...lane, takes: [midiTake] };
+        const exact = decodeExactTakeLaneSnapshots([midiLane]);
+        const prefix = decodeExactTakeLaneSnapshots([midiLane], 'source-prefix');
+        expect(Object.is(exact?.[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(true);
+        expect(Object.is(exact?.[0]?.takes[0]?.midiSource?.rows.notes.value[0]?.startBeat, -0)).toBe(true);
+        expect(Object.is(prefix?.[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(false);
+        expect(Object.is(prefix?.[0]?.takes[0]?.midiSource?.rows.notes.value[0]?.startBeat, -0)).toBe(false);
+        expect(Object.hasOwn(prefix?.[0]?.takes[0]?.midiSource?.rows.notes.value[0] ?? {}, 'pitchBend')).toBe(true);
+    });
+
     it('keeps the former structured-clone number representation by default and canonicalizes only prefix reads', () => {
         const raw = from({ lanes: [lane] });
         const loaded = load<{ lanes: (typeof lane)[] }>(save(raw));

@@ -1688,8 +1688,12 @@ function layerNames(count: number): string[] {
 }
 
 async function seedTracks(names: readonly string[]): Promise<string[]> {
-    for (const name of names) {
-        await executeAppAction({ type: 'addTrack', payload: { name, kind: 'audio' } });
+    const seedResult = await executeAppActionBatch(
+        names.map((name) => ({ type: 'addTrack' as const, payload: { name, kind: 'audio' as const } })),
+        { requireCompensation: true }
+    );
+    if (seedResult.status !== 'committed') {
+        throw new Error(`Expected the fixture tracks to commit, got ${seedResult.status}`);
     }
     return (trackStore.value?.tracks ?? []).map((track) => track.id);
 }

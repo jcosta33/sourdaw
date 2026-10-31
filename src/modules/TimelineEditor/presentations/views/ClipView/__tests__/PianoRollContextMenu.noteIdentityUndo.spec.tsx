@@ -50,6 +50,8 @@ vi.mock('#/utils/UI/useContextMenuDismiss', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    copyPianoRollNotes: vi.fn(),
+    getCopiedPianoRollNotes: vi.fn(),
     copySelectedNotes: vi.fn(),
     pasteNotes: vi.fn(),
 }));
