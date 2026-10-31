@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
@@ -560,5 +560,48 @@ describe('InstrumentsTab', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Save' }));
 
         expect(screen.getByDisplayValue('Withheld preset')).toBeInTheDocument();
+    });
+
+    describe('route spacing', () => {
+        const synthPreset = {
+            id: 'synth-warm-saw',
+            name: 'Warm Saw',
+            category: 'synth',
+            description: '',
+            trackKind: 'midi',
+            devices: [{ type: 'builtin-synth', name: 'Synth', parameterValues: {} }],
+            tags: [],
+            author: 'test',
+            isFactory: true,
+        };
+
+        it.each([
+            { routeId: 'instruments', searchQuery: '', text: 'Fermenter' },
+            { routeId: 'instruments', searchQuery: 'fermenter', text: 'Fermenter' },
+            { routeId: 'instruments-synth', searchQuery: '', text: 'Warm Saw' },
+            { routeId: 'instruments-user', searchQuery: '', text: 'No presets in this category.' },
+        ])(
+            'renders $routeId (search "$searchQuery") inside the shared route body with no route animation',
+            ({ routeId, searchQuery, text }) => {
+                arrangementMocks.getFactoryPresets.mockReturnValue([synthPreset]);
+
+                const { container } = renderWithTooltip(
+                    <InstrumentsTab
+                        selectedTrackId={mockTrack.id}
+                        searchQuery={searchQuery}
+                        selectedTrack={mockTrack}
+                        favorites={new Set()}
+                        onToggleFavorite={vi.fn()}
+                        preview={mockPreview}
+                        currentRoute={{ id: routeId, title: routeId }}
+                        pushRoute={vi.fn()}
+                        panelActions={makePanelActions()}
+                    />
+                );
+
+                expect(within(screen.getByTestId('browser-route-body')).getAllByText(text).length).toBeGreaterThan(0);
+                expect(container.querySelectorAll('[class*="animate-in"]')).toHaveLength(0);
+            }
+        );
     });
 });

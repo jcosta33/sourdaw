@@ -73,6 +73,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -157,6 +159,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -193,6 +197,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -293,6 +299,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -366,7 +374,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Node installs unsoftened here; only the npm cache restore below may
+      # fall through, so a failed install cannot leave the runner's own Node.
+      - name: Install Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -472,6 +489,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -596,6 +615,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -654,6 +675,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -692,6 +715,8 @@ jobs:
           package_json_file: package.json
 
       - name: Set up Node
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -965,6 +990,8 @@ jobs:
 
       - name: Set up Node
         if: env.DEPLOY_CREDENTIAL_PRESENT == 'true'
+        timeout-minutes: 3
+        continue-on-error: true
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: ${{ env.NODE_VERSION }}
