@@ -52,6 +52,42 @@ function sourdawE2eServingCheckoutPlugin(): Plugin {
     };
 }
 
+/**
+ * @automerge/automerge v3's `browser` export condition resolves to
+ * `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` — the ESM
+ * Wasm integration proposal syntax that Rolldown (Vite 8) does not support. The
+ * base64 entrypoint is functionally identical but inlines the .wasm as base64.
+ * Resolve through `import.meta.resolve` so Node walks up from this config file
+ * to the checkout that owns the install (a review worktree has no
+ * `node_modules` of its own), then pin the base64 sibling in that entrypoint.
+ */
+const AUTOMERGE_BASE64_ENTRY = fileURLToPath(
+    new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))
+);
+const AUTOMERGE_STREAMING_ENTRY = fileURLToPath(
+    new URL('./src/infra/automerge/automergeStreamingEntry.ts', import.meta.url)
+);
+
+/**
+ * Redirects the app's Automerge import from the base64 entry to the streaming
+ * entry. Worker bundles keep base64: build workers use `worker.plugins`, and
+ * their IIFE format cannot hold the entry's top-level await. Vitest keeps it
+ * too, since Node cannot fetch the emitted wasm URL.
+ */
+function sourdawAutomergeStreamingEntryPlugin(): Plugin {
+    return {
+        name: 'sourdaw-automerge-streaming-entry',
+        enforce: 'pre',
+        apply: (_config, { mode }) => mode !== 'test',
+        resolveId(id, importer) {
+            if (id !== AUTOMERGE_BASE64_ENTRY || importer === AUTOMERGE_STREAMING_ENTRY) {
+                return null;
+            }
+            return AUTOMERGE_STREAMING_ENTRY;
+        },
+    };
+}
+
 /** The inspection exports and App must share one emitted module graph. */
 function sourdawE2ePersistenceEntryPlugin(): Plugin {
     return {
@@ -111,6 +147,7 @@ export default defineConfig({
         tailwindcss(),
         sourdawE2eServingCheckoutPlugin(),
         sourdawE2ePersistenceEntryPlugin(),
+        sourdawAutomergeStreamingEntryPlugin(),
     ],
     test: {
         environment: 'jsdom',
@@ -170,20 +207,12 @@ export default defineConfig({
         },
     },
     resolve: {
-        alias: {
-            '#': fileURLToPath(new URL('./src', import.meta.url)),
-            // @automerge/automerge v3's `browser` export condition resolves to
-            // `fullfat_bundler.js`, which uses `import * as wasm from "…bg.wasm"` —
-            // the ESM Wasm integration proposal syntax that Rolldown (Vite 8) does
-            // not support. The base64 entrypoint is functionally identical but
-            // inlines the .wasm as a base64 string, sidestepping the issue entirely.
-            // Resolve through `import.meta.resolve` so Node walks up from this config
-            // file to the checkout that owns the install (a review worktree has no
-            // `node_modules` of its own), then pin the base64 sibling in that entrypoint.
-            '@automerge/automerge': fileURLToPath(
-                new URL('./fullfat_base64.js', import.meta.resolve('@automerge/automerge'))
-            ),
-        },
+        alias: [
+            { find: '#', replacement: fileURLToPath(new URL('./src', import.meta.url)) },
+            // Exact match: a string find would prefix-match and break the
+            // `@automerge/automerge/slim` and `/automerge.wasm` subpaths.
+            { find: /^@automerge\/automerge$/, replacement: AUTOMERGE_BASE64_ENTRY },
+        ],
     },
     preview: {
         headers: {
