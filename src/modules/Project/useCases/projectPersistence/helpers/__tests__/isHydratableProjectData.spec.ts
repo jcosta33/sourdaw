@@ -199,6 +199,37 @@ describe('isHydratableProjectData', () => {
         }
     );
 
+    it.each([
+        ['active MIDI', -1],
+        ['active MIDI', 1.5],
+        ['active MIDI', 'x'],
+        ['active MIDI', null],
+        ['active MIDI', undefined],
+        ['saved arrangement', -1],
+        ['inline clip', -1],
+    ])('rejects a malformed %s note recording pass %j before import', (route, recordingPassIndex) => {
+        const base = buildValidProjectData();
+        const note = { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex };
+        const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+        const clip = { ...validClip, type: 'midi', notes: [note] };
+        let project: unknown;
+        if (route === 'active MIDI') {
+            project = { ...base, midi };
+        } else if (route === 'saved arrangement') {
+            project = { ...base, arrangements: [{ id: 'saved', name: 'Saved', midi }] };
+        } else {
+            project = { ...base, arrangement: { tracks: [{ ...validTrack, clips: [clip] }] } };
+        }
+        expect(isHydratableProjectData(project)).toBe(false);
+    });
+
+    it('accepts a note recorded in a later pass', () => {
+        const base = buildValidProjectData();
+        const note = { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: 2 };
+        const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+        expect(isHydratableProjectData({ ...base, midi })).toBe(true);
+    });
+
     it('rejects an exclusive-end expression point while accepting legacy notes without expression', () => {
         const base = buildValidProjectData();
         const note = { id: 'expressive', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
