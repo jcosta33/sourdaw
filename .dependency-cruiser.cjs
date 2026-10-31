@@ -825,6 +825,8 @@ module.exports = {
             from: {},
             to: {
                 couldNotResolve: true,
+                // The resolver matches the `exports` map with the query attached; Vite strips it first.
+                pathNot: '^@automerge/automerge/automerge\\.wasm\\?url$',
             },
         },
         {

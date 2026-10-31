@@ -490,6 +490,20 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
     };
 
     /**
+     * Start beat for a note created at the pointer: the grid cell containing
+     * it. Moves and resizes snap relative deltas to the nearest line with
+     * `snap`; placement must not, or a click in a cell's right half lands the
+     * note in the next cell. The epsilon keeps a pointer exactly on a grid
+     * line (0.3 / 0.1 is 2.9999999999999996) in the cell that starts there.
+     */
+    const cellStartAtPointer = (value: number): number => {
+        if (gridSnap <= 0) {
+            return value;
+        }
+        return Math.floor(value / gridSnap + 1e-9) * gridSnap;
+    };
+
+    /**
      * R-A12: Snap a MIDI pitch to the nearest scale degree when constrainToScale is active.
      * When constrainToScale is false (or scale is chromatic), returns the pitch unchanged.
      */
@@ -695,7 +709,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         setStepBeat((prev) => prev + gridSnap);
                         setSelectedNoteIds(new Set());
                     } else if (chordMode) {
-                        const beat = snap(x / beatWidth);
+                        const beat = cellStartAtPointer(x / beatWidth);
                         const created = stampChord(
                             targetClipId,
                             pitch,
@@ -714,7 +728,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                             setSelectedNoteIds(new Set(createdIds));
                         }
                     } else if (paintMode) {
-                        const beat = snap(x / beatWidth);
+                        const beat = cellStartAtPointer(x / beatWidth);
                         const note = addMidiNote(targetClipId, pitch, beat, gridSnap, getDefaultNoteVelocity());
                         paintNotesRef.current = new Set([note.id]);
                         dragRef.current = {
@@ -741,7 +755,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
                         // through the primary's instrument.
                         const auditionTrackId = resolveTrackIdForClip(targetClipId, trackId);
                         auditionRef.current = playAuditionNote(auditionTrackId, pitch, getDefaultNoteVelocity());
-                        const beat = snap(x / beatWidth);
+                        const beat = cellStartAtPointer(x / beatWidth);
                         pendingStampRef.current = { pitch, beat };
                         rubberBandRef.current = { x, y: noteY, w: 0, h: 0 };
                         dragRef.current = {
@@ -876,7 +890,7 @@ export function usePianoRollInteractions(args: InteractionArgs): InteractionHand
         }
 
         if (drag.mode === 'paint') {
-            const currentBeat = snap(x / beatWidth);
+            const currentBeat = cellStartAtPointer(x / beatWidth);
             const lowBeat = Math.min(drag.origBeat, currentBeat);
             const highBeat = Math.max(drag.origBeat, currentBeat);
             for (let b = lowBeat; b <= highBeat; b += gridSnap) {

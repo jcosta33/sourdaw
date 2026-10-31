@@ -108,30 +108,27 @@ function recordId(id: unknown, ids: Set<string>, duplicates: Set<string>): void 
     ids.add(id);
 }
 
-function findDuplicateIds(
-    value: unknown,
-    ids: Set<string>,
-    duplicates: Set<string>,
-    visited: WeakSet<object>,
-    clipGainEnvelopePoints?: WeakSet<object>
-): void {
-    if (Array.isArray(value)) {
-        for (const item of value) {
-            findDuplicateIds(item, ids, duplicates, visited, clipGainEnvelopePoints);
-        }
-        return;
-    }
+function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<string>, visited: WeakSet<object>): void {
     if (typeof value !== 'object' || value === null || visited.has(value)) {
         return;
     }
     visited.add(value);
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            findDuplicateIds(item, ids, duplicates, visited);
+        }
+        return;
+    }
     const record = value as Record<string, unknown>;
-    if (!clipGainEnvelopePoints?.has(record)) {
-        recordId(record.id, ids, duplicates);
-    }
+    recordId(record.id, ids, duplicates);
     for (const child of Object.values(record)) {
-        findDuplicateIds(child, ids, duplicates, visited, clipGainEnvelopePoints);
+        findDuplicateIds(child, ids, duplicates, visited);
     }
+}
+
+/** Scans `root` as one id namespace; the walk never enters `excludedRoots`. */
+function scanIdNamespace(root: unknown, excludedRoots: readonly object[], duplicates: Set<string>): void {
+    findDuplicateIds(root, new Set<string>(), duplicates, new WeakSet<object>(excludedRoots));
 }
 
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
@@ -141,26 +138,60 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
     return value as Readonly<Record<string, unknown>>;
 }
 
-function collectClipGainEnvelopePoints(
-    document: Readonly<Record<string, unknown>>,
-    duplicates: Set<string>
-): WeakSet<object> {
-    const points = new WeakSet<object>();
-    const envelopes = asRecord(asRecord(document.gainEnvelopes)?.envelopes);
-    for (const envelope of Object.values(envelopes ?? {})) {
-        const envelopePoints = asRecord(envelope)?.points;
-        const pointIds = new Set<string>();
-        for (const point of Array.isArray(envelopePoints) ? envelopePoints : []) {
-            const record = asRecord(point);
-            if (!record) {
-                continue;
-            }
-            // Split and duplicate retain these ids; gain-point edits address clipId plus pointId.
-            recordId(record.id, pointIds, duplicates);
-            points.add(record);
-        }
+/** `EACH` steps into every item of an array or every value of a record. */
+const EACH = Symbol('each');
+
+type IdScopeDeclaration = {
+    /** Document path to each scope root, from the root document's slots. */
+    readonly path: readonly (string | typeof EACH)[];
+    /** Each scope root's own `id` must also stay unique across this declaration's scopes. */
+    readonly scopeIdsUniqueAcrossScopes: boolean;
+    readonly reason: string;
+};
+
+/**
+ * Subtrees that repeat ids by design. Each scope root is scanned in a fresh
+ * namespace of its own, so a repeated id inside one scope is still reported;
+ * every id outside these roots stays in the one global namespace.
+ */
+const INDEPENDENT_ID_SCOPES: readonly IdScopeDeclaration[] = [
+    {
+        path: ['arrangements', 'arrangements', EACH],
+        // `duplicateArrangement` remints only the snapshot id, and
+        // `syncCurrentArrangementToStore` overwrites every snapshot sharing it.
+        scopeIdsUniqueAcrossScopes: true,
+        reason: 'An arrangement snapshot copies the tracks it arranges, ids included (#3032).',
+    },
+    {
+        path: ['gainEnvelopes', 'envelopes', EACH, 'points'],
+        scopeIdsUniqueAcrossScopes: false,
+        reason: 'Split and duplicate keep authored gain-point ids; edits address clipId plus pointId (#5064, #5812).',
+    },
+    {
+        path: ['warpStates', 'states', EACH],
+        scopeIdsUniqueAcrossScopes: false,
+        reason: 'Duplication, paste and Strip Silence copy warp-marker ids into each clip-local warp state (#5570).',
+    },
+    {
+        path: ['chordTrack', 'migrationBase'],
+        scopeIdsUniqueAcrossScopes: false,
+        reason: 'The chord slot keeps its first-written state as its merge base, event ids included (#606).',
+    },
+];
+
+function resolveScopeRoots(value: unknown, path: IdScopeDeclaration['path']): object[] {
+    if (typeof value !== 'object' || value === null) {
+        return [];
     }
-    return points;
+    const [step, ...rest] = path;
+    if (step === undefined) {
+        return [value];
+    }
+    if (step === EACH) {
+        const children: unknown[] = Object.values(value);
+        return children.flatMap((child) => resolveScopeRoots(child, rest));
+    }
+    return resolveScopeRoots(asRecord(value)?.[step], rest);
 }
 
 /**
@@ -466,52 +497,30 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
 }
 
 /**
- * Duplicate ids across the project, with arrangement snapshots and canonical
- * clip gain-envelope points and warp markers counted in their owning namespaces.
- *
- * An arrangement snapshot holds a copy of the track state it arranges, so it
- * repeats the live `tracks` slot's track, clip, alternative and device ids by
- * design — that shared identity is what makes it an arrangement *of* those
- * tracks rather than an unrelated set. Scanning the whole document into one
- * namespace reports every one of those as a duplicate, so any project carrying
- * an arrangement fails `projectInvariantsValid` permanently, and
- * `inspectCurrentAgentProjectRepairState` then holds the project in
- * repair-required: every mutation is refused and every save fails.
- *
- * Gain-point ids are local to each clip envelope, so copying them to another
- * clip is valid. Only those canonical point rows leave the global id set; a
- * repeated point within one envelope is still reported.
- * Warp-marker ids are local to each clip's warp state; repeated ids within one
- * state remain invalid.
- *
- * Other collisions within the live project, or within one snapshot, are still
- * reported. So is a repeated arrangement `id`: it is the
- * one field `duplicateArrangement` remints, so two snapshots may share every
- * track, clip, alternative and device id but never their own. Two snapshots
- * under one id are indistinguishable to `syncCurrentArrangementToStore`, which
- * overwrites every match with the active snapshot and destroys the other
- * arrangement, so those ids are scanned in one namespace shared across
- * snapshots while each snapshot's contents keep their own.
+ * Duplicate ids across the project. Ids are globally unique except inside the
+ * declared copy-by-design scopes (`INDEPENDENT_ID_SCOPES`), each scanned on its
+ * own. A subtree that copies ids without a declaration is reported, because a
+ * duplicate leaves the project repair-required: every edit and save refused.
  */
 function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): Set<string> {
     const duplicateIds = new Set<string>();
-    const { arrangements, warpStates, ...liveDocument } = document;
-    const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
-    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>(), clipGainEnvelopePoints);
-    const snapshots = asRecord(arrangements)?.arrangements;
-    const arrangementIds = new Set<string>();
-    for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
-        recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
-        findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
-    }
-    // Warp-marker identity is clip-local (#5570): duplication, paste and Strip
-    // Silence deliberately copy marker ids into independent states under
-    // different clip ids, so each clip's warp state is scanned in its own
-    // namespace — a shared marker id across clips is the valid copy contract,
-    // a repeated id inside one clip's state is the violation.
-    const warpSlot = asRecord(warpStates)?.states;
-    for (const state of Object.values(warpSlot ?? {})) {
-        findDuplicateIds(state, new Set<string>(), duplicateIds, new WeakSet<object>());
+    const declaredScopes = INDEPENDENT_ID_SCOPES.map((declaration) => ({
+        declaration,
+        roots: resolveScopeRoots(document, declaration.path),
+    }));
+    scanIdNamespace(
+        document,
+        declaredScopes.flatMap((scope) => scope.roots),
+        duplicateIds
+    );
+    for (const { declaration, roots } of declaredScopes) {
+        const scopeIds = new Set<string>();
+        for (const root of roots) {
+            if (declaration.scopeIdsUniqueAcrossScopes) {
+                recordId(asRecord(root)?.id, scopeIds, duplicateIds);
+            }
+            scanIdNamespace(root, [], duplicateIds);
+        }
     }
     return duplicateIds;
 }
