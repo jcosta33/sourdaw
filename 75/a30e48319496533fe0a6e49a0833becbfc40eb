@@ -1,0 +1,32 @@
+scripts/__tests__/cleanupLanes.spec.ts
+  s_b6d960d6f9ffc4::t_7868f37e9be278 490
+  s_b6d960d6f9ffc4::t_fda6b8b37ed65f 489
+  s_b6d960d6f9ffc4::t_43782040a51848 491
+  s_b6d960d6f9ffc4::t_447922e24de512 27,594-649
+scripts/cleanupLanes.ts
+  s_3bb122e91d89a5::t_edd88a4d0cb87c 467-468
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75a30e48319496533fe0a6e49a0833becbfc40eb",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_b6d960d6f9ffc4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "cae2256a-e9f4-4e6e-9cf5-89aa54178786",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
