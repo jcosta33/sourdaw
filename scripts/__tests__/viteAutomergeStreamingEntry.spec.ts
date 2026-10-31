@@ -2,7 +2,7 @@
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { type Alias, type ResolvedConfig, resolveConfig } from 'vite';
+import { type Alias, createServer, type ResolvedConfig, resolveConfig } from 'vite';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '../..');
@@ -11,20 +11,19 @@ const base64Entry = fileURLToPath(new URL('./fullfat_base64.js', import.meta.res
 const streamingEntry = resolve(root, 'src/infra/automerge/automergeStreamingEntry.ts');
 const appImporter = resolve(root, 'src/modules/CrdtDocument/repositories/automergeRepository.ts');
 
-type ResolveIdHandler = (id: string, importer: string | undefined) => unknown;
-
-function isResolveIdHandler(value: unknown): value is ResolveIdHandler {
-    return typeof value === 'function';
-}
-
-function streamingResolveId(config: ResolvedConfig): ResolveIdHandler {
-    const plugin = config.plugins.find((candidate) => candidate.name === PLUGIN_NAME);
-    const hook: unknown = plugin?.resolveId;
-    const handler = typeof hook === 'object' && hook !== null && 'handler' in hook ? hook.handler : hook;
-    if (!isResolveIdHandler(handler)) {
-        throw new TypeError(`${PLUGIN_NAME} must be registered with a resolveId hook`);
+async function resolveThroughDevServer(importer: string): Promise<string | undefined> {
+    const server = await createServer({
+        root,
+        mode: 'development',
+        logLevel: 'silent',
+        server: { middlewareMode: true, hmr: false },
+    });
+    try {
+        const resolved = await server.environments.client.pluginContainer.resolveId('@automerge/automerge', importer);
+        return resolved?.id;
+    } finally {
+        await server.close();
     }
-    return handler;
 }
 
 function aliasMatches(alias: Alias, id: string): boolean {
@@ -39,16 +38,24 @@ function aliasesMatching(config: ResolvedConfig, id: string): Alias[] {
 }
 
 describe('Automerge streaming-entry redirect', () => {
-    it.each([
-        ['an app build', 'production', 'build'],
-        ['the dev server', 'e2e', 'serve'],
-    ] as const)('redirects the base64 entry to the streaming entry for %s', async (_label, mode, command) => {
-        const config = await resolveConfig({ root, mode }, command);
-        const resolveId = streamingResolveId(config);
+    it('resolves the app import to the streaming entry through the dev server plugin container', async () => {
+        expect(await resolveThroughDevServer(appImporter)).toBe(streamingEntry);
+    });
 
-        expect(await resolveId(base64Entry, appImporter)).toBe(streamingEntry);
-        expect(await resolveId(base64Entry, streamingEntry)).toBeNull();
-        expect(await resolveId('@automerge/automerge/slim', appImporter)).toBeNull();
+    it('lets the streaming entry itself reach the package', async () => {
+        expect(await resolveThroughDevServer(streamingEntry)).not.toBe(streamingEntry);
+    });
+
+    it('runs the redirect before Vite resolves the aliased path in an app build', async () => {
+        // A build environment exposes no plugin container; Rolldown runs the
+        // resolved plugin list in this order, and Vite's resolver answers the
+        // aliased absolute path for any plugin placed after it.
+        const config = await resolveConfig({ root, mode: 'production' }, 'build');
+        const names = config.plugins.map((plugin) => plugin.name);
+
+        expect(names).toContain(PLUGIN_NAME);
+        expect(names).toContain('vite:resolve-builtin');
+        expect(names.indexOf(PLUGIN_NAME)).toBeLessThan(names.indexOf('vite:resolve-builtin'));
     });
 
     it('aliases exactly the bare package specifier to the base64 entry', async () => {
