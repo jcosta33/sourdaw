@@ -68,11 +68,18 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     }
     nativeLiveGraphSession.auditionOwner = null;
     nativeLiveGraphSession.auditionRestorationOwner = operation.owner;
-    return restoreProgramme(operation, settled);
+    return restoreProgramme(operation, settled, true);
 }
 
-/** Reconcile the released output. A rejection leaves the gate closed and the next Stop retries. */
-function restoreProgramme(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
+/**
+ * Reconcile the released output. A rejection leaves the gate closed until a retry: the next
+ * Stop, or for a first release the one unattended retry below.
+ */
+function restoreProgramme(
+    operation: ExclusiveOperation,
+    settled: PromiseWithResolvers<void>,
+    retryUnattended: boolean
+): Promise<void> {
     const release = new AbortController();
     void reconcileNativeAuditionMonitoring({
         signal: release.signal,
@@ -87,9 +94,23 @@ function restoreProgramme(operation: ExclusiveOperation, settled: PromiseWithRes
                 operation.restoration = null;
             }
             settled.reject(error);
+            if (retryUnattended) {
+                retryWhenSessionSettles(operation);
+            }
         }
     );
     return settled.promise;
+}
+
+/**
+ * A release the engine started (a native start or abandon), or one whose caller is gone (an
+ * unmounted card), has nobody left to press Stop. It can time out queued behind a slow start, or
+ * meet a native refusal that the next session command clears. Every first release takes this one
+ * retry, with a fresh readiness window, after the session's queued commands drain; a release
+ * cannot tell whether a Stop will follow, and only Stop retries after that.
+ */
+function retryWhenSessionSettles(operation: ExclusiveOperation): void {
+    void nativeLiveGraphSession.pending.then(() => stopExclusive(operation)).catch(report);
 }
 
 /** A Stop after a rejected restoration: the source is already gone, only the output is retried. */
@@ -106,7 +127,7 @@ function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithRes
         settled.resolve();
         return settled.promise;
     }
-    return restoreProgramme(operation, settled);
+    return restoreProgramme(operation, settled, false);
 }
 
 function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {

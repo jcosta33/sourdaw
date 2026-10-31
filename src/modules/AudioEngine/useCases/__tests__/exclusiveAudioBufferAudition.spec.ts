@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { logger } from '#/infra/logger/appLogger';
+
 import { type AudioEngine } from '../../models/AudioEngineState';
 import { type AudioGraphApplyResult, type AudioGraphBackend } from '../../models/AudioGraphBackend';
 import { stoppedEngineTransportPosition } from '../../models/EngineTransportPosition';
@@ -370,6 +372,9 @@ describe('exclusive retained buffer listening lifetime', () => {
         expect(driven.gate.gain.value).toBe(0);
         abandonNativeLiveGraphSession('stalled');
         expect(nativeLiveGraphSession.orphanedBackend).not.toBeNull();
+        // The abandon itself retires the audition: no Stop is needed to reopen the programme.
+        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
         await playback.stop();
         expect(driven.gate.gain.value).toBe(1);
         // The stalled engine is not addressed again: there is no native programme to restore into.
@@ -381,6 +386,119 @@ describe('exclusive retained buffer listening lifetime', () => {
         });
         await ordinary?.ready;
         expect(driven.sources.at(-1)?.start).toHaveBeenCalledOnce();
+    });
+
+    it('recovers an engine-started release that times out queued behind a slow native start', async () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+        let fence = 0;
+        const apply = vi.fn<AudioGraphBackend['apply']>().mockImplementation(async (batch) => {
+            const result = applied(++fence);
+            // Only the start's topology batch is slow: longer than the release's readiness window.
+            if (batch.commands.some((command) => command.kind === 'set-transport' && !command.playing)) {
+                await new Promise((resolve) => setTimeout(resolve, 3_500));
+            }
+            return result;
+        });
+        fixture.startBackend = nativeStartBackend(apply);
+        nativeLiveGraphSession.backend = fixture.startBackend;
+        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineIncarnation: ID,
+            batchesApplied: fence,
+        }));
+        const playback = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        await playback.ready;
+        expect(driven.gate.gain.value).toBe(0);
+        const start = startNativeLiveGraphSession(START);
+        expect(driven.sources[0]?.stop).toHaveBeenCalledTimes(1);
+        await expect(start).resolves.toMatchObject({ outcome: 'started' });
+        await vi.waitFor(() => expect(driven.gate.gain.value).toBe(1));
+        expect(
+            warn.mock.calls.some(
+                ([error]) =>
+                    error instanceof Error &&
+                    error.cause instanceof Error &&
+                    error.cause.message === 'Native audition listening readiness timed out.'
+            )
+        ).toBe(true);
+        warn.mockRestore();
+    }, 10_000);
+
+    it.each([
+        { label: 'once', refusals: 1, reopened: true },
+        { label: 'twice', refusals: 2, reopened: false },
+    ])(
+        'retries a failed first release at most once without another Stop when it fails $label',
+        async ({ refusals, reopened }) => {
+            vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+            let fence = 0;
+            const apply = vi
+                .fn<AudioGraphBackend['apply']>()
+                .mockImplementation(async () => applied(++fence))
+                .mockImplementationOnce(async () => applied(++fence));
+            for (let refusal = 0; refusal < refusals; refusal += 1) {
+                apply.mockRejectedValueOnce(new Error('native output gate refused'));
+            }
+            Object.assign(nativeLiveGraphSession, {
+                backend: { backendId: 'native/live', apply, dispose: vi.fn() },
+                programmeCarrier: true,
+                audibleCarrier: true,
+                monitorShadowed: false,
+            });
+            vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+                ...stoppedEngineTransportPosition,
+                running: true,
+                engineIncarnation: ID,
+                batchesApplied: fence,
+            }));
+            const playback = playExclusiveAudioBufferPreview({
+                buffer: buffer(),
+                gain: 1,
+                isCurrent: () => true,
+                onEnded: vi.fn(),
+            });
+            await playback.ready;
+            // An unmounting card's one Stop: nobody remains to press another.
+            await expect(playback.stop()).rejects.toThrow('native output gate refused');
+            await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(3));
+            await nativeLiveGraphSession.pending;
+            await new Promise((resolve) => setTimeout(resolve, 50));
+            expect(apply).toHaveBeenCalledTimes(3);
+            expect(driven.gate.gain.value).toBe(reopened ? 1 : 0);
+        }
+    );
+
+    it('a superseded audition stop leaves its successor owning the output', async () => {
+        const first = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        await first.ready;
+        const second = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        const successor = nativeLiveGraphSession.auditionOwner;
+        await second.ready;
+        await first.stop();
+        expect(successor).not.toBeNull();
+        expect(nativeLiveGraphSession.auditionOwner).toBe(successor);
+        expect(driven.gate.gain.value).toBe(0);
+        expect(driven.sources[1]?.start).toHaveBeenCalledOnce();
+        expect(driven.sources[1]?.stop).not.toHaveBeenCalled();
+        await second.stop();
+        expect(driven.gate.gain.value).toBe(1);
     });
 
     it('still refuses an audition start while an abandoned native programme is unsettled', async () => {
