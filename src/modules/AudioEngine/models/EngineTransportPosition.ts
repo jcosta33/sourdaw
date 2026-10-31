@@ -8,11 +8,17 @@
  * every key below.
  */
 
+import { type NativeGrinderModelReceipt } from './AudioGraphBackend';
+
 /** Where the native engine's transport stands, as of its last rendered block. */
 export type EngineTransportPosition = {
     /** Optional only for older in-process providers; the bridge parser emits null when unavailable. */
     captureClock?: EngineCaptureClock | null;
     captureClockQuery?: EngineCaptureClockQuery | null;
+    /** Immutable native handle identity, a decimal u64 string without JSON precision loss. */
+    engineId?: string;
+    /** Actual callback activation/clear readback; absence is never model success. */
+    grinderModels?: readonly NativeGrinderModelReceipt[];
     /**
      * False when no native engine has been started, and also false for an
      * engine that exists but whose output stream has produced no render
