@@ -44,7 +44,8 @@ import { type Take } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
-import { recordingPassIndex } from '../../../useCases/recording/recordingPassIndex';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -335,8 +336,18 @@ describe('MIDI loop recordings', () => {
                 recordingPassIndex,
                 ...(interruptsPass ? { interruptsPass } : {}),
             });
+        transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+        const admit = (beat: number, passIndex: number) =>
+            admitRecordingMidiNoteOn({
+                trackId: TRACK_ID,
+                channel: 0,
+                note: 60,
+                velocity: 100,
+                audioTime: 1,
+                position: { beat, passIndex },
+            });
         pass('Planned pass 0', 0, 0);
-        expect(recordingPassIndex({ beat: 11.9, passIndex: 0 })).toBe(0);
+        expect(admit(11.9, 0)).toMatchObject({ onsetPassIndex: 0 });
 
         // The edit cancels the seam the planned stage expected; the scheduler
         // stages the pass it ends as one more take.
@@ -347,7 +358,12 @@ describe('MIDI loop recordings', () => {
         expect(passTake('Edited pass')).not.toHaveProperty('recordingPassIndex');
         expect(passTake('Next wrap')).not.toHaveProperty('recordingPassIndex');
         expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1 });
-        expect(recordingPassIndex({ beat: 9, passIndex: 1 })).toBeNull();
+        // Later input is still placed in the source, so controller rows keep
+        // their beat; only the note's pass is withheld.
+        expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(5);
+        const unowned = admit(9, 1);
+        expect(unowned).toMatchObject({ onsetSourceBeat: 5 });
+        expect(unowned).not.toHaveProperty('onsetPassIndex');
     });
 
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {

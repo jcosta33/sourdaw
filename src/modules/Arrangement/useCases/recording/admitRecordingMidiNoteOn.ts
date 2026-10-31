@@ -45,8 +45,11 @@ export function admitRecordingMidiNoteOn(input: {
         velocity: input.velocity,
         onsetAudioTime: input.audioTime,
         onsetSourceBeat,
-        onsetPassIndex,
     };
+    // The note is still placed by its pass; it only stops naming one.
+    if (!activeRecordingRef.passIdentityLost) {
+        admitted.onsetPassIndex = onsetPassIndex;
+    }
     if (input.initialExpression) {
         admitted.initialExpression = Object.assign({}, input.initialExpression);
     }
