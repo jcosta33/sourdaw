@@ -1,0 +1,27 @@
+src/modules/Transport/AGENTS.md
+  s_88fc7e0d05bab6::t_7347e67255cf10 30
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_88fc7e0d05bab6::t_46e27fd672e374 1024
+  s_88fc7e0d05bab6::t_6e70521b7378b1 524-534
+  s_88fc7e0d05bab6::t_b238cb2113abf0 1110-1112,1114
+  s_88fc7e0d05bab6::t_5e8508f3c8aff5 824
+  s_88fc7e0d05bab6::t_b2614c25bc88ff 863
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerSupersededSeamRecordingPass.spec.ts
+  s_88fc7e0d05bab6::t_fb45627131daf7 513-536
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2c5342725d0b82105fe171418febab60bb1716f0",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
