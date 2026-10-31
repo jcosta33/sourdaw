@@ -64,8 +64,8 @@ function capturing(label: string): () => CapturedInput {
         mocks.events.push(`${label}-captured`);
         return {
             sampleRate: 48_000,
-            historySeconds: 0,
-            outputDurationSeconds: 1,
+            historyFrameCount: 0,
+            outputFrameCount: 48_000,
             instruments: [],
             loadedExternalInstanceIds: [],
         } as unknown as CapturedInput;

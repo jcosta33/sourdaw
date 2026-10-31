@@ -11,6 +11,20 @@ type ClampRenderFrameCountInput = {
     onWarning?: (message: string) => void;
 };
 
+type CountRenderFramesInput = {
+    durationSeconds: number;
+    sampleRate: number;
+};
+
+/**
+ * The frames a render of this duration holds before the renderer's cap. A frame
+ * position derived from a render's length, such as the end of a cropped region,
+ * counts with this rule so it cannot land past the rendered buffer.
+ */
+export function countRenderFrames({ durationSeconds, sampleRate }: CountRenderFramesInput): number {
+    return Math.ceil(durationSeconds * sampleRate);
+}
+
 /**
  * Resolves the frame count for an offline render, capped to what the renderer
  * can allocate.
@@ -25,7 +39,7 @@ type ClampRenderFrameCountInput = {
  * not schedule past it — resolves the same ceil and the same cap.
  */
 export function clampRenderFrameCount({ durationSeconds, sampleRate, onWarning }: ClampRenderFrameCountInput): number {
-    const requestedFrames = Math.ceil(durationSeconds * sampleRate);
+    const requestedFrames = countRenderFrames({ durationSeconds, sampleRate });
     const frameCount = Math.min(requestedFrames, MAX_OFFLINE_FRAMES);
 
     if (frameCount < requestedFrames) {
