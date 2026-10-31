@@ -69,13 +69,17 @@ vi.mock('#/components/daw/DawCompactSelect', () => ({
     DawCompactSelect: ({
         value,
         onChange,
+        className,
+        title,
         children,
     }: {
         value: number;
         onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+        className?: string;
+        title?: string;
         children: React.ReactNode;
     }) => (
-        <select data-testid="compact-select" value={value} onChange={onChange}>
+        <select data-testid="compact-select" value={value} onChange={onChange} className={className} title={title}>
             {children}
         </select>
     ),
@@ -364,6 +368,34 @@ describe('DeviceParameterControl', () => {
         };
         render(<DeviceParameterControl param={choiceParam} device={mockDevice} trackId="track-1" />);
         expect(screen.getByTestId('compact-select')).toBeInTheDocument();
+    });
+
+    it('lets a choice select take the card width and exposes the full selected option on hover', () => {
+        const choiceParam: DeviceParameterView = {
+            ...mockParam,
+            name: 'Kit',
+            type: 'choice',
+            value: 1,
+            choices: ['808 Kit', 'Electronic Kit', 'Acoustic Kit'],
+        };
+        const device: Device = { ...mockDevice, parameterValues: { gain: 1 } };
+        render(<DeviceParameterControl param={choiceParam} device={device} trackId="track-1" />);
+
+        const select = screen.getByTestId('compact-select');
+        expect(select).toHaveAttribute('title', 'Electronic Kit');
+        expect(select.className).toMatch(/\bw-full\b/);
+        expect(select.className).toMatch(/\bmin-w-0\b/);
+        expect(select.className).toMatch(/\btruncate\b/);
+        expect(select.className).not.toMatch(/\bw-\[\d+px\]/);
+    });
+
+    it('gives a legal-set select the same width rule and titles it with the member in force', () => {
+        render(<DeviceParameterControl param={crustOversamplingParam()} device={crustDevice} trackId="track-1" />);
+
+        const select = screen.getByTestId('compact-select');
+        expect(select).toHaveAttribute('title', expect.stringMatching(/^4/));
+        expect(select.className).not.toMatch(/\bw-\[\d+px\]/);
+        expect(select.className).toMatch(/\bw-full\b/);
     });
 
     it('dispatches one guarded action when choice selection changes', () => {

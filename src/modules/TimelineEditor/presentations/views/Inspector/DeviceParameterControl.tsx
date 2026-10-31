@@ -363,6 +363,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const isDiscrete = isChoice || isLegalSet;
 
     const isSlider = param.unit === 'dB';
+    // Sliders and selects need the card's full width, so the header sits above them.
+    const isStacked = isSlider || isDiscrete;
     const isLog = param.scaling === 'log';
     const canPreview =
         draggedModulatorId !== null &&
@@ -488,9 +490,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const renderSliderOrKnob = () => {
         if (isLegalSet) {
+            const memberInForce = quantiseDeviceParameterValue({
+                deviceType: device.type,
+                paramId: param.id,
+                value,
+            });
             return (
                 <DawCompactSelect
-                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
+                    title={`${memberInForce}${param.unit}`}
+                    className="w-full min-w-0 truncate bg-surface px-1.5 focus-visible:ring-primary"
                     // Shown at the member actually in force, not the raw stored
                     // number: a project saved before the set was declared, or a
                     // MIDI CC scaled across the range, can hold a value between
@@ -499,11 +507,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     // law rather than resolved here — a control that works out
                     // "which member is this" for itself is how the readout and
                     // the DSP come to disagree again.
-                    value={quantiseDeviceParameterValue({
-                        deviceType: device.type,
-                        paramId: param.id,
-                        value,
-                    })}
+                    value={memberInForce}
                     onChange={handleSelectChange}
                     aria-label={param.name}
                 >
@@ -519,7 +523,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         if (isChoice) {
             return (
                 <DawCompactSelect
-                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
+                    title={param.choices![Math.round(value)]}
+                    className="w-full min-w-0 truncate bg-surface px-1.5 focus-visible:ring-primary"
                     value={Math.round(value)}
                     onChange={handleSelectChange}
                     aria-label={param.name}
@@ -671,8 +676,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     );
 
     return (
-        <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
-            {isSlider ? (
+        <div className={cn('flex w-full min-w-0', isStacked ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
+            {isStacked ? (
                 <Row justify="between" wrap gap={1} className="w-full">
                     <label
                         className="min-w-0 flex-1 truncate text-[10px] font-medium text-foreground"
@@ -681,10 +686,12 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         {param.name}
                     </label>
                     <Row gap={1.5} shrink={false} className="ml-auto mt-0.5">
-                        <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
-                            {displayValue}
-                            {param.unit ? ` ${param.unit}` : ''}
-                        </span>
+                        {isDiscrete ? null : (
+                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                                {displayValue}
+                                {param.unit ? ` ${param.unit}` : ''}
+                            </span>
+                        )}
                         {parameterActions}
                     </Row>
                 </Row>
@@ -708,7 +715,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                 </Stack>
             )}
 
-            <div className={cn('flex items-center justify-center', isSlider ? 'w-full px-1' : 'shrink-0')}>
+            <div className={cn('flex items-center justify-center', isStacked ? 'w-full min-w-0 px-1' : 'shrink-0')}>
                 {renderSliderOrKnob()}
             </div>
         </div>
