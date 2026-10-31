@@ -191,7 +191,7 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         node.setParam('attackGain', 0.5);
         node.scheduleParam('attackGain', [{ startFrame: 12001, endFrame: 24000, startValue: 1, endValue: 2 }]);
         node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 12000, startValue: Number.NaN, endValue: 2 }]);
-        node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 24000, startValue: 2, endValue: 2 }]);
+        node.scheduleParam('attackGain', [{ startFrame: 12000, endFrame: 24000, startValue: 2, endValue: 2 }]);
         expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
             [{ type: 'gain', name: 'attackGain', value: 0.5, frame: 12000 }],
             [{ type: 'clear-gain', name: 'attackGain' }],
