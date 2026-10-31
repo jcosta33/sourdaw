@@ -50,6 +50,45 @@ describe('TemplateGallery', () => {
         expect(onSelect).toHaveBeenCalledExactlyOnceWith('pop-song');
     });
 
+    it('reports the id of a card that is not the first one', () => {
+        const onSelect = vi.fn();
+        render(<TemplateGallery templates={TEMPLATES} onSelect={onSelect} />);
+
+        fireEvent.click(screen.getByRole('button', { name: /Nebula Drift/ }));
+
+        expect(onSelect).toHaveBeenCalledExactlyOnceWith('demo-nebula-drift');
+    });
+
+    it('reports the id of a card chosen after narrowing to a category', () => {
+        const onSelect = vi.fn();
+        render(<TemplateGallery templates={TEMPLATES} onSelect={onSelect} />);
+
+        fireEvent.click(screen.getByRole('radio', { name: 'Podcast' }));
+        fireEvent.click(screen.getByRole('button', { name: /Podcast Booth/ }));
+
+        expect(onSelect).toHaveBeenCalledExactlyOnceWith('podcast');
+    });
+
+    it.each(['Demos', 'Music', 'Podcast', 'Film', 'All'])(
+        'labels the active %s chip in the foreground color so it clears 4.5:1',
+        (name) => {
+            render(<TemplateGallery templates={TEMPLATES} onSelect={vi.fn()} />);
+
+            fireEvent.click(screen.getByRole('radio', { name }));
+
+            const chip = screen.getByRole('radio', { name });
+            expect(chip.className).toContain('text-foreground');
+            expect(chip.className).not.toContain('text-[var(--color-accent');
+        }
+    );
+
+    it('pads the scroll area on every side so a focus ring is not clipped', () => {
+        render(<TemplateGallery templates={TEMPLATES} onSelect={vi.fn()} />);
+
+        const grid = screen.getByRole('button', { name: /Pop Song/ }).parentElement;
+        expect(grid?.className).toMatch(/(^|\s)p-1(\s|$)/);
+    });
+
     it('renders cards as native buttons that can wrap their description', () => {
         render(<TemplateGallery templates={TEMPLATES} onSelect={vi.fn()} />);
 

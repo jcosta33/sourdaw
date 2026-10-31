@@ -118,6 +118,21 @@ describe('LaunchScreen', () => {
         await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('basic-band'));
     });
 
+    it('creates the template of a card that is not the first one', async () => {
+        mocks.getTemplates.mockReturnValue([
+            { id: 'basic-band', name: 'Basic Band', description: 'A band', category: 'music' },
+            { id: 'podcast-1', name: 'Podcast One', description: 'A podcast', category: 'podcast' },
+        ]);
+
+        render(<LaunchScreen exiting={false} />);
+        fireEvent.click(screen.getByRole('button', { name: /Templates/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('button', { name: /Podcast One/ }));
+
+        await waitFor(() => expect(mocks.createFromTemplate).toHaveBeenCalledWith('podcast-1'));
+        expect(mocks.createFromTemplate).not.toHaveBeenCalledWith('basic-band');
+    });
+
     it('restores the home view when template project activation fails', async () => {
         mocks.createFromTemplate.mockResolvedValue(false);
         mocks.getTemplates.mockReturnValue([

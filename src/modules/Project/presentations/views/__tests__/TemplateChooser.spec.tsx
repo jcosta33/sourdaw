@@ -36,6 +36,12 @@ vi.mock('../../../useCases/projectTemplates/templateDefinitions/getTemplates', (
             description: 'Two tracks and a return bus.',
             category: 'music',
         },
+        {
+            id: 'guard-spec-demo',
+            name: 'Guard Spec Demo',
+            description: 'A finished demo.',
+            category: 'demo',
+        },
     ]),
 }));
 
@@ -123,5 +129,44 @@ describe('TemplateChooser', () => {
         await Promise.resolve();
         await Promise.resolve();
         expect(createFromTemplate).not.toHaveBeenCalled();
+    });
+
+    // Radix keeps DialogContent mounted until its exit animation ends, so a quick close and
+    // reopen reuses the old gallery unless each open session mounts a fresh one. jsdom runs no
+    // animations, so the test reports an animation name that changes on close to hold the content.
+    it('reopens on the requested category instead of the filter chosen last time', () => {
+        let closing = false;
+        const realGetComputedStyle = window.getComputedStyle.bind(window);
+        vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => {
+            const style = realGetComputedStyle(element, pseudo);
+            return new Proxy(style, {
+                get(target, property) {
+                    if (property === 'animationName') {
+                        return closing ? 'dialog-exit' : 'dialog-enter';
+                    }
+                    const value: unknown = Reflect.get(target, property);
+                    return typeof value === 'function' ? value.bind(target) : value;
+                },
+            });
+        });
+
+        const { rerender } = render(<TemplateChooser open onClose={vi.fn()} initialCategory="demo" />);
+        expect(screen.getByRole('radio', { name: 'Demos' })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.queryByRole('button', { name: /Guard Spec Song/ })).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('radio', { name: 'Music' }));
+        expect(screen.getByRole('radio', { name: 'Music' })).toHaveAttribute('aria-checked', 'true');
+
+        closing = true;
+        rerender(<TemplateChooser open={false} onClose={vi.fn()} initialCategory="demo" />);
+        expect(screen.getByRole('radio', { name: 'Music', hidden: true })).toBeInTheDocument();
+
+        closing = false;
+        rerender(<TemplateChooser open onClose={vi.fn()} initialCategory="all" />);
+
+        expect(screen.getByRole('radio', { name: 'All' })).toHaveAttribute('aria-checked', 'true');
+        expect(screen.getByRole('button', { name: /Guard Spec Song/ })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Guard Spec Demo/ })).toBeInTheDocument();
+        vi.restoreAllMocks();
     });
 });

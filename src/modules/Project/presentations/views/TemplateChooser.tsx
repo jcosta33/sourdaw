@@ -215,6 +215,7 @@ const LoadingState = ({ name }: { name: string }): ReactElement => {
 
 export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: TemplateChooserProps): ReactElement => {
     const [isLoading, setIsLoading] = useState(false);
+    const [openSession, setOpenSession] = useState(0);
     const [loadingName, setLoadingName] = useState('');
     const templates = getTemplates();
 
@@ -222,6 +223,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
     if (prevOpen !== open) {
         setPrevOpen(open);
         if (open) {
+            setOpenSession((session) => session + 1);
             setIsLoading(false);
         }
     }
@@ -282,6 +284,7 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
                 ) : (
                     <>
                         <TemplateGallery
+                            key={openSession}
                             templates={templates}
                             initialCategory={initialCategory}
                             onSelect={handleSelect}
