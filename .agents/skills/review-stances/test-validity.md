@@ -2118,6 +2118,23 @@ source lifecycle boundaries. Remove the actual mid or side compensation separate
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
 
+### 2026-10-29 — static summary outlived its measurement qualification (PR #1084)
+
+PR #974 introduced the cost report headline when the contributing Crumbs median was trustworthy.
+PR #1084 refreshed that row as untrustworthy while the static headline survived. GitHub returned no
+review records for #1084; historical prompts and tiers are unknown. Renderer-only checks cannot
+observe conclusions outside the generated region.
+
+Read the whole published artifact against its retained source, including static summaries, historical
+comparisons and the conditions on every dependent claim. An unreliable contributing row must withhold
+the aggregate upper-bound verdict everywhere, even when the generated table already qualifies it.
+
+### 2026-10-29 — calibration warning was lost in the generated cost report (PR #974)
+
+PR #974 (`caabe804622df1c116c1545bcbb1fcea88e7e114`) introduced the cost report. The renderer later treated every median as an upper bound even when its retained row marked the median untrustworthy. Historical private review prompts and tiers are unknown; the missed probe joined the measurement's soft calibration flag to the published conclusion.
+
+Render retained data with an unreliable reference audio row and worker row. Require their raw values and valid floors to remain visible, while withholding dependent upper-bound and decisive claims. Independently toggle each flag and preserve a trustworthy reference control; removing the renderer's flag handling must fail the named regression. A hard-gate pass or JSON-to-Markdown consistency check alone does not prove that the report honors the soft flag.
+
 ## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
 
 PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay

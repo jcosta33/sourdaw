@@ -398,7 +398,10 @@ describe('quantum harness scoped type-aware lint', () => {
             ],
             { cwd: repositoryRoot, encoding: 'utf8' }
         );
-        expect(result.status).toBe(0);
+        expect(
+            result.status,
+            `oxlint signal: ${result.signal}; error: ${result.error?.message ?? 'none'}\n${result.stdout?.slice(0, 8000) ?? ''}\n${result.stderr?.slice(0, 8000) ?? ''}`
+        ).toBe(0);
     });
 });
 
