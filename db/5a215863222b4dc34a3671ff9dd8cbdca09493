@@ -1,0 +1,56 @@
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_57fdb7ae7b3ba4::t_432a7c6134d2f8 406,409,419-424
+  s_9091c7fb2989db::t_0db83dbb511be1 44,86-89,427-430,432-461,463
+  s_9091c7fb2989db::t_f9d3624dc306df 431
+  s_3bb122e91d89a5::t_0b03a3ebab0067 462,464
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx
+  s_9091c7fb2989db::t_37d37b3d6a2c50 258,262-263
+  s_9091c7fb2989db::t_b62daaaab68301 244-257
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_9091c7fb2989db::t_96961628dad8ec 167,169-171
+  s_9091c7fb2989db::t_6fd5af94ae72f7 19
+  s_9091c7fb2989db::t_013eaf674c41ce 269-272
+src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx
+  s_9091c7fb2989db::t_95a8de69916473 114
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_9091c7fb2989db::t_b8234bce54f742 258-259,263-265
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_9091c7fb2989db::t_45ef1332a85da1 701-711,714,716-736
+  s_9091c7fb2989db::t_4acdfa212429f7 712-713,715
+  s_9091c7fb2989db::t_48f3d2b20a91d9 669
+  s_9091c7fb2989db::t_f7795ffcc1f881 697
+src/modules/Arrangement/handlers/track/__tests__/freezeTrackFailure.integration.spec.tsx
+  s_9091c7fb2989db::t_aff0553e3d2db2 245-275
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db5a215863222b4dc34a3671ff9dd8cbdca09493",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_57fdb7ae7b3ba4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a189c0-c384-7382-9850-6381d0e28b57",
+        "model": "gpt-6.1-terra"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
