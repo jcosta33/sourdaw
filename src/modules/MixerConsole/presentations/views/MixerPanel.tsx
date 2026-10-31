@@ -45,6 +45,7 @@ const STRIP_WIDTH_CLASS: Record<ChannelStripWidth, string> = {
 export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
     const { tracks, selectedTrackId } = useTracks();
     const channelTracks = getMixerChannelTracks(tracks);
+    const masterTrack = tracks.find((track) => track.kind === 'master');
     const { channelStripWidth } = useWorkspaceState();
     const widthClass = STRIP_WIDTH_CLASS[channelStripWidth];
 
@@ -225,7 +226,11 @@ export const MixerPanel = ({ style }: MixerPanelProps): ReactElement => {
                         />
                     ))}
 
-                    <MasterChannelStrip widthClass={widthClass} />
+                    <MasterChannelStrip
+                        widthClass={widthClass}
+                        track={masterTrack}
+                        isSelected={masterTrack !== undefined && masterTrack.id === selectedTrackId}
+                    />
 
                     {channelTracks.length === 0 ? (
                         <Row grow justify="center">

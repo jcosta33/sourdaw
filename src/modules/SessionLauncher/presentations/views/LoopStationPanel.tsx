@@ -21,6 +21,7 @@ import {
     type LoopSlotState,
     type LoopStationState,
 } from '../../stores/loopStationStore';
+import { getLaunchableTracks } from '../../transformers/getLaunchableTracks';
 import { clearSlot } from '../../useCases/loopStation/clearSlot';
 import { createSlot } from '../../useCases/loopStation/createSlot';
 import { setFixedLoopLength } from '../../useCases/loopStation/setFixedLoopLength';
@@ -31,7 +32,6 @@ import { toggleRecord } from '../../useCases/loopStation/toggleRecord';
 import { toggleSync } from '../../useCases/loopStation/toggleSync';
 import { triggerSlot } from '../../useCases/loopStation/triggerSlot';
 import { undoLastLayer } from '../../useCases/loopStation/undoLastLayer';
-import { getLaunchableTracks } from '../helpers/getLaunchableTracks';
 import { formatBarBeat, formatLoopProgress } from '../helpers/loopStationProgress';
 
 const emptyLoopState: LoopStationState = {

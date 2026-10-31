@@ -19,10 +19,10 @@ import { cn } from '#/utils/Styles/cn';
 
 import { type Track } from '../../models/TrackViewTypes';
 import { sessionLaunchStore, type SessionLaunchState } from '../../stores/sessionLaunchStore';
+import { getLaunchableTracks } from '../../transformers/getLaunchableTracks';
 import { launchSessionScene } from '../../useCases/sessionLaunch/launchSessionScene';
 import { stopAllSessionSlots } from '../../useCases/sessionLaunch/stopAllSessionSlots';
 import { toggleSessionSlot } from '../../useCases/sessionLaunch/toggleSessionSlot';
-import { getLaunchableTracks } from '../helpers/getLaunchableTracks';
 import { useTracks } from '../hooks/useTracks';
 
 const SCENE_COUNT = 8;

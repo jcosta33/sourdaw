@@ -56,7 +56,11 @@ vi.mock('../Mixer/ExpandedChannelStrip', () => ({
 }));
 
 vi.mock('../Mixer/MasterChannelStrip', () => ({
-    MasterChannelStrip: () => <div data-testid="master-channel-strip">Master</div>,
+    MasterChannelStrip: ({ track, isSelected }: { track?: { id: string }; isSelected?: boolean }) => (
+        <div data-testid="master-channel-strip" data-track-id={track?.id} data-selected={String(isSelected)}>
+            Master
+        </div>
+    ),
 }));
 
 vi.mock('../Mixer/MixHealthDialog', () => ({
@@ -253,6 +257,25 @@ describe('MixerPanel', () => {
         expect(screen.getByText(/Mixer - 1 channels/i)).toBeInTheDocument();
     });
 
+    it.each([
+        ['master', 'true'],
+        ['track-1', 'false'],
+    ])('hands the master row to the master strip with selection %s -> %s', (selectedTrackId, expected) => {
+        trackMocks.useTracks.mockReturnValueOnce({
+            tracks: [
+                { id: 'master', kind: 'master', name: 'Master' },
+                { id: 'track-1', kind: 'midi', name: 'MIDI 1' },
+            ],
+            selectedTrackId,
+        });
+
+        render(<MixerPanel />);
+
+        const strip = screen.getByTestId('master-channel-strip');
+        expect(strip).toHaveAttribute('data-track-id', 'master');
+        expect(strip).toHaveAttribute('data-selected', expected);
+    });
+
     it('should render the blocked state when only the master row exists', () => {
         trackMocks.useTracks.mockReturnValueOnce({
             tracks: [{ id: 'master', kind: 'master', name: 'Master' }],
@@ -262,6 +285,7 @@ describe('MixerPanel', () => {
         render(<MixerPanel />);
 
         expect(screen.getByText('No tracks in the oven yet')).toBeInTheDocument();
+        expect(screen.getByTestId('master-channel-strip')).toBeInTheDocument();
         expect(screen.queryByTestId('channel-strip-master')).not.toBeInTheDocument();
         expect(screen.getByText(/Mixer - 0 channels/i)).toBeInTheDocument();
     });
