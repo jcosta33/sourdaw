@@ -1,0 +1,102 @@
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_3bb122e91d89a5::t_5fc9ade33b8f3c 7
+src/modules/CommandInterface/useCases/__tests__/isWithinModalSurface.spec.ts
+  s_3bb122e91d89a5::t_6675a226837038 1-33
+src/modules/CommandInterface/useCases/index.ts
+  s_3bb122e91d89a5::t_ce601595608fe9 10
+  s_3bb122e91d89a5::t_cf8dd6d2ed8840 8
+  s_7a8e1107313040::t_0caabb792205f2 9
+src/modules/CommandInterface/useCases/isWithinModalSurface.ts
+  s_3bb122e91d89a5::t_cff8c84f397e11 1-8
+  s_88fc7e0d05bab6::t_04e5bea4f54e24 3
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_88fc7e0d05bab6::t_e499a05a9c6986 15-21,199-212,255-256,279,290,322-323,325-326,569-571,573-576,578,584,595-598,604-605,607,614,617,641,652-653,655-657,660-664,666,668-672,723,726,763-764,808-824
+  s_88fc7e0d05bab6::t_01f07982e105ed 291-299,303-305,307-320,580,583,587,594,601-603,616,618-621,623,667
+  s_88fc7e0d05bab6::t_337adc6d3e35c7 665
+  s_3bb122e91d89a5::t_b18ba6b9952b80 39-43,45,48,213-236,269-289,300-301,306,321,324,339,579,588-591,609-613,622,627-640,642-645,724
+  s_88fc7e0d05bab6::t_91093a640d1ad9 253
+  s_88fc7e0d05bab6::t_914e3051ca12ff 250-252
+  s_88fc7e0d05bab6::t_9f36298bd6f2c3 254-255
+  s_7a8e1107313040::t_ee8c574bb644f9 44,238-249,257-267,302
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_88fc7e0d05bab6::t_7ec994f6added2 2,108-109,112-114,116,118-125,199-200,266-267,289-291,294-295,535,729-730,740,746,752,764-765,768,770-771,773,778-803,818-949,969-1012,1026-1031
+  s_88fc7e0d05bab6::t_01f07982e105ed 950-968
+  s_3bb122e91d89a5::t_42b58b9ba01507 4-5,9,46-54,259,261-262,265,804-817,1013-1025,1032-1097,1140-1164,1203-1358
+  s_88fc7e0d05bab6::t_9b3b9f07918eaa 1165-1174,1202
+  s_7a8e1107313040::t_9855196b3846d1 1098-1139,1175-1201
+tests/e2e/finalE2EGaps.spec.ts
+  s_88fc7e0d05bab6::t_ce31495879af78 75-78,85-88,105
+tests/e2e/keyboardShortcuts.spec.ts
+  s_88fc7e0d05bab6::t_4e8a63ada483e3 54,57
+tests/e2e/recordEditPlayback.spec.ts
+  s_88fc7e0d05bab6::t_b65fad53083d45 66
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_88fc7e0d05bab6::t_c3a25f9b9575e7 121
+tests/e2e/virtualKeyboardChord.spec.ts
+  s_88fc7e0d05bab6::t_cf49c49867affd 12,18,28,37,39,43
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_88fc7e0d05bab6::t_001261d96b73da 26
+tests/e2e/virtualKeyboardPlayTestId.spec.ts
+  s_88fc7e0d05bab6::t_9ed1b5a1a50221 15,19,21-26,28-31,42
+tests/e2e/virtualKeyboardTestId.spec.ts
+  s_88fc7e0d05bab6::t_0a3ff5d2440315 21,30,32,35-40,47
+tests/e2e/workspacePanels.spec.ts
+  s_88fc7e0d05bab6::t_3c88e992f7c9c9 42-43,45,52,74
+src/modules/CommandInterface/useCases/__tests__/hasOpenModalSurface.spec.ts
+  s_3bb122e91d89a5::t_ee39a35ca158a6 1-22,24-27,51-59
+  s_88fc7e0d05bab6::t_3998c2893156b0 23,28-37
+  s_88fc7e0d05bab6::t_25cd032689fb00 38-40
+  s_7a8e1107313040::t_9bbd53d3061b76 41-50
+src/modules/CommandInterface/useCases/hasOpenModalSurface.ts
+  s_3bb122e91d89a5::t_6152457cd9da53 10-11,13-15,17-19
+  s_88fc7e0d05bab6::t_6e6579163e57e9 1-3,7,12
+  s_88fc7e0d05bab6::t_5ba2cd7d98c9fb 9
+  s_88fc7e0d05bab6::t_d095ef5d8931af 8
+  s_7a8e1107313040::t_801b3f535ba342 4-6,16
+src/modules/TimelineEditor/presentations/helpers/mouseDrag.ts
+  s_88fc7e0d05bab6::t_91ce2c56987b83 1-2,26,29
+src/utils/UI/__tests__/activeDragGesture.spec.ts
+  s_3bb122e91d89a5::t_aad711e7242b13 1-35
+src/utils/UI/activeDragGesture.ts
+  s_3bb122e91d89a5::t_b1f2f6fae097b6 1-30
+src/modules/TimelineEditor/presentations/helpers/__tests__/mouseDrag.spec.ts
+  s_3bb122e91d89a5::t_8a0bcda162d7a2 3-4,144-163
+src/modules/CommandInterface/useCases/__tests__/isWithinTransientSurface.spec.ts
+  s_7a8e1107313040::t_7c677d0f7794a2 1-42
+src/modules/CommandInterface/useCases/isWithinTransientSurface.ts
+  s_7a8e1107313040::t_fccf093974266b 1-9
+src/modules/WorkspaceShell/AGENTS.md
+  s_7a8e1107313040::t_168c55bc307fb2 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "49d54209da2365a57e8993bec5fa11babe59303c",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
