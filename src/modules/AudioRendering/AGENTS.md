@@ -1,10 +1,10 @@
 # AudioRendering module — Agent Guidelines
 
-Audio encoding and export pipeline: encodes master/stem audio buffers into target formats (WAV, MP3, FLAC), enforces loudness/true peak standards, and writes native export files.
+Audio encoding and export pipeline: encodes master/stem audio buffers into target formats (WAV, MP3, FLAC, Vorbis, Opus), enforces loudness/true peak standards, and writes native export files.
 
 ## Domain Ownership
 
-Owns audio export encoding (WAV, MP3, FLAC), export normalization (LUFS / true peak conformance, dithering, bit-depth conversion), project section render artifacts, and native file export I/O. Does not own offline DSP graph rendering (AudioEngine) or project timeline models (Arrangement).
+Owns audio export encoding (WAV, MP3, FLAC, Vorbis, Opus), export normalization (LUFS / true peak conformance, dithering, bit-depth conversion), project section render artifacts, and native file export I/O. Does not own offline DSP graph rendering (AudioEngine) or project timeline models (Arrangement).
 
 ## Public Contract Surface
 
@@ -26,7 +26,7 @@ Owns audio export encoding (WAV, MP3, FLAC), export normalization (LUFS / true p
 - **Loudness and true peak conformance**: Normalization (EBU R128 / ITU-R BS.1770-4) applies dual-stage K-weighting filtering (high-pass and high-shelf) and oversampled true peak calculation before applying normalization gain.
 - **Dither on bit-depth reduction**: Downsampling from 32-bit float to 24-bit or 16-bit PCM must apply triangular probability density function (TPDF) dither to prevent quantization distortion.
 - **Chunked non-blocking encoding**: Encoding large multi-channel audio buffers into MP3 or FLAC can saturate the main thread; long exports must process in incremental chunks or worker contexts.
-- **Desktop vs browser file delivery**: Desktop environment writes files directly to the filesystem via `desktopBridge`; web browser builds trigger download blobs.
+- **Desktop vs browser file delivery**: Desktop environment writes files directly to the filesystem via `desktopBridge`; web browser builds acquire one transactional Save File picker writable before rendering.
 - **A measurement renderer reports the renders it starts and retains nothing**: the measurement renderers call `onRenderStart` as each target's render begins, so a caller counts the renders that ran rather than the renders it planned, and they hand back buffers without touching the artifact store. The caller retains them with `retainAgentMeasurementRenders` once it has reported, so a measurement that stops first leaves the store as it found it. The master mixdown stops on the render's own `abortSignal`, not on `cancelExport`.
 - **A measurement's mixdown yields to a musician's export**: the mixdown renders with `lockHolder: 'agent-measurement'`, so an export a musician starts meanwhile stops it instead of failing. That stop surfaces as the typed `render-busy` refusal (the target's, not `cancelled`, unless the measurement's own signal stopped it first), after which the caller retains nothing, as for any measurement that stops. A measurement never stops a musician's export; it refuses `render-busy` before rendering.
 - **A section render yields to a musician's export like a measurement does**: each section renders with `lockHolder: 'agent-section-render'`, so an export a musician starts meanwhile stops it and completes. The stop surfaces as a `failed` receipt with `failureKind: 'render-busy'`, which a refusal by another holder produces too. It retains nothing for that section, and the batch stops there instead of rendering the remaining sections once the export frees the lock. The batch ends in the retryable `render-incomplete` follow-up that `retryAgentProjectSectionRenders` already reconciles, its reason carrying the busy message. The project is untouched beyond what the committed action already did.

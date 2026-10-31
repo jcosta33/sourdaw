@@ -1467,14 +1467,13 @@ export function startPlayheadScheduler(
             schedulerSession.scheduledAudioClips.clear();
             schedulerSession.scheduledFrozenTracks.clear();
             // The dying window's emission walked the metronome's beat up to
-            // loopEnd, and `scheduleMetronome` gates on `lastBeat` before its
-            // time-keyed dedup — left standing, that gate would swallow every
-            // incoming-pass click, because the loopEnd beat outranks every
-            // beat the new pass offers. Re-open the window at loopStart; the
-            // `firedClickTimes` dedup (deliberately kept alive by
-            // `resetMetronomeBeat`) then merges the seam pair — the dying
-            // loopEnd click and the incoming loopStart click are the same
-            // physical instant.
+            // its last beat before loopEnd, and `scheduleMetronome` gates on
+            // `lastBeat` — left standing, that gate would swallow every
+            // incoming-pass click the dying pass's beats outrank. Re-open the
+            // window at loopStart. The dying window never clicks at loopEnd,
+            // so the seam instant is the incoming pass's: its loopStart beat
+            // clicks there with its own accent, or nothing does when
+            // loopStart is not a beat.
             resetMetronomeBeat(current.loopStart);
             scheduleMetronome(
                 current.loopStart,

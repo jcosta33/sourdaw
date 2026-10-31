@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,8 +11,10 @@ import {
     isAuthorBotNodeId,
     originMainBlob,
     removalLockPid,
+    REQUIRED_BASE_BRANCH,
     resolvePrimaryRoot,
 } from './githubAppIdentity.ts';
+import { laneIsActive } from './laneActivity.ts';
 import { PR_STATE, supersessionReplacement } from './prContract.ts';
 import { clearGuardFailureReceipt } from './resourceGuard.ts';
 
@@ -34,6 +36,7 @@ export type PullRequest = {
     headRefName: string;
     headRefOid: string;
     headRepository: string | null;
+    baseRefName: string | null;
     mergedAt: string | null;
 };
 
@@ -47,6 +50,7 @@ export type IssueComment = {
 export type ReplacementPullRequest = {
     number: number;
     state: string;
+    baseRefName: string | null;
     mergedAt: string | null;
 };
 
@@ -71,7 +75,7 @@ export type LaneRemovalPort = {
     clearGuardFailure: (laneName: string) => void;
 };
 
-export type ShellCaptureOptions = { preserveStdout?: true };
+export type ShellCaptureOptions = { preserveStdout?: true; processClock?: 'utc' };
 
 export type ShellRunner = {
     capture: (command: string, args: string[], options?: ShellCaptureOptions) => string;
@@ -108,6 +112,10 @@ export function isExpectedReviewLaneName(name: string): boolean {
 export function isExpectedReviewLanePath(target: string, primaryRoot: string): boolean {
     const canonicalPrimaryRoot = canonicalPath(primaryRoot);
     const canonicalTarget = canonicalPath(target);
+    const legacyRoot = canonicalPath(join(canonicalPrimaryRoot, '.agents', 'review-worktrees'));
+    if (canonicalTarget !== legacyRoot && inside(legacyRoot, canonicalTarget)) {
+        return relative(legacyRoot, canonicalTarget).split('/').length === 1;
+    }
     const agentWorktreesRoot = canonicalPath(join(canonicalPrimaryRoot, '.agents', 'worktrees'));
     if (canonicalTarget === agentWorktreesRoot || !inside(agentWorktreesRoot, canonicalTarget)) {
         return false;
@@ -229,7 +237,10 @@ function locateAgentWorktree(target: string, verb: string, port: LaneRemovalPort
         fail(`refusing to ${verb} the primary worktree`);
     }
     const agentRoot = canonicalPath(join(canonicalRoot, '.agents', 'worktrees'));
-    if (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) {
+    if (
+        (canonicalTarget === agentRoot || !inside(agentRoot, canonicalTarget)) &&
+        !(lane.detached && lane.branch === undefined && isExpectedReviewLanePath(canonicalTarget, canonicalRoot))
+    ) {
         fail(`${target} is not an agent worktree`);
     }
     if (inside(canonicalTarget, canonicalPath(port.currentDirectory()))) {
@@ -291,9 +302,37 @@ type OwnershipSnapshot = {
     branch: string | null;
     ignored: string[];
     pullRequest: number;
+    landedAt: string;
     supersededBy?: number;
     remoteHead?: string;
 };
+
+function mergedTimestamp(value: unknown): string | null {
+    if (
+        typeof value !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) ||
+        !Number.isFinite(Date.parse(value))
+    ) {
+        return null;
+    }
+    // Date.parse normalizes nonexistent dates such as February 30 instead of rejecting them.
+    const day = value.slice(0, 10);
+    return new Date(`${day}T00:00:00Z`).toISOString().slice(0, 10) === day ? value : null;
+}
+
+function restPullRequestState(state: unknown, mergedAt: unknown): string {
+    const normalized = typeof state === 'string' ? state.toUpperCase() : 'UNKNOWN';
+    if (normalized === PR_STATE.MERGED && mergedTimestamp(mergedAt) === null) {
+        return 'UNKNOWN';
+    }
+    return normalized === PR_STATE.CLOSED && mergedTimestamp(mergedAt) !== null ? PR_STATE.MERGED : normalized;
+}
+
+function assertMainMergeBase(number: number, baseRefName: string | null): void {
+    if (baseRefName !== REQUIRED_BASE_BRANCH) {
+        fail(`PR #${number} is not proven merged into ${REQUIRED_BASE_BRANCH}`);
+    }
+}
 
 /**
  * A lane is spent once the work it holds is on `main`. Merging is the ordinary way there; being
@@ -312,7 +351,7 @@ type OwnershipSnapshot = {
  * that it arrived, so the named replacement must itself be merged before this lane counts as
  * spent.
  */
-function supersededReplacement(number: number, port: LaneRemovalPort): number {
+function supersededReplacement(number: number, port: LaneRemovalPort): { number: number; mergedAt: string } {
     const receipts = port
         .comments(number)
         .filter((comment) => comment.authorType === 'Bot' && isAuthorBotNodeId(comment.authorNodeId))
@@ -326,10 +365,12 @@ function supersededReplacement(number: number, port: LaneRemovalPort): number {
         fail(`PR #${number} names itself as its replacement`);
     }
     const landed = port.replacement(replacement);
-    if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || landed.mergedAt === null) {
+    const mergedAt = mergedTimestamp(landed.mergedAt);
+    if (landed.number !== replacement || landed.state !== PR_STATE.MERGED || mergedAt === null) {
         fail(`PR #${number} was superseded by #${replacement}, which is not merged`);
     }
-    return replacement;
+    assertMainMergeBase(landed.number, landed.baseRefName);
+    return { number: replacement, mergedAt };
 }
 
 function validateOwnership(
@@ -396,7 +437,8 @@ function validateOwnership(
         if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
             fail(`PR #${pullRequest.number} is foreign`);
         }
-        const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
+        const mergedAt = mergedTimestamp(pullRequest.mergedAt);
+        const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
         if (!merged) {
             fail(
                 pullRequest.state === PR_STATE.OPEN
@@ -404,6 +446,7 @@ function validateOwnership(
                     : `PR #${pullRequest.number} is not merged`
             );
         }
+        assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
         if (port.dirty(target) || port.active(target)) {
             fail('worktree changed during removal');
         }
@@ -412,6 +455,7 @@ function validateOwnership(
             branch: null,
             ignored: [...ignored].sort(),
             pullRequest: pullRequest.number,
+            landedAt: mergedAt,
         };
     }
 
@@ -430,7 +474,8 @@ function validateOwnership(
     if (pullRequest.headRepository?.toLowerCase() !== repository.toLowerCase()) {
         fail(`PR #${pullRequest.number} is foreign`);
     }
-    const merged = pullRequest.state === PR_STATE.MERGED && pullRequest.mergedAt !== null;
+    const mergedAt = mergedTimestamp(pullRequest.mergedAt);
+    const merged = pullRequest.state === PR_STATE.MERGED && mergedAt !== null;
     // The draft flag says nothing about whether the work landed: an OPEN draft is already refused
     // below because it is neither merged nor closed, and GitHub cannot merge a pull request while
     // it is still a draft, so a MERGED pull request is never a draft either. A CLOSED draft is the
@@ -440,7 +485,14 @@ function validateOwnership(
     if (!merged && pullRequest.state !== PR_STATE.CLOSED) {
         fail(`PR #${pullRequest.number} is still active`);
     }
-    const supersededBy = merged ? undefined : supersededReplacement(pullRequest.number, port);
+    if (merged) {
+        assertMainMergeBase(pullRequest.number, pullRequest.baseRefName);
+    }
+    const replacement = merged ? undefined : supersededReplacement(pullRequest.number, port);
+    const landedAt = replacement?.mergedAt ?? mergedAt;
+    if (landedAt === null) {
+        fail(`PR #${pullRequest.number} merge completion is unproven`);
+    }
     const remoteHead = port.remoteHead(branch);
     if (
         pullRequest.headRefName !== branch ||
@@ -457,15 +509,69 @@ function validateOwnership(
         branch,
         ignored: [...ignored].sort(),
         pullRequest: pullRequest.number,
-        supersededBy,
+        landedAt,
+        supersededBy: replacement?.number,
         remoteHead,
     };
 }
 
-export function removeLane(target: string, port: LaneRemovalPort): void {
+export type LaneIdentity = {
+    path: string;
+    head: string;
+    branch?: string;
+    detached: boolean;
+    directory: { dev: number; ino: number; birthtimeMs: number };
+};
+
+export function laneIdentity(lane: Worktree): LaneIdentity {
+    const directory = statSync(lane.path);
+    return {
+        path: lane.path,
+        head: lane.head,
+        branch: lane.branch,
+        detached: lane.detached,
+        directory: { dev: directory.dev, ino: directory.ino, birthtimeMs: directory.birthtimeMs },
+    };
+}
+
+export function sameLaneIdentity(expected: LaneIdentity, actual: LaneIdentity): boolean {
+    return (
+        expected.path === actual.path &&
+        expected.head === actual.head &&
+        expected.branch === actual.branch &&
+        expected.detached === actual.detached &&
+        JSON.stringify(expected.directory) === JSON.stringify(actual.directory)
+    );
+}
+
+function assertLocalRemovalState(target: string, expected: Worktree, port: LaneRemovalPort): void {
+    const current = matchingWorktrees(target, port.worktrees());
+    if (
+        current.length !== 1 ||
+        current[0]?.head !== expected.head ||
+        current[0]?.branch !== expected.branch ||
+        current[0]?.detached !== expected.detached ||
+        current[0]?.path !== expected.path
+    ) {
+        fail('worktree identity changed during removal');
+    }
+    if (
+        port.dirty(target) ||
+        port.active(target) ||
+        port.operation(target) !== undefined ||
+        port.ignored(target).some((path) => !disposableIgnored(path))
+    ) {
+        fail('worktree changed during removal');
+    }
+}
+
+export function removeLane(target: string, port: LaneRemovalPort, expected?: LaneIdentity): void {
     port.fetch();
     const repository = port.repository();
     const lane = identifyLane(target, port);
+    if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+        fail('queued worktree identity changed');
+    }
     const laneName = basename(target);
     const authorLocked = lane.locked && lane.lockReason === AUTHOR_LOCK_REASON;
     if (!authorLocked) {
@@ -478,9 +584,33 @@ export function removeLane(target: string, port: LaneRemovalPort): void {
         if (JSON.stringify(initial) !== JSON.stringify(final)) {
             fail('worktree authority changed during removal');
         }
+        assertLocalRemovalState(target, lane, port);
+        if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+            fail('queued worktree identity changed');
+        }
         port.unlock(target);
         releaseOnFailure = false;
-        port.remove(target);
+        try {
+            // Native, deliberately without --force: Git remains the last dirt/submodule gate.
+            assertLocalRemovalState(target, lane, port);
+            if (expected !== undefined && !sameLaneIdentity(expected, laneIdentity(lane))) {
+                fail('queued worktree identity changed');
+            }
+            port.remove(target);
+        } catch (error) {
+            const remaining = matchingWorktrees(target, port.worktrees());
+            if (
+                authorLocked &&
+                remaining.length === 1 &&
+                remaining[0]?.head === lane.head &&
+                remaining[0]?.branch === lane.branch &&
+                !remaining[0]?.locked &&
+                (expected === undefined || sameLaneIdentity(expected, laneIdentity(remaining[0])))
+            ) {
+                port.lock(target, AUTHOR_LOCK_REASON);
+            }
+            throw error;
+        }
         port.clearGuardFailure(laneName);
     } finally {
         if (releaseOnFailure) {
@@ -672,13 +802,35 @@ export function strandLane(target: string, reason: string, port: LaneStrandPort)
     }
 }
 
-function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
-    const result = spawnSync(command, args, { cwd: process.cwd(), encoding: 'utf8', shell: false });
+export function capture(command: string, args: string[], options?: ShellCaptureOptions): string {
+    const inspection = command === 'lsof' || command === 'ps';
+    if (options?.processClock !== undefined && command !== 'ps') {
+        fail('fixed process clock requires ps inspection');
+    }
+    let executable = command;
+    if (process.platform === 'darwin' && inspection) {
+        if (command === 'lsof') {
+            executable = '/usr/sbin/lsof';
+        } else {
+            executable = '/bin/ps';
+        }
+    }
+    const result = spawnSync(executable, args, {
+        cwd: process.cwd(),
+        encoding: 'utf8',
+        shell: false,
+        maxBuffer: 64 * 1024 * 1024,
+        timeout: inspection ? 5_000 : undefined,
+        env: options?.processClock === 'utc' ? { ...process.env, LC_ALL: 'C', TZ: 'UTC' } : undefined,
+    });
     if (result.error !== undefined) {
         throw result.error;
     }
     if (result.status !== 0) {
         throw new Error(result.stderr.trim() || `${command} failed with exit ${result.status ?? 'signal'}`);
+    }
+    if (inspection && result.stderr.trim() !== '') {
+        fail('open-file inspection was incomplete');
     }
     return options?.preserveStdout === true ? result.stdout : result.stdout.trim();
 }
@@ -701,36 +853,19 @@ function parseJson<Value>(value: string, label: string): Value {
     }
 }
 
-export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort {
+export function shellPort(shell: ShellRunner = { capture, run }, root?: string): LaneStrandPort {
     let cachedRepository: string | undefined;
     const repository = () => {
         cachedRepository ??= shell.capture('gh', ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner']);
         return cachedRepository;
     };
-    const primaryRoot = resolvePrimaryRoot();
+    const primaryRoot = root ?? resolvePrimaryRoot();
     return {
         fetch: () => shell.run('git', ['fetch', '--prune', 'origin']),
         repository,
         currentDirectory: () => realpathSync(process.cwd()),
         worktrees: () => parseWorktrees(shell.capture('git', ['worktree', 'list', '--porcelain', '-z'])),
-        active: (path) => {
-            const canonicalTarget = canonicalPath(path);
-            let pid: number | undefined;
-            for (const line of shell.capture('lsof', ['-a', '-d', 'cwd', '-F', 'pn']).split('\n')) {
-                if (line.startsWith('p')) {
-                    pid = Number(line.slice(1));
-                    continue;
-                }
-                if (
-                    line.startsWith('n') &&
-                    pid !== process.pid &&
-                    inside(canonicalTarget, canonicalPath(line.slice(1)))
-                ) {
-                    return true;
-                }
-            }
-            return false;
-        },
+        active: (path) => laneIsActive(path, shell),
         processAlive: (pid) => {
             try {
                 process.kill(pid, 0);
@@ -751,6 +886,7 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                 .filter((candidate) => candidate !== ''),
         operation: (path) => {
             const candidates = [
+                ['index update', 'index.lock'],
                 ['merge', 'MERGE_HEAD'],
                 ['rebase', 'rebase-merge'],
                 ['rebase', 'rebase-apply'],
@@ -788,7 +924,8 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                         state: string;
                         draft: boolean;
                         head: { ref: string; sha: string; repo: { full_name: string } | null };
-                        merged_at: string | null;
+                        base?: { ref?: string | null } | null;
+                        merged_at?: unknown;
                     }>
                 >
             >(
@@ -802,12 +939,13 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
             );
             return pages.flat().map((pullRequest) => ({
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
+                state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
                 isDraft: pullRequest.draft,
                 headRefName: pullRequest.head.ref,
                 headRefOid: pullRequest.head.sha,
                 headRepository: pullRequest.head.repo?.full_name ?? null,
-                mergedAt: pullRequest.merged_at,
+                baseRefName: pullRequest.base?.ref ?? null,
+                mergedAt: mergedTimestamp(pullRequest.merged_at),
             }));
         },
         commitPullRequests: (sha) => {
@@ -820,7 +958,8 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                             state: string;
                             draft: boolean;
                             head: { ref: string; sha: string; repo: { full_name: string } | null };
-                            merged_at: string | null;
+                            base?: { ref?: string | null } | null;
+                            merged_at?: unknown;
                         }>
                     >
                 >(
@@ -834,12 +973,13 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
                 );
                 return pages.flat().map((pullRequest) => ({
                     number: pullRequest.number,
-                    state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
+                    state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
                     isDraft: pullRequest.draft,
                     headRefName: pullRequest.head.ref,
                     headRefOid: pullRequest.head.sha,
                     headRepository: pullRequest.head.repo?.full_name ?? null,
-                    mergedAt: pullRequest.merged_at,
+                    baseRefName: pullRequest.base?.ref ?? null,
+                    mergedAt: mergedTimestamp(pullRequest.merged_at),
                 }));
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
@@ -869,14 +1009,17 @@ export function shellPort(shell: ShellRunner = { capture, run }): LaneStrandPort
             }));
         },
         replacement: (number) => {
-            const pullRequest = parseJson<{ number: number; state: string; merged_at: string | null }>(
-                shell.capture('gh', ['api', `repos/${repository()}/pulls/${number}`]),
-                `PR #${number} query`
-            );
+            const pullRequest = parseJson<{
+                number: number;
+                state?: string;
+                base?: { ref?: string | null } | null;
+                merged_at?: unknown;
+            }>(shell.capture('gh', ['api', `repos/${repository()}/pulls/${number}`]), `PR #${number} query`);
             return {
                 number: pullRequest.number,
-                state: pullRequest.merged_at === null ? pullRequest.state.toUpperCase() : PR_STATE.MERGED,
-                mergedAt: pullRequest.merged_at,
+                state: restPullRequestState(pullRequest.state, pullRequest.merged_at),
+                baseRefName: pullRequest.base?.ref ?? null,
+                mergedAt: mergedTimestamp(pullRequest.merged_at),
             };
         },
         lock: (path, reason = `lane-remove:${process.pid}`) =>

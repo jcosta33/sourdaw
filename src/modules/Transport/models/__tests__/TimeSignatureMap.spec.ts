@@ -202,6 +202,98 @@ describe('getTimeSignatureSegmentAtBeat', () => {
 });
 
 describe('getMetricalBeatsBetween', () => {
+    it.each([
+        { fromBeat: 4, toBeat: 5.7, expected: [4, 5, 5.5] },
+        { fromBeat: 5.4, toBeat: 5.6, expected: [5.5] },
+    ])(
+        'visits a fractional seam inside $fromBeat..$toBeat before the outgoing next tick',
+        ({ fromBeat, toBeat, expected }) => {
+            const changes: TimeSignatureChange[] = [{ id: 'fractional', beat: 5.5, numerator: 3, denominator: 4 }];
+
+            expect(getMetricalBeatsBetween(changes, fromBeat, toBeat, 4, 4)).toEqual(expected);
+        }
+    );
+
+    it.each([
+        { fromBeat: 4, toBeat: 5.5, expected: [4, 5, 5.5] },
+        { fromBeat: 4, toBeat: 5.5 - 5e-10, expected: [4, 5, 5.5] },
+        { fromBeat: 4, toBeat: 5.5 - 2e-9, expected: [4, 5] },
+        { fromBeat: 5.5, toBeat: 5.5, expected: [5.5] },
+    ])('preserves the inclusive right tolerance at $fromBeat..$toBeat', ({ fromBeat, toBeat, expected }) => {
+        const changes: TimeSignatureChange[] = [{ id: 'fractional', beat: 5.5, numerator: 3, denominator: 4 }];
+
+        expect(getMetricalBeatsBetween(changes, fromBeat, toBeat, 4, 4)).toEqual(expected);
+    });
+
+    it('adopts the fractional origin and denominator of the last duplicate change in an unsorted map', () => {
+        const changes: TimeSignatureChange[] = [
+            { id: 'first', beat: 5.5, numerator: 3, denominator: 4 },
+            { id: 'base', beat: 0, numerator: 4, denominator: 4 },
+            { id: 'governing', beat: 5.5, numerator: 3, denominator: 8 },
+        ];
+
+        expect(getMetricalBeatsBetween(changes, 4, 6.6, 4, 4)).toEqual([4, 5, 5.5, 6, 6.5]);
+        expect(changes.map(({ id }) => id)).toEqual(['first', 'base', 'governing']);
+    });
+
+    it('visits multiple change origins between two outgoing ticks', () => {
+        const changes: TimeSignatureChange[] = [
+            { id: 'first', beat: 5.4, numerator: 3, denominator: 4 },
+            { id: 'second', beat: 5.5, numerator: 5, denominator: 8 },
+            { id: 'third', beat: 5.6, numerator: 7, denominator: 8 },
+        ];
+
+        expect(getMetricalBeatsBetween(changes, 5.3, 5.7, 4, 4)).toEqual([5.4, 5.5, 5.6]);
+    });
+
+    it.each([5.4, 5.5])('emits distinct nearby canonical origins from %s without merging their epochs', (fromBeat) => {
+        const nextOrigin = 5.5 + 5e-10;
+        const changes: TimeSignatureChange[] = [
+            { id: 'first', beat: 5.5, numerator: 3, denominator: 4 },
+            { id: 'second', beat: nextOrigin, numerator: 3, denominator: 8 },
+        ];
+
+        expect(getMetricalBeatsBetween(changes, fromBeat, 5.6, 4, 4)).toEqual([5.5, nextOrigin]);
+    });
+
+    it.each([
+        { fromBeat: -0.0001, toBeat: 0.2, expected: [0] },
+        { fromBeat: -1.2, toBeat: -0.2, expected: [-1] },
+        { fromBeat: 0, toBeat: 0, expected: [0] },
+    ])('retains the default grid at $fromBeat..$toBeat', ({ fromBeat, toBeat, expected }) => {
+        expect(getMetricalBeatsBetween([], fromBeat, toBeat, 4, 4)).toEqual(expected);
+    });
+
+    it('crosses the zero-width default segment from a negative window into an authored origin at zero', () => {
+        const changes: TimeSignatureChange[] = [{ id: 'eighths', beat: 0, numerator: 3, denominator: 8 }];
+
+        expect(getMetricalBeatsBetween(changes, -1.2, 1, 4, 4)).toEqual([-1, 0, 0.5, 1]);
+    });
+
+    it.each([
+        [Number.NaN, 8],
+        [0, Number.NaN],
+        [Number.NEGATIVE_INFINITY, 8],
+        [0, Number.POSITIVE_INFINITY],
+        [4, 3],
+    ])('refuses nonfinite or reversed bounds %s..%s', (fromBeat, toBeat) => {
+        expect(getMetricalBeatsBetween([], fromBeat, toBeat, 4, 4)).toEqual([]);
+    });
+
+    it.each([0, -4, Number.NaN, Number.POSITIVE_INFINITY])(
+        'preserves only valid beats before an invalid denominator %s',
+        (denominator) => {
+            const changes: TimeSignatureChange[] = [{ id: 'invalid', beat: 5.5, numerator: 3, denominator }];
+
+            expect(getMetricalBeatsBetween(changes, 4, 7, 4, 4)).toEqual([4, 5]);
+            expect(getMetricalBeatsBetween([], 0, 8, 4, denominator)).toEqual([]);
+        }
+    );
+
+    it('stops after a finite beat whose next grid step cannot advance in floating point', () => {
+        expect(getMetricalBeatsBetween([], 1e20, 1e20, 4, 4)).toEqual([1e20]);
+    });
+
     it('steps whole quarter notes in 4/4', () => {
         expect(getMetricalBeatsBetween([], 0.5, 4.2, 4, 4)).toEqual([1, 2, 3, 4]);
     });
