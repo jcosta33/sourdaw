@@ -52,7 +52,7 @@ describe('renderFactorySamples', () => {
         const result = await renderFactorySamples(ctx as unknown as AudioContext);
 
         expect(result.map((sample) => sample.id)).toEqual(samples.map((sample) => sample.id));
-        result.forEach((sample, index) => {
+        for (const [index, sample] of result.entries()) {
             const source = samples[index]!;
             expect(sample).toMatchObject({
                 id: source.id,
@@ -64,10 +64,10 @@ describe('renderFactorySamples', () => {
             expect(sample).not.toHaveProperty('channels');
             expect(sample.buffer.numberOfChannels).toBe(source.channels.length);
             expect(sample.buffer.sampleRate).toBe(44100);
-            source.channels.forEach((channel, channelIndex) => {
+            for (const [channelIndex, channel] of source.channels.entries()) {
                 expect(Array.from(sample.buffer.getChannelData(channelIndex))).toEqual(Array.from(channel));
-            });
-        });
+            }
+        }
     });
 
     it('yields to the event loop between buffer chunks so no single task builds them all', async () => {

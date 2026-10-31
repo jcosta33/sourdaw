@@ -12,7 +12,7 @@ describe('factory synthesis worker runtime', () => {
         }
         expect(reply.samples.length).toBeGreaterThanOrEqual(60);
         const buffers = reply.samples.flatMap((sample) => sample.channels.map((channel) => channel.buffer));
-        const transferred = new Set(transfer);
+        const transferred = new Set<ArrayBufferLike>(transfer);
         expect(transfer).toHaveLength(transferred.size);
         expect(transferred.size).toBe(new Set(buffers).size);
         expect(buffers.every((buffer) => transferred.has(buffer))).toBe(true);

@@ -29,8 +29,8 @@ export function toAudioBuffer(ctx: AudioContext, pcm: RenderedPcm): AudioBuffer 
         throw new Error('A factory sample needs at least one channel.');
     }
     const buf = ctx.createBuffer(pcm.channels.length, first.length, pcm.sampleRate);
-    pcm.channels.forEach((channel, index) => {
+    for (const [index, channel] of pcm.channels.entries()) {
         buf.getChannelData(index).set(channel);
-    });
+    }
     return buf;
 }
