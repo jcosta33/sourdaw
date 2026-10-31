@@ -298,7 +298,7 @@ async function recordLaunchSteps(steps: ProofStep[], page: Page): Promise<void> 
         return 'the alpha notice is gone';
     });
 
-    // `dismissOnboardingTour` settles on the browser panel's Effects button
+    // `dismissOnboardingTour` settles on the browser panel's Effects tab
     // when the tour never appears, so the panel has to be showing before it is
     // asked — the same order the latency harness uses.
     await recordStep(steps, 'launch', 'show the browser panel', async () => {

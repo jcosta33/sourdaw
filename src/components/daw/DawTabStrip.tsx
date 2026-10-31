@@ -195,6 +195,8 @@ export const DawTabStrip = <TId extends string>({
             return;
         }
         event.preventDefault();
+        // The global shortcut layer would otherwise read Home and End as playhead seeks.
+        event.stopPropagation();
         tabs[nextIndex]?.focus();
     };
 

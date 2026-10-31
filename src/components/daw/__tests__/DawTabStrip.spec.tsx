@@ -156,6 +156,26 @@ describe('DawTabStrip keyboard', () => {
         expect(fireEvent.keyDown(tab('Beta'), { key: 'ArrowDown' })).toBe(true);
     });
 
+    it('keeps the keys it handles from reaching window-level shortcuts, and lets every other key through', () => {
+        const windowKeydown = vi.fn<(event: KeyboardEvent) => void>();
+        window.addEventListener('keydown', windowKeydown);
+        try {
+            renderStrip({ activeId: 'b' });
+            tab('Beta').focus();
+
+            for (const key of ['Home', 'End', 'ArrowLeft', 'ArrowRight']) {
+                fireEvent.keyDown(document.activeElement ?? tab('Beta'), { key });
+            }
+            expect(windowKeydown).not.toHaveBeenCalled();
+
+            fireEvent.keyDown(tab('Beta'), { key: 'a' });
+            fireEvent.keyDown(tab('Beta'), { key: ' ' });
+            expect(windowKeydown.mock.calls.map(([event]) => event.key)).toEqual(['a', ' ']);
+        } finally {
+            window.removeEventListener('keydown', windowKeydown);
+        }
+    });
+
     it('ignores arrow keys held with a modifier so browser shortcuts survive', () => {
         renderStrip();
         tab('Alpha').focus();
@@ -237,7 +257,7 @@ describe('DawTabStrip reveal on selection', () => {
         const { rerender } = renderStrip({ items: ITEMS.slice(0, 1), activeId: 'a' });
         expect(metrics.scrollLeft).toBe(0);
 
-        // The selection never changes; the strip gains the selected tab itself.
+        // The strip gains a second tab and the selection moves onto it in the same render.
         rerender({ items: ITEMS.slice(0, 2), activeId: 'b' });
 
         expect(metrics.scrollLeft).toBe(144);

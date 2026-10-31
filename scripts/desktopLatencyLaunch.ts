@@ -29,7 +29,7 @@ const ONBOARDING_TOUR_SELECTOR = '[role="dialog"][aria-label="Onboarding tour"]'
 const SKIP_TOUR_BUTTON_NAME = 'Skip tour';
 /** `Sidebar.tsx` — the browser panel's own tab bar, scoped inside `[aria-label="Browser panel"]`. */
 const BROWSER_PANEL_SELECTOR = '[aria-label="Browser panel"]';
-const EFFECTS_TAB_BUTTON_NAME = 'Effects';
+const EFFECTS_TAB_NAME = 'Effects';
 /** `AlphaNoticeDialog.tsx` — the dialog carries no accessible name (see `dismissAlphaNotice`), so its dismiss control is what this polls for. */
 const ALPHA_NOTICE_DISMISS_NAME = 'Let me cook';
 /** Long enough for `AlphaNoticeDialog` to have mounted after the project is ready, if it was going to at all. */
@@ -121,7 +121,7 @@ export async function openNewProjectFromLaunchScreen(page: Page, timeoutMs: numb
  * that already dismissed the notice (persisted `alphaNoticeStore` state)
  * never shows it again — `ALPHA_NOTICE_GRACE_MS` after this step starts is
  * long enough for the dialog to have mounted if it was going to, so once
- * that passes without it appearing and the Effects tab button is already
+ * that passes without it appearing and the Effects tab is already
  * reachable, this returns instead of waiting out the rest of `timeoutMs`.
  */
 export async function dismissAlphaNotice(page: Page, timeoutMs: number): Promise<void> {
@@ -135,30 +135,30 @@ export async function dismissAlphaNotice(page: Page, timeoutMs: number): Promise
             return;
         }
         if (Date.now() - startedAt >= ALPHA_NOTICE_GRACE_MS) {
-            const effectsButtonPresent =
+            const effectsTabPresent =
                 (await page
                     .locator(BROWSER_PANEL_SELECTOR)
-                    .getByRole('button', { name: EFFECTS_TAB_BUTTON_NAME, exact: true })
+                    .getByRole('tab', { name: EFFECTS_TAB_NAME, exact: true })
                     .count()) > 0;
-            if (effectsButtonPresent) {
+            if (effectsTabPresent) {
                 return;
             }
         }
         await sleep(TOUR_POLL_MS);
     }
-    throw new Error(`neither the alpha notice nor the Effects tab button appeared within ${timeoutMs} ms`);
+    throw new Error(`neither the alpha notice nor the Effects tab appeared within ${timeoutMs} ms`);
 }
 
 /**
  * `AppShell.tsx` does not start the onboarding tour until the alpha notice
  * above closes and the track count is greater than zero, so the step above
  * running first is what lets this one find the tour promptly rather than
- * racing its own dialog for pointer events at the Effects button's centre
+ * racing its own dialog for pointer events at the Effects tab's centre
  * (traced on #3070: `elementFromPoint` there resolved to
- * `[role="dialog"][aria-label="Onboarding tour"]`, not the button, while the
+ * `[role="dialog"][aria-label="Onboarding tour"]`, not the tab, while the
  * alpha notice — not a mount delay — was still blocking it). The harness
  * measures audio, not onboarding, so this dismisses the tour the moment it
- * appears and otherwise returns as soon as the Effects button exists — on a
+ * appears and otherwise returns as soon as the Effects tab exists — on a
  * profile where the tour never shows, that is the only condition this waits
  * for.
  */
@@ -171,17 +171,17 @@ export async function dismissOnboardingTour(page: Page, timeoutMs: number): Prom
             await tour.waitFor({ state: 'detached', timeout: timeoutMs });
             return;
         }
-        const effectsButtonPresent =
+        const effectsTabPresent =
             (await page
                 .locator(BROWSER_PANEL_SELECTOR)
-                .getByRole('button', { name: EFFECTS_TAB_BUTTON_NAME, exact: true })
+                .getByRole('tab', { name: EFFECTS_TAB_NAME, exact: true })
                 .count()) > 0;
-        if (effectsButtonPresent) {
+        if (effectsTabPresent) {
             return;
         }
         await sleep(TOUR_POLL_MS);
     }
-    throw new Error(`neither the onboarding tour nor the Effects tab button appeared within ${timeoutMs} ms`);
+    throw new Error(`neither the onboarding tour nor the Effects tab appeared within ${timeoutMs} ms`);
 }
 
 /**
@@ -195,8 +195,8 @@ export async function dismissOnboardingTour(page: Page, timeoutMs: number): Prom
  * "timed out".
  */
 export async function openEffectsTab(page: Page, timeoutMs: number): Promise<void> {
-    const effectsButton = page.locator(BROWSER_PANEL_SELECTOR).getByRole('button', {
-        name: EFFECTS_TAB_BUTTON_NAME,
+    const effectsTab = page.locator(BROWSER_PANEL_SELECTOR).getByRole('tab', {
+        name: EFFECTS_TAB_NAME,
         exact: true,
     });
     // Not `[aria-label="Rescan plugins"]`: that button only exists in
@@ -206,7 +206,7 @@ export async function openEffectsTab(page: Page, timeoutMs: number): Promise<voi
     // regardless of scan state.
     const externalPluginsLabel = page.locator(BROWSER_PANEL_SELECTOR).getByText('External Plugins', { exact: true });
 
-    await effectsButton.click({ timeout: timeoutMs });
+    await effectsTab.click({ timeout: timeoutMs });
     try {
         await externalPluginsLabel.waitFor({ state: 'visible', timeout: timeoutMs });
         return;
@@ -215,11 +215,11 @@ export async function openEffectsTab(page: Page, timeoutMs: number): Promise<voi
     }
 
     await dismissOnboardingTour(page, timeoutMs);
-    await effectsButton.click({ timeout: timeoutMs });
+    await effectsTab.click({ timeout: timeoutMs });
     try {
         await externalPluginsLabel.waitFor({ state: 'visible', timeout: timeoutMs });
     } catch {
-        const box = await effectsButton.boundingBox();
+        const box = await effectsTab.boundingBox();
         const atCentre = box === null ? 'no bounding box' : await describeElementAtCentre(page, box);
         throw new Error(
             `"External Plugins" never appeared after two clicks on the Effects tab — at its centre: ${atCentre}`
