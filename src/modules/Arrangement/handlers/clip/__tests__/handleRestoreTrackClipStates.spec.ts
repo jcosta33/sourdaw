@@ -311,6 +311,42 @@ describe('handleRestoreTrackClipStates', () => {
             expect(mocks.updateTrack).not.toHaveBeenCalled();
         });
 
+        it.each([
+            'audioOffsetSeconds',
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+        ] as const)('refuses a peer change to canonical audio source field %s before any restore write', (field) => {
+            const [source] = clipsFor('t1', ['c1']);
+            const original = {
+                ...source!,
+                audioOffsetSeconds: 0,
+                audioUnwrappedOffsetSeconds: 4,
+                audioLoopStartSeconds: -0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 0,
+            };
+            mocks.getTrackStoreState.mockReturnValue({
+                tracks: [liveTrack('t1', ['c1'], { clips: [{ ...original, [field]: original[field] + 0.25 }] })],
+            });
+
+            const result = handleRestoreTrackClipStates.execute({
+                type: 'restoreTrackClipStates',
+                payload: {
+                    expected: [snapshotFor('t1', ['c1'], { clips: [original] })],
+                    replacement: [snapshotFor('t1', [])],
+                },
+            });
+
+            expect(result).toEqual({ status: 'conflict' });
+            expect(mocks.updateTrack).not.toHaveBeenCalled();
+            expect(mocks.removeMidiClipData).not.toHaveBeenCalled();
+            expect(mocks.restoreMidiClipData).not.toHaveBeenCalled();
+            expect(mocks.writeClipSatelliteEntry).not.toHaveBeenCalled();
+            expect(mocks.applyClipAutomationLaneTransition).not.toHaveBeenCalled();
+        });
+
         it('refuses when a sibling clip was retuned in place through the Knead editor', () => {
             // Knead writes `kneadState` through `updateClipInStore` without going through
             // `executeAppAction`, so a retune files no undo entry of its own to protect

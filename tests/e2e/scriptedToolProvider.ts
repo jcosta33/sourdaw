@@ -80,6 +80,34 @@ async function readBody(request: IncomingMessage): Promise<unknown> {
     return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
 }
 
+/**
+ * The whole-request intake a writing request must complete before any preparation, compilation or
+ * proposal is offered: a literal interpretation stating no acoustic objective, on the catalog the
+ * application advertised for this request.
+ */
+export function literalWholeRequestIntake(request: ScriptedToolRequest, id = 'intake'): ScriptedToolCall {
+    const tool = request.tools.find((candidate) => candidate.function.name === 'selectCreativeInterpretation');
+    const catalog = tool?.function.parameters.properties.catalogId;
+    if (tool === undefined || !isRecord(catalog) || typeof catalog.const !== 'string') {
+        throw new Error('The application did not advertise the whole-request intake.');
+    }
+    return {
+        id,
+        name: tool.function.name,
+        arguments: {
+            catalogId: catalog.const,
+            modeId: 'literal',
+            uncertainty: 'none',
+            targetCandidateIds: [],
+            editDimensionCandidateIds: [],
+            constraintCandidateIds: [],
+            creationSlotIds: [],
+            answer: null,
+            metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+        },
+    };
+}
+
 function send(response: ServerResponse, status: number, body: unknown): void {
     response.writeHead(status, { 'Content-Type': 'application/json' });
     response.end(JSON.stringify(body));

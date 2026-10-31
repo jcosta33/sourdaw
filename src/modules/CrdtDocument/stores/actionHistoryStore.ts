@@ -17,11 +17,12 @@ export {
 
 const DOC_PREFIX_ROOT = 'root';
 const MAX_HISTORY = 200;
+const actionHistoryStorage = createAutomergeStorage<ActionHistoryState>(DOC_PREFIX_ROOT, 'actionHistory', {
+    hydrateMissing: () => ({ entries: [] }),
+});
 
 export const actionHistoryStore = createStore<ActionHistoryState>({
-    storage: createAutomergeStorage(DOC_PREFIX_ROOT, 'actionHistory', {
-        hydrateMissing: () => ({ entries: [] }),
-    }),
+    storage: actionHistoryStorage,
     initialData: defaultActionHistoryState,
     sanitize: sanitize_action_history_state,
 });
@@ -40,7 +41,14 @@ export function pushActionHistoryEntries(entriesToAdd: readonly ActionHistoryEnt
     const evicted_entry_ids = unbounded_entries.slice(0, evicted_entry_count).map((history_entry) => history_entry.id);
     const entries = unbounded_entries.slice(evicted_entry_count);
     actionHistoryStore.set({ entries });
+    // Post-command metadata must settle before the next command reads source owners.
+    actionHistoryStorage.flushPendingUnscopedWrite();
     return evicted_entry_ids;
+}
+
+export function clearActionHistoryStore(): void {
+    actionHistoryStore.set(defaultActionHistoryState);
+    actionHistoryStorage.flushPendingUnscopedWrite();
 }
 
 type MarkEntryRevertedInput = {
@@ -80,5 +88,6 @@ export function markEntryReverted({ entryId, expectedFingerprint }: MarkEntryRev
                 : event
         ),
     });
+    actionHistoryStorage.flushPendingUnscopedWrite();
     return { status: 'marked' };
 }

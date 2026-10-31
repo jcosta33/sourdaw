@@ -4,6 +4,7 @@ import { logger } from '#/infra/logger/appLogger';
 import { LEGACY_MIDI_PROBABILITY_SEED } from '#/modules/MIDI/stores';
 import { playheadPositionRef } from '#/modules/Transport/stores';
 
+import { getRenderedTrackTops, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 import { createTrack } from '../../models/Track';
 import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../../stores/clipDragPreviewRef';
@@ -13,6 +14,7 @@ import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 import type { MidiStoreState } from '#/modules/MIDI/stores';
 import type { Preferences } from '#/modules/Preferences/stores';
 import type { TransportState } from '#/modules/Transport/stores';
+import type { TakeLaneStoreState } from '../../stores/takeLaneStore';
 import type { TimelineViewState } from '../../stores/timelineViewStore';
 import type { TrackStoreState } from '../../stores/trackStore';
 
@@ -27,6 +29,7 @@ const {
     midiStoreMock,
     clipSelectionStoreMock,
     preferencesStoreMock,
+    takeLaneStoreMock,
 } = vi.hoisted(() => ({
     trackStoreMock: (() => {
         const subscribers = new Set<Parameters<TrackStoreSubscribe>[0]>();
@@ -73,11 +76,16 @@ const {
         set: vi.fn(),
     },
     preferencesStoreMock: { value: null as Partial<Preferences> | null, set: vi.fn() },
+    takeLaneStoreMock: { value: null as TakeLaneStoreState | null },
 }));
 
 vi.mock('../../stores/trackStore', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
     return { ...actual, trackStore: trackStoreMock };
+});
+vi.mock('../../stores/takeLaneStore', async (importOriginal) => {
+    const actual = await importOriginal<Record<string, unknown>>();
+    return { ...actual, takeLaneStore: takeLaneStoreMock };
 });
 vi.mock('#/modules/Transport/stores', async (importOriginal) => {
     const actual = await importOriginal<Record<string, unknown>>();
@@ -125,6 +133,124 @@ vi.mock('../../stores/activeRecordingRef', async (importOriginal) => {
 });
 
 describe('buildTimelineRenderModel', () => {
+    it('projects canonical slip preview through its owned comp programme without moving the rectangle', () => {
+        const source = clip({
+            id: 'slip',
+            type: 'audio',
+            audioBufferId: 'bursts',
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: 0.25,
+            audioUnwrappedOffsetSeconds: 0.25,
+        });
+        const snapshot = {
+            startBeat: 0,
+            audioOffsetSeconds: 1,
+            audioLoopStartSeconds: 1,
+            audioLoopPassEntrySeconds: 1,
+            audioLoopPassOriginBeat: 0,
+            loopOriginBeat: 0,
+            loopLength: 4,
+        };
+        seedStores({
+            tracks: [{ ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }), clips: [source] }],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            { id: 'take', clipId: 'slip', name: 'Manual', startBeat: 0, endBeat: 4, selected: true },
+                        ],
+                        activeCompRegions: [{ takeId: 'take', startBeat: 0, endBeat: 4, audioSource: snapshot }],
+                    },
+                ],
+            },
+        });
+        const before = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        const pos = { trackId: 't', startBeat: 0, endBeat: 4, audioSlipOffsetBeats: 0.7 };
+        clipDragPreviewRef.current = { positions: new Map([['slip', pos]]), originals: new Map([['slip', pos]]) };
+        const preview = buildTimelineRenderModel().tracks[0]!.clips[0]!;
+        expect(preview.startBeat).toBe(before.startBeat);
+        expect(preview.endBeat).toBe(before.endBeat);
+        expect(preview.audioOffsetSeconds).toBeCloseTo(0.35);
+        expect(preview.audioProgramme?.[0]?.audioOffsetSeconds).toBeCloseTo(1.1);
+        expect(before.audioProgramme?.[0]?.audioOffsetSeconds).toBe(1);
+        expect(trackStoreMock.value?.tracks[0]!.clips[0]).toEqual(source);
+        clipDragPreviewRef.current = null;
+    });
+
+    it('carries canonical audio source fields and the map the waveform will invert', () => {
+        const source = clip({
+            id: 'audio-source',
+            type: 'audio',
+            audioOffsetBeats: 12,
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            loopOriginBeat: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        seedStores({ tracks: [{ ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }), clips: [source] }] });
+        tempoMapStoreMock.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+
+        const model = buildTimelineRenderModel();
+
+        expect(model.tracks[0]?.clips[0]).toMatchObject({
+            audioOffsetSeconds: 0,
+            audioLoopStartSeconds: -1,
+            audioLoopPassEntrySeconds: 0.5,
+            audioLoopPassOriginBeat: 1,
+            loopOriginBeat: 2,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        const timeline = model.sourceTimeline;
+        if (!timeline) {
+            throw new Error('Expected the captured source timeline');
+        }
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+        expect(timeline.beatAtSeconds(3)).toBe(5);
+        // Neither mutating the former store array nor publishing its replacement may move this model.
+        tempoMapStoreMock.value.changes[1]!.tempo = 45;
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+        expect(timeline.beatAtSeconds(3)).toBe(5);
+        tempoMapStoreMock.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slower', beat: 4, tempo: 45, curve: 'instant' },
+            ],
+        };
+        const replacement = buildTimelineRenderModel().sourceTimeline;
+        expect(replacement?.secondsAtBeat(5)).toBeCloseTo(10 / 3, 12);
+        expect(replacement?.beatAtSeconds(10 / 3)).toBe(5);
+        expect(timeline.secondsAtBeat(5)).toBe(3);
+    });
+
+    it('keeps the captured flat base tempo when a later model uses a different one', () => {
+        seedStores({ transport: { tempo: 120 } });
+        const timeline = buildTimelineRenderModel().sourceTimeline;
+        if (!timeline) {
+            throw new Error('Expected the captured source timeline');
+        }
+        expect(timeline.secondsAtBeat(4)).toBe(2);
+        expect(timeline.beatAtSeconds(2)).toBe(4);
+
+        transportStoreMock.value = { tempo: 60 };
+
+        const replacement = buildTimelineRenderModel().sourceTimeline;
+        expect(replacement?.secondsAtBeat(4)).toBe(4);
+        expect(replacement?.beatAtSeconds(4)).toBe(4);
+        expect(timeline.secondsAtBeat(4)).toBe(2);
+        expect(timeline.beatAtSeconds(2)).toBe(4);
+    });
+
     it('keeps the shared track fixture reactive through both read channels', async () => {
         const [{ trackStore: definingTrackStore }, { trackStore: barrelTrackStore }] = await Promise.all([
             import('../../stores/trackStore'),
@@ -349,8 +475,10 @@ function seedStores(overrides: {
     transport?: Partial<TransportState>;
     view?: Partial<TimelineViewState>;
     ghostClips?: NonNullable<TrackStoreState['ghostClips']>;
+    takeLanes?: TakeLaneStoreState;
 }): void {
     tempoMapStoreMock.value = { changes: [] };
+    takeLaneStoreMock.value = overrides.takeLanes ?? null;
     trackStoreMock.value = {
         tracks: overrides.tracks ?? [],
         selectedTrackId: null,
@@ -375,6 +503,334 @@ function seedStores(overrides: {
     playheadPositionRef.current = 0;
     Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: 800 });
 }
+
+function programmeWindows(model: ReturnType<typeof buildTimelineRenderModel>, clipId: string) {
+    const displayed = model.tracks[0]!.clips.find((item) => item.id === clipId);
+    if (!displayed) {
+        throw new Error('Expected the emitted clip model');
+    }
+    return displayed.audioProgramme?.map((part) => [part.startBeat, part.endBeat, part.audioOffsetSeconds]);
+}
+
+describe('buildTimelineRenderModel — audible audio programme', () => {
+    it('shows the selected unplaced take depth across a loop whose region opens inside a pass and a tempo edit', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'recording',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            audioBufferId: 'passes',
+                            audioOffsetSeconds: 0,
+                            loopEnabled: true,
+                            loopLength: 4,
+                            stretchMode: 'timestretch',
+                            stretchRatio: 2,
+                        }),
+                    ],
+                },
+            ],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            {
+                                id: 'second-pass',
+                                clipId: 'recording',
+                                name: 'Second pass',
+                                startBeat: 0,
+                                endBeat: 8,
+                                selected: true,
+                                sourceOffsetBeats: 4,
+                                sourceOffsetSeconds: 2,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 1, endBeat: 7, takeId: 'second-pass' }],
+                    },
+                ],
+            },
+        });
+        tempoMapStoreMock.value = {
+            changes: [
+                { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+                { id: 'slow', beat: 4, tempo: 60, curve: 'instant' },
+            ],
+        };
+
+        const model = buildTimelineRenderModel();
+        const displayedClip = model.tracks[0]!.clips[0]!;
+        expect([displayedClip.startBeat, displayedClip.endBeat]).toEqual([0, 8]);
+        expect(displayedClip.audioProgramme?.find((part) => part.startBeat === 1)).toMatchObject({
+            startBeat: 1,
+            endBeat: 7,
+            audioOffsetSeconds: 2.5,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+    });
+
+    it('draws a selected middle phrase and a retained source tile in the base gap', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'recording',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            audioBufferId: 'bursts',
+                            audioOffsetSeconds: 0,
+                        }),
+                    ],
+                },
+            ],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            {
+                                id: 'middle',
+                                clipId: 'recording',
+                                name: 'Middle',
+                                startBeat: 0,
+                                endBeat: 8,
+                                selected: true,
+                                sourceOffsetSeconds: 1,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'middle' }],
+                        baseGapAudioSources: [
+                            {
+                                clipId: 'recording',
+                                startBeat: 4,
+                                endBeat: 6,
+                                audioSource: {
+                                    startBeat: 4,
+                                    audioOffsetSeconds: 10,
+                                    audioLoopStartSeconds: 10,
+                                    audioLoopPassEntrySeconds: 10,
+                                    audioLoopPassOriginBeat: 4,
+                                    loopOriginBeat: 4,
+                                    loopLength: 8,
+                                },
+                            },
+                        ],
+                    },
+                ],
+            },
+        });
+
+        const model = buildTimelineRenderModel();
+        expect([model.tracks[0]!.clips[0]!.startBeat, model.tracks[0]!.clips[0]!.endBeat]).toEqual([0, 8]);
+        expect(programmeWindows(model, 'recording')).toEqual([
+            [0, 2, 0],
+            [2, 4, 2],
+            [4, 6, 10],
+            [6, 8, 3],
+        ]);
+    });
+
+    it('leaves silence outside a placed pass and stops at its exclusive PCM end', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'recording',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            audioBufferId: 'bursts',
+                            audioOffsetSeconds: 0,
+                        }),
+                    ],
+                },
+            ],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            {
+                                id: 'placed',
+                                clipId: 'recording',
+                                name: 'Placed',
+                                startBeat: 0,
+                                endBeat: 8,
+                                selected: true,
+                                passOriginBeat: 0,
+                                passOriginSourceSeconds: 0,
+                                passAnchorSeconds: 1,
+                                passDepthSeconds: 2,
+                                passSourceEndSeconds: 3,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 8, takeId: 'placed' }],
+                    },
+                ],
+            },
+        });
+
+        expect(programmeWindows(buildTimelineRenderModel(), 'recording')).toEqual([[2, 4, 2]]);
+    });
+
+    it('preserves negative pre-roll and lets canonical zero override stale beat offsets', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'preroll',
+                            type: 'audio',
+                            audioBufferId: 'bursts',
+                            startBeat: 0,
+                            endBeat: 4,
+                            audioOffsetBeats: 99,
+                            audioOffsetSeconds: -1,
+                        }),
+                        clip({
+                            id: 'zero',
+                            type: 'audio',
+                            audioBufferId: 'bursts',
+                            startBeat: 5,
+                            endBeat: 9,
+                            audioOffsetBeats: 99,
+                            audioOffsetSeconds: 0,
+                        }),
+                    ],
+                },
+            ],
+        });
+
+        const model = buildTimelineRenderModel();
+        expect(model.tracks[0]!.clips.map((part) => [part.startBeat, part.endBeat, part.audioOffsetSeconds])).toEqual([
+            [0, 4, -1],
+            [5, 9, 0],
+        ]);
+        expect(model.tracks[0]!.clips.every((part) => part.audioProgramme === undefined)).toBe(true);
+    });
+
+    it('invalidates only a changed comp projection while preserving the earlier model snapshot', () => {
+        const source = clip({
+            id: 'recording',
+            type: 'audio',
+            audioBufferId: 'bursts',
+            audioOffsetSeconds: 0,
+            startBeat: 0,
+            endBeat: 4,
+        });
+        const lane = {
+            id: 'lane',
+            trackId: 't',
+            takes: [
+                {
+                    id: 'take',
+                    clipId: 'recording',
+                    name: 'Take',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    sourceOffsetSeconds: 1,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'take' }],
+        };
+        seedStores({
+            tracks: [{ ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }), clips: [source] }],
+            takeLanes: { lanes: [lane] },
+        });
+        const before = buildTimelineRenderModel();
+        const beforeTracks = before.tracks;
+        expect(programmeWindows(before, 'recording')).toEqual([[0, 4, 1]]);
+
+        takeLaneStoreMock.value = {
+            lanes: [
+                {
+                    ...lane,
+                    takes: [{ ...lane.takes[0]!, sourceOffsetSeconds: 2 }],
+                },
+            ],
+        };
+        const after = buildTimelineRenderModel();
+        expect(after.tracks).not.toBe(beforeTracks);
+        expect(programmeWindows(after, 'recording')).toEqual([[0, 4, 2]]);
+        expect(programmeWindows(before, 'recording')).toEqual([[0, 4, 1]]);
+    });
+
+    it('keeps the chosen source in step with a clip drag preview without moving its committed rectangle', () => {
+        seedStores({
+            tracks: [
+                {
+                    ...createTrack({ id: 't', name: 'Audio', kind: 'audio' }),
+                    clips: [
+                        clip({
+                            id: 'recording',
+                            type: 'audio',
+                            startBeat: 0,
+                            endBeat: 8,
+                            audioBufferId: 'bursts',
+                            audioOffsetSeconds: 0,
+                        }),
+                    ],
+                },
+            ],
+            takeLanes: {
+                lanes: [
+                    {
+                        id: 'lane',
+                        trackId: 't',
+                        takes: [
+                            {
+                                id: 'take',
+                                clipId: 'recording',
+                                name: 'Take',
+                                startBeat: 0,
+                                endBeat: 8,
+                                selected: true,
+                                sourceOffsetSeconds: 1,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'take' }],
+                    },
+                ],
+            },
+        });
+        const committed = buildTimelineRenderModel();
+        clipDragPreviewRef.current = {
+            positions: new Map([['recording', { trackId: 't', startBeat: 10, endBeat: 18 }]]),
+            originals: new Map(),
+        };
+
+        const preview = buildTimelineRenderModel();
+        expect([preview.tracks[0]!.clips[0]!.startBeat, preview.tracks[0]!.clips[0]!.endBeat]).toEqual([10, 18]);
+        expect(preview.tracks[0]!.clips[0]!.audioProgramme?.find((part) => part.startBeat === 12)).toMatchObject({
+            startBeat: 12,
+            endBeat: 14,
+            audioOffsetSeconds: 2,
+        });
+        expect(committed.tracks[0]!.clips[0]!.audioProgramme?.find((part) => part.startBeat === 2)).toMatchObject({
+            startBeat: 2,
+            endBeat: 4,
+            audioOffsetSeconds: 2,
+        });
+        expect([committed.tracks[0]!.clips[0]!.startBeat, committed.tracks[0]!.clips[0]!.endBeat]).toEqual([0, 8]);
+    });
+});
 
 describe('buildTimelineRenderModel — clip-start tempo', () => {
     it('projects normal, ghost, and variation clips and invalidates a cached model on a map-only edit', () => {
@@ -490,6 +946,39 @@ describe('buildTimelineRenderModel — track visibility', () => {
         const model = buildTimelineRenderModel();
         expect(model.tracks.find((t) => t.id === 'f')?.height).toBe(26);
         expect(model.tracks.find((t) => t.id === 'm')?.height).toBe(48);
+    });
+});
+
+describe('buildTimelineRenderModel — variation lane rows', () => {
+    const laneTrack = (id: string, kind: 'audio' | 'folder', showVariationLanes: boolean) => ({
+        ...createTrack({ id, name: id, kind }),
+        clips: [],
+        color: '#000',
+        height: 64,
+        alternatives: [
+            { id: `${id}-a`, name: `${id} A`, clips: [] },
+            { id: `${id}-b`, name: `${id} B`, clips: [] },
+        ],
+        showVariationLanes,
+    });
+
+    it('gives a lane-enabled track one lane per alternative, so the row below starts after them', () => {
+        seedStores({ tracks: [laneTrack('upper', 'audio', true), laneTrack('lower', 'audio', false)] });
+
+        const { tracks } = buildTimelineRenderModel();
+
+        expect(tracks[0]!.variationLanes?.map((lane) => lane.name)).toEqual(['upper A', 'upper B']);
+        expect(tracks[1]!.variationLanes).toBeUndefined();
+        expect(getRenderedTrackTops(tracks)).toEqual([0, 64 + 2 * VARIATION_LANE_HEIGHT]);
+    });
+
+    it('gives a folder row no lanes even when its toggle is on', () => {
+        seedStores({ tracks: [laneTrack('f', 'folder', true), laneTrack('after', 'audio', false)] });
+
+        const { tracks } = buildTimelineRenderModel();
+
+        expect(tracks[0]!.variationLanes).toBeUndefined();
+        expect(getRenderedTrackTops(tracks)).toEqual([0, 26]);
     });
 });
 

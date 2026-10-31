@@ -4,6 +4,7 @@ import { getHandlerMap } from '#/modules/Command/stores';
 import { projectLoadFailureStore, projectStore } from '#/modules/Project/stores';
 
 import { isKeyboardEditableTarget } from '../../useCases/isKeyboardEditableTarget';
+import { isWithinModalSurface } from '../../useCases/isWithinModalSurface';
 import { handleKeydown } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeydown';
 import { handleKeyup } from '../../useCases/keyboardShortcutActions/handleKeyboardShortcut/handleKeyup';
 
@@ -18,15 +19,6 @@ function shouldDispatchShortcutAppActions(): boolean {
         return false;
     }
     return Object.keys(getHandlerMap()).length > 0;
-}
-
-// A focused dialog / alertdialog / menu / listbox surface owns the keyboard:
-// keydowns from inside it stay in the surface, not the app shortcuts (#3618).
-const MODAL_SURFACE_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
-
-/** True when the keydown's target sits inside an open modal or menu surface. */
-function isWithinModalSurface(target: EventTarget | null): boolean {
-    return target instanceof Element && target.closest(MODAL_SURFACE_SELECTOR) !== null;
 }
 
 function preservesNativeTabTraversal(event: KeyboardEvent): boolean {

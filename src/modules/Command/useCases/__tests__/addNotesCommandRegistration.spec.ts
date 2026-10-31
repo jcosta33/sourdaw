@@ -642,7 +642,7 @@ describe('addNotes command registration', () => {
         ]);
     });
 
-    it('publishes no partial grouped history when metadata recording fails after project commit', async () => {
+    it('commits no project change or grouped history when batch metadata staging fails', async () => {
         const legacyRecord = vi
             .fn(() => [] as string[])
             .mockImplementationOnce(() => [])
@@ -699,12 +699,11 @@ describe('addNotes command registration', () => {
             { groupId: 'atomic-history-group', groupLabel: 'Create atomic MIDI phrase', source: 'ai' }
         );
 
-        expect(result).toMatchObject({
-            status: 'committed-with-warning',
-            warningDetails: [{ kind: 'history', message: 'metadata batch record failed' }],
-        });
-        expect(getTrackStoreState()?.tracks[0]?.clips.map((clip) => clip.id)).toEqual(['clip-atomic-midi']);
-        expect(midiStore.value?.notesByClipId['clip-atomic-midi']).toHaveLength(1);
+        // History metadata stages inside the batch's storage transaction, so its
+        // failure aborts the project change instead of committing it without Undo.
+        expect(result).toMatchObject({ status: 'failed', reason: 'metadata batch record failed' });
+        expect(getTrackStoreState()?.tracks).toEqual([]);
+        expect(midiStore.value?.notesByClipId['clip-atomic-midi']).toBeUndefined();
         expect(recordBatch).toHaveBeenCalledOnce();
         expect(legacyRecord).not.toHaveBeenCalled();
         expect(undoStore.value).toEqual({ past: [], future: [] });

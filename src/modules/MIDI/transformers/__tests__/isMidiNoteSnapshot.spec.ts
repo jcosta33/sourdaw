@@ -20,6 +20,11 @@ describe('isMidiNoteSnapshot', () => {
         expect(isMidiNoteSnapshot([validNote])).toBe(true);
     });
 
+    it('preserves a typed recording pass identity and refuses malformed modern presence', () => {
+        expect(isMidiNoteSnapshot([note({ recordingPassIndex: 0 })])).toBe(true);
+        expect(isMidiNoteSnapshot([{ ...note(), recordingPassIndex: -1 }])).toBe(false);
+    });
+
     it('refuses a note whose expression curve point sits at or past duration', () => {
         const invalidNote = note({ expression: { pressure: [{ offsetBeats: 4, value: 90 }] } });
         expect(isMidiNoteSnapshot([invalidNote])).toBe(false);

@@ -383,7 +383,12 @@ function batchBinding(binding: unknown): boolean {
 function state(entry: unknown, metricIds: readonly string[]): entry is MetricGoalState {
     return (
         record(entry) &&
-        keys(entry, ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding'], ['nativeLiteralUses']) &&
+        keys(
+            entry,
+            ['schemaVersion', 'authorities', 'steps', 'proofs', 'binding'],
+            ['nativeLiteralUses', 'refinedRequests']
+        ) &&
+        (entry.refinedRequests === undefined || strings(entry.refinedRequests)) &&
         (entry.nativeLiteralUses === undefined ||
             (Array.isArray(entry.nativeLiteralUses) &&
                 entry.nativeLiteralUses.length <= MAX_LLM_ACTIONS_PER_BATCH &&

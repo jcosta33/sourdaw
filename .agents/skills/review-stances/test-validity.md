@@ -6,6 +6,21 @@ PR #1986 made `prepareStemImport` reject absent local-work admission, then PR #2
 
 Pair a real planner and real `prepareStemImport` with two selected files and mocked boundary ports. The positive case must reach an approved card and one committed import. The over-budget case must fail before decode or staging with no partial stem reservation. Preserve legacy recovery fixtures as separate historical cases. Removing the Prompt Bar callback must fail the positive case at the original budget refusal.
 
+### 2026-10-30 — a forced-GC ownership bound counted the JIT's references (#5924, introduced by #5829)
+
+PR #5829's stem-export ownership case samples every observed buffer still live after `gc()` and
+bounds it at two renders. On a starved CI runner it failed with the previous stem's PCM and encoder
+state still live at the next stem's first WAV write. An in-flight background Maglev/Turbofan job
+holds its closure, and so that closure's context, as a strong root `gc()` does not drain; the
+retained objects were exactly what finished encoder and PCM-reader closures captured. The
+measurement child now runs with `--no-concurrent-recompilation` and refuses to measure without it.
+Synchronous tiering removes background-compile roots. It does not limit `gc()` to program
+references: concurrent Sparkplug and other engine roots remain. The flag also moves compile work
+onto the measuring thread, so the case's deadline must be budgeted from CI timing. Probe it
+under engine delay: `--concurrent-recompilation-delay=300` must fail the case without the flag
+and pass with it, and keeping the previous render's channels reachable must still fail the bound.
+A local green run proves nothing about a measurement whose roots depend on background thread speed.
+
 ### 2026-10-30 — initial App rejection needed a real module-map oracle (#3356)
 
 PR #3356's fulfillment-only initial import left first paint mounted after rejection; its public
@@ -141,6 +156,29 @@ Require the pinned runtime, original lock and install metadata, private owner/st
 installation output. Removing only the workspace pin must fail the same case with the exact
 setting-changed error; restoring it passes.
 
+### 2026-10-30 — fixture transactions consumed the receipt test's deadline (PR #5191)
+
+PR #5191 (`c3ad77924b10613195d1aec01059a19ff4dbb344`) introduced the newest-receipt case with 26
+separately committed track fixtures. Hosted validation took 5,411.5 ms against the 5,000 ms
+deadline; confirmation ended at 5,238 ms and Undo at 5,386 ms, with no pending stage in the final
+trace. All stages eventually completed. The missed risk was fixture transaction overhead consuming
+the behavioral deadline; the trace does not establish a blocked await or CPU-versus-async attribution.
+
+Keep the exact 26-track topology and execute its real `addTrack` handlers in one compensated
+`executeAppActionBatch` transaction. Assert commit and exact ordered track names, then retain the
+three-batch, protection, newest-receipt and one-undo assertions at the existing 5-second deadline.
+Run the whole affected file so the changed setup is exercised with its normal hooks. Direct store
+seeding, fewer tracks, moving work to hooks, or a timeout increase does not prove the fixture is
+both realistic and bounded.
+
+### 2026-10-30 — source-clock fixtures must match hydrated project state (PR #2169)
+
+PR #2169 (`bfbf1dd69b18c2a843472a04815ccab773a4b364`) used a 600 BPM fixture that real publication
+normalizes to 120 BPM. Check fixture and hydrated source geometry against each other; the detailed
+source-clock escape and probe are in [audio-source-time](audio-source-time.md#escape-strip-silence-fixture-changed-source-geometry-after-hydration-pr-2169).
+Use supported 300 BPM / 50 Hz geometry and preserve exactly 10 samples per beat through real
+publication and hydration.
+
 ### 2026-10-29 — replacement-diff proof omitted retained scanner history (#5746 and #5748)
 
 The literal RFC 6455 nonce in #5746's original `cc52a482abc4b62519a79e1984e683893c31cbc0`
@@ -236,6 +274,20 @@ and be refetched in the same document, so two requests alone do not prove a relo
 independent recovery must fail the transient case; removing its budget or entry-body fence must
 fail the persistent or late-error case. Exercise source and generated entry identity under the
 actual production CSP, plus controller absence without conditional test admission.
+
+### 2026-10-27 — one-layer NAM goldens missed the layer/width cross-product (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) added the LSTM runtime and a
+single-layer/hidden-size-3 NAMCore fixture. That fixture cannot expose the deeper cell's wider input
+being fed a scalar. The source establishes this coverage gap; historical private reviewer prompts,
+assigned stances and model tiers are unknown, and no introducing-head trap was measured.
+
+Cross layers greater than one with hidden size greater than one through actual load/prewarm,
+alongside each supported boundary. A rejection test must require the named error and no loaded
+model. A replacement test must activate the capture and compare continuing PCM with a matched
+reference and dry control; a loaded flag and finite output are insufficient. On an isolated
+committed probe, removing the topology refusal must fail the public-loader regression. Preserve
+the existing NAMCore goldens and distinguish compiled WASM PCM from full native/hardware proof.
 
 ### 2026-10-27 — valid refinement examples did not exercise their safety guards (PR #5646)
 
@@ -459,6 +511,20 @@ omit that ID from every later read without deleting it. Both real serialized clo
 retain the journaled owner, print recovery, and send zero unverified deletes; inspect the actual
 marker collection as well as the projected OPEN state. Preserve the observed-delete rollback and
 read-only release controls. The original comment-ID set alone is not proof of compensation.
+
+### Cold frozen PCM needs a byte-producing restoration oracle
+
+`57b7349f7864eca0bd177333d720a50186bd33e9` narrowed export hydration to clip IDs;
+`ab5a579209b5e02a035e123380b5ceaf9c922250` (associated with PR #187) preserved that
+selection through the owner use case. The narrowing commit has no associated PR in the lookup;
+historical private reviewer prompts and tiers are unverified. A request/order mock cannot
+observe whether a cold frozen print became usable PCM.
+
+Seed distinct ordinary, active frozen, and stale PCM in controlled IndexedDB, clear runtime
+cache, run actual owner restoration, and inspect actual WAV samples from mixdown and stems.
+The renderer may remain a named controlled boundary; do not describe this as browser or audible
+acceptance. Remove the active frozen ID from the production request and require the cold source
+oracle to fail before encoding, while keeping the empty-clip fallback and stale-print exclusion.
 
 ### 2026-10-24 — a buffered pipe did not prove native write backpressure (introduced by PR #5624)
 
@@ -1410,6 +1476,12 @@ PR #5373 (`eecc1c5a8457`) and PR #5658 (`71e358df7415`) retained useful callback
 
 Drive actual manual and scheduler-registered audio callbacks into real commitRecording and executeAppAction. A forwarding waiter spy may expose entry, but must return the actual unresolved wait. Hold a real active transaction that has not reserved root; prove one wait entry, no entry yet, in-flight lifecycle and unresolved wait before public replacement and release. Assert raw CRDT, projections, takes, durable action history, undo stacks/tree and the actual mirror against the successor snapshot. Internal recording commands can be omitted from that mirror, so do not invent session contracts or require mirror entry counts. A targeted post-wait guard mutation on a committed head must redden the unchanged owning spec; pair same-root successful completion and guarded stale callback/failure/catch cases. Queue proof establishes authority and history, not physical audio, full fork persistence or browser UI acceptance.
 
+### Split gain admission needs the real history round trip (#5157)
+
+The global collector in #1857 and curve-preserving split copies in #2842 were not joined by a production admission and saved-history oracle; #5812 made gain-point identity clip-local. Historical private review prompts and tiers are unknown.
+
+Split an audio envelope with points before, at and after the cut. Assert admission, raw and projected fragments, an independent gain-curve oracle, edge-extension material, and real Undo/Redo before and after authenticated session and binary hydration. Restore the old global gain-point census: the unchanged combined split case must fail. Also require same-envelope and non-gain global duplicates to refuse, and a merged peer gain edit to preserve state, heads and history when Undo refuses.
+
 ### 2026-09-03 — a native method read off its host and called unbound (escaped via PR #2097)
 
 `electron/scanWorker.ts`'s `nativeCommand` read a napi class method off the addon host and returned
@@ -1947,6 +2019,15 @@ whole requested set after strategy teardown. Preserve bypass, withheld and non-c
 and degradable agent/freeze callers. A bundled constructor success does not prove refusal after a
 later runtime load failure.
 
+### Tempo inverse probes must cross a complete excursion (escaped via PR #4987)
+
+A single tempo rise or drop did not expose `renderTempoTimeline` alternating
+between segments. Use 180 to 60 to 180 BPM at beats 0.25 and 0.5 and a physical
+source end of frame 8320 at 48 kHz; read the ending through the actual live and
+offline comp consumers. The old inverse returns frame 320. Restoring that inverse
+must fail both the owning numerical case and source-end parity; see
+`audio-source-time.md` for the traced escape and preservation obligations.
+
 ### 2026-10-25 — optimistic replay success did not prove its committed owner (#5520 / #5613)
 
 PR #5520 (`21bcc9487c`) introduced the generic nested-field hydrate winner and base advance.
@@ -2046,6 +2127,17 @@ or add inspection diagnostics to the warning-success allowlist.
 PR #2083 made device edits require an exact live before-chain. MIDI import publishes a track with its default Synth after boot's strip projection, so a lawful Remove Synth before first Play commits project truth and then fails against an absent strip. Its public review caught project-only folders but did not cover an uninitialized live-eligible MIDI track; historical private prompts, models and tiers are unavailable. Play/Stop warming masked the missing admission. Undo also has to change the existing live chain, rather than send an initialization snapshot that can only accept an already matching strip.
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
+
+## Escape: recovery tests swallowed a stale owner result (PR #4496)
+
+PR #4496 (`b88383cb221f`) made project recovery read `ensureTrackStrips().status`,
+but the import roundtrip spec retained a void mock. Its recovery cases stayed
+green while logging `Cannot read properties of undefined (reading 'status')` and
+skipping the successful restoration continuation. The missed test-validity input
+was a real caller consuming an owner's changed result; private reviewer prompts
+and tiers are unavailable. Type the mock from the exported callable and return
+its complete ready result, so result-contract drift cannot masquerade as tested
+recovery. Read unexpected logged errors even when every assertion passes.
 
 ## Escape: sanitizer tests did not prove project-file admission (PR #4987)
 
@@ -2151,6 +2243,23 @@ source lifecycle boundaries. Remove the actual mid or side compensation separate
 named PCM regression must fail. Metadata equality alone cannot prove delivered alignment;
 fixed/DC delay alignment does not imply arbitrary processed signals have equal phase.
 
+### 2026-10-29 — static summary outlived its measurement qualification (PR #1084)
+
+PR #974 introduced the cost report headline when the contributing Crumbs median was trustworthy.
+PR #1084 refreshed that row as untrustworthy while the static headline survived. GitHub returned no
+review records for #1084; historical prompts and tiers are unknown. Renderer-only checks cannot
+observe conclusions outside the generated region.
+
+Read the whole published artifact against its retained source, including static summaries, historical
+comparisons and the conditions on every dependent claim. An unreliable contributing row must withhold
+the aggregate upper-bound verdict everywhere, even when the generated table already qualifies it.
+
+### 2026-10-29 — calibration warning was lost in the generated cost report (PR #974)
+
+PR #974 (`caabe804622df1c116c1545bcbb1fcea88e7e114`) introduced the cost report. The renderer later treated every median as an upper bound even when its retained row marked the median untrustworthy. Historical private review prompts and tiers are unknown; the missed probe joined the measurement's soft calibration flag to the published conclusion.
+
+Render retained data with an unreliable reference audio row and worker row. Require their raw values and valid floors to remain visible, while withholding dependent upper-bound and decisive claims. Independently toggle each flag and preserve a trustworthy reference control; removing the renderer's flag handling must fail the named regression. A hard-gate pass or JSON-to-Markdown consistency check alone does not prove that the report honors the soft flag.
+
 ## 2026-10-29 — pre-commit revocation did not cover committed history finalization (PR #5556, caught in #5849)
 
 PR #5556 (`6e8565f8ce195daf3ee7d763cd88e700a9779890`) moved atomic history only after replay
@@ -2176,6 +2285,23 @@ and AI metadata together after completion. A same-lineage edit retaining the exa
 snapshot must still revoke settlement; snapshot identity alone cannot prove project authority.
 Pair it with clear-only and original-reference restore, normal no-op consumption and caller
 cancellation. Await the observation and completion, never a chosen number of microtasks.
+
+### 2026-10-30 — metadata restoration did not prove retained replay authority
+
+The #229 observer (`490b39269a`), #576 abort path (`ecd24df665`) and later #4082 projection
+settlement (`dcb995a672`) compose a boundary absent from the original observer and transaction
+fixtures. This is a qualified static history trace; historical versions were not executed and
+private review prompts and tiers are unknown. A current-main production-observer fixture restores
+every metadata row on abort while both replay status and actual inverse execution remain unavailable.
+
+Use the actual bootstrap publication subscriber, real metadata producers, a full history and a
+live oldest inverse. Observe the pending trim with unchanged durable truth, then require exact
+restoration plus successful `revertAction` after abort and pre-publication failure. A metadata-only
+assertion cannot catch lost authority. Separately require successful publication to evict, a new
+unflushed capability to survive unrelated commits, and an equal-content empty clear to fence ID
+re-add. Replacing publication observation with the visible-store subscriber must fail the rollback
+cases; removing map/list identity from dedupe must fail the same-empty-clear case. Run such probes
+only on committed work and keep root replacement, consumed and claimed capability controls strict.
 
 ### 2026-10-29 — explicit routing fixtures missed a fresh engine's default
 
@@ -2264,6 +2390,24 @@ startup phase, preserving unrelated mock behavior. Use discriminating corrupted-
 reload controls for persistence claims; fixed ticks or a conditional `isVisible` body cannot prove
 readiness or recovery. Do not claim that clean WebSocket closure or Vite polling reproduced the
 original navigation.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.
 
 ### 2026-10-30 — a single-head view hid concurrent checkpoint-only descendants (#5681)
 
@@ -2374,3 +2518,14 @@ loopEnd click and the incoming loopStart click are indistinguishable. Pin incomi
 with a loop whose loopStart is off-grid (the seam must be silent) and one whose outgoing and
 incoming labels differ at one instant (the seam must carry the incoming accent and volume), through
 the real scheduler, for the seam and a later pass.
+
+### 2026-10-31 — a spec read a remote ref the shallow tooling job never fetches (introduced by PR #5917)
+
+PR #5917 introduced `laneAdoption.spec.ts`, whose fixture ran `git show origin/main:...`.
+The review-tooling unit job checks out only the shallow merge ref, so `origin/main` does not
+exist there. The full-history unit shards passed, #5917's own runs skipped the tooling job, and
+the failure surfaced on the next tooling-profile PR (#5935). The value equalled the working-tree
+file once #5917 merged. A spec must not read refs, history or remotes that a CI job collecting it
+does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
+the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
+`tooling-unit` uses the default shallow checkout.

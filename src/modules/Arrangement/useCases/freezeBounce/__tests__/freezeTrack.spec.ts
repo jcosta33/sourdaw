@@ -666,6 +666,7 @@ describe('freezeTrack', () => {
                     kind: 'audio',
                     clips: [{ startBeat: 0, endBeat: 4 }],
                     devices: [],
+                    frozen: false,
                     freezeState: { status: 'unfrozen' },
                 } as any,
             ],
@@ -693,6 +694,43 @@ describe('freezeTrack', () => {
         }
         const restoredTrack = errorCall[1](storedTrack);
         expect(restoredTrack.freezeState.status).toBe('unfrozen');
+        expect(restoredTrack.frozen).toBe(false);
+        expect(didWrite).toBe(true);
+    });
+
+    it('keeps the stale take frozen when its refresh is cancelled', async () => {
+        const staleFreezeState = {
+            status: 'stale' as const,
+            freezeId: 'freeze-old',
+            frozenBufferId: 'freeze-old',
+            sourceContentHash: 'old-hash',
+            renderedAt: 1000,
+        };
+        trackStore.set({
+            tracks: [
+                {
+                    id: 't1',
+                    kind: 'audio',
+                    clips: [{ startBeat: 0, endBeat: 4 }],
+                    devices: [],
+                    frozen: true,
+                    frozenBufferId: 'freeze-old',
+                    freezeState: staleFreezeState,
+                } as any,
+            ],
+            selectedTrackId: null,
+        });
+        vi.mocked(renderTrackOffline).mockImplementation(() => {
+            activeFreezeTasks.get('t1')?.abort();
+            return Promise.reject(new Error('aborted'));
+        });
+
+        const didWrite = await freezeTrack('t1');
+
+        const storedTrack = trackStore.value?.tracks[0];
+        expect(storedTrack?.frozen).toBe(true);
+        expect(storedTrack?.frozenBufferId).toBe('freeze-old');
+        expect(storedTrack?.freezeState).toEqual(staleFreezeState);
         expect(didWrite).toBe(true);
     });
 

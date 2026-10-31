@@ -40,6 +40,9 @@ vi.mock('#/modules/Transport/stores', () => ({
     DEFAULT_TEMPO_BPM: 120,
     transportStore: { value: { tempo: 120 } },
     readBarStartBeat: vi.fn<typeof import('#/modules/Transport/stores').readBarStartBeat>(() => null),
+    // Command's macro readers share this graph; stem preparation does not call them.
+    readTempoAtBeat: vi.fn<typeof import('#/modules/Transport/stores').readTempoAtBeat>(() => 120),
+    readTempoMapEditTargets: vi.fn<typeof import('#/modules/Transport/stores').readTempoMapEditTargets>(() => null),
 }));
 
 import { agentRunLifecycle } from '../../agentRunLifecycle';

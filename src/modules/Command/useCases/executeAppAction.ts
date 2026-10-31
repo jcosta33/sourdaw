@@ -22,11 +22,16 @@ import {
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapability,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 import { undoStore } from '../stores/undoStore';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
+import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
 import { commitUndoEntry } from './commitUndoEntry';
 import { type AbortCompensation, compensateAbortedActions } from './compensateAbortedActions';
@@ -49,6 +54,9 @@ export type ExecuteAppActionOptions = ExecuteOptions & {
     authorizeFirstHandler?: () => string | null;
     commandEnvelope?: VersionedCommandEnvelope;
     onCommitted?: () => void;
+    /** Observe an isolated copy of final owner arguments, including a successful noop's arguments.
+     * This grants no commit authority; callers consume it only after dispatch succeeds. */
+    observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
     /**
      * Synchronous authority check on this action's project transaction, after the
@@ -158,6 +166,7 @@ function coalesceTargetsMatch(previous: AppAction, next: AppAction): boolean {
 export const executeAppAction: ExecuteAppAction = inject({ logger })(
     ({ logger }) =>
         async function executeAppAction(action: AppAction, options?: ExecuteAppActionOptions): Promise<void> {
+            const recordedRedo = options?.skipUndo ? captureRecordedRedoContext(action) : undefined;
             const materialized = options?.commandEnvelope
                 ? { action, applicationAssignedIds: options.commandEnvelope.applicationAssignedIds }
                 : materializeCommandApplicationIds(action);
@@ -176,7 +185,18 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 logger.error(error);
                 throw error;
             }
-            action = materializeCommandHandlerArguments(action, handler);
+            type Context = NonNullable<Parameters<typeof materializeCommandHandlerArguments>[2]>;
+            let materializationContext: { -readonly [K in keyof Context]: Context[K] } | undefined;
+            if (options?.undoEntryId !== undefined || recordedRedo !== undefined) {
+                materializationContext = { actions: [action], actionIndex: 0 };
+                if (options?.undoEntryId !== undefined) {
+                    materializationContext.undoEntryId = options.undoEntryId;
+                }
+                if (recordedRedo !== undefined) {
+                    materializationContext.recordedRedo = recordedRedo;
+                }
+            }
+            action = materializeCommandHandlerArguments(action, handler, materializationContext);
             const historyGroupId = handler.batchExecution === 'singleton' ? undefined : options?.groupId;
             const historyGroupLabel = historyGroupId ? options?.groupLabel : undefined;
             if (
@@ -196,6 +216,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     return;
                 }
 
+                options?.observeMaterializedAction?.(structuredClone(action));
                 if (handler.isNoop?.(action)) {
                     return;
                 }
@@ -284,6 +305,7 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type);
             }
 
+            options?.observeMaterializedAction?.(structuredClone(action));
             if (handler.isNoop?.(action)) {
                 return;
             }
@@ -296,7 +318,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 redoAction?: AppAction;
             } | null = null;
             if (handler.undoable) {
-                undoResult = handler.describe(action);
+                if (recordedRedo) {
+                    undoResult = handler.describe(action, { actions: [action], actionIndex: 0, recordedRedo });
+                } else {
+                    undoResult = handler.describe(action);
+                }
             }
 
             const command = options?.commandEnvelope
@@ -435,11 +461,35 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type, refusal);
             }
 
+            const historyMetadata: ActionHistoryMetadata | null =
+                !options?.skipUndo && handler.undoable
+                    ? {
+                          id: command.envelope.commandId,
+                          label,
+                          actionKind: action.type,
+                          source: options?.source ?? 'manual',
+                          timestamp: command.envelope.issuedAt,
+                          groupId: historyGroupId,
+                          groupLabel: historyGroupLabel,
+                          reverted: false,
+                      }
+                    : null;
+            let evictedEntryIds: string[] = [];
+
             try {
                 registerHandlerCommitValidation(
                     storage_transaction,
                     execution_result?.commitValidation ? [execution_result.commitValidation] : []
                 );
+                // Durable bookkeeping shares the command's publication owner. Session
+                // Undo/replay authority is installed only after this commit succeeds.
+                storage_transaction.scope(() => {
+                    if (historyMetadata) {
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.record(historyMetadata)
+                        );
+                    }
+                });
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the
@@ -525,21 +575,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                    if (handler.undoable) {
+                    if (historyMetadata) {
                         const entry_id = command.envelope.commandId;
                         const inverse_action = undoResult?.inverseAction ?? null;
-                        const metadata = {
-                            id: entry_id,
-                            label,
-                            actionKind: action.type,
-                            source: options?.source ?? 'manual',
-                            timestamp: command.envelope.issuedAt,
-                            groupId: historyGroupId,
-                            groupLabel: historyGroupLabel,
-                            reverted: false,
-                        };
-                        const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
-                        for (const evicted_entry_id of evicted_entry_ids) {
+                        const metadata = historyMetadata;
+                        for (const evicted_entry_id of evictedEntryIds) {
                             revokeActionReplayCapability(evicted_entry_id);
                         }
                         if (inverse_action) {

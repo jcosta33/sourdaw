@@ -166,8 +166,8 @@
             "digests": [
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
-                "sha256:13a2ec7a8e56d685f18e90aca15d6fc0b3ff6486e9e8bfebe05ba5435035ec98:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:0bfc4866b5c17c7c36bef8a01dce6295da8174a9c301c4282faf41c28704df4c:release/dependency-license-proofs.json"
+                "sha256:35f6ee9b035de32be91c18949d200abcdf1b9930100e42ed12eee0b8494eacf2:public/legal/DEPENDENCY-LICENSES.txt",
+                "sha256:25c64fb0eef095b81dd093c48e61fd24ec360e75110988b636e2b7479d4fdef0:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -402,7 +402,7 @@
                 "exact Cargo lock graph"
             ],
             "digests": [
-                "sha256:7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6",
+                "sha256:38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b",
                 "sha256:57f5b3fc8207b24fad956e3a8a52cfd2d527420cb753257bbd5f698d0cfc3e1e:public/legal/PLUGIN-INTERFACE-NOTICES.txt"
             ],
             "licenses": [
@@ -1208,12 +1208,12 @@
             "digests": [
                 "tracked-set-sha256:bca1b5c169913723a3c6ccd54b7e592822bf2836b9adb391e8d9be4bda3cb95a:grand-boule-native-rust",
                 "tracked-set-sha256:428b6c1285337ce7af016a553a558c7111f6009a64f9b85f9265cf179fa2c290:grand-boule-admission-decision",
-                "tracked-set-sha256:0dee6dbc7998602dcdad2ea721575c2df3a9977ef34c535e5f6416546f99d03a:grand-boule-discovery-catalog",
+                "tracked-set-sha256:c2d030f44de1cbce95cc3942ee9b5053e5854ddf6b60c86943b03b9952c08860:grand-boule-discovery-catalog",
                 "tracked-set-sha256:7cbd0ef290ff1d6ab57caeba94627a5db5646b02fde0a91434606161fae713fb:grand-boule-factory-admission",
-                "tracked-set-sha256:9add2037c2766126e9d3f40d23500167897ae0e2407b680b15cf8818b5078edc:grand-boule-live-runtime",
-                "tracked-set-sha256:f6451f79ee426d51a8b06bb43dfc208fdb006bae7f62ffb8f4bdeeb1704f7c06:grand-boule-project-state",
+                "tracked-set-sha256:5f6bbf8a610c573ab85ef58252101994c6c7600d671cef32a356425f3da01223:grand-boule-live-runtime",
+                "tracked-set-sha256:a0a5a9dc8dabeb46e588bac54fccd8f88fb830fe7c5ef370162b45814554fd16:grand-boule-project-state",
                 "tracked-set-sha256:7e8d66187434f55ff0f62c3bc22b5f49cba512b0813f672a28a7524f8cfd1085:grand-boule-offline-composition",
-                "tracked-set-sha256:4cf6df4ec83e92ee30dc93eb4f0ed990f4656a3813a812e3226d3a67a7eedbcb:grand-boule-release-proof"
+                "tracked-set-sha256:5c8a902914cd511ac233d288fb021f4dfb034ddcc8e16f134aa92c3ce59304d5:grand-boule-release-proof"
             ],
             "licenses": [
                 "Apache-2.0"
@@ -1344,13 +1344,13 @@
                 "wasm-pack 0.14.0",
                 "wasm-bindgen 0.2.127",
                 "wasm-opt bundled-by-wasm-pack@0.14.0",
-                "daw-dsp sha256:5754cc83138f63d75533a1a0fd35a0fd2bc7e768bc9bbbf1fec697909e0ae73f",
+                "daw-dsp sha256:40c6bcbb712085808c987f770cae22d65850a0f56e007748553dee89b6a34676",
                 "daw-wasm-decoder sha256:beb5266485c814e84325737e25ba0c12bc4f10263e51ba697c04e64adaf30d7f",
                 "proof-chamber sha256:085cc6bc16311e3db8a39fc185cbf7a862acd526acfc4b2a9190b209c4744bb8",
-                "scoring sha256:e18952ecd88b6e6806dfe0031823faa6cb4568e22654adc702ef995f27e14317"
+                "scoring sha256:705a002f08904b62aaf7eced31ba69b2dc3b37fb7c5fbf71edbb6d05f9546ac6"
             ],
             "digests": [
-                "sha256:3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c:public/wasm/manifest.json"
+                "sha256:9ec934f8776293e76616782808062623af44671e00ee000922f3121daa489e8f:public/wasm/manifest.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1819,7 +1819,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
+            "sha256": "a7dcb1aec3cfb59bdd7d0afc19254f5675f8d56b38cda8b7a829bca88dc4bbc4"
         },
         {
             "path": "server/package.json",
@@ -1839,7 +1839,7 @@
         },
         {
             "path": "Cargo.lock",
-            "sha256": "7b01749335e7ddaa4e58db85a9aab820b8477abf28a2839af9f30dcd879676c6"
+            "sha256": "38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b"
         },
         {
             "path": "src/modules/AiRuntime/repositories/webLlm/webLlmArtifactManifest.generated.json",
@@ -1847,7 +1847,7 @@
         },
         {
             "path": "public/wasm/manifest.json",
-            "sha256": "3ec257c1fdff310632a8e0cb4fc6cff6ec819edb5caad483b702b2f0b77de68c"
+            "sha256": "9ec934f8776293e76616782808062623af44671e00ee000922f3121daa489e8f"
         }
     ],
     "externalReferences": [
@@ -2257,6 +2257,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/cleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
             "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"
@@ -2289,6 +2294,17 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/installCleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/installCleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git",
+            "templateSha256": "48c2a8e056e9a57b98456f3376b3055cb2c5610b90d5512837e7f5594659fa15"
         },
         {
             "surface": "project-source",

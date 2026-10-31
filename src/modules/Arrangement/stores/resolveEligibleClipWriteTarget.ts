@@ -196,7 +196,7 @@ function resolveClipTarget(store: NormalizedStore, clipId: string): ClipWriteTar
     return Object.freeze({ status: 'eligible', trackId: owner.id, clipId });
 }
 
-function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
+function resolveClipWriteTarget(input: unknown, state: TrackStoreState | null | undefined): ClipWriteTargetResolution {
     if (!isObject(input)) {
         return INELIGIBLE;
     }
@@ -217,7 +217,7 @@ function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
         return INELIGIBLE;
     }
 
-    const store = createClipWriteTargetIndex(trackStore.value);
+    const store = createClipWriteTargetIndex(state);
     if (store.status !== 'valid') {
         if (store.status === 'missing') {
             return MISSING;
@@ -231,9 +231,12 @@ function resolveClipWriteTarget(input: unknown): ClipWriteTargetResolution {
     return resolveClipTarget(store, requestedId);
 }
 
-export function resolveEligibleClipWriteTarget(input: ClipWriteTargetInput): ClipWriteTargetResolution {
+export function resolveEligibleClipWriteTarget(
+    input: ClipWriteTargetInput,
+    state?: TrackStoreState | null
+): ClipWriteTargetResolution {
     try {
-        return resolveClipWriteTarget(input);
+        return resolveClipWriteTarget(input, state === undefined ? trackStore.value : state);
     } catch {
         return INELIGIBLE;
     }

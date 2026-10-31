@@ -175,7 +175,7 @@ describe('executableAppActionEffectsByType', () => {
 
     it('pins the exact effect object for setTempo', () => {
         expect(executableAppActionEffectsByType.setTempo).toEqual({
-            dimensions: ['project-timing'],
+            dimensions: ['project-timing', 'arrangement', 'clip-audio'],
             scope: 'project',
         });
     });

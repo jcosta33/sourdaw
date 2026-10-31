@@ -107,6 +107,10 @@ function hasValidMidiNoteOptionals(value: MidiNote): boolean {
             value.pitchBendRangeSemitones === undefined ||
             isFiniteNumber(value.pitchBendRangeSemitones)) &&
         (!('channel' in value) || value.channel === undefined || isFiniteNumber(value.channel)) &&
+        (!('recordingPassIndex' in value) ||
+            (typeof value.recordingPassIndex === 'number' &&
+                Number.isSafeInteger(value.recordingPassIndex) &&
+                value.recordingPassIndex >= 0)) &&
         (!('articulation' in value) ||
             value.articulation === undefined ||
             isValidMidiArticulation(value.articulation)) &&
@@ -177,6 +181,13 @@ function normalizeMidiNote(note: MidiNote): MidiNote {
     }
     if (isFiniteNumber(note.channel)) {
         normalizedNote.channel = note.channel;
+    }
+    if (
+        typeof note.recordingPassIndex === 'number' &&
+        Number.isSafeInteger(note.recordingPassIndex) &&
+        note.recordingPassIndex >= 0
+    ) {
+        normalizedNote.recordingPassIndex = note.recordingPassIndex;
     }
     if (isValidMidiArticulation(note.articulation)) {
         normalizedNote.articulation = note.articulation;
@@ -321,6 +332,30 @@ function isExactMidiStoreState(value: unknown): value is MidiStoreState {
     );
 }
 
+function refuseMalformedRecordingPassIndices(value: Record<string, unknown>): void {
+    const notesByClipId = value.notesByClipId;
+    if (!isPlainObject(notesByClipId)) {
+        return;
+    }
+    for (const rows of Object.values(notesByClipId)) {
+        if (!Array.isArray(rows)) {
+            continue;
+        }
+        for (const row of rows) {
+            if (!isPlainObject(row) || !Object.hasOwn(row, 'recordingPassIndex')) {
+                continue;
+            }
+            if (
+                typeof row.recordingPassIndex !== 'number' ||
+                !Number.isSafeInteger(row.recordingPassIndex) ||
+                row.recordingPassIndex < 0
+            ) {
+                throw new Error('Invalid MIDI recording pass identity');
+            }
+        }
+    }
+}
+
 export function sanitizeMidiStoreState(
     value: unknown,
     probabilitySeedFallback = LEGACY_MIDI_PROBABILITY_SEED
@@ -328,6 +363,8 @@ export function sanitizeMidiStoreState(
     if (!isPlainObject(value)) {
         return { ...defaultMidiStoreState, probabilitySeed: probabilitySeedFallback };
     }
+
+    refuseMalformedRecordingPassIndices(value);
 
     let probabilitySeed = probabilitySeedFallback;
     let candidate = value;

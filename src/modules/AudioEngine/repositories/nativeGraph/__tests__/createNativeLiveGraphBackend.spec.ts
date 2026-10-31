@@ -59,6 +59,35 @@ function stubTransport(applyGraphCommands: NativeGraphTransport['applyGraphComma
 }
 
 describe('createNativeLiveGraphBackend', () => {
+    it('releases a refused final roll lease and never reuses its admission callback', async () => {
+        const applyGraphCommands = vi.fn().mockResolvedValue({
+            acceptance: 'accepted',
+            application: 'applied',
+            runtimeRevision: 1,
+            reports: [],
+        });
+        const transport = stubTransport(applyGraphCommands);
+        const timelineSampleLifecycle = vi.fn(transport.timelineSampleLifecycle);
+        const backend = createNativeLiveGraphBackend({ transport: { ...transport, timelineSampleLifecycle } });
+        const finalize = vi.fn(() => {
+            throw new Error('retired NAM start');
+        });
+        await expect(backend.rollAtFinalAdmission(2.5, finalize)).resolves.toMatchObject({
+            acceptance: 'rejected',
+            application: 'not-applied',
+            reason: 'retired NAM start',
+        });
+        expect(finalize).toHaveBeenCalledTimes(1);
+        expect(applyGraphCommands).not.toHaveBeenCalled();
+        expect(timelineSampleLifecycle.mock.calls.filter(([request]) => request.action === 'release')).toEqual([
+            [{ action: 'release', lease: expect.any(String) }],
+        ]);
+        await expect(backend.apply(BATCH)).resolves.toMatchObject({ acceptance: 'accepted', application: 'applied' });
+        expect(finalize).toHaveBeenCalledTimes(1);
+        expect(applyGraphCommands).toHaveBeenCalledTimes(1);
+        backend.dispose();
+    });
+
     it('applies the serialized batch through apply_graph_commands', async () => {
         const applyGraphCommands = vi.fn().mockResolvedValue({
             acceptance: 'accepted',
@@ -560,5 +589,144 @@ describe('createNativeLiveGraphBackend — claims scoped per instance (#4203)', 
 
         expect(calls.filter((call) => call.startsWith('release:'))).not.toContain('release:levain:violin-1');
         expect(registeredNativeSampleBankKeys.has('levain:violin-1')).toBe(true);
+    });
+});
+
+describe('native Grinder model receipt parser', () => {
+    it.each(['applied', 'needs-reconcile'] as const)(
+        'preserves the native %s admission fact when disposed while IPC is pending',
+        async (application) => {
+            const receipt = {
+                trackId: 't',
+                deviceId: 'd',
+                engineId: '9007199254740993',
+                targetGeneration: '9',
+                requestId: 'r',
+                contentHash: 'a'.repeat(64),
+            };
+            let entered!: () => void;
+            const admitted = new Promise<void>((resolve) => {
+                entered = resolve;
+            });
+            let release!: (value: unknown) => void;
+            const answer = new Promise<unknown>((resolve) => {
+                release = resolve;
+            });
+            let admittedLease: string | undefined;
+            const applyGraphCommands = vi.fn<NativeGraphTransport['applyGraphCommands']>(({ batch }) => {
+                admittedLease = batch.timelineLease;
+                expect(batch.schemaVersion).toBe(2);
+                entered();
+                return answer;
+            });
+            const transport = stubTransport(applyGraphCommands);
+            const timelineSampleLifecycle = vi.fn(transport.timelineSampleLifecycle);
+            const backend = createNativeLiveGraphBackend({ transport: { ...transport, timelineSampleLifecycle } });
+            const pending = backend.apply({
+                schemaVersion: 1,
+                commands: [
+                    {
+                        kind: 'set-grinder-model',
+                        target: { trackId: 't', deviceId: 'd' },
+                        modelJson: null,
+                        requestId: 'r',
+                        values: {},
+                    },
+                ],
+            });
+            await admitted;
+            backend.dispose();
+            expect(backend.disposed).toBe(true);
+            release({
+                acceptance: 'accepted',
+                application,
+                runtimeRevision: 4,
+                admittedBatch: 7,
+                engineId: receipt.engineId,
+                grinderModels: [receipt],
+                reports: [],
+                reason: 'native partial admission',
+                compensation: 'not-attempted',
+            });
+            await expect(pending).resolves.toMatchObject({ acceptance: 'accepted', application, runtimeRevision: 4 });
+            expect(admittedLease).toEqual(expect.any(String));
+            expect(timelineSampleLifecycle.mock.calls.filter(([request]) => request.action === 'release')).toEqual([
+                [{ action: 'release', lease: admittedLease }],
+            ]);
+            await expect(backend.apply(BATCH)).resolves.toMatchObject({
+                acceptance: 'rejected',
+                application: 'not-applied',
+                reason: 'backend disposed',
+            });
+            expect(applyGraphCommands).toHaveBeenCalledTimes(1);
+        }
+    );
+
+    it('refuses old-native silent model omission and an unsafe fence', async () => {
+        for (const payload of [
+            { acceptance: 'accepted', application: 'applied', runtimeRevision: 1, admittedBatch: 3, reports: [] },
+            {
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                admittedBatch: Number.MAX_SAFE_INTEGER + 1,
+                engineId: '1',
+                grinderModels: [],
+                reports: [],
+            },
+        ]) {
+            const backend = createNativeLiveGraphBackend({ transport: stubTransport(async () => payload) });
+            await expect(
+                backend.apply({
+                    schemaVersion: 1,
+                    commands: [
+                        {
+                            kind: 'set-grinder-model',
+                            target: { trackId: 't', deviceId: 'd' },
+                            modelJson: null,
+                            requestId: 'r',
+                            values: {},
+                        },
+                    ],
+                })
+            ).rejects.toThrow(/NAM/);
+            backend.dispose();
+        }
+    });
+
+    it('preserves real native model identity without rounding the engine id', async () => {
+        const receipt = {
+            trackId: 't',
+            deviceId: 'd',
+            engineId: '9007199254740993',
+            targetGeneration: '9',
+            requestId: 'r',
+            contentHash: 'a'.repeat(64),
+        };
+        const backend = createNativeLiveGraphBackend({
+            transport: stubTransport(async () => ({
+                acceptance: 'accepted',
+                application: 'applied',
+                runtimeRevision: 1,
+                admittedBatch: 3,
+                engineId: receipt.engineId,
+                grinderModels: [receipt],
+                reports: [],
+            })),
+        });
+        const result = await backend.apply({
+            schemaVersion: 1,
+            commands: [
+                {
+                    kind: 'set-grinder-model',
+                    target: { trackId: 't', deviceId: 'd' },
+                    modelJson: null,
+                    requestId: 'r',
+                    values: {},
+                },
+            ],
+        });
+        expect(result).toMatchObject({ engineId: receipt.engineId, grinderModels: [receipt], admittedBatch: 3 });
+        backend.dispose();
     });
 });

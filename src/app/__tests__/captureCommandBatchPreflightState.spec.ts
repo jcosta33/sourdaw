@@ -1,3 +1,4 @@
+import { change, from } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type getProjectContext } from '#/modules/AiRuntime/useCases';
@@ -205,6 +206,178 @@ function cyclingRootDocument(): Record<string, unknown> {
                 },
             ],
         },
+    };
+}
+
+function midiRows(noteIds: readonly string[] = ['note-1']) {
+    return {
+        notes: noteIds.map((id) => ({ id, pitch: 60, startBeat: 0, duration: 1, velocity: 100 })),
+        controlChanges: [{ id: 'cc-1', controller: 1, value: 64, beat: 0, channel: 0 }],
+        pitchBends: [{ id: 'bend-1', value: 0, beat: 0, channel: 0 }],
+    };
+}
+
+// The exact frozen copy a re-key captures: the original clip's rows, ids included.
+function midiTakeSource(noteIds: readonly string[] = ['note-1']) {
+    const rows = midiRows(noteIds);
+    return {
+        sourceClipId: 'clip-a',
+        rows: {
+            notes: { present: true, value: rows.notes },
+            controlChanges: { present: true, value: rows.controlChanges },
+            pitchBends: { present: true, value: rows.pitchBends },
+        },
+        sourceEntryBeat: 0,
+        sourceEndBeat: 4,
+        phaseHeadBeat: 0,
+        passLengthBeats: 4,
+    };
+}
+
+type MidiTakeFixtureOptions = {
+    liveNoteIds?: readonly string[];
+    sourceNoteIds?: readonly string[];
+    secondTakeId?: string;
+    secondClipId?: string;
+};
+
+// A MIDI clip fragmented into clip-a and clip-b, each fragment's take carrying
+// the same frozen source of the original rows that clip-a still holds live.
+function midiTakeProjectSlots(options: MidiTakeFixtureOptions = {}): Record<string, unknown> {
+    const rows = midiRows(options.liveNoteIds);
+    return {
+        tracks: {
+            tracks: [
+                {
+                    id: 'track-keys',
+                    kind: 'midi',
+                    gain: 1,
+                    pan: 0,
+                    outputId: 'master',
+                    clips: [
+                        { id: 'clip-a', startBeat: 0, endBeat: 2 },
+                        { id: options.secondClipId ?? 'clip-b', startBeat: 2, endBeat: 4 },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        },
+        midi: {
+            notesByClipId: { 'clip-a': rows.notes },
+            ccByClipId: { 'clip-a': rows.controlChanges },
+            pitchBendByClipId: { 'clip-a': rows.pitchBends },
+        },
+        takeLanes: {
+            lanes: [
+                {
+                    id: 'lane-keys',
+                    trackId: 'track-keys',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-a',
+                            name: 'Take 1',
+                            startBeat: 0,
+                            endBeat: 2,
+                            selected: true,
+                            midiSource: midiTakeSource(options.sourceNoteIds),
+                        },
+                        {
+                            id: options.secondTakeId ?? 'take-2',
+                            clipId: 'clip-b',
+                            name: 'Take 2',
+                            startBeat: 2,
+                            endBeat: 4,
+                            selected: false,
+                            midiSource: midiTakeSource(options.sourceNoteIds),
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 2, takeId: 'take-1' },
+                        { startBeat: 2, endBeat: 4, takeId: options.secondTakeId ?? 'take-2' },
+                    ],
+                },
+            ],
+        },
+    };
+}
+
+/** Inspects the document from inside a real Automerge change, where command
+ *  postcondition validation runs and every row is a document proxy. */
+function inspectInsideDocumentChange(document: Record<string, unknown>) {
+    let inspected: ReturnType<typeof captureCommandBatchPreflightState> | undefined;
+    change(from(document), (draft) => {
+        inspected = captureCommandBatchPreflightState({ assetReferences: [], projectDocument: draft, targetIds: [] });
+    });
+    if (!inspected) {
+        throw new Error('The in-change inspection did not run');
+    }
+    return inspected;
+}
+
+function midiTakeArrangementDocument(snapshotExtras: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        arrangements: {
+            activeArrangementId: 'arrangement-1',
+            arrangements: [{ id: 'arrangement-1', name: 'Main', ...midiTakeProjectSlots(), ...snapshotExtras }],
+        },
+        tracks: { tracks: [] },
+    };
+}
+
+// The beforeEach root document plus one clip, so slot copies can collide with
+// a live track or clip id.
+function rootDocumentWith(slots: Record<string, unknown>): Record<string, unknown> {
+    const route = (id: string, kind: string, outputId: string, clips: unknown[] = []) => ({
+        id,
+        kind,
+        gain: 1,
+        pan: 0,
+        outputId,
+        clips,
+        devices: [],
+        sends: [],
+    });
+    return {
+        tracks: {
+            tracks: [
+                route('track-vocal', 'audio', 'bus-vocal', [{ id: 'clip-vocal', startBeat: 0, endBeat: 4 }]),
+                route('bus-vocal', 'bus', 'master'),
+                route('master', 'master', 'hw_out'),
+            ],
+        },
+        ...slots,
+    };
+}
+
+function arrangementsSlot(arrangementIds: readonly string[]): Record<string, unknown> {
+    return {
+        activeArrangementId: arrangementIds[0],
+        arrangements: arrangementIds.map((id) => ({ id, tracks: rootDocumentWith({}).tracks })),
+    };
+}
+
+function clipEnvelope(clipId: string, pointIds: readonly string[]): Record<string, unknown> {
+    return {
+        clipId,
+        enabled: true,
+        points: pointIds.map((id, index) => ({ id, beatOffset: index, gainDb: -6 })),
+    };
+}
+
+function chordEvent(id: string): Record<string, unknown> {
+    return { id, beat: 0, root: 0, quality: 'major', duration: 4 };
+}
+
+// The chord slot's CRDT encoding: live events keyed by id beside the
+// `migrationBase` copy the store writes on the slot's first write.
+function chordTrackSlot(liveIds: readonly string[], baseIds: readonly string[]): Record<string, unknown> {
+    return {
+        schemaVersion: 1,
+        enabled: true,
+        events: Object.fromEntries(liveIds.map((id) => [id, { deleted: false, value: chordEvent(id) }])),
+        migrationBase: { enabled: true, events: baseIds.map(chordEvent) },
     };
 }
 
@@ -811,6 +984,318 @@ describe('captureCommandBatchPreflightState', () => {
                 },
             },
         });
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('admits frozen MIDI take sources that copy the live row ids, the exact-original-rows contract', () => {
+        // A re-key (Delete Time, split) freezes the clip's original rows, ids
+        // included, on every fragment's take, so those ids repeat the live rows
+        // and each other by design.
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it('admits frozen MIDI take sources copying row ids inside one arrangement snapshot', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeArrangementDocument());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    // Inside a change every list read returns a fresh proxy, so each declared
+    // scope must hold by where it sits, not by which object it is.
+    it.each([
+        {
+            scope: 'arrangement snapshots copying the live track and clip ids',
+            document: () => rootDocumentWith({ arrangements: arrangementsSlot(['arrangement-1', 'arrangement-2']) }),
+        },
+        {
+            scope: 'gain points shared across two clip envelopes',
+            document: () =>
+                rootDocumentWith({
+                    gainEnvelopes: {
+                        envelopes: {
+                            'clip-vocal': clipEnvelope('clip-vocal', ['point-1']),
+                            'clip-copy': clipEnvelope('clip-copy', ['point-1']),
+                        },
+                    },
+                }),
+        },
+        { scope: 'frozen MIDI take sources copying the live row ids', document: () => midiTakeProjectSlots() },
+        {
+            scope: 'frozen MIDI take sources copying row ids inside an arrangement snapshot',
+            document: () => midiTakeArrangementDocument(),
+        },
+    ])('admits $scope inside a document change', ({ document }) => {
+        const state = inspectInsideDocumentChange(document());
+
+        expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it.each([
+        {
+            scope: 'two arrangement snapshots under one arrangement id',
+            document: () => rootDocumentWith({ arrangements: arrangementsSlot(['arrangement-1', 'arrangement-1']) }),
+        },
+        {
+            scope: 'an id repeated inside one arrangement snapshot',
+            document: () =>
+                rootDocumentWith({
+                    arrangements: {
+                        activeArrangementId: 'arrangement-1',
+                        arrangements: [
+                            { id: 'arrangement-1', tracks: { tracks: [{ id: 'track-a' }, { id: 'track-a' }] } },
+                        ],
+                    },
+                }),
+        },
+        {
+            scope: 'a row id repeated inside one frozen MIDI take source',
+            document: () => midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }),
+        },
+        {
+            scope: 'a gain point id repeated inside one clip envelope',
+            document: () =>
+                rootDocumentWith({
+                    gainEnvelopes: { envelopes: { 'clip-vocal': clipEnvelope('clip-vocal', ['point-1', 'point-1']) } },
+                }),
+        },
+        {
+            // The staged structure check keys clips and tracks apart, so only
+            // the duplicate-id scan can see this collision.
+            scope: 'a live clip id repeating a live track id',
+            document: () => midiTakeProjectSlots({ secondClipId: 'track-keys' }),
+        },
+    ])('still fails $scope inside a document change', ({ document }) => {
+        const state = inspectInsideDocumentChange(document());
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails two live MIDI notes sharing an id beside frozen take sources', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ liveNoteIds: ['note-1', 'note-1'] }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a row id repeated inside one frozen MIDI take source', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a take whose own id repeats a clip id', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ secondTakeId: 'clip-b' }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a repeated id elsewhere in a snapshot carrying frozen take sources', () => {
+        mocks.getCrdtDoc.mockReturnValue(
+            midiTakeArrangementDocument({
+                tempoMap: {
+                    changes: [
+                        { id: 'tempo-1', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'tempo-1', beat: 8, tempo: 90, curve: 'instant' },
+                    ],
+                },
+            })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('admits a chord track whose migration base copies the live chord event ids', () => {
+        // The chord slot keeps the state it was first written from as its merge
+        // base (#606), so every live chord id appears twice by design.
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({ chordTrack: chordTrackSlot(['chord-1', 'chord-2'], ['chord-1', 'chord-2']) })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    it('still fails a chord id repeated inside the chord migration base', () => {
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({ chordTrack: chordTrackSlot(['chord-1'], ['chord-1', 'chord-1']) })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it.each(['track-vocal', 'clip-vocal'])('still fails a live chord event id equal to the live entity %s', (id) => {
+        mocks.getCrdtDoc.mockReturnValue(rootDocumentWith({ chordTrack: chordTrackSlot([id], []) }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('admits arrangement snapshots and gain envelopes that copy live ids under distinct owners', () => {
+        const tracks = rootDocumentWith({}).tracks;
+        const envelope = (clipId: string) => ({
+            clipId,
+            enabled: true,
+            points: [{ id: 'track-vocal', beatOffset: 0, gainDb: -6 }],
+        });
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({
+                arrangements: {
+                    activeArrangementId: 'arrangement-1',
+                    arrangements: [
+                        { id: 'arrangement-1', tracks },
+                        { id: 'arrangement-2', tracks },
+                    ],
+                },
+                gainEnvelopes: {
+                    envelopes: { 'clip-vocal': envelope('clip-vocal'), 'clip-copy': envelope('clip-copy') },
+                },
+            })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    it('still fails two arrangement snapshots under one arrangement id', () => {
+        const tracks = rootDocumentWith({}).tracks;
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({
+                arrangements: {
+                    activeArrangementId: 'arrangement-1',
+                    arrangements: [
+                        { id: 'arrangement-1', tracks },
+                        { id: 'arrangement-1', tracks },
+                    ],
+                },
+            })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails an id repeated inside one arrangement snapshot', () => {
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({
+                arrangements: {
+                    activeArrangementId: 'arrangement-1',
+                    arrangements: [{ id: 'arrangement-1', tracks: { tracks: [{ id: 'track-a' }, { id: 'track-a' }] } }],
+                },
+            })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a gain point id repeated inside one clip envelope', () => {
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({
+                gainEnvelopes: {
+                    envelopes: {
+                        'clip-vocal': {
+                            clipId: 'clip-vocal',
+                            enabled: true,
+                            points: [
+                                { id: 'point-1', beatOffset: 0, gainDb: -6 },
+                                { id: 'point-1', beatOffset: 1, gainDb: -12 },
+                            ],
+                        },
+                    },
+                },
+            })
+        );
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    // Each multi-root scope: the first root is clean, so only a scan of a later
+    // root can see the repeated id.
+    it.each([
+        {
+            scope: 'a later arrangement snapshot',
+            slots: {
+                arrangements: {
+                    activeArrangementId: 'arrangement-1',
+                    arrangements: [
+                        { id: 'arrangement-1', tracks: { tracks: [{ id: 'track-a' }] } },
+                        { id: 'arrangement-2', tracks: { tracks: [{ id: 'track-b' }, { id: 'track-b' }] } },
+                    ],
+                },
+            },
+        },
+        {
+            scope: 'a later clip gain envelope',
+            slots: {
+                gainEnvelopes: {
+                    envelopes: {
+                        'clip-vocal': {
+                            clipId: 'clip-vocal',
+                            enabled: true,
+                            points: [{ id: 'point-1', beatOffset: 0, gainDb: -6 }],
+                        },
+                        'clip-copy': {
+                            clipId: 'clip-copy',
+                            enabled: true,
+                            points: [
+                                { id: 'point-2', beatOffset: 0, gainDb: -6 },
+                                { id: 'point-2', beatOffset: 1, gainDb: -12 },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+        {
+            scope: 'a later clip warp state',
+            slots: {
+                warpStates: {
+                    states: {
+                        'clip-a': { markers: [{ id: 'm-1' }] },
+                        'clip-b': { markers: [{ id: 'm-2' }, { id: 'm-2' }] },
+                    },
+                },
+            },
+        },
+    ])('still fails an id repeated inside $scope', ({ slots }) => {
+        mocks.getCrdtDoc.mockReturnValue(rootDocumentWith(slots));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails an undeclared slot that copies the live track rows', () => {
+        // Fail-closed: a subtree repeats live ids legitimately only when it is
+        // declared as an independent id scope.
+        mocks.getCrdtDoc.mockReturnValue(
+            rootDocumentWith({ trackHistory: { previous: { tracks: [{ id: 'track-vocal' }, { id: 'bus-vocal' }] } } })
+        );
 
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 

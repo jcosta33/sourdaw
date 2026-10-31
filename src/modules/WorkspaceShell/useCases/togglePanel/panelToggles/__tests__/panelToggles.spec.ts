@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => {
         automationPanelWidth: 400,
         scratchPadOpen: false,
         scratchPadHeight: 120,
+        scratchPadCollapsed: false,
+        timelineMinimapPreviewHeight: null,
         activeTool: 'select' as const,
         selectedClipId: null as string | null,
         selectedClipIds: [] as string[],

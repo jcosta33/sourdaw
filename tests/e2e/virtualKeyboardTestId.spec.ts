@@ -18,7 +18,7 @@ test.describe('Virtual keyboard & panel toggles — test-id targeted', () => {
         await expect(vkToggle).toHaveAttribute('aria-pressed', 'true');
 
         // Virtual keyboard should be visible.
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible({ timeout: 5000 });
 
         // Close.
@@ -27,23 +27,24 @@ test.describe('Virtual keyboard & panel toggles — test-id targeted', () => {
         await expect(keyboard).not.toBeVisible();
     });
 
-    test('virtual keyboard renders with keyboard focus area', async ({ page }) => {
+    test('Escape closes the virtual keyboard without it holding focus', async ({ page }) => {
         await page.getByTestId('toggle-virtual-keyboard').click();
-        await page.waitForTimeout(500);
-
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible();
 
-        // The keyboard should have tabIndex=0 for focus.
-        const tabIndex = await keyboard.getAttribute('tabindex');
-        expect(tabIndex).toBe('0');
+        // The panel captures the computer keyboard globally, so it is not a focus target.
+        expect(await keyboard.getAttribute('tabindex')).toBeNull();
+
+        await page.keyboard.press('Escape');
+        await expect(keyboard).not.toBeVisible();
+        await expect(page.getByTestId('toggle-virtual-keyboard')).toHaveAttribute('aria-pressed', 'false');
     });
 
     test('virtual keyboard close button works', async ({ page }) => {
         await page.getByTestId('toggle-virtual-keyboard').click();
         await page.waitForTimeout(500);
 
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible();
 
         // Click the close button inside the keyboard.
