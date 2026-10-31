@@ -1,0 +1,29 @@
+src/modules/FactorySynthesis/services/bufferCreation.ts
+  s_3bb122e91d89a5::t_c1899ed0acdef1 32,34
+src/modules/FactorySynthesis/useCases/__tests__/renderFactorySamples.spec.ts
+  s_3bb122e91d89a5::t_ff24250d9be643 55
+  s_3bb122e91d89a5::t_6a1699dd6883e3 67,69-70
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorkerRuntime.spec.ts
+  s_3bb122e91d89a5::t_1e0490bdf68839 15
+src/modules/FactorySynthesis/workers/__tests__/factorySynthesisWorker.spec.ts
+  s_3bb122e91d89a5::t_a33d4c8e998407 27-30,32
+  s_3bb122e91d89a5::t_3a876e0a7e5c48 1,5,9-10
+  s_3bb122e91d89a5::t_b627f822b6486a 3-4
+  s_3bb122e91d89a5::t_221777cbe8dde4 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f4447c85da05e8fb8feb702bc82285d4b13f9e6",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
