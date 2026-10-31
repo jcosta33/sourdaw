@@ -12,6 +12,7 @@ import { schedulerSession } from '../playheadScheduler/schedulerSession';
 import { stopPlayheadScheduler } from '../playheadScheduler/stopPlayheadScheduler';
 import { secondsBetweenBeats } from '../secondsBetweenBeats';
 
+import { captureManualRecordingEnd } from './captureManualRecordingEnd';
 import { panicYeastRuntime } from './panicYeastRuntime';
 import { stopActiveRecording } from './stopActiveRecording';
 
@@ -24,6 +25,13 @@ export function pausePlayback(): void {
     // Read once, so the beat the engine parks on and the beat the store commits
     // are the same number by construction rather than by two matching reads.
     const pausedBeat = playheadPositionRef.current;
+    // The take's ending is read here, on the gesture, while the transport still
+    // rolls. `pausedBeat` is the last tick's beat, up to a tick behind the audio
+    // clock, and once the store is parked on it the gesture clock answers that
+    // stale beat: read after parking, the ending would pair it with a later
+    // context time and shift the closing pass by the tick's age. It also reads
+    // the pending punch-out before the punch flag below is retired.
+    const recordingEnd = captureManualRecordingEnd();
 
     // #3096: pause halts the engine; it just does not locate it. Established
     // transports separate pause from stop only by where the playhead is left,
@@ -105,7 +113,7 @@ export function pausePlayback(): void {
     // `stopActiveRecording` clears the count-in timer and is a safe no-op when
     // nothing is recording (the audio recorder and clip finaliser both bail on
     // empty session/clip sets).
-    Promise.resolve(stopActiveRecording())
+    Promise.resolve(stopActiveRecording(undefined, recordingEnd))
         .catch((error: unknown) => {
             logger.error(new Error('Recording teardown failed before pausing playback', { cause: error }));
         })
