@@ -1,0 +1,20 @@
+--- a/src/wasm/vorbis/vorbis_enc.c
++++ b/src/wasm/vorbis/vorbis_enc.c
+@@ -22,6 +22,7 @@
+   vorbis_dsp_state vd;
+   vorbis_block vb;
+   ogg_stream_state os;
++  bool audio_page_started;
+ } CFG, *PCFG;
+ 
+ typedef struct __attribute__((packed)) _PARAMS
+@@ -185,7 +186,8 @@
+   {
+     vorbis_analysis(&cfg->vb, &packet);
+     ogg_stream_packetin(&cfg->os, &packet);
+-    stream_write(cfg, false);
++    stream_write(cfg, !cfg->audio_page_started);
++    cfg->audio_page_started = true;
+   }
+ }
+ 

@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a
@@ -101,6 +115,19 @@ repository, `setupProjectionBridge`, the store and `replaceCrdtDocInLineage` wit
 to an unrelated slot after a local edit, and require the runtime fields to survive while the durable field
 takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
 fingerprint: ask which caller it speaks for.
+
+### 2026-10-29 — failed Freeze settlement needs current attempt authority (PR #2597 escape)
+
+The #2597 diagnostic/no-history escape requires a separate failure settlement after the render
+refuses. That continuation must still belong to the exact project root, revision, task and freeze
+aggregate when admitted and immediately before commit. A track ID or reused project timestamp
+cannot establish ownership, and the old attempt must not clear a newer task in its finalizer.
+
+Hold settlement admission and separately its staged-write commit boundary. Cancel, start a newer
+task, replace the root with the same timestamp and track ID, remove/recreate the track, or replace
+its take. Require the successor to survive with no failed-Freeze history. Pair each refusal with
+a genuinely current retry that persists its reason and later freezes, undoes and redoes normally.
+The missed real Command/durable-state stance cannot be replaced by a direct use-case callback.
 
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
@@ -496,6 +523,8 @@ success that settled just before replacement.
 The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0cbea8d62b`) added same-ID failure cleanup and PR #4564 (`40c5218228c5`) added asynchronous commit cleanup. PR #5373 explicitly deferred these scheduler windows. Historical review dispatch and tier are unknown. Capture the public root identity at each punch opening, before callback registration, and retain that opening through success, failure, commit wait and catch. Guard before caching media, reading a same-ID live clip or discarding it.
 
 Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
+
+PR #4564 (`40c5218228c5`) also introduced the manual audio terminal's missing-clip append escape (#5289). PR #5373 (`eecc1c5a8457`) fenced that opening, but immediate-flush and direct-root-replacement fixtures did not prove the real branch transition. Drive actual Stop with an explicitly held recorder terminal: a real switch must remain on the outgoing root until its take and Command entry settle, then save that branch and clear incoming Undo. A real fork can install its copied root while the old flush is held; settle both old success and old failure and preserve that successor's same-ID provisional clip, takes, media and history exactly. Pair actual same-owner completion and failure, known PCM through the real cache, and real Undo/Redo. Make the captured-root predicate always true and require both stale-terminal cases to fail. Historical reviewer prompts and tiers remain unverified; the missing stance was recording-owner lifetime across the actual branch transition.
 
 ### Deferred sensitivity must redraw the current clip's markers
 

@@ -27,6 +27,7 @@ import {
 
 import { type CrdtDocumentSnapshot } from '../models/CrdtDocumentSnapshot';
 import { type DocId, type DocumentBundle, type MergeResult, DOC_PREFIX_ROOT } from '../models/CrdtDocumentTypes';
+import { advanceDocumentIdentityEpoch, readDocumentIdentityEpoch } from '../stores/documentIdentityEpoch';
 
 import { compareIncrementalKeys } from './crdtPersistence/compareIncrementalKeys';
 
@@ -297,7 +298,9 @@ class AutomergeRepository {
     private rootId: DocId = DOC_PREFIX_ROOT;
     private mutationEpoch = 0;
     private lastHistoryDiscardEpoch = 0;
-    private documentIdentityEpoch = 0;
+    private get documentIdentityEpoch(): number {
+        return readDocumentIdentityEpoch();
+    }
     private rootIdentityEpoch = 0;
     private unownedMutationEpoch = 0;
     private mutationEpochByOwner = new WeakMap<object, number>();
@@ -1191,6 +1194,9 @@ class AutomergeRepository {
             if (touchedRoot) {
                 this.notifyRootInstallation();
             }
+            if (installedAny) {
+                this.notifyListeners();
+            }
             throw error;
         }
         // The worker's `mergeBundle` kept the merged documents as its
@@ -1244,6 +1250,9 @@ class AutomergeRepository {
             }
             if (touchedRoot) {
                 this.notifyRootInstallation();
+            }
+            if (result.mergedDocIds.length > 0 || result.newDocIds.length > 0) {
+                this.notifyListeners();
             }
             throw error;
         }
@@ -1306,7 +1315,7 @@ class AutomergeRepository {
     }
 
     private markDocumentIdentityMutation(): void {
-        this.documentIdentityEpoch += 1;
+        advanceDocumentIdentityEpoch();
         this.markMutation();
     }
 

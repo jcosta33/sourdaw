@@ -149,6 +149,106 @@ function bridge(
 }
 
 describe('a level stated in decibels reaches the handler in decibels', () => {
+    it('requires a VCA qualifier when a track and VCA share the requested level name', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            tracks: [{ ...vocals, name: 'Strings', vcaGroupId: 'vca-strings' }, reverb, master],
+            vcaGroups: [{ id: 'vca-strings', name: 'Strings', gain: 0.75, muted: false, trackIds: [vocals.id] }],
+        };
+        const vcaCall = { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-strings', gainDb: -6 } };
+        expect(bridge([vcaCall], 'set Strings gain to -6 dB', context).actions).toEqual([]);
+        const relativeCall = { name: 'setVcaGain', arguments: { vcaGroupId: 'vca-strings', deltaDb: -2 } };
+        expect(bridge([relativeCall], 'set Strings gain down 2 dB', context).actions).toEqual([]);
+        expect(bridge([relativeCall], 'set the Strings VCA gain down 2 dB', context).actions).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-strings', deltaDb: -2 } },
+        ]);
+        expect(bridge([vcaCall], 'set the Strings VCA gain to -6 dB', context).actions).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-strings', gainDb: -6 } },
+        ]);
+        expect(bridge([vcaCall], 'set vca-strings gain to -6 dB', context).actions).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-strings', gainDb: -6 } },
+        ]);
+        expect(
+            bridge(
+                [{ name: 'setTrackGain', arguments: { trackId: vocals.id, gainDb: -6 } }],
+                'set the Strings track gain to -6 dB',
+                context
+            ).actions
+        ).toEqual([{ type: 'setTrackGain', payload: { trackId: vocals.id, gainDb: -6 } }]);
+        const unique = { ...context, tracks: [vocals, reverb, master] };
+        expect(bridge([vcaCall], 'set Strings gain to -6 dB', unique).actions).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-strings', gainDb: -6 } },
+        ]);
+        const label = {
+            ...context,
+            tracks: [{ ...context.tracks[0]!, name: 'Strings VCA' }, reverb, master],
+            vcaGroups: [{ ...context.vcaGroups![0]!, name: 'Strings VCA' }],
+        };
+        expect(bridge([vcaCall], 'set Strings VCA gain to -6 dB', label).actions).toEqual([]);
+    });
+
+    it('grounds VCA and metronome decibel forms without accepting model-computed linear values', () => {
+        const context: ProjectContext = {
+            ...projectContext,
+            vcaGroups: [{ id: 'vca-drums', name: 'Drum VCA', gain: 0.75, muted: false, trackIds: [vocals.id] }],
+        };
+        const vcaPrompt = 'set Drum VCA gain to -6 dB';
+        const metroPrompt = 'turn the metronome volume down 2 dB';
+        const vca = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gainDb: -6 } }],
+            vcaPrompt,
+            context
+        );
+        const metro = bridge([{ name: 'setMetronomeVolume', arguments: { deltaDb: -2 } }], metroPrompt, context);
+        expect(vca.actions, JSON.stringify(vca.rejections)).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', gainDb: -6 } },
+        ]);
+        expect(metro.actions, JSON.stringify(metro.rejections)).toEqual([
+            { type: 'setMetronomeVolume', payload: { deltaDb: -2 } },
+        ]);
+        const relativeVca = bridge(
+            [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', deltaDb: -2 } }],
+            'set vca gain for Drum VCA down 2 dB',
+            context
+        );
+        const absoluteMetro = bridge(
+            [{ name: 'setMetronomeVolume', arguments: { volumeDb: -6 } }],
+            'set metronome volume to -6 dB',
+            context
+        );
+        expect(relativeVca.actions, JSON.stringify(relativeVca.rejections)).toEqual([
+            { type: 'setVcaGain', payload: { vcaGroupId: 'vca-drums', deltaDb: -2 } },
+        ]);
+        expect(absoluteMetro.actions, JSON.stringify(absoluteMetro.rejections)).toEqual([
+            { type: 'setMetronomeVolume', payload: { volumeDb: -6 } },
+        ]);
+        expect(
+            bridge([{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gain: 0.5 } }], vcaPrompt, context)
+                .actions
+        ).toEqual([]);
+        const other = {
+            ...context,
+            vcaGroups: [
+                ...context.vcaGroups!,
+                { id: 'vca-other', name: 'Other VCA', gain: 1, muted: false, trackIds: [] },
+            ],
+        };
+        expect(
+            bridge([{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-other', gainDb: -6 } }], vcaPrompt, other)
+                .actions
+        ).toEqual([]);
+        expect(
+            bridge(
+                [{ name: 'setVcaGain', arguments: { vcaGroupId: 'vca-drums', gainDb: -6 } }],
+                `${vcaPrompt} and leave it unchanged`,
+                context
+            ).actions
+        ).toEqual([]);
+        expect(
+            bridge([{ name: 'setMetronomeVolume', arguments: { volume: 0.4 } }], metroPrompt, context).actions
+        ).toEqual([]);
+    });
+
     it('grounds a downward change and refuses the other readings of the same figure', () => {
         const prompt = 'turn Vocals down 2 dB';
 

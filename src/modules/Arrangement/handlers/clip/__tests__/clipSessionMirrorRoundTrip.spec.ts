@@ -28,6 +28,7 @@ import {
     reconcileSessionUndoForProject,
     registerProductionCommandHandlers,
     stampSessionUndoWitness,
+    setActionHistoryMetadataPort,
     createVersionedCommandEnvelope,
     parseVersionedCommandEnvelope,
     isExecutableAppActionType,
@@ -37,6 +38,10 @@ import {
 import { agentProjectRepairStateStore } from '#/modules/CrdtDocument/stores';
 import {
     createCrdtDoc,
+    clearActionHistory,
+    recordActionHistoryEntry,
+    recordActionHistoryEntries,
+    markActionHistoryEntryReverted,
     captureDurableDocumentWitness,
     getCrdtDoc,
     agentProjectInspectionPort,
@@ -1103,6 +1108,11 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     });
 
     afterEach(() => {
+        setActionHistoryMetadataPort({
+            record: () => [],
+            markReverted: () => ({ status: 'unavailable' }),
+            clear: () => undefined,
+        });
         stopProjectionBridge();
         stopProjectionBridge = () => undefined;
         agentProjectInspectionPort.setProvider(null);
@@ -3817,6 +3827,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
     it.each([false, true])(
         'saved removal retains ripple=%s with the opposite reloaded workspace mode',
         async (ripple) => {
+            setActionHistoryMetadataPort({
+                record: recordActionHistoryEntry,
+                recordBatch: recordActionHistoryEntries,
+                markReverted: markActionHistoryEntryReverted,
+                clear: clearActionHistory,
+            });
             workspaceStore.set({ ...defaultWorkspaceState, rippleEditing: ripple });
             const peerClip = { ...createClipFixture('peer-mode-clip', 20, 24), trackId: 'peer-mode-track' };
             trackStore.set({

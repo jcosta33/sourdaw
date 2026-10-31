@@ -22,10 +22,14 @@ import {
 } from '../errors/AppActionExecutionError';
 import { isActionEntry } from '../models/UndoEntry';
 import { type VersionedCommandEnvelope } from '../models/VersionedCommandEnvelope';
-import { registerActionReplayCapability, revokeActionReplayCapability } from '../stores/actionReplayCapabilities';
+import {
+    registerActionReplayCapability,
+    revokeActionReplayCapability,
+    runActionHistoryStaging,
+} from '../stores/actionReplayCapabilities';
 import { undoStore } from '../stores/undoStore';
 
-import { actionHistoryMetadataPort } from './actionHistoryMetadataPort';
+import { actionHistoryMetadataPort, type ActionHistoryMetadata } from './actionHistoryMetadataPort';
 import { appendAbortFailures } from './appendAbortFailures';
 import { captureRecordedRedoContext } from './captureRecordedRedoContext';
 import { commitRedoInverseCapture } from './commitRedoInverseCapture';
@@ -54,6 +58,13 @@ export type ExecuteAppActionOptions = ExecuteOptions & {
      * This grants no commit authority; callers consume it only after dispatch succeeds. */
     observeMaterializedAction?: (action: Readonly<AppAction>) => void;
     deviceParameterRuntimeAuthority?: HandlerValidationContext['deviceParameterRuntimeAuthority'];
+    /**
+     * Synchronous authority check on this action's project transaction, after the
+     * handler stages its writes and immediately before storage commits them.
+     * False aborts the action without history or committed observers. Runtime-only
+     * handlers have no project transaction and do not consult this predicate.
+     */
+    shouldCommit?: () => boolean;
 };
 
 type ExecuteAppAction = (action: AppAction, options?: ExecuteAppActionOptions) => Promise<void>;
@@ -403,6 +414,14 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     ? `Action conflicts with current project state: ${action.type}`
                     : null;
             });
+            let caller_commit_denied = false;
+            if (options?.shouldCommit) {
+                const shouldCommit = options.shouldCommit;
+                storage_transaction.validateCommit(() => {
+                    caller_commit_denied = !shouldCommit();
+                    return caller_commit_denied ? `Action commit authority withdrawn: ${action.type}` : null;
+                });
+            }
             try {
                 execution_result = await storage_transaction.value;
                 execution_result?.commitValidation?.release();
@@ -442,11 +461,35 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 throw new AppActionConflictError(action.type, refusal);
             }
 
+            const historyMetadata: ActionHistoryMetadata | null =
+                !options?.skipUndo && handler.undoable
+                    ? {
+                          id: command.envelope.commandId,
+                          label,
+                          actionKind: action.type,
+                          source: options?.source ?? 'manual',
+                          timestamp: command.envelope.issuedAt,
+                          groupId: historyGroupId,
+                          groupLabel: historyGroupLabel,
+                          reverted: false,
+                      }
+                    : null;
+            let evictedEntryIds: string[] = [];
+
             try {
                 registerHandlerCommitValidation(
                     storage_transaction,
                     execution_result?.commitValidation ? [execution_result.commitValidation] : []
                 );
+                // Durable bookkeeping shares the command's publication owner. Session
+                // Undo/replay authority is installed only after this commit succeeds.
+                storage_transaction.scope(() => {
+                    if (historyMetadata) {
+                        evictedEntryIds = runActionHistoryStaging(() =>
+                            actionHistoryMetadataPort.record(historyMetadata)
+                        );
+                    }
+                });
                 storage_transaction.commit();
             } catch (error) {
                 // A commit that already reached storage cannot be undone by rolling the
@@ -461,9 +504,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                 } else {
                     commitRedoInverseCapture({ phase: 'discard', actions: [action] });
                 }
+                let semantic_cleanup_failure: { error: unknown } | null = null;
                 try {
                     clearSemanticContext();
                 } catch (clear_error) {
+                    semantic_cleanup_failure = { error: clear_error };
                     logger.error(
                         new Error(`Semantic context cleanup failed for action: ${action.type}`, {
                             cause: clear_error,
@@ -486,6 +531,16 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
                     const committed_error = new AppActionCommittedError(action.type, committedCause);
                     logger.error(committed_error);
                     throw committed_error;
+                }
+                if (
+                    !hasAbortFailure(abortFailures) &&
+                    caller_commit_denied &&
+                    error instanceof AutomergeStorageTransactionValidationError
+                ) {
+                    if (semantic_cleanup_failure !== null) {
+                        throw semantic_cleanup_failure.error;
+                    }
+                    return;
                 }
                 if (
                     !hasAbortFailure(abortFailures) &&
@@ -520,21 +575,11 @@ export const executeAppAction: ExecuteAppAction = inject({ logger })(
 
                 if (!options?.skipUndo) {
                     // Record undoable actions to global history (skip UI-only actions like panel toggles)
-                    if (handler.undoable) {
+                    if (historyMetadata) {
                         const entry_id = command.envelope.commandId;
                         const inverse_action = undoResult?.inverseAction ?? null;
-                        const metadata = {
-                            id: entry_id,
-                            label,
-                            actionKind: action.type,
-                            source: options?.source ?? 'manual',
-                            timestamp: command.envelope.issuedAt,
-                            groupId: historyGroupId,
-                            groupLabel: historyGroupLabel,
-                            reverted: false,
-                        };
-                        const evicted_entry_ids = actionHistoryMetadataPort.record(metadata);
-                        for (const evicted_entry_id of evicted_entry_ids) {
+                        const metadata = historyMetadata;
+                        for (const evicted_entry_id of evictedEntryIds) {
                             revokeActionReplayCapability(evicted_entry_id);
                         }
                         if (inverse_action) {

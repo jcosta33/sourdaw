@@ -25,7 +25,14 @@ const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
 const GC_FILTER_NAME = `connected stem export output ownership > ${GC_CASE_NAME}`;
 const GC_SPEC = 'src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx';
 const GC_CHILD_MARKER = 'SOURDAW_EXPORT_STREAMING_GC_CHILD';
-const GC_BODY_DEADLINE_MS = 180_000;
+// An in-flight background Maglev/Turbofan job holds its closure, and so that closure's context, as a
+// strong root that gc() does not drain. On a starved runner a job compiling a finished stem's encoder
+// or PCM-reader closure keeps that stem's PCM live into the next render's checkpoint (#5924).
+// Synchronous tiering removes those background-compile roots from the measurement.
+const GC_SYNCHRONOUS_TIERING_FLAG = '--no-concurrent-recompilation';
+// Synchronous tiering moves compile work onto the measuring thread: the admitted runner projects about
+// 182 s for 64 stems with it, so 300 s keeps a 1.6x margin.
+const GC_BODY_DEADLINE_MS = 300_000;
 // Nested Vitest startup and child exit need time outside the measured GC body.
 const GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS = 120_000;
 const GC_CHILD_DEADLINE_MS = GC_BODY_DEADLINE_MS + GC_CHILD_BOOTSTRAP_AND_EXIT_ALLOWANCE_MS;
@@ -137,6 +144,7 @@ async function runGcChild(cwd: string, reportPath: string): Promise<string> {
             GC_SPEC,
             '--pool=forks',
             '--execArgv=--expose-gc',
+            `--execArgv=${GC_SYNCHRONOUS_TIERING_FLAG}`,
             '--maxWorkers=1',
             `--testNamePattern=^${GC_FILTER_NAME}$`,
             '--reporter=default',
@@ -880,6 +888,9 @@ describe('connected stem export output ownership', () => {
                 }
                 await runGcMeasurementInChild();
                 return;
+            }
+            if (!process.execArgv.includes(GC_SYNCHRONOUS_TIERING_FLAG)) {
+                throw new TypeError(`Run this ownership probe with node ${GC_SYNCHRONOUS_TIERING_FLAG}.`);
             }
             stemRender.frames = 44100 * 3;
             const b = stemRender.frames * 2 * Float32Array.BYTES_PER_ELEMENT;

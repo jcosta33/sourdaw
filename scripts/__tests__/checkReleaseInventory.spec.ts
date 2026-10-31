@@ -116,11 +116,11 @@ const ddspModelEnforcementPaths = [
 ] as const;
 const WEBLLM_SURFACE_ID = 'webllm-qwen-artifacts';
 const WEBLLM_LEGAL_PATH_PREFIX = 'public/legal/';
-// Re-pinned for Electron 44.9.1's Desktop runtime notice update: the closure's
+// Re-pinned for the browser codec canonical notice update: the closure's
 // paths, source buckets, and path-to-source mapping are byte-identical to the
 // previous pin; only the shared notice's content digest moved. Any other
 // field moving is a legal-closure change, not drift.
-const WEBLLM_LEGAL_CLOSURE_DIGEST = 'c175e0868e5697f1796f60340124f134fe14527a9a40fda12c588dd6d237ded4';
+const WEBLLM_LEGAL_CLOSURE_DIGEST = 'e4fc225b5a235755f9fc244ff3a16840077e51c2d927e227809001c35f419f93';
 const APACHE_TVM_COMMIT = 'bc1a904ec1ad89454ee6577d66cde1268b8f6bc8';
 const TVM_FFI_COMMIT = '3c35034fd1026011736e19a4e0e1ed0f22058c42';
 
