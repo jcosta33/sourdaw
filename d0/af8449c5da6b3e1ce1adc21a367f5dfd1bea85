@@ -1,0 +1,29 @@
+tests/e2e/exportAudioEvidenceHarness.ts
+  s_3bb122e91d89a5::t_0f71c550c009f2 1-115
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  s_3bb122e91d89a5::t_9adf9d08a68414 1-100
+tests/e2e/exportAudioEvidence.spec.ts
+  s_3bb122e91d89a5::t_81404fbead97f1 27-28
+  s_3bb122e91d89a5::t_b78d7005e2e6bb 117-127
+  s_3bb122e91d89a5::t_90263c87d484d7 18-21,23-26,29-62,68,82-83,95-102,112,114,138
+  s_3bb122e91d89a5::t_ececaa10344be7 137
+  s_3bb122e91d89a5::t_a783e84eda7e28 4,8-13,16-17,132,136,139,150
+scripts/e2eSpecDurations.json
+  s_3bb122e91d89a5::t_52e523653e6de6 94-95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d0af8449c5da6b3e1ce1adc21a367f5dfd1bea85",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
