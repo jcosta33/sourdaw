@@ -335,6 +335,53 @@ describe('a ramp that arrives on a beat shared by two changes', () => {
 });
 
 describe('secondsBetweenBeats', () => {
+    const shortChanges: TempoChange[] = [
+        { id: 'base', beat: 0, tempo: 120, curve: 'instant' },
+        { id: 'fast', beat: 0.25, tempo: 240, curve: 'instant' },
+        { id: 'return', beat: 0.45, tempo: 120, curve: 'instant' },
+    ];
+
+    it('keeps the three-row signed-source clock on frame 4800 without sample rounding', () => {
+        expect([0.25, 0.45, 0.5, 1, 1.5, 2].map((beat) => secondsBetweenBeats(shortChanges, 0, beat, 120))).toEqual([
+            0.125, 0.175, 0.2, 0.45, 0.7, 0.95,
+        ]);
+        const entry = -0.1 + secondsBetweenBeats(shortChanges, 0, 0.5, 120);
+        expect(entry).toBe(0.1);
+        expect(entry * 48_000).toBe(4_800);
+    });
+
+    it('retains genuinely fractional source frames through the same short tempo map', () => {
+        const entry = -0.1 + secondsBetweenBeats(shortChanges, 0, 0.50001, 120);
+        const frame = entry * 48_000;
+        expect(frame).toBeGreaterThan(4_800);
+        expect(frame).toBeLessThan(4_801);
+        expect(frame).not.toBe(Math.round(frame));
+    });
+
+    it('uses the same short-span clock when a linear segment has constant tempo', () => {
+        const changes: TempoChange[] = [
+            ...shortChanges.slice(0, 2),
+            { id: 'flat-linear', beat: 0.45, tempo: 120, curve: 'linear' },
+            { id: 'flat-end', beat: 1, tempo: 120, curve: 'instant' },
+        ];
+        expect(secondsBetweenBeats(changes, 0, 0.5, 120)).toBe(0.2);
+    });
+
+    it('preserves a nonfinite elapsed sum across multiple public tempo segments', () => {
+        const changes: TempoChange[] = [
+            { id: 'start', beat: 0, tempo: 20, curve: 'instant' },
+            { id: 'later', beat: 1e308, tempo: 20, curve: 'instant' },
+        ];
+        expect(secondsBetweenBeats(changes, 0, 1.1e308, 20)).toBe(Infinity);
+    });
+
+    it('preserves negative absolute coordinates and their sample inverse', () => {
+        expect(secondsBetweenBeats(shortChanges, -0.25, 0, 120)).toBe(0.125);
+        expect(secondsBetweenBeats(shortChanges, 0, -0.25, 120)).toBe(-0.125);
+        expect(beatToSamples(shortChanges, -0.25, 120, 48_000)).toBe(-6_000);
+        expect(samplesToBeat(shortChanges, -6_000, 120, 48_000)).toBe(-0.25);
+    });
+
     it('falls back to the default tempo when the map is empty', () => {
         expect(secondsBetweenBeats([], 0, 8, 120)).toBeCloseTo(4, 12);
     });

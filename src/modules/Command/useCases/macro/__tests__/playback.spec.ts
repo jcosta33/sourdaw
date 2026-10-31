@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import * as storageWrites from '#/infra/store/storage/createAutomergeStorage';
 import { automationStore } from '#/modules/Automation/stores';
 import { addAutomationLane } from '#/modules/Automation/useCases';
 
@@ -37,9 +38,11 @@ describe('playMacro', () => {
         // the call, mutate nothing.
         executeAppActionMock.mockReset();
         executeAppActionMock.mockResolvedValue(undefined);
+        vi.spyOn(storageWrites, 'flushAutomergeStorageWrites').mockReturnValue(undefined);
     });
 
     afterEach(() => {
+        vi.restoreAllMocks();
         localStorage.removeItem(STORAGE_KEY);
         automationStore.set({ lanes: [] });
     });
@@ -60,6 +63,16 @@ describe('playMacro', () => {
         expect(secondAction).toEqual({ type: 'toggleLoop' });
         expect(firstOptions?.groupId).toBe(secondOptions?.groupId);
         expect(firstOptions?.groupLabel).toBe('Macro: Two steps');
+    });
+
+    it('propagates settlement failure before dispatching any macro step', async () => {
+        const failure = new Error('Controlled preceding history settlement failure');
+        vi.mocked(storageWrites.flushAutomergeStorageWrites).mockImplementationOnce(() => {
+            throw failure;
+        });
+        await expect(playMacro('play-1')).rejects.toBe(failure);
+        expect(executeAppActionMock).not.toHaveBeenCalled();
+        expect(macroStore.value?.macros).toEqual([macro]);
     });
 
     it('plays a macro holding a singleton action alongside a batch-capable action without throwing', async () => {

@@ -11,6 +11,7 @@ import { resolveEligibleClipWriteTarget } from '../../stores/resolveEligibleClip
 import { setWarpState } from '../../stores/warpStates';
 import { addClip } from '../clip/addClip';
 import { isClipDropCompatible } from '../clip/isClipDropCompatible';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { removeClip } from '../clip/removeClip';
 
 export function pasteClip(): boolean {
@@ -146,6 +147,7 @@ export function pasteClip(): boolean {
                 // shifts by the paste offset so the pasted clip's loop window
                 // and pass count read identically to the source's (#4988).
                 ...shiftLoopOriginEntry(entry.clip, offset),
+                ...relocateAudioSourceTimeFields(entry.clip, offset),
                 followAction: entry.clip.followAction,
             });
 

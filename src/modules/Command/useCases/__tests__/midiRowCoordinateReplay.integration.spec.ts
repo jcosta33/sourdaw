@@ -24,6 +24,7 @@ import {
     transactSnapshot,
 } from '#/modules/CrdtDocument/useCases';
 import { defaultMidiStoreState, midiStore, type MidiStoreState } from '#/modules/MIDI/stores';
+import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/Transport/stores';
 import { type AppAction } from '#/utils/handlerContract';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
@@ -169,6 +170,89 @@ function snapshot() {
 function peerRows(change: (state: MidiStoreState) => void): void {
     mutateCrdtDoc<{ midi: MidiStoreState }>({ id: 'root', changeFn: (document) => change(document.midi) });
     projectCrdtToStores({ resetProjections: true });
+}
+
+type TempoMacroKind = 'base' | 'targeted' | 'add' | 'update' | 'remove' | 'replace' | 'collision';
+function tempoMacroRequest(kind: TempoMacroKind): AppAction {
+    if (kind === 'base') {
+        return { type: 'setTempo', payload: { bpm: 60 } };
+    }
+    if (kind === 'targeted') {
+        return { type: 'setTempo', payload: { bpm: 60, tempoChangeId: 'original-row' } };
+    }
+    if (kind === 'add' || kind === 'collision') {
+        return { type: 'editTempoMap', payload: { edit: { type: 'add', beat: 4, tempo: 60 } } };
+    }
+    if (kind === 'replace') {
+        return {
+            type: 'editTempoMap',
+            payload: {
+                edit: {
+                    type: 'replace',
+                    changes: [
+                        { beat: 6, tempo: 60, curve: 'instant' },
+                        { beat: 10, tempo: 100, curve: 'instant' },
+                    ],
+                },
+            },
+        };
+    }
+    if (kind === 'remove') {
+        return { type: 'editTempoMap', payload: { edit: { type: 'remove', id: 'original-row' } } };
+    }
+    return { type: 'editTempoMap', payload: { edit: { type: 'update', id: 'original-row', tempo: 60 } } };
+}
+function tempoProduct() {
+    return {
+        tracks: structuredClone(trackStore.value),
+        tempo: transportStore.value?.tempo,
+        map: structuredClone(tempoMapStore.value),
+    };
+}
+async function recordTempoMacro(kind: TempoMacroKind) {
+    await executeAppAction({ type: 'startMacroRecording' });
+    await executeAppAction(tempoMacroRequest(kind));
+    await settleMirror();
+    const id = actionHistoryStore.value?.entries.at(-1)?.id;
+    if (!id) {
+        throw new Error('Expected settled tempo history');
+    }
+    await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
+    if (kind === 'remove' || kind === 'replace' || kind === 'collision') {
+        await executeAppAction({
+            type: 'editTempoMap',
+            payload: { edit: { type: 'update', id: 'original-row', tempo: 75 } },
+        });
+    }
+    await executeAppAction({ type: 'stopMacroRecording', payload: { name: 'Tempo edit and reverse' } });
+    const recorded = macroStore.value?.macros[0];
+    if (!recorded) {
+        throw new Error('Expected saved tempo macro');
+    }
+    const serialized = JSON.stringify(recorded);
+    const saved: typeof recorded = JSON.parse(serialized);
+    macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+    return { saved, serialized };
+}
+async function roundTripMacroHistory(
+    before: ReturnType<typeof tempoProduct>,
+    after: ReturnType<typeof tempoProduct>,
+    pastLength: number
+) {
+    await saveAndReload();
+    while ((undoStore.value?.past.length ?? 0) > pastLength) {
+        const length = undoStore.value?.past.length ?? 0;
+        await expect(undo({ stepOverConflicts: false })).resolves.toEqual({ headConsumed: true });
+        expect(undoStore.value?.past.length).toBeLessThan(length);
+    }
+    expect(tempoProduct()).toEqual(before);
+    await saveAndReload();
+    while ((undoStore.value?.future.length ?? 0) > 0) {
+        const length = undoStore.value?.future.length ?? 0;
+        await redo();
+        expect(undoStore.value?.future.length).toBeLessThan(length);
+    }
+    expect(tempoProduct()).toEqual(after);
 }
 
 describe('exact row captures through real Command history and persistence (#5695)', () => {
@@ -555,6 +639,8 @@ describe('exact row captures through real Command history and persistence (#5695
         });
         await executeAppAction({ type: 'startMacroRecording' });
         await executeAppAction(kind === 'slip' ? freshSlip(forwardOffset) : trim());
+        // Reversion reads authoritative source owners alongside settled history metadata.
+        await settleMirror();
         const id = actionHistoryStore.value?.entries.at(-1)?.id;
         if (!id) {
             throw new Error('Expected an action-history entry to revert');
@@ -660,6 +746,214 @@ describe('exact row captures through real Command history and persistence (#5695
         }
         expect(notifyUser).not.toHaveBeenCalled();
     });
+
+    it.each([
+        [0, 0, 99],
+        [2, 1, 99],
+    ] as const)(
+        'uses authoritative captured audio U=%s E=%s over stale q=%s for a saved inverse macro',
+        async (unwrapped, entry, staleBeat) => {
+            seed(8, 'audio');
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({ changes: [] });
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: (document) => {
+                    const clip = document.tracks.tracks[0]!.clips[0]!;
+                    clip.audioOffsetBeats = staleBeat;
+                    clip.audioOffsetSeconds = entry;
+                    clip.audioUnwrappedOffsetSeconds = unwrapped;
+                    clip.audioLoopStartSeconds = 0;
+                    clip.audioLoopPassEntrySeconds = entry;
+                    clip.audioLoopPassOriginBeat = 0;
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+            const freshSlip = (offset: number): AppAction => ({
+                type: 'slipClipContent',
+                payload: { clipId: CLIP_ID, clipType: 'audio', offset },
+            });
+            await executeAppAction({ type: 'startMacroRecording' });
+            await executeAppAction(freshSlip(-1));
+            await settleMirror();
+            const id = actionHistoryStore.value?.entries.at(-1)?.id;
+            if (!id) {
+                throw new Error('Expected audio source history');
+            }
+            await expect(revertAction(id)).resolves.toEqual({ status: 'executed' });
+            await executeAppAction({ type: 'stopMacroRecording', payload: { name: 'Canonical source inverse' } });
+            const recorded = macroStore.value?.macros[0];
+            if (!recorded) {
+                throw new Error('Expected source macro');
+            }
+            const serialized = JSON.stringify(recorded);
+            const saved: typeof recorded = JSON.parse(serialized);
+            macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0]!.clips[0]!.loopLength = 4;
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+            for (let playback = 0; playback < 2; playback += 1) {
+                await settleMirror();
+                const before = structuredClone(readClip());
+                await executeAppAction(freshSlip(-1));
+                const first = structuredClone(readClip());
+                await settleMirror();
+                await executeAppAction(freshSlip(unwrapped * 2));
+                const expected = structuredClone(readClip());
+                await settleMirror();
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+                expect(readClip()).toEqual(first);
+                await settleMirror();
+                await expect(undo()).resolves.toEqual({ headConsumed: true });
+                expect(readClip()).toEqual(before);
+                await executeAppAction({ type: 'playMacro', payload: { macroId: saved.id } });
+                expect(readClip()).toEqual(expected);
+                expect(readClip().audioUnwrappedOffsetSeconds).toBe(unwrapped);
+                expect(readClip().audioOffsetBeats).toBe(unwrapped * 2);
+                expect(JSON.stringify(macroStore.value?.macros[0])).toBe(serialized);
+            }
+        }
+    );
+
+    it.each(['base', 'targeted', 'add', 'update', 'remove', 'replace', 'collision'] as const)(
+        'replays saved %s tempo intent twice with current source capture and actual row aliases',
+        async (kind) => {
+            seed(8, 'audio');
+            transportStore.set({ ...defaultTransportState, tempo: 120, playheadPosition: 0 });
+            let rows: NonNullable<typeof tempoMapStore.value>['changes'] = [];
+            if (kind !== 'base' && kind !== 'add') {
+                rows = [
+                    { id: 'original-row', beat: 4, tempo: 90, curve: 'instant' },
+                    { id: 'unrelated-row', beat: 12, tempo: 150, curve: 'instant' },
+                ];
+            }
+            tempoMapStore.set({ changes: rows });
+            await settleMirror();
+            const { saved, serialized } = await recordTempoMacro(kind);
+            expect(saved.actions[1]?.type).toBe(
+                kind === 'base' || kind === 'targeted' ? 'restoreTempoEdit' : 'restoreTempoMapEdit'
+            );
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0]!.clips[0]!.loopLength = 4;
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+            if (kind === 'targeted') {
+                const transport = transportStore.value;
+                if (!transport) {
+                    throw new Error('Expected diagnostic transport');
+                }
+                transportStore.set({ ...transport, playheadPosition: 20 });
+            }
+            if (kind === 'collision') {
+                await executeAppAction({
+                    type: 'editTempoMap',
+                    payload: {
+                        edit: {
+                            type: 'replace',
+                            changes: [
+                                { beat: 4, tempo: 60, curve: 'instant' },
+                                { beat: 12, tempo: 150, curve: 'instant' },
+                            ],
+                        },
+                    },
+                });
+            }
+            await settleMirror();
+            for (let playback = 0; playback < 2; playback += 1) {
+                const before = tempoProduct();
+                const pastLength = undoStore.value?.past.length ?? 0;
+                await executeAppAction({ type: 'playMacro', payload: { macroId: saved.id } });
+                const after = tempoProduct();
+                expect(after.tempo).toBe(120);
+                expect(after.map?.changes.map(({ beat, tempo, curve }) => ({ beat, tempo, curve }))).toEqual(
+                    rows.map(({ beat, tempo, curve }, index) => ({
+                        beat,
+                        curve,
+                        tempo:
+                            index === 0 && (kind === 'remove' || kind === 'replace' || kind === 'collision')
+                                ? 75
+                                : tempo,
+                    }))
+                );
+                if (kind === 'remove' || kind === 'replace' || kind === 'collision') {
+                    expect(after.map?.changes[0]?.id).not.toBe('original-row');
+                }
+                expect(readClip().loopLength).toBe(4);
+                expect(readClip().audioUnwrappedOffsetSeconds).toBe(0);
+                expect(JSON.stringify(macroStore.value?.macros[0])).toBe(serialized);
+                await roundTripMacroHistory(before, after, pastLength);
+            }
+        }
+    );
+
+    it.each(['remove', 'replace'] as const)(
+        'retains a genuinely created tempo alias after inverse %s and a later reference',
+        async (operation) => {
+            seed(8, 'audio');
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({ changes: [] });
+            await settleMirror();
+            await executeAppAction({ type: 'startMacroRecording' });
+            await executeAppAction({ type: 'editTempoMap', payload: { edit: { type: 'add', beat: 4, tempo: 90 } } });
+            const created = tempoMapStore.value?.changes[0];
+            if (!created) {
+                throw new Error('Expected actual recorded tempo row');
+            }
+            let edit: Extract<AppAction, { type: 'editTempoMap' }>['payload']['edit'] = {
+                type: 'remove',
+                id: created.id,
+            };
+            if (operation === 'replace') {
+                edit = { type: 'replace', changes: [{ beat: 6, tempo: 100, curve: 'instant' }] };
+            }
+            await executeAppAction({ type: 'editTempoMap', payload: { edit } });
+            await settleMirror();
+            const entryId = actionHistoryStore.value?.entries.at(-1)?.id;
+            if (!entryId) {
+                throw new Error('Expected actual row edit history');
+            }
+            await expect(revertAction(entryId)).resolves.toEqual({ status: 'executed' });
+            await executeAppAction({
+                type: 'editTempoMap',
+                payload: { edit: { type: 'update', id: created.id, tempo: 75 } },
+            });
+            await executeAppAction({ type: 'stopMacroRecording', payload: { name: 'Create restore and edit row' } });
+            const recorded = macroStore.value?.macros[0];
+            if (!recorded) {
+                throw new Error('Expected saved row alias macro');
+            }
+            expect(recorded.actions).toHaveLength(4);
+            const serialized = JSON.stringify(recorded);
+            const saved: typeof recorded = JSON.parse(serialized);
+            macroStore.set({ macros: [saved], recording: false, currentRecording: [] });
+            mutateCrdtDoc<{ tracks: TrackStoreState }>({
+                id: 'root',
+                changeFn: (document) => {
+                    document.tracks.tracks[0]!.clips[0]!.loopLength = 4;
+                },
+            });
+            projectCrdtToStores({ resetProjections: true });
+            for (let playback = 0; playback < 2; playback += 1) {
+                await executeAppAction({ type: 'editTempoMap', payload: { edit: { type: 'replace', changes: [] } } });
+                await settleMirror();
+                const before = tempoProduct();
+                const pastLength = undoStore.value?.past.length ?? 0;
+                await executeAppAction({ type: 'playMacro', payload: { macroId: saved.id } });
+                const after = tempoProduct();
+                expect(after.map?.changes).toEqual([{ id: expect.any(String), beat: 4, tempo: 75, curve: 'instant' }]);
+                expect(after.map?.changes[0]?.id).not.toBe(created.id);
+                expect(JSON.stringify(macroStore.value?.macros[0])).toBe(serialized);
+                await roundTripMacroHistory(before, after, pastLength);
+            }
+        }
+    );
 
     it('keeps aliased capability reversions coherent when both original entries replay with peers and reload', async () => {
         seed();
