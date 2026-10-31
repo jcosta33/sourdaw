@@ -878,6 +878,18 @@ PR #2083 made device edits require an exact live before-chain. MIDI import publi
 
 Probe the real import, Command/CRDT/history and engine boundary with a completed import, an actually absent strip and no Play gesture. Require clean removal, exact authoritative final topology, and identity-preserving Undo/Redo. Exercise cold add/remove/reorder and grouped final-chain composition; refuse an existing mismatched strip, stale or unrelated project divergence and duplicate ownership. Inject initialization rejection and require committed failure with no later parameter writes. Revert the missing-strip admission and require the cold Command regression to fail. UI admission must require the Remove Synth control unconditionally and click it before first Play.
 
+### Catalog mutation candidates must respect resolved protection polarity (introduced by PR #4128)
+
+PR #4128 (`1d1471216e`) collected positive mutation targets from the entire request and fell back to contextual selection without excluding resolved protection spans; PRs #4132 and #4298 retained that behavior. The observed defect was incorrect published candidates and refusal scope, not a proven unauthorized persisted write. The missed baseline was catalog candidate semantics and source binding; historical private review prompts and tiers are unknown.
+
+Probe the actual catalog through admission and the bridge: request an edit to Drums while leaving Bass alone, protect a selected object's descendants, and combine a Vocal fader-only protection with permitted Vocal processing. Derive positive mutation candidates from completely consumed resolved spans and exact whole-object, control and clip restrictions. Unknown or ambiguous protected objects must clarify without selection fallback. Independently retain protected objects in read and measurement scopes. Reverting the polarity filtering must fail these producer-to-consumer checks.
+
+### Required per-request insertion anchors precede optional-field omission (introduced by PR #1650)
+
+PR #1650 (`a295c8b501e0834f4031934935be26161ad0b132`) admitted omitted optional target fields before checking request-bound device insertion order; PR #2811 retained the skip above its anchor comparison. A compressor requested after EQ could therefore append after a following device when `afterDeviceId` was omitted. The older PR #2712 unanchored negative refused earlier in its historical intake route and did not prove the anchor comparison. Historical private review prompts, models and tiers are unknown.
+
+Probe genuine whole-request intake through local and hosted planning, both eligible target chains, the exact resolved EQ identity and a later non-EQ device. Require missing and wrong anchors to refuse with no confirmation, document/runtime/revision or Undo writes; require the correct EQ to insert immediately after it. Keep the anchorless append control and existing supplied-unrequested-anchor refusal. In an isolated committed probe, restore only the optional-field skip before the mandatory comparison and require the original unanchored integration negative to fail at the anchor obligation, rather than at an earlier intake or schema failure.
+
 ### 2026-10-29 — resolved group replay was mistaken for a completed revert (#5565)
 
 The AI history caller from `22a84b216658f593391e7e141d90f7c84d13648b` marked its row

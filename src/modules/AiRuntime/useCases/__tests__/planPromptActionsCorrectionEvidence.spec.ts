@@ -9,9 +9,14 @@ import {
 } from '#/modules/CrdtDocument/useCases';
 
 import { type ProjectContext } from '../../models/ProjectContext';
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { compileArbitraryCommandList } from '../compileArbitraryCommandList';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { planPromptActions } from '../planPromptActions';
+
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
@@ -124,6 +129,49 @@ const declineTurn = () => ({
     ],
 });
 
+function bluesIntake(userMessage: string, schemas: readonly ToolSchema[]) {
+    const base = selectCreativeInterpretationCall({
+        catalog: readCreativeInterpretationCatalog(userMessage, schemas),
+        modeId: 'create',
+        targetObjectIds: ['track-bass'],
+        dimensions: ['processing', 'arrangement'],
+        creationSlotObjectTypes: ['track'],
+    });
+    const schema = schemas.find((candidate) => candidate.function.name === base.name);
+    if (schema === undefined) {
+        throw new TypeError('Expected the published joint intake schema');
+    }
+    const objective = readMetricPublication(schema).find((candidate) => candidate.kind === 'unsupported');
+    if (objective === undefined) {
+        throw new TypeError('Expected the published unsupported objective');
+    }
+    return {
+        status: 'complete' as const,
+        toolCalls: [
+            {
+                ...base,
+                id: 'intake',
+                arguments: {
+                    ...base.arguments,
+                    answer: null,
+                    metricIntent: {
+                        kind: 'perceptual',
+                        uncertainty: 'none',
+                        objectives: [
+                            {
+                                objectiveId: objective.id,
+                                scopeCandidateId: null,
+                                referenceScopeCandidateId: null,
+                                rangeCandidateId: null,
+                            },
+                        ],
+                    },
+                },
+            },
+        ],
+    };
+}
+
 type UserMessageSection = Record<string, unknown>;
 
 function parseSection(userMessage: string, section: string): UserMessageSection | null {
@@ -146,7 +194,7 @@ function text(value: unknown): string {
     return typeof value === 'string' ? value : ((value as { value?: string }).value ?? '');
 }
 
-const { generateToolPlanningOutcome } = vi.mocked(await import('../llmOrchestration/inference'));
+const { generateToolPlanningOutcome } = await import('../llmOrchestration/inference');
 
 describe('planPromptActions bounded correction evidence', () => {
     beforeEach(() => {
@@ -169,12 +217,15 @@ describe('planPromptActions bounded correction evidence', () => {
     it('repairs a rejected command only when the correction names the failing item and constraint', async () => {
         let turn = 0;
         let correctionDiagnostic: UserMessageSection | null = null;
-        vi.mocked(generateToolPlanningOutcome).mockImplementation((_systemPrompt, userMessage) => {
+        vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
-            if (turn === 1) {
+            if (turn === 1 || turn === 4) {
+                return bluesIntake(userMessage, schemas);
+            }
+            if (turn === 2 || turn === 5) {
                 return discoverTurn(['addTrack', 'setTrackPan']);
             }
-            if (turn === 2) {
+            if (turn === 3) {
                 // The invalid multi-step proposal: one creation plus one
                 // command whose pan value violates the app-owned range.
                 return proposeListTurn([
@@ -195,9 +246,6 @@ describe('planPromptActions bounded correction evidence', () => {
                         },
                     },
                 ]);
-            }
-            if (turn === 3) {
-                return discoverTurn(['addTrack', 'setTrackPan']);
             }
             const failures = parseSection(userMessage, 'validation_failures');
             correctionDiagnostic = (failures?.correction as UserMessageSection | undefined) ?? null;
@@ -245,10 +293,15 @@ describe('planPromptActions bounded correction evidence', () => {
         });
 
         expect(correctionDiagnostic).not.toBeNull();
-        // One bounded correction: two provider turns per planning attempt.
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
+        // One bounded correction: intake, discovery and proposal on each attempt.
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(6);
         expect(result.result.rejectionReason).toBeUndefined();
         expect(result.result.actions.map((action) => action.type)).toEqual(['addTrack', 'setTrackPan']);
+        // The corrected creative plan has no measurement proof and does not claim approval.
+        expect(metricGoalStateCodec(result.result.metricGoalState)).toMatchObject({
+            authorities: [{ kind: 'perceptual', goals: [{ relation: 'unsupported' }] }],
+            proofs: [],
+        });
         const panAction = result.result.actions.find((action) => action.type === 'setTrackPan');
         expect(panAction).toMatchObject({ payload: { trackId: 'track-bass', pan: -30 } });
     });
@@ -256,12 +309,15 @@ describe('planPromptActions bounded correction evidence', () => {
     it('delivers a missing-target diagnostic for a selector that resolves nothing, then repairs it', async () => {
         let turn = 0;
         let correctionDiagnostic: UserMessageSection | null = null;
-        vi.mocked(generateToolPlanningOutcome).mockImplementation((_systemPrompt, userMessage) => {
+        vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
-            if (turn === 1) {
+            if (turn === 1 || turn === 4) {
+                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
+            }
+            if (turn === 2 || turn === 5) {
                 return discoverTurn(['renameClip']);
             }
-            if (turn === 2) {
+            if (turn === 3) {
                 return proposeListTurn([
                     {
                         id: 'rename-ghost',
@@ -275,9 +331,6 @@ describe('planPromptActions bounded correction evidence', () => {
                         },
                     },
                 ]);
-            }
-            if (turn === 3) {
-                return discoverTurn(['renameClip']);
             }
             const failures = parseSection(userMessage, 'validation_failures');
             correctionDiagnostic = (failures?.correction as UserMessageSection | undefined) ?? null;
@@ -308,6 +361,7 @@ describe('planPromptActions bounded correction evidence', () => {
             kind: 'missing-target',
             resolution: { resolvedCount: 0, expectedCount: 1 },
         });
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(6);
         expect(result.result.rejectionReason).toBeUndefined();
         expect(result.result.actions).toMatchObject([{ type: 'renameClip', payload: { name: 'Bridge Solo' } }]);
     });
@@ -315,12 +369,15 @@ describe('planPromptActions bounded correction evidence', () => {
     it('separates an ambiguous-target diagnostic from a missing one before the provider disambiguates', async () => {
         let turn = 0;
         const corrections: Array<UserMessageSection> = [];
-        vi.mocked(generateToolPlanningOutcome).mockImplementation((_systemPrompt, userMessage) => {
+        vi.mocked(generateToolPlanningOutcome).mockImplementation(async (_systemPrompt, userMessage, schemas) => {
             turn += 1;
-            if (turn === 1) {
+            if (turn === 1 || turn === 4) {
+                return { status: 'complete', toolCalls: literalMetricIntakeTurn(userMessage, schemas) };
+            }
+            if (turn === 2 || turn === 5) {
                 return discoverTurn(['renameClip']);
             }
-            if (turn === 2) {
+            if (turn === 3) {
                 // Every clip matches a type-only selector — ambiguous.
                 return proposeListTurn([
                     {
@@ -335,9 +392,6 @@ describe('planPromptActions bounded correction evidence', () => {
                         },
                     },
                 ]);
-            }
-            if (turn === 3) {
-                return discoverTurn(['renameClip']);
             }
             const failures = parseSection(userMessage, 'validation_failures');
             const correctionDiagnostic = (failures?.correction as UserMessageSection | undefined) ?? null;
@@ -418,6 +472,7 @@ describe('planPromptActions bounded correction evidence', () => {
         expect(diagnostic.candidateIds).toEqual(
             expect.arrayContaining(['clip-bass', 'clip-lead', 'clip-guitar-verse'])
         );
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(6);
         expect(result.result.rejectionReason).toBeUndefined();
         expect(result.result.actions).toMatchObject([{ type: 'renameClip', payload: { name: 'Chosen Verse' } }]);
     });

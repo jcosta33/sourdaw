@@ -54,6 +54,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 /**
  * AC-002 (#4380): a request that refines the pending proposal yields a replacement derived from it,
@@ -119,6 +120,8 @@ const runtimeMocks = vi.hoisted(() => ({
     }),
     setTrackSoloGate: vi.fn(),
 }));
+
+const providerScriptState = { phase: 'intake' as 'intake' | 'discover' | 'propose', planningRun: 0 };
 
 vi.mock('../llmOrchestration/backendResolution/getBackendChain', () => ({ getBackendChain: () => ['webllm'] }));
 
@@ -227,21 +230,28 @@ function asCommandBatchProposal(calls: readonly ProviderCall[], refines: string 
 }
 
 /**
- * Each planning run is a discovery turn and a proposal turn; the runs take the scripts in order,
- * and a run past the last script (a bounded correction) takes the last one again.
+ * Each planning attempt admits the whole request, discovers command schemas and proposes. The runs
+ * take the scripts in order, and a run past the last script (a bounded correction) takes the last one again.
  */
 function scriptProvider(scripts: readonly ProposalScript[]): void {
-    let turn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation(async () => {
-        turn += 1;
-        const script = scripts[Math.min(Math.floor((turn - 1) / 2), scripts.length - 1)];
+    providerScriptState.phase = 'intake';
+    providerScriptState.planningRun = 0;
+    runtimeMocks.generateWebLlmCompletion.mockImplementation(async (systemPrompt: string, userMessage: string) => {
+        if (providerScriptState.phase === 'intake') {
+            providerScriptState.phase = 'discover';
+            return JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt));
+        }
+        const script = scripts[Math.min(providerScriptState.planningRun, scripts.length - 1)];
         if (script === undefined) {
             throw new Error('Expected a scripted planning run.');
         }
-        if (turn % 2 === 1) {
+        if (providerScriptState.phase === 'discover') {
+            providerScriptState.phase = 'propose';
             const names = [...new Set(script.calls.map((call) => call.name))];
             return JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }]);
         }
+        providerScriptState.phase = 'intake';
+        providerScriptState.planningRun += 1;
         await script.beforeProposal?.();
         return JSON.stringify([asCommandBatchProposal(script.calls, script.refines?.())]);
     });
@@ -249,6 +259,7 @@ function scriptProvider(scripts: readonly ProposalScript[]): void {
 
 async function sendChatMessage(prompt: string, options?: Parameters<typeof sendChatMessageWithoutDocumentFlush>[1]) {
     flushAutomergeStorageWrites();
+    providerScriptState.phase = 'intake';
     await sendChatMessageWithoutDocumentFlush(prompt, options);
 }
 
@@ -863,6 +874,7 @@ describe('refining the pending proposal', () => {
                 notices.push(notification.summary);
             });
 
+            providerScriptState.phase = 'intake';
             const submitted = await submitAdmittedPromptRequest({ prompt: REFINEMENT_PROMPT, source: 'prompt-bar' });
             unsubscribe();
 

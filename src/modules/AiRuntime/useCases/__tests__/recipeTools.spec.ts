@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { trackStore, type Track } from '#/modules/Arrangement/stores';
-import { getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { getArrangementHandlers, getMixRecipeCatalog } from '#/modules/Arrangement/useCases';
+import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { getCanonicalTrackRoleOptions, querySemanticProject } from '#/modules/Project/useCases';
 
@@ -13,10 +14,13 @@ import { executeRecipeExpansion } from '../executeRecipeExpansion';
 import { executeTransformCompile } from '../executeTransformCompile';
 import { getProjectContext } from '../getProjectContext';
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { parsePromptToActions } from '../parsePromptToActions';
-import { prepareCreativeInterpretationCatalog } from '../prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from '../projectDeclarativeTransformSnapshot';
 
+import { advertisedAnswerCandidateId } from './answerWireFixture';
+import { readCreativeInterpretationCatalog, selectCreativeInterpretationCall } from './highLevelIntentWorkflowFixture';
+import { readMetricPublication } from './metricGoalWorkflowFixture';
 import { createTrack } from './trackFixture';
 
 vi.mock('#/modules/Project/useCases', async (importOriginal) => ({
@@ -1409,6 +1413,8 @@ describe('recipe.expand through provider planning', () => {
     const PROMPT = 'make the lead vocal warmer';
 
     beforeEach(() => {
+        clearHandlerRegistry();
+        registerHandlerMap(getArrangementHandlers());
         vi.clearAllMocks();
         vi.mocked(tryPresetMatch).mockReturnValue([]);
         vi.mocked(tryParameterizedPath).mockReturnValue([]);
@@ -1417,6 +1423,7 @@ describe('recipe.expand through provider planning', () => {
     });
 
     afterEach(() => {
+        clearHandlerRegistry();
         setTracks([]);
         projectStore.set(structuredClone(defaultProjectStoreState));
     });
@@ -1424,28 +1431,56 @@ describe('recipe.expand through provider planning', () => {
     // Red when an adopted expansion stops carrying its commands into the batch or its recipe onto the result.
     it('adopts an expansion by call id into the batch and records the recipe on the planned result', async () => {
         const context = getProjectContext();
-        const catalog = prepareCreativeInterpretationCatalog({ prompt: PROMPT, context, projectRevision: REVISION });
         const recipe = getMixRecipeCatalog().recipes.find((candidate) => candidate.id === 'vocal-warm');
         vi.mocked(generateToolPlanningOutcome)
-            .mockResolvedValueOnce({
-                status: 'complete',
-                toolCalls: [
-                    {
-                        id: 'interpretation-1',
-                        name: 'selectCreativeInterpretation',
-                        arguments: {
-                            catalogId: catalog.catalogId,
-                            modeId: 'edit',
-                            targetCandidateIds: ['target-1'],
-                            editDimensionCandidateIds: ['dimension-processing'],
-                            constraintCandidateIds: [],
-                            creationSlotIds: [
-                                catalog.creationSlots.find((slot) => slot.objectType === 'device')?.candidateId ?? '',
-                            ],
-                            uncertainty: 'none',
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                const base = selectCreativeInterpretationCall({
+                    catalog,
+                    modeId: 'edit',
+                    targetObjectIds: ['lead-vocal-1'],
+                    dimensions: ['processing'],
+                    creationSlotObjectTypes: ['device'],
+                });
+                const schema = schemas.find(
+                    (entry: Parameters<typeof generateToolPlanningOutcome>[2][number]) =>
+                        entry.function.name === base.name
+                );
+                if (schema === undefined) {
+                    throw new Error('Missing actual published selector.');
+                }
+                const objective = readMetricPublication(schema).find((entry) => entry.recipeId === 'vocal-warm');
+                if (objective === undefined) {
+                    throw new Error('Missing actual published authored recipe objective.');
+                }
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            ...base,
+                            id: 'interpretation-1',
+                            arguments: {
+                                ...base.arguments,
+                                answer: null,
+                                metricIntent: {
+                                    kind: 'perceptual',
+                                    uncertainty: 'none',
+                                    objectives: [
+                                        {
+                                            objectiveId: objective.id,
+                                            scopeCandidateId: advertisedAnswerCandidateId(
+                                                [schemas, userMessage],
+                                                'lead-vocal-1'
+                                            ),
+                                            referenceScopeCandidateId: null,
+                                            rangeCandidateId: null,
+                                        },
+                                    ],
+                                },
+                            },
                         },
-                    },
-                ],
+                    ],
+                };
             })
             .mockResolvedValueOnce({
                 status: 'complete',
@@ -1476,6 +1511,14 @@ describe('recipe.expand through provider planning', () => {
         const planned = await parsePromptToActions({ prompt: PROMPT, context, projectRevision: REVISION });
 
         expect(planned.rejectionReason).toBeUndefined();
+        expect(metricGoalStateCodec(planned.metricGoalState)?.authorities[0]).toMatchObject({
+            kind: 'perceptual',
+            goals: expect.arrayContaining([
+                expect.objectContaining({
+                    source: expect.objectContaining({ kind: 'recipe', recipeId: 'vocal-warm' }),
+                }),
+            ]),
+        });
         expect(planned.actions).toMatchObject([
             { type: 'addDevice', payload: { trackId: 'lead-vocal-1', deviceType: 'builtin-eq' } },
             { type: 'setDeviceParameter', payload: { paramId: 'eq-low-freq', value: 160 } },
@@ -1491,6 +1534,29 @@ describe('recipe.expand through provider planning', () => {
     it('records no recipe on a batch that adopted none', async () => {
         const context = getProjectContext();
         vi.mocked(generateToolPlanningOutcome)
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'literal-intake',
+                            name: 'selectCreativeInterpretation',
+                            arguments: {
+                                catalogId: catalog.catalogId,
+                                modeId: 'literal',
+                                uncertainty: 'none',
+                                targetCandidateIds: [],
+                                editDimensionCandidateIds: [],
+                                constraintCandidateIds: [],
+                                creationSlotIds: [],
+                                answer: null,
+                                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                            },
+                        },
+                    ],
+                };
+            })
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -1521,5 +1587,9 @@ describe('recipe.expand through provider planning', () => {
         expect(planned.rejectionReason).toBeUndefined();
         expect(planned.actions).toMatchObject([{ type: 'setTempo', payload: { bpm: 100 } }]);
         expect(planned.adoptedRecipes).toBeUndefined();
+        expect(metricGoalStateCodec(planned.metricGoalState)?.authorities[0]).toMatchObject({
+            kind: 'literal',
+            goals: [],
+        });
     });
 });

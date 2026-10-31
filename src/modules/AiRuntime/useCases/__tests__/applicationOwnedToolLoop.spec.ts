@@ -18,6 +18,8 @@ import { APPLICATION_OWNED_TOOL_SCHEMAS, runApplicationOwnedToolLoop } from '../
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+import { readCreativeInterpretationCatalog } from './highLevelIntentWorkflowFixture';
+
 const { mockBridgeGroundedLlmToolCalls, mockLogger } = vi.hoisted(() => ({
     mockBridgeGroundedLlmToolCalls: vi.fn(),
     mockLogger: {
@@ -166,6 +168,29 @@ describe('application-owned tool loop', () => {
                     },
                 ],
             })
+            .mockImplementationOnce(async (_system, userMessage, schemas) => {
+                const catalog = readCreativeInterpretationCatalog(userMessage, schemas);
+                return {
+                    status: 'complete',
+                    toolCalls: [
+                        {
+                            id: 'literal-intake',
+                            name: 'selectCreativeInterpretation',
+                            arguments: {
+                                catalogId: catalog.catalogId,
+                                modeId: 'literal',
+                                uncertainty: 'none',
+                                targetCandidateIds: [],
+                                editDimensionCandidateIds: [],
+                                constraintCandidateIds: [],
+                                creationSlotIds: [],
+                                answer: null,
+                                metricIntent: { kind: 'literal', uncertainty: 'none', objectives: [] },
+                            },
+                        },
+                    ],
+                };
+            })
             .mockResolvedValueOnce({
                 status: 'complete',
                 toolCalls: [
@@ -199,17 +224,17 @@ describe('application-owned tool loop', () => {
         });
 
         expect(querySemanticProject).toHaveBeenCalledWith({ type: 'project-summary' });
-        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(3);
+        expect(generateToolPlanningOutcome).toHaveBeenCalledTimes(4);
         const firstSchemas: readonly ToolSchema[] = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[2] ?? [];
         expect(firstSchemas.some((schema) => schema.function.name === 'project.query')).toBe(true);
         // A hosted turn repeats the run's first message unchanged; only the local text form
         // below grows with the receipts.
         const firstMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[0]?.[1];
-        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[9]).toMatchObject({
+        expect(vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[9]).toMatchObject({
             firstUserMessage: firstMessage,
             history: [],
         });
-        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[2]?.[1];
+        const continuationMessage = vi.mocked(generateToolPlanningOutcome).mock.calls[3]?.[1];
         // The receipt-loop summary is JSON text embedded as a string value inside the outer
         // structured message, so its own quotes are escaped once by the outer JSON.stringify.
         expect(continuationMessage).toContain('\\"callId\\":\\"provider-query-1\\"');
@@ -218,6 +243,7 @@ describe('application-owned tool loop', () => {
         expect(result.actions).toEqual([{ type: 'setTempo', payload: { bpm: 128 } }]);
         expect(result.applicationToolReceipts).toMatchObject([
             { callId: 'provider-query-1', toolName: 'project.query', status: 'success', revision: 'revision-2' },
+            { callId: 'literal-intake', toolName: 'selectCreativeInterpretation', status: 'success' },
             { toolName: 'agent.catalog.discover', status: 'success' },
         ]);
     });

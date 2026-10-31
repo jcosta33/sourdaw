@@ -62,6 +62,7 @@ type GroundedRefinement = {
 };
 
 type GroundedFields = {
+    nativeLiteralUses: ReturnType<typeof bridgeGroundedLlmToolCalls>['nativeLiteralUses'];
     actions: IntentResult['actions'];
     actionCommandGraph: IntentResult['actionCommandGraph'];
     requiresConfirmation: boolean;
@@ -290,6 +291,7 @@ function composeGroundedFields(
 
     return {
         actions: guarded.actions,
+        nativeLiteralUses: bridged.nativeLiteralUses,
         actionCommandGraph: bridged.actionCommandGraph,
         requiresConfirmation: requiresAppActionConfirmation(guarded.actions),
         providerKnownTargetIds: getProviderKnownTargetIds(input),

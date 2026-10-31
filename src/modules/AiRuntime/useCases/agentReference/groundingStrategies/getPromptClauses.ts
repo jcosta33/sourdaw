@@ -44,11 +44,18 @@ function isBeatDurationValueSeparator({
     );
 }
 
+/**
+ * Where one request clause ends: a coordinating or sequential connector, a comma, a semicolon, a newline or
+ * a sentence period. A connector starts where its whitespace run starts, or right after a newline
+ * separator; without that lookbehind every position inside a long whitespace run rescans the whole run,
+ * which is quadratic in its length.
+ */
+export const PROMPT_CLAUSE_SEPARATOR = /(?<![^\S\n])\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
+
 export function getPromptClauses(prompt: string, maskedPrompt: string): PromptClauseSpan[] {
     const clauses: PromptClauseSpan[] = [];
-    const separatorPattern = /\s+(?:and then|then|and|but)\s+|[;,\n]+|\.(?!\d)/giu;
     let start = 0;
-    for (const match of maskedPrompt.matchAll(separatorPattern)) {
+    for (const match of maskedPrompt.matchAll(PROMPT_CLAUSE_SEPARATOR)) {
         const separatorEnd = match.index + match[0].length;
         const normalizedPrefix = normalizePromptText(maskedPrompt.slice(start, match.index));
         const normalizedSuffix = normalizePromptText(maskedPrompt.slice(separatorEnd));

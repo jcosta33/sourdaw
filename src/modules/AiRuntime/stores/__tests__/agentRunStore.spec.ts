@@ -5,6 +5,7 @@ import {
     type AgentRunPendingEffectRecovery,
     type AgentRunPreparedStemImportRecoveryCapsule,
 } from '../../models/AgentRun';
+import { type ApplicationToolReceipt } from '../../models/ApplicationOwnedTool';
 import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../models/GetPendingEffectRecoveryPolicy';
 import { agentRunLifecycle } from '../../useCases/agentRunLifecycle';
 import { persistAgentRunState, readAgentRunState, sanitizeAgentRunState } from '../agentRunStore';
@@ -68,6 +69,75 @@ function createPreparedStemRecoveryCapsule(index: number): AgentRunPreparedStemI
 describe('agentRunStore', () => {
     beforeEach(() => {
         agentRunLifecycle.clear();
+    });
+
+    describe('application verification receipt identity', () => {
+        const receipt: ApplicationToolReceipt = {
+            schema: 'sourdaw.application-tool-receipt',
+            schemaVersion: 1,
+            callId: 'actual-receipt',
+            toolName: 'analysis.measure',
+            turn: 1,
+            revision: 'revision-1',
+            status: 'success',
+            data: {},
+            summary: 'Measured preview.',
+            warnings: [],
+            error: null,
+        };
+        function recorded(overrides: Readonly<Record<string, unknown>>) {
+            agentRunLifecycle.create({
+                runId: 'receipt-run',
+                request: 'Preview the proposal.',
+                mode: 'plan',
+                createdRevision: 'revision-1',
+            });
+            agentRunLifecycle.recordPlan({
+                runId: 'receipt-run',
+                summary: 'Preview the proposal.',
+                commandIds: [],
+                serializedBatchIdentity: null,
+                revision: 'revision-1',
+                scope: pointTargetScope,
+                grants,
+                budgets: { limits: {}, consumed: {} },
+                applicationToolReceipts: [receipt],
+            });
+            const state = readAgentRunState();
+            const run = state.runs[0];
+            if (run?.plan === null || run?.plan === undefined) {
+                throw new Error('Expected a persisted actual run plan.');
+            }
+            return {
+                ...state,
+                runs: [{ ...run, plan: { ...run.plan, applicationToolReceipts: [{ ...receipt, ...overrides }] } }],
+            };
+        }
+        it.each([
+            { label: 'legacy provider receipt', turn: 1 },
+            { label: 'explicit application verification', turn: 0, origin: 'application-verification' },
+        ])('round-trips the $label without changing its turn or identity', ({ label: _label, ...overrides }) => {
+            const state = sanitizeAgentRunState(recorded(overrides));
+            expect(state.runs).toHaveLength(1);
+            expect(state.runs[0]?.plan?.applicationToolReceipts).toEqual([{ ...receipt, ...overrides }]);
+            persistAgentRunState(state);
+            expect(readAgentRunState().runs[0]?.plan?.applicationToolReceipts).toEqual([{ ...receipt, ...overrides }]);
+        });
+        it.each([
+            { label: 'untagged turn zero', turn: 0 },
+            { label: 'unknown origin', turn: 0, origin: 'provider' },
+            { label: 'forged unknown positive origin', turn: 1, origin: 'provider' },
+            { label: 'wrong tool', turn: 0, toolName: 'project.query', origin: 'application-verification' },
+            {
+                label: 'wrong tool with positive turn',
+                turn: 1,
+                toolName: 'project.query',
+                origin: 'application-verification',
+            },
+            { label: 'negative turn', turn: -1, origin: 'application-verification' },
+        ])('rejects $label before it can persist', ({ label: _label, ...overrides }) => {
+            expect(sanitizeAgentRunState(recorded(overrides)).runs).toHaveLength(0);
+        });
     });
 
     it('keeps the owning run when legacy context evidence is discarded', () => {

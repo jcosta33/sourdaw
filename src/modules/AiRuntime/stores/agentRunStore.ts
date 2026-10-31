@@ -38,6 +38,7 @@ import {
 } from '../models/AgentRun';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { getPendingEffectRecoveryPolicy } from '../models/GetPendingEffectRecoveryPolicy';
+import { MAX_METRIC_GOAL_STATE_BYTES } from '../models/MetricGoalAdmission';
 import { type BoundRequestProtections, type ProposalProtectionFacts } from '../models/ProposalGroundingBasis';
 import {
     THREAD_COMMIT_STANDINGS,
@@ -923,11 +924,18 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     const revision = readNullableString(value.revision);
     const summary = readString(value.summary);
     const warnings = readStringArray(value.warnings);
+    const origin = value.origin;
+    if (origin !== undefined && origin !== 'application-verification') {
+        return null;
+    }
+    if (origin === 'application-verification' && toolName !== 'analysis.measure') {
+        return null;
+    }
     if (
         callId === null ||
         toolName === null ||
         turn === null ||
-        turn < 1 ||
+        (turn < 1 && !(turn === 0 && origin === 'application-verification' && toolName === 'analysis.measure')) ||
         revision === undefined ||
         summary === null ||
         warnings === null
@@ -949,7 +957,7 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
     if ((value.status === 'success' && error !== null) || (value.status === 'failure' && error === null)) {
         return null;
     }
-    return {
+    const receipt: ApplicationToolReceipt = {
         schema: 'sourdaw.application-tool-receipt',
         schemaVersion: 1,
         callId,
@@ -962,6 +970,10 @@ function readApplicationToolReceipt(value: unknown): ApplicationToolReceipt | nu
         warnings,
         error,
     };
+    if (origin !== undefined) {
+        return { ...receipt, origin };
+    }
+    return receipt;
 }
 
 function isThreadCommitStanding(value: unknown): value is ThreadCommitStanding {
@@ -1359,6 +1371,12 @@ function readAgentRunBatchSchedule(value: unknown): AgentRunBatchSchedule | null
     if (requestProtections !== undefined && requestProtections !== null) {
         schedule.requestProtections = requestProtections;
     }
+    if (
+        typeof value.metricGoalState === 'string' &&
+        new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+    ) {
+        schedule.metricGoalState = value.metricGoalState;
+    }
     return schedule;
 }
 
@@ -1511,6 +1529,11 @@ function readAgentRunPlan(value: unknown, fallbackScope: AgentRun['scope']): Age
               commandIds,
               serializedBatchIdentity,
               applicationToolReceipts,
+              metricGoalState:
+                  typeof value.metricGoalState === 'string' &&
+                  new TextEncoder().encode(value.metricGoalState).byteLength <= MAX_METRIC_GOAL_STATE_BYTES
+                      ? value.metricGoalState
+                      : undefined,
               revision,
               classification,
               showPlanPanel,
