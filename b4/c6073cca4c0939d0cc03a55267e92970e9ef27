@@ -1,0 +1,35 @@
+src/components/daw/DawFilterChipGroup.tsx
+  s_88fc7e0d05bab6::t_ba793e6fe87c59 93
+src/modules/Project/presentations/components/TemplateCard.tsx
+  s_3bb122e91d89a5::t_4dd469cb430abf 7,26-27,44,47,51-53
+src/modules/Project/presentations/components/templateCategories.ts
+  s_88fc7e0d05bab6::t_fd408e3304b791 1-69
+src/modules/Project/presentations/views/TemplateGallery.tsx
+  s_88fc7e0d05bab6::t_afe502765e4b5b 7,19-20,24-26,28-36
+src/modules/Project/presentations/views/__tests__/TemplateGallery.spec.tsx
+  s_3bb122e91d89a5::t_2475a5460cc425 7,33,41,48,50,71,75-93,97
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b4c6073cca4c0939d0cc03a55267e92970e9ef27",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
