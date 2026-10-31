@@ -252,6 +252,10 @@ export { toggleVariationLanes } from './toggleTrackState/toggleVariationLanes';
 // ── Track View / Zoom ─────────────────────────────────────────────────────────
 
 export { zoomTracksVertical } from './trackZoom';
+export { initTimelineScrollClamp } from './initTimelineScrollClamp';
+export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
+export { hasVariationLanes } from './hasVariationLanes';
+export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';
 export { setTimelineHorizontalScrollbarScrollX } from './setTimelineHorizontalScrollbarScrollX';

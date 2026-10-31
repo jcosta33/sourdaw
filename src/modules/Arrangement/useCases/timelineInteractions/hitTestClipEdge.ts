@@ -1,3 +1,4 @@
+import { getRenderedTrackTops } from '../../models/TimelineTrackExtent';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
 
@@ -25,6 +26,11 @@ export function hitTestClipEdge(
 
     const track = model.tracks[hit.index];
     if (!track) {
+        return null;
+    }
+
+    // Variation lanes sit under the row and have no clip edges of their own.
+    if (contentY >= getRenderedTrackTops(model.tracks)[hit.index]! + track.height) {
         return null;
     }
 
