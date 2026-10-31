@@ -163,6 +163,40 @@ function collectClipGainEnvelopePoints(
     return points;
 }
 
+function collectTakeMidiSources(takeLanes: unknown): object[] {
+    const lanes = asRecord(takeLanes)?.lanes;
+    return (Array.isArray(lanes) ? lanes : []).flatMap((lane) => {
+        const takes = asRecord(lane)?.takes;
+        return (Array.isArray(takes) ? takes : []).flatMap((take) => {
+            const source = asRecord(asRecord(take)?.midiSource);
+            return source ? [source] : [];
+        });
+    });
+}
+
+/**
+ * Scans one id namespace (the live project or one snapshot) except its takes'
+ * frozen MIDI sources, then each source in its own namespace. Marking the
+ * sources visited is what keeps the enclosing scan from descending into them.
+ */
+function findNamespaceDuplicateIds(
+    namespace: unknown,
+    duplicates: Set<string>,
+    clipGainEnvelopePoints?: WeakSet<object>
+): void {
+    const takeSources = collectTakeMidiSources(asRecord(namespace)?.takeLanes);
+    findDuplicateIds(
+        namespace,
+        new Set<string>(),
+        duplicates,
+        new WeakSet<object>(takeSources),
+        clipGainEnvelopePoints
+    );
+    for (const source of takeSources) {
+        findDuplicateIds(source, new Set<string>(), duplicates, new WeakSet<object>());
+    }
+}
+
 /**
  * The live projection's own fingerprint for every target the document backs,
  * reported beside the document fingerprint rather than folded into it. Approval
@@ -483,6 +517,12 @@ function inspectStagedProjectDocument(document: Readonly<Record<string, unknown>
  * repeated point within one envelope is still reported.
  * Warp-marker ids are local to each clip's warp state; repeated ids within one
  * state remain invalid.
+ * A take's `midiSource` is the exact frozen copy of its clip's original MIDI
+ * rows, and a re-key copies it onto every fragment's take, so its row ids
+ * repeat the live rows and the other fragments' sources by design; original-row
+ * replacement addresses those rows by id, so they cannot be reminted. Each
+ * source is scanned in its own namespace: a repeated row within one source is
+ * still reported, and the take's own fields stay in the enclosing namespace.
  *
  * Other collisions within the live project, or within one snapshot, are still
  * reported. So is a repeated arrangement `id`: it is the
@@ -497,12 +537,12 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
     const duplicateIds = new Set<string>();
     const { arrangements, warpStates, ...liveDocument } = document;
     const clipGainEnvelopePoints = collectClipGainEnvelopePoints(document, duplicateIds);
-    findDuplicateIds(liveDocument, new Set<string>(), duplicateIds, new WeakSet<object>(), clipGainEnvelopePoints);
+    findNamespaceDuplicateIds(liveDocument, duplicateIds, clipGainEnvelopePoints);
     const snapshots = asRecord(arrangements)?.arrangements;
     const arrangementIds = new Set<string>();
     for (const snapshot of Array.isArray(snapshots) ? snapshots : []) {
         recordId(asRecord(snapshot)?.id, arrangementIds, duplicateIds);
-        findDuplicateIds(snapshot, new Set<string>(), duplicateIds, new WeakSet<object>());
+        findNamespaceDuplicateIds(snapshot, duplicateIds);
     }
     // Warp-marker identity is clip-local (#5570): duplication, paste and Strip
     // Silence deliberately copy marker ids into independent states under

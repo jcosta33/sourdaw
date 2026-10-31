@@ -208,6 +208,109 @@ function cyclingRootDocument(): Record<string, unknown> {
     };
 }
 
+function midiRows(noteIds: readonly string[] = ['note-1']) {
+    return {
+        notes: noteIds.map((id) => ({ id, pitch: 60, startBeat: 0, duration: 1, velocity: 100 })),
+        controlChanges: [{ id: 'cc-1', controller: 1, value: 64, beat: 0, channel: 0 }],
+        pitchBends: [{ id: 'bend-1', value: 0, beat: 0, channel: 0 }],
+    };
+}
+
+// The exact frozen copy a re-key captures: the original clip's rows, ids included.
+function midiTakeSource(noteIds: readonly string[] = ['note-1']) {
+    const rows = midiRows(noteIds);
+    return {
+        sourceClipId: 'clip-a',
+        rows: {
+            notes: { present: true, value: rows.notes },
+            controlChanges: { present: true, value: rows.controlChanges },
+            pitchBends: { present: true, value: rows.pitchBends },
+        },
+        sourceEntryBeat: 0,
+        sourceEndBeat: 4,
+        phaseHeadBeat: 0,
+        passLengthBeats: 4,
+    };
+}
+
+type MidiTakeFixtureOptions = {
+    liveNoteIds?: readonly string[];
+    sourceNoteIds?: readonly string[];
+    secondTakeId?: string;
+};
+
+// A MIDI clip fragmented into clip-a and clip-b, each fragment's take carrying
+// the same frozen source of the original rows that clip-a still holds live.
+function midiTakeProjectSlots(options: MidiTakeFixtureOptions = {}): Record<string, unknown> {
+    const rows = midiRows(options.liveNoteIds);
+    return {
+        tracks: {
+            tracks: [
+                {
+                    id: 'track-keys',
+                    kind: 'midi',
+                    gain: 1,
+                    pan: 0,
+                    outputId: 'master',
+                    clips: [
+                        { id: 'clip-a', startBeat: 0, endBeat: 2 },
+                        { id: 'clip-b', startBeat: 2, endBeat: 4 },
+                    ],
+                    devices: [],
+                    sends: [],
+                },
+            ],
+        },
+        midi: {
+            notesByClipId: { 'clip-a': rows.notes },
+            ccByClipId: { 'clip-a': rows.controlChanges },
+            pitchBendByClipId: { 'clip-a': rows.pitchBends },
+        },
+        takeLanes: {
+            lanes: [
+                {
+                    id: 'lane-keys',
+                    trackId: 'track-keys',
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-a',
+                            name: 'Take 1',
+                            startBeat: 0,
+                            endBeat: 2,
+                            selected: true,
+                            midiSource: midiTakeSource(options.sourceNoteIds),
+                        },
+                        {
+                            id: options.secondTakeId ?? 'take-2',
+                            clipId: 'clip-b',
+                            name: 'Take 2',
+                            startBeat: 2,
+                            endBeat: 4,
+                            selected: false,
+                            midiSource: midiTakeSource(options.sourceNoteIds),
+                        },
+                    ],
+                    activeCompRegions: [
+                        { startBeat: 0, endBeat: 2, takeId: 'take-1' },
+                        { startBeat: 2, endBeat: 4, takeId: options.secondTakeId ?? 'take-2' },
+                    ],
+                },
+            ],
+        },
+    };
+}
+
+function midiTakeArrangementDocument(snapshotExtras: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+        arrangements: {
+            activeArrangementId: 'arrangement-1',
+            arrangements: [{ id: 'arrangement-1', name: 'Main', ...midiTakeProjectSlots(), ...snapshotExtras }],
+        },
+        tracks: { tracks: [] },
+    };
+}
+
 describe('captureCommandBatchPreflightState', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -811,6 +914,66 @@ describe('captureCommandBatchPreflightState', () => {
                 },
             },
         });
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('admits frozen MIDI take sources that copy the live row ids, the exact-original-rows contract', () => {
+        // A re-key (Delete Time, split) freezes the clip's original rows, ids
+        // included, on every fragment's take, so those ids repeat the live rows
+        // and each other by design.
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it('admits frozen MIDI take sources copying row ids inside one arrangement snapshot', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeArrangementDocument());
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    it('still fails two live MIDI notes sharing an id beside frozen take sources', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ liveNoteIds: ['note-1', 'note-1'] }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a row id repeated inside one frozen MIDI take source', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a take whose own id repeats a clip id', () => {
+        mocks.getCrdtDoc.mockReturnValue(midiTakeProjectSlots({ secondTakeId: 'clip-b' }));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
+    it('still fails a repeated id elsewhere in a snapshot carrying frozen take sources', () => {
+        mocks.getCrdtDoc.mockReturnValue(
+            midiTakeArrangementDocument({
+                tempoMap: {
+                    changes: [
+                        { id: 'tempo-1', beat: 0, tempo: 120, curve: 'instant' },
+                        { id: 'tempo-1', beat: 8, tempo: 90, curve: 'instant' },
+                    ],
+                },
+            })
+        );
 
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
