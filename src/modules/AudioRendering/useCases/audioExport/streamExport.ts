@@ -1,4 +1,4 @@
-import { type ExportAudioSource } from '../../models/ExportAudioSource';
+import { type ExportAudioSource, type ExportByteWriter } from '../../models/ExportAudioSource';
 import { type PcmDitherOptions } from '../../repositories/audioEncoders/convertFloatChannelsToPcm';
 import { audioBufferToFlac } from '../../repositories/audioEncoders/flacEncoder';
 import { audioBufferToOpus } from '../../repositories/audioEncoders/opusEncoder';
@@ -122,6 +122,43 @@ function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: Abort
     });
 }
 
+/** Write one prepared source to one entry in a single delivery format. */
+async function encodeDeliveryFormat(input: {
+    format: DeliveryFormat;
+    source: ExportAudioSource;
+    target: Target;
+    writer: ExportByteWriter;
+    onProgress: (fraction: number) => void;
+    signal?: AbortSignal;
+}): Promise<void> {
+    const { format, source, target, writer, onProgress, signal } = input;
+    if (format === 'wav') {
+        await awaitExportOperation(
+            audioBufferToWav(source, target.bitDepth, onProgress, target.dither, writer),
+            signal
+        );
+    } else if (format === 'mp3') {
+        await awaitExportOperation(
+            audioBufferToMp3(source, target.mp3BitRate, onProgress, target.dither, target.metadata, writer),
+            signal
+        );
+    } else if (format === 'flac') {
+        if (target.bitDepth === 32) {
+            throw new Error('FLAC export supports 16-bit or 24-bit only.');
+        }
+        await awaitExportOperation(
+            audioBufferToFlac(source, target.bitDepth, onProgress, target.dither, writer),
+            signal
+        );
+    } else if (format === 'ogg') {
+        await audioBufferToVorbis(source, onProgress, writer, signal);
+    } else if (format === 'opus') {
+        await audioBufferToOpus(source, onProgress, writer, signal);
+    } else {
+        throw new Error('Unsupported delivery format.');
+    }
+}
+
 /** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
 export async function streamExport(input: StreamExportInput) {
     const targets = 'targets' in input ? copyTargets(input.targets) : undefined;
@@ -186,38 +223,14 @@ export async function streamExport(input: StreamExportInput) {
                     const source = prepared.source;
                     const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), input.signal);
                     const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
-                    if (format === 'wav') {
-                        await awaitExportOperation(
-                            audioBufferToWav(source, target.bitDepth, progress, target.dither, entry.writer),
-                            input.signal
-                        );
-                    } else if (format === 'mp3') {
-                        await awaitExportOperation(
-                            audioBufferToMp3(
-                                source,
-                                target.mp3BitRate,
-                                progress,
-                                target.dither,
-                                target.metadata,
-                                entry.writer
-                            ),
-                            input.signal
-                        );
-                    } else if (format === 'flac') {
-                        if (target.bitDepth === 32) {
-                            throw new Error('FLAC export supports 16-bit or 24-bit only.');
-                        }
-                        await awaitExportOperation(
-                            audioBufferToFlac(source, target.bitDepth, progress, target.dither, entry.writer),
-                            input.signal
-                        );
-                    } else if (format === 'ogg') {
-                        await audioBufferToVorbis(source, progress, entry.writer, input.signal);
-                    } else if (format === 'opus') {
-                        await audioBufferToOpus(source, progress, entry.writer, input.signal);
-                    } else {
-                        throw new Error('Unsupported delivery format.');
-                    }
+                    await encodeDeliveryFormat({
+                        format,
+                        source,
+                        target,
+                        writer: entry.writer,
+                        onProgress: progress,
+                        signal: input.signal,
+                    });
                     input.checkCancelled();
                     await awaitExportOperation(entry.finish(), input.signal);
                     input.checkCancelled();
