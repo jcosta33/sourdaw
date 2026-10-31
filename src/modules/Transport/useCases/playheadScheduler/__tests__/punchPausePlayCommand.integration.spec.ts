@@ -45,6 +45,7 @@ import { defaultTransportState, tempoMapStore, transportStore } from '#/modules/
 import * as transportStateReader from '../../../repositories/transport/getTransportState';
 import { disposePlayheadScheduler } from '../../playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
+import { executePlayheadSeek } from '../../transportControls/executePlayheadSeek';
 import { pausePlayback } from '../../transportControls/pausePlayback';
 import { recordingLifecycle } from '../../transportControls/recordingLifecycle';
 import { startPlayback } from '../../transportControls/startPlayback';
@@ -55,40 +56,92 @@ const testAudioDatabase = new IDBFactory();
 type RecordingTerminal = Parameters<typeof import('#/modules/AudioEngine/useCases').startAudioRecording>[1];
 const mocks = vi.hoisted(() => {
     const audioClock = { currentTime: 0, baseLatency: 0, outputLatency: 0 };
-    let terminals: RecordingTerminal[] = [];
-    let pending: Array<{ callback: RecordingTerminal; resolve: () => void }> = [];
+    type RecorderSession = {
+        trackId: string;
+        callback: RecordingTerminal;
+        status: 'recording' | 'stopping';
+        flushed: Promise<void>;
+        settle: () => void;
+    };
+    // Mirrors the audio recorder repository's per-track admission
+    // (`startAudioRecording`/`stopAudioRecording`): one session per track; a
+    // start behind a stopping session waits for its flush and is refused when
+    // any stop ran meanwhile; a stop flushes only sessions still recording.
+    const recorder = {
+        startGeneration: 0,
+        sessions: new Map<string, RecorderSession>(),
+        heldFlushes: [] as RecorderSession[],
+        refusedStarts: 0,
+    };
+    function openSession(trackId: string, callback: RecordingTerminal): void {
+        const flush = Promise.withResolvers<void>();
+        recorder.sessions.set(trackId, {
+            trackId,
+            callback,
+            status: 'recording',
+            flushed: flush.promise,
+            settle: flush.resolve,
+        });
+    }
+    async function admitStart(trackId: string, callback: RecordingTerminal): Promise<boolean> {
+        const startGeneration = recorder.startGeneration;
+        const current = recorder.sessions.get(trackId);
+        if (current?.status === 'stopping') {
+            await current.flushed;
+            if (startGeneration !== recorder.startGeneration) {
+                recorder.refusedStarts++;
+                return false;
+            }
+        }
+        if (recorder.sessions.has(trackId)) {
+            recorder.refusedStarts++;
+            return false;
+        }
+        openSession(trackId, callback);
+        return true;
+    }
+    function stopSessions(): Promise<void> {
+        recorder.startGeneration++;
+        const sessions = [...recorder.sessions.values()];
+        for (const session of sessions) {
+            if (session.status === 'recording') {
+                session.status = 'stopping';
+                recorder.heldFlushes.push(session);
+            }
+        }
+        return Promise.all(sessions.map((session) => session.flushed)).then(() => undefined);
+    }
     return {
         audioClock,
         getAudioContext: vi.fn(() => audioClock),
         getCompensationDelay: vi.fn(() => 0),
         notifyUser: vi.fn<(message: string, level: string) => void>(),
-        startAudioRecording: vi.fn<(trackId: string, callback: RecordingTerminal) => Promise<boolean>>(
-            (_trackId, callback) => {
-                terminals.push(callback);
-                return Promise.resolve(true);
-            }
-        ),
-        stopAudioRecording: vi.fn<() => Promise<void>>(() => {
-            const callback = terminals.shift();
-            if (!callback) {
-                return Promise.resolve();
-            }
-            return new Promise<void>((resolve) => pending.push({ callback, resolve }));
-        }),
+        startAudioRecording: vi.fn<(trackId: string, callback: RecordingTerminal) => Promise<boolean>>(admitStart),
+        stopAudioRecording: vi.fn<() => Promise<void>>(stopSessions),
         reset(): void {
-            terminals = [];
-            pending = [];
+            recorder.startGeneration = 0;
+            recorder.sessions = new Map();
+            recorder.heldFlushes = [];
+            recorder.refusedStarts = 0;
         },
         pendingCount(): number {
-            return pending.length;
+            return recorder.heldFlushes.length;
+        },
+        recordingSessions(): number {
+            return [...recorder.sessions.values()].filter((session) => session.status === 'recording').length;
+        },
+        refusedStarts(): number {
+            return recorder.refusedStarts;
         },
         release(buffer: AudioBuffer): void {
-            const capture = pending.shift();
-            if (!capture) {
+            const session = recorder.heldFlushes.shift();
+            if (!session) {
                 throw new Error('Expected a held recorder flush');
             }
-            capture.callback({ kind: 'completed', buffer, sampleZeroContextFrame: 0, sampleRate: buffer.sampleRate });
-            capture.resolve();
+            // The repository runs the terminal, then retires the session, then wakes its waiters.
+            session.callback({ kind: 'completed', buffer, sampleZeroContextFrame: 0, sampleRate: buffer.sampleRate });
+            recorder.sessions.delete(session.trackId);
+            session.settle();
         },
     };
 });
@@ -330,36 +383,13 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         vi.restoreAllMocks();
         vi.unstubAllGlobals();
     });
-    it.each(['old-first', 'successor-first'] as const)('retains both captures when %s', async (order) => {
-        const oldBuffer = pcm(0.25);
-        const successorBuffer = pcm(0.5);
-        const old = await openFirst();
-        const oldGeneration = schedulerSession.generation;
-        pausePlayback();
-        expect(mocks.pendingCount()).toBe(1);
-        await startPlayback();
-        const successorGeneration = schedulerSession.generation;
-        expect(successorGeneration).toBeGreaterThan(oldGeneration);
-        if (order === 'old-first') {
-            mocks.release(oldBuffer);
-            await vi.waitFor(() => expect(commits()).toBe(1));
-        }
-        await tick(2);
-        const successor = activeRecordingRef.current[0];
-        expect(successor).toBeTruthy();
-        expect(successor).not.toBe(old);
-        expect(schedulerSession.punchRecordingActive).toBe(true);
-        const beforeOldCompletion = captured();
-        if (order === 'successor-first') {
-            mocks.release(oldBuffer);
-            await vi.waitFor(() => expect(commits()).toBe(1));
-            expect(activeRecordingRef.current).toEqual([successor]);
-            expect(schedulerSession.punchRecordingActive).toBe(true);
-            expect(schedulerSession.generation).toBe(successorGeneration);
-            expect(captured().tracks?.tracks[0]?.clips.find((clip) => clip.id === successor)).toEqual(
-                beforeOldCompletion.tracks?.tracks[0]?.clips.find((clip) => clip.id === successor)
-            );
-        }
+    async function expectBothCapturesRetained(capture: {
+        old: string | undefined;
+        oldBuffer: AudioBuffer;
+        successor: string | undefined;
+        successorBuffer: AudioBuffer;
+    }): Promise<void> {
+        const { old, oldBuffer, successor, successorBuffer } = capture;
         pausePlayback();
         expect(mocks.pendingCount()).toBe(1);
         mocks.release(successorBuffer);
@@ -397,121 +427,88 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expect(captured()).toEqual(full);
         expectPcm(old, oldBuffer, 0.25);
         expectPcm(successor, successorBuffer, 0.5);
-    });
-    it('keeps the third punch through two older pending flushes and their pause continuations', async () => {
-        const firstBuffer = pcm(0.125);
-        const secondBuffer = pcm(0.25);
-        const thirdBuffer = pcm(0.5);
-        const first = await openFirst();
-        const firstGeneration = schedulerSession.generation;
+    }
+
+    it('retains both captures when the old flush settles before the successor punches in', async () => {
+        const oldBuffer = pcm(0.25);
+        const successorBuffer = pcm(0.5);
+        const old = await openFirst();
+        const oldGeneration = schedulerSession.generation;
         pausePlayback();
         expect(mocks.pendingCount()).toBe(1);
-
+        // Resume just before the punch-in point, so the successor rolls while the
+        // old flush is held and punches in only when a later tick crosses it.
+        await executePlayheadSeek(3.95);
         await startPlayback();
-        await tick(2);
-        const second = activeRecordingRef.current[0];
-        const secondGeneration = schedulerSession.generation;
-        expect(secondGeneration).toBeGreaterThan(firstGeneration);
-        expect(second).toBeTruthy();
-        expect(second).not.toBe(first);
-        pausePlayback();
-        expect(mocks.pendingCount()).toBe(2);
-
-        await startPlayback();
-        await tick(3);
-        const third = activeRecordingRef.current[0];
-        const thirdGeneration = schedulerSession.generation;
-        expect(thirdGeneration).toBeGreaterThan(secondGeneration);
-        expect(third).toBeTruthy();
-        expect(new Set([first, second, third]).size).toBe(3);
-        const thirdRow = structuredClone(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === third));
-        expect(thirdRow).toBeDefined();
-        // After the third punch opens, these two reads can only be the two pause continuations.
+        const successorGeneration = schedulerSession.generation;
+        expect(successorGeneration).toBeGreaterThan(oldGeneration);
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        expect(mocks.startAudioRecording).toHaveBeenCalledTimes(1);
+        // The roll's first window already covers the scheduler's look-ahead;
+        // move the audio clock past it so the next tick advances the playhead.
+        mocks.audioClock.currentTime += 0.1;
+        // Nothing else reads the transport through this repository until the
+        // old Pause's late continuation does.
         const continuationReads = vi.spyOn(transportStateReader, 'getTransportState');
-        const expectThirdOwner = () => {
-            expect(schedulerSession.generation).toBe(thirdGeneration);
-            expect(schedulerSession.punchRecordingActive).toBe(true);
-            expect(activeRecordingRef.current).toEqual([third]);
-            expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === third)).toEqual(thirdRow);
-            flushAutomergeStorageWrites();
-            const root = getCrdtDoc(DOC_PREFIX_ROOT);
-            if (!root) {
-                throw new Error('Expected the owning project root');
-            }
-            expect(toJS(root).tracks).toEqual({ tracks: trackStore.value?.tracks });
-        };
 
-        mocks.release(firstBuffer);
+        mocks.release(oldBuffer);
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        expect(mocks.recordingSessions()).toBe(1);
+        expect(mocks.refusedStarts()).toBe(0);
+
         await vi.waitFor(() => expect(commits()).toBe(1));
-        expect(mocks.pendingCount()).toBe(1);
-        expectPcm(first, firstBuffer, 0.125);
-        expectThirdOwner();
-
-        mocks.release(secondBuffer);
-        await vi.waitFor(() => expect(commits()).toBe(2));
-        await recordingLifecycle.waitForClosing();
-        await vi.waitFor(() => expect(continuationReads).toHaveBeenCalledTimes(2));
-        expectPcm(first, firstBuffer, 0.125);
-        expectPcm(second, secondBuffer, 0.25);
-        expectThirdOwner();
+        await vi.waitFor(() => expect(continuationReads).toHaveBeenCalledTimes(1));
         continuationReads.mockRestore();
+        // The old continuation found the successor rolling and left it its scheduler and punch.
+        expect(schedulerSession.worker).not.toBeNull();
+        expect(schedulerSession.generation).toBe(successorGeneration);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        expect(activeRecordingRef.current).toEqual([successor]);
+        expectPcm(old, oldBuffer, 0.25);
+        await expectBothCapturesRetained({ old, oldBuffer, successor, successorBuffer });
+    });
 
+    it('retains both captures when the successor punches in on a later tick behind the held old flush', async () => {
+        const oldBuffer = pcm(0.25);
+        const successorBuffer = pcm(0.5);
+        const old = await openFirst();
         pausePlayback();
         expect(mocks.pendingCount()).toBe(1);
-        mocks.release(thirdBuffer);
-        await vi.waitFor(() => expect(commits()).toBe(3));
-        await recordingLifecycle.waitForClosing();
-        flushAutomergeStorageWrites();
-        const full = captured();
-        const clips = full.tracks?.tracks[0]?.clips ?? [];
-        expect(clips.map((clip) => clip.id)).toEqual([first, second, third]);
-        expect(new Set(clips.map((clip) => clip.audioBufferId)).size).toBe(3);
-        expect(full.takes?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
-            first,
-            second,
-            third,
-        ]);
-        expect(actionHistoryStore.value?.entries).toHaveLength(3);
-        const root = getCrdtDoc(DOC_PREFIX_ROOT);
-        if (!root) {
-            throw new Error('Expected committed project root');
-        }
-        expect(toJS(root).tracks).toEqual({ tracks: full.tracks?.tracks });
-        expect(toJS(root).takeLanes).toEqual(full.takes);
-        expectPcm(first, firstBuffer, 0.125);
-        expectPcm(second, secondBuffer, 0.25);
-        expectPcm(third, thirdBuffer, 0.5);
+        await executePlayheadSeek(3.95);
+        await startPlayback();
+        const successorGeneration = schedulerSession.generation;
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        mocks.audioClock.currentTime += 0.1;
 
-        await undo();
-        expectPcm(first, firstBuffer, 0.125);
-        expectPcm(second, secondBuffer, 0.25);
-        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([first, second]);
-        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
-            first,
-            second,
-        ]);
-        await undo();
-        expectPcm(first, firstBuffer, 0.125);
-        expect(trackStore.value?.tracks[0]?.clips.map((clip) => clip.id)).toEqual([first]);
-        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([first]);
-        await undo();
-        expect(trackStore.value?.tracks[0]?.clips).toEqual([]);
-        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
-        await redo();
-        expectPcm(first, firstBuffer, 0.125);
-        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([first]);
-        await redo();
-        expectPcm(first, firstBuffer, 0.125);
-        expectPcm(second, secondBuffer, 0.25);
-        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId))).toEqual([
-            first,
-            second,
-        ]);
-        await redo();
-        expect(captured()).toEqual(full);
-        expectPcm(first, firstBuffer, 0.125);
-        expectPcm(second, secondBuffer, 0.25);
-        expectPcm(third, thirdBuffer, 0.5);
+        // A later tick's punch-in does not hold the roll; its start waits behind the old flush.
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        expect(mocks.recordingSessions()).toBe(0);
+        const successorRow = structuredClone(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === successor));
+        expect(successorRow).toBeDefined();
+        const continuationReads = vi.spyOn(transportStateReader, 'getTransportState');
+
+        // No stop ran while the successor waited, so the settled flush admits it.
+        mocks.release(oldBuffer);
+        await vi.waitFor(() => expect(mocks.recordingSessions()).toBe(1));
+        await vi.waitFor(() => expect(commits()).toBe(1));
+        await vi.waitFor(() => expect(continuationReads).toHaveBeenCalledTimes(1));
+        continuationReads.mockRestore();
+        expect(mocks.refusedStarts()).toBe(0);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expect(schedulerSession.worker).not.toBeNull();
+        expect(schedulerSession.generation).toBe(successorGeneration);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        expect(activeRecordingRef.current).toEqual([successor]);
+        expect(trackStore.value?.tracks[0]?.clips.find((clip) => clip.id === successor)).toEqual(successorRow);
+        expectPcm(old, oldBuffer, 0.25);
+        await expectBothCapturesRetained({ old, oldBuffer, successor, successorBuffer });
     });
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
