@@ -163,6 +163,75 @@ describe('hitTestClip', () => {
         expect(result).toEqual({ clipId: 'clip-1', trackId: 'track-1' });
     });
 
+    describe('inline MIDI clip away from beat 0', () => {
+        const inlineClipAt = (overrides: Partial<TrackRenderModel['clips'][number]>): TrackRenderModel => {
+            const track = makeMidiTrack();
+            track.clips[0] = {
+                ...track.clips[0]!,
+                startBeat: 8,
+                endBeat: 12,
+                isInlineEditing: true,
+                ...overrides,
+            };
+            return track;
+        };
+
+        // Notes are clip-relative, so this one is drawn 1 beat into a clip that starts at beat 8.
+        const note = { id: 'note-1', startBeat: 1, duration: 1, pitch: 60, velocity: 100 };
+        // Pitch 60 sits in row 6 of the 54..66 window: contentY 37..43 in an 80px track.
+        const NOTE_ROW_Y = 40;
+
+        it('hits a note where it is drawn, not at its absolute beat position', () => {
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
+            mocks.buildTimelineRenderModel.mockReturnValue(makeRenderModel([inlineClipAt({ midiNotes: [note] })]));
+
+            // Drawn at beat 9..10 => X 450..500.
+            expect(hitTestClip(475, NOTE_ROW_Y)).toMatchObject({ clipId: 'clip-1', noteId: 'note-1', pitch: 60 });
+            // Beat 1..2 (X 50..100) is where an absolute reading would put it; no clip is there.
+            expect(hitTestClip(75, NOTE_ROW_Y)).toBeNull();
+        });
+
+        it('hits a note at the clip start when the clip plays from an offset', () => {
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
+            mocks.buildTimelineRenderModel.mockReturnValue(
+                makeRenderModel([inlineClipAt({ midiNotes: [note], midiOffsetBeats: 1 })])
+            );
+
+            // The offset pulls the note to the clip start: beat 8..9 => X 400..450.
+            expect(hitTestClip(425, NOTE_ROW_Y)).toMatchObject({ noteId: 'note-1' });
+            expect(hitTestClip(475, NOTE_ROW_Y)).not.toHaveProperty('noteId');
+        });
+
+        it('hits a note in a loop repeat', () => {
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
+            mocks.buildTimelineRenderModel.mockReturnValue(
+                makeRenderModel([inlineClipAt({ endBeat: 16, midiNotes: [note], loopEnabled: true, loopLength: 4 })])
+            );
+
+            // Repeats at beat 9..10 and 13..14 => the second sits at X 650..700.
+            expect(hitTestClip(675, NOTE_ROW_Y)).toMatchObject({ clipId: 'clip-1', noteId: 'note-1', pitch: 60 });
+        });
+
+        it('returns the pitch row and source beat under the pointer in empty space', () => {
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
+            mocks.buildTimelineRenderModel.mockReturnValue(
+                makeRenderModel([inlineClipAt({ midiNotes: [], midiOffsetBeats: 1 })])
+            );
+
+            // X 500 is 2 beats into the clip; the empty window is 54..66, so row 3 (y 20..26) is pitch 63.
+            expect(hitTestClip(500, 23)).toEqual({ clipId: 'clip-1', trackId: 'track-1', noteBeat: 3, pitch: 63 });
+        });
+
+        it('returns no position for a non-inline clip', () => {
+            mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
+            mocks.buildTimelineRenderModel.mockReturnValue(
+                makeRenderModel([inlineClipAt({ isInlineEditing: false, midiNotes: [note] })])
+            );
+
+            expect(hitTestClip(500, 23)).toEqual({ clipId: 'clip-1', trackId: 'track-1' });
+        });
+    });
+
     it('hit-tests clips inside variation lanes below the main track body', () => {
         const track = makeMidiTrack();
         // Move the main clip out of the way so the beat-range match doesn't win first.

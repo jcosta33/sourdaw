@@ -6,10 +6,10 @@ import { type AutomationPoint } from '../../../models/AutomationViewTypes';
 import { splitClipWithUndo } from '../../../useCases/clipEditing/splitClipWithUndo';
 import { commitInlineMidiNoteCreate } from '../../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
+import { getGridSnap } from '../../../useCases/timelineInteractions/getGridSnap';
 import { hitTestAutomationSubLane } from '../../../useCases/timelineInteractions/hitTestAutomationSubLane';
 import { type ClipHitResult, hitTestClip } from '../../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { snapToGrid } from '../../../useCases/timelineInteractions/snapToGrid';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { getContentY, resolveTrackAtY, valueAtTrackY } from '../timelineMouse';
 import {
@@ -27,7 +27,7 @@ vi.mock('../../../useCases/timelineInteractions/hitTestAutomationSubLane', () =>
 }));
 vi.mock('../../../useCases/clipEditing/splitClipWithUndo', () => ({ splitClipWithUndo: vi.fn() }));
 vi.mock('../../../useCases/toggleTrackState/selectTrack', () => ({ selectTrack: vi.fn() }));
-vi.mock('../../../useCases/timelineInteractions/snapToGrid', () => ({ snapToGrid: vi.fn() }));
+vi.mock('../../../useCases/timelineInteractions/getGridSnap', () => ({ getGridSnap: vi.fn() }));
 vi.mock('../timelineMouse', () => ({
     getContentY: vi.fn(),
     resolveTrackAtY: vi.fn(),
@@ -182,49 +182,105 @@ describe('timelineTools', () => {
             expect(result).toBe(true);
         });
 
-        it('creates a new note when drawing inside an inline-editing midi clip', () => {
-            const hit: ClipHitResult = { clipId: 'c1', trackId: 't1', pitch: 72 };
-            vi.mocked(hitTestClip).mockReturnValue(hit);
-            vi.mocked(snapToGrid).mockReturnValue(4);
-            trackStoreMock.state = {
-                tracks: [
-                    {
-                        id: 't1',
-                        kind: 'midi',
-                        clips: [{ id: 'c1', startBeat: 0, endBeat: 8, isInlineEditing: true, type: 'midi' }],
-                    },
-                ],
-            };
+        const inlineMidiTrack = (clipStartBeat: number): MockTrack => ({
+            id: 't1',
+            kind: 'midi',
+            clips: [
+                {
+                    id: 'c1',
+                    startBeat: clipStartBeat,
+                    endBeat: clipStartBeat + 8,
+                    isInlineEditing: true,
+                    type: 'midi',
+                },
+            ],
+        });
 
-            const result = handleDrawTool(0, 10, 4.2, { current: null });
+        it('creates a new note at the pointer pitch when drawing inside an inline-editing midi clip', () => {
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 72, noteBeat: 4.25 });
+            vi.mocked(getGridSnap).mockReturnValue(0.25);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
+
+            const result = handleDrawTool(0, 10, 4.25, { current: null });
 
             expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith({
                 clipId: 'c1',
                 pitch: 72,
-                startBeat: 4,
+                startBeat: 4.25,
                 duration: 0.25,
                 velocity: 100,
             });
             expect(result).toBe(true);
         });
 
-        it('defaults pitch to 60 when the hit test omits it', () => {
-            const hit: ClipHitResult = { clipId: 'c1', trackId: 't1' };
-            vi.mocked(hitTestClip).mockReturnValue(hit);
-            vi.mocked(snapToGrid).mockReturnValue(4);
-            trackStoreMock.state = {
-                tracks: [
-                    {
-                        id: 't1',
-                        kind: 'midi',
-                        clips: [{ id: 'c1', startBeat: 0, endBeat: 8, isInlineEditing: true, type: 'midi' }],
-                    },
-                ],
-            };
+        it('stamps in the grid cell containing the pointer, not at the nearest grid line', () => {
+            vi.mocked(getGridSnap).mockReturnValue(0.5);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
-            handleDrawTool(0, 10, 4.2, { current: null });
+            // 4.4 is in the cell 4..4.5 but nearer its end; rounding would stamp at 4.5.
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.4 });
+            handleDrawTool(0, 10, 4.4, { current: null });
+            expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ startBeat: 4 }));
 
-            expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith(expect.objectContaining({ pitch: 60 }));
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.6 });
+            handleDrawTool(0, 10, 4.6, { current: null });
+            expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ startBeat: 4.5 }));
+        });
+
+        it('stamps the clip-relative beat for a clip that starts later on the timeline', () => {
+            vi.mocked(getGridSnap).mockReturnValue(0.25);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(8)] };
+            // The pointer is at absolute beat 9.3, which is 1.3 beats into the clip.
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 1.3 });
+
+            handleDrawTool(0, 10, 9.3, { current: null });
+
+            expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 1.25 }));
+        });
+
+        it('stamps at the pitch the hit test reports for the pointer row, never a fixed pitch', () => {
+            vi.mocked(getGridSnap).mockReturnValue(0.25);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
+
+            for (const pitch of [48, 67, 96]) {
+                vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch, noteBeat: 1 });
+                handleDrawTool(0, 10, 1, { current: null });
+                expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ pitch }));
+            }
+        });
+
+        it('stamps nothing when the pointer is inside the clip but on no pitch row', () => {
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1' });
+            vi.mocked(getGridSnap).mockReturnValue(0.25);
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
+            const ref = { current: null };
+
+            const result = handleDrawTool(0, 1, 4, ref);
+
+            expect(result).toBe(true);
+            expect(commitInlineMidiNoteCreate).not.toHaveBeenCalled();
+            expect(ref.current).toBeNull();
+        });
+
+        it('stamps at the unsnapped pointer beat when the grid is off', () => {
+            vi.mocked(getGridSnap).mockReturnValue(0);
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.37 });
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
+
+            handleDrawTool(0, 10, 4.37, { current: null });
+
+            expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith(expect.objectContaining({ startBeat: 4.37 }));
+        });
+
+        it('keeps a pointer on a grid line in the cell that starts there despite division error', () => {
+            vi.mocked(getGridSnap).mockReturnValue(0.1);
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 0.3 });
+            trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
+
+            handleDrawTool(0, 10, 0.3, { current: null });
+
+            const stamped = vi.mocked(commitInlineMidiNoteCreate).mock.calls[0]![0].startBeat;
+            expect(stamped).toBeCloseTo(0.3, 9);
         });
 
         it('falls through to track selection when the clip is not inline-editing', () => {

@@ -14,10 +14,11 @@ import { trackStore } from '../../stores/trackStore';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
 import { commitInlineMidiNoteCreate } from '../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
+import { floorToGridCell } from '../../useCases/timelineInteractions/floorToGridCell';
+import { getGridSnap } from '../../useCases/timelineInteractions/getGridSnap';
 import { hitTestAutomationSubLane } from '../../useCases/timelineInteractions/hitTestAutomationSubLane';
-import { hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
+import { type ClipHitResult, hitTestClip } from '../../useCases/timelineInteractions/hitTestClip/hitTestClip';
 import { hitTestTrack } from '../../useCases/timelineInteractions/hitTestClip/hitTestTrack';
-import { snapToGrid } from '../../useCases/timelineInteractions/snapToGrid';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 
 import { getContentY, resolveTrackAtY, valueAtTrackY } from './timelineMouse';
@@ -49,6 +50,23 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
 
 // ── Draw tool ─────────────────────────────────────────────────────────────────
 
+// The cell under the pointer, not the nearest grid line, so the note lands where
+// the user sees the pointer. Length is the grid step, as in the piano roll;
+// with the grid off `addMidiNote` applies its minimum note length.
+const stampInlineMidiNote = (hit: ClipHitResult): void => {
+    if (hit.noteBeat === undefined || hit.pitch === undefined) {
+        return;
+    }
+    const snap = getGridSnap();
+    commitInlineMidiNoteCreate({
+        clipId: hit.clipId,
+        pitch: hit.pitch,
+        startBeat: floorToGridCell(hit.noteBeat, snap),
+        duration: snap,
+        velocity: 100,
+    });
+};
+
 export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: DrawDragRef): boolean => {
     const hit = hitTestClip(x, y);
     const trackId = hit?.trackId ?? hitTestTrack(y);
@@ -65,16 +83,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
         const trackState = trackStore.value;
         const clip = trackState?.tracks.flatMap((time) => time.clips).find((context) => context.id === hit.clipId);
         if (clip?.isInlineEditing && clip.type === 'midi') {
-            // Draw a new note inside the inline clip
-            const pitch = hit.pitch ?? 60;
-            const startBeat = snapToGrid(beat);
-            commitInlineMidiNoteCreate({
-                clipId: hit.clipId,
-                pitch,
-                startBeat,
-                duration: 0.25,
-                velocity: 100,
-            });
+            stampInlineMidiNote(hit);
             return true;
         }
     }
