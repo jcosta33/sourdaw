@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('../saveProject', () => ({ saveProject: mocks.saveProject }));
 vi.mock('../../../../stores/projectStore', () => ({ projectStore: mocks.projectStoreValue }));
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectIdentity: vi.fn(() => mocks.identity.value),
 }));
 vi.mock('#/utils/Notification/confirmUser', () => ({ confirmUser: vi.fn() }));

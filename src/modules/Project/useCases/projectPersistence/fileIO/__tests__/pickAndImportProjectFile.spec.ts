@@ -63,7 +63,8 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
     confirmUser: mocks.confirmUser,
 }));
 
-vi.mock('#/modules/CrdtDocument/useCases', () => ({
+vi.mock('#/modules/CrdtDocument/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/CrdtDocument/useCases')>()),
     captureProjectIdentity: () => 'open-project-identity',
 }));
 
