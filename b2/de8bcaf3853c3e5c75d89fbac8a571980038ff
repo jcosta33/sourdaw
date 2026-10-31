@@ -1,0 +1,45 @@
+.agents/skills/delivery-orchestration/SKILL.md
+  s_55244eb93b97d1::t_eabadfa0ce208d 543-546
+.agents/skills/review-stances/audio-param-frame-timing.md
+  s_55244eb93b97d1::t_c8af42e4a17a13 1-21
+.agents/skills/review-stances/security-and-platform.md
+  s_55244eb93b97d1::t_503b38f8af4d51 563-575
+scripts/__tests__/installCleanupLanes.spec.ts
+  s_55244eb93b97d1::t_bc222ff5df308f 22,30-41,83-84,99,108-110,117-118,543-633
+scripts/installCleanupLanes.ts
+  s_55244eb93b97d1::t_268c7c6eb28990 5,18-20,31,212-260,346-351,392-394
+src/modules/Arrangement/handlers/track/__tests__/freezeTrackFailure.integration.spec.tsx
+  s_55244eb93b97d1::t_1db8a7ae1a00dc 245-275
+src/modules/Arrangement/presentations/views/TrackContextMenu.tsx
+  s_55244eb93b97d1::t_f45bf05f5489d7 19,167,169-171,269-272
+src/modules/Arrangement/presentations/views/__tests__/TrackContextMenu.spec.tsx
+  s_55244eb93b97d1::t_d41c24ed0c60b7 44,86-89,406,409,419-462
+src/modules/Arrangement/useCases/freezeBounce/__tests__/freezeTrack.spec.ts
+  s_55244eb93b97d1::t_75685b5702d373 669,697-733
+src/modules/Arrangement/useCases/freezeBounce/freezeTrack.ts
+  s_55244eb93b97d1::t_50133db22bc51c 258-259,263-265
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  s_55244eb93b97d1::t_4d72ac2fd961bb 41-43,45-46
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  s_55244eb93b97d1::t_61c3852f49ff88 136,138-142
+src/modules/TimelineEditor/presentations/views/Inspector/TrackHeaderSection.tsx
+  s_55244eb93b97d1::t_2961d327ef80b7 114
+src/modules/TimelineEditor/presentations/views/Inspector/__tests__/TrackHeaderSection.spec.tsx
+  s_55244eb93b97d1::t_64c8b71eacacca 244-258,262-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b2de8bcaf3853c3e5c75d89fbac8a571980038ff",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
