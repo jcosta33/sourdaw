@@ -1327,13 +1327,29 @@ export function startPlayheadScheduler(
                         )
                     )
                         .then((started) => {
-                            if (!started) {
-                                captureClocks.remove(track.id);
+                            if (started) {
+                                return;
+                            }
+                            // A refused start never runs the terminal, so its
+                            // provisional clip and take would be left with no
+                            // buffer and no history entry (#4265). A refusal is
+                            // what a Pause or Stop during the wait produces, so
+                            // it stays quiet.
+                            captureClocks.remove(track.id);
+                            if (recClip && ownsCapture()) {
+                                discardRecording(recClip.id);
                             }
                         })
                         .catch((error: unknown) => {
                             captureClocks.remove(track.id);
                             logger.error(new Error('Punch-in audio recording failed to start', { cause: error }));
+                            if (!ownsCapture()) {
+                                return;
+                            }
+                            notifyUser('Punch-in recording failed to start — the take was discarded.', 'error');
+                            if (recClip) {
+                                discardRecording(recClip.id);
+                            }
                         });
                     if (initial) {
                         recordingAdmissions.push(admission);

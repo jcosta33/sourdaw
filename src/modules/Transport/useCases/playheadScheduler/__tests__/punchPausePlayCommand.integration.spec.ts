@@ -510,6 +510,77 @@ describe('automatic punch Pause and Play with real recording commits', () => {
         expectPcm(old, oldBuffer, 0.25);
         await expectBothCapturesRetained({ old, oldBuffer, successor, successorBuffer });
     });
+    it('discards the successor provisional clip when a pause refuses its start behind the held old flush', async () => {
+        const oldBuffer = pcm(0.25);
+        const old = await openFirst();
+        pausePlayback();
+        expect(mocks.pendingCount()).toBe(1);
+        await executePlayheadSeek(3.95);
+        await startPlayback();
+        mocks.audioClock.currentTime += 0.1;
+        await tick(2);
+        const successor = activeRecordingRef.current[0];
+        expect(successor).toBeTruthy();
+        expect(successor).not.toBe(old);
+        expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(true);
+
+        // A second Pause while the successor waits moves the recorder's start generation.
+        pausePlayback();
+        mocks.release(oldBuffer);
+        await vi.waitFor(() => expect(mocks.refusedStarts()).toBe(1));
+        await vi.waitFor(() => expect(commits()).toBe(1));
+        await vi.waitFor(() =>
+            expect(trackStore.value?.tracks[0]?.clips.some((clip) => clip.id === successor)).toBe(false)
+        );
+        await recordingLifecycle.waitForCommits();
+        await recordingLifecycle.waitForClosing();
+        flushAutomergeStorageWrites();
+        const clips = trackStore.value?.tracks[0]?.clips ?? [];
+        expect(clips.map((clip) => clip.id)).toEqual([old]);
+        expect(clips.filter((clip) => clip.audioBufferId === undefined)).toEqual([]);
+        const takeClipIds = takeLaneStore.value?.lanes.flatMap((lane) => lane.takes.map((take) => take.clipId));
+        expect(takeClipIds).not.toContain(successor);
+        expect(takeClipIds).toEqual([old]);
+        expect(actionHistoryStore.value?.entries).toHaveLength(1);
+        expect(activeRecordingRef.current).toEqual([]);
+        expect(mocks.notifyUser).not.toHaveBeenCalled();
+        expectPcm(old, oldBuffer, 0.25);
+    });
+
+    it('discards the provisional clip and says so when a punch-in start throws', async () => {
+        mocks.startAudioRecording.mockImplementationOnce(() => Promise.reject(new Error('recorder unavailable')));
+        trackStore.set({ tracks: [recordingTrack('audio')], selectedTrackId: TRACK_ID, ghostClips: [] });
+        takeLaneStore.set({ lanes: [] });
+        transportStore.set({
+            ...defaultTransportState,
+            tempo: 120,
+            isPlaying: false,
+            isRecording: false,
+            countInEnabled: false,
+            punchInEnabled: true,
+            punchInBeat: 4,
+            punchOutBeat: 8,
+            playheadPosition: 3.95,
+        });
+        tempoMapStore.set({ changes: [] });
+        flushAutomergeStorageWrites();
+        await startPlayback();
+        expect(schedulerSession.punchRecordingActive).toBe(false);
+        mocks.audioClock.currentTime += 0.1;
+        // The rolling transport crosses the punch-in point on a later tick.
+        await tick(1);
+        expect(schedulerSession.punchRecordingActive).toBe(true);
+        await vi.waitFor(() => expect(trackStore.value?.tracks[0]?.clips).toEqual([]));
+        expect(takeLaneStore.value?.lanes.flatMap((lane) => lane.takes)).toEqual([]);
+        expect(activeRecordingRef.current).toEqual([]);
+        expect(mocks.notifyUser).toHaveBeenCalledTimes(1);
+        expect(mocks.notifyUser).toHaveBeenCalledWith(expect.stringContaining('Punch-in recording'), 'error');
+        pausePlayback();
+        await recordingLifecycle.waitForClosing();
+        expect(actionHistoryStore.value?.entries).toEqual([]);
+        expect(commits()).toBe(0);
+    });
+
     it('commits an ordinary pause before resuming without a held predecessor', async () => {
         const old = await openFirst();
         pausePlayback();
