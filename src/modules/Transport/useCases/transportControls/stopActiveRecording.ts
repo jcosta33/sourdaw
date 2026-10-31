@@ -3,7 +3,6 @@ import { stopRecording, takeOwnsRecordingRoot } from '#/modules/Arrangement/useC
 import { stopAudioRecording } from '#/modules/AudioEngine/useCases';
 import { waitForOverdubLanding } from '#/modules/MIDI/useCases';
 
-import { getTransportState } from '../../repositories/transport/getTransportState';
 import { updateTransportState } from '../../repositories/transport/updateTransportState';
 
 import { captureRecordingEnd } from './captureRecordingEnd';
@@ -27,10 +26,12 @@ async function closeActiveRecording(stillOwns?: () => boolean, gestureEnding?: R
     // A manual ending belongs to its synchronous receipt, between ticks too.
     // The last published playhead can precede captured PCM; passing it as an
     // intended cap would discard the tail before a pending seam sounds.
-    const rolling = getTransportState()?.isPlaying === true;
+    // Whether the receipt dates a rolling transport is read with the receipt:
+    // Pause parks the transport before it stops the recorder, and its parked
+    // position is the last tick's beat, not the gesture's.
     const closesTake = activeRecordingRef.current.length > 0 && takeOwnsRecordingRoot();
     const recordingCommit = stopRecording(
-        rolling ? ending?.beatAtContextSeconds(ending.contextSeconds) : undefined,
+        ending?.rolling ? ending.beatAtContextSeconds(ending.contextSeconds) : undefined,
         ending,
         true
     );
