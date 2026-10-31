@@ -105,7 +105,10 @@ test('exports the complete Nebula Drift mix as a stereo WAV', async ({ page }, t
         const dialog = page.getByRole('dialog').filter({ hasText: /The Bakery/i });
         await expect(dialog).toBeVisible();
         await expect(dialog.getByRole('checkbox', { name: /WAV/i })).toHaveAttribute('aria-checked', 'true');
-        await expect(dialog.getByRole('checkbox', { name: /MP3/i })).toHaveAttribute('aria-checked', 'false');
+        await expect(dialog.getByRole('checkbox', { name: 'MP3 Lossy crust', exact: true })).toHaveAttribute(
+            'aria-checked',
+            'false'
+        );
         await expect(dialog.getByRole('checkbox', { name: /FLAC/i })).toHaveAttribute('aria-checked', 'false');
         await expect(dialog.getByRole('radio', { name: 'Whole project' })).toBeChecked();
         // Auto-detect tail defaults on, so the manual Tail-seconds field is disabled

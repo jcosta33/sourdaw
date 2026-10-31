@@ -531,6 +531,66 @@ describe('usePianoRollInteractions', () => {
             expect(setSelectedNoteIds).toHaveBeenCalledWith(new Set());
         });
 
+        it('stamps in the cell containing the pointer when the click lands in the right half of a cell', () => {
+            const { canvas } = renderRoll({ notes: [] });
+
+            // x = 70px is 1.75 beats: inside cell [1, 2), so the note starts at 1, not at the nearer line 2.
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
+        });
+
+        it('floors to the cell of a fine grid and keeps a pointer exactly on a grid line in that cell', () => {
+            const fine = renderRoll({ notes: [], gridSnap: 0.25 });
+            // 0.9 beats is inside [0.75, 1.0); 1.2 beats is inside [1.0, 1.25).
+            fireEvent.mouseDown(fine.canvas, { clientX: 36, clientY: yForPitch(70) });
+            fireEvent.mouseUp(fine.canvas, { clientX: 36, clientY: yForPitch(70) });
+            fireEvent.mouseDown(fine.canvas, { clientX: 48, clientY: yForPitch(72) });
+            fireEvent.mouseUp(fine.canvas, { clientX: 48, clientY: yForPitch(72) });
+            fine.unmount();
+
+            // 0.3 / 0.1 is 2.9999999999999996 in floating point; the pointer sits on the line at beat 0.3.
+            const boundary = renderRoll({ notes: [], gridSnap: 0.1, beatWidth: 100 });
+            fireEvent.mouseDown(boundary.canvas, { clientX: 30, clientY: yForPitch(74) });
+            fireEvent.mouseUp(boundary.canvas, { clientX: 30, clientY: yForPitch(74) });
+
+            const starts = mocks.addMidiNote.mock.calls.map((call) => [call[1], call[2]]);
+            expect(starts[0]).toEqual([70, 0.75]);
+            expect(starts[1]).toEqual([72, 1]);
+            expect(starts[2]?.[0]).toBe(74);
+            expect(starts[2]?.[1]).toBeCloseTo(0.3, 9);
+        });
+
+        it('stamps at the unsnapped pointer beat when the grid is off', () => {
+            const { canvas } = renderRoll({ notes: [], gridSnap: 0 });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote.mock.calls[0]?.[2]).toBe(1.75);
+        });
+
+        it('a second click at the same point hits the stamped note instead of stacking a duplicate', () => {
+            const args = buildArgs({ notes: [] });
+            const view = render(<Harness args={args} />);
+            const canvas = screen.getByLabelText('piano-roll-test-surface');
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+            const stamped = mocks.addMidiNote.mock.results[0]?.value;
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+
+            // The store now holds the note; the hook sees it through `notes`.
+            view.rerender(<Harness args={{ ...args, notes: [stamped] }} />);
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            fireEvent.mouseUp(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.addMidiNote).toHaveBeenCalledTimes(1);
+            expect(setSelectedNoteIds).toHaveBeenLastCalledWith(new Set([stamped.id]));
+        });
+
         it('undo of a stamped note removes exactly the created note', () => {
             const { canvas } = renderRoll();
             fireEvent.mouseDown(canvas, { clientX: 45, clientY: yForPitch(70) });
@@ -792,6 +852,27 @@ describe('usePianoRollInteractions', () => {
                 expect.any(Function),
                 expect.any(Function)
             );
+        });
+
+        it('paint mode starts in the cell under the pointer, not the nearer grid line', () => {
+            const { canvas } = renderRoll({ paintMode: true, notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+            expect(mocks.addMidiNote).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY);
+
+            // 3.75 beats is inside cell [3, 4): the brush stops at 3, not 4.
+            fireEvent.mouseMove(canvas, { clientX: 150, clientY: yForPitch(70) });
+            // The mocked store does not feed notes back, so the start cell may repeat; the set is what matters.
+            expect(new Set(mocks.addMidiNote.mock.calls.map((call) => call[2]))).toEqual(new Set([1, 2, 3]));
+        });
+
+        it('chord mode stamps in the cell under the pointer', () => {
+            mocks.stampChord.mockReturnValue([{ id: 'ch1' }]);
+            const { canvas } = renderRoll({ chordMode: true, chordType: 'min7', notes: [] });
+
+            fireEvent.mouseDown(canvas, { clientX: 70, clientY: yForPitch(70) });
+
+            expect(mocks.stampChord).toHaveBeenCalledWith('clip-1', 70, 1, 1, PREFERRED_DEFAULT_VELOCITY, 'min7');
         });
 
         it('chord mode stamps a chord and selects the created notes', () => {

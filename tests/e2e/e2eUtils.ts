@@ -35,8 +35,6 @@ const ALPHA_NOTICE_DISMISSED_STORAGE_KEY = 'sourdaw-alpha-notice-dismissed';
 export const PREFERENCES_STORAGE_KEY = 'sourdaw-preferences';
 export const RECENT_PROJECTS_STORAGE_KEY = 'sourdaw-recent-projects';
 
-type LaunchOverlayState = 'active' | 'exited';
-
 type LaunchFromTemplateInput = {
     page: Page;
     template_name: string | RegExp;
@@ -109,31 +107,15 @@ export async function setupWorkspace(page: Page, options: SetupWorkspaceOptions 
     await page.waitForLoadState('domcontentloaded');
 }
 
-async function get_launch_overlay_state(page: Page): Promise<LaunchOverlayState> {
-    const launch_screen = page.getByLabel(LAUNCH_SCREEN_NAME);
-
-    return launch_screen.evaluateAll((elements): LaunchOverlayState => {
-        const element = elements[0];
-        if (!element) {
-            return 'exited';
-        }
-
-        const style = window.getComputedStyle(element);
-        if (style.opacity === '0' && style.pointerEvents === 'none') {
-            return 'exited';
-        }
-
-        return 'active';
-    });
-}
-
 export async function wait_for_workspace_ready(page: Page): Promise<void> {
-    // Launch loading text is transient; wait for the stable exited-overlay contract instead.
+    // Launch loading text is transient; wait for the overlay to unmount instead.
+    // A transparent overlay is still an aria-modal dialog, so an unscoped
+    // getByRole('dialog') right after launch would also match it.
     // The overlay-exit waits on WASM DSP boot + template instantiation. Under
     // full-suite worker contention a heavy template (e.g. the full demo project)
-    // can take well past the 5s default poll bound; match the panel-open bound
+    // can take well past the 5s default bound; match the panel-open bound
     // so a slow-but-healthy boot is not mistaken for a hang.
-    await expect.poll(async () => get_launch_overlay_state(page), { timeout: 30_000 }).toBe('exited');
+    await expect(page.getByLabel(LAUNCH_SCREEN_NAME)).toHaveCount(0, { timeout: 30_000 });
     await expect(page.getByRole('group', { name: PLAYBACK_CONTROLS_NAME })).toBeVisible();
 }
 

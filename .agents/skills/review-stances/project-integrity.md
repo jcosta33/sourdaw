@@ -135,6 +135,20 @@ independent writer after authorization capture, whose mutation must still revoke
 when it changes no document value. Removing admission settlement or final binding alignment must
 fail the unchanged-selection case.
 
+## Cold export must reach the active frozen print
+
+Commit `57b7349f7864eca0bd177333d720a50186bd33e9` narrowed export restoration from the
+whole audio store to clip buffer IDs. Its commit-to-pulls lookup returns no associated PR.
+`ab5a579209b5e02a035e123380b5ceaf9c922250` (associated with PR #187) retained that set
+while routing restoration through the AudioEngine owner. Neither trace establishes historical
+review prompts or tiers. The escaped integrity input is a cold project with an ordinary clip
+and an active frozen print whose PCM has a separate ID; the clip-only set omits the sound.
+
+Require both IDs through the actual cache restoration before mixdown and stem consumption,
+then inspect encoded PCM. Exclude stale prints and retain the empty-clip all-buffer fallback.
+Remove the active frozen ID from the restoration request: the cold PCM case must fail before
+encoding. A warm cache or a component assertion about requested IDs alone cannot prove the bytes.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
@@ -1033,3 +1047,15 @@ and real App together, trace each owning module's emitted identity, and retain e
 project-ID, witness, exact material, commit callback and two-cycle Undo/Redo assertion.
 A served inspection entry exporting a separate Project store must fail the same oracle;
 an export census or configured inspection port alone does not prove all live identities.
+
+## 2026-10-31 — chord migration base copies locked every chorded project (PR #1857 walker, chord base from #606)
+
+Commit `83be56e84e` (PR #1857, `feat(command): enforce batch preflight`) made the global project
+ID walk part of the save gate. The chord slot's `migrationBase` predated it (#606): its first write
+copies every live chord event, ids included, so a demo, template, import or agent edit that wrote
+chords reloaded repair-required with every edit and save refused. This was the fourth escape of one
+class after arrangement snapshots (#3032), gain points (#5064) and warp markers (#5570), each
+patched as a special case. The missed stance clause: every persisted copy-by-design subtree is an
+owning namespace, now declared once in `INDEPENDENT_ID_SCOPES`. Probe by loading each shipped demo
+and template, saving, reloading, and requiring the repair gate to stay clear; and require an
+undeclared slot that copies live rows to stay repair-required, so the walker remains fail-closed.
