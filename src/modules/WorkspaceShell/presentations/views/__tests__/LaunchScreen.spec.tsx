@@ -310,7 +310,7 @@ describe('LaunchScreen', () => {
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
 
         // Switch to Podcast category
-        fireEvent.click(screen.getByRole('button', { name: /^Podcast$/ }));
+        fireEvent.click(screen.getByRole('radio', { name: /^Podcast$/ }));
         expect(screen.queryByRole('button', { name: /Basic Band/ })).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: /Podcast One/ })).toBeInTheDocument();
     });
