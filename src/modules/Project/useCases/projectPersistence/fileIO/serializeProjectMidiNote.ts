@@ -65,6 +65,10 @@ export function serializeProjectMidiNote(note: RuntimeNote): ProjectMidiNote {
     if (note.expression !== undefined) {
         serialized.expression = serializeExpression(note.expression);
     }
+    // Without its pass, a recorded note belongs to every take of its loop.
+    if (note.recordingPassIndex !== undefined) {
+        serialized.recordingPassIndex = note.recordingPassIndex;
+    }
 
     return serialized;
 }

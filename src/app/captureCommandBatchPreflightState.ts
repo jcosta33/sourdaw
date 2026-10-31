@@ -177,6 +177,16 @@ const INDEPENDENT_ID_SCOPES: readonly IdScopeDeclaration[] = [
         scopeIdsUniqueAcrossScopes: false,
         reason: 'The chord slot keeps its first-written state as its merge base, event ids included (#606).',
     },
+    {
+        path: ['takeLanes', 'lanes', EACH, 'takes', EACH, 'midiSource'],
+        scopeIdsUniqueAcrossScopes: false,
+        reason: 'Split and Delete Time freeze the cut MIDI rows, note ids included, into each re-keyed take.',
+    },
+    {
+        path: ['arrangements', 'arrangements', EACH, 'takeLanes', 'lanes', EACH, 'takes', EACH, 'midiSource'],
+        scopeIdsUniqueAcrossScopes: false,
+        reason: "Saving snapshots the current arrangement, its takes' frozen MIDI sources included.",
+    },
 ];
 
 function resolveScopeRoots(value: unknown, path: IdScopeDeclaration['path']): object[] {
@@ -508,18 +518,20 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
         declaration,
         roots: resolveScopeRoots(document, declaration.path),
     }));
-    scanIdNamespace(
-        document,
-        declaredScopes.flatMap((scope) => scope.roots),
-        duplicateIds
-    );
+    const allRoots = declaredScopes.flatMap((scope) => scope.roots);
+    scanIdNamespace(document, allRoots, duplicateIds);
     for (const { declaration, roots } of declaredScopes) {
         const scopeIds = new Set<string>();
         for (const root of roots) {
             if (declaration.scopeIdsUniqueAcrossScopes) {
                 recordId(asRecord(root)?.id, scopeIds, duplicateIds);
             }
-            scanIdNamespace(root, [], duplicateIds);
+            // A scope nested inside this one keeps its own namespace.
+            scanIdNamespace(
+                root,
+                allRoots.filter((other) => other !== root),
+                duplicateIds
+            );
         }
     }
     return duplicateIds;

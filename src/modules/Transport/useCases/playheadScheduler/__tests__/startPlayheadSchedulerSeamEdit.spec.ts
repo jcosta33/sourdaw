@@ -614,6 +614,46 @@ describe('startPlayheadScheduler punch at the seam-edit wrap', () => {
         }
         expect(punchOutsAtBeat(PUNCH_OUT_BEAT)).toHaveLength(1);
     });
+
+    it('marks the MIDI pass an edit ends without a seam as interrupted, and no wrap-ended pass', async () => {
+        trackStoreState.value = { tracks: [{ ...(armedRecordingTrack() as object), kind: 'midi' }] };
+        transportStoreState.value = recordingPunchState();
+        const stages: Array<{ at: number; interruptsPass: boolean | undefined }> = [];
+        vi.mocked(stageRecordingTake).mockImplementation((input) => {
+            stages.push({ at: ctxTime.now, interruptsPass: input.interruptsPass });
+            return undefined;
+        });
+
+        startPlayheadScheduler();
+        const worker = schedulerWorker();
+        let ticks = 0;
+        while (panicYeastRuntimeSpy.mock.calls.length === 0 && ticks < 200) {
+            ticks++;
+            await runTick(worker);
+        }
+        await runTick(worker, 0.01);
+        transportStoreState.value = recordingPunchState({ isRecording: true });
+        activeRecordingRef.current = ['rec-clip-1'];
+        await runTick(worker, 0.01);
+        await runTick(worker, 0.01);
+        const stagedBeforeEdit = stages.length;
+
+        tempoMapStoreState.value = {
+            changes: [{ id: 'tempo-edit', beat: 0, tempo: EDITED_BPM, curve: 'instant' }],
+        };
+        transportStoreState.value = recordingPunchState({
+            loopStart: EDITED_LOOP_START,
+            loopEnd: EDITED_LOOP_END,
+            isRecording: true,
+        });
+        await runTick(worker, 0.01);
+        const editTickTime = ctxTime.now;
+
+        expect(stages.slice(0, stagedBeforeEdit).every((stage) => stage.interruptsPass === undefined)).toBe(true);
+        expect(stages.filter((stage) => stage.at === editTickTime)).toEqual([
+            { at: editTickTime, interruptsPass: true },
+        ]);
+    });
 });
 
 /**
