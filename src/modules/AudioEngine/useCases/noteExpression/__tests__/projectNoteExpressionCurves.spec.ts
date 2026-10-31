@@ -544,6 +544,30 @@ describe('projectNoteExpressionCurves', () => {
             expect(changes).toEqual([]);
         });
 
+        it('orders a frozen crop’s folded own bend against the carried channel move by their original moments', () => {
+            const channelAfterOwn = projectNoteExpressionCurves({
+                note: { pitchBend: 2_000, pitchBendRangeSemitones: 48 },
+                channelBend: [carried(2, 1.5, 4_096)],
+                startBeat: 2,
+                recordedOwnBendBeat: 1.25,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+            const ownAfterChannel = projectNoteExpressionCurves({
+                note: { pitchBend: 3_000, pitchBendRangeSemitones: 48 },
+                channelBend: [carried(2, 1.5, 4_096)],
+                startBeat: 2,
+                recordedOwnBendBeat: 1.75,
+                releaseFrame: frameAtBeat(4),
+                frameAtBeat,
+            });
+
+            expect(channelAfterOwn.atStart?.pitchBend).toBe(4_096);
+            expect(channelAfterOwn.atStart?.pitchBendRangeSemitones).toBe(2);
+            expect(ownAfterChannel.atStart).toBeUndefined();
+            expect(ownAfterChannel.changes).toEqual([]);
+        });
+
         it('keeps a cut note on its own bend point recorded after the channel move', () => {
             const { atStart } = projectNoteExpressionCurves({
                 note: {

@@ -7,6 +7,7 @@
  */
 
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
 import { type ProductionBrief } from './ProductionBrief';
 
@@ -814,6 +815,8 @@ export type ProjectTake = {
     passSourceEndSeconds?: number;
     passOriginBeat?: number;
     passOriginSourceSeconds?: number;
+    recordingPassIndex?: number;
+    midiSource?: MidiTakeSourceSnapshot;
 };
 
 export type ProjectTakeLane = {

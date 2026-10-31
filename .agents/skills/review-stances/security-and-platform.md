@@ -158,6 +158,20 @@ without exposing a path, File or raw error. Removing provenance dispatch or that
 redden the owning case. These renderer-boundary probes establish neither OS-dialog execution nor
 a security exposure.
 
+### 2026-10-27 — accepted NAM dimensions exceeded the runtime input width (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) added the LSTM loader with
+deeper cells sized to `hidden_size` while rendering passed a one-element input to every cell.
+The source establishes the length contradiction for `num_layers > 1 && hidden_size > 1`;
+no trap on the introducing head was measured. The missing coverage obligation was the layer/width
+cross-product. Historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Pass an exact-layout, finite-weight two-layer/hidden-size-2 file through the actual loader and
+prewarm entry. Require a named refusal before construction/prewarm, paired with successful
+single-layer/wide and stacked/hidden-size-1 controls. Count initial hidden/cell state and the head
+in the fixture, rather than guessing its length. Exercise the public import boundary and rebuilt
+WASM bytes too; a validated metadata object alone cannot prove runtime admission.
+
 ### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
 
 PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) selected `author { id }` from

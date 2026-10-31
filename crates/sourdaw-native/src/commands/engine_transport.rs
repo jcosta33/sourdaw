@@ -145,6 +145,10 @@ pub struct TransportMapsApplied {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grinder_models: Vec<super::graph::GrinderModelReceipt>,
     pub running: bool,
     pub playing: bool,
     pub position_seconds: f64,
@@ -287,6 +291,8 @@ fn transport_position_payload(
     rendering: bool,
 ) -> EngineTransportPosition {
     EngineTransportPosition {
+        engine_id: None,
+        grinder_models: Vec::new(),
         running: rendering,
         playing: snapshot.playing,
         position_seconds: snapshot.playhead_frame as f64 / sample_rate,
@@ -581,6 +587,8 @@ pub async fn engine_transport_position(
         entered_seconds,
         leaving_seconds: engine.capture_clock_now().1,
     });
+    payload.engine_id = Some(engine.instance_id().to_string());
+    payload.grinder_models = registry_guard.native_grinder_readback(engine.instance_id());
     Ok(payload)
 }
 
@@ -1125,6 +1133,8 @@ mod tests {
     #[test]
     fn the_position_payload_serializes_with_camel_case_keys() {
         let json = serde_json::to_string(&EngineTransportPosition {
+            engine_id: None,
+            grinder_models: Vec::new(),
             running: true,
             playing: true,
             position_seconds: 1.5,
@@ -1180,6 +1190,52 @@ mod tests {
                 r#""captureClock":{"epoch":7,"streamEpoch":2,"sampleRate":48000.0,"presentationSeconds":12.25,"quality":"estimated","uncertaintySeconds":null},"#,
                 r#""captureClockQuery":{"epoch":7,"enteredSeconds":12.3,"leavingSeconds":12.35}}"#
             )
+        );
+    }
+
+    #[test]
+    fn the_position_payload_serializes_exact_engine_and_model_identity() {
+        let json = serde_json::to_value(EngineTransportPosition {
+            engine_id: Some("9007199254740993".to_string()),
+            grinder_models: vec![crate::commands::graph::GrinderModelReceipt {
+                track_id: "track-a".to_string(),
+                device_id: "grinder-a".to_string(),
+                engine_id: "9007199254740993".to_string(),
+                target_generation: "17".to_string(),
+                request_id: "19".to_string(),
+                content_hash: "a".repeat(64),
+            }],
+            ..EngineTransportPosition::default()
+        })
+        .expect("position model identity should serialize");
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "engineId": "9007199254740993",
+                "grinderModels": [{
+                    "trackId": "track-a",
+                    "deviceId": "grinder-a",
+                    "engineId": "9007199254740993",
+                    "targetGeneration": "17",
+                    "requestId": "19",
+                    "contentHash": "a".repeat(64)
+                }],
+                "running": false,
+                "playing": false,
+                "positionSeconds": 0.0,
+                "playheadFrame": 0.0,
+                "loopWraps": 0.0,
+                "batchesApplied": 0.0,
+                "tempo": 0.0,
+                "timeSigNum": 0,
+                "timeSigDenom": 0,
+                "masterPeak": 0.0,
+                "stripPeaks": {},
+                "tunerTelemetry": {},
+                "captureClock": null,
+                "captureClockQuery": null
+            })
         );
     }
 
