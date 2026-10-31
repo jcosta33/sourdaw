@@ -4,9 +4,10 @@ import { activeRecordingRef } from '../../stores/activeRecordingRef';
 import { takeLaneStore } from '../../stores/takeLaneStore';
 import { type Track } from '../../stores/trackStore';
 
-import { closeRecordingPass, recordingPassOrigin } from './recordingPassOrigin';
+import { closeRecordingPass } from './closeRecordingPass';
+import { passSourceBeat } from './passSourceBeat';
+import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
-import { passSourceBeat } from './sourceBeat';
 
 type StageRecordingTakeInput = {
     trackId: string;
@@ -111,6 +112,49 @@ function replaceProvisionalTake(
     };
 }
 
+/** Place an owned MIDI pass, then withhold its identity once a pass has ended without a wrap. */
+function admitPassIdentity(
+    track: Track,
+    input: StageRecordingTakeInput
+): { placed: StageRecordingTakeInput; passInput: StageRecordingTakeInput } {
+    const placed = placeMidiPassTake(track, input);
+    if (input.interruptsPass && track.kind === 'midi') {
+        // Takes count staged passes and notes count loop wraps. A pass ended by an
+        // edit or a jump is staged without a wrap, so from here neither names the
+        // other and later notes and takes stay unowned, sounding in every take.
+        activeRecordingRef.passIdentityLost = true;
+    }
+    return { placed, passInput: activeRecordingRef.passIdentityLost ? withoutPassIdentity(placed) : placed };
+}
+
+function buildStagedTake(
+    input: StageRecordingTakeInput,
+    placed: StageRecordingTakeInput,
+    lane: TakeLane | undefined
+): { take: Take; replacement: Take | undefined } {
+    if (input.provisionalTakeId !== undefined) {
+        return replaceProvisionalTake(input, lane);
+    }
+    const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
+    const replacement = lane?.takes.find(
+        (candidate) =>
+            replacementId !== undefined && candidate.id === replacementId && candidate.clipId === input.clipId
+    );
+    if (replacement) {
+        return { replacement, take: { ...replacement, endBeat: input.endBeat } };
+    }
+    return {
+        replacement: undefined,
+        take: createTake(
+            input.clipId,
+            input.name,
+            recordingPassTiming.nextStartBeat(input.clipId) ?? placed.startBeat,
+            input.endBeat,
+            placed.sourceOffsetBeats
+        ),
+    };
+}
+
 /**
  * Open a take for an in-flight recording without a history entry.
  *
@@ -138,14 +182,7 @@ export function stageRecordingTake(
     ) {
         throw new Error('Invalid MIDI recording pass identity');
     }
-    const placed = placeMidiPassTake(track, input);
-    if (input.interruptsPass && track.kind === 'midi') {
-        // Takes count staged passes and notes count loop wraps. A pass ended by an
-        // edit or a jump is staged without a wrap, so from here neither names the
-        // other and later notes and takes stay unowned, sounding in every take.
-        activeRecordingRef.passIdentityLost = true;
-    }
-    const passInput = activeRecordingRef.passIdentityLost ? withoutPassIdentity(placed) : placed;
+    const { placed, passInput } = admitPassIdentity(track, input);
     const state = takeLaneStore.value;
     if (!state) {
         if (input.provisionalTakeId !== undefined) {
@@ -158,32 +195,7 @@ export function stageRecordingTake(
     }
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
-    let replacement: Take | undefined;
-    let take: Take;
-    if (input.provisionalTakeId !== undefined) {
-        ({ take, replacement } = replaceProvisionalTake(input, lane));
-    } else {
-        const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
-        if (replacementId !== undefined) {
-            replacement = lane?.takes.find(
-                (candidate) => candidate.id === replacementId && candidate.clipId === input.clipId
-            );
-        }
-        if (replacement) {
-            take = {
-                ...replacement,
-                endBeat: input.endBeat,
-            };
-        } else {
-            take = createTake(
-                input.clipId,
-                input.name,
-                recordingPassTiming.nextStartBeat(input.clipId) ?? placed.startBeat,
-                input.endBeat,
-                placed.sourceOffsetBeats
-            );
-        }
-    }
+    const { take, replacement } = buildStagedTake(input, placed, lane);
     if (passInput.recordingPassIndex !== undefined) {
         take.recordingPassIndex = passInput.recordingPassIndex;
     }

@@ -1058,7 +1058,7 @@ describe('applyImportedProjectData round-trip hydration', () => {
                 ];
                 project.activeArrangementId = 'first';
             }
-            const serialized: unknown = JSON.parse(JSON.stringify(project));
+            const serialized: unknown = structuredClone(project);
             await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
             expect(resetCrdtProject).not.toHaveBeenCalled();
             expect(resetModuleStoresToDefault).not.toHaveBeenCalled();

@@ -326,7 +326,7 @@ describe('MIDI loop recordings', () => {
         if (!clip) {
             throw new Error('Expected a provisional MIDI recording');
         }
-        const pass = (name: string, sourceOffsetBeats: number, recordingPassIndex: number, interruptsPass?: true) =>
+        const pass = (name: string, sourceOffsetBeats: number, recordingPassIndex: number, interruptsPass = false) =>
             stageRecordingTake({
                 trackId: TRACK_ID,
                 clipId: clip.id,
@@ -335,7 +335,7 @@ describe('MIDI loop recordings', () => {
                 endBeat: 12,
                 sourceOffsetBeats,
                 recordingPassIndex,
-                ...(interruptsPass ? { interruptsPass } : {}),
+                interruptsPass,
             });
         transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
         const admit = (beat: number, passIndex: number) =>
