@@ -4,7 +4,7 @@ import { createTrack, type Track } from '../../models/Track';
 import { hasVariationLanes } from '../hasVariationLanes';
 
 function makeTrack(kind: Track['kind'], showVariationLanes: boolean, alternatives?: Track['alternatives']): Track {
-    return {
+    const track: Track = {
         ...createTrack({
             id: kind,
             kind,
@@ -13,8 +13,11 @@ function makeTrack(kind: Track['kind'], showVariationLanes: boolean, alternative
             initialAlternativeId: `${kind}-alt`,
         }),
         showVariationLanes,
-        ...(alternatives === undefined ? {} : { alternatives }),
     };
+    if (alternatives !== undefined) {
+        track.alternatives = alternatives;
+    }
+    return track;
 }
 
 describe('hasVariationLanes', () => {
