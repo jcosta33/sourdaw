@@ -1,0 +1,19 @@
+src/modules/TimelineEditor/presentations/hooks/__tests__/useElementWidth.spec.tsx
+  s_4a33dd7d0ab74a::t_03882d678ff9b7 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "302ea10a77237bcf2f5614cb6d4e2fa88fdf49f3",
+  "prompts": {},
+  "sessions": {
+    "s_4a33dd7d0ab74a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_4a33dd7d0ab74a",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
