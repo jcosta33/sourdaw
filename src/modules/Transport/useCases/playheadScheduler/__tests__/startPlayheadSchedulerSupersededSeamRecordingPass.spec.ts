@@ -51,7 +51,10 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
 const takeLaneState = vi.hoisted(() => ({
     value: { lanes: [] as { id: string; trackId: string; takes: StagedTake[]; activeCompRegions: unknown[] }[] },
 }));
-vi.mock('#/modules/Arrangement/stores', async () => ({
+vi.mock('#/modules/Arrangement/stores', async (importOriginal) => ({
+    // The real barrel supplies `activeRecordingRef`, which the scheduler and
+    // these assertions must share.
+    ...(await importOriginal<typeof import('#/modules/Arrangement/stores')>()),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),
@@ -64,7 +67,6 @@ vi.mock('#/modules/Arrangement/stores', async () => ({
         },
     },
     takeLaneStore: takeLaneState,
-    activeRecordingRef: (await import('#/modules/Arrangement/stores/activeRecordingRef')).activeRecordingRef,
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
 }));
@@ -241,17 +243,21 @@ function stageIntoLane(input: Parameters<typeof stageRecordingTake>[0]): undefin
     }
     const takes = lane().takes;
     if (input.replacedTakeId !== undefined) {
-        lane().takes = takes.map((take) =>
-            take.id === input.replacedTakeId ? { ...take, endBeat: input.endBeat, recordingPassIndex } : take
-        );
+        lane().takes = takes.map((take) => {
+            if (take.id !== input.replacedTakeId) {
+                return take;
+            }
+            return { ...take, endBeat: input.endBeat, recordingPassIndex };
+        });
         return undefined;
     }
     lane().takes = [
-        ...takes.map((take) =>
-            take.sourceOffsetBeats === undefined && take.clipId === input.clipId
-                ? { ...take, recordingPassIndex: recordingPassIndex + 1 }
-                : take
-        ),
+        ...takes.map((take) => {
+            if (take.sourceOffsetBeats !== undefined || take.clipId !== input.clipId) {
+                return take;
+            }
+            return { ...take, recordingPassIndex: recordingPassIndex + 1 };
+        }),
         {
             id: `take-${takes.length}`,
             clipId: input.clipId,
