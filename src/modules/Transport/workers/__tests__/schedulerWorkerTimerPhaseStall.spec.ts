@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { startRecording } from '#/modules/Arrangement/useCases';
 
-import { defaultTransportState } from '../../../models/TransportState';
-import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
-import '../../../workers/schedulerWorker';
-import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
-import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
-import { schedulerSession } from '../schedulerSession';
-import { schedulerTimingDiagnostics } from '../schedulerTimingDiagnostics';
-import { startPlayheadScheduler } from '../startPlayheadScheduler';
+import { defaultTransportState } from '../../models/TransportState';
+import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
+import '../schedulerWorker';
+import { metronomeSchedulingState } from '../../useCases/scheduling/metronomeSchedulingState';
+import { disposePlayheadScheduler } from '../../useCases/playheadScheduler/disposePlayheadScheduler';
+import { schedulerSession } from '../../useCases/playheadScheduler/schedulerSession';
+import { schedulerTimingDiagnostics } from '../../useCases/playheadScheduler/schedulerTimingDiagnostics';
+import { startPlayheadScheduler } from '../../useCases/playheadScheduler/startPlayheadScheduler';
 
 /**
  * #5889 — a punch loop recording froze just before its first loop seam: the
@@ -95,7 +95,7 @@ vi.mock('#/modules/MIDI/stores', async (importOriginal) => ({
         },
     },
 }));
-vi.mock('../../../stores/transportStore', () => ({
+vi.mock('../../stores/transportStore', () => ({
     transportStore: {
         get value() {
             return transportStoreState.value;
@@ -105,14 +105,14 @@ vi.mock('../../../stores/transportStore', () => ({
         },
     },
 }));
-vi.mock('../../../stores/tempoMapStore', () => ({
+vi.mock('../../stores/tempoMapStore', () => ({
     tempoMapStore: {
         get value() {
             return tempoMapStoreState.value;
         },
     },
 }));
-vi.mock('../../../stores/timeSignatureMapStore', () => ({
+vi.mock('../../stores/timeSignatureMapStore', () => ({
     timeSignatureMapStore: { value: { changes: [] } },
 }));
 vi.mock('#/modules/Toaster/stores', () => ({ toasterStore: { value: null } }));
@@ -211,14 +211,16 @@ vi.mock('#/modules/Yeast/useCases', () => ({
     processYeastMidi: vi.fn(),
     getYeastSchedulingLookahead: () => ({ earlyBeats: 0, lateBeats: 0 }),
 }));
-vi.mock('../../scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
-vi.mock('../../scheduling/applyAutomation/applyAutomation', () => ({
+vi.mock('../../useCases/scheduling/scheduleAudioClips', () => ({ scheduleAudioClips: vi.fn() }));
+vi.mock('../../useCases/scheduling/applyAutomation/applyAutomation', () => ({
     applyAutomation: vi.fn(() => new Set<string>()),
 }));
-vi.mock('../../scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains: vi.fn() }));
-vi.mock('../../transportControls/panicYeastRuntime', () => ({ panicYeastRuntime: vi.fn(() => Promise.resolve()) }));
-vi.mock('../../../repositories/transport/updateTransportState', () => ({ updateTransportState: vi.fn() }));
-vi.mock('../../evaluateFollowActions', () => ({
+vi.mock('../../useCases/scheduling/applyAutomation/applyVcaGains', () => ({ applyVcaGains: vi.fn() }));
+vi.mock('../../useCases/transportControls/panicYeastRuntime', () => ({
+    panicYeastRuntime: vi.fn(() => Promise.resolve()),
+}));
+vi.mock('../../repositories/transport/updateTransportState', () => ({ updateTransportState: vi.fn() }));
+vi.mock('../../useCases/evaluateFollowActions', () => ({
     evaluateFollowActions: () => ({ jumpToPosition: null, shouldStop: false }),
 }));
 
@@ -363,16 +365,17 @@ describe('startPlayheadScheduler under a phase-shifted Worker timer', () => {
         startPlayheadScheduler();
         let slowWakeFired = false;
         while (clock.ms < DRIVE_END_MS) {
-            const active = timer;
+            const active: RepeatingTimer | null = timer;
             expect(active, 'the Worker stopped its repeating timer').not.toBeNull();
             if (!active) {
                 return;
             }
-            const slowWake = !slowWakeFired && active.nextFireMs >= SLOW_WAKE_GRID_MS;
+            const slowWake: boolean = !slowWakeFired && active.nextFireMs >= SLOW_WAKE_GRID_MS;
             slowWakeFired ||= slowWake;
             fireTimer(active, slowWake ? SLOW_WAKE_MS : STEADY_WAKE_MS);
             await settle();
         }
+        expect(slowWakeFired, 'the slow wake never fired').toBe(true);
 
         // The punch recording opened on the first pass and is still capturing.
         expect(vi.mocked(startRecording).mock.calls.map(([anchorBeat]) => anchorBeat)).toEqual([PUNCH_IN_BEAT]);
