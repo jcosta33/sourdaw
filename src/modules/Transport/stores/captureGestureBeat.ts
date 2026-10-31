@@ -17,11 +17,15 @@
  *    event.
  *
  * So while the transport plays, this projects the scheduler's committed anchor
- * (`playheadClockRef`) forward over the audio clock's elapsed time at the live
- * tempo — the same integration the next tick is about to perform, evaluated at
- * the event instead of at the grain — and when the native engine is the audible
- * transport, it reads the engine's own cursor through the registered clock
- * source, the same integration `runTick` uses for the drawn playhead. A parked
+ * (`playheadClockRef`) forward over all of the audio clock's elapsed time since
+ * it, at the anchor's tempo — the advance the next tick is about to make,
+ * evaluated at the event instead of at the grain. The song position is a
+ * function of the audio clock: a suspended context does not leap (`suspend()`
+ * stops `currentTime`), so a gap longer than a grain is a main thread that was
+ * late while the audio kept playing, and a gesture captured just after it
+ * happened at the beat the audio clock reached. When the native engine is the
+ * audible transport, it reads the engine's own cursor through the registered
+ * clock source, the same integration `runTick` uses for the drawn playhead. A parked
  * transport answers from the store, which is authoritative exactly then.
  *
  * The capture must run on the gesture's own synchronous path. Reading it after
@@ -37,15 +41,6 @@ import { getGestureClockSource } from './gestureClockSource';
 import { playheadClockRef } from './playheadClockRef';
 import { tempoMapStore } from './tempoMapStore';
 import { transportStore } from './transportStore';
-
-/**
- * Upper bound on the elapsed audio time a capture will integrate, matching the
- * scheduler's own per-tick clamp (`MAX_DELTA_SECONDS`). A suspended AudioContext
- * leaps `currentTime` forward by the whole gap; an unclamped projection would
- * claim beats the scheduler deliberately declines to advance through, so the
- * capture stays bounded to the same grain window the next tick will admit.
- */
-export const MAX_PROJECTION_SECONDS = 0.1;
 
 type GestureClockCapture = {
     beat: number;
@@ -91,7 +86,7 @@ export function captureGestureClock(): GestureClockCapture {
     }
 
     const audioTime = source.getAudioTimeSeconds();
-    const elapsedSeconds = Math.max(0, Math.min(audioTime - playheadClockRef.audioTimeSeconds, MAX_PROJECTION_SECONDS));
+    const elapsedSeconds = Math.max(0, audioTime - playheadClockRef.audioTimeSeconds);
     const tempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], playheadClockRef.beat, transport.tempo);
     const pending = playheadClockRef.pendingLoopSeam;
     const ownsClock =

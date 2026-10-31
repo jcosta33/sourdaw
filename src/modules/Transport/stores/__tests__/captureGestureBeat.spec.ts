@@ -166,15 +166,16 @@ describe('captureGestureBeat', () => {
         expect(captureGestureBeat()).toBe(2);
     });
 
-    it('caps the projection at one scheduler grain when the audio clock leaps', () => {
-        // A suspended/resumed context leaps `currentTime` by the whole gap; the
-        // scheduler refuses to advance through it, and so must the capture.
+    it('projects over the whole audio time a main-thread stall left since the anchor', () => {
+        // No tick ran for 0.5 s while the audio kept playing: the gesture
+        // happened 1 beat past the anchor at 120 BPM, where the next tick will
+        // put the playhead, not one grain past it.
         mocks.source = {
-            getAudioTimeSeconds: () => 1000,
+            getAudioTimeSeconds: () => 10.5,
             readNativeCursorBeats: () => null,
         };
 
-        expect(captureGestureBeat()).toBeCloseTo(2.2, 9);
+        expect(captureGestureBeat()).toBeCloseTo(3, 9);
     });
 
     it('prefers the native engine cursor while that engine is the audible transport', () => {

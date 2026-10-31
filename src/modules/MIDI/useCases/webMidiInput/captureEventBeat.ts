@@ -1,7 +1,6 @@
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import {
     captureGestureClock,
-    MAX_PROJECTION_SECONDS,
     playheadClockRef,
     playheadWrapCountRef,
     readSecondsAtBeat,
@@ -107,7 +106,8 @@ function isWitnessedSeam(
         pending.loopEnd === transport.loopEnd &&
         pending.passIndex === wrapsSinceEpoch + 1 &&
         pendingIncomingSeconds >= 0 &&
-        pendingIncomingSeconds <= MAX_PROJECTION_SECONDS &&
+        // The witness describes one wrap: an incoming pass that has itself run
+        // out has crossed a seam the witness does not know.
         pendingIncomingSeconds < travelSeconds(pending.loopStart, pending.loopEnd)
     );
 }
@@ -231,10 +231,13 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
     }
 
     const pending = clock.pendingLoopSeam;
-    const projectedNow =
-        playheadClockRef.audioTimeSeconds +
-        Math.max(0, Math.min(now - playheadClockRef.audioTimeSeconds, MAX_PROJECTION_SECONDS));
-    const pendingIncomingSeconds = pending ? projectedNow - pending.audioTimeSeconds : -1;
+    // The audio time the cursor was projected over from the scheduler's anchor:
+    // all of it, as `captureGestureClock` projects, however late the main
+    // thread was.
+    const projectionSeconds = Math.max(0, now - playheadClockRef.audioTimeSeconds);
+    const pendingIncomingSeconds = pending
+        ? playheadClockRef.audioTimeSeconds + projectionSeconds - pending.audioTimeSeconds
+        : -1;
     const witnessedSeam = isWitnessedSeam(pending, transport, wrapsSinceEpoch, pendingIncomingSeconds);
     if (elapsedSeconds <= 0 && !witnessedSeam) {
         return { beat: beatNow, passIndex: wrapsSinceEpoch };
@@ -273,10 +276,10 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
 
     // The overshoot past the seam, converted back to wall clock at the ANCHOR's
     // tempo — the exact rate the projector advanced the pair
-    // (`captureGestureBeat` integrates at most one `MAX_PROJECTION_SECONDS`
-    // grain at `getTempoAtBeat` of the anchor beat). Re-integrating the beats
-    // past `loopEnd` through the post-seam map instead charges the overshoot
-    // to a tempo zone a looping roll never travels, so a decelerating change
+    // (`captureGestureBeat` projects at `getTempoAtBeat` of the anchor beat).
+    // Re-integrating the beats past `loopEnd` through the post-seam map
+    // instead charges the overshoot to a tempo zone a looping roll never
+    // travels, so a decelerating change
     // just past the seam inflates one grain of projection into half a second
     // of "travel" and closes the window on the whole genuine seam band (#4935
     // review). The conversion is exact while the map holds from the anchor
@@ -294,21 +297,22 @@ export function captureEventPositionAt({ audioTime }: CaptureEventBeatInput): { 
     // false and the direct bound below would charge a multi-wrap roll zero of
     // its completed passes — the same event answering the epoch before the
     // grain and its own dying-pass beat after it. What dates the window is
-    // the overshoot: the clamp pins the published pair at the seam and the
-    // projection covers at most one `MAX_PROJECTION_SECONDS` grain of travel
-    // past it before the arrival tick moves the count and drops the cursor
-    // back inside the region. A counted wrap beside an overshoot whose wall
-    // age outlasts that grain is a straight play-through instead — a region
-    // shrunk below a wrapped cursor mid-roll (the ruler drag writes no epoch
-    // and zeroes no count) leaves stale wraps beside a cursor that never
-    // hands over (#4935 review) — and keeps the direct bound.
+    // the overshoot: the clamp pins the published pair at or before the seam,
+    // so in the window the projection itself, not the anchor, crossed it, and
+    // the overshoot's wall age is at most the audio time projected — one grain
+    // until the arrival tick moves the count, longer only when a main-thread
+    // stall delayed that tick. A counted wrap beside an overshoot older than
+    // the projection is a straight play-through instead — a region shrunk
+    // below a wrapped cursor mid-roll (the ruler drag writes no epoch and
+    // zeroes no count) leaves stale wraps beside a cursor that never hands
+    // over (#4935 review) — and keeps the direct bound.
     const inSeamWindow =
         witnessedSeam ||
         (transport.isLooping &&
             loopLengthBeats > 0 &&
             wrapsSinceEpoch >= 1 &&
             beatNow >= transport.loopEnd &&
-            overshootSeconds <= MAX_PROJECTION_SECONDS);
+            overshootSeconds <= projectionSeconds);
     if (inSeamWindow) {
         return captureAtSeam({
             witnessedSeam,

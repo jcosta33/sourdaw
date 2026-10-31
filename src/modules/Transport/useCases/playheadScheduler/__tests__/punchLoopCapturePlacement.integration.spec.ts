@@ -2456,14 +2456,18 @@ describe('punch audio capture loop placement', () => {
             getAudioTimeSeconds: () => hardware.now,
             readNativeCursorBeats: () => hardware.nativeCursorBeat?.(hardware.now) ?? null,
         });
-        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.5 });
-        playheadPositionRef.current = 11.5;
-        playheadClockRef.beat = 11.5;
+        // The browser integration trails the native cursor by 0.4 beats, so
+        // 0.2 s later the native engine has wrapped (8.1) while the browser
+        // stands at 11.7 with its look-ahead horizon short of the seam.
+        transportStore.set({ ...transportStore.value!, isPlaying: true, playheadPosition: 11.3 });
+        playheadPositionRef.current = 11.3;
+        playheadClockRef.beat = 11.3;
         playheadClockRef.audioTimeSeconds = 51;
         toggleRecording();
         await vi.waitFor(() => expect(activeRecordingRef.current).toHaveLength(1));
         startPlayheadScheduler();
         await tick(0.2);
+        expect(playheadClockRef.beat).toBeCloseTo(11.7, 10);
         expect(schedulerSession.pendingSeam).toBeNull();
         await tick(0.01);
         hardware.now = 51.25;

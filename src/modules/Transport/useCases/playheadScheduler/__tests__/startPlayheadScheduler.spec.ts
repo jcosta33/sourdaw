@@ -583,12 +583,12 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(scheduleMetronome)).not.toHaveBeenCalled();
     });
 
-    it('clamps a suspended-context clock leap so the playhead never races past scheduled beats', async () => {
+    it('advances by the whole audio time a main-thread stall left and opens the window at the playhead', async () => {
         transportStoreState.value = playingState({ playheadPosition: 0 });
         // Init reads currentTime 0 → lastTickTime seeded at 0.
         startPlayheadScheduler();
-        // The first tick sees a huge currentTime leap (10s), which an unclamped
-        // delta would turn into ~20 beats of skipped advance.
+        // No tick runs for 10 s while the context keeps rendering: a suspended
+        // context would not have advanced `currentTime` at all.
         ctxTime.now = 10;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -597,10 +597,42 @@ describe('startPlayheadScheduler', () => {
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // deltaSec clamped to MAX_DELTA_SECONDS (0.1); at 120bpm (2 bps) that is
-        // 0.2 beats of advance — not the 20 beats an unclamped 10s leap implies.
-        expect(schedulerSession.accumulatedPosition).toBeLessThan(1);
-        expect(schedulerSession.accumulatedPosition).toBeCloseTo(0.2, 5);
+        // 10 s at 120 BPM: the playhead is where the audio clock is, beat 20.
+        expect(schedulerSession.accumulatedPosition).toBeCloseTo(20, 9);
+        // The 20 beats the stall passed are not replayed: every window opens at
+        // the playhead, and the MIDI window is a relocation that chases the
+        // stored controllers there.
+        expect(vi.mocked(scheduleMetronome).mock.calls[0]?.[0]).toBeCloseTo(20, 9);
+        expect(vi.mocked(scheduleAudioClips).mock.calls[0]?.[0]).toBeCloseTo(20, 9);
+        const midiWindow = vi.mocked(scheduleMidiNotes).mock.calls[0];
+        expect(midiWindow?.[0]).toBeCloseTo(20, 9);
+        expect(midiWindow?.[8]).toBe(true);
+        expect(vi.mocked(panicYeastRuntime)).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps a tick no longer than the look-ahead on the continuing window', async () => {
+        transportStoreState.value = playingState({ playheadPosition: 0 });
+        startPlayheadScheduler();
+        const worker = schedulerSession.worker as unknown as {
+            onmessage: ((event: { data: unknown }) => void) | null;
+        };
+        ctxTime.now = 0.05;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        const continuingFrom = schedulerSession.lastScheduledBeat;
+        vi.mocked(scheduleMidiNotes).mockClear();
+
+        // Exactly one look-ahead later: late by nothing the window did not cover.
+        ctxTime.now = 0.15;
+        emitSchedulerTick(worker);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        const midiWindow = vi.mocked(scheduleMidiNotes).mock.calls[0];
+        expect(midiWindow?.[0]).toBe(continuingFrom);
+        expect(midiWindow?.[8]).toBe(false);
+        expect(vi.mocked(panicYeastRuntime)).not.toHaveBeenCalled();
     });
 
     /**
@@ -702,10 +734,11 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
-        // Init reads currentTime 0 → lastTickTime seeded at 0.
+        // Init reads currentTime 0.1 → lastTickTime seeded at 0.1.
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
-        // A 0.2s clock delta is clamped to MAX_DELTA_SECONDS (0.1) → 0.2 beats
-        // of advance from 3.9 → 4.1, crossing loopEnd 4 and wrapping to 0.1.
+        // A 0.1 s tick, no longer than the look-ahead → 0.2 beats of advance
+        // from 3.9 → 4.1, crossing loopEnd 4 and wrapping to 0.1.
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -747,29 +780,32 @@ describe('startPlayheadScheduler', () => {
             playheadPosition: 0,
             isLooping: true,
             loopStart: 0,
-            loopEnd: 0.2,
+            loopEnd: 0.125,
         });
+        ctxTime.now = 0.25;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
 
-        // Tick 1 wraps (0 → 0.2 beats) and its post-wrap emission plants the
+        // Tick 1 wraps (0 → 0.125 beats) and its post-wrap emission plants the
         // sources; tick 2 wraps again, and its fence is the one under test.
-        ctxTime.now = 0.2;
+        ctxTime.now = 0.3125;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
-        ctxTime.now = 0.4;
+        ctxTime.now = 0.375;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
 
-        // The clamped advance lands the playhead exactly on loopEnd 0.2, so the
-        // seam instant is the tick's own clock (0.4). Unfixed, both sources are
-        // stopped at 0.405 and the compensated tail never plays.
-        expect(plain.stop).toHaveBeenCalledWith(0.4);
-        expect(compensated.stop).toHaveBeenCalledWith(expect.closeTo(0.65, 9));
+        // Each 0.0625 s tick (exact in binary, so no rounding moves the seam)
+        // advances exactly the region's 0.125 beats and lands the playhead on
+        // loopEnd, so the seam instant is the tick's own clock (0.375).
+        // Unfixed, both sources are stopped at the tick's clock and the
+        // compensated tail never plays.
+        expect(plain.stop).toHaveBeenCalledWith(0.375);
+        expect(compensated.stop).toHaveBeenCalledWith(expect.closeTo(0.625, 9));
     });
 
     it('plays straight through without wrapping when starting playback at or past loopEnd (#4117)', async () => {
@@ -779,6 +815,7 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -801,6 +838,7 @@ describe('startPlayheadScheduler', () => {
             loopStart: 0,
             loopEnd: 4,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -829,6 +867,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -869,6 +908,7 @@ describe('startPlayheadScheduler', () => {
             isRecording: true,
         });
 
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -956,6 +996,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1011,6 +1052,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1058,6 +1100,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1133,6 +1176,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1172,6 +1216,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 6,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1215,6 +1260,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 4,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1268,6 +1314,7 @@ describe('startPlayheadScheduler', () => {
             loopEnd: 16,
             isRecording: true,
         });
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
@@ -1901,8 +1948,9 @@ describe('startPlayheadScheduler', () => {
             punchOutBeat: 8,
         });
         schedulerSession.punchRecordingActive = true;
+        ctxTime.now = 0.1;
         startPlayheadScheduler();
-        // 0.2s delta at 120bpm = 0.4 beats → from 7.9 to 8.3, crossing punchOut 8.
+        // 0.1 s tick at 120bpm = 0.2 beats → from 7.9 to 8.1, crossing punchOut 8.
         ctxTime.now = 0.2;
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
@@ -1913,7 +1961,7 @@ describe('startPlayheadScheduler', () => {
 
         expect(audioEngineMocks.stopAudioRecording).toHaveBeenCalledTimes(1);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledTimes(1);
-        // The tick overshoots to 8.3; the take ends at the punch-out point.
+        // The tick overshoots to 8.1; the take ends at the punch-out point.
         expect(schedulerSession.accumulatedPosition).toBeGreaterThan(8);
         expect(arrangementMocks.stopRecording).toHaveBeenCalledWith(
             8,
