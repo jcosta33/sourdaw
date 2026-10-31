@@ -1,0 +1,529 @@
+.agents/skills/review-stances/async-file-imports.md
+  s_55244eb93b97d1::t_3eef076832df5d 3-8
+.agents/skills/review-stances/audio-param-frame-timing.md
+  s_55244eb93b97d1::t_c657ac555e079c 5-10,17-19,27-38
+.agents/skills/review-stances/correctness.md
+  s_55244eb93b97d1::t_054b79df0c0f80 237-248,893-904
+.agents/skills/review-stances/security-and-platform.md
+  s_55244eb93b97d1::t_9eff92f21882d6 526-543
+.agents/skills/review-stances/session-lifecycle.md
+  s_55244eb93b97d1::t_855d8728a337b8 252-269,371-387
+.agents/skills/review-stances/test-validity.md
+  s_55244eb93b97d1::t_9c274b42baca0d 3-8,822-833,2174-2221
+evidence/agent-campaign/corpora/development.json
+  s_55244eb93b97d1::t_10e85e4c55e0ad 58-61,177-180,309-312,371-374,417-420,714-717,792-795,870-873,948-951,1008-1011,1068-1071,1116-1119,1178-1181,1254-1257,1330-1333,1433-1436,1503-1506,1575-1578,1649-1652,1685-1688,1747-1750,1783-1786,1845-1848,1881-1884,1943-1946,1979-1982,2027-2030,2063-2066,2111-2114,2147-2150,2195-2198,2245-2248,2295-2298,2345-2348,2387-2390,2429-2432,2471-2474,2521-2524,2571-2574,2621-2624,2676-2679,2731-2734,2795-2798,2873-2876,2927-2930,3041-3044,3145-3148
+evidence/agent-campaign/corpora/held-out.json
+  s_55244eb93b97d1::t_593922679c3204 58-61,165-168,273-276,335-338,381-384,660-663,738-741,816-819,894-897,954-957,1014-1017,1062-1065,1124-1127,1200-1203,1303-1306,1379-1382,1453-1456,1525-1528,1599-1602,1635-1638,1697-1700,1733-1736,1795-1798,1831-1834,1893-1896,1929-1932,1977-1980,2013-2016,2061-2064,2097-2100,2145-2148,2195-2198,2245-2248,2295-2298,2337-2340,2379-2382,2421-2424,2471-2474,2521-2524,2578-2581,2633-2636,2688-2691,2752-2755,2830-2833,2884-2887,2987-2990,3097-3100
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_ce459306803a54 250,374,527,683,695,748,800,808,814-817,820,914
+release/open-source-inventory.json
+  s_55244eb93b97d1::t_856c2faf5148f2 1214
+scripts/__tests__/agentCampaignHarness.spec.ts
+  s_55244eb93b97d1::t_d34d22b1028b49 109-117
+scripts/agent-campaign/evidenceGateContract.ts
+  s_55244eb93b97d1::t_0ab6fbae147855 103
+scripts/e2eSpecDurations.json
+  s_55244eb93b97d1::t_a7635d956524ee 94-95
+src/app/__tests__/bootstrap.spec.ts
+  s_55244eb93b97d1::t_a8c3f950c90f8f 199,304,416,1524-1530
+src/app/bootstrap.ts
+  s_55244eb93b97d1::t_5f1cf5296d58c3 36,734
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.spec.ts
+  s_55244eb93b97d1::t_81fd628d35591b 1-187
+src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts
+  s_55244eb93b97d1::t_d60e1a073e88fe 1-66
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_cb7acb6b9094eb 7,85,94-95,181,409-413,1594-1611,1632,1641,1715-1736,1757-1800,1875,1885,1890-1897,2077-2117,2373-2387,2745-2762,2811-2842,2844-2860,3067-3121,3763-3920
+src/modules/AiRuntime/models/AgentRun.ts
+  s_55244eb93b97d1::t_d234e7af021f08 63,101-102
+src/modules/AiRuntime/models/ApplicationOwnedTool.ts
+  s_55244eb93b97d1::t_6db8e857a9a7cd 9-10
+src/modules/AiRuntime/models/IntentResult.ts
+  s_55244eb93b97d1::t_4f1f0aed5a0874 16-17
+src/modules/AiRuntime/models/MeasuredPreview.ts
+  s_55244eb93b97d1::t_b7303ffe08822b 3-21,57-58
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_55244eb93b97d1::t_6dcd595891ec9f 1-171
+src/modules/AiRuntime/models/RetainedCompilation.ts
+  s_55244eb93b97d1::t_20b99bcb2d25fe 3,42
+src/modules/AiRuntime/models/WorkflowCapability.ts
+  s_55244eb93b97d1::t_0f6033ffd96276 3-4,6,60-62,85-86,88,99-108,117-124
+src/modules/AiRuntime/presentations/views/ChatPanel.tsx
+  s_55244eb93b97d1::t_4cbc348bc58829 25,31,35,133-140,172-182,190,206-216
+src/modules/AiRuntime/presentations/views/__tests__/ChatPanel.spec.tsx
+  s_55244eb93b97d1::t_baad1483af2ac6 9-12,25,57-76,164-165,253-295,299-304,497,524-580,583
+src/modules/AiRuntime/services/applicationToolReceiptBudget.ts
+  s_55244eb93b97d1::t_e6f3f32fae7959 1-280
+src/modules/AiRuntime/stores/__tests__/agentRunStore.spec.ts
+  s_55244eb93b97d1::t_c45331b9bba5d7 8,74-142
+src/modules/AiRuntime/stores/agentRunStore.ts
+  s_55244eb93b97d1::t_8faa0d567d7b67 41,927-933,938,960,973-976,1374-1379,1532-1536
+src/modules/AiRuntime/stores/pendingActionConfirmationStore.ts
+  s_55244eb93b97d1::t_e90fe74b0deb5a 40,127,338,386,508
+src/modules/AiRuntime/useCases/__tests__/agentDomainPreviewAdapters.spec.ts
+  s_55244eb93b97d1::t_1bb558e2ac54bf 22,28,522-523,528,531-538,574,582,590
+src/modules/AiRuntime/useCases/__tests__/agentRiskApproval.spec.ts
+  s_55244eb93b97d1::t_94dd0bc22db09d 20-21,28-31,101-147,266-267,271,415-419
+src/modules/AiRuntime/useCases/__tests__/agentToolCatalog.spec.ts
+  s_55244eb93b97d1::t_e4669e7265dd52 26-27,429-432,476,599-607,627-640,642-643
+src/modules/AiRuntime/useCases/__tests__/agentWorkBudget.spec.ts
+  s_55244eb93b97d1::t_4a51356caa9792 72-138
+src/modules/AiRuntime/useCases/__tests__/applicationOwnedToolLoop.spec.ts
+  s_55244eb93b97d1::t_f4c8708dd73a19 21-22,171-193,227,233,237,246
+src/modules/AiRuntime/useCases/__tests__/articulationTransferPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_08344641f468c9 26,45,298,417-424,434,446,451-459,469,595,704
+src/modules/AiRuntime/useCases/__tests__/automateParameterRangeConfirmation.spec.ts
+  s_55244eb93b97d1::t_73d38aa2e9a326 64,114,169,177-178
+src/modules/AiRuntime/useCases/__tests__/automationLaneBinding.spec.ts
+  s_55244eb93b97d1::t_d400d91af249c8 86,316,324-325
+src/modules/AiRuntime/useCases/__tests__/backingVocalPlateWorkflow.spec.ts
+  s_55244eb93b97d1::t_9d634078eaa8b0 35-36,52,55,64-65,67,69-70,77-78,363-377,692,722-723,726-727,730,732-733,737-739,768-769,777-778,780-781,783-789,797-800,803-806,1093,1282-1308,1323,1692-1924
+src/modules/AiRuntime/useCases/__tests__/bassCompressorParameterPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_d6f2a7f6b26d40 62-63,146-161,296,322-323,325-326,328,360,362-369,371,588,591-592,751,754-755,757
+src/modules/AiRuntime/useCases/__tests__/bassCompressorPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_a462cd6d070d22 37,45,47,57,336,425,427-428,430-433,481-482,485-489,740,883,922-925,930,936-985
+src/modules/AiRuntime/useCases/__tests__/bassProcessingCopyPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_7d16600fbf6d92 41,58,319,486-488,490,492-508,511-513,556-557,561-564,879,1048,1338-1343,1347-1355
+src/modules/AiRuntime/useCases/__tests__/bulkSetCommands.spec.ts
+  s_55244eb93b97d1::t_009701aace5f4f 35,58,78,1724,1904-1909,1918-1925,1940,1979,2057,2110,2212,2361,2364-2386
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_55244eb93b97d1::t_392c1ab115d336 1-2126
+src/modules/AiRuntime/useCases/__tests__/concurrentCheckpointApproval.spec.ts
+  s_55244eb93b97d1::t_60b21b6d5a542e 50,145,153-154
+src/modules/AiRuntime/useCases/__tests__/confirmPendingChatActions.spec.ts
+  s_55244eb93b97d1::t_81405c8c5b3d0d 91,248,277,282,300-301,686,694-695,1164,1172-1173,1218,1250,1255,1273-1274,1326,1358,1363,1382-1383,1490,1524,1529,1556-1557,1797,1828,1833,1850-1851,1965,2014,2019,2038-2039,2110,2139,2144,2164-2165,2394-2397,2781,2802,2807,2824-2825,2880,2909,2914,2929-2930,2968,2975,3038,3043,3061-3062,3181,3227,3232,3240-3241,3379,3410,3415,3422-3423,3450,3501,3506,3515-3516,3597,3634,3639,3656-3657,3819,3857,3862,3870-3871,3890,3959,3964,3972-3973,4007,4090,4098,4115-4116,4176,4228,4236,4253-4254,4323,4385,4394,4411-4412,4563,4634,4642,4662-4663,4709,4770,4778,4800-4801,4941,4990,4998,5015-5016,5055,5105,5113,5131-5132,5161,5221,5226,5234-5235,5264,5301,5306,5314-5315,5338,5370,5375,5383-5384
+src/modules/AiRuntime/useCases/__tests__/confirmedCompoundBusActions.spec.ts
+  s_55244eb93b97d1::t_22b73d3d8ced41 69,468,476-477
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationCatalog.spec.ts
+  s_55244eb93b97d1::t_6303a2103024a5 4-8,65-323
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationExecution.spec.ts
+  s_55244eb93b97d1::t_ec12652f008fe9 51,54,58,64,87,91,340,387-422,447,451,475,494-504,506,516,602,606,616,635,678,681,747,756,775-779,844-845,870,931-954,999,1015-1084,1118-1122,1127,1152,1154-1157,1200-1204,1303,1305
+src/modules/AiRuntime/useCases/__tests__/creativeInterpretationPlanning.spec.ts
+  s_55244eb93b97d1::t_aca884592f3ba8 3-4,10,12-13,15,19-21,85-87,454-516,518-520,537,571-595,601,604,606,640
+src/modules/AiRuntime/useCases/__tests__/deleteMutedEmptyTracksPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_13d1900e3a4d2b 33,46,245-258,315,406,408-409,412-414,428-429,432-437,555,564,777,780
+src/modules/AiRuntime/useCases/__tests__/drumBusPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_470fe56d758d87 50,68,70,73-75,84-85,660,690,693-694,699,702,704-708,711,740-741,749-750,752,754-758,1118-1119,1122-1129,1133-1136,1144,1148-1208,1485,1676,4319-4373,4378,4381,4467,4472,4475,4529,4553
+src/modules/AiRuntime/useCases/__tests__/drumPreviewBranchesPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_2be65f2327e8dd 43,63,65,68-79,383,418,420-421,424-426,465-466,470-473,708,713
+src/modules/AiRuntime/useCases/__tests__/getAgentApprovalView.spec.ts
+  s_55244eb93b97d1::t_0d3be4c66f35b2 36-37,331-332,338-343,346,354,370-373,392-395
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentAdversarial.spec.ts
+  s_55244eb93b97d1::t_08b0a1db6e6eed 14-15,48,110-122,489-493,506
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentCompilation.spec.ts
+  s_55244eb93b97d1::t_620a79684004a7 23-24,105-125,446,457,503,514,550,563,582,608,619,639,650,672,683,719,730,758,769,782,793,817,843,876,887,909,920,941,952,963,976,984,995,1045,1056,1079,1090,1137,1148,1172,1183,1196,1225,1245,1280,1291,1313,1324,1333,1349,1360,1371,1379,1390,1409,1420,1436,1447,1471,1489,1508,1519,1531,1542,1550,1563,1582,1603,1623,1655,1666,1673,1692,1710,1728,1766,1782,1784-1785
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentConformance.spec.ts
+  s_55244eb93b97d1::t_4eb84cbc80384d 69,76,78-105,268-273,413,416-418,444,447,468-473,481-482,511
+src/modules/AiRuntime/useCases/__tests__/highLevelIntentExecution.spec.ts
+  s_55244eb93b97d1::t_87d9a65c995415 70,73,77-79,81-88,282-287
+src/modules/AiRuntime/useCases/__tests__/matchSelectorApprovalRevalidation.spec.ts
+  s_55244eb93b97d1::t_64d7748391589b 52,612,620-621
+src/modules/AiRuntime/useCases/__tests__/materializeActionStateGuards.spec.ts
+  s_55244eb93b97d1::t_8b5c7bc373d798 3-4,79-141
+src/modules/AiRuntime/useCases/__tests__/metricGoalAdmission.spec.ts
+  s_55244eb93b97d1::t_7f8efa60466d59 1-513
+src/modules/AiRuntime/useCases/__tests__/metricGoalWorkflowFixture.ts
+  s_55244eb93b97d1::t_64f7bac3a86c1d 1-351
+src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts
+  s_55244eb93b97d1::t_e53eab7e69a4fb 1-1247
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_55244eb93b97d1::t_adf0890fd9fb85 1-269
+src/modules/AiRuntime/useCases/__tests__/midiOverlapPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_8e726c742c7160 39,57,358,393,395-396,399-401,454-455,459-462,587,751
+src/modules/AiRuntime/useCases/__tests__/mixPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_2acae021ad5a1a 58-59,203-218,318,363-364,366-368,370,383,395-408
+src/modules/AiRuntime/useCases/__tests__/musicalRangeResolution.spec.ts
+  s_55244eb93b97d1::t_58fd0d08053423 21,94,301,316,321
+src/modules/AiRuntime/useCases/__tests__/parsePromptToActions.spec.ts
+  s_55244eb93b97d1::t_f8bd400bd14244 11-16,25-36,257,260-330,332-334,371-386,514-596,787-820,822-834,836-837,840-843,851,870-903,905-917,919-920,923-926,934,959-984,986-1007,1009-1021,1023-1024,1027-1030,1067-1076,1127-1152,1154-1175,1178-1181,1206-1235,1237-1252,1255-1258,1384-1386,1392-1393,1401,1403-1411,1415-1424,1427,1433,1438-1439,1477-1479,1504-1506,1513,1520,1524-1529,1542-1548,1603-1610,1612-1631,1657-1660,1672-1674,1693,1706-1709,1731-1733,1745,1765,1772-1790,1815,1838,1858,1878,1895-1898,1921-1924,1937-1940,1942-1949,1998,2004-2015,2019,2094-2102,2155-2180,2182-2198,2201-2204,2241-2244,2295-2298,2364-2374,2388-2398,2451-2458,2476-2479,2556-2559,2572,2612-2622,2670,2709,2724-2727,2740-2749,2752-2753,2788-2791,2814,2825-2831,2850-2854,2860-2862,2874-2876,2890-2895,2941,2949-2951,2970-2976
+src/modules/AiRuntime/useCases/__tests__/pendingChatActions.spec.ts
+  s_55244eb93b97d1::t_67f69aadd91f9f 12,30,182,195,199-203,231
+src/modules/AiRuntime/useCases/__tests__/perceptualGoalAdmission.spec.ts
+  s_55244eb93b97d1::t_241edb5ed143c4 12-13,153-195,197-198
+src/modules/AiRuntime/useCases/__tests__/planPromptActionsCorrectionEvidence.spec.ts
+  s_55244eb93b97d1::t_21582cee923ebe 12,15,18-20,132-174,197,220,222-225,228,296-297,300-304,312,314-317,320,364,372,374-377,380,475
+src/modules/AiRuntime/useCases/__tests__/planWithMeasurements.spec.ts
+  s_55244eb93b97d1::t_0fd153fe33803e 1-785
+src/modules/AiRuntime/useCases/__tests__/planningInterpretation.spec.ts
+  s_55244eb93b97d1::t_83a416fa817561 425,427-429,433
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_479da1e8edb624 62-63,305-337,460,489
+src/modules/AiRuntime/useCases/__tests__/promptStemImportRecovery.spec.ts
+  s_55244eb93b97d1::t_74202f1d304106 8,27-28,33,40,43-51,57-62,75-92,161,175,227-380,409-427,467,473-474,479-489,524,537,555,560,575,580,594,600,613-614,619,634,647-648,664,678-688,692-696,700,705,709-710,713,718-767
+src/modules/AiRuntime/useCases/__tests__/protectedTargetCollaboratorDrift.spec.ts
+  s_55244eb93b97d1::t_5b5be81157fb04 43-44,47-50,57-67,204,210,223-270,278-279
+src/modules/AiRuntime/useCases/__tests__/recipeTools.spec.ts
+  s_55244eb93b97d1::t_866d171991ed2e 4-5,17,21-23,1416-1417,1426,1436-1480,1482-1483,1514-1521,1537-1559,1590-1593
+src/modules/AiRuntime/useCases/__tests__/refinePendingProposal.spec.ts
+  s_55244eb93b97d1::t_2a4f2bb774ef70 57,124-125,233-234,237-244,248-249,253-254,262,877
+src/modules/AiRuntime/useCases/__tests__/refinementValueBinding.spec.ts
+  s_55244eb93b97d1::t_b5f2bd412215f1 58,5935-5936,6073,6075-6082,6086-6087,6093-6094,6102,6596
+src/modules/AiRuntime/useCases/__tests__/relativeToLastCommit.spec.ts
+  s_55244eb93b97d1::t_688d771ce98323 1,21,30,37,48,57,88-104,204-205,235-238,242-243,245-258,262-263,267-270,276-278,360-388,390-483,1167-1198,1200-1202,1204-1218,1760,1789-1847
+src/modules/AiRuntime/useCases/__tests__/reproposePendingChatActions.spec.ts
+  s_55244eb93b97d1::t_244bee8c3cda06 3,14-15,106,108,172-173,178,183-184,219-223,265-285
+src/modules/AiRuntime/useCases/__tests__/retainedTransformLocalContext.integration.spec.ts
+  s_55244eb93b97d1::t_821cc8120ead6c 34,142-145,214-215
+src/modules/AiRuntime/useCases/__tests__/sendChatMessage.spec.ts
+  s_55244eb93b97d1::t_d632f36e83779c 711-714
+src/modules/AiRuntime/useCases/__tests__/sharedVocalFxBusesWorkflow.spec.ts
+  s_55244eb93b97d1::t_fd789d01d3ef09 44,52,54-55,62-68,74-112,608,638,641-642,645,647-648,651-654,683-684,692-693,695,697-701,767-768,771-777,1124-1165,1169,1171,1287,1291,1311,1314,1322,1324,1364,1414,1452,1458,1462,1633,1661,1701,1723
+src/modules/AiRuntime/useCases/__tests__/stampProcessingOnlyParameterPolicy.spec.ts
+  s_55244eb93b97d1::t_39624200423b54 15-16,274-277
+src/modules/AiRuntime/useCases/__tests__/stemImportStartingMixWorkflow.spec.ts
+  s_55244eb93b97d1::t_42d48a2667588a 38,52-53,60-66,73-113,511,619-621,623-630,635,642-646,648-650,662,667-672,802-854,858,861,919,939,949,951,968,975,1005,1026,1037,1040,1049,1051,1063,1083,1092,1105,1127,1144,1197,1207,1219,1236,1272,1301,1327,1350,1374,1399,1416,1431,1449
+src/modules/AiRuntime/useCases/__tests__/submitAdmittedPromptRequest.spec.ts
+  s_55244eb93b97d1::t_3ba4effe5dd7a4 5-10,45,50,112,193-201,226-386
+src/modules/AiRuntime/useCases/__tests__/syncopatedArpeggioPromptWorkflow.spec.ts
+  s_55244eb93b97d1::t_1439ae1e3b120d 34,51-52,55-73,265,359-366,373,387,392-398,405,528
+src/modules/AiRuntime/useCases/__tests__/transformToolApproval.spec.ts
+  s_55244eb93b97d1::t_ae9cf815808d8f 39,147-150,250-253
+src/modules/AiRuntime/useCases/__tests__/transformToolCompile.spec.ts
+  s_55244eb93b97d1::t_b3fdeba0e0ea7e 14-15,114-134,140-141,147-148,158-159,232-234,243-244,331-332,337-339,360,396-401,532-533,543-544,558-559,733-741,743-767,769-770,772-776,817-818,831-832,846-847,917-928,930-953,955,958-962,998-1033,1036-1045,1564-1565,1568-1572,1582-1583,1595-1600,1626-1627,1657-1658,1668-1669,1722-1723,1753-1754,1768-1769,1786-1787,2184-2186,2192-2193,2198-2199,2212-2213,2293
+src/modules/AiRuntime/useCases/__tests__/verseHallAutomationWorkflow.spec.ts
+  s_55244eb93b97d1::t_18fec3213a539b 33,52,132-146,251-264,287,313,315-316,319-321,354-355,358-366,682-684
+src/modules/AiRuntime/useCases/__tests__/vibeMixingControlLoop.spec.ts
+  s_55244eb93b97d1::t_e3878121953334 37,126-127,131,133-137,252-254
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixAdmissionScoping.spec.ts
+  s_55244eb93b97d1::t_18ecb890bbb01a 4,6,70-125
+src/modules/AiRuntime/useCases/__tests__/wholeProjectVibeMixPlan.spec.ts
+  s_55244eb93b97d1::t_e8c768b361866e 34,43-44,46-47,58-59,61,65-140,293,378-397,408,410,415-421,432,675-748,750,803,805,838,885-888,899,937,1029,1032,1083,1096,1113,1140,1149,1157,1168,1199,1220
+src/modules/AiRuntime/useCases/admitMetricIntent.ts
+  s_55244eb93b97d1::t_ebbcc7ea631cb7 1-210
+src/modules/AiRuntime/useCases/admitPlanningInterpretation.ts
+  s_55244eb93b97d1::t_02b0ead00362b4 7-8,10,15-100,103,120,131,148-175
+src/modules/AiRuntime/useCases/admitWorkflowMetricIntake.ts
+  s_55244eb93b97d1::t_d7937febca899e 1-58
+src/modules/AiRuntime/useCases/agentReference/__tests__/bridgeBackingVocalPlatePlan.spec.ts
+  s_55244eb93b97d1::t_ed612aa56150fd 1-3,6-8,10-14,39-108
+src/modules/AiRuntime/useCases/agentReference/__tests__/creativeAuthorityGrounding.spec.ts
+  s_55244eb93b97d1::t_687bfd2ab6d356 197-245,1070
+src/modules/AiRuntime/useCases/agentReference/bridgeBackingVocalPlatePlan.ts
+  s_55244eb93b97d1::t_2e53ffb0abd48a 3,25,161-174,180-196
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_55244eb93b97d1::t_b52deab4560f5f 10,15,240,4740-4754,7039-7130,7402,7696-7701,8032-8038,8278-8313
+src/modules/AiRuntime/useCases/agentReference/composeVerifiedProviderProposalScope.ts
+  s_55244eb93b97d1::t_2eb6cc7f681bde 15,40-53
+src/modules/AiRuntime/useCases/agentReference/freezeWorkflowNativeLiteralUses.ts
+  s_55244eb93b97d1::t_850f3bab3f6d40 1-71
+src/modules/AiRuntime/useCases/agentReference/getBulkDeviceInsertionTrackScope.ts
+  s_55244eb93b97d1::t_be10eab1126f22 3,17-18,21
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/__tests__/getPromptClauses.spec.ts
+  s_55244eb93b97d1::t_ec3b32dfcf4bf6 1-27
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/getPromptClauses.ts
+  s_55244eb93b97d1::t_2808b4f06ad24e 47-54,58
+src/modules/AiRuntime/useCases/agentReference/groundingStrategies/postTargetScopeAdmissionStrategy.ts
+  s_55244eb93b97d1::t_d2f0240bbaf0c5 18,153
+src/modules/AiRuntime/useCases/agentReference/refinementRequestReading.ts
+  s_55244eb93b97d1::t_62da602998c4aa 66-67
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/persistPromptActionConfirmation.spec.ts
+  s_55244eb93b97d1::t_d1d82b3ae398c9 12,21,59,190
+src/modules/AiRuntime/useCases/agentRequestOrchestration/__tests__/resolveConfirmationAdmission.spec.ts
+  s_55244eb93b97d1::t_0e00b099e09564 53-54
+src/modules/AiRuntime/useCases/agentRequestOrchestration/executeConfirmedCommandBatch.ts
+  s_55244eb93b97d1::t_e9eb1f47e1fa43 362
+src/modules/AiRuntime/useCases/agentRequestOrchestration/materializePromptCommandPlan.ts
+  s_55244eb93b97d1::t_08751113174aa4 120-123,133,164-165,173-174,199,271,295
+src/modules/AiRuntime/useCases/agentRequestOrchestration/orchestratePromptChatRequest.ts
+  s_55244eb93b97d1::t_58e5bae3d16f47 33,720,982
+src/modules/AiRuntime/useCases/agentRequestOrchestration/persistPromptActionConfirmation.ts
+  s_55244eb93b97d1::t_32c3e5c9f0f025 38,94-117,154,175
+src/modules/AiRuntime/useCases/agentRequestOrchestration/proposeNextScheduledBatch.ts
+  s_55244eb93b97d1::t_c5d227920d6bda 136,209
+src/modules/AiRuntime/useCases/agentRequestOrchestration/resolveConfirmationAdmission.ts
+  s_55244eb93b97d1::t_fdf6bf32ecbf43 18-19,21,72-74,313-319,333-345
+src/modules/AiRuntime/useCases/agentRunLifecycle.ts
+  s_55244eb93b97d1::t_fab6876ca26ef1 474,499-512,519-543,546-548,2481
+src/modules/AiRuntime/useCases/agentWorkBudget.ts
+  s_55244eb93b97d1::t_6cd1c5ace9c528 119-147,150
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolvePresetActions.ts
+  s_55244eb93b97d1::t_47b7731f607ac4 3,7-8,11,16-18,21
+src/modules/AiRuntime/useCases/aiRuntimeQueries/resolveRawPresetActions.ts
+  s_55244eb93b97d1::t_36cbc2d38432f4 1-21
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_55244eb93b97d1::t_f97baef4603907 10,26,44,58-65,105-108,110,192,195-199,207,210,239-243,1365,1375,1822,1839,1843,1864,1877,1939,1942,2004-2024,2189-2193,2215,2237-2252,2254,2257-2258,2263-2284
+src/modules/AiRuntime/useCases/bindMetricGoalsToBatch.ts
+  s_55244eb93b97d1::t_ce173902415649 1-70
+src/modules/AiRuntime/useCases/collectMetricGoalProof.ts
+  s_55244eb93b97d1::t_609b06daf9a1ce 1-48
+src/modules/AiRuntime/useCases/compileAgentActionExecution.ts
+  s_55244eb93b97d1::t_d8bdb0ab82d048 6,10,19-20,24-73,75-82,94-100,115,126,134,141
+src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts
+  s_55244eb93b97d1::t_a2211d71334c0c 11,13,28,95-107,109
+src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts
+  s_55244eb93b97d1::t_8a55e44fe0087b 28-31,107,109,116,183-220
+src/modules/AiRuntime/useCases/composeMeasuredAnswer.ts
+  s_55244eb93b97d1::t_73c5f8fdd471c9 18,146,149-150,153-161,175-177
+src/modules/AiRuntime/useCases/createMetricIntentSelectionSchema.ts
+  s_55244eb93b97d1::t_ecf19a80c7f170 1-49
+src/modules/AiRuntime/useCases/createPlanningCandidateView.ts
+  s_55244eb93b97d1::t_dac429e8ba6ad2 5-7,79,82-84,102-117,149-158,194-297,308-314
+src/modules/AiRuntime/useCases/createPlanningInterpretationToolSchema.ts
+  s_55244eb93b97d1::t_31dba75260fb5b 9,11,17,35-40,52
+src/modules/AiRuntime/useCases/evaluateMetricGoalAdmission.ts
+  s_55244eb93b97d1::t_ea7e77f4ee13af 1-520
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  s_55244eb93b97d1::t_bd28f97b014a32 1-293
+src/modules/AiRuntime/useCases/executePreviewMeasurement.ts
+  s_55244eb93b97d1::t_c0b4953c5976f1 3-6,56-58,208-218,278-288
+src/modules/AiRuntime/useCases/executeRecipeExpansion.ts
+  s_55244eb93b97d1::t_952ff54fbf5fa6 2,6,19,63-80,87,92
+src/modules/AiRuntime/useCases/expandMixRecipe.ts
+  s_55244eb93b97d1::t_71d9e1023e54fa 294-295
+src/modules/AiRuntime/useCases/getAgentApprovalView.ts
+  s_55244eb93b97d1::t_ceee40aa4cd7a8 2,6,14,16-17,103-106,199-207,232-241,378-456,476-489,491-492
+src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts
+  s_55244eb93b97d1::t_71d8ef987395ef 65,294
+src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts
+  s_55244eb93b97d1::t_1dcbd559056c0b 20,38
+src/modules/AiRuntime/useCases/llmOrchestration/__tests__/mandatoryPlanningTools.spec.ts
+  s_55244eb93b97d1::t_d716c56da8fddc 20,42,61,64,132-137,139-141,229-281,555,886-1135
+src/modules/AiRuntime/useCases/llmOrchestration/getHostedProposalWireToolSchema.ts
+  s_55244eb93b97d1::t_3b89abfdf9ee8a 63-64,66-73,77-88
+src/modules/AiRuntime/useCases/materializeActionStateGuards.ts
+  s_55244eb93b97d1::t_c083dec7f1b30a 5,549-551,553,807-874
+src/modules/AiRuntime/useCases/metricGoalContractTypes.ts
+  s_55244eb93b97d1::t_d226c6390d426a 1-12
+src/modules/AiRuntime/useCases/metricGoalStateCodec.ts
+  s_55244eb93b97d1::t_68bd3c320d2859 1-501
+src/modules/AiRuntime/useCases/objectiveMetricProjection.ts
+  s_55244eb93b97d1::t_b68f73b11c2124 1-68
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_55244eb93b97d1::t_eaee314cfa9c74 4,6,18,24,33,42,45,63,65,94,97,99,101,118-119,123-124,127,134,153,174-176,465-487,501-502,509,555,572-620,635,645,651,657,728-735,837,841-842,878-964,968,1025-1058,1062-1063,1070-1091,1101-1104,1107-1110,1118-1119,1131,1158,1170-1175,1178,1191,1196-1197,1256-1287,1419-1464,1561,1564-1572,1586-1591,1696-1706,1708,1820-1884,1886,1978-2018
+src/modules/AiRuntime/useCases/planAgentRun.ts
+  s_55244eb93b97d1::t_315a9360f922f0 13-15,36,253-268,303,344
+src/modules/AiRuntime/useCases/planningProviderSchema.ts
+  s_55244eb93b97d1::t_8e7484d058c4c1 2-6,9,16-17,20-25
+src/modules/AiRuntime/useCases/prepareCreativeInterpretationCatalog.ts
+  s_55244eb93b97d1::t_29a3c36aee5100 16,18-19,21-22,56-112,168-171,200-204,229-232,255-267,271-281,359-360,366-371,377-380,382,399-400
+src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts
+  s_55244eb93b97d1::t_a8f415d33b421b 1-417
+src/modules/AiRuntime/useCases/prepareMetricIntentCatalog.ts
+  s_55244eb93b97d1::t_7fc39bcb74f30e 1-230
+src/modules/AiRuntime/useCases/prepareWorkflowMetricScopes.ts
+  s_55244eb93b97d1::t_a872edb9649bf3 1-28
+src/modules/AiRuntime/useCases/projectAnswerProviderReceipt.ts
+  s_55244eb93b97d1::t_274126b6b10519 12,22-65
+src/modules/AiRuntime/useCases/projectPlanningProviderToolSchemas.ts
+  s_55244eb93b97d1::t_be43577eb856f9 1-8,11,17-23,29-30,39-41,53-78
+src/modules/AiRuntime/useCases/projectWorkflowMetricToolSchemas.ts
+  s_55244eb93b97d1::t_e6dc446266351c 1-32
+src/modules/AiRuntime/useCases/readNativeLiteralCommandBinding.ts
+  s_55244eb93b97d1::t_eccfa794c6d9de 1-98
+src/modules/AiRuntime/useCases/readRequestMetricNumbers.ts
+  s_55244eb93b97d1::t_401b67a6b1014e 1-44
+src/modules/AiRuntime/useCases/reproposePendingChatActions.ts
+  s_55244eb93b97d1::t_932073153be80b 21,24-26,91-94,245,255-264,298,301,309,312,316,337,341-342,353-376,385,394,426-500
+src/modules/AiRuntime/useCases/submitAdmittedPromptRequest.ts
+  s_55244eb93b97d1::t_e1b41347c5d4c2 3-8,14,18,29,37,50-53,73-109,212-217,245-287,378,404,474
+src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts
+  s_55244eb93b97d1::t_9d62e5267f6310 3-9,11-12,18,28-92,97-107,113,138-144
+src/modules/Arrangement/AGENTS.md
+  s_55244eb93b97d1::t_cf9ec46bac05b2 27
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  s_55244eb93b97d1::t_770f82752b48ab 84-89,992-1029
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  s_55244eb93b97d1::t_baa839fda087cd 13
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  s_55244eb93b97d1::t_e6616507d5df61 726-732,735,737
+src/modules/Arrangement/models/TimelineTrackExtent.ts
+  s_55244eb93b97d1::t_180fa3bb34e55a 1-50
+src/modules/Arrangement/models/__tests__/TimelineTrackExtent.spec.ts
+  s_55244eb93b97d1::t_d6f04a030b562b 1-99
+src/modules/Arrangement/presentations/helpers/__tests__/timelineMouse.spec.ts
+  s_55244eb93b97d1::t_5b008b4e0f1a2d 7-8,56-67
+src/modules/Arrangement/presentations/helpers/timelineMouse.ts
+  s_55244eb93b97d1::t_690482c7bd976c 7,37
+src/modules/Arrangement/presentations/hooks/useTimelineInteractions.ts
+  s_55244eb93b97d1::t_b37b29945dae90 14,533-535,810
+src/modules/Arrangement/presentations/renderers/__tests__/createCanvasRenderer.spec.ts
+  s_55244eb93b97d1::t_9c49203fffdb2a 315-344
+src/modules/Arrangement/presentations/renderers/createCanvasRenderer.ts
+  s_55244eb93b97d1::t_dcc2d8bfb5cd40 5,121,213,274
+src/modules/Arrangement/presentations/renderers/createWebGpuRenderer.ts
+  s_55244eb93b97d1::t_29761855a6af48 12,448-454,589
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_55244eb93b97d1::t_0dd92db81c2f0a 12,432
+src/modules/Arrangement/presentations/views/TimelineSurface.tsx
+  s_55244eb93b97d1::t_9ef1d1763c69d5 11,16-22,91-98,100-101,103,107,111-112,319-321
+src/modules/Arrangement/presentations/views/TrackListView.tsx
+  s_55244eb93b97d1::t_0dc61ea3ea0944 36-37,45-56,84-85,116-118,123-137,349,385-400,416-421
+src/modules/Arrangement/presentations/views/__tests__/TakeLanesView.spec.tsx
+  s_55244eb93b97d1::t_089dd867a4973a 108-118
+src/modules/Arrangement/presentations/views/__tests__/TimelineSurface.spec.tsx
+  s_55244eb93b97d1::t_db98f21bc968fb 10,103-105,148,302-332,458-461,463-466,488-502,504-535,545,551-552,556
+src/modules/Arrangement/presentations/views/__tests__/TrackListView.spec.tsx
+  s_55244eb93b97d1::t_b374115c8f2954 3-4,8,105-108,111,306-309,318,322-324,329-531
+src/modules/Arrangement/presentations/views/index.ts
+  s_55244eb93b97d1::t_c7847fe9f55ea0 13
+src/modules/Arrangement/presentations/views/timelineHorizontalScrollbar.ts
+  s_55244eb93b97d1::t_b96b21a794005d 1-6
+src/modules/Arrangement/stores/__tests__/deviceWriteBoundaryClosure.spec.ts
+  s_55244eb93b97d1::t_5dc761e4446963 531-535,552-553,558-563,570-572,574-575,577,862-865,2181
+src/modules/Arrangement/stores/__tests__/timelineViewStore.spec.ts
+  s_55244eb93b97d1::t_85ff034c9fbc43 3,18-30,129-132,147-166,186-190,211-213,224-228,230-235,239-240,242,256,306-309
+src/modules/Arrangement/stores/timelineViewStore.ts
+  s_55244eb93b97d1::t_cc85a967f4539f 3-4,13-14,101-105,112-124,128-129,155
+src/modules/Arrangement/transformers/__tests__/getTimelineContentHeight.spec.ts
+  s_55244eb93b97d1::t_7bedba3bbc5399 1-90
+src/modules/Arrangement/transformers/getTimelineContentHeight.ts
+  s_55244eb93b97d1::t_15aaa7364be750 1-17
+src/modules/Arrangement/useCases/__tests__/buildTimelineRenderModel.spec.ts
+  s_55244eb93b97d1::t_a3ce3c9e973266 7,952-984
+src/modules/Arrangement/useCases/__tests__/detectVariationLaneEnabling.spec.ts
+  s_55244eb93b97d1::t_9681ff29dcc87f 1-55
+src/modules/Arrangement/useCases/__tests__/hasVariationLanes.spec.ts
+  s_55244eb93b97d1::t_06aa419d5d82ca 1-40
+src/modules/Arrangement/useCases/__tests__/initTimelineScrollClamp.spec.ts
+  s_55244eb93b97d1::t_01cec4cb672ceb 1-98
+src/modules/Arrangement/useCases/buildTimelineRenderModel.ts
+  s_55244eb93b97d1::t_b4867448c28c56 27,389-432
+src/modules/Arrangement/useCases/detectVariationLaneEnabling.ts
+  s_55244eb93b97d1::t_aaf10347880742 1-29
+src/modules/Arrangement/useCases/hasVariationLanes.ts
+  s_55244eb93b97d1::t_37b827f0c0b41a 1-7
+src/modules/Arrangement/useCases/index.ts
+  s_55244eb93b97d1::t_a9f6ebdaf5ac12 255-258
+src/modules/Arrangement/useCases/initTimelineScrollClamp.ts
+  s_55244eb93b97d1::t_9c0205baa4e611 1-14
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  s_55244eb93b97d1::t_041a344fe9882e 10,15,132-133,176-179
+src/modules/Arrangement/useCases/recording/fitFlatTakesToClip.ts
+  s_55244eb93b97d1::t_b04ec71f9ad85d 1-35
+src/modules/Arrangement/useCases/recording/withMinimumRecordingLength.ts
+  s_55244eb93b97d1::t_4dbd9aff16a0f7 1-14
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestAutomationSubLane.spec.ts
+  s_55244eb93b97d1::t_0f2f9099050c7e 245-246,292-339
+src/modules/Arrangement/useCases/timelineInteractions/__tests__/hitTestRowsBelowVariationLanes.spec.ts
+  s_55244eb93b97d1::t_e8dd314d471bb3 1-123
+src/modules/Arrangement/useCases/timelineInteractions/getTrackAtY.ts
+  s_55244eb93b97d1::t_9992c92ec5d8ac 1-2,4,9-10,13
+src/modules/Arrangement/useCases/timelineInteractions/hitTestAutomationSubLane.ts
+  s_55244eb93b97d1::t_9a77262e1d9354 4,71
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClip/hitTestClip.ts
+  s_88fc7e0d05bab6::t_5758f9655226eb 7,45-46,48,89-90
+src/modules/Arrangement/useCases/timelineInteractions/hitTestClipEdge.ts
+  s_55244eb93b97d1::t_22dc42be923f98 1,32-36
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  s_55244eb93b97d1::t_a144cfd007f5e8 40-47,56-69,77,93-98,203-208,223-224,227
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  s_55244eb93b97d1::t_a3a71172d7cbd0 153-198
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  s_55244eb93b97d1::t_e1254304f88ee0 4,18,99-146
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  s_55244eb93b97d1::t_1787906a22d835 6-9,14-31,37-47,72-84,114,135-154,168-171,175-176
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_55244eb93b97d1::t_b67cb56985955e 85-91,217-220,224-238,255-256,481,489-491,753,847,875-877
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_55244eb93b97d1::t_5c4fd9f0544edb 2968-3152
+src/modules/Project/useCases/projectPersistence/saveProject/__tests__/saveProject.snapshotContinuation.integration.spec.ts
+  s_55244eb93b97d1::t_f323d5a81af3f7 1-445
+src/modules/Project/useCases/projectPersistence/saveProject/saveProject.ts
+  s_55244eb93b97d1::t_cf24c184dfc6ff 12,26-27,34-91,193-195
+src/modules/TimelineEditor/presentations/views/ArrangeView.tsx
+  s_55244eb93b97d1::t_c073b39cb18371 24,36-41,58-59,70-78,210-219,253,273-278,289,319-326,344,354-355,357-365,425,427
+src/modules/TimelineEditor/presentations/views/Timeline/ScratchPadView.tsx
+  s_55244eb93b97d1::t_effef453bf9363 36-37,68-70,74-79,126,131,203
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ScratchPadView.spec.tsx
+  s_55244eb93b97d1::t_854fae60c45999 40,47,54,67,74-78,80,82,84-92,94-97,102,109,124,135,145,157,167,179,189,197,211
+src/modules/TimelineEditor/presentations/views/Timeline/scratchPadHeight.ts
+  s_55244eb93b97d1::t_d148ed0011a78f 1-7
+src/modules/TimelineEditor/presentations/views/__tests__/ArrangeView.spec.tsx
+  s_55244eb93b97d1::t_439fa6813c994c 9,54-71,79,136,187,191-200,202-204,618-669,781-832
+src/modules/TimelineEditor/presentations/views/__tests__/arrangementLayout.spec.ts
+  s_55244eb93b97d1::t_1608050e26f29b 1-59
+src/modules/TimelineEditor/presentations/views/__tests__/useArrangementMinimumHeight.spec.tsx
+  s_55244eb93b97d1::t_399af2f84c1a3f 1-168
+src/modules/TimelineEditor/presentations/views/arrangementLayout.ts
+  s_55244eb93b97d1::t_0cdc4739cb471b 1-49
+src/modules/TimelineEditor/presentations/views/index.ts
+  s_55244eb93b97d1::t_27b292f509d74e 10
+src/modules/TimelineEditor/presentations/views/useArrangementMinimumHeight.ts
+  s_55244eb93b97d1::t_b6f1aa34a04cf3 1-54
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_55244eb93b97d1::t_c82cc25f74e910 462-468,3380-3407,3473
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  s_55244eb93b97d1::t_ead2773f707385 1-557
+src/modules/Transport/workers/__tests__/schedulerWorkerTimerPhaseStall.spec.ts
+  s_55244eb93b97d1::t_c1bebc936f1969 1-393
+src/modules/WorkspaceShell/handlers/scratchPad/__tests__/scratchPadHandlers.spec.ts
+  s_55244eb93b97d1::t_48a7885cc82ceb 42-50,75-82
+src/modules/WorkspaceShell/handlers/scratchPad/handleCaptureScratchPad.ts
+  s_55244eb93b97d1::t_d385cda3ba76b7 12
+src/modules/WorkspaceShell/handlers/scratchPad/handleToggleScratchPad.ts
+  s_55244eb93b97d1::t_9e8bc0343f8255 9
+src/modules/WorkspaceShell/models/WorkspaceState.ts
+  s_55244eb93b97d1::t_f6d020cad5c773 46-53,105-106
+src/modules/WorkspaceShell/presentations/components/InstrumentBottomPanel.tsx
+  s_55244eb93b97d1::t_f28d5efd3e2ed1 9-10,33-36,38-39
+src/modules/WorkspaceShell/presentations/components/__tests__/InstrumentBottomPanel.spec.tsx
+  s_55244eb93b97d1::t_d2b35fc2b799a0 28-48
+src/modules/WorkspaceShell/presentations/components/agentWorkspace/AgentApprovalSection.tsx
+  s_55244eb93b97d1::t_4930ff894e2134 47-52,411-419,444
+src/modules/WorkspaceShell/presentations/hooks/__tests__/usePromptExecution.spec.ts
+  s_55244eb93b97d1::t_014a4c41bc6259 137-143,218-220,353-374,376,378-380,382-391,394-396,398-399,401,405-414,421-422,425,431-434,436-438,602,660,711,794-795,802,805-806,810,884
+src/modules/WorkspaceShell/presentations/hooks/usePromptExecution.ts
+  s_55244eb93b97d1::t_c03932e5d00e97 231
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_55244eb93b97d1::t_6ec2c76162cd08 9,31,33,62-67,181,190-191,213,258,269-275,277,386-404,687-688,747-752,759-763,971,979,1035-1039,1073-1076,1080-1084
+src/modules/WorkspaceShell/presentations/views/__tests__/AgentWorkspace.spec.tsx
+  s_55244eb93b97d1::t_46f90f124d7522 229-230,677-720
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_55244eb93b97d1::t_d671d4409c010c 42,102,112-116,682-827,894-943
+src/modules/WorkspaceShell/useCases/togglePanel/__tests__/panelToggles.spec.ts
+  s_55244eb93b97d1::t_200eaf7c4ce699 68-73
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/closeScratchPad.spec.ts
+  s_55244eb93b97d1::t_b0e4548a0add42 18,21
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/__tests__/panelToggles.spec.ts
+  s_55244eb93b97d1::t_bdc9e7c6dd8776 20-21
+src/modules/WorkspaceShell/useCases/togglePanel/panelToggles/closeScratchPad.ts
+  s_55244eb93b97d1::t_7fe6014bcab988 4
+tests/e2e/aiProviderToolAuthority.spec.ts
+  s_55244eb93b97d1::t_aa2962f4e081f5 5,183-190,274
+tests/e2e/controlledRecipesEffect.spec.ts
+  s_55244eb93b97d1::t_f018ccf20d6d8a 5,294-299,307,317
+tests/e2e/devServerOnlySpecs.ts
+  s_55244eb93b97d1::t_54b625249ab2aa 23
+tests/e2e/exportAudioEvidence.spec.ts
+  s_55244eb93b97d1::t_abc441b65b33c3 4,8-13,16-21,23-62,68,82-83,95-102,112,114,117-127,132,136-139,150
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  s_55244eb93b97d1::t_95875ab9006cb7 1-100
+tests/e2e/exportAudioEvidenceHarness.ts
+  s_55244eb93b97d1::t_4757eeac42074d 1-115
+tests/e2e/metricGoalAdmission.spec.ts
+  s_55244eb93b97d1::t_2d9ca5848cfc44 1-379
+tests/e2e/midiCycleTakeAcceptance.spec.ts
+  s_55244eb93b97d1::t_82d8ada228efea 203-215,217
+tests/e2e/punchLoopTakeAcceptance.spec.ts
+  s_55244eb93b97d1::t_07749e2ec9effa 1181,1192-1194,1200-1201,1218,1222
+tests/e2e/recordEditPlayback.spec.ts
+  s_55244eb93b97d1::t_9a67af45b8182d 51-85,146-148,151-180
+tests/e2e/scriptedToolProvider.ts
+  s_55244eb93b97d1::t_252a8619b99d51 83-110
+tests/e2e/transientShaperEffect.spec.ts
+  s_55244eb93b97d1::t_061b9d8ed5bbc3 8,127-132,140,150,218,575-587,589-598,632-634,646
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "457ee403eb42ffe3be0a497b6ddcd12781017e10",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
