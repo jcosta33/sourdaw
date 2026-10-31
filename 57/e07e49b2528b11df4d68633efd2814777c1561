@@ -1,0 +1,21 @@
+src/modules/Arrangement/presentations/views/__tests__/TakeLanesView.spec.tsx
+  s_7a8e1107313040::t_902ce7ce285576 245,253,297,319,322-323,325-326,329,336,338,345,355,358-359,366,383,385-414,418,420,427,436
+src/modules/Arrangement/presentations/views/TakeLanesView.tsx
+  s_7a8e1107313040::t_6f498a42edd2a7 90-92,98-107,141-160,166-169,179-180,183,460-475
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "57e07e49b2528b11df4d68633efd2814777c1561",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
