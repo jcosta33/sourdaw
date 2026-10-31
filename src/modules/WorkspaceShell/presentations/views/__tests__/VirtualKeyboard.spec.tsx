@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/MIDI/useCases';
 import { setVirtualKeyboardOctave } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
@@ -93,14 +93,24 @@ vi.mock('#/components/ui/tooltip', () => ({
     TooltipTrigger: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+// Radix renders the thumb as a focusable span with role="slider" that handles arrow keys
+// itself; the mock keeps that shape so the key-capture rules see a real slider target.
 vi.mock('#/components/ui/slider', () => ({
     Slider: ({ value, onValueChange, 'aria-label': ariaLabel }: any) => (
-        <input
-            type="range"
-            value={value?.[0] || 0}
-            onChange={(e) => onValueChange?.([Number(e.target.value)])}
+        <span
+            role="slider"
+            tabIndex={0}
             aria-label={ariaLabel}
+            aria-valuenow={value?.[0] || 0}
             data-testid="velocity-slider"
+            onKeyDown={(event) => {
+                if (event.key === 'ArrowRight') {
+                    onValueChange?.([(value?.[0] || 0) + 1]);
+                }
+                if (event.key === 'ArrowLeft') {
+                    onValueChange?.([(value?.[0] || 0) - 1]);
+                }
+            }}
         />
     ),
 }));
@@ -174,7 +184,8 @@ describe('VirtualKeyboard', () => {
         const offMock = vi.mocked(triggerLiveNoteOff);
         const setOctaveMock = vi.mocked(setVirtualKeyboardOctave);
 
-        const panel = () => screen.getByRole('application');
+        // The panel owns the computer keyboard globally, so events land on the body.
+        const panel = () => document.body;
 
         // Fix #5 + #1: the home-row 'A' key plays the same display octave the keyboard
         // scrolls to/labels. With active octave 4 (which scrolls to C4 = MIDI 60), pressing
@@ -233,14 +244,13 @@ describe('VirtualKeyboard', () => {
             expect(onMock).toHaveBeenCalledTimes(1);
         });
 
-        it('ignores keyUp events that bubble from the velocity slider', () => {
+        it('releases a held note on keyup even when focus has moved to another element', () => {
             render(<VirtualKeyboard />);
             fireEvent.keyDown(panel(), { code: 'KeyA' });
             offMock.mockClear();
-            const slider = screen.getByTestId('velocity-slider');
-            fireEvent.keyUp(slider, { code: 'KeyA', bubbles: true });
-            // The note stays held because the keyUp originated from the slider.
-            expect(offMock).not.toHaveBeenCalled();
+            fireEvent.keyUp(screen.getByTestId('velocity-slider'), { code: 'KeyA' });
+            expect(offMock).toHaveBeenCalledTimes(1);
+            expect(offMock).toHaveBeenCalledWith(0, 60);
         });
 
         // Fix #3a: keys are matched on physical position (event.code), so a non-QWERTY
@@ -262,13 +272,13 @@ describe('VirtualKeyboard', () => {
             expect(onMock).not.toHaveBeenCalled();
         });
 
-        // Fix #6: a key event bubbling from the velocity slider must not fire a note.
-        // key 'a' would otherwise match the mapping, so only the slider-origin guard stops it.
-        it('ignores mapped keys that bubble up from the velocity slider', () => {
+        // The VK owns the computer keyboard wherever focus is: a mapped key typed while the
+        // velocity slider thumb is focused plays the note rather than being lost.
+        it('plays mapped keys even when the velocity slider has focus', () => {
             render(<VirtualKeyboard />);
             const slider = screen.getByTestId('velocity-slider');
-            fireEvent.keyDown(slider, { code: 'KeyA', key: 'a', bubbles: true });
-            expect(onMock).not.toHaveBeenCalled();
+            fireEvent.keyDown(slider, { code: 'KeyA', key: 'a' });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
         });
 
         // The workspace velocity is applied to the noteOn, not a hard-coded default — a note
@@ -508,7 +518,7 @@ describe('VirtualKeyboard', () => {
     describe('releases held notes on teardown', () => {
         const offMock = vi.mocked(triggerLiveNoteOff);
 
-        const panel = () => screen.getByRole('application');
+        const panel = () => document.body;
 
         // Hold A (MIDI 60) and S (MIDI 62) at octave 4, then run the teardown action.
         const holdTwoNotes = () => {
@@ -702,18 +712,8 @@ describe('VirtualKeyboard', () => {
         it('routes the velocity slider to setVirtualKeyboardVelocity', () => {
             render(<VirtualKeyboard />);
             const slider = screen.getByTestId('velocity-slider');
-            fireEvent.change(slider, { target: { value: '88' } });
-            expect(setVelocityMock).toHaveBeenCalledWith(88);
-        });
-
-        it('ignores an undefined slider value', () => {
-            render(<VirtualKeyboard />);
-            const slider = screen.getByTestId('velocity-slider');
-            // Force an undefined entry to exercise the guard.
-            fireEvent.change(slider, { target: { value: '88' } });
-            // The mock Slider always passes [Number]; the guard against undefined is
-            // exercised when values[0] is undefined — verified via a direct call shape.
-            expect(setVelocityMock).toHaveBeenCalledWith(88);
+            fireEvent.keyDown(slider, { key: 'ArrowLeft', code: 'ArrowLeft' });
+            expect(setVelocityMock).toHaveBeenCalledWith(99);
         });
     });
 
@@ -723,19 +723,19 @@ describe('VirtualKeyboard', () => {
 
         it('shifts the octave down once on a single Z press', () => {
             render(<VirtualKeyboard />);
-            fireEvent.keyDown(screen.getByRole('application'), { code: 'KeyZ' });
+            fireEvent.keyDown(document.body, { code: 'KeyZ' });
             expect(setOctaveMock).toHaveBeenCalledWith(3);
         });
 
         it('ignores modifier-suppressed octave keys', () => {
             render(<VirtualKeyboard />);
-            fireEvent.keyDown(screen.getByRole('application'), { code: 'KeyZ', ctrlKey: true });
+            fireEvent.keyDown(document.body, { code: 'KeyZ', ctrlKey: true });
             expect(setOctaveMock).not.toHaveBeenCalled();
         });
 
         it('releases the exact held note after an octave change on keyup', () => {
             const { rerender } = render(<VirtualKeyboard />);
-            const panel = screen.getByRole('application');
+            const panel = document.body;
             // Hold a black key (KeyW = C#, MIDI 61 at octave 4)
             fireEvent.keyDown(panel, { code: 'KeyW' });
             // Shift octave down via Z while W is held
@@ -747,20 +747,228 @@ describe('VirtualKeyboard', () => {
         });
     });
 
-    // ── Blur panel ────────────────────────────────────────────────────────────────
-    describe('panel blur', () => {
+    // ── Blur ──────────────────────────────────────────────────────────────────────
+    describe('window blur', () => {
         const offMock = vi.mocked(triggerLiveNoteOff);
 
-        it('releases every held note when the panel loses focus', () => {
+        it('releases every held note when the window loses focus', () => {
             render(<VirtualKeyboard />);
-            const panel = screen.getByRole('application');
-            fireEvent.keyDown(panel, { code: 'KeyA' }); // C4 = 60
-            fireEvent.keyDown(panel, { code: 'KeyS' }); // D4 = 62
+            fireEvent.keyDown(document.body, { code: 'KeyA' }); // C4 = 60
+            fireEvent.keyDown(document.body, { code: 'KeyS' }); // D4 = 62
             offMock.mockClear();
-            // Simulate blur bubbling to the panel's onBlur
-            fireEvent.blur(panel);
+            fireEvent(window, new Event('blur'));
             const released = offMock.mock.calls.map(([, note]) => note).sort((a, b) => a - b);
             expect(released).toEqual([60, 62]);
+        });
+    });
+
+    // ── Computer-keyboard capture while the panel is open ─────────────────────────
+    describe('key capture', () => {
+        const onMock = vi.mocked(triggerLiveNoteOn);
+        const setOctaveMock = vi.mocked(setVirtualKeyboardOctave);
+        const setVelocityMock = vi.mocked(setVirtualKeyboardVelocity);
+
+        // A bubble-phase window listener stands in for the global shortcut layer and every
+        // other window-level panel listener.
+        const bubbleKeydowns: KeyboardEvent[] = [];
+        const recordBubble = (event: KeyboardEvent) => {
+            bubbleKeydowns.push(event);
+        };
+
+        beforeEach(() => {
+            bubbleKeydowns.length = 0;
+            window.addEventListener('keydown', recordBubble);
+        });
+
+        afterEach(() => {
+            window.removeEventListener('keydown', recordBubble);
+            document.body.replaceChildren();
+        });
+
+        it('consumes an unmapped letter so no window listener sees it', () => {
+            render(<VirtualKeyboard />);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'KeyM', key: 'm' });
+            expect(notPrevented).toBe(false);
+            expect(bubbleKeydowns).toHaveLength(0);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['digit', { code: 'Digit1', key: '1' }],
+            ['space', { code: 'Space', key: ' ' }],
+            ['arrow', { code: 'ArrowLeft', key: 'ArrowLeft' }],
+            ['delete', { code: 'Delete', key: 'Delete' }],
+            ['question mark', { code: 'Slash', key: '?', shiftKey: true }],
+            ['shifted mapped letter', { code: 'KeyA', key: 'A', shiftKey: true }],
+            ['alt mapped letter', { code: 'KeyA', key: 'å', altKey: true }],
+        ])('swallows %s from every other listener', (_name, init) => {
+            render(<VirtualKeyboard />);
+            const notPrevented = fireEvent.keyDown(document.body, init);
+            expect(notPrevented).toBe(false);
+            expect(bubbleKeydowns).toHaveLength(0);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it('consumes a musical key and plays its note', () => {
+            render(<VirtualKeyboard />);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'KeyA' });
+            expect(notPrevented).toBe(false);
+            expect(bubbleKeydowns).toHaveLength(0);
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+        });
+
+        it('consumes the octave keys', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(document.body, { code: 'KeyX' })).toBe(false);
+            expect(bubbleKeydowns).toHaveLength(0);
+            expect(setOctaveMock).toHaveBeenCalledWith(5);
+        });
+
+        it('plays a note when a non-editable element has focus', () => {
+            render(<VirtualKeyboard />);
+            const outside = document.createElement('div');
+            document.body.append(outside);
+            fireEvent.keyDown(outside, { code: 'KeyA' });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+        });
+
+        it('leaves a musical key alone when an input elsewhere in the document is the target', () => {
+            render(<VirtualKeyboard />);
+            const input = document.createElement('input');
+            document.body.append(input);
+            const notPrevented = fireEvent.keyDown(input, { code: 'KeyA', key: 'a' });
+            expect(notPrevented).toBe(true);
+            expect(bubbleKeydowns).toHaveLength(1);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it.each([
+            ['textarea', () => document.createElement('textarea')],
+            [
+                'contenteditable',
+                () => {
+                    const element = document.createElement('div');
+                    element.setAttribute('contenteditable', 'true');
+                    return element;
+                },
+            ],
+            ['select', () => document.createElement('select')],
+            [
+                'dialog descendant',
+                () => {
+                    const dialog = document.createElement('div');
+                    dialog.setAttribute('role', 'dialog');
+                    const child = document.createElement('div');
+                    dialog.append(child);
+                    document.body.append(dialog);
+                    return child;
+                },
+            ],
+            [
+                'menu descendant',
+                () => {
+                    const menu = document.createElement('div');
+                    menu.setAttribute('role', 'menu');
+                    const child = document.createElement('div');
+                    menu.append(child);
+                    document.body.append(menu);
+                    return child;
+                },
+            ],
+        ])('passes every key through from a %s', (_name, createTarget) => {
+            render(<VirtualKeyboard />);
+            const target = createTarget();
+            if (!target.isConnected) {
+                document.body.append(target);
+            }
+            expect(fireEvent.keyDown(target, { code: 'KeyA', key: 'a' })).toBe(true);
+            expect(fireEvent.keyDown(target, { code: 'KeyM', key: 'm' })).toBe(true);
+            expect(bubbleKeydowns).toHaveLength(2);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it('passes Cmd and Ctrl chords through to the app', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(document.body, { code: 'KeyS', key: 's', metaKey: true })).toBe(true);
+            expect(fireEvent.keyDown(document.body, { code: 'KeyA', key: 'a', ctrlKey: true })).toBe(true);
+            expect(bubbleKeydowns).toHaveLength(2);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it('closes on Escape and consumes it', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(notPrevented).toBe(false);
+            expect(onClose).toHaveBeenCalledTimes(1);
+            expect(bubbleKeydowns).toHaveLength(0);
+        });
+
+        it('does not close on Escape typed into a text field', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const input = document.createElement('input');
+            document.body.append(input);
+            fireEvent.keyDown(input, { code: 'Escape', key: 'Escape' });
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        it('lets arrow keys reach the velocity slider', () => {
+            render(<VirtualKeyboard />);
+            const slider = screen.getByTestId('velocity-slider');
+            const notPrevented = fireEvent.keyDown(slider, { code: 'ArrowRight', key: 'ArrowRight' });
+            expect(notPrevented).toBe(true);
+            expect(setVelocityMock).toHaveBeenCalledWith(101);
+        });
+
+        it('lets Enter and Space reach a focused button but swallows its other keys', () => {
+            render(<VirtualKeyboard />);
+            const button = screen.getByLabelText(/Octave up/i);
+            expect(fireEvent.keyDown(button, { code: 'Enter', key: 'Enter' })).toBe(true);
+            expect(fireEvent.keyDown(button, { code: 'Space', key: ' ' })).toBe(true);
+            expect(fireEvent.keyDown(button, { code: 'KeyM', key: 'm' })).toBe(false);
+        });
+
+        it('does not let a slider-specific key through on a non-interactive target', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(document.body, { code: 'ArrowRight', key: 'ArrowRight' })).toBe(false);
+        });
+
+        it('does not prevent Tab or Shift+Tab', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(document.body, { code: 'Tab', key: 'Tab' })).toBe(true);
+            expect(fireEvent.keyDown(document.body, { code: 'Tab', key: 'Tab', shiftKey: true })).toBe(true);
+            expect(bubbleKeydowns).toHaveLength(2);
+        });
+
+        it('consumes the keyup of a held musical key but lets other keyups through', () => {
+            render(<VirtualKeyboard />);
+            const keyups: KeyboardEvent[] = [];
+            const recordKeyup = (event: KeyboardEvent) => {
+                keyups.push(event);
+            };
+            window.addEventListener('keyup', recordKeyup);
+            try {
+                fireEvent.keyDown(document.body, { code: 'KeyA' });
+                expect(fireEvent.keyUp(document.body, { code: 'KeyA' })).toBe(false);
+                expect(fireEvent.keyUp(document.body, { code: 'KeyM' })).toBe(true);
+                expect(keyups).toHaveLength(1);
+            } finally {
+                window.removeEventListener('keyup', recordKeyup);
+            }
+        });
+
+        it('stops capturing keys once the panel unmounts', () => {
+            const { unmount } = render(<VirtualKeyboard />);
+            unmount();
+            expect(fireEvent.keyDown(document.body, { code: 'KeyM', key: 'm' })).toBe(true);
+            expect(bubbleKeydowns).toHaveLength(1);
+        });
+
+        it('exposes the panel as a labelled region rather than a focus target', () => {
+            render(<VirtualKeyboard />);
+            const region = screen.getByRole('region', { name: 'Virtual Piano Keyboard' });
+            expect(region).not.toHaveAttribute('tabindex');
         });
     });
 });

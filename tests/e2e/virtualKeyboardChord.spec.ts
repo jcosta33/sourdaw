@@ -9,13 +9,13 @@ test.describe('Virtual Keyboard', () => {
     });
 
     test('Virtual keyboard is visible with piano keys', async ({ page }) => {
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
         await expect(keyboard).toBeVisible();
         await expect(keyboard.getByRole('button', { name: /C4/i })).toBeVisible();
     });
 
     test('Can shift octave up', async ({ page }) => {
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
         await expect(keyboard.getByRole('button', { name: /C4/i })).toBeVisible();
 
         await page.getByRole('button', { name: 'Octave up' }).click();
@@ -25,7 +25,7 @@ test.describe('Virtual Keyboard', () => {
 
     test('Can shift octave down', async ({ page }) => {
         await page.getByRole('button', { name: 'Octave down' }).click();
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
         await expect(keyboard.getByRole('button', { name: /C3/i })).toBeVisible();
     });
 
@@ -34,13 +34,13 @@ test.describe('Virtual Keyboard', () => {
     });
 
     test('Can close the virtual keyboard', async ({ page }) => {
-        await expect(page.getByRole('application', { name: /Virtual Piano Keyboard/i })).toBeVisible();
+        await expect(page.getByRole('region', { name: /Virtual Piano Keyboard/i })).toBeVisible();
         await page.getByRole('button', { name: 'Close virtual keyboard' }).click();
-        await expect(page.getByRole('application', { name: /Virtual Piano Keyboard/i })).toBeHidden();
+        await expect(page.getByRole('region', { name: /Virtual Piano Keyboard/i })).toBeHidden();
     });
 
     test('Can click a piano key to trigger a note', async ({ page }) => {
-        const key = page.getByRole('application', { name: /Virtual Piano Keyboard/i }).getByRole('button', { name: /C4/i });
+        const key = page.getByRole('region', { name: /Virtual Piano Keyboard/i }).getByRole('button', { name: /C4/i });
         await key.click();
         await expect(key).toBeVisible();
     });

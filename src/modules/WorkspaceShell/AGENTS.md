@@ -30,6 +30,7 @@ Top-level DAW application shell layout, dockable and collapsible panels, workspa
 - Workspace layout and panel states are client UI session state — never serialize workspace layout directly into project CRDT documents.
 - The mutation-refusal banner is not a dialog: keep it out of `anyDialogOpen` and out of the shell's `inert` condition. Every route out of a refusal — the assistant panel, the production brief, undo, the launch screen — lives inside the workspace it sits above, so covering the workspace would trap the user in the state the banner is explaining.
 - The banner never derives a refusal itself. `deriveProjectMutationRefusal` reads the same repair store the dispatch gate reads and calls `getProjectScopedBriefLock` for the brief gate, so the banner and the gate cannot disagree about why an edit was refused.
+- While mounted, `VirtualKeyboard` owns the computer keyboard through window capture-phase listeners, not panel focus: musical keys play anywhere, Esc closes, and every other unmodified key is swallowed before any other listener. Cmd/Ctrl chords, Tab, text fields, selects and modal surfaces pass through. Do not gate this inside individual shortcut listeners; that splits the lock across modules and leaves other window listeners firing.
 
 ## Verification
 

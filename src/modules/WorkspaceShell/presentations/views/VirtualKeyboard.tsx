@@ -12,9 +12,13 @@
  *   off the panel. Because capture retargets boundary events to the capture element, a
  *   glissando is driven by `pointermove` + hit-testing (`glideToPoint`), not by
  *   `pointerenter` on the neighbouring key — that never fires once a pointer is captured.
- * - Computer keyboard (ASDFGHJKL; = white keys, WETYUOP = black keys) fires notes only
- *   when the panel is focused. Keys are matched by physical position (event.code) so the
- *   layout works on non-QWERTY keyboards. Z/X = octave down/up.
+ * - Computer keyboard (ASDFGHJKL; = white keys, WETYUOP = black keys): while the panel is
+ *   mounted it owns the keyboard. Window capture-phase listeners run before any target or
+ *   bubble listener, so musical keys play regardless of focus and every other unmodified key
+ *   is swallowed before the global shortcut layer or any other window listener sees it.
+ *   Cmd/Ctrl chords, text fields, selects, modal surfaces and Tab pass through; Esc closes.
+ *   Keys are matched by physical position (event.code) so the layout works on non-QWERTY
+ *   keyboards. Z/X = octave down/up.
  * - Routes through triggerLiveNoteOn/Off use cases → same path as a physical MIDI controller.
  */
 
@@ -32,6 +36,7 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
+import { isNativeTextEditableTarget, isWithinModalSurface } from '#/modules/CommandInterface/useCases';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
 
@@ -184,6 +189,38 @@ const KEYBOARD_BLACK_MAP: Record<string, number> = {
 const OCTAVE_DOWN_CODE = 'KeyZ';
 const OCTAVE_UP_CODE = 'KeyX';
 
+/** Keys a focused button or slider-like control handles natively; they must reach it. */
+const CONTROL_NATIVE_KEYS = new Set([
+    'Enter',
+    ' ',
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    'Home',
+    'End',
+    'PageUp',
+    'PageDown',
+]);
+const INTERACTIVE_CONTROL_SELECTOR =
+    'button, [role="slider"], [role="spinbutton"], [role="tab"], [role="radio"], [role="checkbox"], [role="switch"], [role="button"]';
+
+/** Surfaces where typing and navigation belong to the user's current task, not the keyboard. */
+const yieldsKeyboardToTarget = (target: EventTarget | null): boolean =>
+    (target instanceof Element && isNativeTextEditableTarget(target)) ||
+    target instanceof HTMLSelectElement ||
+    isWithinModalSurface(target);
+
+const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean =>
+    CONTROL_NATIVE_KEYS.has(event.key) &&
+    event.target instanceof Element &&
+    event.target.closest(INTERACTIVE_CONTROL_SELECTOR) !== null;
+
+const consumeKeyEvent = (event: KeyboardEvent): void => {
+    event.preventDefault();
+    event.stopPropagation();
+};
+
 // ─── Component ────────────────────────────────────────────────────────────────
 
 type VirtualKeyboardProps = {
@@ -195,7 +232,6 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const octave = workspace.virtualKeyboardOctave;
     const velocity = workspace.virtualKeyboardVelocity;
 
-    const panelRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set());
@@ -367,7 +403,6 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         }
         mouseNote.current = midiNote;
         triggerNoteOn(midiNote);
-        panelRef.current?.focus({ preventScroll: true });
     };
 
     const onWhitePointerUp = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
@@ -390,7 +425,6 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         }
         mouseNote.current = midiNote;
         triggerNoteOn(midiNote);
-        panelRef.current?.focus({ preventScroll: true });
     };
 
     const onBlackPointerUp = (midiNote: number, event: React.PointerEvent<HTMLDivElement>) => {
@@ -428,79 +462,89 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     // ── Computer keyboard ─────────────────────────────────────────────────────
 
     /**
-     * True when a key event bubbled up from a control that owns its own keyboard handling
-     * (the velocity slider). Such events must not be interpreted as note/octave input.
+     * The long-lived window listeners below read the latest render's values through this
+     * ref, so they subscribe once instead of re-subscribing on every octave or velocity
+     * change (which would also drop key events between unsubscribe and resubscribe).
      */
-    const isFromIgnoredControl = (event: React.KeyboardEvent<HTMLDivElement>): boolean => {
-        const target = event.target as HTMLElement | null;
-        return Boolean(target?.closest('[data-vk-ignore-keys]'));
-    };
+    const keyboardInputRef = useRef({ octave, onClose, triggerNoteOn, triggerNoteOff });
+    useLayoutEffect(() => {
+        keyboardInputRef.current = { octave, onClose, triggerNoteOn, triggerNoteOff };
+    });
 
-    const onKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-        if (event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) {
+    const onKeyDown = (event: KeyboardEvent) => {
+        if (event.metaKey || event.ctrlKey || yieldsKeyboardToTarget(event.target)) {
             return;
         }
-        if (isFromIgnoredControl(event)) {
-            return;
-        }
+        const { octave: currentOctave, onClose: close, triggerNoteOn: noteOn } = keyboardInputRef.current;
         const code = event.code;
 
-        if (code === OCTAVE_DOWN_CODE) {
-            event.preventDefault();
+        if (code === 'Escape') {
+            consumeKeyEvent(event);
+            close?.();
+            return;
+        }
+        if (event.key === 'Tab') {
+            return;
+        }
+        if (event.altKey || event.shiftKey) {
+            if (!isNativeKeyOfFocusedControl(event)) {
+                consumeKeyEvent(event);
+            }
+            return;
+        }
+
+        if (code === OCTAVE_DOWN_CODE || code === OCTAVE_UP_CODE) {
+            consumeKeyEvent(event);
             // Guard OS key-repeat so a held Z/X shifts the octave once per physical press.
-            if (event.repeat) {
-                return;
+            if (!event.repeat) {
+                setVirtualKeyboardOctave(currentOctave + (code === OCTAVE_UP_CODE ? 1 : -1));
             }
-            setVirtualKeyboardOctave(octave - 1);
-            return;
-        }
-        if (code === OCTAVE_UP_CODE) {
-            event.preventDefault();
-            if (event.repeat) {
-                return;
-            }
-            setVirtualKeyboardOctave(octave + 1);
             return;
         }
 
-        if (heldKeys.current.has(code)) {
+        const semitone = KEYBOARD_WHITE_MAP[code] ?? KEYBOARD_BLACK_MAP[code];
+        if (semitone !== undefined) {
+            consumeKeyEvent(event);
+            if (heldKeys.current.has(code)) {
+                return;
+            }
+            heldKeys.current.add(code);
+            const midiNote = (currentOctave + 1) * 12 + semitone;
+            heldKeyNotes.current.set(code, midiNote);
+            noteOn(midiNote);
             return;
         }
 
-        const whiteSemi = KEYBOARD_WHITE_MAP[code];
-        if (whiteSemi !== undefined) {
-            event.preventDefault();
-            heldKeys.current.add(code);
-            const midiNote = (octave + 1) * 12 + whiteSemi;
-            heldKeyNotes.current.set(code, midiNote);
-            triggerNoteOn(midiNote);
-            return;
-        }
-        const blackSemi = KEYBOARD_BLACK_MAP[code];
-        if (blackSemi !== undefined) {
-            event.preventDefault();
-            heldKeys.current.add(code);
-            const midiNote = (octave + 1) * 12 + blackSemi;
-            heldKeyNotes.current.set(code, midiNote);
-            triggerNoteOn(midiNote);
+        if (!isNativeKeyOfFocusedControl(event)) {
+            consumeKeyEvent(event);
         }
     };
 
-    const onKeyUp = (event: React.KeyboardEvent<HTMLDivElement>) => {
-        if (isFromIgnoredControl(event)) {
-            return;
-        }
+    const onKeyUp = (event: KeyboardEvent) => {
         const code = event.code;
         heldKeys.current.delete(code);
 
         // Release the exact note this key fired on, not one recomputed at the current octave,
         // so an octave shift while the key was held cannot leak the original noteOn.
         const heldNote = heldKeyNotes.current.get(code);
-        if (heldNote !== undefined) {
-            heldKeyNotes.current.delete(code);
-            triggerNoteOff(heldNote);
+        if (heldNote === undefined) {
+            return;
         }
+        consumeKeyEvent(event);
+        heldKeyNotes.current.delete(code);
+        keyboardInputRef.current.triggerNoteOff(heldNote);
     };
+
+    // Capture phase on window runs before any target or bubble listener, which is what lets
+    // the open keyboard claim keys from the global shortcut layer and every other surface.
+    useEffect(() => {
+        window.addEventListener('keydown', onKeyDown, { capture: true });
+        window.addEventListener('keyup', onKeyUp, { capture: true });
+        return () => {
+            window.removeEventListener('keydown', onKeyDown, { capture: true });
+            window.removeEventListener('keyup', onKeyUp, { capture: true });
+        };
+    }, []);
 
     /**
      * Release every sounding note and clear all held-key bookkeeping. Reads the live
@@ -519,10 +563,6 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             setPressed(() => new Set());
         }
         mouseNote.current = null;
-    };
-
-    const onBlur = () => {
-        releaseAllHeldNotes();
     };
 
     // Release all held notes when the component unmounts, the tab is hidden, or the window
@@ -556,14 +596,9 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
 
     return (
         <Stack
-            className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] outline-none focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-border-focus/70"
-            ref={panelRef} // eslint-disable-next-line jsx-a11y-x/no-noninteractive-tabindex -- application role requires programmatic focus for keyboard input
-            tabIndex={0}
-            onKeyDown={onKeyDown}
-            onKeyUp={onKeyUp}
-            onBlur={onBlur}
+            className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
             aria-label="Virtual Piano Keyboard"
-            role="application"
+            role="region"
         >
             <DawHeaderBand
                 compact
@@ -600,7 +635,8 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                             : 'inline-flex bg-[var(--color-state-danger)]/10 text-[var(--color-state-danger)]'
                     )}
                 >
-                    {liveNoteStatus ?? 'A…; white · W E T Y U O P black · Z/X octave'}
+                    {liveNoteStatus ??
+                        'Keys captured while open · A…; white · W E T Y U O P black · Z/X octave · Esc closes'}
                 </DawInlineHint>
             </DawHeaderBand>
 
@@ -644,28 +680,23 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
                     <div className="w-px h-3.5 bg-white/10 mx-1" />
 
                     <Minus className="size-2.5 text-white/30 shrink-0" />
-                    {/* Marked so the panel onKeyDown/onKeyUp ignore key events that originate
-                        inside the velocity slider — otherwise a mapped key (e.g. A) typed while
-                        the slider thumb is focused would bubble up and fire a spurious note. */}
-                    <span style={{ display: 'contents' }} data-vk-ignore-keys="">
-                        <Slider
-                            value={[velocity]}
-                            min={1}
-                            max={127}
-                            step={1}
-                            className="w-16"
-                            trackClassName="h-1 bg-white/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
-                            rangeClassName="[background:linear-gradient(180deg,rgba(170,135,200,0.95)_0%,rgba(170,135,200,0.62)_100%)] shadow-[0_0_10px_rgba(170,135,200,0.18)]"
-                            thumbClassName="size-3 rounded-[3px] hover:ring-[rgba(170,135,200,0.28)] focus-visible:ring-[rgba(170,135,200,0.38)]"
-                            aria-label="Note velocity"
-                            onValueChange={(values) => {
-                                const nextValue = values[0];
-                                if (nextValue !== undefined) {
-                                    setVirtualKeyboardVelocity(nextValue);
-                                }
-                            }}
-                        />
-                    </span>
+                    <Slider
+                        value={[velocity]}
+                        min={1}
+                        max={127}
+                        step={1}
+                        className="w-16"
+                        trackClassName="h-1 bg-white/10 shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]"
+                        rangeClassName="[background:linear-gradient(180deg,rgba(170,135,200,0.95)_0%,rgba(170,135,200,0.62)_100%)] shadow-[0_0_10px_rgba(170,135,200,0.18)]"
+                        thumbClassName="size-3 rounded-[3px] hover:ring-[rgba(170,135,200,0.28)] focus-visible:ring-[rgba(170,135,200,0.38)]"
+                        aria-label="Note velocity"
+                        onValueChange={(values) => {
+                            const nextValue = values[0];
+                            if (nextValue !== undefined) {
+                                setVirtualKeyboardVelocity(nextValue);
+                            }
+                        }}
+                    />
                     <Plus className="size-2.5 text-white/30 shrink-0" />
                     <span className="text-[9px] tabular-nums text-white/40 w-5 text-right">{velocity}</span>
                 </Row>
