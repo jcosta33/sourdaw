@@ -209,21 +209,35 @@ function cleanupLaunchAgents(home: string): string {
     return agents;
 }
 
-type LaunchObservation = { runs: number; lastExitCode: string };
+type LaunchObservation = { runs: number; lastExitCode: string; executing: boolean };
+
+/** Top-level `launchctl print` fields sit one tab deep; nested sections repeat names such as `state` deeper. */
+function topLevelField(printed: string, name: string): string | undefined {
+    return new RegExp(`^\\t${name} = (.*?)\\s*$`, 'm').exec(printed)?.[1];
+}
 
 function parseLaunchObservation(printed: string): LaunchObservation {
     return {
-        runs: Number(/^\s*runs = (\d+)\s*$/m.exec(printed)?.[1] ?? 0),
-        lastExitCode: /^\s*last exit code = (.*?)\s*$/m.exec(printed)?.[1] ?? '',
+        runs: Number(topLevelField(printed, 'runs') ?? 0),
+        lastExitCode: topLevelField(printed, 'last exit code') ?? '',
+        executing: topLevelField(printed, 'state') === 'running' && /^\d+$/.test(topLevelField(printed, 'pid') ?? ''),
     };
 }
 
-/** Registration proves nothing: launchd reports its first RunAtLoad launch only through `runs`. */
+function hasExited(observation: LaunchObservation): boolean {
+    return observation.lastExitCode !== '' && observation.lastExitCode !== '(never exited)';
+}
+
+/** launchd counts a run at spawn, before initialization can fail, so a run alone settles nothing. */
+function isSettled(observation: LaunchObservation): boolean {
+    return observation.executing || (observation.runs > 0 && hasExited(observation));
+}
+
 function observeFirstLaunch(port: CleanupInstallationPort, service: string): LaunchObservation {
     let waited = 0;
     for (;;) {
         const observation = parseLaunchObservation(port.capture('/bin/launchctl', ['print', service]));
-        if (observation.runs > 0 || waited >= CLEANUP_LAUNCH_WAIT_MS) {
+        if (isSettled(observation) || waited >= CLEANUP_LAUNCH_WAIT_MS) {
             return observation;
         }
         port.wait(CLEANUP_LAUNCH_POLL_MS);
@@ -235,10 +249,10 @@ function launchFailure(observation: LaunchObservation, node: string, primaryRoot
     const remediation =
         `Grant ${node} Full Disk Access (or Removable Volumes access for an external volume) ` +
         'in System Settings > Privacy & Security, then rerun pnpm lane:cleanup:install.';
-    if (observation.runs === 0) {
-        return `launchd did not start the cleanup job for ${primaryRoot} within ${CLEANUP_LAUNCH_WAIT_MS / 1000} seconds. ${remediation}`;
+    if (!isSettled(observation)) {
+        return `launchd did not start or finish initializing the cleanup job for ${primaryRoot} within ${CLEANUP_LAUNCH_WAIT_MS / 1000} seconds. ${remediation}`;
     }
-    if (LAUNCHD_INITIALIZATION_FAILURE.test(observation.lastExitCode)) {
+    if (!observation.executing && LAUNCHD_INITIALIZATION_FAILURE.test(observation.lastExitCode)) {
         return `launchd could not initialize the cleanup job for ${primaryRoot} (last exit code ${observation.lastExitCode}). ${remediation}`;
     }
     return undefined;
