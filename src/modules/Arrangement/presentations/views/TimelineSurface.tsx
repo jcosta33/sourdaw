@@ -8,6 +8,7 @@ import { onZoomToFit, onZoomToSelection, onScrollToPlayhead } from '#/modules/Wo
 import { animationScheduler } from '#/utils/DOM/AnimationScheduler';
 
 import { type TimelineRenderer } from '../../models/RendererBackend';
+import { getRenderedTrackExtent, getRenderedTrackTops } from '../../models/TimelineTrackExtent';
 import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
@@ -87,49 +88,28 @@ export const TimelineSurface = (): ReactElement => {
         const left = Math.max(0, marqueeSelection.startBeat * pixelsPerBeat - scrollX);
         const width = (marqueeSelection.endBeat - marqueeSelection.startBeat) * pixelsPerBeat;
 
-        let topTrackIdx = -1;
-        let bottomTrackIdx = -1;
-
-        for (const [idx, track] of currentTrackStore.tracks.entries()) {
+        // Rows as laid out on the canvas: visible tracks only, each with its
+        // variation lanes. The marquee spans from its first row's top to its
+        // last row's bottom.
+        const rows = buildTimelineRenderModel().tracks;
+        const tops = getRenderedTrackTops(rows);
+        let topRow = -1;
+        let bottomRow = -1;
+        for (const [idx, track] of rows.entries()) {
             if (marqueeSelection.trackIds.includes(track.id)) {
-                if (topTrackIdx === -1 || idx < topTrackIdx) {
-                    topTrackIdx = idx;
+                if (topRow === -1) {
+                    topRow = idx;
                 }
-                if (idx > bottomTrackIdx) {
-                    bottomTrackIdx = idx;
-                }
+                bottomRow = idx;
             }
         }
 
-        if (topTrackIdx === -1) {
+        if (topRow === -1) {
             return null;
         }
 
-        let trackYOffset = 0;
-        let top = 0;
-        let bottom = 0;
-
-        for (let i = 0; i <= bottomTrackIdx; i++) {
-            const track = currentTrackStore.tracks[i];
-            if (!track) {
-                continue;
-            }
-
-            // Mirror buildTimelineRenderModel.ts:162 / the renderer's row layout:
-            // folders collapse to a fixed 26px and every other track uses its own
-            // resizable height. Using a single constant here misaligned the
-            // marquee box against the rendered rows (#32-new).
-            const rowHeight = track.kind === 'folder' ? 26 : track.height;
-
-            if (i === topTrackIdx) {
-                top = trackYOffset;
-            }
-            if (i === bottomTrackIdx) {
-                bottom = trackYOffset + rowHeight;
-            }
-
-            trackYOffset += rowHeight;
-        }
+        const top = tops[topRow]!;
+        const bottom = tops[bottomRow]! + getRenderedTrackExtent(rows[bottomRow]!);
 
         return {
             left,

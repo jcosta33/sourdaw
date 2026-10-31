@@ -1,10 +1,11 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { act, render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor, createEvent, within } from '@testing-library/react';
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { normalizeTrack } from '../../../models/Track';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
@@ -146,10 +147,6 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
 
 vi.mock('../../../useCases/getTrackTemplates', () => ({
     getTrackTemplates: vi.fn(() => []),
-}));
-
-vi.mock('../TakeLanesView', () => ({
-    TakeLanePanel: () => null,
 }));
 
 const renderWithTooltip = (ui: ReactElement) => {
@@ -429,6 +426,106 @@ describe('TrackListView', () => {
             measureScroller(340);
 
             expect(readSpacerHeight()).toBe('0px');
+        });
+    });
+
+    describe('variation lane rows under a track header', () => {
+        const alternatives = [
+            { id: 'u-a', name: 'Take A', clips: [] },
+            { id: 'u-b', name: 'Take B', clips: [] },
+        ];
+
+        it('renders one fixed-height row per alternative, labelled with its name, in a block of the lane extent', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'lower', name: 'Lower', kind: 'audio' }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            const block = screen.getByTestId('variation-lanes-upper');
+            expect(block).toHaveStyle({ height: `${2 * VARIATION_LANE_HEIGHT}px` });
+            const rows = within(block).getAllByTestId('variation-lane-row');
+            expect(rows).toHaveLength(2);
+            for (const row of rows) {
+                expect(row).toHaveStyle({ height: `${VARIATION_LANE_HEIGHT}px` });
+            }
+            expect(rows.map((row) => row.textContent)).toEqual(['Take A', 'Take B']);
+            expect(screen.queryByTestId('variation-lanes-lower')).not.toBeInTheDocument();
+        });
+
+        it('places the next track header exactly one lane block below the track above', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'lower', name: 'Lower', kind: 'audio' }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            const upperRow = screen.getByTestId('variation-lanes-upper').parentElement!;
+            const lowerRow = screen.getByTestId('track-lower').closest('[role="row"]')!;
+            // The upper row holds header + lane block; the lower row follows it in the list.
+            expect(upperRow.nextElementSibling).toBe(lowerRow);
+            expect(upperRow.lastElementChild).toBe(screen.getByTestId('variation-lanes-upper'));
+        });
+
+        it('renders no lane block and no take panel for a folder or a track whose lanes are off', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'folder',
+                        name: 'Folder',
+                        kind: 'folder',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'off', name: 'Off', kind: 'audio', alternatives, showVariationLanes: false }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            expect(screen.queryByTestId(/variation-lanes-/)).not.toBeInTheDocument();
+            expect(screen.queryByText(/Takes ·/)).not.toBeInTheDocument();
+        });
+
+        it('no longer hosts the take-lane panel under the header', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            expect(screen.queryByText(/Takes ·/)).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Add take')).not.toBeInTheDocument();
         });
     });
 

@@ -109,6 +109,11 @@ vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) =
     ),
 }));
 
+vi.mock('#/modules/Arrangement/presentations/views', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Arrangement/presentations/views')>()),
+    TakeLanesView: () => <div data-testid="take-lanes-view">Takes</div>,
+}));
+
 vi.mock('#/modules/Preferences/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/Preferences/presentations/views')>()),
     PreferencesDialog: () => <div data-testid="preferences-dialog">Preferences</div>,
@@ -671,6 +676,72 @@ describe('AppShell', () => {
             expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('aria-selected', 'true');
             expect(screen.queryByTestId('elastic-panel')).not.toBeInTheDocument();
             expect(elasticEditorPanelMock).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('Takes dock tab', () => {
+        const trackWithLanes = (showVariationLanes: boolean): Track => ({
+            ...createTrack(createClip('midi')),
+            showVariationLanes,
+        });
+
+        beforeEach(() => {
+            vi.mocked(useWorkspaceState).mockReturnValue(
+                createWorkspaceState({
+                    sidebarOpen: false,
+                    inspectorOpen: false,
+                    mixerOpen: true,
+                })
+            );
+        });
+
+        it('appears only while a track has variation lanes on', () => {
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+            expect(screen.getByTestId('takes-tab-button')).toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Takes' })).toHaveAttribute('aria-selected', 'false');
+        });
+
+        it('does not count a folder, whose lanes are never shown', () => {
+            trackStoreState = {
+                tracks: [{ ...trackWithLanes(true), kind: 'folder' }],
+                selectedTrackId: null,
+                ghostClips: [],
+            };
+
+            render(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+        });
+
+        it('hosts the take lanes view in the dock panel when selected', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            render(<AppShell>Content</AppShell>);
+
+            fireEvent.click(screen.getByTestId('takes-tab-button'));
+
+            const tab = screen.getByRole('tab', { name: 'Takes' });
+            expect(tab).toHaveAttribute('aria-selected', 'true');
+            expect(screen.getByRole('tabpanel').getAttribute('aria-labelledby')).toBe(tab.id);
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+        });
+
+        it('falls back to the mixer tab when the last lane is switched off while Takes is active', () => {
+            trackStoreState = { tracks: [trackWithLanes(true)], selectedTrackId: null, ghostClips: [] };
+            const { rerender } = render(<AppShell>Content</AppShell>);
+            fireEvent.click(screen.getByTestId('takes-tab-button'));
+            expect(screen.getByTestId('take-lanes-view')).toBeInTheDocument();
+
+            trackStoreState = { tracks: [trackWithLanes(false)], selectedTrackId: null, ghostClips: [] };
+            rerender(<AppShell>Content</AppShell>);
+
+            expect(screen.queryByTestId('takes-tab-button')).not.toBeInTheDocument();
+            expect(screen.queryByTestId('take-lanes-view')).not.toBeInTheDocument();
+            expect(screen.getByRole('tab', { name: 'Mixer' })).toHaveAttribute('aria-selected', 'true');
         });
     });
 

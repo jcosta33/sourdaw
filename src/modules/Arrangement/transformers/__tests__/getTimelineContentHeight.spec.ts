@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 import { createTrack, type Track } from '../../models/Track';
 import { getTimelineContentHeight } from '../getTimelineContentHeight';
 
@@ -60,12 +61,30 @@ describe('getTimelineContentHeight', () => {
         expect(getTimelineContentHeight(tracks)).toBe(90);
     });
 
-    it('does not advance past the variation lanes the canvas paints over the next row', () => {
+    it('adds one lane height per alternative under a track whose variation lanes are on', () => {
         const tracks = [
-            makeTrack({ id: 'lanes', kind: 'audio', height: 64, showVariationLanes: true }),
+            makeTrack({
+                id: 'lanes',
+                kind: 'audio',
+                height: 64,
+                showVariationLanes: true,
+                alternatives: [
+                    { id: 'alt-1', name: 'Alt 1', clips: [] },
+                    { id: 'alt-2', name: 'Alt 2', clips: [] },
+                ],
+            }),
             makeTrack({ id: 'plain', kind: 'audio', height: 64 }),
         ];
 
-        expect(getTimelineContentHeight(tracks)).toBe(128);
+        expect(getTimelineContentHeight(tracks)).toBe(64 + 2 * VARIATION_LANE_HEIGHT + 64);
+    });
+
+    it('adds no lane height for a folder or a track whose lanes are off', () => {
+        const tracks = [
+            makeTrack({ id: 'folder', kind: 'folder', showVariationLanes: true }),
+            makeTrack({ id: 'off', kind: 'audio', height: 64, showVariationLanes: false }),
+        ];
+
+        expect(getTimelineContentHeight(tracks)).toBe(26 + 64);
     });
 });

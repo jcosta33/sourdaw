@@ -100,7 +100,9 @@ vi.mock('../../renderers/createTimelineRenderer', () => ({
     ),
 }));
 
-const renderModelRef = vi.hoisted(() => ({ tracks: [] as Array<{ id: string; height: number }> }));
+const renderModelRef = vi.hoisted(() => ({
+    tracks: [] as Array<{ id: string; height: number; variationLanes?: unknown[] }>,
+}));
 vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     buildTimelineRenderModel: vi.fn(() => ({ tracks: renderModelRef.tracks })),
 }));
@@ -453,11 +455,15 @@ describe('TimelineSurface — marquee selection box', () => {
         });
     });
 
+    afterEach(() => {
+        renderModelRef.tracks = [];
+    });
+
     it('renders a marquee box spanning the selected tracks and beat range', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'a', height: 40 }), makeTrack({ id: 'b', height: 60 })],
-            selectedTrackId: null,
-        });
+        renderModelRef.tracks = [
+            { id: 'a', height: 40 },
+            { id: 'b', height: 60 },
+        ];
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
             scrollY: 0,
@@ -479,11 +485,11 @@ describe('TimelineSurface — marquee selection box', () => {
         expect(marquee!.style.height).toBe('100px');
     });
 
-    it('uses the folder row height (26) for folder tracks within the marquee', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'f', kind: 'folder', height: 80 }), makeTrack({ id: 'b', height: 50 })],
-            selectedTrackId: null,
-        });
+    it('spans the variation lanes under a selected track, as the canvas lays them out', () => {
+        renderModelRef.tracks = [
+            { id: 'a', height: 40, variationLanes: [{}, {}] },
+            { id: 'b', height: 50 },
+        ];
         zoomHandlers.timelineViewStoreRef.current?.set({
             scrollX: 0,
             scrollY: 0,
@@ -493,21 +499,61 @@ describe('TimelineSurface — marquee selection box', () => {
         clipSelectionStore.set({
             selectedClipId: null,
             selectedClipIds: [],
-            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['f', 'b'] },
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['a', 'b'] },
         });
 
         const { container } = renderWithTooltip(<TimelineSurface />);
         const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
         expect(marquee).not.toBeNull();
-        // folder collapses to 26 + track b 50 = 76.
-        expect(marquee!.style.height).toBe('76px');
+        // Row a 40 + two 24px lanes, then row b 50.
+        expect(marquee!.style.height).toBe('138px');
+    });
+
+    it('spans the lanes of the last selected track', () => {
+        renderModelRef.tracks = [{ id: 'a', height: 40, variationLanes: [{}] }];
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['a'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
+        expect(marquee!.style.height).toBe('64px');
+    });
+
+    it('starts the marquee below the lanes of an unselected track above it', () => {
+        renderModelRef.tracks = [
+            { id: 'a', height: 40, variationLanes: [{}] },
+            { id: 'b', height: 50 },
+        ];
+        zoomHandlers.timelineViewStoreRef.current?.set({
+            scrollX: 0,
+            scrollY: 0,
+            pixelsPerBeat: 10,
+            autoScrollEnabled: true,
+        });
+        clipSelectionStore.set({
+            selectedClipId: null,
+            selectedClipIds: [],
+            marqueeSelection: { startBeat: 0, endBeat: 4, trackIds: ['b'] },
+        });
+
+        const { container } = renderWithTooltip(<TimelineSurface />);
+        const marquee = container.querySelector('[style*="left: 0px"]') as HTMLElement | null;
+        expect(marquee).not.toBeNull();
+        expect(marquee!.style.top).toBe('64px');
+        expect(marquee!.style.height).toBe('50px');
     });
 
     it('renders no marquee box when the selection trackIds match no rendered track', () => {
-        zoomHandlers.trackStoreRef.current?.set({
-            tracks: [makeTrack({ id: 'a', height: 40 })],
-            selectedTrackId: null,
-        });
+        renderModelRef.tracks = [{ id: 'a', height: 40 }];
         clipSelectionStore.set({
             selectedClipId: null,
             selectedClipIds: [],

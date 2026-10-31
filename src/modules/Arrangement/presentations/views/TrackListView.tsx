@@ -33,13 +33,13 @@ import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCas
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
+import { getVariationLaneCount, getVariationLaneExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
 import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
-import { TakeLanePanel } from './TakeLanesView';
 import { TrackHeader } from './TrackHeader';
 
 /**
@@ -382,10 +382,22 @@ export const TrackListView = ({
                                 }
                             >
                                 <TrackHeader track={track} isSelected={track.id === selectedTrackId} />
-                                {track.showVariationLanes === true &&
-                                track.kind !== 'folder' &&
-                                track.kind !== 'master' ? (
-                                    <TakeLanePanel trackId={track.id} trackName={track.name} trackColor={track.color} />
+                                {getVariationLaneCount(track) > 0 ? (
+                                    <div
+                                        data-testid={`variation-lanes-${track.id}`}
+                                        style={{ height: getVariationLaneExtent(track) }}
+                                    >
+                                        {track.alternatives.map((alternative) => (
+                                            <div
+                                                key={alternative.id}
+                                                data-testid="variation-lane-row"
+                                                className="box-border flex items-center overflow-hidden border-t border-border/20 bg-surface-well/60 px-3 text-[10px] text-muted-foreground"
+                                                style={{ height: VARIATION_LANE_HEIGHT }}
+                                            >
+                                                <span className="truncate">{alternative.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 ) : null}
                             </div>
                         );

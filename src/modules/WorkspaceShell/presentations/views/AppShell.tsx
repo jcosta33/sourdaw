@@ -27,7 +27,9 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { TakeLanesView } from '#/modules/Arrangement/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
+import { hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -175,6 +177,7 @@ type BottomTabValue =
     | 'loopStation'
     | 'modulation'
     | 'elastic'
+    | 'takes'
     | 'agent';
 
 type BottomTabState = {
@@ -251,6 +254,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         tracksSnapshot.tracks.some((track) =>
             track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
         );
+    const takesTabAvailable = hasVariationLanes(tracksSnapshot.tracks);
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const alphaDismissed = useStore(alphaNoticeStore);
@@ -261,9 +265,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const selectedClipChanged = bottomTabState.selectedClipId !== selectedClipId;
     const selectedClipBottomTab = selectedClipChanged && selectedClipId !== null ? 'editor' : bottomTabState.value;
     const elasticBottomTabUnavailable = selectedClipBottomTab === 'elastic' && !isAudioClipSelected;
-    const bottomTab: BottomTabValue = elasticBottomTabUnavailable ? 'editor' : selectedClipBottomTab;
+    const takesBottomTabUnavailable = selectedClipBottomTab === 'takes' && !takesTabAvailable;
+    let bottomTab: BottomTabValue = selectedClipBottomTab;
+    if (elasticBottomTabUnavailable) {
+        bottomTab = 'editor';
+    } else if (takesBottomTabUnavailable) {
+        bottomTab = 'mixer';
+    }
 
-    if (selectedClipChanged || elasticBottomTabUnavailable) {
+    if (selectedClipChanged || elasticBottomTabUnavailable || takesBottomTabUnavailable) {
         setBottomTabState({
             value: bottomTab,
             selectedClipId,
@@ -654,6 +664,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 return <ModulationMatrix />;
             case 'elastic':
                 return <ElasticEditorPanel />;
+            case 'takes':
+                return <TakeLanesView />;
             case 'agent':
                 return <AgentWorkspace requestedRun={requestedAgentRun} />;
             default:
@@ -999,6 +1011,11 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                                       'text-[var(--color-accent-peach)]',
                                                       { 'data-testid': 'elastic-tab-button' }
                                                   )
+                                                : null}
+                                            {takesTabAvailable
+                                                ? renderBottomTab('takes', 'Takes', 'text-[var(--color-accent-mint)]', {
+                                                      'data-testid': 'takes-tab-button',
+                                                  })
                                                 : null}
                                         </Row>
 

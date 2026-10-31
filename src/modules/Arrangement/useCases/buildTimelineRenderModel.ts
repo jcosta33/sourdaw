@@ -24,6 +24,7 @@ import {
     type ClipRenderModel,
     type AudioWaveformProgrammePart,
 } from '../models/TimelineRenderModel';
+import { getVariationLaneCount } from '../models/TimelineTrackExtent';
 import { activeRecordingRef } from '../stores/activeRecordingRef';
 import { clipDragPreviewRef } from '../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../stores/clipSelectionStore';
@@ -385,49 +386,50 @@ export function buildTimelineRenderModel(): TimelineRenderModel {
                 height: baseHeight,
                 automationMode: track.automationMode,
                 clips: mappedClips,
-                variationLanes: track.showVariationLanes
-                    ? track.alternatives.map((alt) => ({
-                          id: alt.id,
-                          name: alt.name,
-                          clips: alt.clips.map((clip) => {
-                              const notes = midiState?.notesByClipId[clip.id] ?? [];
-                              return {
-                                  id: clip.id,
-                                  startBeat: clip.startBeat,
-                                  endBeat: clip.endBeat,
-                                  name: clip.name,
-                                  color: clip.color || track.color,
-                                  type: clip.type,
-                                  muted: clip.muted,
-                                  midiNotes: notes.map((node) => ({
-                                      id: node.id,
-                                      pitch: node.pitch,
-                                      startBeat: node.startBeat,
-                                      duration: node.duration,
-                                  })),
-                                  audioBufferId: clip.audioBufferId,
-                                  loopEnabled: clip.loopEnabled,
-                                  loopLength: clip.loopLength,
-                                  audioOffsetBeats: clip.audioOffsetBeats,
-                                  audioOffsetSeconds: clip.audioOffsetSeconds,
-                                  audioLoopStartSeconds: clip.audioLoopStartSeconds,
-                                  audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
-                                  audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
-                                  loopOriginBeat: clip.loopOriginBeat,
-                                  clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
-                                  midiOffsetBeats: clip.midiOffsetBeats,
-                                  stretchRatio: clip.stretchRatio,
-                                  stretchMode: clip.stretchMode,
-                                  fadeInBeats: clip.fadeInBeats,
-                                  fadeOutBeats: clip.fadeOutBeats,
-                                  generating: clip.generating,
-                                  isGhost: clip.isGhost,
-                                  isLinkedInstance: clip.isLinkedInstance || !!clip.parentClipId,
-                                  isInlineEditing: clip.isInlineEditing,
-                              };
-                          }),
-                      }))
-                    : undefined,
+                variationLanes:
+                    getVariationLaneCount(track) > 0
+                        ? track.alternatives.map((alt) => ({
+                              id: alt.id,
+                              name: alt.name,
+                              clips: alt.clips.map((clip) => {
+                                  const notes = midiState?.notesByClipId[clip.id] ?? [];
+                                  return {
+                                      id: clip.id,
+                                      startBeat: clip.startBeat,
+                                      endBeat: clip.endBeat,
+                                      name: clip.name,
+                                      color: clip.color || track.color,
+                                      type: clip.type,
+                                      muted: clip.muted,
+                                      midiNotes: notes.map((node) => ({
+                                          id: node.id,
+                                          pitch: node.pitch,
+                                          startBeat: node.startBeat,
+                                          duration: node.duration,
+                                      })),
+                                      audioBufferId: clip.audioBufferId,
+                                      loopEnabled: clip.loopEnabled,
+                                      loopLength: clip.loopLength,
+                                      audioOffsetBeats: clip.audioOffsetBeats,
+                                      audioOffsetSeconds: clip.audioOffsetSeconds,
+                                      audioLoopStartSeconds: clip.audioLoopStartSeconds,
+                                      audioLoopPassEntrySeconds: clip.audioLoopPassEntrySeconds,
+                                      audioLoopPassOriginBeat: clip.audioLoopPassOriginBeat,
+                                      loopOriginBeat: clip.loopOriginBeat,
+                                      clipStartTempo: timeline.tempoAtBeat(clip.startBeat),
+                                      midiOffsetBeats: clip.midiOffsetBeats,
+                                      stretchRatio: clip.stretchRatio,
+                                      stretchMode: clip.stretchMode,
+                                      fadeInBeats: clip.fadeInBeats,
+                                      fadeOutBeats: clip.fadeOutBeats,
+                                      generating: clip.generating,
+                                      isGhost: clip.isGhost,
+                                      isLinkedInstance: clip.isLinkedInstance || !!clip.parentClipId,
+                                      isInlineEditing: clip.isInlineEditing,
+                                  };
+                              }),
+                          }))
+                        : undefined,
             };
         });
 
