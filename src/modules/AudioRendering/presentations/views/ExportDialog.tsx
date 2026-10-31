@@ -82,6 +82,13 @@ type ExportDialogProps = {
     onClose: () => void;
 };
 
+const clearTimers = (timers: Set<ReturnType<typeof setTimeout>>): void => {
+    for (const timer of timers) {
+        clearTimeout(timer);
+    }
+    timers.clear();
+};
+
 const resolveExportMime = (isZip: boolean, primaryExt: string): string => {
     if (isZip) {
         return 'application/zip';
@@ -207,11 +214,28 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
     // them: the props each timer closes over come from the render that started
     // the export — `open` always true — so a user closing and reopening within
     // the timer window would have the stale timer slam the fresh session shut.
-    // The session counter increments on every open transition; a timer fires
-    // only when its session still owns the dialog.
+    // The session counter increments on every open transition and again when a
+    // session ends (close or unmount); a timer fires only when its session still
+    // owns the dialog, and ending the session clears every timer it armed so none
+    // outlives the dialog.
     const openSessionRef = useRef(0);
     const openRef = useRef(open);
     openRef.current = open;
+    const sessionTimersRef = useRef(new Set<ReturnType<typeof setTimeout>>());
+    const sessionOwnsDialog = (session: number) => openSessionRef.current === session && openRef.current;
+    const scheduleForSession = (session: number, delayMs: number, callback: () => void) => {
+        if (!sessionOwnsDialog(session)) {
+            return;
+        }
+        const timers = sessionTimersRef.current;
+        const timer = setTimeout(() => {
+            timers.delete(timer);
+            if (sessionOwnsDialog(session)) {
+                callback();
+            }
+        }, delayMs);
+        timers.add(timer);
+    };
     const cancelledRef = useRef(false);
     const commitStartedRef = useRef(false);
     const activeExportCancellationRef = useRef<AbortController | null>(null);
@@ -228,6 +252,8 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             setStatusText('');
             setErrorText('');
             return () => {
+                openSessionRef.current += 1;
+                clearTimers(sessionTimersRef.current);
                 if (commitStartedRef.current) {
                     return;
                 }
@@ -452,7 +478,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
         const canonicalSampleRate =
             targetPlan.length > 0 ? Math.max(...targetPlan.map((target) => target.sampleRate)) : sampleRate;
         const session = openSessionRef.current;
-        const currentSession = () => openSessionRef.current === session && openRef.current;
+        const currentSession = () => sessionOwnsDialog(session);
         const destinationBelongsToSession = () => !cancellation.signal.aborted && currentSession();
         const finishCancelledPreparation = () => {
             if (!currentSession()) {
@@ -460,11 +486,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             }
             setProgress(0);
             setStatusText('Oven turned off.');
-            setTimeout(() => {
-                if (currentSession()) {
-                    setExporting(false);
-                }
-            }, 1500);
+            scheduleForSession(session, 1500, () => {
+                setExporting(false);
+            });
         };
         const ts = Date.now();
         const baseName = `Sourdaw_Bake_${ts}`;
@@ -726,11 +750,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 setProgress(100);
                 setStatusText('Clip ready in the timeline.');
                 notifyUser('Rendered audio placed as a new clip', 'success');
-                setTimeout(() => {
-                    if (openSessionRef.current === session && openRef.current) {
-                        onClose();
-                    }
-                }, 1500);
+                scheduleForSession(session, 1500, onClose);
                 return;
             }
 
@@ -824,11 +844,7 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
             notifyUser('Ding! The audio finished baking', 'success');
 
             // Auto-close after 2.5s, only if this export's session still owns the dialog
-            setTimeout(() => {
-                if (openSessionRef.current === session && openRef.current) {
-                    onClose();
-                }
-            }, 2500);
+            scheduleForSession(session, 2500, onClose);
         } catch (error) {
             // A Cancel's own failure is reported by the finally below.
             if (!endedCancelled() && currentSession()) {
@@ -856,11 +872,9 @@ export const ExportDialog = ({ open, onClose }: ExportDialogProps): ReactElement
                 // figure, and 100 would show the finished state. All uncommitted files were aborted.
                 setProgress(0);
                 setStatusText('Oven turned off.');
-                setTimeout(() => {
-                    if (currentSession()) {
-                        setExporting(false);
-                    }
-                }, 1500);
+                scheduleForSession(session, 1500, () => {
+                    setExporting(false);
+                });
             } else if (currentSession()) {
                 // Success or error — both unblock the button immediately.
                 // progress===100 drives the "Close Bakery" button state; exporting===false re-enables export.
