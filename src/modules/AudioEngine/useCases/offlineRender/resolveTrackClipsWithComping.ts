@@ -225,18 +225,6 @@ function withMediaOffsetBeats(clip: TrackClip, offsetBeats: number): TrackClip {
     return { ...clip, midiOffsetBeats: offsetBeats };
 }
 
-/**
- * The clip set a track actually plays: comped takes where a take lane has
- * active regions, gap fills where the original clip still shows through, and
- * the clips unchanged when no comping applies.
- *
- * Shared by both renderers (#2225): the Web Audio scheduler
- * (`scheduleTrackClips`) and the native export path must schedule exactly the
- * same clip set — comped takes and gap fills included — for the two to be
- * interchangeable. `timeline` is the tempo map the caller's readers convert
- * each resolved offset against: a render passes its own, and a live producer
- * reads the session's.
- */
 function selectedAudioSource(
     region: TakeLaneStoreState['lanes'][number]['activeCompRegions'][number],
     take: Take,
@@ -395,6 +383,18 @@ function resolveBaseGapClips(
     return resolvedClips;
 }
 
+/**
+ * The clip set a track actually plays: comped takes where a take lane has
+ * active regions, gap fills where the original clip still shows through, and
+ * the clips unchanged when no comping applies.
+ *
+ * Shared by both renderers (#2225): the Web Audio scheduler
+ * (`scheduleTrackClips`) and the native export path must schedule exactly the
+ * same clip set — comped takes and gap fills included — for the two to be
+ * interchangeable. `timeline` is the tempo map the caller's readers convert
+ * each resolved offset against: a render passes its own, and a live producer
+ * reads the session's.
+ */
 export function resolveTrackClipsWithComping(
     trackId: string,
     clips: Track['clips'],

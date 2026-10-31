@@ -12,6 +12,8 @@ type StageRecordingTakeInput = {
     endBeat: number;
     sourceOffsetBeats?: number;
     recordingPassIndex?: number;
+    /** Retime this recording's already staged pass end instead of closing the pass again. */
+    replacedTakeId?: string;
     /** Reuse this recording's still-open audio take when its final lap closes. */
     provisionalTakeId?: string;
     /** Physical seam ending this recorded pass, on the capture clock. */
@@ -116,7 +118,7 @@ export function stageRecordingTake(
     if (input.provisionalTakeId !== undefined) {
         ({ take, replacement } = replaceProvisionalTake(input, lane));
     } else {
-        const replacementId = recordingPassTiming.replacementTakeId(input.clipId);
+        const replacementId = input.replacedTakeId ?? recordingPassTiming.replacementTakeId(input.clipId);
         if (replacementId !== undefined) {
             replacement = lane?.takes.find(
                 (candidate) => candidate.id === replacementId && candidate.clipId === input.clipId

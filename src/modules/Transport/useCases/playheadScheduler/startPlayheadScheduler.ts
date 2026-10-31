@@ -201,7 +201,13 @@ const MAX_DELTA_SECONDS = SCHEDULE_AHEAD_SECONDS;
 function stageLoopWrapTakes(
     current: TransportState,
     passEndContextSeconds: number,
-    boundary: { planned?: boolean; endBeat?: number; nextPassStartBeat?: number; deferredClock?: boolean } = {},
+    boundary: {
+        planned?: boolean;
+        endBeat?: number;
+        nextPassStartBeat?: number;
+        deferredClock?: boolean;
+        supersedesPlannedSeam?: boolean;
+    } = {},
     kinds: 'all' | 'audio' | 'midi' = 'all'
 ): Array<NonNullable<ReturnType<typeof stageRecordingTake>>> {
     const finalizeClocks: Array<NonNullable<ReturnType<typeof stageRecordingTake>>> = [];
@@ -273,6 +279,23 @@ function stageLoopWrapTakes(
         };
         if (track.kind === 'midi') {
             stagedTake.recordingPassIndex = passIndex;
+            if (boundary.supersedesPlannedSeam) {
+                // A MIDI pass has no capture clock to cancel its planned end, so
+                // the relocation closes the pass the wrap count says it ended:
+                // the look-ahead may already have staged that pass's take, which
+                // the relocation then retimes rather than closing a pass twice.
+                const closedPassIndex = playheadWrapCountRef.current - activeRecordingRef.startWrapCount - 1;
+                const plannedTake = lane?.takes.find(
+                    (take) =>
+                        take.clipId === recordingClip.id &&
+                        take.sourceOffsetBeats !== undefined &&
+                        take.recordingPassIndex === closedPassIndex
+                );
+                if (plannedTake) {
+                    stagedTake.replacedTakeId = plannedTake.id;
+                    stagedTake.recordingPassIndex = closedPassIndex;
+                }
+            }
         }
         const finalizeClock = stageRecordingTake(stagedTake);
         if (boundary.deferredClock && finalizeClock) {
@@ -853,7 +876,9 @@ export function startPlayheadScheduler(
             return;
         }
 
-        let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
+        let capturedJumpBoundary: { endBeat: number; nextPassStartBeat: number; supersedesPlannedSeam: true } | null =
+            null;
+        let jumpClosedRecordingPasses = 0;
         if (jumpToPosition !== null) {
             const pending = schedulerSession.pendingSeam;
             if (pending !== null && activeRecordingRef.current.length > 0) {
@@ -871,7 +896,15 @@ export function startPlayheadScheduler(
                 if (browserCapture) {
                     observeRecordingPassEntry(endingBeat, now, false, true);
                 }
-                capturedJumpBoundary = { endBeat: endingBeat, nextPassStartBeat: jumpToPosition };
+                capturedJumpBoundary = {
+                    endBeat: endingBeat,
+                    nextPassStartBeat: jumpToPosition,
+                    supersedesPlannedSeam: true,
+                };
+                // The relocation ends the pass it interrupts, after the pass the
+                // superseded seam already closed when its instant has passed
+                // uncounted.
+                jumpClosedRecordingPasses = now >= pending.seamAudioTime ? 2 : 1;
             }
             // The relocation supersedes the seam this tick may have scheduled.
             seam = null;
@@ -928,6 +961,9 @@ export function startPlayheadScheduler(
         // position at the seam. Scheduling decisions — punch, follow actions,
         // the windows themselves — stay on `newPosition` above: they are about
         // material *this* scheduler emitted, against its own clock (ADR 0039).
+        // Counted beside the seam's own wrap, for the same reason: the
+        // destination is the first position of the pass the count now names.
+        playheadWrapCountRef.current += jumpClosedRecordingPasses;
         if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
             schedulerSession.pendingSeam = null;
             playheadClockRef.pendingLoopSeam = null;

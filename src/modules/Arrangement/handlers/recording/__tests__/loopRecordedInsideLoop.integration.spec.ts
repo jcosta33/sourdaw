@@ -311,6 +311,46 @@ describe('MIDI loop recordings', () => {
         expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
     });
 
+    it('retimes a planned pass end in place when a relocation ends that pass first', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Planned pass 0',
+            startBeat: 8,
+            endBeat: 12,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
+        const planned = passTake('Planned pass 0');
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Relocated pass 0',
+            startBeat: 8,
+            endBeat: 10.5,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+            replacedTakeId: planned.id,
+            nextPassStartBeat: 9,
+        });
+
+        const takes = takeLaneStore.value?.lanes[0]?.takes ?? [];
+        expect(takes.filter((take) => take.sourceOffsetBeats !== undefined)).toEqual([{ ...planned, endBeat: 10.5 }]);
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1 });
+        expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+    });
+
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {
         transportStore.set({
             ...defaultTransportState,

@@ -1009,6 +1009,58 @@ describe('scheduleMidiNotes', () => {
         });
     });
 
+    it.each([
+        { recordingPassIndex: 1, heard: [67] },
+        { recordingPassIndex: undefined, heard: [72, 67] },
+    ])(
+        'plays only the selected pass of a raw recording clip (pass $recordingPassIndex)',
+        async ({ recordingPassIndex, heard }) => {
+            const sourceClip = midiClip({ startBeat: 0, endBeat: 4, midiOffsetBeats: 3.5 });
+            const track = midiTrack({ clips: [sourceClip] });
+            (trackStore as { value: unknown }).value = { tracks: [track] };
+            (midiStore as { value: unknown }).value = {
+                probabilitySeed: 0xdecafbad,
+                notesByClipId: {
+                    'clip-1': [
+                        // The earlier pass's last row, inside the window the selected pass reads.
+                        {
+                            id: 'held-previous',
+                            pitch: 72,
+                            startBeat: 3.75,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 0,
+                        },
+                        {
+                            id: 'selected-row',
+                            pitch: 67,
+                            startBeat: 4.5,
+                            duration: 1,
+                            velocity: 100,
+                            recordingPassIndex: 1,
+                        },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            };
+            vi.mocked(resolveClipsWithComping).mockReturnValue([
+                {
+                    ...sourceClip,
+                    regionStartBeat: 0,
+                    regionEndBeat: 4,
+                    sourceStartBeat: 0,
+                    midiTakeId: 'selected',
+                    midiTakeRecordingPassIndex: recordingPassIndex,
+                },
+            ]);
+
+            await scheduleMidiNotes(0, 2, 0, new Set<string>(), [], defaultTransportState, 120);
+
+            expect(vi.mocked(scheduleNote).mock.calls.map(([, , pitch]) => pitch)).toEqual(heard);
+        }
+    );
+
     it('schedules selected frozen source in both first and rolling WebAudio windows', async () => {
         const sourceClip = midiClip({ startBeat: 0, endBeat: 8 });
         const track = midiTrack({ clips: [sourceClip] });

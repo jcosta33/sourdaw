@@ -713,27 +713,27 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         expect(isHydratableProjectData(withPlacement(placement))).toBe(true);
     });
 
+    const frozenMidiPlacement = {
+        sourceOffsetBeats: 4,
+        passAnchorSeconds: -2,
+        passDepthSeconds: 2,
+        midiSource,
+        recordingPassIndex: 1,
+    };
+
     it('accepts a valid frozen MIDI source beside a complete audio placement', () => {
-        expect(
-            isHydratableProjectData(
-                withPlacement({
-                    sourceOffsetBeats: 4,
-                    passAnchorSeconds: -2,
-                    passDepthSeconds: 2,
-                    midiSource,
-                    recordingPassIndex: 1,
-                })
-            )
-        ).toBe(true);
+        expect(isHydratableProjectData(withPlacement(frozenMidiPlacement))).toBe(true);
     });
 
     it.each([
         { midiSource: { ...midiSource, sourceEndBeat: 0 } },
+        // A frozen window longer than the pass it was cut from.
+        { midiSource: { ...midiSource, sourceEndBeat: 8 } },
         { midiSource: undefined },
         { recordingPassIndex: -1 },
         { recordingPassIndex: undefined },
     ])('rejects a malformed present MIDI source or pass identity before hydration %j', (midiFields) => {
-        expect(isHydratableProjectData(withPlacement(midiFields))).toBe(false);
+        expect(isHydratableProjectData(withPlacement({ ...frozenMidiPlacement, ...midiFields }))).toBe(false);
     });
 
     it.each([

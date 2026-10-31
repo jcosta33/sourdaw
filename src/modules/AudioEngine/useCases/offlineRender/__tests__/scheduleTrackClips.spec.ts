@@ -393,6 +393,8 @@ type RunScheduleInput = {
     useLegacyScheduler?: boolean;
     trackDeviceType?: string;
     includeSecondNote?: boolean;
+    /** Replaces the clip's note list. */
+    notes?: NonNullable<MidiStoreState>['notesByClipId'][string];
     abortSignal?: AbortSignal;
 };
 
@@ -417,6 +419,7 @@ async function runSchedule({
     useLegacyScheduler = false,
     trackDeviceType,
     includeSecondNote = false,
+    notes,
     abortSignal,
 }: RunScheduleInput = {}): Promise<PendingWorkletEvent[]> {
     const offlineCtx = makeOfflineCtx();
@@ -443,6 +446,9 @@ async function runSchedule({
     }
     if (includeSecondNote) {
         midi.notesByClipId['clip-1']!.push({ id: 'note-2', pitch: 62, startBeat: 2, duration: 1, velocity: 90 });
+    }
+    if (notes) {
+        midi.notesByClipId['clip-1'] = notes;
     }
     if (probability !== undefined) {
         midi.notesByClipId['clip-1']![0]!.probability = probability;
@@ -737,6 +743,67 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         mocks.evaluateAutomationValue.mockReturnValue(null);
         mocks.shouldPlayMidiEvent.mockImplementation(({ probabilityPercent }) => probabilityPercent > 0);
     });
+
+    it.each([
+        { recordingPassIndex: 1, heard: [[67, 0.5]] },
+        {
+            recordingPassIndex: 0,
+            heard: [[72, 0.125]],
+        },
+    ])(
+        'renders only the selected pass of a raw recording clip (pass $recordingPassIndex)',
+        async ({ recordingPassIndex, heard }) => {
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-midi',
+                        trackId: 'track-inst',
+                        takes: [
+                            {
+                                id: 'selected',
+                                clipId: 'clip-1',
+                                name: 'Selected',
+                                startBeat: 0,
+                                endBeat: 4,
+                                selected: true,
+                                sourceOffsetBeats: 3.5,
+                                recordingPassIndex,
+                            },
+                        ],
+                        activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'selected' }],
+                    },
+                ],
+            };
+
+            const events = await runSchedule({
+                notes: [
+                    // The earlier pass's last row, inside the window the selected pass reads.
+                    {
+                        id: 'previous-pass',
+                        pitch: 72,
+                        startBeat: 3.75,
+                        duration: 1,
+                        velocity: 100,
+                        recordingPassIndex: 0,
+                    },
+                    {
+                        id: 'selected-row',
+                        pitch: 67,
+                        startBeat: 4.5,
+                        duration: 1,
+                        velocity: 100,
+                        recordingPassIndex: 1,
+                    },
+                ],
+            });
+
+            expect(
+                voiceEvents(events)
+                    .filter((event) => event.type === 'on')
+                    .map((event) => [event.pitch, event.time])
+            ).toEqual(heard);
+        }
+    );
 
     it('renders selected frozen source instead of ordinary rows through direct and Yeast routes', async () => {
         mocks.takeLaneValue.value = {
