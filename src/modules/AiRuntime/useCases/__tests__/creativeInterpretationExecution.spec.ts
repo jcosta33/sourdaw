@@ -405,9 +405,9 @@ function radioProviderTurns(input: {
 }): ScriptedTurn[] {
     const turns: ScriptedTurn[] = [
         () => [catalogDiscoveryCall([PROPOSED_COMMAND_NAME, PARAMETER_COMMAND_NAME])],
-        (userMessage) => [
+        (userMessage, providerView) => [
             selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage),
+                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
                 ...input.interpretation,
             }),
         ],
@@ -455,9 +455,9 @@ const BEAT_AND_RADIO_COMMAND_NAMES = ['addTrack', 'addClip', 'addNotes', PROPOSE
 function beatAndRadioProviderTurns(): ScriptedTurn[] {
     return [
         () => [catalogDiscoveryCall(BEAT_AND_RADIO_COMMAND_NAMES)],
-        (userMessage) => [
+        (userMessage, providerView) => [
             selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage),
+                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
                 modeId: 'create',
                 targetObjectIds: [GUITAR_TRACK_ID],
                 dimensions: ['arrangement', 'midi-content', 'processing'],
@@ -562,9 +562,9 @@ function combinedProviderTurns(input: {
 }): ScriptedTurn[] {
     return [
         () => [catalogDiscoveryCall(COMBINED_COMMAND_NAMES)],
-        (userMessage) => [
+        (userMessage, providerView) => [
             selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage),
+                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
                 ...input.interpretation,
             }),
         ],
@@ -641,9 +641,9 @@ function synthProposalItems(): Record<string, unknown>[] {
 function synthProviderTurns(): ScriptedTurn[] {
     return [
         () => [catalogDiscoveryCall(SYNTH_COMMAND_NAMES)],
-        (userMessage) => [
+        (userMessage, providerView) => [
             selectCreativeInterpretationCall({
-                catalog: readCreativeInterpretationCatalog(userMessage),
+                catalog: readCreativeInterpretationCatalog(userMessage, providerView),
                 ...CREATE_A_TRACK_AND_TREAT_IT,
             }),
         ],
@@ -835,17 +835,22 @@ describe('creative interpretation execution', () => {
         runtimeMocks.backend.value = 'cloud';
         const turns = radioProviderTurns({ interpretation: EDIT_THE_SELECTED_TRACK, proposeTrackId: GUITAR_TRACK_ID });
         let turnIndex = 0;
-        runtimeMocks.generateCloudToolCalls.mockImplementation((_systemPrompt, userMessage) => {
+        runtimeMocks.generateCloudToolCalls.mockImplementation((_systemPrompt, userMessage, toolSchemas) => {
             const turn = turns[turnIndex];
             if (!turn) {
                 throw new Error('Unexpected hosted planning turn');
             }
             turnIndex += 1;
-            const scriptedCalls = turnIndex === 3 ? [proposeAddDeviceCall(GUITAR_TRACK_ID)] : turn(userMessage);
+            const scriptedCalls =
+                turnIndex === 3 ? [proposeAddDeviceCall(GUITAR_TRACK_ID)] : turn(userMessage, toolSchemas);
             const calls = scriptedCalls.map((call, index) => {
                 const id = `hosted-${String(turnIndex)}-${String(index)}`;
                 if (call.name !== 'command.batch.propose') {
-                    return { id, name: call.name, arguments: call.arguments };
+                    let argumentsValue = call.arguments;
+                    if (call.name === 'selectCreativeInterpretation') {
+                        argumentsValue = { ...call.arguments, answer: null };
+                    }
+                    return { id, name: call.name, arguments: argumentsValue };
                 }
                 return {
                     id,

@@ -2,6 +2,9 @@ import { expandMidiTransform } from '#/modules/Command/useCases';
 import { LEGACY_MIDI_PROBABILITY_SEED, type MidiStoreState } from '#/modules/MIDI/stores';
 
 import { type AgentPlanProposal } from '../../models/AgentRun';
+import { type ToolSchema } from '../../models/ToolDefinitions';
+
+import { advertisedAnswerSchema } from './answerWireFixture';
 
 /** A MIDI store holding nothing. The store barrel publishes the seed, not the whole default state. */
 export function emptyMidiState(): MidiStoreState {
@@ -236,7 +239,7 @@ type ProviderCompletionMock = {
     mockImplementation: (fn: (systemPrompt: string, userMessage: string) => Promise<string>) => unknown;
 };
 
-export type ScriptedTurn = (userMessage: string) => ProviderCall[];
+export type ScriptedTurn = (userMessage: string, providerView?: string | readonly ToolSchema[]) => ProviderCall[];
 
 /**
  * Drives the provider through an exact list of turns. Each turn sees the real user message, so a turn
@@ -245,13 +248,13 @@ export type ScriptedTurn = (userMessage: string) => ProviderCall[];
  */
 export function scriptProviderTurns(completion: ProviderCompletionMock, turns: readonly ScriptedTurn[]): string[] {
     const seenMessages: string[] = [];
-    completion.mockImplementation((_systemPrompt, userMessage) => {
+    completion.mockImplementation((systemPrompt, userMessage) => {
         seenMessages.push(userMessage);
         const turn = turns[seenMessages.length - 1];
         if (!turn) {
             throw new Error(`Expected exactly ${String(turns.length)} provider turns`);
         }
-        return Promise.resolve(JSON.stringify(turn(userMessage)));
+        return Promise.resolve(JSON.stringify(turn(userMessage, systemPrompt)));
     });
     return seenMessages;
 }
@@ -263,13 +266,13 @@ export function scriptProviderTurns(completion: ProviderCompletionMock, turns: r
  */
 export function cycleProviderAttempt(completion: ProviderCompletionMock, turns: readonly ScriptedTurn[]): string[] {
     const seenMessages: string[] = [];
-    completion.mockImplementation((_systemPrompt, userMessage) => {
+    completion.mockImplementation((systemPrompt, userMessage) => {
         seenMessages.push(userMessage);
         const turn = turns[(seenMessages.length - 1) % turns.length];
         if (!turn) {
             throw new Error('Expected at least one scripted provider turn');
         }
-        return Promise.resolve(JSON.stringify(turn(userMessage)));
+        return Promise.resolve(JSON.stringify(turn(userMessage, systemPrompt)));
     });
     return seenMessages;
 }
@@ -338,47 +341,88 @@ export type ScriptedCreativeCatalog = {
     creationSlots: ReadonlyArray<{ candidateId: string; objectType: string; parentCandidateId: string | null }>;
 };
 
-function requireCandidateRecords(value: unknown, family: string): Record<string, unknown>[] {
-    if (!Array.isArray(value) || !value.every((entry) => isRecord(entry))) {
-        throw new TypeError(`Expected a published ${family} candidate list in the creative interpretation catalog`);
+export function readCreativeInterpretationCatalog(
+    userMessage: string,
+    providerView?: string | readonly ToolSchema[]
+): ScriptedCreativeCatalog {
+    const schema = advertisedAnswerSchema(providerView);
+    if (schema.name !== 'selectCreativeInterpretation') {
+        throw new Error('Expected the actual joint planning selector.');
     }
-    return value;
-}
-
-function requireCandidateId(candidate: Record<string, unknown>, family: string): string {
-    if (typeof candidate.candidateId !== 'string') {
-        throw new TypeError(`Expected an application-minted ${family} candidate id`);
+    const properties = schema.parameters.properties;
+    if (!isRecord(properties)) {
+        throw new Error('Expected selector properties.');
     }
-    return candidate.candidateId;
-}
-
-export function readCreativeInterpretationCatalog(userMessage: string): ScriptedCreativeCatalog {
-    const available = getProviderSection(userMessage, 'capability_schemas').availableCapabilities;
-    if (typeof available !== 'string') {
-        throw new TypeError('Expected serialized available capabilities in provider request');
+    const selectorProperties = properties;
+    function resolved(value: unknown): Record<string, unknown> {
+        if (!isRecord(value)) {
+            throw new Error('Expected a candidate schema.');
+        }
+        if (typeof value.$ref === 'string') {
+            const key = value.$ref.split('/').at(-1)!;
+            const definitions = schema.parameters.$defs;
+            if (!isRecord(definitions)) {
+                throw new Error('Missing candidate schema definition.');
+            }
+            return resolved(definitions[key]);
+        }
+        return value;
     }
-    const parsed: unknown = JSON.parse(available);
-    const catalog = isRecord(parsed) ? parsed.creativeInterpretationCatalog : undefined;
-    if (!isRecord(catalog) || typeof catalog.catalogId !== 'string' || !Array.isArray(catalog.modes)) {
-        throw new TypeError('Expected a published creative interpretation catalog in provider request');
+    function ids(key: string): string[] {
+        const items = resolved(resolved(selectorProperties[key]).items);
+        if (!Array.isArray(items.enum) || !items.enum.every((id) => typeof id === 'string')) {
+            throw new Error('Missing published candidate ids.');
+        }
+        return items.enum;
+    }
+    const view = JSON.parse(schema.description.slice(schema.description.indexOf('View: {') + 6)) as {
+        targets: Array<[string, string, string[], string | null, string]>;
+        dimensions: string[];
+        slots: Array<[string, string | null, number]>;
+        fallback: Array<[string, string, string]>;
+    };
+    const section = getProviderSection(userMessage, 'untrusted_project_data');
+    if (!isRecord(section.data)) {
+        throw new Error('Expected actual outbound project rows.');
+    }
+    const data = section.data as { selectableTargets?: Array<{ id: string; clips: Array<{ id: string }> }> };
+    const objects = new Map<string, string>();
+    for (const [trackIndex, track] of (data.selectableTargets ?? []).entries()) {
+        objects.set(`t${String(trackIndex)}`, track.id);
+        for (const [clipIndex, clip] of track.clips.entries()) {
+            objects.set(`c${String(trackIndex)}.${String(clipIndex)}`, clip.id);
+        }
+    }
+    for (const [index, row] of view.fallback.entries()) {
+        objects.set(`f${String(index)}`, row[1]);
+    }
+    objects.set('master', 'master');
+    const targetIds = ids('targetCandidateIds');
+    const dimensionIds = ids('editDimensionCandidateIds');
+    const slotIds = ids('creationSlotIds');
+    const catalog = resolved(properties.catalogId);
+    const modes = resolved(properties.modeId).enum;
+    if (typeof catalog.const !== 'string' || !Array.isArray(modes)) {
+        throw new TypeError('Missing joint catalog binding.');
     }
     return {
-        catalogId: catalog.catalogId,
-        modes: catalog.modes.filter((mode) => typeof mode === 'string'),
-        targets: requireCandidateRecords(catalog.targets, 'target').map((target) => ({
-            candidateId: requireCandidateId(target, 'target'),
-            objectIds: Array.isArray(target.objectIds)
-                ? target.objectIds.filter((objectId) => typeof objectId === 'string')
-                : [],
+        catalogId: catalog.const,
+        modes: modes.filter((mode) => typeof mode === 'string'),
+        targets: view.targets.map((target, index) => ({
+            candidateId: targetIds[index]!,
+            objectIds: target[2].map((reference) => {
+                const id = objects.get(reference);
+                if (id === undefined) {
+                    throw new Error('Missing printed target reference.');
+                }
+                return id;
+            }),
         })),
-        dimensions: requireCandidateRecords(catalog.dimensions, 'dimension').map((dimension) => ({
-            candidateId: requireCandidateId(dimension, 'dimension'),
-            dimension: String(dimension.dimension),
-        })),
-        creationSlots: requireCandidateRecords(catalog.creationSlots, 'creation slot').map((slot) => ({
-            candidateId: requireCandidateId(slot, 'creation slot'),
-            objectType: String(slot.objectType),
-            parentCandidateId: typeof slot.parentCandidateId === 'string' ? slot.parentCandidateId : null,
+        dimensions: view.dimensions.map((dimension, index) => ({ candidateId: dimensionIds[index]!, dimension })),
+        creationSlots: view.slots.map((slot, index) => ({
+            candidateId: slotIds[index]!,
+            objectType: slot[0],
+            parentCandidateId: slot[1],
         })),
     };
 }

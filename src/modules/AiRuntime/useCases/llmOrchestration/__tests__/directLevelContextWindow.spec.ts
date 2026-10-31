@@ -12,9 +12,12 @@ import { estimateConservativePromptTokens } from '../../../transformers/estimate
 import { createPlanningProject, fixtureUuid } from '../../__tests__/planningProjectFixture';
 import { createFullThreadContext } from '../../__tests__/threadContextFixture';
 import { buildAgentContext } from '../../buildAgentContext';
+import { createPlanningInterpretationToolSchema } from '../../createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../getPlanningProviderToolSchemas';
 import { getProjectContext } from '../../getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from '../../prepareCreativeInterpretationCatalog';
+import { projectPlanningProviderToolSchemas } from '../../projectPlanningProviderToolSchemas';
 import { generateToolPlanningOutcome, WEBLLM_TOOL_BUDGET } from '../inference';
 
 const mocks = vi.hoisted(() => ({ completion: vi.fn(), toolCalls: vi.fn() }));
@@ -36,8 +39,11 @@ describe('direct level context window', () => {
             vcaGroups: [{ id: groupId, name: 'Drums VCA', gain: 0.75, muted: false, trackIds: [base.tracks[0]!.id] }],
         };
         const catalog = prepareCreativeInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
-        const tools = [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)];
-        const system = buildPlanningSystemPrompt();
+        const advertised = projectPlanningProviderToolSchemas(
+            [...getPlanningProviderToolSchemas(), createCreativeInterpretationToolSchema(catalog)],
+            'planning'
+        );
+        const system = buildPlanningSystemPrompt(undefined, 'planning');
         const receipt = {
             callId: 'call-1',
             toolName: 'project.query',
@@ -55,10 +61,17 @@ describe('direct level context window', () => {
             context,
             projectRevision: 'revision-1',
             receipts: [{ id: 'application-tool-loop', summary }],
-            capabilitySchemas: tools.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
-            capabilityData: { creativeInterpretationCatalog: catalog },
+            capabilitySchemas: advertised.map((tool) => ({ name: tool.function.name, schemaVersion: 1 })),
             thread: createFullThreadContext(),
         });
+        const answer = prepareAnswerInterpretationCatalog({ prompt, context, projectRevision: 'revision-1' });
+        const tools = projectPlanningProviderToolSchemas(
+            [
+                ...getPlanningProviderToolSchemas(),
+                createPlanningInterpretationToolSchema({ creative: catalog, answer, binding: built.planningBinding }),
+            ],
+            'planning'
+        );
         const actual = await vi.importActual<typeof import('../../../repositories/webLlm/toolCalling')>(
             '../../../repositories/webLlm/toolCalling'
         );

@@ -7,6 +7,7 @@ import {
     type AgentContextEvidence,
 } from '../models/AgentContext';
 import { type AgentRunBudgets, type AgentRunGrants } from '../models/AgentRun';
+import { type PlanningContextBinding } from '../models/PlanningContextBinding';
 import { type PlanningRejectionEvidence } from '../models/PlanningRejectionEvidence';
 import { PROJECT_CONTEXT_LEVEL_LAW, type ProjectContext } from '../models/ProjectContext';
 import { type ThreadContext } from '../models/ThreadContext';
@@ -386,7 +387,11 @@ function buildRevisionPayload(input: {
         input.priorEvidence.revision !== input.revision &&
         priorSnapshot !== undefined &&
         !priorSnapshot.truncated &&
-        !input.snapshot.truncated;
+        !input.snapshot.truncated &&
+        // Sections have no outward internal identity, so deletion cannot use an id tombstone.
+        (priorSnapshot.sections ?? []).every((section) =>
+            (input.snapshot.sections ?? []).some((current) => current.id === section.id)
+        );
     if (!compatiblePrior) {
         const {
             metronomeVolume: _metronomeVolume,
@@ -395,6 +400,7 @@ function buildRevisionPayload(input: {
             ...fullProjectData
         } = input.projectData;
         return {
+            candidateSections: input.projectData.sections,
             delta: { mode: 'full' as const, baseRevision: null, currentRevision: input.revision },
             projectPayload: { ...fullProjectData, sections: input.projectData.sections.map(toProviderBoundSection) },
         };
@@ -424,6 +430,7 @@ function buildRevisionPayload(input: {
         .filter((section) => !currentSectionIds.has(section.id))
         .map((section) => section.id);
     return {
+        candidateSections: changedSections,
         delta: {
             mode: 'delta' as const,
             baseRevision: input.priorEvidence!.revision,
@@ -455,6 +462,67 @@ function buildRevisionPayload(input: {
     };
 }
 
+/** Only complete rows in the actual outbound payload may supply candidate references. */
+function buildPlanningContextBinding(
+    payload: ReturnType<typeof buildRevisionPayload>,
+    snapshotIdentity: string,
+    revision: string | null,
+    selection: PlanningContextBinding['selection'],
+    authorityComplete: boolean
+): PlanningContextBinding {
+    const targets = payload.projectPayload.selectableTargets ?? [];
+    const objects: PlanningContextBinding['objects'] = [];
+    for (const [index, target] of targets.entries()) {
+        const reference = `t${String(index)}`;
+        if (!target.name.truncated) {
+            objects.push({
+                reference,
+                id: target.id,
+                label: target.name.value,
+                kind: target.kind,
+                parentId: null,
+                startBeat: null,
+                endBeat: null,
+            });
+        }
+        for (const [clipIndex, clip] of target.clips.entries()) {
+            if (!target.name.truncated && !clip.name.truncated) {
+                objects.push({
+                    reference: `c${String(index)}.${String(clipIndex)}`,
+                    id: clip.id,
+                    label: clip.name.value,
+                    kind: clip.type,
+                    parentId: target.id,
+                    startBeat: clip.startBeat,
+                    endBeat: clip.endBeat,
+                });
+            }
+        }
+    }
+    const sections = payload.candidateSections.flatMap((section, index) =>
+        section.name.truncated
+            ? []
+            : [
+                  {
+                      reference: `r${String(index)}`,
+                      id: section.id,
+                      label: section.name.value,
+                      startBeat: section.startBeat,
+                      endBeat: section.endBeat,
+                  },
+              ]
+    );
+    return {
+        authorityComplete,
+        snapshotIdentity,
+        mode: payload.delta.mode,
+        revision,
+        selection: structuredClone(selection),
+        objects,
+        sections,
+    };
+}
+
 /**
  * The planning context for one turn, in two renderings of the same evidence. `message` is what a
  * hosted provider reads. `localMessage` is what the local model reads inside its context window:
@@ -464,6 +532,7 @@ function buildRevisionPayload(input: {
  */
 export function buildAgentContext(input: BuildAgentContextInput): {
     authorityComplete: boolean;
+    planningBinding: PlanningContextBinding;
     message: string;
     localMessage: string;
     evidence: AgentContextEvidence;
@@ -656,6 +725,13 @@ export function buildAgentContext(input: BuildAgentContextInput): {
 
     return {
         authorityComplete: productionBrief?.incompleteRelevantAuthority !== true,
+        planningBinding: buildPlanningContextBinding(
+            revisionPayload,
+            snapshot.identity,
+            revision,
+            evidence.selection,
+            productionBrief?.incompleteRelevantAuthority !== true
+        ),
         evidence,
         message: `fixed_policy:\n${input.fixedPolicy}\n\n${hostedSections}${projectContextMessage('hosted')}`,
         localMessage: `${localSections}${projectContextMessage('local')}`,
