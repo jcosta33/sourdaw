@@ -1,0 +1,57 @@
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_3bb122e91d89a5::t_5fc9ade33b8f3c 7
+src/modules/CommandInterface/useCases/__tests__/isWithinModalSurface.spec.ts
+  s_3bb122e91d89a5::t_6675a226837038 1-33
+src/modules/CommandInterface/useCases/index.ts
+  s_3bb122e91d89a5::t_ce601595608fe9 8
+src/modules/CommandInterface/useCases/isWithinModalSurface.ts
+  s_3bb122e91d89a5::t_cff8c84f397e11 1-8
+src/modules/WorkspaceShell/AGENTS.md
+  s_3bb122e91d89a5::t_eb0453d9a7502d 33
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_88fc7e0d05bab6::t_e499a05a9c6986 15-21,39,192-223,465-467,469-472,474-475,478,481-483,486-491,496-501,505-510,512,514,517-519,523,530-531,533-535,538-548,599,601,638-639,683-699
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_88fc7e0d05bab6::t_7ec994f6added2 2,96-97,100-102,104,106-113,187-188,247,251-253,275-277,280-281,521,715-716,726,732,738,750-751,754,756-757,759,764-973
+tests/e2e/finalE2EGaps.spec.ts
+  s_88fc7e0d05bab6::t_ce31495879af78 75-78,85-88,105
+tests/e2e/keyboardShortcuts.spec.ts
+  s_88fc7e0d05bab6::t_4e8a63ada483e3 54,57
+tests/e2e/recordEditPlayback.spec.ts
+  s_88fc7e0d05bab6::t_b65fad53083d45 66
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_88fc7e0d05bab6::t_c3a25f9b9575e7 121
+tests/e2e/virtualKeyboardChord.spec.ts
+  s_88fc7e0d05bab6::t_cf49c49867affd 12,18,28,37,39,43
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_88fc7e0d05bab6::t_001261d96b73da 26
+tests/e2e/virtualKeyboardPlayTestId.spec.ts
+  s_88fc7e0d05bab6::t_9ed1b5a1a50221 15,19,21-26,28-31,42
+tests/e2e/virtualKeyboardTestId.spec.ts
+  s_88fc7e0d05bab6::t_0a3ff5d2440315 21,30,32,35-40,47
+tests/e2e/workspacePanels.spec.ts
+  s_88fc7e0d05bab6::t_3c88e992f7c9c9 42-43,45,52,74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51ee5fa04d951906960454330cb6ce983c83d151",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
