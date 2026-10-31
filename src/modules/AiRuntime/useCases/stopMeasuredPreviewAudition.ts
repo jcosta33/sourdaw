@@ -16,6 +16,7 @@ export function stopMeasuredPreviewAudition(
     ) {
         return Promise.resolve({ status: 'idle' });
     }
+    // Null again after a rejected restoration, so this Stop retries it.
     if (operation.restoration === null) {
         // Abort, source stop and ended handlers may reenter this use case.
         // Publish their shared settlement before invoking any of those callbacks.
@@ -39,7 +40,8 @@ export function stopMeasuredPreviewAudition(
             error: null,
         });
     }
-    return operation.restoration.then(
+    const restoration = operation.restoration;
+    return restoration.then(
         () => {
             runtime.operations.delete(operation.id);
             if (runtime.current === operation) {
@@ -56,6 +58,9 @@ export function stopMeasuredPreviewAudition(
             return { status: 'stopped' as const };
         },
         (error: unknown) => {
+            if (operation.restoration === restoration) {
+                operation.restoration = null;
+            }
             const reason = error instanceof Error ? error.message : 'The listening output could not be restored.';
             if (runtime.current === operation) {
                 measuredPreviewAuditionStore.set({

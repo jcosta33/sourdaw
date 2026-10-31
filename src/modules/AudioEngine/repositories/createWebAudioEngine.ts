@@ -2681,16 +2681,18 @@ class AudioEngineImpl implements AudioEngine {
         this.previewProgrammeGate.gain.setValueAtTime(suppressed ? 0 : 1, now);
     }
 
+    /**
+     * Ordinary previews wait only while a restoration is in flight. A rejected one is not
+     * latched: its owner retries the restore, and the programme gate stays closed until then.
+     */
     public holdAudioPreviewRestoration(restoration: Promise<void>): void {
         this.previewRestoration = restoration;
-        void restoration.then(
-            () => {
-                if (this.previewRestoration === restoration) {
-                    this.previewRestoration = null;
-                }
-            },
-            () => undefined
-        );
+        const release = () => {
+            if (this.previewRestoration === restoration) {
+                this.previewRestoration = null;
+            }
+        };
+        void restoration.then(release, release);
     }
 
     public playAudioPreviewTone(frequency: number, durationSeconds: number, intent: AudioPreviewIntent) {

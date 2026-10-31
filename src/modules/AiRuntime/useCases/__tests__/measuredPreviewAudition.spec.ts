@@ -226,6 +226,54 @@ describe('measured audition controller through the actual exclusive source execu
         await expect(stopped).resolves.toEqual({ status: 'restore-failed', reason: RESTORE_FAILURE });
         expect(measuredPreviewAuditionStore.value?.phase).toBe('restore-failed');
         expect(driven.gate.gain.value).toBe(0);
+
+        // While the native gate still refuses, each Stop retries the restore and fails on its own
+        // attempt: a preview begun during it waits and fails with it, and none after it is held.
+        const stillRefused = Promise.withResolvers<ReturnType<typeof applied>>();
+        apply.mockReturnValueOnce(stillRefused.promise);
+        const retried = stopMeasuredPreviewAudition();
+        await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(3));
+        const during = driven.engine.beginAudioPreviewIntent().ready;
+        const duringFails = expect(during).rejects.toThrow(RESTORE_FAILURE);
+        stillRefused.reject(new Error('actual restore still rejected'));
+        await expect(retried).resolves.toEqual({ status: 'restore-failed', reason: RESTORE_FAILURE });
+        await duringFails;
+        expect(driven.gate.gain.value).toBe(0);
+        expect(driven.engine.beginAudioPreviewIntent().ready).toBeUndefined();
+
+        // The native gate applies again, so the next Stop restores the programme.
+        await expect(stopMeasuredPreviewAudition()).resolves.toEqual({ status: 'stopped' });
+        expect(apply).toHaveBeenCalledTimes(4);
+        expect(apply.mock.calls[3]?.[0]).toEqual([
+            expect.objectContaining({ commands: [{ kind: 'set-monitor-shadow', shadowed: false }] }),
+        ]);
+        expect(driven.gate.gain.value).toBe(1);
+        expect(measuredPreviewAuditionStore.value?.phase).toBe('idle');
+        const ordinary = audio.playAudioBufferPreview({ buffer: exact, onEnded: vi.fn() });
+        await ordinary?.ready;
+        expect(driven.sources.at(-1)?.start).toHaveBeenCalledOnce();
+    });
+
+    it('stops a playing audition when a project edit retires its pair', async () => {
+        const { createCrdtDoc, mutateCrdtDoc } = await import('#/modules/CrdtDocument/useCases');
+        await expect(startMeasuredPreviewAudition(INPUT)).resolves.toEqual({ status: 'playing' });
+        expect(driven.gate.gain.value).toBe(0);
+        createCrdtDoc('root');
+        wire.resolve.mockReturnValue({ status: 'unavailable', reason: 'The project changed after measurement.' });
+        mutateCrdtDoc<{ tempo?: number }>({
+            id: 'root',
+            changeFn: (doc) => {
+                doc.tempo = 128;
+            },
+        });
+        expect(driven.sources[0]?.stop).toHaveBeenCalledOnce();
+        await vi.waitFor(() => expect(measuredPreviewAuditionStore.value?.phase).toBe('idle'));
+        expect(driven.gate.gain.value).toBe(1);
+        await expect(startMeasuredPreviewAudition(INPUT)).resolves.toEqual({
+            status: 'unavailable',
+            reason: 'The project changed after measurement.',
+        });
+        expect(driven.sources).toHaveLength(1);
     });
 
     it('canonical invalidation while acquiring the source handle waits its real restoration', async () => {

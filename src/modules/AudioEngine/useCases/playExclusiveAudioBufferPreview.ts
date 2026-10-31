@@ -43,6 +43,9 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     const settled = Promise.withResolvers<void>();
     operation.restoration = settled.promise;
     audioEngine.holdAudioPreviewRestoration(operation.restoration);
+    if (operation.stopped) {
+        return retryRestoration(operation, settled);
+    }
     operation.stopped = true;
     operation.acquisition.abort();
     if (nativeLiveGraphSession.auditionInvalidation === operation.invalidate) {
@@ -65,6 +68,11 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
     }
     nativeLiveGraphSession.auditionOwner = null;
     nativeLiveGraphSession.auditionRestorationOwner = operation.owner;
+    return restoreProgramme(operation, settled);
+}
+
+/** Reconcile the released output. A rejection leaves the gate closed and the next Stop retries. */
+function restoreProgramme(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
     const release = new AbortController();
     void reconcileNativeAuditionMonitoring({
         signal: release.signal,
@@ -72,8 +80,33 @@ function stopExclusive(operation: ExclusiveOperation): Promise<void> {
             nativeLiveGraphSession.auditionOwner === null &&
             nativeLiveGraphSession.auditionRestorationOwner === operation.owner,
         restoreWebProgramme: () => audioEngine.setAudioPreviewProgrammeSuppressed(false),
-    }).then(() => settled.resolve(), settled.reject);
-    return operation.restoration;
+    }).then(
+        () => settled.resolve(),
+        (error: unknown) => {
+            if (operation.restoration === settled.promise) {
+                operation.restoration = null;
+            }
+            settled.reject(error);
+        }
+    );
+    return settled.promise;
+}
+
+/** A Stop after a rejected restoration: the source is already gone, only the output is retried. */
+function retryRestoration(operation: ExclusiveOperation, settled: PromiseWithResolvers<void>): Promise<void> {
+    if (unsafeOutputContexts.has(audioEngine.context)) {
+        settled.reject(new Error('Audition source cleanup failed. Reload to restore listening.'));
+        return settled.promise;
+    }
+    if (
+        nativeLiveGraphSession.auditionOwner !== null ||
+        nativeLiveGraphSession.auditionRestorationOwner !== operation.owner
+    ) {
+        // A newer gesture owns the output now; its own release restores it.
+        settled.resolve();
+        return settled.promise;
+    }
+    return restoreProgramme(operation, settled);
 }
 
 function failed(operation: ExclusiveOperation, error: unknown): Promise<void> {

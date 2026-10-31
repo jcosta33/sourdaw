@@ -6,6 +6,7 @@ import { stoppedEngineTransportPosition } from '../../models/EngineTransportPosi
 import { createAudioEngine } from '../../repositories/createWebAudioEngine';
 import { getEngineTransportPosition } from '../../repositories/engineTransport/getEngineTransportPosition';
 import { type createNativeLiveGraphBackend } from '../../repositories/nativeGraph/createNativeLiveGraphBackend';
+import { abandonNativeLiveGraphSession } from '../livePlayback/abandonNativeLiveGraphSession';
 import { nativeLiveGraphSessionOffered } from '../livePlayback/nativeLiveGraphSessionOffered';
 import { nativeLiveGraphSession } from '../livePlayback/nativeLiveGraphSessionState';
 import { startNativeLiveGraphSession } from '../livePlayback/startNativeLiveGraphSession';
@@ -81,6 +82,7 @@ vi.mock('../livePlayback/armNativeLiveAutomationWriter', () => ({ armNativeLiveA
 vi.mock('../livePlayback/armNativeLiveMidiWriter', () => ({ armNativeLiveMidiWriter: vi.fn() }));
 vi.mock('../livePlayback/startNativeEnginePlayheadFeed', () => ({ startNativeEnginePlayheadFeed: vi.fn() }));
 vi.mock('../livePlayback/watchNativeEngineLiveness', () => ({ startNativeEngineLivenessWatch: vi.fn() }));
+vi.mock('#/utils/Notification/notifyUser', () => ({ notifyUser: vi.fn() }));
 
 const START = {
     positionSeconds: 0,
@@ -342,6 +344,60 @@ describe('exclusive retained buffer listening lifetime', () => {
         await expect(stopping).rejects.toThrow('native restoration rejected');
         expect(driven.gate.gain.value).toBe(0);
     });
+    it('reopens the Web programme when an abandon leaves a playing audition no native programme', async () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        let fence = 0;
+        const apply = vi.fn<AudioGraphBackend['apply']>().mockImplementation(async () => applied(++fence));
+        Object.assign(nativeLiveGraphSession, {
+            backend: { backendId: 'native/live', apply, dispose: vi.fn() },
+            programmeCarrier: true,
+            audibleCarrier: true,
+            monitorShadowed: false,
+        });
+        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineIncarnation: ID,
+            batchesApplied: fence,
+        }));
+        const playback = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        await playback.ready;
+        expect(driven.gate.gain.value).toBe(0);
+        abandonNativeLiveGraphSession('stalled');
+        expect(nativeLiveGraphSession.orphanedBackend).not.toBeNull();
+        await playback.stop();
+        expect(driven.gate.gain.value).toBe(1);
+        // The stalled engine is not addressed again: there is no native programme to restore into.
+        expect(apply).toHaveBeenCalledTimes(1);
+        const ordinary = playAudioBufferPreview({
+            buffer: buffer(),
+            intent: driven.engine.beginAudioPreviewIntent(),
+            onEnded: vi.fn(),
+        });
+        await ordinary?.ready;
+        expect(driven.sources.at(-1)?.start).toHaveBeenCalledOnce();
+    });
+
+    it('still refuses an audition start while an abandoned native programme is unsettled', async () => {
+        vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
+        const orphan = { backendId: 'native/live', apply: vi.fn<AudioGraphBackend['apply']>(), dispose: vi.fn() };
+        Object.assign(nativeLiveGraphSession, { orphanedBackend: orphan });
+        const playback = playExclusiveAudioBufferPreview({
+            buffer: buffer(),
+            gain: 1,
+            isCurrent: () => true,
+            onEnded: vi.fn(),
+        });
+        await expect(playback.ready).rejects.toThrow('has not settled into an owned listening session');
+        expect(driven.sources).toHaveLength(0);
+        expect(orphan.apply).not.toHaveBeenCalled();
+    });
+
     it('an older deferred native start installs without cancelling the newer A/B owner', async () => {
         vi.mocked(nativeLiveGraphSessionOffered).mockReturnValue(true);
         const topology = Promise.withResolvers<AudioGraphApplyResult>();

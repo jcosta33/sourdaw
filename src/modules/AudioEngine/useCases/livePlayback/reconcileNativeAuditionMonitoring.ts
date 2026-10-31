@@ -108,7 +108,13 @@ function admitOutputGate(scope: MonitoringScope) {
                 throw new SessionTransition();
             }
             if (session.orphanedBackend !== null) {
-                throw new Error('A native programme has not settled into an owned listening session.');
+                // An abandon already handed the programme to Web Audio and left no
+                // native programme to restore into, so only a release may reopen it.
+                if (scope.input.restoreWebProgramme === undefined || owner !== null) {
+                    throw new Error('A native programme has not settled into an owned listening session.');
+                }
+                scope.input.restoreWebProgramme();
+                return { unchanged, assertUnchanged, incarnation: null, fence: 0 };
             }
             const position = await getEngineTransportPosition();
             assertUnchanged();
