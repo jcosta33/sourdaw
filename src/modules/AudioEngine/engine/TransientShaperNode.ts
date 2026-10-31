@@ -37,14 +37,14 @@ function bounded(value: number): number {
     return Math.min(2, Math.max(0, value));
 }
 
-function createGainControls(context: BaseAudioContext, param: (name: string) => AudioParam | undefined) {
-    // `currentTime` is a frame count over the sample rate and can sit just above
-    // its frame, which Chromium would apply one sample late. An immediate write
-    // and a frame already reached both land on the current frame exactly.
-    const time = (frame?: number): number => {
-        const currentFrame = Math.round(context.currentTime * context.sampleRate);
-        return frameTime(Math.max(currentFrame, frame ?? currentFrame), context.sampleRate);
-    };
+function createGainControls(
+    context: BaseAudioContext,
+    param: (name: string) => AudioParam | undefined,
+    publishImmediateGain: (name: string, value: number, frame: number) => void,
+    clearImmediateGain: (name: string) => void
+) {
+    const currentFrame = (): number => Math.round(context.currentTime * context.sampleRate);
+    const time = (frame: number): number => frameTime(Math.max(currentFrame(), frame), context.sampleRate);
     return {
         setParam(name: string, value: number, sampleFrame?: number): void {
             if (
@@ -53,7 +53,20 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
             ) {
                 return;
             }
-            param(name)?.setValueAtTime(bounded(value), time(sampleFrame));
+            const target = param(name);
+            if (!target) {
+                return;
+            }
+            const now = currentFrame();
+            const frame = Math.max(now, sampleFrame ?? now);
+            const gain = bounded(value);
+            target.setValueAtTime(gain, time(frame));
+            // Chromium clamps an event before `currentTime` up to it, and a
+            // `currentTime` that sits above its integer frame lands one sample
+            // late, so only the port reaches the frame a write made now is for.
+            if (frame === now) {
+                publishImmediateGain(name, gain, frame);
+            }
         },
         acceptsScheduledParam: isTransientShaperParameter,
         scheduleParam(name: string, segments: readonly OfflineAutomationSegment[]): void {
@@ -61,6 +74,7 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
             if (!target) {
                 return;
             }
+            let reachesNow = false;
             for (const segment of segments) {
                 if (
                     !Number.isSafeInteger(segment.startFrame) ||
@@ -76,6 +90,12 @@ function createGainControls(context: BaseAudioContext, param: (name: string) => 
                 if (segment.endFrame > segment.startFrame) {
                     target.linearRampToValueAtTime(bounded(segment.endValue), time(segment.endFrame));
                 }
+                reachesNow ||= segment.startFrame <= currentFrame();
+            }
+            // A posted write is only ever for the current frame, so automation
+            // that reaches it must decide that frame instead of the port.
+            if (reachesNow) {
+                clearImmediateGain(name);
             }
         },
     };
@@ -180,7 +200,12 @@ function createTransientShaperController(
         }
         return workletNode.parameters.get(name);
     };
-    const gainControls = createGainControls(context, param);
+    const gainControls = createGainControls(
+        context,
+        param,
+        (name, value, frame) => workletNode.port.postMessage({ type: 'gain', name, value, frame }),
+        (name) => workletNode.port.postMessage({ type: 'clear-gain', name })
+    );
     workletNode.port.postMessage({ type: 'init' });
     return {
         workletNode,
@@ -195,10 +220,11 @@ function createTransientShaperController(
             }
             bypassed = value;
             epoch++;
-            // A scheduled currentTime can round into the next quantum. Publish
-            // the intrinsic value too, with no older private timeline to override it.
+            // The k-rate value can land a whole quantum late (see the gain
+            // writes), so the port carries the same epoch to the next quantum.
             resetParam.cancelScheduledValues(0);
             resetParam.value = epoch;
+            workletNode.port.postMessage({ type: 'reset', epoch });
             if (epoch === RESET_FAULT_EPOCH) {
                 fail('Transient Shaper reset epoch exhausted');
             }
