@@ -1,0 +1,28 @@
+src/modules/CommandInterface/useCases/isWithinModalSurface.ts
+  s_88fc7e0d05bab6::t_04e5bea4f54e24 3
+src/modules/CommandInterface/useCases/hasOpenModalSurface.ts
+  s_88fc7e0d05bab6::t_6e6579163e57e9 1-7,10,14
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_88fc7e0d05bab6::t_9b3b9f07918eaa 1123-1133
+src/modules/WorkspaceShell/AGENTS.md
+  s_88fc7e0d05bab6::t_0afb5ca2c95ace 33
+src/modules/CommandInterface/useCases/__tests__/hasOpenModalSurface.spec.ts
+  s_88fc7e0d05bab6::t_3998c2893156b0 23,28-37
+  s_88fc7e0d05bab6::t_25cd032689fb00 38-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b7c7b2ab4c319b77124f39a4c12a43ebf7a69ed2",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
