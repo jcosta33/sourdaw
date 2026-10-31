@@ -9,7 +9,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { writeNamedProjectJsonByKey } from '../../../repositories/project/writeNamedProjectJsonByKey';
 import { projectLoadFailureStore } from '../../../stores/projectLoadFailureStore';
-import { projectStore } from '../../../stores/projectStore';
+import { projectStore, type ProjectStoreState } from '../../../stores/projectStore';
 import { addToRecentProjects } from '../../recentProjects/addToRecentProjects';
 import { buildProjectData } from '../fileIO/buildProjectData';
 import { getProjectSnapshotKey } from '../getProjectSnapshotKey';
@@ -23,13 +23,102 @@ type AudioDurabilityReceipt = {
     release: () => void;
 };
 
+/** The exact project state one successful save made durable. */
+type DurableSnapshot = {
+    createdAt: number;
+    projectId: string | undefined;
+    revision: string;
+    settledTakes: number;
+};
+
+type SaveOutcome = {
+    saved: boolean;
+    durableSnapshot?: DurableSnapshot;
+};
+
+const unsavedOutcome: SaveOutcome = { saved: false };
+
+let latestSave: Promise<SaveOutcome> | undefined;
+
 function assertProjectSnapshotAuthority(): void {
     if (agentProjectRepairStateStore.value !== null) {
         throw new Error('[saveProject] Project repair became required before snapshot persistence');
     }
 }
 
-export async function saveProject(): Promise<boolean> {
+/** Names the one authority that moved since the snapshot, so a refusal seen only in a remote log says which. */
+function describeSnapshotChange(
+    persistedProject: ProjectStoreState,
+    snapshotRevision: string,
+    audioDurabilityReceipt: AudioDurabilityReceipt | undefined
+): string | null {
+    const activeProject = projectStore.value;
+    if (!activeProject) {
+        return 'the project closed';
+    }
+    if (activeProject.createdAt !== persistedProject.createdAt) {
+        return 'the project creation identity changed';
+    }
+    if (activeProject.projectId !== persistedProject.projectId) {
+        return 'the project id changed';
+    }
+    if (captureProjectRevision() !== snapshotRevision) {
+        return 'the project revision moved';
+    }
+    if (audioDurabilityReceipt !== undefined && !audioDurabilityReceipt.isCurrent()) {
+        return 'the required audio durability receipt is no longer current';
+    }
+    return null;
+}
+
+/**
+ * Saves run one at a time. Every save publishes a fresh `updatedAt` into the
+ * project before it builds its snapshot, so a second save overlapping the
+ * first (the 30 s autosave firing during a Save the user asked for) moves the
+ * first one's revision and the first save refuses itself (#5984). A save that
+ * waited behind another is already satisfied when that save made exactly the
+ * current state durable; otherwise it persists its own snapshot.
+ */
+export function saveProject(): Promise<boolean> {
+    const save = runSaveAfter(latestSave);
+    latestSave = save;
+    // Only a save still in flight is waited on: once it settles, the next save
+    // starts at once and always persists its own snapshot.
+    void save.then(() => {
+        if (latestSave === save) {
+            latestSave = undefined;
+        }
+    });
+    return save.then((outcome) => outcome.saved);
+}
+
+async function runSaveAfter(predecessor: Promise<SaveOutcome> | undefined): Promise<SaveOutcome> {
+    if (predecessor) {
+        const outcome = await predecessor;
+        if (isCurrentStateDurableIn(outcome)) {
+            return outcome;
+        }
+    }
+    return persistProjectSnapshot();
+}
+
+function isCurrentStateDurableIn({ durableSnapshot }: SaveOutcome): boolean {
+    if (!durableSnapshot || projectLoadFailureStore.value !== null || agentProjectRepairStateStore.value !== null) {
+        return false;
+    }
+    flushAutomergeStorageWrites();
+    const project = projectStore.value;
+    return (
+        project !== null &&
+        !project.dirty &&
+        project.createdAt === durableSnapshot.createdAt &&
+        project.projectId === durableSnapshot.projectId &&
+        countSettledTakes() === durableSnapshot.settledTakes &&
+        captureProjectRevision() === durableSnapshot.revision
+    );
+}
+
+async function persistProjectSnapshot(): Promise<SaveOutcome> {
     // Everything below assumes `projectStore` identifies the project the other
     // stores hold. That pairing only survives while a project is open. After a
     // load replaced the CRDT authority and then failed, `projectStore` still
@@ -52,12 +141,12 @@ export async function saveProject(): Promise<boolean> {
     // function as "the user has been told" — several comments below say
     // "already notified", and that only holds for the catch.
     if (projectLoadFailureStore.value !== null) {
-        return false;
+        return unsavedOutcome;
     }
 
     const project = projectStore.value;
     if (!project) {
-        return true;
+        return { saved: true };
     }
 
     const updatedAt = Date.now();
@@ -131,15 +220,9 @@ export async function saveProject(): Promise<boolean> {
             // original serialized revision cannot certify a newer visible state.
             flushAutomergeStorageWrites();
             assertProjectSnapshotAuthority();
-            const activeProject = projectStore.value;
-            if (
-                !activeProject ||
-                activeProject.createdAt !== persistedProject.createdAt ||
-                activeProject.projectId !== persistedProject.projectId ||
-                captureProjectRevision() !== built.snapshotRevision ||
-                (audioDurabilityReceipt !== undefined && !audioDurabilityReceipt.isCurrent())
-            ) {
-                throw new Error('[saveProject] Project or audio changed during snapshot persistence');
+            const change = describeSnapshotChange(persistedProject, built.snapshotRevision, audioDurabilityReceipt);
+            if (change !== null) {
+                throw new Error(`[saveProject] Project or audio changed during snapshot persistence: ${change}`);
             }
         };
 
@@ -195,7 +278,21 @@ export async function saveProject(): Promise<boolean> {
                         identityPersistencePending: false,
                     });
                     unsavedClosedTakes.markSavedThrough(settledTakesAtSnapshot);
-                    return true;
+                    // Publishing the transient flags rewrites the project slot
+                    // with the same durable content, which still advances the
+                    // revision. Read the revision after that write, in the same
+                    // synchronous turn as the last continuation check, so it
+                    // names exactly the state this save made durable.
+                    flushAutomergeStorageWrites();
+                    return {
+                        saved: true,
+                        durableSnapshot: {
+                            createdAt: persistedProject.createdAt,
+                            projectId: persistedProject.projectId,
+                            revision: captureProjectRevision(),
+                            settledTakes: settledTakesAtSnapshot,
+                        },
+                    };
                 } finally {
                     audioDurabilityReceipt?.release();
                 }
@@ -206,6 +303,6 @@ export async function saveProject(): Promise<boolean> {
     } catch (error) {
         logger.warn('[saveProject] Project persistence failed:', error);
         notifyUser('Save failed — your latest changes could not be persisted.', 'error');
-        return false;
+        return unsavedOutcome;
     }
 }
