@@ -1,0 +1,23 @@
+src/app/__tests__/bootstrap.spec.ts
+  s_88fc7e0d05bab6::t_dc50604e3f14e0 303
+  s_88fc7e0d05bab6::t_cbb0cfab6bb58b 405
+  s_88fc7e0d05bab6::t_f97f361fcc73d2 198
+  s_88fc7e0d05bab6::t_fd806f5b3c0077 1501,1505-1507
+  s_88fc7e0d05bab6::t_0c5f00e2951e2d 1502-1504
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "16c907714b4f168d5bafe4b2ace39f8a98ca3cd0",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
