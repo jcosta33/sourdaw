@@ -1,0 +1,57 @@
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStall.spec.ts
+  s_88fc7e0d05bab6::t_d852139ce3d79c 1-477
+  s_88fc7e0d05bab6::t_6c07116b87cc23 478
+src/modules/Transport/useCases/playheadScheduler/startPlayheadScheduler.ts
+  s_88fc7e0d05bab6::t_50a8ab3166cf3c 476-484
+  s_88fc7e0d05bab6::t_7328655415e1b3 740-745
+  s_88fc7e0d05bab6::t_547fe3658d5a28 763-766
+  s_88fc7e0d05bab6::t_b0d95327f3a756 931-954
+  s_88fc7e0d05bab6::t_86340b2c3ac263 746-747
+  s_88fc7e0d05bab6::t_44ba9d156c141a 767-768
+  s_88fc7e0d05bab6::t_c157368338a4ff 955-957
+  s_88fc7e0d05bab6::t_2c6d5cf03b3f46 772,958,1505-1508,1643-1645,1655
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadScheduler.spec.ts
+  s_88fc7e0d05bab6::t_38962adfb820cf 586,590-591,600-635,808,818,841,870,911,999,1055,1103,1179,1219,1263,1317,1951
+  s_88fc7e0d05bab6::t_27ab96352ce6a4 785,791,793,797,802-805,1953
+  s_88fc7e0d05bab6::t_8ee293f732a0e8 737-738,740-741
+  s_88fc7e0d05bab6::t_77302c935eae6d 806-807
+  s_88fc7e0d05bab6::t_a25295aa1166cd 783,1964
+src/modules/Transport/useCases/playheadScheduler/__tests__/startPlayheadSchedulerStoredControllers.spec.ts
+  s_88fc7e0d05bab6::t_8f400df7e07376 637-657
+src/modules/Transport/stores/captureGestureBeat.ts
+  s_88fc7e0d05bab6::t_2d4fb5561bc932 26-28
+  s_88fc7e0d05bab6::t_313415fd26e971 20-25
+  s_88fc7e0d05bab6::t_d53cccb58c377b 89
+src/modules/Transport/stores/__tests__/captureGestureBeat.spec.ts
+  s_88fc7e0d05bab6::t_fa499d2959ccc0 169-172,174,178
+src/modules/Transport/stores/index.ts
+  s_88fc7e0d05bab6::t_16152dca34f6e5 9
+src/modules/MIDI/useCases/webMidiInput/captureEventBeat.ts
+  s_88fc7e0d05bab6::t_e9031e7de4a1c8 109-110
+  s_88fc7e0d05bab6::t_ac3542a8fd1cd1 279-280
+  s_88fc7e0d05bab6::t_7e4296de332aaf 234-240
+  s_88fc7e0d05bab6::t_e7b862d1bfbf98 300-308,315
+  s_88fc7e0d05bab6::t_a6b6aa92bca1d9 281-282
+src/modules/Transport/useCases/__tests__/playheadScheduler.spec.ts
+  s_88fc7e0d05bab6::t_cae91c86646e95 462,470-472,475
+src/modules/Transport/AGENTS.md
+  s_88fc7e0d05bab6::t_5469bf47f9e929 30-32
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  s_88fc7e0d05bab6::t_147b7d9db00ef6 2459-2464,2470
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "337f55bd28560c6ed70a4bb09fd33b939b3881e1",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
