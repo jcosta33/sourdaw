@@ -1,0 +1,29 @@
+src/app/__tests__/splitGainPointHistory.integration.spec.ts
+  h_beb54bf43b47b7 1-59,60,62-101,105-146,148,152-160,164-341,345-352,356-422
+  s_59e31a5c6f3e31::t_e915119aa7d61c 61
+.agents/skills/review-stances/test-validity.md
+  s_59e31a5c6f3e31::t_60f157de567ebd 1422-1427
+.agents/skills/review-stances/project-integrity.md
+  s_59e31a5c6f3e31::t_60f157de567ebd 190-195
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "39bc9e2f8dd2372696989d1ddc91d8bccb736ce6",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  },
+  "sessions": {
+    "s_59e31a5c6f3e31": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a12b20-8608-7cc0-85db-20f352be177f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
