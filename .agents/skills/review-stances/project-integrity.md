@@ -950,6 +950,24 @@ and thread callers, same-lineage edits with the exact Undo snapshot retained, cl
 discard, original-reference restoration and request cancellation. This fence applies only
 before publication: a real committed inverse remains committed truth.
 
+## 2026-10-30 — optimistic history eviction outlived an aborted transaction
+
+The replay observer introduced by #229 (`490b39269a`) consumes ordinary store notifications.
+The supported abort path arrived in #576 (`ecd24df665`), with later projection settlement in
+#4082 (`dcb995a672`). Static history establishes these components, not an executed historical
+reproduction or a single introducing PR. On current main, a real history trim notified that
+observer before publication: abort restored the metadata, but its inverse authority was gone.
+Historical private review prompts and tiers are unknown.
+
+Fill the real bounded history while retaining its oldest replay capability. Stage single and
+multi-entry metadata through the public storage transaction, then abort or refuse publication.
+Require exact raw/projected restoration and actual replay of that oldest entry. Reconcile
+authority from committed history and root installation, preserving optimistic UI visibility.
+Keep successful eviction, same-content empty clear followed by ID re-add, unrelated root commits
+before a new metadata row flushes, changed fingerprints, consumed/claimed inverses and root reset
+as independent controls. Never reconstruct authority from restored metadata or use elapsed time
+as a publication signal.
+
 ## 2026-10-30 — startup retry must preserve the initialized project and its history
 
 PR #3356 (`26c6a7fe7d3374572f42510ac9accf8ff293a420`) added a second App render after first paint.
