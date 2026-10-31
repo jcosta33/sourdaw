@@ -135,6 +135,20 @@ independent writer after authorization capture, whose mutation must still revoke
 when it changes no document value. Removing admission settlement or final binding alignment must
 fail the unchanged-selection case.
 
+## Cold export must reach the active frozen print
+
+Commit `57b7349f7864eca0bd177333d720a50186bd33e9` narrowed export restoration from the
+whole audio store to clip buffer IDs. Its commit-to-pulls lookup returns no associated PR.
+`ab5a579209b5e02a035e123380b5ceaf9c922250` (associated with PR #187) retained that set
+while routing restoration through the AudioEngine owner. Neither trace establishes historical
+review prompts or tiers. The escaped integrity input is a cold project with an ordinary clip
+and an active frozen print whose PCM has a separate ID; the clip-only set omits the sound.
+
+Require both IDs through the actual cache restoration before mixdown and stem consumption,
+then inspect encoded PCM. Exclude stale prints and retain the empty-clip all-buffer fallback.
+Remove the active frozen ID from the restoration request: the cold PCM case must fail before
+encoding. A warm cache or a component assertion about requested IDs alone cannot prove the bytes.
+
 ## 2026-09-28 — a post-commit device timeout had no caller-visible outcome
 
 `waitForDevices` historically returned `void` after retiring stalled nodes, so demo/template construction could commit valid project truth and then finish without telling the musician that instruments were unavailable. The timeout was introduced in commit `9783731236` (associated with PR #2035 without proof that its readiness policy was reviewed); PR #3982 explicitly deferred caller outcomes. Probe the actual post-commit boundary: hold a current device load to failure and require a warning naming the failed device while project identity and committed tracks remain valid; cancel an obsolete captured generation and require no warning over the replacement. Do not throw into project-load recovery after the commit.
