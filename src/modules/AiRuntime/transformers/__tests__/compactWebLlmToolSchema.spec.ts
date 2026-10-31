@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
 
 import { ANALYSIS_MEASURE_MAX_TARGETS } from '../../models/AnalysisMeasureLimits';
+import { createAnswerInterpretationToolSchema } from '../../models/AnswerInterpretation';
 import { COMMAND_BATCH_DECLINE_MAX_QUESTIONS } from '../../models/CommandBatchDecline';
 import { type ToolSchema } from '../../models/ToolDefinitions';
+import { buildAgentContext } from '../../useCases/buildAgentContext';
+import { createPlanningInterpretationToolSchema } from '../../useCases/createPlanningInterpretationToolSchema';
 import { getPlanningProviderToolSchemas } from '../../useCases/getPlanningProviderToolSchemas';
+import { getProjectContext } from '../../useCases/getProjectContext';
+import { prepareAnswerInterpretationCatalog } from '../../useCases/prepareAnswerInterpretationCatalog';
+import { prepareCreativeInterpretationCatalog } from '../../useCases/prepareCreativeInterpretationCatalog';
 import { matchesJsonSchema } from '../../validators/matchesJsonSchema';
 import { compactWebLlmToolSchema } from '../compactWebLlmToolSchema';
+
+function jointInterpretationSchema(): ToolSchema {
+    const context = getProjectContext();
+    const prompt = 'Describe the project';
+    const projectRevision = 'revision';
+    return createPlanningInterpretationToolSchema({
+        creative: prepareCreativeInterpretationCatalog({ prompt, context, projectRevision }),
+        answer: prepareAnswerInterpretationCatalog({ prompt, context, projectRevision }),
+        binding: buildAgentContext({ fixedPolicy: 'policy', prompt, context, projectRevision }).planningBinding,
+    });
+}
 
 type SchemaPath = readonly (string | number)[];
 
@@ -158,7 +175,18 @@ function survives(compacted: unknown, fact: Fact): boolean {
         return true;
     }
     const names = Array.isArray(fact.value) ? fact.value : [];
-    return names.every((name) => at(compacted, [...fact.path, 'properties', String(name)]) !== undefined);
+    return names.every((name) => {
+        let objectPath = fact.path;
+        while (at(compacted, [...objectPath, 'properties', String(name)]) === undefined) {
+            const combinator = objectPath.at(-2);
+            // A combinator constrains the same object as its parent; a property/items step does not.
+            if (typeof combinator !== 'string' || !(COMBINATORS as readonly string[]).includes(combinator)) {
+                return false;
+            }
+            objectPath = objectPath.slice(0, -2);
+        }
+        return true;
+    });
 }
 
 function maxItemsOf(toolName: string, property: string): number {
@@ -182,6 +210,31 @@ function projectQueryType(): string {
 }
 
 describe('compactWebLlmToolSchema', () => {
+    it('finds inherited required properties through same-object combinators only', () => {
+        const inherited = {
+            properties: { intakeCallId: { type: 'string' } },
+            anyOf: [{ required: ['intakeCallId'] }],
+        };
+        expect(survives(inherited, { keyword: 'required', path: ['anyOf', 0], value: ['intakeCallId'] })).toBe(true);
+        expect(
+            survives({ anyOf: inherited.anyOf }, { keyword: 'required', path: ['anyOf', 0], value: ['intakeCallId'] })
+        ).toBe(false);
+        const anotherObject = {
+            properties: {
+                intakeCallId: { type: 'string' },
+                nested: { anyOf: inherited.anyOf },
+            },
+        };
+        expect(
+            survives(anotherObject, {
+                keyword: 'required',
+                path: ['properties', 'nested', 'anyOf', 0],
+                value: ['intakeCallId'],
+            })
+        ).toBe(false);
+        expect(survives(inherited, { keyword: 'required', path: ['anyOf', 0], value: [] })).toBe(false);
+    });
+
     it('keeps a tool description word for word, however long', () => {
         const description = `${'A long sentence about one thing. '.repeat(20)}And the rule that matters last.`;
         const compacted = compactWebLlmToolSchema({
@@ -195,7 +248,17 @@ describe('compactWebLlmToolSchema', () => {
     // Red when any tool description is dropped or shortened: a description holds rules the schema
     // cannot state, such as "return this call alone" and "pass the returned callId in compiledCallIds".
     it('keeps the whole description of every planning tool', () => {
-        for (const tool of getPlanningProviderToolSchemas()) {
+        for (const tool of [
+            ...getPlanningProviderToolSchemas(),
+            jointInterpretationSchema(),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe the project',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ]) {
             expect(
                 compactWebLlmToolSchema(tool).function.description,
                 `${tool.function.name} keeps its description`
@@ -275,7 +338,17 @@ describe('compactWebLlmToolSchema', () => {
     it('keeps every description, validity keyword, required list, enum, const and combinator of every planning tool', () => {
         const dropped: string[] = [];
         let checked = 0;
-        for (const tool of getPlanningProviderToolSchemas()) {
+        for (const tool of [
+            ...getPlanningProviderToolSchemas(),
+            jointInterpretationSchema(),
+            createAnswerInterpretationToolSchema(
+                prepareAnswerInterpretationCatalog({
+                    prompt: 'Describe the project',
+                    context: getProjectContext(),
+                    projectRevision: 'revision',
+                })
+            ),
+        ]) {
             const compacted = compactWebLlmToolSchema(tool).function.parameters;
             for (const fact of collectFacts(tool.function.parameters, [])) {
                 checked += 1;

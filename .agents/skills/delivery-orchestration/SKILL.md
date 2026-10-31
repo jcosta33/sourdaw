@@ -540,7 +540,10 @@ job. It materializes the worker's verified `origin/main` local-import closure, r
 existing Git/GitHub executables, and checks runtime bytes and manifest against approved Git objects
 before every execution. It can refresh only the canonical protected-primary bootstrap from approved
 sources when its HEAD/index or previous verified installation proves the current bytes; a local edit
-refuses. It preserves other primary dirt and never depends on the author lane surviving. Consult
+refuses. It preserves other primary dirt and never depends on the author lane surviving. Install
+then verifies the job's first launchd launch and, when launchd cannot initialize it, boots the job
+out, removes the plist and fails with the remediation. On macOS a primary on an external volume needs
+the pinned Node binary granted Full Disk Access (or Removable Volumes access). Consult
 `lane:cleanup --status` from a current checkout, `.agents/lane-cleanup/worker*.log`, and
 `launchctl print gui/$(id -u)/com.sourdaw.lane-cleanup` for retained work and scheduler status.
 

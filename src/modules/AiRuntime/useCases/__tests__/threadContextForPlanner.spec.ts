@@ -1324,7 +1324,11 @@ describe('thread context for the planner', () => {
             vi.mocked(generateToolPlanningOutcome).mockResolvedValue({
                 status: 'complete',
                 toolCalls: [
-                    { id: 'answer-1', name: 'answer.respond', arguments: { text: 'Lowered.', evidenceCallIds: [] } },
+                    {
+                        id: 'decline-1',
+                        name: 'command.batch.decline',
+                        arguments: { kind: 'clarify', reason: 'Which target?', questions: ['Which target?'] },
+                    },
                 ],
             });
         });

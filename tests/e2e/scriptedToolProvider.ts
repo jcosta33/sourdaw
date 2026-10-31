@@ -5,7 +5,11 @@ export type ScriptedToolRequest = {
     stream: false;
     tools: Array<{
         type: 'function';
-        function: { name: string; parameters: { properties: Record<string, unknown>; [key: string]: unknown } };
+        function: {
+            name: string;
+            description?: string;
+            parameters: { properties: Record<string, unknown>; [key: string]: unknown };
+        };
     }>;
     messages: Array<{ role: string; content: string | null; tool_call_id?: string }>;
 };
@@ -38,6 +42,7 @@ function readRequest(value: unknown): ScriptedToolRequest {
             type: 'function' as const,
             function: {
                 name: tool.function.name,
+                ...(typeof tool.function.description === 'string' ? { description: tool.function.description } : {}),
                 parameters: { ...tool.function.parameters, properties: tool.function.parameters.properties },
             },
         };

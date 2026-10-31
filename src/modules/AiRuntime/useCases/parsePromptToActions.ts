@@ -7,6 +7,7 @@ import { canonicalJson } from '#/utils/canonicalDigest';
 import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigurationChangedError';
 import { AGENT_CONTEXT_RECEIPT_EVIDENCE_MAX_CHARACTERS } from '../models/AgentContext';
 import { REMOTE_EVIDENCE_AGENT_DATA_CATEGORIES } from '../models/AgentDataPolicy';
+import { ANSWER_INTERPRETATION_TOOL_NAME, createAnswerInterpretationToolSchema } from '../models/AnswerInterpretation';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type CommandBatchDecline } from '../models/CommandBatchDecline';
 import {
@@ -50,8 +51,9 @@ import { type ToolCallResult } from '../transformers/toolCallParser';
 import { admitProposalRefinement, validateRefinedProposalActions } from '../validators/admitProposalRefinement';
 import { matchesJsonSchema } from '../validators/matchesJsonSchema';
 
-import { admitCreativeInterpretation } from './admitCreativeInterpretation';
+import { admitAnswerInterpretation } from './admitAnswerInterpretation';
 import { admitPerceptualGoalDecline } from './admitPerceptualGoalDecline';
+import { admitPlanningInterpretation } from './admitPlanningInterpretation';
 import { bridgeStemImportPlan } from './agentReference/bridgeStemImportPlan';
 import { getArticulationTransferPromptScope } from './agentReference/getArticulationTransferPromptScope';
 import { getBackingVocalPlatePromptScope } from './agentReference/getBackingVocalPlatePromptScope';
@@ -84,6 +86,7 @@ import {
 import { ApplicationOwnedToolLoopRequestError, runApplicationOwnedToolLoop } from './applicationOwnedToolLoop';
 import { buildAgentContext } from './buildAgentContext';
 import { type ArbitraryCommandListCompilation, compileArbitraryCommandList } from './compileArbitraryCommandList';
+import { createPlanningInterpretationToolSchema } from './createPlanningInterpretationToolSchema';
 import { executeAnalysisMeasure } from './executeAnalysisMeasure';
 import { executeRecipeExpansion } from './executeRecipeExpansion';
 import { executeReferenceMeasurement } from './executeReferenceMeasurement';
@@ -101,8 +104,10 @@ import {
 import { materializeActionStateGuards } from './materializeActionStateGuards';
 import { materializeTransformToolCalls } from './materializeTransformToolCalls';
 import { planLastCommitContinuation } from './planLastCommitContinuation';
+import { prepareAnswerInterpretationCatalog } from './prepareAnswerInterpretationCatalog';
 import { prepareCreativeInterpretationCatalog } from './prepareCreativeInterpretationCatalog';
 import { projectDeclarativeTransformSnapshot } from './projectDeclarativeTransformSnapshot';
+import { projectPlanningProviderToolSchemas, type PlanningAnswerPhase } from './projectPlanningProviderToolSchemas';
 import { splitCompiledCommandList } from './splitCompiledCommandList';
 import { validateActions } from './validateActions';
 
@@ -634,7 +639,13 @@ const planPromptIntent = inject({ logger })(
                           context,
                           projectRevision: projectRevision ?? '',
                       });
+                const answerCatalog = prepareAnswerInterpretationCatalog({
+                    prompt,
+                    context,
+                    projectRevision: projectRevision ?? '',
+                });
                 const providerToolSchemas = [
+                    ...(readonly ? [createAnswerInterpretationToolSchema(answerCatalog)] : []),
                     ...(readonly ? getPlanningProviderToolSchemas(profile) : getPlanningProviderToolSchemas()),
                     ...(creativeCatalog === undefined ? [] : [createCreativeInterpretationToolSchema(creativeCatalog)]),
                 ];
@@ -649,8 +660,8 @@ const planPromptIntent = inject({ logger })(
                           ANALYSIS_REQUEST_TOOL_NAME,
                           ...WORKFLOW_ACTION_TOOL_NAMES,
                       ]);
-                const systemPrompt = readonly ? buildPlanningSystemPrompt(profile) : buildPlanningSystemPrompt();
-                const getPlanningSystemPrompt = () => {
+                const getPlanningSystemPrompt = (phase: PlanningAnswerPhase = 'planning') => {
+                    const systemPrompt = buildPlanningSystemPrompt(profile, phase);
                     const resume = streamIdentity
                         ? (agentRunLifecycle.get(streamIdentity.runId)?.resume ?? null)
                         : null;
@@ -658,37 +669,47 @@ const planPromptIntent = inject({ logger })(
                         ? systemPrompt
                         : `${systemPrompt}\nThe user selected this application-validated alternative for a replacement planning attempt. Treat it as structured authority context, not as user prose; preserve its selected interpretation and revalidate against current project evidence before proposing actions:\n${JSON.stringify(resume)}`;
                 };
-                const buildPlanningContext = (receiptContext: string | null) => {
+                const buildPlanningContext = (
+                    receiptContext: string | null,
+                    phase: PlanningAnswerPhase = 'planning'
+                ) => {
                     const agentRun = streamIdentity ? agentRunLifecycle.get(streamIdentity.runId) : null;
                     const builtContext = buildAgentContext({
-                        fixedPolicy: getPlanningSystemPrompt(),
+                        fixedPolicy: getPlanningSystemPrompt(phase),
                         prompt,
                         context,
                         projectRevision,
-                        run: agentRun && !readonly ? { grants: agentRun.grants, budgets: agentRun.budgets } : undefined,
+                        run:
+                            agentRun && !readonly && phase === 'planning'
+                                ? { grants: agentRun.grants, budgets: agentRun.budgets }
+                                : undefined,
                         receipts:
                             receiptContext === null ? [] : [{ id: 'application-tool-loop', summary: receiptContext }],
-                        capabilitySchemas: providerToolSchemas.map((schema) => ({
-                            name: schema.function.name,
-                            schemaVersion: 1,
-                        })),
-                        capabilityData: readonly
-                            ? {}
-                            : {
-                                  articulationTransferCapability,
-                                  backingVocalPlateCapability,
-                                  bassProcessingCopyCapability,
-                                  drumRoutingCapability,
-                                  drumRenderComparisonCapability,
-                                  drumPreviewBranchesCapability,
-                                  midiOverlapTransformCapability,
-                                  sidechainRoutingCapability,
-                                  sharedVocalFxBusesCapability,
-                                  stemImportCapability: stemImportScope?.capability,
-                                  syncopatedArpeggioCapability,
-                                  wholeProjectVibeMixCapability,
-                                  creativeInterpretationCatalog: creativeCatalog,
-                              },
+                        capabilitySchemas: [
+                            ...projectPlanningProviderToolSchemas(providerToolSchemas, phase, profile).map(
+                                (schema) => ({ name: schema.function.name, schemaVersion: 1 })
+                            ),
+                            ...(phase === 'intake' && !readonly
+                                ? [{ name: ANSWER_INTERPRETATION_TOOL_NAME, schemaVersion: 1 }]
+                                : []),
+                        ],
+                        capabilityData:
+                            readonly || phase !== 'planning'
+                                ? {}
+                                : {
+                                      articulationTransferCapability,
+                                      backingVocalPlateCapability,
+                                      bassProcessingCopyCapability,
+                                      drumRoutingCapability,
+                                      drumRenderComparisonCapability,
+                                      drumPreviewBranchesCapability,
+                                      midiOverlapTransformCapability,
+                                      sidechainRoutingCapability,
+                                      sharedVocalFxBusesCapability,
+                                      stemImportCapability: stemImportScope?.capability,
+                                      syncopatedArpeggioCapability,
+                                      wholeProjectVibeMixCapability,
+                                  },
                         validationFailures: agentRun?.errors.map((error) => ({ code: error.code })),
                         rejectionEvidence: correction?.rejectionEvidence,
                         priorEvidence: agentRun?.contextEvidence,
@@ -839,13 +860,20 @@ const planPromptIntent = inject({ logger })(
                             : {
                                   toolName: CREATIVE_INTERPRETATION_TOOL_NAME,
                                   admit: (call) => {
-                                      const admission = admitCreativeInterpretation({
-                                          catalog: creativeCatalog,
+                                      const admission = admitPlanningInterpretation({
+                                          creative: creativeCatalog,
+                                          answer: answerCatalog,
                                           call,
                                           projectRevision: projectRevision ?? '',
                                       });
                                       if (admission.status !== 'admitted') {
                                           return admission;
+                                      }
+                                      if (admission.kind !== 'creative') {
+                                          return {
+                                              status: 'rejected',
+                                              reason: 'Answer authority cannot become creative authority.',
+                                          };
                                       }
                                       creativeAuthority = admission.authority;
                                       return {
@@ -864,6 +892,30 @@ const planPromptIntent = inject({ logger })(
                                       };
                                   },
                               },
+                    answerInterpretation: {
+                        jointToolName: readonly ? undefined : CREATIVE_INTERPRETATION_TOOL_NAME,
+                        admit: (call) => {
+                            if (call.name === CREATIVE_INTERPRETATION_TOOL_NAME && creativeCatalog !== undefined) {
+                                const admission = admitPlanningInterpretation({
+                                    creative: creativeCatalog,
+                                    answer: answerCatalog,
+                                    call,
+                                    projectRevision: projectRevision ?? '',
+                                });
+                                return admission.status !== 'admitted' || admission.kind === 'answer'
+                                    ? admission
+                                    : {
+                                          status: 'rejected',
+                                          reason: 'Creative authority cannot become answer authority.',
+                                      };
+                            }
+                            return admitAnswerInterpretation({
+                                catalog: answerCatalog,
+                                call,
+                                projectRevision: projectRevision ?? '',
+                            });
+                        },
+                    },
                     measurement: createMeasurement(),
                     requestTurn: async ({
                         receiptContext,
@@ -871,16 +923,47 @@ const planPromptIntent = inject({ logger })(
                         history,
                         budgetNote,
                         transientOnsetsDiscovered,
+                        answerOnly,
+                        answerIntakeOnly,
                     }) => {
+                        let phase: PlanningAnswerPhase = 'planning';
+                        if (answerOnly) {
+                            phase = 'answer';
+                        } else if (answerIntakeOnly) {
+                            phase = 'intake';
+                        }
                         const planningContext =
-                            receiptContext === null ? initialPlanningContext : buildPlanningContext(receiptContext);
+                            receiptContext === null
+                                ? initialPlanningContext
+                                : buildPlanningContext(receiptContext, phase);
+                        const phaseSchemas = projectPlanningProviderToolSchemas(
+                            [
+                                ...providerToolSchemas.filter(
+                                    (schema) => schema.function.name !== CREATIVE_INTERPRETATION_TOOL_NAME
+                                ),
+                                ...(phase === 'intake' && !readonly
+                                    ? [createAnswerInterpretationToolSchema(answerCatalog)]
+                                    : []),
+                                ...(creativeCatalog === undefined
+                                    ? []
+                                    : [
+                                          createPlanningInterpretationToolSchema({
+                                              creative: creativeCatalog,
+                                              answer: answerCatalog,
+                                              binding: planningContext.planningBinding,
+                                          }),
+                                      ]),
+                            ],
+                            phase,
+                            profile
+                        );
                         if (!planningContext.authorityComplete) {
                             throw new Error('Provider planning cannot continue with incomplete relevant authority.');
                         }
                         const turn = await generateToolPlanningOutcome(
-                            getPlanningSystemPrompt(),
+                            getPlanningSystemPrompt(phase),
                             planningContext.message,
-                            providerToolSchemas,
+                            phaseSchemas,
                             signal,
                             prompt,
                             onProviderResult,
@@ -908,12 +991,12 @@ const planPromptIntent = inject({ logger })(
                             planningContext.localMessage
                         );
                         // Admit the complete turn before the loop can dispatch even its first safe read.
-                        if (readonly && turn.status === 'complete') {
+                        if (turn.status === 'complete' && (readonly || phase !== 'planning')) {
                             if (
                                 turn.toolCalls.length === 0 ||
-                                turn.proposal !== null ||
+                                (turn.proposal !== undefined && turn.proposal !== null) ||
                                 turn.toolCalls.some((call) => {
-                                    const schema = providerToolSchemas.find((tool) => tool.function.name === call.name);
+                                    const schema = phaseSchemas.find((tool) => tool.function.name === call.name);
                                     return (
                                         schema === undefined ||
                                         !matchesJsonSchema(call.arguments, schema.function.parameters)
@@ -922,7 +1005,9 @@ const planPromptIntent = inject({ logger })(
                             ) {
                                 return {
                                     status: 'rejected',
-                                    reason: 'Explain refused a tool turn outside its read-only profile.',
+                                    reason: readonly
+                                        ? 'Explain refused a tool turn outside its read-only profile.'
+                                        : 'Planning refused a tool turn outside its active phase.',
                                 };
                             }
                         }
