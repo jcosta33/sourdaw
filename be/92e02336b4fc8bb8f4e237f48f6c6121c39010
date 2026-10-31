@@ -1,0 +1,27 @@
+src/modules/Project/presentations/components/TemplateCard.tsx
+  s_88fc7e0d05bab6::t_738e3b66617f47 54
+  s_88fc7e0d05bab6::t_49f7c93923fadf 1,18,25
+src/modules/Project/presentations/views/TemplateGallery.tsx
+  s_88fc7e0d05bab6::t_09d0cb07160578 8-10
+  s_88fc7e0d05bab6::t_1c1e15adf5cf0e 64-70
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_88fc7e0d05bab6::t_95600f9809955a 21-22
+src/components/daw/__tests__/DawFilterChipGroup.spec.tsx
+  s_88fc7e0d05bab6::t_67440c811bee77 2-3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "be92e02336b4fc8bb8f4e237f48f6c6121c39010",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
