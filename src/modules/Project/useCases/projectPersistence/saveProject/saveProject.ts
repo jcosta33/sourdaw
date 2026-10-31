@@ -82,19 +82,22 @@ function describeSnapshotChange(
 export function saveProject(): Promise<boolean> {
     const save = runSaveAfter(latestSave);
     latestSave = save;
-    // Only a save still in flight is waited on: once it settles, the next save
-    // starts at once and always persists its own snapshot.
-    void save.then(() => {
+    // Only a save still in flight is waited on: once it settles, fulfilled or
+    // rejected, the next save starts at once and persists its own snapshot.
+    const releaseQueueSlot = (): void => {
         if (latestSave === save) {
             latestSave = undefined;
         }
-    });
+    };
+    void save.then(releaseQueueSlot, releaseQueueSlot);
     return save.then((outcome) => outcome.saved);
 }
 
 async function runSaveAfter(predecessor: Promise<SaveOutcome> | undefined): Promise<SaveOutcome> {
     if (predecessor) {
-        const outcome = await predecessor;
+        // A predecessor that threw made nothing durable; its own caller still
+        // receives that rejection through the promise it was handed.
+        const outcome = await predecessor.catch(() => unsavedOutcome);
         if (isCurrentStateDurableIn(outcome)) {
             return outcome;
         }

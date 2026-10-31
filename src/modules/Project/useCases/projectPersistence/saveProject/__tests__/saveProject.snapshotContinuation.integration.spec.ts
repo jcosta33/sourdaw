@@ -255,6 +255,44 @@ describe('saveProject snapshot continuation', () => {
     );
 
     it(
+        'keeps saving after a save rejects outside its failure handling',
+        async () => {
+            const indexedDb = installMultiDatabaseIndexedDb();
+            const opened = await openProjectWithCachedStereoClip();
+            const snapshotKeyModule = await import('../../getProjectSnapshotKey');
+            const failure = new Error('snapshot key unavailable');
+            vi.spyOn(snapshotKeyModule, 'getProjectSnapshotKey').mockImplementationOnce(() => {
+                throw failure;
+            });
+            const unhandled: unknown[] = [];
+            const recordUnhandled = (reason: unknown): void => {
+                unhandled.push(reason);
+            };
+            process.on('unhandledRejection', recordUnhandled);
+            try {
+                const first = opened.project.saveProject();
+                const second = opened.project.saveProject();
+                const settled = await Promise.allSettled([first, second]);
+                await new Promise((resolve) => setTimeout(resolve, 0));
+                const third = await opened.project.saveProject();
+                await new Promise((resolve) => setTimeout(resolve, 0));
+
+                expect(settled).toEqual([
+                    { status: 'rejected', reason: failure },
+                    { status: 'fulfilled', value: true },
+                ]);
+                expect(third).toBe(true);
+                expect(unhandled).toEqual([]);
+            } finally {
+                process.off('unhandledRejection', recordUnhandled);
+            }
+            expect(opened.projectStore.value?.dirty).toBe(false);
+            expect(savedTrackNames(indexedDb, opened)).toEqual(['Close Drums']);
+        },
+        CASE_TIMEOUT_MS
+    );
+
+    it(
         'saves when the cached clip PCM becomes durable while the preflight waits for it',
         async () => {
             const indexedDb = installMultiDatabaseIndexedDb();
