@@ -281,9 +281,9 @@ function stageLoopWrapTakes(
             stagedTake.recordingPassIndex = passIndex;
             if (boundary.supersedesPlannedSeam) {
                 // A MIDI pass has no capture clock to cancel its planned end, so
-                // the relocation closes the pass the wrap count says it ended:
-                // the look-ahead may already have staged that pass's take, which
-                // the relocation then retimes rather than closing a pass twice.
+                // the jump or loop edit closes the pass the wrap count says it
+                // ended: the look-ahead may already have staged that pass's take,
+                // which is then retimed rather than closing the pass twice.
                 const closedPassIndex = playheadWrapCountRef.current - activeRecordingRef.startWrapCount - 1;
                 const plannedTake = lane?.takes.find(
                     (take) =>
@@ -518,7 +518,8 @@ export function startPlayheadScheduler(
         let lateWrap = false;
         let lateWrapSeamAudioTime: number | null = null;
         let editPassEndBeat: number | undefined;
-        let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number } | null = null;
+        let capturedEditBoundary: { endBeat: number; nextPassStartBeat: number; supersedesPlannedSeam: true } | null =
+            null;
         // Set when an edit's teardown cuts the look-ahead: the window that
         // re-emits it opens where playback stands (or at the loop start), and
         // like a jump's it must restore the stored controllers in force there.
@@ -630,6 +631,7 @@ export function startPlayheadScheduler(
                         capturedEditBoundary = {
                             endBeat: audiblePositionAtEdit,
                             nextPassStartBeat: current.loopStart,
+                            supersedesPlannedSeam: true,
                         };
                     }
                 }
@@ -963,7 +965,12 @@ export function startPlayheadScheduler(
         // material *this* scheduler emitted, against its own clock (ADR 0039).
         // Counted beside the seam's own wrap, for the same reason: the
         // destination is the first position of the pass the count now names.
+        // A loop edit that cancelled the seam ends one pass too, which a late
+        // wrap at the edit has already counted.
         playheadWrapCountRef.current += jumpClosedRecordingPasses;
+        if (capturedEditBoundary !== null && !lateWrap) {
+            playheadWrapCountRef.current += 1;
+        }
         if (schedulerSession.pendingSeam !== null && now >= schedulerSession.pendingSeam.seamAudioTime) {
             schedulerSession.pendingSeam = null;
             playheadClockRef.pendingLoopSeam = null;

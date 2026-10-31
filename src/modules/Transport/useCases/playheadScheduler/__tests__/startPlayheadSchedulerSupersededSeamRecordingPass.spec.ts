@@ -10,12 +10,12 @@ import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
 
 /**
- * A follow action that relocates a MIDI loop recording before its scheduled
- * seam sounds ends the pass it interrupts. Notes are tagged with the wrap
+ * A follow action or a loop edit that supersedes a MIDI loop recording's
+ * scheduled seam ends the pass it interrupts. Notes are tagged with the wrap
  * count when they arrive (`captureEventBeat`), and the raw pass filters and
- * the source mapping read a take's notes by that tag, so the jump must close
- * exactly one pass and leave the wrap count naming the pass the destination
- * opens. `stageRecordingTake` is modelled on the lane it writes: an
+ * the source mapping read a take's notes by that tag, so the supersession
+ * must close exactly one pass and leave the wrap count naming the pass that
+ * follows it. `stageRecordingTake` is modelled on the lane it writes: an
  * ordinary staging closes a new pass and advances the open take, a staging
  * naming `replacedTakeId` retimes that take in place.
  */
@@ -317,7 +317,7 @@ async function jumpOnNextTick(seconds: number): Promise<number> {
     return passPosition;
 }
 
-describe('follow-action jump during MIDI loop recording', () => {
+describe('superseded loop seam during MIDI loop recording', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         stageSpy.mockReset();
@@ -422,6 +422,35 @@ describe('follow-action jump during MIDI loop recording', () => {
         await advanceUntil(() => schedulerSession.pendingSeam === null);
         expect(notePass()).toBe(2);
         expect(openTake().recordingPassIndex).toBe(2);
+    });
+
+    it('retimes the planned pass end when a loop edit cancels the seam before it sounds', async () => {
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        const passPosition = schedulerSession.accumulatedPosition;
+        const editTickSeconds = 0.01;
+        expect(ctxTime.now + editTickSeconds).toBeLessThan(schedulerSession.pendingSeam!.seamAudioTime);
+        const extendedLoopEnd = LOOP_BEATS + 2;
+        transportStoreState.value = { ...transportStoreState.value!, loopEnd: extendedLoopEnd };
+
+        await tick(editTickSeconds);
+
+        expect(schedulerSession.pendingSeam).toBeNull();
+        expect(closedPasses()).toEqual([expect.objectContaining({ recordingPassIndex: 0 })]);
+        expect(closedPasses()[0]!.endBeat).toBeGreaterThan(passPosition);
+        expect(closedPasses()[0]!.endBeat).toBeLessThan(LOOP_BEATS);
+        expect(openTake().recordingPassIndex).toBe(1);
+        expect(notePass()).toBe(1);
+    });
+
+    it('counts one pass when a loop edit behind the playhead wraps at the edit', async () => {
+        await advanceUntil(() => schedulerSession.pendingSeam !== null);
+        transportStoreState.value = { ...transportStoreState.value!, loopEnd: LOOP_BEATS - 1 };
+
+        await tick(0.01);
+
+        expect(closedPasses()).toEqual([expect.objectContaining({ recordingPassIndex: 0 })]);
+        expect(openTake().recordingPassIndex).toBe(1);
+        expect(notePass()).toBe(1);
     });
 
     it('closes the sounded pass and the interrupted one when the seam instant passed uncounted', async () => {
