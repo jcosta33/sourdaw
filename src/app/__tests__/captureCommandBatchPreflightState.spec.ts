@@ -1,3 +1,4 @@
+import { change, from } from '@automerge/automerge';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { type getProjectContext } from '#/modules/AiRuntime/useCases';
@@ -299,6 +300,19 @@ function midiTakeProjectSlots(options: MidiTakeFixtureOptions = {}): Record<stri
             ],
         },
     };
+}
+
+/** Inspects the document from inside a real Automerge change, where command
+ *  postcondition validation runs and every row is a document proxy. */
+function inspectInsideDocumentChange(document: Record<string, unknown>) {
+    let inspected: ReturnType<typeof captureCommandBatchPreflightState> | undefined;
+    change(from(document), (draft) => {
+        inspected = captureCommandBatchPreflightState({ assetReferences: [], projectDocument: draft, targetIds: [] });
+    });
+    if (!inspected) {
+        throw new Error('The in-change inspection did not run');
+    }
+    return inspected;
 }
 
 function midiTakeArrangementDocument(snapshotExtras: Record<string, unknown> = {}): Record<string, unknown> {
@@ -937,6 +951,18 @@ describe('captureCommandBatchPreflightState', () => {
         const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
 
         expect(state.projectInvariantsValid).toBe(true);
+    });
+
+    it('admits frozen MIDI take sources copying live row ids inside a document change', () => {
+        const state = inspectInsideDocumentChange(midiTakeProjectSlots());
+
+        expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
+    });
+
+    it('still fails a row id repeated inside one frozen MIDI take source inside a document change', () => {
+        const state = inspectInsideDocumentChange(midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }));
+
+        expect(state.projectInvariantsValid).toBe(false);
     });
 
     it('still fails two live MIDI notes sharing an id beside frozen take sources', () => {

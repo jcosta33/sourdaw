@@ -163,36 +163,65 @@ function collectClipGainEnvelopePoints(
     return points;
 }
 
-function collectTakeMidiSources(takeLanes: unknown): object[] {
-    const lanes = asRecord(takeLanes)?.lanes;
-    return (Array.isArray(lanes) ? lanes : []).flatMap((lane) => {
-        const takes = asRecord(lane)?.takes;
-        return (Array.isArray(takes) ? takes : []).flatMap((take) => {
-            const source = asRecord(asRecord(take)?.midiSource);
-            return source ? [source] : [];
-        });
-    });
+/**
+ * The take-lane slot with every take's frozen MIDI source lifted out, beside
+ * the sources themselves. The split copies structure rather than skipping by
+ * object identity: inside a document change every list read returns a fresh
+ * proxy, so no object reference names the same source twice.
+ */
+function splitTakeMidiSources(takeLanes: unknown): { slot: unknown; sources: unknown[] } {
+    const slot = asRecord(takeLanes);
+    if (!slot || !Array.isArray(slot.lanes)) {
+        return { slot: takeLanes, sources: [] };
+    }
+    const sources: unknown[] = [];
+    const lanes: unknown[] = [];
+    for (const lane of slot.lanes) {
+        const laneRecord = asRecord(lane);
+        if (!laneRecord || !Array.isArray(laneRecord.takes)) {
+            lanes.push(lane);
+            continue;
+        }
+        const takes: unknown[] = [];
+        for (const take of laneRecord.takes) {
+            const takeRecord = asRecord(take);
+            if (!takeRecord || takeRecord.midiSource === undefined) {
+                takes.push(take);
+                continue;
+            }
+            const { midiSource, ...takeFields } = takeRecord;
+            sources.push(midiSource);
+            takes.push(takeFields);
+        }
+        lanes.push({ ...laneRecord, takes });
+    }
+    return { slot: { ...slot, lanes }, sources };
 }
 
 /**
- * Scans one id namespace (the live project or one snapshot) except its takes'
- * frozen MIDI sources, then each source in its own namespace. Marking the
- * sources visited is what keeps the enclosing scan from descending into them.
+ * Scans one id namespace (the live project or one snapshot) without its takes'
+ * frozen MIDI sources, then each source in its own namespace.
  */
 function findNamespaceDuplicateIds(
     namespace: unknown,
     duplicates: Set<string>,
     clipGainEnvelopePoints?: WeakSet<object>
 ): void {
-    const takeSources = collectTakeMidiSources(asRecord(namespace)?.takeLanes);
+    const record = asRecord(namespace);
+    if (!record) {
+        findDuplicateIds(namespace, new Set<string>(), duplicates, new WeakSet<object>(), clipGainEnvelopePoints);
+        return;
+    }
+    const { takeLanes, ...fields } = record;
+    const split = splitTakeMidiSources(takeLanes);
     findDuplicateIds(
-        namespace,
+        { ...fields, takeLanes: split.slot },
         new Set<string>(),
         duplicates,
-        new WeakSet<object>(takeSources),
+        new WeakSet<object>(),
         clipGainEnvelopePoints
     );
-    for (const source of takeSources) {
+    for (const source of split.sources) {
         findDuplicateIds(source, new Set<string>(), duplicates, new WeakSet<object>());
     }
 }
