@@ -104,6 +104,8 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
         if (event.button !== 0) {
             return;
         }
+        // The comp gesture owns mouseup; the parent track must not start a native drag.
+        event.preventDefault();
         const startBeat = beatFromPointer(event.clientX);
         setDrag({ startBeat, endBeat: startBeat });
     };
@@ -200,6 +202,7 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
                 {take.startBeat.toFixed(1)}–{take.endBeat.toFixed(1)}
             </span>
 
+            {/* Children are pointer-transparent so the strip stays the single mouse target: the drag preview unmounts on release, and a release over it would otherwise dispatch to a detached node. */}
             <div
                 ref={rowRef}
                 role="presentation"
@@ -215,7 +218,7 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
                 {extent ? (
                     <div
                         className={cn(
-                            'absolute top-0 bottom-0 rounded-sm',
+                            'pointer-events-none absolute top-0 bottom-0 rounded-sm',
                             isActive
                                 ? 'bg-[var(--color-accent-mint)]/25 border border-[var(--color-accent-mint)]/60'
                                 : 'bg-white/[0.08] border border-white/[0.08]'
@@ -226,7 +229,7 @@ const TakeRow = ({ take, minBeat, maxBeat, isActive, onPromote, onCreateRegion }
                 ) : null}
                 {dragPreview ? (
                     <div
-                        className="absolute top-0 bottom-0 rounded-sm border border-[var(--color-accent-cyan)] bg-[var(--color-accent-cyan)]/20"
+                        className="pointer-events-none absolute top-0 bottom-0 rounded-sm border border-[var(--color-accent-cyan)] bg-[var(--color-accent-cyan)]/20"
                         style={{ left: `${dragPreview.left}%`, width: `${dragPreview.width}%` }}
                         aria-hidden="true"
                     />

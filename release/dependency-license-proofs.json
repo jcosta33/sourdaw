@@ -1,7 +1,7 @@
 {
     "schemaVersion": 4,
     "cargoRuntimeInventory": {
-        "cargoLockSha256": "eff81d9943c48a9dddd9f9fcedeff59856d127b77569057754da16bf4f680563",
+        "cargoLockSha256": "38b66fbd32cf74ca3a8531e0914ffb776915968189c5624ad4596243d042272b",
         "sourceInputs": [
             {
                 "path": ".cargo/config.toml",
@@ -21,7 +21,7 @@
             },
             {
                 "path": "crates/daw-dsp/Cargo.toml",
-                "sha256": "52b7d9b8c5f92e6c23188fc98745ceca7d9ad57013df7aaf198539fc905556e2"
+                "sha256": "682e35160f2e0492ef5d9ad320cf1fb2708298da6359366c674466e73817bcc7"
             },
             {
                 "path": "crates/daw-engine/Cargo.toml",
@@ -45,7 +45,7 @@
             },
             {
                 "path": "crates/scoring/Cargo.toml",
-                "sha256": "c97271ac7945ef4965a798a93d8c75cdfd5308cbcd39d68b32f0d88d8ee95454"
+                "sha256": "10b631fe6f0cc0a00fcbd6d2e6e566f8a227806d9d696e0ece9ba86eb6d53ee7"
             },
             {
                 "path": "crates/sourdaw-harness-tone/Cargo.toml",
@@ -53,7 +53,7 @@
             },
             {
                 "path": "crates/sourdaw-native/Cargo.toml",
-                "sha256": "d090b4243f74f2e775b0c3130b30eada50396344d1dab63868761969e1c4712c"
+                "sha256": "d3127997fa7640f2e294598d63835e12eb736a13f8a6b3a0b0d3fef1f195b0ad"
             },
             {
                 "path": "electron-builder.yml",
@@ -61,7 +61,7 @@
             },
             {
                 "path": "package.json",
-                "sha256": "6250d2a183752d83ed6c3fa31d87c1308e1103e54f627a2d31eda6d97ebce502"
+                "sha256": "a7dcb1aec3cfb59bdd7d0afc19254f5675f8d56b38cda8b7a829bca88dc4bbc4"
             },
             {
                 "path": "rust-toolchain.toml",

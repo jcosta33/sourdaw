@@ -20,6 +20,8 @@ import type {
     configureRuntimeGraphTopologyValidator,
 } from '#/modules/AudioEngine/useCases';
 import type { configureDurableAssetCommitProof } from '#/modules/Collaboration/useCases';
+import type { resetActionReplayAuthority, syncActionReplayMetadata } from '#/modules/Command/useCases';
+import type { subscribeToPublishedActionHistory } from '#/modules/CrdtDocument/useCases';
 import type { setProjectIdentityTransitionDependencies } from '#/modules/Project/useCases';
 import type { NotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
@@ -48,6 +50,7 @@ type DurableAssetOwnerRecoveryAfterProjectLoad = NonNullable<
     ProjectIdentityTransitionDependencies['resumeDurableAssetOwnerHandoffsAfterProjectLoad']
 >;
 type DurableAssetCommitProofProvider = Parameters<typeof configureDurableAssetCommitProof>[0];
+type PublishedHistoryObserver = Parameters<typeof subscribeToPublishedActionHistory>[0];
 type AssetTransferMock = {
     resumeDurableOwnerRebindsAfterProjectLoad: DurableAssetOwnerRecoveryAfterProjectLoad;
 };
@@ -116,6 +119,9 @@ const {
     eventBusMock,
     loggerMock,
     actionHistoryStoreMock,
+    subscribeToPublishedActionHistoryMock,
+    syncActionReplayMetadataMock,
+    resetActionReplayAuthorityMock,
     trackStoreMock,
     setTimeOperationDependenciesMock,
     setVcaRuntimeProjectionDependenciesMock,
@@ -163,6 +169,7 @@ const {
     projectRevisionMatchesLiveIgnoringCommandCheckpointMock,
     agentProjectInspectionSetProviderMock,
     setArrangementEventBusMock,
+    setRecordingMidiAdmissionPortMock,
     configureRuntimeGraphProjectRevisionValidatorMock,
     configureRuntimeGraphTopologyValidatorMock,
     runtimeGraphTopologyMock,
@@ -190,6 +197,8 @@ const {
     initCrumbsModePushMock,
     initDeviceStateReconciliationMock,
     initInputMonitoringProjectAccessMock,
+    initLevainDeviceStateProjectAccessMock,
+    initLevainDeviceStatePersistenceMock,
 } = vi.hoisted(() => {
     const noop = vi.fn();
     const sentinelHandlers = (moduleId: string) => vi.fn<() => HandlerMapSentinel>(() => ({ moduleId }));
@@ -221,6 +230,9 @@ const {
         eventBusMock: { emit: vi.fn(), on: vi.fn(), off: vi.fn() },
         loggerMock: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), setWriters: vi.fn() },
         actionHistoryStoreMock: { value: { entries: [] as unknown[] }, subscribe: vi.fn() },
+        subscribeToPublishedActionHistoryMock: vi.fn<typeof subscribeToPublishedActionHistory>(() => noop),
+        syncActionReplayMetadataMock: vi.fn<typeof syncActionReplayMetadata>(),
+        resetActionReplayAuthorityMock: vi.fn<typeof resetActionReplayAuthority>(),
         trackStoreMock: { subscribe: vi.fn() },
         setTimeOperationDependenciesMock: vi.fn(),
         setVcaRuntimeProjectionDependenciesMock: vi.fn(),
@@ -289,6 +301,8 @@ const {
         initCrumbsModePushMock: vi.fn(),
         initDeviceStateReconciliationMock: vi.fn(),
         initInputMonitoringProjectAccessMock: vi.fn(),
+        initLevainDeviceStateProjectAccessMock: vi.fn(),
+        initLevainDeviceStatePersistenceMock: vi.fn(),
         setMidiLearnDependenciesMock: vi.fn(),
         registerCrdtStorageRuntimeMock: vi.fn<() => void>(),
         captureProjectRootIdentityMock: vi.fn<() => string>(() => 'root-identity'),
@@ -300,6 +314,7 @@ const {
         ),
         agentProjectInspectionSetProviderMock: vi.fn(),
         setArrangementEventBusMock: vi.fn<(eventBus: ArrangementEventBus) => void>(),
+        setRecordingMidiAdmissionPortMock: vi.fn(),
         setProjectIdentityTransitionDependenciesMock:
             vi.fn<(dependencies: ProjectIdentityTransitionDependencies) => void>(),
         configureRuntimeGraphProjectRevisionValidatorMock:
@@ -363,6 +378,15 @@ vi.mock('#/modules/Arrangement/stores', () => ({
 }));
 
 vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOn: noop,
+    admitRecordingMidiNoteOff: noop,
+    admitRecordingMidiExpression: noop,
+    findOpenRecordingMidiAdmission: noop,
+    findOpenRecordingMidiMemberAdmission: noop,
+    getRecordingMidiAdmission: noop,
+    retireRecordingMidiAdmission: noop,
+    takeOwnsRecordingRoot: noop,
+    recordingMidiSourceBeatAt: noop,
     getDeviceManifestProtocolContract: noop,
     setClipAudioAssetStager: noop,
     stageAudioBufferAsset: noop,
@@ -497,7 +521,8 @@ vi.mock('#/modules/Command/useCases', () => ({
     commandTrackDefaultsPort: { setTrackColorProvider: noop },
     commandRuntimeRepairPort: commandRuntimeRepairPortMock,
     setCommandEventBus: noop,
-    syncActionReplayMetadata: noop,
+    syncActionReplayMetadata: syncActionReplayMetadataMock,
+    resetActionReplayAuthority: resetActionReplayAuthorityMock,
     captureCommandTargetFingerprints: noop,
     stampSessionUndoWitness: stampSessionUndoWitnessMock,
 }));
@@ -534,6 +559,7 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     recordActionHistoryEntries: noop,
     clearActionHistory: noop,
     registerCrdtStorageRuntime: registerCrdtStorageRuntimeMock,
+    subscribeToPublishedActionHistory: subscribeToPublishedActionHistoryMock,
     sessionUndoWitnessStampPort: sessionUndoWitnessStampPortMock,
     // The Crumbs device-state reconciliation is pinned by reference in its own
     // mock below, so this stands in for the document-change listeners the
@@ -588,7 +614,7 @@ vi.mock('#/modules/Levain/stores', () => ({ setEngineReady: noop }));
 
 vi.mock('#/modules/Levain/useCases', () => ({
     configureLevainZoneTableBuilder: configureLevainZoneTableBuilderMock,
-    initLevainDeviceStatePersistence: () => noop,
+    initLevainDeviceStatePersistence: initLevainDeviceStatePersistenceMock,
     reconcileLevainDeviceStatesFromProject: noop,
     registerLevainDevice: noop,
     unregisterLevainDevice: noop,
@@ -619,6 +645,7 @@ vi.mock('#/modules/MIDI/useCases', () => ({
     shouldPlayMidiEvent: () => true,
     setWebMidiRealtimeProcessor: noop,
     setWebMidiRuntimeEventBus: noop,
+    setRecordingMidiAdmissionPort: setRecordingMidiAdmissionPortMock,
     getWebMidiInputHandlers: sentinelHandlers('WebMidiInput'),
     destroyWebMidi: noop,
 }));
@@ -783,6 +810,9 @@ vi.mock('../initDeviceStateReconciliation', () => ({
 vi.mock('../initInputMonitoringProjectAccess', () => ({
     initInputMonitoringProjectAccess: initInputMonitoringProjectAccessMock,
 }));
+vi.mock('../initLevainDeviceStateProjectAccess', () => ({
+    initLevainDeviceStateProjectAccess: initLevainDeviceStateProjectAccessMock,
+}));
 
 // Side-effect import: this is what runs the composition root under test.
 // `vi.mock` calls above are hoisted above this import by Vitest, so every
@@ -815,6 +845,43 @@ describe('bootstrap', () => {
     });
     it('binds committed project access during bootstrap', () => {
         expect(initInputMonitoringProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+    });
+    it('routes published history and root replacement to the Command replay authority callbacks', () => {
+        expect(subscribeToPublishedActionHistoryMock).toHaveBeenCalledOnce();
+        expect(actionHistoryStoreMock.subscribe).not.toHaveBeenCalled();
+        const observer = subscribeToPublishedActionHistoryMock.mock.calls[0]?.[0];
+        if (!observer) {
+            throw new Error('bootstrap never registered the published history observer');
+        }
+        const entries: Parameters<PublishedHistoryObserver['onHistory']>[0] = [
+            {
+                id: 'bootstrap-history-entry',
+                label: 'Set snap',
+                actionKind: 'setSnapValue',
+                source: 'manual',
+                timestamp: 1,
+                reverted: false,
+            },
+        ];
+        syncActionReplayMetadataMock.mockClear();
+        resetActionReplayAuthorityMock.mockClear();
+
+        observer.onHistory(entries);
+
+        expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
+        expect(resetActionReplayAuthorityMock).not.toHaveBeenCalled();
+
+        observer.onRootReplaced();
+
+        expect(resetActionReplayAuthorityMock).toHaveBeenCalledExactlyOnceWith();
+        expect(syncActionReplayMetadataMock).toHaveBeenCalledExactlyOnceWith(entries);
+    });
+    it('binds committed Levain membership before device-state persistence subscribes', () => {
+        expect(initLevainDeviceStateProjectAccessMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initLevainDeviceStatePersistenceMock).toHaveBeenCalledExactlyOnceWith();
+        expect(initLevainDeviceStateProjectAccessMock.mock.invocationCallOrder[0]).toBeLessThan(
+            initLevainDeviceStatePersistenceMock.mock.invocationCallOrder[0]!
+        );
     });
     // The exact order bootstrap.ts passes module handler maps to the production assembler.
     // This list IS the assertion: every module bootstrap wires into the shared
@@ -1006,6 +1073,17 @@ describe('bootstrap', () => {
             captureAgentProjectInspectionState
         );
         expect(setArrangementEventBusMock).toHaveBeenCalledExactlyOnceWith(eventBusMock);
+        expect(setRecordingMidiAdmissionPortMock).toHaveBeenCalledExactlyOnceWith({
+            admitRecordingMidiNoteOn: noop,
+            admitRecordingMidiNoteOff: noop,
+            admitRecordingMidiExpression: noop,
+            findOpenRecordingMidiAdmission: noop,
+            findOpenRecordingMidiMemberAdmission: noop,
+            getRecordingMidiAdmission: noop,
+            retireRecordingMidiAdmission: noop,
+            takeOwnsRecordingRoot: noop,
+            recordingMidiSourceBeatAt: noop,
+        });
 
         expect(configureRuntimeGraphProjectRevisionValidatorMock).toHaveBeenCalledTimes(1);
         const projectRevisionValidatorCall = configureRuntimeGraphProjectRevisionValidatorMock.mock.calls.at(0);

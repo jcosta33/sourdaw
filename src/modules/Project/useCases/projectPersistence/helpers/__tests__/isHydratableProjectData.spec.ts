@@ -199,6 +199,37 @@ describe('isHydratableProjectData', () => {
         }
     );
 
+    it.each([
+        ['active MIDI', -1],
+        ['active MIDI', 1.5],
+        ['active MIDI', 'x'],
+        ['active MIDI', null],
+        ['active MIDI', undefined],
+        ['saved arrangement', -1],
+        ['inline clip', -1],
+    ])('rejects a malformed %s note recording pass %j before import', (route, recordingPassIndex) => {
+        const base = buildValidProjectData();
+        const note = { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex };
+        const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+        const clip = { ...validClip, type: 'midi', notes: [note] };
+        let project: unknown;
+        if (route === 'active MIDI') {
+            project = { ...base, midi };
+        } else if (route === 'saved arrangement') {
+            project = { ...base, arrangements: [{ id: 'saved', name: 'Saved', midi }] };
+        } else {
+            project = { ...base, arrangement: { tracks: [{ ...validTrack, clips: [clip] }] } };
+        }
+        expect(isHydratableProjectData(project)).toBe(false);
+    });
+
+    it('accepts a note recorded in a later pass', () => {
+        const base = buildValidProjectData();
+        const note = { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: 2 };
+        const midi = { notesByClipId: { 'clip-1': [note] }, ccByClipId: {}, pitchBendByClipId: {} };
+        expect(isHydratableProjectData({ ...base, midi })).toBe(true);
+    });
+
     it('rejects an exclusive-end expression point while accepting legacy notes without expression', () => {
         const base = buildValidProjectData();
         const note = { id: 'expressive', pitch: 60, startBeat: 0, duration: 1, velocity: 100 };
@@ -646,6 +677,19 @@ describe('isHydratableProjectData', () => {
 });
 
 describe.each(['top-level', 'saved arrangement'])('project take placement admission: %s', (route) => {
+    const midiSource = {
+        sourceClipId: validClip.id,
+        rows: {
+            notes: { present: true, value: [] },
+            controlChanges: { present: true, value: [] },
+            pitchBends: { present: true, value: [] },
+        },
+        sourceEntryBeat: 0,
+        sourceEndBeat: 4,
+        phaseHeadBeat: 0,
+        passLengthBeats: 4,
+    };
+
     function withPlacement(placement: Record<string, unknown>): unknown {
         const takeLanes = {
             lanes: [
@@ -671,7 +715,13 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         if (route === 'top-level') {
             return { ...data, takeLanes };
         }
-        return { ...data, arrangements: [{ id: 'saved', name: 'Saved', takeLanes }] };
+        return {
+            ...data,
+            arrangements: [
+                { id: 'first', name: 'First' },
+                { id: 'saved', name: 'Saved', takeLanes },
+            ],
+        };
     }
 
     it.each([
@@ -679,8 +729,42 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         { sourceOffsetBeats: 0 },
         { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2 },
         { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 0 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 3 },
+        { sourceOffsetSeconds: 0 },
+        {
+            sourceOffsetBeats: 4,
+            sourceOffsetSeconds: 0.5,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 4,
+            passOriginBeat: 0,
+            passOriginSourceSeconds: -1,
+        },
     ])('accepts legacy or complete placement %j', (placement) => {
         expect(isHydratableProjectData(withPlacement(placement))).toBe(true);
+    });
+
+    const frozenMidiPlacement = {
+        sourceOffsetBeats: 4,
+        passAnchorSeconds: -2,
+        passDepthSeconds: 2,
+        midiSource,
+        recordingPassIndex: 1,
+    };
+
+    it('accepts a valid frozen MIDI source beside a complete audio placement', () => {
+        expect(isHydratableProjectData(withPlacement(frozenMidiPlacement))).toBe(true);
+    });
+
+    it.each([
+        { midiSource: { ...midiSource, sourceEndBeat: 0 } },
+        // A frozen window longer than the pass it was cut from.
+        { midiSource: { ...midiSource, sourceEndBeat: 8 } },
+        { midiSource: undefined },
+        { recordingPassIndex: -1 },
+        { recordingPassIndex: undefined },
+    ])('rejects a malformed present MIDI source or pass identity before hydration %j', (midiFields) => {
+        expect(isHydratableProjectData(withPlacement({ ...frozenMidiPlacement, ...midiFields }))).toBe(false);
     });
 
     it.each([
@@ -692,12 +776,58 @@ describe.each(['top-level', 'saved arrangement'])('project take placement admiss
         { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: Number.POSITIVE_INFINITY },
         { sourceOffsetBeats: 0, passAnchorSeconds: '1', passDepthSeconds: 1 },
         { sourceOffsetBeats: 0, passAnchorSeconds: 1, passDepthSeconds: null },
+        { sourceOffsetSeconds: -1 },
+        { sourceOffsetSeconds: Number.NaN },
+        { sourceOffsetSeconds: Number.POSITIVE_INFINITY },
+        { sourceOffsetSeconds: '1' },
+        { sourceOffsetSeconds: null },
+        { sourceOffsetSeconds: undefined },
+        { passSourceEndSeconds: 4 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 1 },
+        {
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: Number.POSITIVE_INFINITY,
+        },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: '4' },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: undefined },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passOriginBeat: 0 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passOriginSourceSeconds: 0 },
+        {
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passOriginBeat: Number.NaN,
+            passOriginSourceSeconds: 0,
+        },
+        {
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passOriginBeat: 0,
+            passOriginSourceSeconds: Number.POSITIVE_INFINITY,
+        },
+        { passOriginBeat: 0, passOriginSourceSeconds: 0 },
         { sourceOffsetBeats: undefined },
         { sourceOffsetBeats: -1 },
         { sourceOffsetBeats: Number.NaN },
         { sourceOffsetBeats: Number.POSITIVE_INFINITY },
         { sourceOffsetBeats: '1' },
         { sourceOffsetBeats: 0, passAnchorSeconds: undefined, passDepthSeconds: undefined },
+        { passSourceEndSeconds: 3 },
+        { sourceOffsetBeats: 0, passSourceEndSeconds: 3 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: 1 },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: Number.NaN },
+        {
+            sourceOffsetBeats: 0,
+            passAnchorSeconds: 0,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: Number.POSITIVE_INFINITY,
+        },
+        { sourceOffsetBeats: 0, passAnchorSeconds: 0, passDepthSeconds: 2, passSourceEndSeconds: undefined },
     ])('rejects malformed placement before hydration %j', (placement) => {
         expect(isHydratableProjectData(withPlacement(placement))).toBe(false);
     });

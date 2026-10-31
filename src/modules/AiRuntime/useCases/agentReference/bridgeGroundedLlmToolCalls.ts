@@ -1836,6 +1836,44 @@ function isListAnsweredByEveryMember(
  * can enumerate which ("instead", "actually", "on the Reverb send", "turn the Comp off"), so the phrase
  * then names nothing and the request is read as main reads it.
  */
+function readsOnlyReferencedVcaLevel(input: {
+    calls: readonly ToolCallResult[];
+    catalog: GroundingCatalog;
+    context: ProjectContext;
+    prompt: string;
+}): boolean {
+    if (input.calls.length !== 1 || input.calls[0]?.name !== 'setVcaGain') {
+        return false;
+    }
+    const id = input.calls[0].arguments.vcaGroupId;
+    const group = input.context.vcaGroups?.find((candidate) => candidate.id === id);
+    if (!group) {
+        return false;
+    }
+    const masked = maskQuotedLabels(maskProjectReferences(input.prompt, input.context));
+    const clauses = splitAttachedSourceClauses(getPromptClauses(input.prompt, masked), input.catalog);
+    if (clauses.length !== 1) {
+        return false;
+    }
+    const clause = clauses[0]!;
+    const intent = resolveClauseActionIntent(clause.masked, input.catalog, 'setVcaGain');
+    if (intent?.actionType !== 'setVcaGain' || !intent.referenceSlot) {
+        return false;
+    }
+    const reference = normalizePromptText(clause.text.slice(intent.referenceSlot.start, intent.referenceSlot.end));
+    const matches = (input.context.vcaGroups ?? []).filter((candidate) =>
+        [candidate.id, candidate.name].some((name) => normalizePromptText(name) === reference)
+    );
+    const collidesWithTrack = input.context.tracks.some((track) =>
+        [track.id, track.name].some((name) => normalizePromptText(name) === reference)
+    );
+    return (
+        matches.length === 1 &&
+        matches[0]?.id === group.id &&
+        (reference === normalizePromptText(group.id) || !collidesWithTrack)
+    );
+}
+
 function readsOnlyReferencedLevelClauses(input: {
     calls: readonly ToolCallResult[];
     catalog: GroundingCatalog;
@@ -7057,19 +7095,20 @@ function bridgeOriginalRequestToolCalls(input: BridgeGroundedLlmToolCallsInput):
     if (main.rejections.length === 0) {
         return main;
     }
-    // A level phrase that names its track ("set Drums to -6 dB") grounds only where main's reading refuses
+    // A level phrase naming its track or VCA grounds only where main's reading refuses
     // a call and every clause of the request is accounted for, so it admits nothing main refused beside a
     // clause that might restrict it, and changes nothing main grounded. A refusal of the batch as a whole
     // (an oversized or mismatched plan) is not one a level phrase can answer.
     const catalog = getExecutableAppActionGroundingCatalog();
     if (
         main.rejections.some((mainRejection) => mainRejection.name === '<batch>') ||
-        !readsOnlyReferencedLevelClauses({
+        (!readsOnlyReferencedLevelClauses({
             calls: input.calls,
             catalog,
             context: input.context,
             prompt: input.prompt,
-        })
+        }) &&
+            !readsOnlyReferencedVcaLevel({ calls: input.calls, catalog, context: input.context, prompt: input.prompt }))
     ) {
         return main;
     }

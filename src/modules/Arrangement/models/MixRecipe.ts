@@ -17,7 +17,7 @@
 /**
  * The perceptual words a request can carry.
  *
- * Eleven of them name a quality to add. Two are corrective and name the fault
+ * Most name a quality to add. Two are corrective and name the fault
  * being removed rather than the quality being added: a `muddy` recipe makes a
  * source *less* muddy, and a `thin` recipe makes a source *less* thin. Reading
  * either as an instruction to add the fault inverts the recipe.
@@ -36,6 +36,7 @@ export const MIX_RECIPE_DESCRIPTORS = [
     'glued',
     'lo-fi',
     'vintage',
+    'controlled',
 ] as const;
 
 export type MixRecipeDescriptor = (typeof MIX_RECIPE_DESCRIPTORS)[number];
@@ -63,6 +64,7 @@ export const MIX_RECIPE_DESCRIPTOR_EFFECTS: Readonly<Record<MixRecipeDescriptor,
     glued: 'produces',
     'lo-fi': 'produces',
     vintage: 'produces',
+    controlled: 'produces',
 };
 
 /**
@@ -88,6 +90,7 @@ export const MIX_RECIPE_DESCRIPTOR_TERMS: Readonly<Record<MixRecipeDescriptor, r
     glued: ['glued', 'glue', 'cohesive'],
     'lo-fi': ['lo-fi', 'lofi', 'lo fi'],
     vintage: ['vintage', 'retro'],
+    controlled: ['controlled'],
 };
 
 /** The kind of source a recipe was authored against. */

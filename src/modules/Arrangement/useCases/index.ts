@@ -110,6 +110,8 @@ export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedB
 
 export { copySelectedClip } from './clipboard/copySelectedClip';
 export { copySelectedNotes } from './clipboard/copySelectedNotes';
+export { copyPianoRollNotes } from './clipboard/copyPianoRollNotes';
+export { getCopiedPianoRollNotes } from './clipboard/getCopiedPianoRollNotes';
 export { cutSelectedClip } from './clipboard/cutSelectedClip';
 export { pasteClip } from './clipboard/pasteClip';
 export { pasteNotes } from './clipboard/pasteNotes';
@@ -140,6 +142,9 @@ export { selectTake } from './comping/selectTake';
 export { setCompRegion } from './comping/setCompRegion';
 export { removeCompRegion } from './comping/removeCompRegion';
 export { resolveClipsWithComping } from './resolveComping';
+export { prepareTempoAudioSources } from './prepareTempoAudioSources';
+export { applyTempoAudioSources } from './applyTempoAudioSources';
+export { canApplyTempoAudioSources } from './canApplyTempoAudioSources';
 
 export { createCompGroup } from './groupComping/compGroupOperations/createCompGroup';
 
@@ -205,9 +210,20 @@ export { armTrack } from './recording/armTrack';
 export { commitRecording } from './recording/commitRecording';
 export { discardRecording } from './recording/discardRecording';
 export { stageRecordingTake } from './recording/stageRecordingTake';
+export { observeRecordingPassEntry } from './recording/observeRecordingPassEntry';
+export { admitRecordingCaptureClock } from './recording/admitRecordingCaptureClock';
+export { prepareRecoveredRecording } from './recording/prepareRecoveredRecording';
 export { startRecording } from './recording/startRecording';
 export { stopRecording } from './recording/stopRecording';
 export { takeOwnsRecordingRoot } from './recording/takeOwnsRecordingRoot';
+export { recordingMidiSourceBeatAt } from './recording/recordingMidiSourceBeatAt';
+export { admitRecordingMidiNoteOn } from './recording/admitRecordingMidiNoteOn';
+export { admitRecordingMidiExpression } from './recording/admitRecordingMidiExpression';
+export { admitRecordingMidiNoteOff } from './recording/admitRecordingMidiNoteOff';
+export { findOpenRecordingMidiAdmission } from './recording/findOpenRecordingMidiAdmission';
+export { findOpenRecordingMidiMemberAdmission } from './recording/findOpenRecordingMidiMemberAdmission';
+export { retireRecordingMidiAdmission } from './recording/retireRecordingMidiAdmission';
+export { getRecordingMidiAdmission } from './recording/getRecordingMidiAdmission';
 
 export { captureArrangementToScratchPad } from './scratchPad/captureCommit/captureArrangementToScratchPad';
 export { commitScratchPadToArrangement } from './scratchPad/captureCommit/commitScratchPadToArrangement';

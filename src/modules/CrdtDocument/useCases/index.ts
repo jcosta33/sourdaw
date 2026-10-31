@@ -35,6 +35,7 @@ export { clearActionHistory } from './clearActionHistory';
 export { markActionHistoryEntryReverted } from './markActionHistoryEntryReverted';
 export { recordActionHistoryEntry } from './recordActionHistoryEntry';
 export { recordActionHistoryEntries } from './recordActionHistoryEntries';
+export { subscribeToPublishedActionHistory } from './subscribeToPublishedActionHistory';
 export { getCrdtDoc } from './getCrdtDoc';
 export { getCrdtDocIds } from './getCrdtDocIds';
 export { hasCrdtDoc } from './hasCrdtDoc';

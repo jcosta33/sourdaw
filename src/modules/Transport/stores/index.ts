@@ -6,7 +6,7 @@ export { playheadClockRef } from './playheadClockRef';
 export { playheadWrapCountRef } from './playheadWrapCountRef';
 export { tempoProjectRevisionStore } from './tempoProjectRevisionStore';
 
-export { captureGestureBeat, MAX_PROJECTION_SECONDS } from './captureGestureBeat';
+export { captureGestureBeat, captureGestureClock, MAX_PROJECTION_SECONDS } from './captureGestureBeat';
 export { setGestureClockSource, type GestureClockSource } from './gestureClockSource';
 
 export type { TempoMapStoreState } from './tempoMapStore';
@@ -23,3 +23,4 @@ export { readSecondsAtBeat } from './readSecondsAtBeat';
 export { readBeatAtSamples } from './readBeatAtSamples';
 export { readBarStartBeat } from './readBarStartBeat';
 export { readNextPhysicalBarBoundary } from './readNextPhysicalBarBoundary';
+export { readTempoMapEditTargets } from './readTempoMapEditTargets';

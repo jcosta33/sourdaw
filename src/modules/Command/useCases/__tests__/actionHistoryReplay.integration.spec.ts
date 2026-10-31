@@ -1,6 +1,11 @@
+import { change, clone, merge } from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
+import {
+    configureAutomergeStoragePort,
+    flushAutomergeStorageWrites,
+    runWithAutomergeStorageTransaction,
+} from '#/infra/store/storage/createAutomergeStorage';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     clearActionHistory as clearCrdtActionHistory,
@@ -12,12 +17,15 @@ import {
     recordActionHistoryEntries,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
+    replaceCrdtDoc,
+    replaceCrdtDocInLineage,
+    subscribeToPublishedActionHistory,
 } from '#/modules/CrdtDocument/useCases';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { getChordTrackHandlers } from '#/modules/MIDI/useCases';
 import { type ActionHandler, type AppAction } from '#/utils/handlerContract';
 
-import { hasActionReplayCapability } from '../../stores/actionReplayCapabilities';
+import { hasActionReplayCapability, registerActionReplayCapability } from '../../stores/actionReplayCapabilities';
 import { clearHandlerRegistry, registerHandlerMap } from '../../stores/handlerRegistry';
 import { setActionHistoryMetadataPort } from '../actionHistoryMetadataPort';
 import { clearActionHistory } from '../clearActionHistory';
@@ -32,6 +40,7 @@ import { syncActionReplayMetadata } from '../syncActionReplayMetadata';
 type SetSnapValueAction = Extract<AppAction, { type: 'setSnapValue' }>;
 type TogglePlaybackAction = Extract<AppAction, { type: 'togglePlayback' }>;
 type IntegrationDocument = { actionHistory?: unknown };
+type HistoryEntriesDocument = { actionHistory: { entries: unknown[] } };
 
 const no_action_history_metadata_port = {
     record: () => [],
@@ -60,8 +69,9 @@ describe('Command action-history replay integration', () => {
             markReverted: markActionHistoryEntryReverted,
             clear: clearCrdtActionHistory,
         });
-        unsubscribe_action_history = actionHistoryStore.subscribe((state) => {
-            syncActionReplayMetadata(state?.entries ?? []);
+        unsubscribe_action_history = subscribeToPublishedActionHistory({
+            onHistory: syncActionReplayMetadata,
+            onRootReplaced: resetActionReplayAuthority,
         });
         clearHandlerRegistry();
         resetActionReplayAuthority();
@@ -182,6 +192,286 @@ describe('Command action-history replay integration', () => {
                 source: 'ai',
             },
         ]);
+    });
+
+    describe.each(['single', 'atomic'] as const)('transactional %s metadata retention', (route) => {
+        async function seedBoundedHistory(): Promise<string> {
+            await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+            const oldestId = actionHistoryStore.value?.entries[0]?.id;
+            if (!oldestId) {
+                throw new Error('Expected replayable oldest entry');
+            }
+            recordActionHistoryEntries(
+                Array.from({ length: 199 }, (_, index) => ({
+                    id: `retained-${index}`,
+                    label: 'Retained metadata',
+                    actionKind: 'setSnapValue',
+                    source: 'manual' as const,
+                    timestamp: index,
+                    reverted: false,
+                }))
+            );
+            flushAutomergeStorageWrites();
+            expect(actionHistoryStore.value?.entries).toHaveLength(200);
+            expect(getActionReplayStatus(oldestId)).toEqual({ status: 'ready' });
+            return oldestId;
+        }
+
+        function stageHistoryTrim() {
+            const entries = Array.from({ length: route === 'single' ? 1 : 2 }, (_, index) => ({
+                id: `staged-${index}`,
+                label: 'Staged metadata',
+                actionKind: 'setSnapValue',
+                source: 'manual' as const,
+                timestamp: 1_000 + index,
+                reverted: false,
+            }));
+            return runWithAutomergeStorageTransaction(undefined, () =>
+                route === 'single' ? recordActionHistoryEntry(entries[0]!) : recordActionHistoryEntries(entries)
+            );
+        }
+
+        it.each(['abort', 'commit refusal'] as const)(
+            'keeps restored replay authority after a pending trim and %s',
+            async (settlement) => {
+                const oldestId = await seedBoundedHistory();
+                const beforeStore = structuredClone(actionHistoryStore.value);
+                const beforeDurable = JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory);
+                const transaction = stageHistoryTrim();
+                try {
+                    expect(transaction.status).toBe('returned');
+                    expect(actionHistoryStore.value?.entries.some(({ id }) => id === oldestId)).toBe(false);
+                    expect(JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory)).toBe(beforeDurable);
+                    if (settlement === 'commit refusal') {
+                        transaction.validateDocument('root', () => 'refuse staged history before publication');
+                        expect(() => transaction.commit()).toThrow('refuse staged history before publication');
+                    }
+                } finally {
+                    transaction.abort();
+                }
+                expect(actionHistoryStore.value).toEqual(beforeStore);
+                expect(JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory)).toBe(beforeDurable);
+                const statusAfterAbort = getActionReplayStatus(oldestId);
+                const replayAfterAbort = await revertAction(oldestId);
+                expect({ statusAfterAbort, replayAfterAbort }).toEqual({
+                    statusAfterAbort: { status: 'ready' },
+                    replayAfterAbort: { status: 'executed' },
+                });
+                expect(executed_actions).toContain('togglePlayback');
+            }
+        );
+
+        it('still revokes evicted replay authority after a successful commit', async () => {
+            const oldestId = await seedBoundedHistory();
+            const transaction = stageHistoryTrim();
+            try {
+                expect(transaction.status).toBe('returned');
+                transaction.commit();
+            } finally {
+                transaction.abort();
+            }
+            expect(actionHistoryStore.value?.entries).toHaveLength(200);
+            expect(actionHistoryStore.value?.entries.some(({ id }) => id === oldestId)).toBe(false);
+            expect(hasActionReplayCapability(oldestId)).toBe(false);
+            expect(getActionReplayStatus(oldestId)).toEqual({ status: 'unavailable' });
+            expect(await revertAction(oldestId)).toEqual({ status: 'unavailable' });
+        });
+
+        it('does not restore authority reset while the trim was pending', async () => {
+            const oldestId = await seedBoundedHistory();
+            const transaction = stageHistoryTrim();
+            resetActionReplayAuthority();
+            transaction.abort();
+
+            expect(actionHistoryStore.value?.entries.some(({ id }) => id === oldestId)).toBe(true);
+            expect(getActionReplayStatus(oldestId)).toEqual({ status: 'unavailable' });
+            expect(await revertAction(oldestId)).toEqual({ status: 'unavailable' });
+        });
+
+        it('retains authority when metadata storage throws before publication', async () => {
+            const oldestId = await seedBoundedHistory();
+            const before = structuredClone(actionHistoryStore.value);
+            const beforeDurable = JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory);
+            const transaction = stageHistoryTrim();
+            const failure = new Error('history storage refused before publication');
+            configureAutomergeStoragePort({
+                getDoc: (id) => getCrdtDoc<Record<string, unknown>>(id),
+                getSemanticMessage: () => undefined,
+                hasDoc: (id) => getCrdtDoc(id) !== undefined,
+                mutateDoc: () => {
+                    throw failure;
+                },
+            });
+            try {
+                expect(() => transaction.commit()).toThrow(failure);
+            } finally {
+                transaction.abort();
+                registerCrdtStorageRuntime();
+            }
+
+            expect(actionHistoryStore.value).toEqual(before);
+            expect(JSON.stringify(getCrdtDoc<IntegrationDocument>('root')?.actionHistory)).toBe(beforeDurable);
+            expect(getActionReplayStatus(oldestId)).toEqual({ status: 'ready' });
+            expect(await revertAction(oldestId)).toEqual({ status: 'executed' });
+        });
+    });
+
+    // This component fixture exercises an unscoped pending write independently of normal command publication.
+    function registerPublishedReplayCapability(): Parameters<typeof recordActionHistoryEntry>[0] {
+        const entry: Parameters<typeof recordActionHistoryEntry>[0] = {
+            id: crypto.randomUUID(),
+            label: 'Set snap',
+            actionKind: 'setSnapValue',
+            source: 'manual',
+            timestamp: 1,
+            reverted: false,
+        };
+        recordActionHistoryEntry(entry);
+        registerActionReplayCapability({
+            entryId: entry.id,
+            inverseAction: { type: 'togglePlayback' },
+            metadata: entry,
+        });
+        expect(actionHistoryStore.value?.entries).toEqual([entry]);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+        expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [entry] });
+        return entry;
+    }
+
+    it('keeps a newly registered capability through an unrelated commit', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
+        const { id: entryId } = registerPublishedReplayCapability();
+
+        mutateCrdtDoc<{ unrelated?: string }>({
+            id: 'root',
+            changeFn: (document) => {
+                document.unrelated = 'committed';
+            },
+        });
+
+        expect(getActionReplayStatus(entryId)).toEqual({ status: 'ready' });
+        flushAutomergeStorageWrites();
+        expect(getActionReplayStatus(entryId)).toEqual({ status: 'ready' });
+        expect(await revertAction(entryId)).toEqual({ status: 'executed' });
+        expect(executed_actions).toEqual(['setSnapValue:0', 'togglePlayback']);
+    });
+
+    it('keeps a just-committed action replayable across a remote history merge', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        flushAutomergeStorageWrites();
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        const local = getCrdtDoc<HistoryEntriesDocument>('root');
+        if (!entry || !local) {
+            throw new Error('Expected committed replayable metadata');
+        }
+        const remote = change(clone(local), (document) => {
+            document.actionHistory.entries.push({
+                id: 'remote-entry',
+                label: 'Remote edit',
+                actionKind: 'setSnapValue',
+                source: 'manual',
+                timestamp: 2,
+                reverted: false,
+            });
+        });
+
+        replaceCrdtDocInLineage({ id: 'root', doc: merge(clone(local), remote) });
+        // A sync merge re-projects the history store from the merged document.
+        actionHistoryStore.hydrate();
+        flushAutomergeStorageWrites();
+
+        expect(actionHistoryStore.value?.entries.map(({ id }) => id)).toEqual(
+            expect.arrayContaining([entry.id, 'remote-entry'])
+        );
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
+    });
+
+    it('fences a published capability across a history clear before its ID is re-added', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } }, { skipUndo: true });
+        const entry = registerPublishedReplayCapability();
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+
+        clearCrdtActionHistory();
+
+        expect(getCrdtDoc<IntegrationDocument>('root')?.actionHistory).toEqual({ entries: [] });
+        recordActionHistoryEntry(entry);
+        flushAutomergeStorageWrites();
+        expect(actionHistoryStore.value?.entries).toEqual([entry]);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+        expect(executed_actions).toEqual(['setSnapValue:0']);
+    });
+
+    it.each(['install', 'replace'] as const)('forfeits authority on a same-content root %s', async (route) => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        flushAutomergeStorageWrites();
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        const document = getCrdtDoc<IntegrationDocument>('root');
+        if (!entry || !document) {
+            throw new Error('Expected committed replayable metadata');
+        }
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'ready' });
+
+        if (route === 'install') {
+            createCrdtDoc('root', clone(document));
+        } else {
+            replaceCrdtDoc({ id: 'root', doc: clone(document) });
+        }
+
+        expect(actionHistoryStore.value?.entries).toContainEqual(entry);
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+    });
+
+    it('never revives a consumed inverse when its metadata is unmarked and re-added', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        flushAutomergeStorageWrites();
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        if (!entry) {
+            throw new Error('Expected committed replayable metadata');
+        }
+        expect(await revertAction(entry.id)).toEqual({ status: 'executed' });
+        flushAutomergeStorageWrites();
+        clearCrdtActionHistory();
+        recordActionHistoryEntry({ ...entry, reverted: false });
+        flushAutomergeStorageWrites();
+
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
+        expect(executed_actions.filter((action) => action === 'togglePlayback')).toHaveLength(1);
+    });
+
+    it('does not restore a claimed inverse after same-content root replacement during replay', async () => {
+        await executeAppAction({ type: 'setSnapValue', payload: { value: 0 } });
+        flushAutomergeStorageWrites();
+        const entry = actionHistoryStore.value?.entries.at(-1);
+        const document = getCrdtDoc<IntegrationDocument>('root');
+        if (!entry || !document) {
+            throw new Error('Expected committed replayable metadata');
+        }
+        let resolveInverse: (() => void) | undefined;
+        clearHandlerRegistry();
+        registerHandlerMap({
+            togglePlayback: {
+                undoable: false,
+                describe: () => ({ label: 'Toggle playback' }),
+                execute: () =>
+                    new Promise<void>((resolve) => {
+                        resolveInverse = resolve;
+                    }),
+            },
+        });
+        const replay = revertAction(entry.id);
+        await vi.waitFor(() => expect(resolveInverse).toBeDefined());
+
+        replaceCrdtDoc({ id: 'root', doc: clone(document) });
+        resolveInverse?.();
+
+        await expect(replay).resolves.toEqual({ status: 'executed-unmarked' });
+        expect(getActionReplayStatus(entry.id)).toEqual({ status: 'unavailable' });
+        expect(await revertAction(entry.id)).toEqual({ status: 'unavailable' });
     });
 
     it('revokes replay authority for grouped entries evicted before capability registration', async () => {
@@ -330,10 +620,15 @@ describe('Command action-history replay integration', () => {
         expect(actionHistoryStore.value?.entries[0]?.id).toBe(initial_entry_id);
         expect(getActionReplayStatus(initial_entry_id)).toEqual({ status: 'ready' });
 
-        for (let index = 1; index <= 200; index += 1) {
-            await executeAppAction({ type: 'setSnapValue', payload: { value: index } });
-        }
+        const eviction_actions: SetSnapValueAction[] = Array.from({ length: 200 }, (_, index) => ({
+            type: 'setSnapValue',
+            payload: { value: index + 1 },
+        }));
+        await expect(executeAppActionBatch(eviction_actions)).resolves.toMatchObject({ status: 'committed' });
 
+        expect(executed_actions.slice(1)).toEqual(
+            eviction_actions.map(({ payload }) => `setSnapValue:${payload.value}`)
+        );
         expect(actionHistoryStore.value?.entries).toHaveLength(200);
         expect(getActionReplayStatus(initial_entry_id)).toEqual({ status: 'unavailable' });
 

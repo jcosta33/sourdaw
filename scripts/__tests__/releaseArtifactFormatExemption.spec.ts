@@ -31,6 +31,11 @@ describe('.prettierignore coverage', () => {
         // pathAddressedSha256 fail here instead of running fewer cases.
         expect(releasePaths).toEqual([
             'release/dependency-license-proofs.json',
+            'release/upstream-proofs/audio-export-codecs/BUILD.md',
+            'release/upstream-proofs/audio-export-codecs/provenance.json',
+            'release/upstream-proofs/audio-export-codecs/reproduction-commands.json',
+            'release/upstream-proofs/audio-export-codecs/vorbis-primer-page.patch',
+            'release/upstream-proofs/audio-export-codecs/vorbis-short-leading-context.patch',
             'release/upstream-proofs/mi-plaits-dsp-rs-LICENSE.txt',
             'release/upstream-proofs/mi-plaits-dsp-rs-kick_808.rs',
             'release/upstream-proofs/mutable-instruments-analog_bass_drum.h',

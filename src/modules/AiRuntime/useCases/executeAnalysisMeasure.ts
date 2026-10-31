@@ -1,12 +1,12 @@
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
-import { type AnalysisMeasureRead } from '../models/AnalysisMeasureRead';
 import { type ApplicationToolReceipt } from '../models/ApplicationOwnedTool';
 import { type MeasurementAdmitter, type MeasurementFailure } from '../models/MeasurementBudget';
 import { type ProjectContextSection } from '../models/ProjectContext';
 import { type ToolCallResult } from '../models/ToolCallResult';
 
+import { type AnalysisMeasureRead } from './answerContractTypes';
 import { executePreviewMeasurement } from './executePreviewMeasurement';
 import { measureProjectScope, type MeasuredRange, type ReducedTarget } from './measureProjectScope';
 import { parseAnalysisMeasureArguments } from './parseAnalysisMeasureArguments';
@@ -114,5 +114,14 @@ export async function executeAnalysisMeasure(input: ExecuteAnalysisMeasureInput)
     if (measured.status === 'failed') {
         return read(failureReceipt(input, measured.failure));
     }
-    return read(successReceipt(input, parsed.value, measured.measurement));
+    return {
+        ...read(successReceipt(input, parsed.value, measured.measurement)),
+        answerMeasurement: {
+            revision: input.projectRevision,
+            scope: parsed.value.scope,
+            range: measured.measurement.range,
+            metrics: parsed.value.metrics,
+            targets: measured.measurement.targets,
+        },
+    };
 }

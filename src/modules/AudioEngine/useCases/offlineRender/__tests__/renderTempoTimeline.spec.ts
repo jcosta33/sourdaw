@@ -34,4 +34,29 @@ describe('renderTempoTimeline', () => {
             (2 * 60) / (60 * sampleRate)
         );
     });
+    it('brackets a source end across a short 180 to 60 to 180 excursion', () => {
+        const secondsAtBeat = (beat: number) => {
+            if (beat <= 0.25) {
+                return beat / 3;
+            }
+            if (beat <= 0.5) {
+                return 0.25 / 3 + beat - 0.25;
+            }
+            return 0.25 / 3 + 0.25 + (beat - 0.5) / 3;
+        };
+        const tempoAtBeat = (beat: number) => (beat < 0.25 || beat >= 0.5 ? 180 : 60);
+        const onSamples = (beat: number) => Math.round(secondsAtBeat(beat) * 48000) / 48000;
+        const timeline = renderTempoTimeline(onSamples, tempoAtBeat);
+        const target = 8320 / 48000;
+        expect(Math.round(onSamples(timeline.beatAtSeconds(target)) * 48000)).toBe(8320);
+        expect(timeline.beatAtSeconds(target)).toBeCloseTo(0.34, 4);
+    });
+
+    it.each([0, -1, -100, 1, 100])('preserves zero and signed placement at %s seconds', (seconds) => {
+        const timeline = renderTempoTimeline(
+            (beat) => beat / 2,
+            () => 120
+        );
+        expect(timeline.beatAtSeconds(seconds)).toBe(seconds * 2);
+    });
 });

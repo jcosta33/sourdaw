@@ -1,5 +1,13 @@
 pub mod audio_thread;
 pub mod capture;
+mod capture_clock;
+#[cfg(feature = "command-capture-fixture")]
+pub use audio_thread::CaptureLifecycleDriver;
+pub use audio_thread::{
+    CaptureCompletionService, CaptureFirstInput, CapturePeriodObservation, CapturePeriodSnapshot,
+    CaptureServiceProgress,
+};
+pub use capture_clock::{CaptureClockQuality, CaptureClockSnapshot};
 pub(crate) mod device;
 pub mod retrospective;
 /// Why an engine has no capture side. The device seam itself stays internal;
@@ -32,7 +40,7 @@ use scheduler::{
     PluginCore, RetiredGraphObjects, TransportPositionReader, TransportPositionSnapshot,
     CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
 };
-use std::sync::atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use timeline::{
@@ -86,7 +94,15 @@ pub enum GraphBatchError {
     },
 }
 
+static NEXT_ENGINE_INSTANCE: AtomicU64 = AtomicU64::new(1);
+
+fn reserve_engine_instance_id(next: &AtomicU64) -> Result<u64, String> {
+    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+        .map_err(|_| "Native engine instance identity exhausted".to_string())
+}
+
 pub struct EngineHandle {
+    instance_id: u64,
     command_tx: Producer<GraphCommand>,
     /// Hands freshly provisioned retirement consumers to the reclaimer thread
     /// when the command channel is reallocated for a large batch.
@@ -155,6 +171,7 @@ pub struct EngineHandle {
     capture_period_used: bool,
     /// Revoked once by the control side; reopening uses a different slot.
     capture_period_revoked: Arc<AtomicBool>,
+    capture_period: CapturePeriodObservation,
     retired_capture_events: Vec<(Consumer<EngineEvent>, Arc<AtomicU8>)>,
     midi_rt_diagnostics: ActiveMidiRtDiagnosticsReader,
     timeline_rt_diagnostics: TimelineRtDiagnosticsReader,
@@ -174,6 +191,7 @@ pub struct EngineHandle {
     /// The rate the stream actually opened at. Every command that names a time
     /// in seconds is converted to frames against this and nothing else.
     sample_rate: f32,
+    capture_clock: capture_clock::CaptureClock,
     /// What the capture ring published as its settled latency, in frames, or
     /// zero while it is not serving. Written by the audio thread, read here.
     input_latency_frames: Arc<AtomicUsize>,
@@ -220,6 +238,10 @@ pub struct EngineHandle {
 }
 
 impl EngineHandle {
+    pub fn instance_id(&self) -> u64 {
+        self.instance_id
+    }
+
     /// Boot the native audio engine (spawns the audio stream).
     ///
     /// Two attempts, the second without the negotiated buffer period — see
@@ -240,6 +262,9 @@ impl EngineHandle {
     /// channels, which is why the retry lives here rather than inside
     /// `spawn_audio_thread`.
     fn spawn(force_default_buffer: bool) -> Result<Self, String> {
+        // Reserve before opening a stream. Failed construction burns an id;
+        // retirement or a fallback start can never reuse an old receipt.
+        let instance_id = reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)?;
         let (tx, rx) = RingBuffer::new(256);
         let (diagnostics_tx, diagnostics_reader) = active_midi_rt_diagnostics_channel();
         let (timeline_diagnostics_tx, timeline_diagnostics_reader) =
@@ -300,6 +325,7 @@ impl EngineHandle {
         )?;
 
         Ok(Self {
+            instance_id,
             command_tx: tx,
             retired_adoption_tx: spawned.retired_adoption_tx,
             audio_thread: spawned.handle,
@@ -313,6 +339,7 @@ impl EngineHandle {
             capture_period_requested: false,
             capture_period_used: false,
             capture_period_revoked: spawned.capture_period_revoked,
+            capture_period: spawned.capture_period,
             retired_capture_events: Vec::new(),
             midi_rt_diagnostics: diagnostics_reader,
             timeline_rt_diagnostics: timeline_diagnostics_reader,
@@ -322,6 +349,7 @@ impl EngineHandle {
             engine_events: engine_event_rx,
             capture_events: capture_event_rx,
             sample_rate: spawned.sample_rate,
+            capture_clock: spawned.capture_clock,
             input_latency_frames: spawned.input_latency_frames,
             capture_refusal: spawned.capture_refusal,
             rendering: spawned.liveness.rendering,
@@ -399,6 +427,7 @@ impl EngineHandle {
             self.input_latency_frames = Arc::clone(&latency);
             self.retrospective = control;
             self.capture_period_revoked = Arc::new(AtomicBool::new(false));
+            self.capture_period = CapturePeriodObservation::new();
             self.audio_thread
                 .prepare_capture(audio_thread::CapturePeriod {
                     events: events_tx,
@@ -406,6 +435,7 @@ impl EngineHandle {
                     refusal,
                     retrospective: writer,
                     revoked: Arc::clone(&self.capture_period_revoked),
+                    observation: self.capture_period.clone(),
                 });
         }
         self.capture_period_used = false;
@@ -747,6 +777,11 @@ impl EngineHandle {
         self.transport_position.snapshot()
     }
 
+    /// Same monotonic epoch as the callback date, for a caller's query bracket.
+    pub fn capture_clock_now(&self) -> (u64, f64) {
+        self.capture_clock.now()
+    }
+
     /// Read what the engine's master output, and every timeline track's own
     /// strip, measured, outside the callback.
     ///
@@ -954,7 +989,46 @@ impl EngineHandle {
     /// registration ahead of the `AddPlugin` that answers it, and until the id
     /// resolves the callback skips it.
     pub fn register_capture_consumer(&mut self, plugin_id: usize) -> Result<(), String> {
-        self.push(GraphCommand::RegisterCaptureConsumer(plugin_id))
+        self.prepare_capture_consumer_registration(plugin_id)?
+            .commit()
+            .map(|_| ())
+    }
+
+    /// Reserve the single producer's next registration without publishing a
+    /// graph command or acquiring input. The borrower binds its take before
+    /// committing, so a render callback cannot outrun that preparation.
+    pub fn prepare_capture_consumer_registration(
+        &mut self,
+        plugin_id: usize,
+    ) -> Result<PreparedCaptureRegistration<'_>, String> {
+        if self.capture_consumers.contains(&plugin_id) {
+            return Err(capture_consumer_registered_error(plugin_id));
+        }
+        if self.capture_consumers.len() >= CRUMBS_CAPTURE_RESERVE {
+            return Err(capture_bus_full_error());
+        }
+        if self.command_tx.slots() == 0 {
+            return Err("Audio command queue full".to_string());
+        }
+        self.prepare_capture_period();
+        let period = self.capture_period.clone();
+        Ok(PreparedCaptureRegistration {
+            engine: self,
+            plugin_id,
+            period,
+        })
+    }
+
+    pub fn is_current_capture_period(&self, expected: &CapturePeriodObservation) -> bool {
+        self.capture_period.same_period(expected)
+    }
+
+    /// Adopt one weakly owned take service before acquiring its capture holder.
+    pub fn adopt_capture_completion_service(
+        &self,
+        service: Box<dyn CaptureCompletionService>,
+    ) -> Result<(), String> {
+        self.audio_thread.adopt_capture_completion_service(service)
     }
 
     /// Stop feeding a native plugin the captured input.
@@ -1452,6 +1526,26 @@ impl EngineHandle {
     }
 }
 
+/// An exclusive producer borrow, not an acquired input holder. Dropping it
+/// leaves the graph and capture ledger untouched.
+pub struct PreparedCaptureRegistration<'engine> {
+    engine: &'engine mut EngineHandle,
+    plugin_id: usize,
+    period: CapturePeriodObservation,
+}
+
+impl PreparedCaptureRegistration<'_> {
+    pub fn period(&self) -> &CapturePeriodObservation {
+        &self.period
+    }
+
+    pub fn commit(self) -> Result<CapturePeriodObservation, String> {
+        self.engine
+            .push(GraphCommand::RegisterCaptureConsumer(self.plugin_id))?;
+        Ok(self.period)
+    }
+}
+
 /// The one wording for a refusal against the shared effect table, so the batch
 /// path, the plugin path and the crumbs path all report the same ceiling.
 fn effect_table_full_error() -> String {
@@ -1547,6 +1641,8 @@ fn engine_handle_fixture(
     output_stream_fault: Arc<AtomicU8>,
 ) -> EngineHandle {
     EngineHandle {
+        instance_id: reserve_engine_instance_id(&NEXT_ENGINE_INSTANCE)
+            .expect("fixture engine identity exhausted"),
         command_tx,
         retired_adoption_tx,
         audio_thread: audio_thread::detached_audio_thread_handle(),
@@ -1557,6 +1653,7 @@ fn engine_handle_fixture(
         capture_period_requested: false,
         capture_period_used: false,
         capture_period_revoked: Arc::new(AtomicBool::new(false)),
+        capture_period: CapturePeriodObservation::new(),
         retired_capture_events: Vec::new(),
         midi_rt_diagnostics,
         timeline_rt_diagnostics,
@@ -1566,6 +1663,7 @@ fn engine_handle_fixture(
         engine_events,
         capture_events,
         sample_rate: 48_000.0,
+        capture_clock: capture_clock::CaptureClock::new(),
         input_latency_frames: audio_thread::new_input_latency_slot(),
         capture_refusal,
         rendering,
@@ -1620,11 +1718,68 @@ pub fn engine_handle_for_command_capture(
     )
 }
 
+/// A controlled input/renderer driver for cross-crate native lifecycle tests.
+/// Both actual capture delivery and rendering use the graph returned here.
+#[cfg(feature = "command-capture-fixture")]
+pub fn capture_lifecycle_fixture(
+    capacity: usize,
+    refuse_input: bool,
+) -> Result<(EngineHandle, CaptureLifecycleDriver), String> {
+    let (command_tx, commands) = RingBuffer::new(capacity);
+    let (retired_tx, retired_rx) = RingBuffer::new(scheduler::RETIREMENT_QUEUE_CAPACITY);
+    let (retired_adoption_tx, retired_adoptions) = std::sync::mpsc::channel();
+    let (midi_tx, midi_reader) = active_midi_rt_diagnostics_channel();
+    let (timeline_tx, timeline_reader) = timeline_rt_diagnostics_channel();
+    let (progress_tx, progress_reader) = graph_progress_channel();
+    let (position_tx, position_reader) = transport_position_channel();
+    let (meter_tx, meter_reader) = meter_channel();
+    let scheduler = scheduler::AudioScheduler::with_rt_diagnostics(
+        commands,
+        retired_tx,
+        48_000.0,
+        midi_tx,
+        timeline_tx,
+        progress_tx,
+        position_tx,
+        meter_tx,
+    );
+    let capture_clock = capture_clock::CaptureClock::new();
+    let parts = audio_thread::capture_lifecycle_driver(
+        scheduler,
+        retired_rx,
+        retired_adoptions,
+        refuse_input,
+        capture_clock,
+    )?;
+    let (_output_events, output_events) = engine_event_channel();
+    let mut engine = engine_handle_fixture(
+        command_tx,
+        retired_adoption_tx,
+        midi_reader,
+        timeline_reader,
+        progress_reader,
+        position_reader,
+        meter_reader,
+        output_events,
+        parts.events,
+        parts.refusal,
+        audio_thread::new_render_liveness().rendering,
+        audio_thread::new_output_stream_fault_slot(),
+    );
+    engine.capture_clock = capture_clock;
+    engine.audio_thread = parts.handle;
+    engine.capture_period = parts.period;
+    engine.capture_period_revoked = parts.revoked;
+    engine.input_latency_frames = parts.latency;
+    engine.retrospective = parts.retrospective;
+    Ok((engine, parts.driver))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        engine_handle_fixture, engine_handle_for_command_capture, spawn_with_fallback,
-        GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
+        engine_handle_fixture, engine_handle_for_command_capture, reserve_engine_instance_id,
+        spawn_with_fallback, GraphBatchError, CRUMBS_CAPTURE_RESERVE, EFFECT_TABLE_CAPACITY,
     };
     use crate::audio_thread::{observed_audio_thread_handle, OwnerCommand};
     use crate::engine_events::{engine_event_channel, EngineEvent, StreamErrorKind, StreamSide};
@@ -1643,7 +1798,23 @@ mod tests {
     use rtrb::{Consumer, Producer, RingBuffer};
     use std::any::Any;
     use std::cell::RefCell;
+    use std::sync::atomic::Ordering;
     use triple_buffer::Input;
+
+    #[test]
+    fn native_grinder_model_engine_identity_is_unique_for_actual_handle_recreation() {
+        let (first, _, _) = engine_handle_for_command_capture(8);
+        let id = first.instance_id();
+        drop(first);
+        let (next, _, _) = engine_handle_for_command_capture(8);
+        assert!(next.instance_id() > id);
+        let exhausted = std::sync::atomic::AtomicU64::new(u64::MAX);
+        assert!(reserve_engine_instance_id(&exhausted).is_err());
+        assert_eq!(
+            exhausted.load(std::sync::atomic::Ordering::Relaxed),
+            u64::MAX
+        );
+    }
 
     /// The pre-built instance a detached-effect batch carries, built here on
     /// the control side exactly as [`crate::EngineHandle::add_effect`] builds
@@ -2088,6 +2259,138 @@ mod tests {
             owner_rx.try_recv().is_err(),
             "one successful arm asks exactly once"
         );
+    }
+
+    #[test]
+    fn arm_only_disarm_closes_capture_and_reopens_a_fresh_period() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(3, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.retrospective_capture_target(), None);
+        assert_eq!(engine.input_latency_frames(), 0);
+        engine.disarm_retrospective_capture();
+        assert!(
+            owner.try_recv().is_err(),
+            "duplicate disarm cannot close twice"
+        );
+
+        engine.arm_retrospective_capture(4, 1);
+        assert!(matches!(
+            owner.try_recv(),
+            Ok(OwnerCommand::PrepareCapture(_))
+        ));
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        assert_eq!(engine.retrospective_capture_target(), Some(4));
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn arm_then_take_disarm_keeps_capture_until_the_take_releases() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(3, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.register_capture_consumer(7).unwrap();
+        assert!(owner.try_recv().is_err(), "the take shares the armed input");
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(owner.try_recv().is_err(), "disarm must not cut the take");
+        assert_eq!(engine.input_latency_frames(), 512);
+        engine.unregister_capture_consumer(7).unwrap();
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.input_latency_frames(), 0);
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn take_then_arm_release_keeps_capture_until_the_arm_disarms() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.register_capture_consumer(7).unwrap();
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        engine.arm_retrospective_capture(3, 2);
+        assert!(
+            owner.try_recv().is_err(),
+            "arm must not replace the take's input"
+        );
+        engine.input_latency_frames.store(512, Ordering::Relaxed);
+        engine.unregister_capture_consumer(7).unwrap();
+        assert!(
+            owner.try_recv().is_err(),
+            "the arm independently holds capture"
+        );
+        assert_eq!(engine.input_latency_frames(), 512);
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.input_latency_frames(), 0);
+        assert!(owner.try_recv().is_err());
+    }
+
+    #[test]
+    fn repeated_and_refused_retrospective_arms_hold_only_one_capture_period() {
+        let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+        let (audio_thread, owner) = observed_audio_thread_handle();
+        engine.audio_thread = audio_thread;
+        engine.arm_retrospective_capture(0, 2);
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+        for track_id in 1..16 {
+            engine.arm_retrospective_capture(track_id, 2);
+        }
+        assert!(
+            engine.retrospective_capture_target().unwrap() < 15,
+            "an undrained ring eventually refuses a replacement arm"
+        );
+        assert!(
+            owner.try_recv().is_err(),
+            "rearms never replace the live input"
+        );
+
+        engine.disarm_retrospective_capture();
+
+        assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+        assert_eq!(engine.retrospective_capture_target(), None);
+        engine.disarm_retrospective_capture();
+        assert!(
+            owner.try_recv().is_err(),
+            "one successful arm period releases once"
+        );
+    }
+
+    #[test]
+    fn invalid_retrospective_arm_releases_only_its_previous_holder() {
+        for take_active in [false, true] {
+            let (mut engine, _commands, _retired) = engine_handle_for_command_capture(16);
+            let (audio_thread, owner) = observed_audio_thread_handle();
+            engine.audio_thread = audio_thread;
+            engine.arm_retrospective_capture(3, 2);
+            assert!(matches!(owner.try_recv(), Ok(OwnerCommand::OpenCapture)));
+            if take_active {
+                engine.register_capture_consumer(7).unwrap();
+            }
+
+            engine.arm_retrospective_capture(4, 0);
+
+            assert_eq!(engine.retrospective_capture_target(), None);
+            if take_active {
+                assert!(owner.try_recv().is_err(), "invalid arm cannot cut a take");
+                engine.unregister_capture_consumer(7).unwrap();
+            }
+            assert!(matches!(owner.try_recv(), Ok(OwnerCommand::CloseCapture)));
+            assert!(owner.try_recv().is_err());
+        }
     }
 
     /// A failed arm (zero channels) leaves the ring disarmed and must not

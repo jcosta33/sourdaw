@@ -59,6 +59,7 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { tempoMapStore } from '#/modules/Transport/stores';
 import { addTempoChange, getTransportHandlers, updateTempoChange } from '#/modules/Transport/useCases';
 
 import { deriveDeterministicProjectId, type ProjectData } from '../../../../models/ProjectData';
@@ -159,7 +160,7 @@ async function seedProjectA(): Promise<void> {
         type: 'addMarker',
         payload: { markerId: 'marker-a', beat: 4, name: 'A Marker', color: '#aa0000' },
     });
-    addTempoChange(0, 111);
+    await addTempoChange(0, 111);
     flushAutomergeStorageWrites();
 }
 
@@ -196,7 +197,7 @@ async function switchToProjectB(data: ProjectData): Promise<void> {
         type: 'addMarker',
         payload: { markerId: 'marker-b', beat: 8, name: 'B Marker', color: '#0000aa' },
     });
-    addTempoChange(0, 222);
+    await addTempoChange(0, 222);
     flushAutomergeStorageWrites();
 }
 
@@ -270,12 +271,13 @@ describe('project export snapshot consistency integration', () => {
         if (!tempoChangeId) {
             throw new Error('Expected the seeded tempo-map entry');
         }
-        const before = captureProjectRevision();
 
         const building = buildProjectData({ includeAudioBuffers: true });
         await vi.waitFor(() => expect(audioRuntime.exportCachedAudioBuffers).toHaveBeenCalledOnce());
-        updateTempoChange(tempoChangeId, 177);
-        expect(captureProjectRevision()).not.toBe(before);
+        const beforeTempoEdit = captureProjectRevision();
+        await updateTempoChange(tempoChangeId, 177);
+        expect(tempoMapStore.value?.changes).toEqual([expect.objectContaining({ id: tempoChangeId, tempo: 177 })]);
+        expect(captureProjectRevision()).not.toBe(beforeTempoEdit);
         pcm.resolve({});
 
         await expect(building).resolves.toBeNull();
@@ -330,7 +332,7 @@ describe('project export snapshot consistency integration', () => {
         if (!tempoChangeId) {
             throw new Error('Expected the seeded tempo-map entry');
         }
-        updateTempoChange(tempoChangeId, 188);
+        await updateTempoChange(tempoChangeId, 188);
         dialog.resolve('/tmp/project-a.sourdaw');
         await exporting;
 

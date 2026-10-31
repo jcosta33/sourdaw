@@ -939,6 +939,34 @@ describe('AppShell', () => {
             expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
         });
 
+        it('unmounts the launch screen without waiting for the fade under reduced motion', () => {
+            vi.useFakeTimers();
+            vi.stubGlobal('matchMedia', (query: string) => ({
+                matches: query === '(prefers-reduced-motion: reduce)',
+                media: query,
+                onchange: null,
+                addListener: vi.fn(),
+                removeListener: vi.fn(),
+                addEventListener: vi.fn(),
+                removeEventListener: vi.fn(),
+                dispatchEvent: vi.fn(),
+            }));
+            try {
+                projectState = createProjectState({ initialized: false, loading: false });
+                const { rerender } = render(<AppShell>Content</AppShell>);
+
+                projectState = createProjectState({ initialized: true, loading: false });
+                rerender(<AppShell>Content</AppShell>);
+
+                act(() => {
+                    vi.advanceTimersByTime(0);
+                });
+                expect(screen.queryByTestId('launch-screen')).not.toBeInTheDocument();
+            } finally {
+                vi.unstubAllGlobals();
+            }
+        });
+
         /**
          * The reason the terminal open failure has its own store rather than
          * riding the transient flags. `launchReady` latches the first time a

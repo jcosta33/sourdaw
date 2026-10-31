@@ -104,13 +104,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "24.19.0",
@@ -269,13 +271,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "24.19.0",
@@ -350,7 +354,7 @@
         "if": "fromJSON(inputs.matrix).include[0] != null",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -370,13 +374,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -390,7 +396,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run shard",
@@ -438,13 +444,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -483,7 +491,7 @@
       "browser-ai-webgpu": {
         "name": "Browser AI WebGPU admission",
         "if": "inputs.browser-ai",
-        "runs-on": "macos-14",
+        "runs-on": "macos-15",
         "timeout-minutes": 40,
         "steps": [
           {
@@ -499,7 +507,7 @@
           {
             "name": "Set up pnpm",
             "timeout-minutes": 7,
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -507,6 +515,7 @@
           {
             "name": "Set up Node",
             "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -702,13 +711,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -815,14 +826,15 @@
           {
             "name": "Set up pnpm",
             "timeout-minutes": 5,
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
-            "timeout-minutes": 5,
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -858,13 +870,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -914,7 +928,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
@@ -970,13 +984,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -999,7 +1015,7 @@
         "if": "github.event.pull_request != null && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -1015,13 +1031,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1035,7 +1053,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run offline smoke set",
@@ -1056,13 +1074,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1092,13 +1112,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1305,13 +1327,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1512,13 +1536,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1608,13 +1634,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1652,13 +1680,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1708,7 +1738,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "dest": "${{ steps.unit_tools.outputs.root }}",
               "package_json_file": "package.json"
@@ -1768,13 +1798,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1834,7 +1866,16 @@
             "uses": "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
           },
           {
+            "name": "Install Node",
+            "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+            "with": {
+              "node-version": "${{ env.NODE_VERSION }}"
+            }
+          },
+          {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -1924,13 +1965,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2003,7 +2046,7 @@
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
         "runs-on": "ubuntu-latest",
         "container": {
-          "image": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+          "image": "mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea",
           "options": "--init --ipc=host"
         },
         "defaults": {
@@ -2038,13 +2081,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2058,7 +2103,7 @@
           {
             "name": "Verify preinstalled browser runtime",
             "timeout-minutes": 2,
-            "run": "node scripts/verifyPlaywrightRuntime.ts 1.63.0"
+            "run": "node scripts/verifyPlaywrightRuntime.ts 1.64.1"
           },
           {
             "name": "Run shard",
@@ -2089,7 +2134,7 @@
         "name": "Browser AI WebGPU admission",
         "needs": "decide",
         "if": "needs.decide.outputs.heavy == 'true' && needs.decide.outputs.e2e == 'true'",
-        "runs-on": "macos-14",
+        "runs-on": "macos-15",
         "timeout-minutes": 30,
         "steps": [
           {
@@ -2102,13 +2147,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2147,13 +2194,15 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
           },
           {
             "name": "Set up Node",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2323,7 +2372,7 @@
           {
             "name": "Set up pnpm",
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "package.json"
             }
@@ -2331,6 +2380,8 @@
           {
             "name": "Set up Node",
             "if": "env.DEPLOY_CREDENTIAL_PRESENT == 'true'",
+            "timeout-minutes": 3,
+            "continue-on-error": true,
             "uses": "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
             "with": {
               "node-version": "${{ env.NODE_VERSION }}",
@@ -2634,7 +2685,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"
+            "uses": "./.github/actions/setup-pnpm"
           },
           {
             "name": "Set up Node",
@@ -2787,7 +2838,7 @@
           },
           {
             "name": "Set up pnpm",
-            "uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86",
+            "uses": "./control/.github/actions/setup-pnpm",
             "with": {
               "package_json_file": "source/package.json"
             }

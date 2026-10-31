@@ -1,8 +1,22 @@
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+    closeSync,
+    fstatSync,
+    mkdirSync,
+    mkdtempSync,
+    openSync,
+    readFileSync,
+    realpathSync,
+    rmSync,
+    symlinkSync,
+    writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { Document, parseDocument } from 'yaml';
 
 import {
     PNPM_MODULES_MANIFEST,
@@ -358,4 +372,122 @@ describe('pnpm modules preflight against a real filesystem', () => {
     it('stands down outside a git checkout instead of blocking the guard', () => {
         expect(() => assertCurrentCheckoutModulesBelongToCheckout(tempCheckout('non-repo'))).not.toThrow();
     });
+
+    it('keeps a CI-created private install fresh for CI and local package commands', () => {
+        const root = tempCheckout('ci-to-local');
+        const repositoryPackage = JSON.parse(readFileSync(join(process.cwd(), 'package.json'), 'utf8'));
+        const workspace = parseDocument(readFileSync(join(process.cwd(), 'pnpm-workspace.yaml'), 'utf8'));
+        expect(workspace.errors).toEqual([]);
+        const enableGlobalVirtualStore: unknown = workspace.get('enableGlobalVirtualStore');
+        if (enableGlobalVirtualStore !== undefined && typeof enableGlobalVirtualStore !== 'boolean') {
+            throw new TypeError('enableGlobalVirtualStore must be a boolean');
+        }
+        const fixtureWorkspace = new Document({ packages: ['.'] });
+        if (enableGlobalVirtualStore !== undefined) {
+            fixtureWorkspace.set('enableGlobalVirtualStore', enableGlobalVirtualStore);
+        }
+        writeFileSync(join(root, 'pnpm-workspace.yaml'), fixtureWorkspace.toString());
+        writeFileSync(
+            join(root, 'package.json'),
+            JSON.stringify({
+                name: 'private-store-probe',
+                private: true,
+                packageManager: repositoryPackage.packageManager,
+                scripts: { probe: 'node probe.cjs' },
+                dependencies: { 'local-probe': 'file:./dependency' },
+            })
+        );
+        mkdirSync(join(root, 'dependency'));
+        writeFileSync(
+            join(root, 'dependency/package.json'),
+            JSON.stringify({ name: 'local-probe', version: '1.0.0', main: 'index.cjs' })
+        );
+        writeFileSync(join(root, 'dependency/index.cjs'), "module.exports = 'PRIVATE_STORE_PROBE';\n");
+        writeFileSync(join(root, 'probe.cjs'), "console.log(require('local-probe'));\n");
+        writeFileSync(join(root, '.npmrc'), '');
+
+        const pnpm = process.env.npm_execpath ?? 'pnpm';
+        const javascriptCli = /\.[cm]?js$/.test(pnpm);
+        const runPnpm = (ci: string, args: string[]) => {
+            const env: NodeJS.ProcessEnv = { CI: ci, NO_COLOR: '1', FORCE_COLOR: '0' };
+            for (const key of [
+                'PATH',
+                'HOME',
+                'USERPROFILE',
+                'SystemRoot',
+                'WINDIR',
+                'ComSpec',
+                'PATHEXT',
+                'TMPDIR',
+                'TMP',
+                'TEMP',
+            ]) {
+                const value = process.env[key];
+                if (value !== undefined) {
+                    env[key] = value;
+                }
+            }
+            const configuredArguments = [
+                `--config.userconfig=${join(root, '.npmrc')}`,
+                `--config.globalconfig=${join(root, '.npmrc')}`,
+                `--config.store-dir=${join(root, 'store')}`,
+                ...args,
+            ];
+            const cliArguments = javascriptCli ? [pnpm, ...configuredArguments] : configuredArguments;
+            return spawnSync(javascriptCli ? process.execPath : pnpm, cliArguments, {
+                cwd: root,
+                env,
+                encoding: 'utf8',
+                timeout: 10_000,
+            });
+        };
+        const version = runPnpm('true', ['--version']);
+        expect(version.status, `${version.error ?? ''}${version.stdout}${version.stderr}`).toBe(0);
+        expect(`pnpm@${version.stdout.trim()}`).toBe(repositoryPackage.packageManager);
+        const installed = runPnpm('true', ['install', '--offline', '--ignore-scripts']);
+        expect(installed.status, `${installed.error ?? ''}${installed.stdout}${installed.stderr}`).toBe(0);
+        expect(nodeModulesLinkTarget(root)).toBeUndefined();
+        expect(realpathSync(join(root, 'node_modules/.pnpm'))).toBe(join(root, 'node_modules/.pnpm'));
+        expect(() => assertCheckoutModulesBelongToCheckout(root)).not.toThrow();
+        expect(JSON.parse(readFileSync(join(root, 'node_modules', PNPM_WORKSPACE_STATE), 'utf8'))).toMatchObject({
+            settings: { enableGlobalVirtualStore: false },
+            projects: { [root]: {} },
+        });
+        const metadata = () =>
+            Object.fromEntries(
+                [
+                    'pnpm-lock.yaml',
+                    `node_modules/${PNPM_MODULES_MANIFEST}`,
+                    `node_modules/${PNPM_WORKSPACE_STATE}`,
+                    'node_modules/.pnpm/lock.yaml',
+                ].map((path) => {
+                    const descriptor = openSync(join(root, path), 'r');
+                    try {
+                        const stat = fstatSync(descriptor);
+                        return [
+                            path,
+                            {
+                                sha256: createHash('sha256').update(readFileSync(descriptor)).digest('hex'),
+                                ino: stat.ino,
+                                mtimeMs: stat.mtimeMs,
+                            },
+                        ];
+                    } finally {
+                        closeSync(descriptor);
+                    }
+                })
+            );
+        const before = metadata();
+        for (const ci of ['false', 'true']) {
+            for (const freshness of [['--config.verify-deps-before-run=error'], []]) {
+                const result = runPnpm(ci, [...freshness, 'run', 'probe']);
+                const output = `${result.stdout}${result.stderr}`;
+                expect(result.status, `CI=${ci} ${freshness.join(' ')}: ${result.error ?? ''}${output}`).toBe(0);
+                expect(output).toContain('PRIVATE_STORE_PROBE');
+                expect(output).not.toMatch(/Lockfile is up to date|Already up to date|Packages:|Done in /);
+                expect(metadata()).toEqual(before);
+                expect(() => assertCheckoutModulesBelongToCheckout(root)).not.toThrow();
+            }
+        }
+    }, 90_000);
 });

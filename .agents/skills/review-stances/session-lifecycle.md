@@ -1,5 +1,19 @@
 # Lesson library: session lifecycle
 
+### 2026-10-29 — an editor connection owned the acceptance document lifetime
+
+Playwright's dev-server route dates to `0ef2e91d94`; #5363 kept the source-module companion
+and #5738 consolidated its child lifecycle. The Vite 8.3.5 pin in #5748 retained an
+unconditional disconnect/ping/reload branch even when updates were disabled. Historical
+private review prompts and tiers are unavailable. The missed lifecycle probe separates
+editor WebSocket loss from healthy application HTTP and pending module ownership.
+
+With an actual held App import, disconnect only the fixture's established socket while
+health remains available. Require same-document App and CSS completion with HMR off, and
+an observed CDP reload plus successful successor completion under default developer HMR.
+Keep the transport connected initially and retain CSS exports and custom/error delivery;
+disabling WebSockets altogether introduces connection errors rather than proving isolation.
+
 Lesson library for defects in a runtime session's lifecycle — anything that starts, stops, parks,
 replaces or disposes a long-lived runtime the app holds on behalf of a user-facing mode: the
 native live graph session, the playhead scheduler, the playhead feed, a recording session, a
@@ -65,6 +79,21 @@ actual child entry separately and preserve the host's time origin; share one per
 across host and child, never replenishing it on successful startup. Storage failure requires
 manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
+### 2026-10-27 — unsupported NAM replacement needs sounding-model preservation (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) introduced the real NAM runtime
+with an admitted stacked-wide LSTM shape whose deeper input width contradicts its render buffer.
+The missing coverage obligation is replacement refusal while an existing capture is sounding;
+historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Activate Capture mode and advance two identical loaded engines with identical input. Attempt the
+unsupported replacement on one only, then require its subsequent PCM to equal the continuing
+reference without a reset. Require nonzero output separated from a matched unloaded/dry control.
+`has_loaded_neural_model` plus finite output can pass while Circuit mode bypasses the capture.
+Pair empty-engine refusal with both supported topology boundaries; preserve the selected library
+entry at the real import UI. This proves the exercised shared/WASM route, not native transport or
+physical playback acceptance.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
@@ -102,6 +131,19 @@ to an unrelated slot after a local edit, and require the runtime fields to survi
 takes the remote value. A spec that sets a runtime field and expects hydrate to drop it is the escape's
 fingerprint: ask which caller it speaks for.
 
+### 2026-10-29 — failed Freeze settlement needs current attempt authority (PR #2597 escape)
+
+The #2597 diagnostic/no-history escape requires a separate failure settlement after the render
+refuses. That continuation must still belong to the exact project root, revision, task and freeze
+aggregate when admitted and immediately before commit. A track ID or reused project timestamp
+cannot establish ownership, and the old attempt must not clear a newer task in its finalizer.
+
+Hold settlement admission and separately its staged-write commit boundary. Cancel, start a newer
+task, replace the root with the same timestamp and track ID, remove/recreate the track, or replace
+its take. Require the successor to survive with no failed-Freeze history. Pair each refusal with
+a genuinely current retry that persists its reason and later freezes, undoes and redoes normally.
+The missed real Command/durable-state stance cannot be replaced by a direct use-case callback.
+
 ### 2026-10-08 — shutdown reclamation needs a release inside the poll pass (introduced by PR #2976)
 
 The native CI failure on PR #5064 occurred after the plugin's stop and destroy assertions passed;
@@ -113,6 +155,19 @@ owner through the first retirement sweep, release it inside the first 2 ms poll 
 the next sweep to destroy it before another wait. Independently hold the owner across a synthetic
 wait longer than the 500 ms budget and require a retained, named abandonment with no second poll.
 This tests the lifecycle boundary and measured-wait budget without timing unrelated shutdown steps.
+
+### Cold frozen export restoration must finish before rendering
+
+The clip-only restoration set introduced by `57b7349f7864eca0bd177333d720a50186bd33e9`
+survived the owner-use-case routing in `ab5a579209b5e02a035e123380b5ceaf9c922250`
+(associated with PR #187); no PR is associated with the narrowing commit, and historical
+review dispatch is unknown. The missed lifecycle input is a fresh runtime whose active frozen
+print is durable but absent from memory alongside an ordinary clip.
+
+Hold restoration and require no render or encode; release it through the real cache owner and
+require active frozen PCM in both mixdown and stems. Remove only its requested ID and require
+failure before encoding. Preserve stale-print exclusion, the empty-clip fallback, cancellation,
+and the current dialog session fence; a late older callback must not paint a reopened dialog.
 
 ### VCA membership must reach committed runtime gain
 
@@ -507,6 +562,8 @@ The scheduler callback from `4f410257b212` lacked root authority; PR #4270 (`9a0
 
 Replace the root while an audio capture is open, retaining copied provisional state. Settle both stale success and stale failure, then reject a held commit after replacement: the successor must remain exact and no notice may falsely claim it discarded the take. On the same root, real success must commit once and genuine failure must retire its own provisional state. Open a later punch on the replacement root while the prior callback remains pending; only the later terminal may attach media and history. Preserve separate armed-input callbacks. Settled capture promises, including refusals, retain Transport's existing lifecycle count semantics; that count alone is never proof of a landed take.
 
+PR #4564 (`40c5218228c5`) also introduced the manual audio terminal's missing-clip append escape (#5289). PR #5373 (`eecc1c5a8457`) fenced that opening, but immediate-flush and direct-root-replacement fixtures did not prove the real branch transition. Drive actual Stop with an explicitly held recorder terminal: a real switch must remain on the outgoing root until its take and Command entry settle, then save that branch and clear incoming Undo. A real fork can install its copied root while the old flush is held; settle both old success and old failure and preserve that successor's same-ID provisional clip, takes, media and history exactly. Pair actual same-owner completion and failure, known PCM through the real cache, and real Undo/Redo. Make the captured-root predicate always true and require both stale-terminal cases to fail. Historical reviewer prompts and tiers remain unverified; the missing stance was recording-owner lifetime across the actual branch transition.
+
 ### Deferred sensitivity must redraw the current clip's markers
 
 Commit `33a3549990c5ce2234e22bf48f3d5758711e2b56` introduced an Elastic panel snapshot that stayed stale after deferred detection updated the owner store. No associated introducing PR or private review prompt or tier is established. Change sensitivity on varied-pulse audio, await the actual detection and owner projection, and require count, drawing and marker hit-testing to update without an incidental pointer refresh. Switch clips and check the current clip's projection, retained lock, unrelated clip and PCM. A subscription rollback must fail the real-store regression; this does not establish Worker or performance acceptance.
@@ -597,3 +654,21 @@ evaluation/effect boundary. If App fulfillment owns bootstrap, require effects i
 to remain absent until release. After release, require actual App render issuance and bootstrap observation. Do not infer
 quiescence from missing UI/capability markers, fixed microtask counts, or an unrelated hung-import
 case; preserve the distinct cold-stylesheet lesson in test-validity.
+
+### 2026-10-30 — early scheduler callbacks published future deadlines (PR #955)
+
+PR #955 (`9273fb830b42e102a67802ffdb46d55cd10663d6`) introduced the worker deadline
+advance and the receiver's `sentAtMs >= scheduledAtMs` admission. PR #956
+(`74616a080d0e400b8b9ed44a5361a57b21ec933a`) retained that relation while validating
+message timing. PR #955 has no public reviews; historical private prompts and tiers are
+unknown. The missed input was a callback before the next deadline: forcing one elapsed
+slot published that future deadline and advanced it, so a sustained early phase could
+keep every subsequent payload outside the receiver's contract.
+
+Drive the actual worker module with controlled early clock reads at the initial deadline
+and after missed slots. Require no premature emission or sequence/deadline advance, then
+continued admissible ticks on the unchanged due-slot grid. Retain exact, late, missed-slot,
+restart and stop controls, and keep the receiver's timestamp and generation guards strict.
+Removing only the early-callback guard must fail the named worker spec. Controlled clock
+inputs prove this producer contract; they do not attribute the separately observed #5889
+browser stall, whose raw worker messages were not retained.

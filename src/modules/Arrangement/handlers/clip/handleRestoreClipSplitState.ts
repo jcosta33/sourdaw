@@ -76,10 +76,21 @@ function clipAutomationLanesMatch(
  *  `restoreMidiClipSplitState` and `execute`'s own satellite guard exactly, reused by
  *  `validate` so a batch preflight refuses a diverged clip instead of executing into a
  *  conflict. */
+function changesTempo(action: AppAction): boolean {
+    return action.type === 'setTempo' || action.type === 'restoreTempoEdit';
+}
+
+function expectedSatellitesMatch(action: RestoreClipSplitStateAction, priorActions: readonly AppAction[]): boolean {
+    return (
+        action.payload.expected.clipSatellites === undefined ||
+        clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)
+    );
+}
+
 function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: HandlerValidationContext): boolean {
     const priorActions = context?.actions.slice(0, context.actionIndex) ?? [];
     const projected = projectClipReplayPrefix(priorActions);
-    if (!projected) {
+    if (!projected || (action.payload.expected.leftClip.type === 'audio' && !projected.tracks)) {
         return false;
     }
     const tracks =
@@ -87,6 +98,15 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             id: track.id,
             clips: projected.clips.filter((owner) => owner.owningTrackId === track.id).map((owner) => owner.clip),
         })) ?? [];
+    let takePriorActions = priorActions;
+    let takeLanes: Parameters<typeof reKeyedTakeLaneOwnersMatchStore>[3] = undefined;
+    if (priorActions.some(changesTempo)) {
+        if (!projected.tracks) {
+            return false;
+        }
+        takePriorActions = [];
+        takeLanes = projected.takeLanes;
+    }
     return (
         !hasForeignPendingProjectWrites() &&
         clipSplitCaptureOwnersMatch(action.payload) &&
@@ -94,7 +114,8 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
         reKeyedTakeLaneOwnersMatchStore(
             action.payload.reKeyedTakeLanes ?? [],
             action.payload.replacement.rightClip ? 'apply' : 'restore',
-            priorActions
+            takePriorActions,
+            takeLanes
         ) &&
         clipSplitStateRestorable(action.payload, { tracks }) &&
         midiClipSplitStateMatches(
@@ -109,8 +130,7 @@ function clipSplitStateMatches(action: RestoreClipSplitStateAction, context?: Ha
             undefined,
             priorActions
         ) &&
-        (action.payload.expected.clipSatellites === undefined ||
-            clipSatelliteEntriesMatchSnapshot(action.payload.expected.clipSatellites, priorActions)) &&
+        expectedSatellitesMatch(action, priorActions) &&
         clipAutomationLanesMatch(action, projected)
     );
 }
@@ -231,7 +251,13 @@ function prepareSplitRetirementCommit(
     );
     let retiredSource: readonly RetiredTakeLaneSnapshot[] = [];
     if (!action.payload.replacement.rightClip) {
-        retiredSource = planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds)?.retiredLanes ?? [];
+        const reKeyedTiles = (action.payload.reKeyedTakeLanes ?? []).flatMap(
+            (transition) => transition.baseGapAudioSourcesAfter ?? []
+        );
+        retiredSource =
+            planTakeRetirement([action.payload.rightClipId], reKeyedTakeIds, {
+                preservedBaseGapAudioSources: reKeyedTiles,
+            })?.retiredLanes ?? [];
     }
     const stagedSourceProof: CommandSourceProof = { changeHash: '', memberId: '' };
     let sourceProof: ReturnType<typeof captureRetiredTakeSource> = undefined;

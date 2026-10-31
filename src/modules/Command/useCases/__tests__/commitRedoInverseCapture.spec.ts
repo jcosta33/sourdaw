@@ -22,6 +22,7 @@ import { type AppAction } from '#/utils/handlerContract';
 
 import { type ActionUndoEntry } from '../../models/UndoEntry';
 import { undoStore } from '../../stores/undoStore';
+import { captureRecordedRedoContext } from '../captureRecordedRedoContext';
 import { commitRedoInverseCapture } from '../commitRedoInverseCapture';
 import { createUndoEntry } from '../createUndoEntry';
 
@@ -61,6 +62,16 @@ describe('committed Redo inverse capture publication', () => {
         undoStore.set({ past: [], future: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('binds private Redo context to the exact pending entry and retires it with that entry', () => {
+        const action = actions[0]!;
+        const context = captureRecordedRedoContext(action);
+        expect(context?.inverseAction).toBe(entries[0]!.inverseAction);
+        expect(context?.isCurrent()).toBe(true);
+        expect(captureRecordedRedoContext(structuredClone(action))).toBeUndefined();
+        undoStore.set({ past: [], future: [] });
+        expect(context?.isCurrent()).toBe(false);
     });
 
     function stage(fresh: readonly AppAction[], otherStorage?: typeof storage) {

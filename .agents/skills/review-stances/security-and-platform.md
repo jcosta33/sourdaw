@@ -35,6 +35,12 @@ dispatch.
   internal consumer of a broad platform directory does not grant the renderer authority over it.
 - Follow canonical paths through existing symlinks and missing tails before evaluating a root or
   grant. Check component boundaries and platform spelling behavior rather than string prefixes.
+- Admit every managed-directory component before creating its children or publishing scheduler
+  files. PR #5869's pre-delivery installer probe showed that a symlinked `Library` or `LaunchAgents`
+  could replace an unrelated external plist before launchd inspection. Require an existing canonical
+  home anchor, refuse each parent alias without external child creation or scheduler calls, and
+  preserve an external plist sentinel byte-for-byte. Keep canonical directory creation and
+  reinstallation positive controls. This was caught before delivery, not a main escape.
 - Trace every authoritative field from its native response parser through the final equality
   witness. PR #5627's new historical-parent observation cut exposed an inherited omission of the
   child's live `baseRef`; cached `baseRefOid` did not bind its name, repository, target or presence.
@@ -71,6 +77,43 @@ dispatch.
   not claims of live/main occurrences or an established historical reviewer omission.
 
 ## Lessons from escapes
+
+### Merged lane cleanup must prove release and survive removal refusal (introduced by PR #1802)
+
+PR #1802 introduced lane removal (`4404e50fdc`) and cwd-only activity inspection (`2a13a418e1`).
+A process outside the lane could hold a lane file open without blocking deletion, and a refused
+native removal after unlock lost the original author lock. Historic private stance, prompt and
+model are unestablished. A manual-only exit also left merged worktrees behind when delivery or its
+caller stopped before removal.
+
+Probe native removal with a spawned process whose cwd is elsewhere but whose descriptor holds a
+lane file; incomplete/denied lsof catalogs and omitted live same-user PIDs must retain the lane.
+Inject a native removal refusal after unlock and require the original author lock restored.
+Kill the worker after durable queue publication and require a later process to reclaim only after
+fresh merged-head proof. Race a second worker, move HEAD, reuse the same directory path, and tamper
+with the installed runtime/manifest; stale authority or unverifiable bytes must never delete work.
+
+Merge state alone does not prove that work reached `main`: an exact PR head merged into an open
+stack parent is still unlanded. Require a live `main` base and valid merge timestamp for author and
+review heads, and for the merged replacement of a closed superseded lane. Missing metadata stays
+unproven; a missing `merged_at` must never map to merged. Probe non-main and unknown bases, missing
+or malformed timestamps, open-state/timestamp contradictions and a base transition between the two
+ownership reads. Preserve valid main merges and closed stack lanes whose truthful replacement landed
+on main. The pre-publication integration probe exposed this eligibility gap before automatic cleanup
+was shipped; historical review dispatch details remain unestablished.
+
+### 2026-10-29 — private install ownership omitted cross-environment settings (introduced in PR #2)
+
+PR #2's `10f24a6f03` pinned pnpm 11.6; CI defaults an unset virtual-store setting to false, but
+local freshness comparison still sees unset. Existing ownership checks could accept the install
+while an ordinary local package command refused it. Historical private prompts and tiers are
+unestablished; this refusal does not establish a security exposure.
+
+Probe the real pinned runner with a private offline install under CI followed by local and CI
+package commands using repository workspace policy. Require unchanged lock/ownership metadata and
+a checkout-private virtual tree while retaining shared download-cache policy and freshness checks.
+Removing the explicit false pin must expose the same setting mismatch; a precheck bypass, metadata
+rewrite or different CI environment cannot carry that proof.
 
 ### 2026-10-29 — a replacement PR left its public fixture in scanned history (#5746 and #5748)
 
@@ -114,6 +157,20 @@ another picker. A handle-only consumer must refuse browser-only authority before
 without exposing a path, File or raw error. Removing provenance dispatch or that refusal must
 redden the owning case. These renderer-boundary probes establish neither OS-dialog execution nor
 a security exposure.
+
+### 2026-10-27 — accepted NAM dimensions exceeded the runtime input width (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) added the LSTM loader with
+deeper cells sized to `hidden_size` while rendering passed a one-element input to every cell.
+The source establishes the length contradiction for `num_layers > 1 && hidden_size > 1`;
+no trap on the introducing head was measured. The missing coverage obligation was the layer/width
+cross-product. Historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Pass an exact-layout, finite-weight two-layer/hidden-size-2 file through the actual loader and
+prewarm entry. Require a named refusal before construction/prewarm, paired with successful
+single-layer/wide and stacked/hidden-size-1 controls. Count initial hidden/cell state and the head
+in the fixture, rather than guessing its length. Exercise the public import boundary and rebuilt
+WASM bytes too; a validated metadata object alone cannot prove runtime admission.
 
 ### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
 
@@ -480,3 +537,35 @@ nonfinite values, forged identity, wrong generation and replay. Caller project p
 maps must not widen the finite runtime schema. Remove only the declared Body key to
 make the positive factory probe fail; a hand-built permissive target cannot establish
 that valid controls cross the production trust boundary.
+
+### Package-manager trust reaches the final caller
+
+PR #4222 (`120c9e2b418`) introduced the setup action whose bootstrap could block the selected
+JavaScript pnpm on unused native-engine signature metadata (#5806). PR #5464 (`eded998aebf`)
+introduced the Corepack-producer and later Node/cache-consumer arrangement in push checks.
+When that selected Node directory contains a Corepack shim, its later PATH prepend can override
+an already verified target. These revisions identify the escaped contracts; historical private
+reviewer prompts and tiers remain unknown, and public approval prose does not prove which
+unrecorded probes ran.
+
+The needed stance follows the executing tool through acquisition, activation and its final
+consumer. Distinguish a reviewed bootstrap byte pin from runtime signature verification. Bind the
+selected engine's name, version and installed integrity to a trusted signature before activation;
+verify any platform package it actually executes. Then prepend the later runtime's directory and
+prove the cache caller still resolves the authenticated target. Before disabling Corepack aliases,
+validate the whole affected set of leaf symlinks and real targets against that selected Node's
+official distribution. Refuse unrecognized launchers without deleting recognized peers, and
+preserve Node, npm, npx, Yarn and unrelated files.
+
+### A scheduler install must observe its first real launch (introduced by PR #5869)
+
+PR #5869 introduced the cleanup installer, which ended at `launchctl bootstrap` and `launchctl print`.
+That proves only registration. With the primary on an external volume, launchd refused the job before
+it ran (`Unable to open stdout path ... Operation not permitted`), and `print` showed a rising `runs`
+with `last exit code = 78: EX_CONFIG` at every interval while install reported success. Historic
+private stance, prompt and model are unestablished.
+
+Probe a scheduler install by observing the first RunAtLoad launch (`runs`, `last exit code`) on the
+actual volume the job must write to, not a temporary directory. Stub `print` as `runs = 1` with
+`last exit code = 78: EX_CONFIG` and as `runs = 0` for the whole wait; require boot-out, plist removal
+and an error naming the pinned binary and remediation. Delete the launch observation to make both fail.

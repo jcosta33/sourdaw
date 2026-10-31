@@ -1,11 +1,99 @@
-import { type ExportAudioSource } from '../../models/ExportAudioSource';
+import { type ExportAudioSource, type ExportByteWriter } from '../../models/ExportAudioSource';
 import { type PcmDitherOptions } from '../../repositories/audioEncoders/convertFloatChannelsToPcm';
 import { audioBufferToFlac } from '../../repositories/audioEncoders/flacEncoder';
+import { audioBufferToOpus } from '../../repositories/audioEncoders/opusEncoder';
+import { audioBufferToVorbis } from '../../repositories/audioEncoders/vorbisEncoder';
 import { audioBufferToWav } from '../../repositories/audioEncoders/wavEncoder';
 import { streamExportToBrowser } from '../../repositories/audioExport/streamExportToBrowser';
 import { streamExportToNative } from '../../repositories/audioExport/streamExportToNative';
 import { audioBufferToMp3 } from '../audioBufferToMp3';
-import { normalizeExportBuffer } from '../normalizeExportBuffer';
+import { type resolveDeliveryTargets } from '../resolveDeliveryTargets';
+
+import { prepareDeliveryTarget } from './prepareDeliveryTarget';
+
+type Target = Omit<ReturnType<typeof resolveDeliveryTargets>[number], 'mp3BitRate' | 'channels'> & {
+    mp3BitRate: number;
+    channels: number;
+};
+type DeliveryFormat = Target['formats'][number];
+type LegacySettings = {
+    formats: readonly DeliveryFormat[];
+    bitDepth: 16 | 24 | 32;
+    mp3BitRate: number;
+    dither: PcmDitherOptions;
+    metadata?: Parameters<typeof audioBufferToMp3>[4];
+    normalization?: { targetLufs: number; ceilingDbTp: number };
+};
+type StreamExportAudioOptions = {
+    source: ExportAudioSource;
+    name: string;
+    onProgress: (format: DeliveryFormat, fraction: number, targetId: string) => void;
+    onLimited: (target: Target) => void;
+};
+
+const SHIPPED_FORMATS: readonly string[] = ['wav', 'mp3', 'flac', 'ogg', 'opus'];
+// The Opus encoder only accepts 48 kHz input; other formats keep the target's rate.
+const OPUS_SAMPLE_RATE = 48000;
+
+type StreamExportInput = {
+    destination:
+        | { kind: 'native'; directoryPath?: string; selectedFilePath?: string }
+        | { kind: 'browser'; suggestedName: string; extension: string; mime: string; archive: boolean };
+    checkCancelled: () => void;
+    signal?: AbortSignal;
+} & ({ targets: readonly Target[] } | LegacySettings);
+
+function copyTargets(targets: readonly Target[]): Target[] {
+    return targets.map((target) => {
+        const dither: PcmDitherOptions = { mode: target.dither.mode };
+        if (Object.hasOwn(target.dither, 'seed')) {
+            dither.seed = target.dither.seed;
+        }
+        let metadata: Target['metadata'];
+        if (target.metadata) {
+            metadata = {
+                title: target.metadata.title,
+                artist: target.metadata.artist,
+                description: target.metadata.description,
+            };
+        }
+        return {
+            ...target,
+            formats: [...target.formats],
+            dither,
+            metadata,
+        };
+    });
+}
+
+function createExportPlan(
+    targets: readonly Target[] | undefined,
+    input: StreamExportInput,
+    source: ExportAudioSource
+): readonly Target[] {
+    if (targets !== undefined) {
+        return targets;
+    }
+    if (!('formats' in input)) {
+        return [];
+    }
+    return [
+        {
+            id: 'custom',
+            name: 'Custom',
+            formats: [...input.formats],
+            sampleRate: source.sampleRate,
+            channels: source.numberOfChannels,
+            bitDepth: input.bitDepth,
+            mp3BitRate: input.mp3BitRate,
+            dither: input.dither,
+            metadata: input.metadata,
+            normalization: input.normalization ? 'r128' : 'off',
+            targetLufs: input.normalization?.targetLufs ?? -14,
+            ceilingDbTp: input.normalization?.ceilingDbTp ?? -1,
+        },
+    ];
+}
 
 function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: AbortSignal): Promise<TValue> {
     if (!signal) {
@@ -34,20 +122,55 @@ function awaitExportOperation<TValue>(operation: Promise<TValue>, signal?: Abort
     });
 }
 
-/** Acquire output storage before rendering; every render then drains into this one staged batch. */
-export async function streamExport(input: {
-    destination:
-        | { kind: 'native'; directoryPath?: string; selectedFilePath?: string }
-        | { kind: 'browser'; suggestedName: string; extension: string; mime: string; archive: boolean };
-    formats: readonly ('wav' | 'mp3' | 'flac')[];
-    bitDepth: 16 | 24 | 32;
-    mp3BitRate: number;
-    dither: PcmDitherOptions;
-    metadata?: Parameters<typeof audioBufferToMp3>[4];
-    normalization?: { targetLufs: number; ceilingDbTp: number };
-    checkCancelled: () => void;
+/** Write one prepared source to one entry in a single delivery format. */
+async function encodeDeliveryFormat(input: {
+    format: DeliveryFormat;
+    source: ExportAudioSource;
+    target: Target;
+    writer: ExportByteWriter;
+    onProgress: (fraction: number) => void;
     signal?: AbortSignal;
-}) {
+}): Promise<void> {
+    const { format, source, target, writer, onProgress, signal } = input;
+    if (format === 'wav') {
+        await awaitExportOperation(
+            audioBufferToWav(source, target.bitDepth, onProgress, target.dither, writer),
+            signal
+        );
+    } else if (format === 'mp3') {
+        await awaitExportOperation(
+            audioBufferToMp3(source, target.mp3BitRate, onProgress, target.dither, target.metadata, writer),
+            signal
+        );
+    } else if (format === 'flac') {
+        if (target.bitDepth === 32) {
+            throw new Error('FLAC export supports 16-bit or 24-bit only.');
+        }
+        await awaitExportOperation(
+            audioBufferToFlac(source, target.bitDepth, onProgress, target.dither, writer),
+            signal
+        );
+    } else if (format === 'ogg') {
+        await audioBufferToVorbis(source, onProgress, writer, signal);
+    } else if (format === 'opus') {
+        await audioBufferToOpus(source, onProgress, writer, signal);
+    } else {
+        throw new Error('Unsupported delivery format.');
+    }
+}
+
+/** Storage precedes rendering; each borrowed render drains all targets before its owner continues. */
+export async function streamExport(input: StreamExportInput) {
+    const targets = 'targets' in input ? copyTargets(input.targets) : undefined;
+    const formatLists = targets?.map((target) => target.formats) ?? ('formats' in input ? [input.formats] : []);
+    if (
+        formatLists.length === 0 ||
+        formatLists.some(
+            (formats) => formats.length === 0 || formats.some((format) => !SHIPPED_FORMATS.includes(format))
+        )
+    ) {
+        throw new Error('Unsupported delivery format.');
+    }
     let destination:
         Awaited<ReturnType<typeof streamExportToNative>> | Awaited<ReturnType<typeof streamExportToBrowser>>;
     if (input.destination.kind === 'native') {
@@ -60,61 +183,58 @@ export async function streamExport(input: {
         });
     }
     return {
-        async writeAudio(options: {
-            source: ExportAudioSource;
-            name: string;
-            onProgress: (format: 'wav' | 'mp3' | 'flac', fraction: number) => void;
-            onLimited: () => void;
-        }) {
+        async writeAudio(options: StreamExportAudioOptions) {
             input.checkCancelled();
-            let source = options.source;
-            if (input.normalization) {
-                const result = normalizeExportBuffer({ buffer: source, ...input.normalization, apply: false });
-                source = {
-                    length: source.length,
-                    numberOfChannels: source.numberOfChannels,
-                    sampleRate: source.sampleRate,
-                    getChannelData: (channel) => options.source.getChannelData(channel),
-                    gain: result.appliedGain,
-                };
-                if (result.limitedByCeiling) {
-                    options.onLimited();
-                }
-            }
-            for (const format of input.formats) {
+            const plan = createExportPlan(targets, input, options.source);
+            for (const target of plan) {
                 input.checkCancelled();
-                const entry = await awaitExportOperation(
-                    destination.beginFile(`${options.name}.${format}`),
-                    input.signal
-                );
-                const progress = (fraction: number) => options.onProgress(format, fraction);
-                if (format === 'wav') {
-                    await awaitExportOperation(
-                        audioBufferToWav(source, input.bitDepth, progress, input.dither, entry.writer),
-                        input.signal
-                    );
-                } else if (format === 'mp3') {
-                    await awaitExportOperation(
-                        audioBufferToMp3(
-                            source,
-                            input.mp3BitRate,
-                            progress,
-                            input.dither,
-                            input.metadata,
-                            entry.writer
-                        ),
-                        input.signal
-                    );
-                } else {
-                    if (input.bitDepth === 32) {
-                        throw new Error('FLAC export supports 16-bit or 24-bit only.');
+                const name = plan.length > 1 ? `${options.name}__${target.id}` : options.name;
+                let prepared: Awaited<ReturnType<typeof prepareDeliveryTarget>> | undefined;
+                let preparedRate: number | undefined;
+                let reportedCeiling = false;
+                for (const format of target.formats) {
+                    input.checkCancelled();
+                    const rate = format === 'opus' ? OPUS_SAMPLE_RATE : target.sampleRate;
+                    if (rate !== preparedRate) {
+                        // Each codec rate starts at the borrowed render, never previously converted PCM.
+                        prepared = await awaitExportOperation(
+                            prepareDeliveryTarget({
+                                source: options.source,
+                                target: {
+                                    sampleRate: rate,
+                                    channels: target.channels,
+                                    normalization: target.normalization,
+                                    targetLufs: target.targetLufs,
+                                    ceilingDbTp: target.ceilingDbTp,
+                                },
+                                checkCancelled: input.checkCancelled,
+                            }),
+                            input.signal
+                        );
+                        preparedRate = rate;
+                        if (prepared.normalization?.limitedByCeiling && !reportedCeiling) {
+                            reportedCeiling = true;
+                            options.onLimited(target);
+                        }
                     }
-                    await awaitExportOperation(
-                        audioBufferToFlac(source, input.bitDepth, progress, input.dither, entry.writer),
-                        input.signal
-                    );
+                    if (!prepared) {
+                        throw new Error('Export PCM preparation is unavailable.');
+                    }
+                    const source = prepared.source;
+                    const entry = await awaitExportOperation(destination.beginFile(`${name}.${format}`), input.signal);
+                    const progress = (fraction: number) => options.onProgress(format, fraction, target.id);
+                    await encodeDeliveryFormat({
+                        format,
+                        source,
+                        target,
+                        writer: entry.writer,
+                        onProgress: progress,
+                        signal: input.signal,
+                    });
+                    input.checkCancelled();
+                    await awaitExportOperation(entry.finish(), input.signal);
+                    input.checkCancelled();
                 }
-                await awaitExportOperation(entry.finish(), input.signal);
             }
         },
         commit: destination.commit,

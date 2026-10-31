@@ -6,6 +6,9 @@
  * everything is a plain object with no class methods or engine refs.
  */
 
+import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
+
 import { type ProductionBrief } from './ProductionBrief';
 
 /**
@@ -238,6 +241,11 @@ export type ProjectClip = {
     // Audio specific
     bufferId?: string;
     sampleStartBeat?: number;
+    audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
     fileId?: string;
     // Runtime aliases retained only for loading snapshots written before the
     // arrangement collection gained an explicit serialized shape.
@@ -349,6 +357,8 @@ export type ProjectMidiNote = {
     articulation?: string;
     /** Expression changes after note-on, per dimension; offsets are beats after `startBeat`. */
     expression?: ProjectMidiNoteExpression;
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 export type ProjectMidiExpressionPoint = {
@@ -800,6 +810,15 @@ export type ProjectTake = {
     startBeat: number;
     endBeat: number;
     selected: boolean;
+    sourceOffsetBeats?: number;
+    sourceOffsetSeconds?: number;
+    passAnchorSeconds?: number;
+    passDepthSeconds?: number;
+    passSourceEndSeconds?: number;
+    passOriginBeat?: number;
+    passOriginSourceSeconds?: number;
+    recordingPassIndex?: number;
+    midiSource?: MidiTakeSourceSnapshot;
 };
 
 export type ProjectTakeLane = {
@@ -807,7 +826,8 @@ export type ProjectTakeLane = {
     trackId: string;
     automationLaneId?: string;
     takes: ProjectTake[];
-    activeCompRegions: Array<{ startBeat: number; endBeat: number; takeId: string }>;
+    activeCompRegions: Array<{ startBeat: number; endBeat: number; takeId: string; audioSource?: AudioSourceSnapshot }>;
+    baseGapAudioSources?: AudioSourceTile[];
 };
 
 export type ProjectTakeLaneStoreState = {

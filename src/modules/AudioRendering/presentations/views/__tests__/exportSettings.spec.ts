@@ -5,6 +5,23 @@ import { loadExportSettings, saveExportSettings } from '../exportSettings';
 const EXPORT_SETTINGS_KEY = 'sourdaw:export-settings';
 
 describe('exportSettings', () => {
+    it('retains browser codec selections without changing the PCM preference', () => {
+        saveExportSettings({
+            formats: ['ogg', 'opus'],
+            sampleRate: 96000,
+            bitDepth: 32,
+            mp3BitRate: 128,
+            dither: 'seeded',
+            normalization: 'off',
+        });
+        expect(loadExportSettings()).toMatchObject({
+            formats: ['ogg', 'opus'],
+            sampleRate: 96000,
+            bitDepth: 32,
+            dither: 'seeded',
+        });
+    });
+
     beforeEach(() => {
         window.localStorage.clear();
     });
@@ -227,5 +244,13 @@ describe('exportSettings', () => {
                 normalization: 'off',
             })
         );
+    });
+    it('round-trips explicit custom channel and peak overrides while keeping legacy defaults', () => {
+        const settings = { ...loadExportSettings(), channels: 1 as const, ceilingDbTp: -2 };
+        saveExportSettings(settings);
+        expect(loadExportSettings()).toEqual(settings);
+        window.localStorage.setItem(EXPORT_SETTINGS_KEY, JSON.stringify({ ...settings, channels: 7, ceilingDbTp: 6 }));
+        expect(loadExportSettings().channels ?? 2).toBe(2);
+        expect(loadExportSettings().ceilingDbTp ?? -1).toBe(-1);
     });
 });

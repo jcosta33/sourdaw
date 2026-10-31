@@ -350,6 +350,7 @@ describe('sanitizeMidiStoreState', () => {
                         slide: 0.25,
                         pitchBend: -0.1,
                         channel: 3,
+                        recordingPassIndex: 0,
                     },
                 ],
             },
@@ -359,6 +360,20 @@ describe('sanitizeMidiStoreState', () => {
         };
         const result = sanitizeMidiStoreState(exact);
         expect(result).toEqual(exact);
+    });
+
+    it('refuses a malformed present recording pass identity before any row normalization', () => {
+        expect(() =>
+            sanitizeMidiStoreState({
+                notesByClipId: {
+                    'clip-1': [
+                        { id: 'n1', pitch: 60, startBeat: 0, duration: 1, velocity: 90, recordingPassIndex: -1 },
+                    ],
+                },
+                ccByClipId: {},
+                pitchBendByClipId: {},
+            })
+        ).toThrow('Invalid MIDI recording pass identity');
     });
 
     it('rebuilds the state, carrying the migrated list only when it is a valid string array', () => {
