@@ -31,6 +31,7 @@ const MIC_SAMPLE_RATE = 48_000;
 const MIC_SECONDS = 24;
 const MARKER_SECONDS = 0.4;
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
+const COMP_RELEASE_INSET_PX = 1.2;
 const CAPTURE_FRONTIER_BOUND_BEATS = (2 * RECORDING_RENDER_QUANTUM_FRAMES * TEMPO) / (MIC_SAMPLE_RATE * 60);
 
 type CapturedTake = {
@@ -250,7 +251,8 @@ async function createCompRegion(
     const y = box.y + box.height / 2;
     await page.mouse.move(x(startBeat), y);
     await page.mouse.down();
-    await page.mouse.move(x(endBeat), y, { steps: 8 });
+    // Release inside the drag preview, which spans to the strip's inner edge; the strip must still be the target.
+    await page.mouse.move(x(endBeat) - COMP_RELEASE_INSET_PX, y, { steps: 8 });
     await page.mouse.up();
 }
 
@@ -953,9 +955,12 @@ async function waitForCapturedThirdPassFrontier(page: Page): Promise<void> {
         .toBe(true);
 }
 
+/** A gesture beat and the audio-clock frame it was read at, taken from one rolling-clock observation. */
+type ClockGesture = { beat: number; contextFrame: number };
+
 function capturedThirdPassFrontier(
     witness: PunchRecordingClockWitness,
-    publishedGestureBeat: number,
+    gesture: ClockGesture,
     pcmFrames: number
 ): number {
     const stop = stopClockEvent(witness);
@@ -976,8 +981,8 @@ function capturedThirdPassFrontier(
     expect(worker?.sampleZeroContextFrame).toBe(frame.sampleZeroContextFrame);
     expect(worker?.sampleRate).toBe(MIC_SAMPLE_RATE);
     return compensatedCaptureFrontierBeat({
-        gestureBeat: publishedGestureBeat,
-        gestureContextFrame: frame.contextFrame,
+        gestureBeat: gesture.beat,
+        gestureContextFrame: gesture.contextFrame,
         sampleZeroContextFrame: frame.sampleZeroContextFrame!,
         capturedFrames,
         sampleRate: frame.sampleRate,
@@ -1116,7 +1121,11 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         const captureWitness = await readPunchRecordingClockWitness(page);
         const stop = stopClockEvent(captureWitness);
         expect(stop.output?.wrapCount).toBe(2);
-        const expectedEndBeat = capturedThirdPassFrontier(captureWitness, stop.output!.gestureBeat, originalPcm.frames);
+        const expectedEndBeat = capturedThirdPassFrontier(
+            captureWitness,
+            { beat: stop.output!.gestureBeat, contextFrame: stop.recording!.contextFrame },
+            originalPcm.frames
+        );
         expect(passes[2].endBeat).toBeGreaterThanOrEqual(expectedEndBeat - CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].endBeat).toBeLessThanOrEqual(expectedEndBeat + CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].passSourceEndSeconds).toBeCloseTo(captured.durationSeconds, 6);
@@ -1514,7 +1523,17 @@ test('keeps a live take when Pause is immediately followed by New Project', asyn
         const stop = stopClockEvent(captureWitness);
         expect(stop.output!.gestureBeat).toBeGreaterThanOrEqual(pause.beat - CAPTURE_FRONTIER_BOUND_BEATS);
         expect(stop.output!.gestureBeat).toBeLessThanOrEqual(pause.beat + CAPTURE_FRONTIER_BOUND_BEATS);
-        const expectedEndBeat = capturedThirdPassFrontier(captureWitness, pause.beat, originalPcm.frames);
+        // Pause parks the transport before the recorder stops, and a parked
+        // transport answers every later read with its paused beat. The Stop
+        // event's frame is therefore not the frame that beat belongs to; the
+        // click is the last observation of the rolling clock, beat and frame
+        // read together.
+        expect(pauseClick?.recording).toBeTruthy();
+        const expectedEndBeat = capturedThirdPassFrontier(
+            captureWitness,
+            { beat: pauseClick!.output!.gestureBeat, contextFrame: pauseClick!.recording!.contextFrame },
+            originalPcm.frames
+        );
         expect(passes[2].endBeat).toBeGreaterThanOrEqual(expectedEndBeat - CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].endBeat).toBeLessThanOrEqual(expectedEndBeat + CAPTURE_FRONTIER_BOUND_BEATS);
         expect(passes[2].passSourceEndSeconds).toBeCloseTo(closing.durationSeconds, 6);

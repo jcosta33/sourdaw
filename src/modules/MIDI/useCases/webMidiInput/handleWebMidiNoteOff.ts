@@ -12,7 +12,10 @@ import { type RealtimeMidiEvent } from '../../repositories/webMidi/realtimeMidiP
 import { releaseActiveToasterNote } from '../../repositories/webMidi/releaseActiveToasterNote';
 import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 
+import { createRecordedAdmittedMidiNote } from './createRecordedAdmittedMidiNote';
+import { isRecordingOnArmedTrack } from './isRecordingOnArmedTrack';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
+import { recordingMidiAdmissionPort } from './recordingMidiAdmissionPort';
 import { releaseKeyInRemovedYeastRack } from './releaseKeyInRemovedYeastRack';
 import { resolveDeviceNode } from './resolveDeviceNode';
 import { resolveInputDispatchFrame } from './resolveInputDispatchFrame';
@@ -23,6 +26,8 @@ import { resolveRecordingPlacement } from './resolveRecordingPlacement';
 import { retireDrainOfRemovedYeast } from './retireDrainOfRemovedYeast';
 import { voiceYeastNoteOn } from './voiceYeastNoteOn';
 import { withRecordedNoteExpression } from './withRecordedNoteExpression';
+
+const { getRecordingMidiAdmission, retireRecordingMidiAdmission } = recordingMidiAdmissionPort;
 
 /** Whether a key still held went through this Yeast on this instrument track. */
 function isYeastRouteHeld(instrumentTrackId: string, yeastDeviceId: string): boolean {
@@ -376,6 +381,19 @@ export const handleWebMidiNoteOff = inject(midiMessageHandlerDependencies)((deps
             } catch {
                 // Already stopped.
             }
+        }
+
+        if (noteData.recordingAdmissionId) {
+            const admission = getRecordingMidiAdmission(noteData.recordingAdmissionId);
+            if (!admission || !isRecordingOnArmedTrack(deps, targetTrackId)) {
+                return;
+            }
+            deps.appendRecordedMidiNote({
+                clipId: admission.clipId,
+                note: createRecordedAdmittedMidiNote(admission, eventTime),
+            });
+            retireRecordingMidiAdmission(admission.id);
+            return;
         }
 
         // The note belongs to the clip holding its admitted onset and is stored

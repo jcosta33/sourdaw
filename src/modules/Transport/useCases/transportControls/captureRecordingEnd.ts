@@ -18,6 +18,8 @@ export function captureRecordingEnd() {
     const songSeconds = secondsBetweenBeats(changes, 0, beat, tempo);
     return {
         contextSeconds,
+        /** Whether the transport was rolling when the ending was read, so the beat it read is a live one. */
+        rolling: transport.isPlaying,
         beatAtContextSeconds: (seconds: number): number =>
             samplesToBeat(changes, songSeconds + seconds - contextSeconds, tempo, 1),
     };

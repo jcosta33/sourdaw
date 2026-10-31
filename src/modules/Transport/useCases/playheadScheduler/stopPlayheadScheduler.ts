@@ -49,6 +49,7 @@ export function stopPlayheadScheduler(): void {
     schedulerSession.accumulatedPosition = 0;
     playheadClockRef.beat = 0;
     playheadClockRef.audioTimeSeconds = 0;
+    playheadClockRef.pendingLoopSeam = null;
     schedulerSession.lastScheduledBeat = -1;
     schedulerSession.tickInFlight = false;
     schedulerSession.pendingSeam = null;

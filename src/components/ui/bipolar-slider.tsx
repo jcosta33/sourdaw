@@ -21,6 +21,8 @@ type BipolarSliderProps = {
     step?: number;
     defaultValue?: number;
     label?: string;
+    /** Render the built-in value readout. Turn off when the caller shows the value itself. */
+    showValue?: boolean;
     'aria-label'?: string;
     formatValue?: (val: number) => string;
     className?: string;
@@ -162,6 +164,7 @@ export const BipolarSlider = ({
     step = 0.1,
     defaultValue = 0,
     label,
+    showValue = true,
     'aria-label': ariaLabel,
     formatValue = (v) => v.toFixed(1),
     className,
@@ -187,7 +190,9 @@ export const BipolarSlider = ({
             {label ? (
                 <Row justify="between" className="px-1">
                     <span className="text-[10px] text-muted-foreground">{label}</span>
-                    <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
+                    {showValue ? (
+                        <span className="text-[10px] font-mono text-muted-foreground">{formatValue(value)}</span>
+                    ) : null}
                 </Row>
             ) : null}
             <Row className="relative h-6 px-1 pt-2 pb-1" onPointerDownCapture={gesture.handlePointerDown}>
@@ -207,7 +212,7 @@ export const BipolarSlider = ({
                     className="z-10"
                 />
             </Row>
-            {!label ? (
+            {!label && showValue ? (
                 <Row align="stretch" justify="center">
                     <span className="text-[9px] font-mono text-muted-foreground">{formatValue(value)}</span>
                 </Row>

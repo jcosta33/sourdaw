@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { activeRecordingRef, trackStore, type Track } from '#/modules/Arrangement/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { stopPlayback, togglePlayback, toggleRecording } from '#/modules/Transport/useCases';
 
@@ -99,6 +99,7 @@ describe('Auto input monitoring across the Stop gestures', () => {
     let unsubscribe: () => void;
 
     beforeEach(() => {
+        activeRecordingRef.current = [];
         harness.monitored.clear();
         harness.startInputMonitoring.mockReset();
         harness.stopTrackInputMonitoring.mockReset();
@@ -115,6 +116,7 @@ describe('Auto input monitoring across the Stop gestures', () => {
     });
 
     afterEach(() => {
+        activeRecordingRef.current = [];
         unsubscribe();
         trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
         reconcileAutoInputMonitoring();
@@ -142,6 +144,36 @@ describe('Auto input monitoring across the Stop gestures', () => {
         expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
         expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
         expect(harness.startInputMonitoring).not.toHaveBeenCalled();
+        expect(harness.monitored.get(TRACK_ID)).toBe(INPUT_ID);
+    });
+
+    it('stops an active audio-only clip without requiring the MIDI event clock', async () => {
+        const track = armedAutoAudioTrack();
+        track.clips = [
+            {
+                id: 'audio-recording',
+                trackId: TRACK_ID,
+                name: 'Recording',
+                startBeat: 4,
+                endBeat: 4,
+                type: 'audio',
+                fadeInBeats: 0,
+                fadeOutBeats: 0,
+                gain: 1,
+                color: '#ff0000',
+                locked: false,
+                muted: false,
+            },
+        ];
+        trackStore.set({ tracks: [track], selectedTrackId: null, ghostClips: [] });
+        activeRecordingRef.current = ['audio-recording'];
+        startRecordingRoll();
+
+        await stopPlayback();
+
+        expect(activeRecordingRef.current).toEqual([]);
+        expect(transportStore.value).toMatchObject({ isPlaying: false, isRecording: false });
+        expect(harness.stopTrackInputMonitoring).not.toHaveBeenCalled();
         expect(harness.monitored.get(TRACK_ID)).toBe(INPUT_ID);
     });
 

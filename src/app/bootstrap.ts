@@ -41,6 +41,15 @@ import {
     getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds,
     reserveNextTrackColorForCommand,
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -163,6 +172,7 @@ import {
     destroyWebMidi,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
+    setRecordingMidiAdmissionPort,
 } from '#/modules/MIDI/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import {
@@ -409,6 +419,17 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 configureLevainZoneTableBuilder(buildLevainZoneTables);
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
+setRecordingMidiAdmissionPort({
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
+});
 setNotificationEventBus(eventBus);
 // Storage adapters cannot resolve `notifyUser` before this line: `inject`
 // caches the closure it builds on first call, and an unregistered token
