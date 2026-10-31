@@ -1171,11 +1171,6 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
         await page.evaluate(() => {
             const events: { type: string; phase: string; stripTarget: boolean; inDraggableAncestor: boolean }[] = [];
             Reflect.set(window, '__punchCompGestureEvents', events);
-            // A handler can unmount the target (the drag preview inside the strip goes
-            // away on mouseup) before the bubble phase reaches the document, leaving
-            // it without ancestors. Classify once, in the capture phase, while it is
-            // still attached.
-            const classified = new WeakMap<Event, { strip: boolean; draggable: boolean }>();
             for (const type of ['mousedown', 'mousemove', 'mouseup', 'dragstart', 'drag', 'dragend', 'drop']) {
                 for (const capture of [true, false]) {
                     document.addEventListener(
@@ -1185,19 +1180,16 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                                 return;
                             }
                             const target = event.target instanceof Element ? event.target : null;
-                            const known = classified.get(event) ?? {
-                                strip: Boolean(target?.closest('[role="presentation"]')),
-                                draggable: Boolean(target?.closest('[draggable="true"]')),
-                            };
-                            classified.set(event, known);
-                            if (!known.strip && !known.draggable) {
+                            const strip = target?.closest('[role="presentation"]');
+                            const draggable = target?.closest('[draggable="true"]');
+                            if (!strip && !draggable) {
                                 return;
                             }
                             events.push({
                                 type,
                                 phase: capture ? 'capture' : 'bubble',
-                                stripTarget: known.strip,
-                                inDraggableAncestor: known.draggable,
+                                stripTarget: Boolean(strip),
+                                inDraggableAncestor: Boolean(draggable),
                             });
                         },
                         capture
