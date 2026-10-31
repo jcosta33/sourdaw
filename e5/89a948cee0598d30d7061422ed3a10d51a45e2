@@ -1,0 +1,24 @@
+src/modules/AiRuntime/useCases/evaluateRequestNumericLiterals.ts
+  s_55244eb93b97d1::t_bc2847247d2fef 126,131
+  s_55244eb93b97d1::t_9c801195900513 112-113,143-174,187,192-193
+src/modules/AiRuntime/models/MetricGoalAdmission.ts
+  s_55244eb93b97d1::t_75d2d62f4ed987 118
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_55244eb93b97d1::t_21393359672f2d 150-184
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e589a948cee0598d30d7061422ed3a10d51a45e2",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
