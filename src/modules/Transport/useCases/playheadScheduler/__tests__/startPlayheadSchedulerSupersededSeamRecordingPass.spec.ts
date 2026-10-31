@@ -373,8 +373,6 @@ describe('superseded loop seam during MIDI loop recording', () => {
         };
         activeRecordingRef.current = [CLIP_ID];
         activeRecordingRef.startWrapCount = 0;
-        activeRecordingRef.loopStart = 0;
-        activeRecordingRef.loopEnd = LOOP_BEATS;
         activeRecordingRef.startedLooping = true;
         vi.stubGlobal(
             'Worker',

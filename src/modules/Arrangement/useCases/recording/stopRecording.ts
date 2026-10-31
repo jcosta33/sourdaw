@@ -63,7 +63,8 @@ function finalMidiPassOffsetsAtStop(
     const tracks = getTrackState()?.tracks ?? [];
     const lanes = takeLaneStore.value?.lanes ?? [];
     const relativePassIndex = stopPassIndex - activeRecordingRef.startWrapCount;
-    if (!activeRecordingRef.startedLooping || relativePassIndex <= 0) {
+    const loopStart = transportStore.value?.loopStart;
+    if (!activeRecordingRef.startedLooping || relativePassIndex <= 0 || loopStart === undefined) {
         return offsets;
     }
     for (const track of tracks) {
@@ -94,7 +95,7 @@ function finalMidiPassOffsetsAtStop(
                 continue;
             }
             const sourceOffsetBeats = recordingMidiSourceBeatAt(clip.id, {
-                beat: activeRecordingRef.loopStart,
+                beat: loopStart,
                 passIndex: stopPassIndex,
             });
             if (sourceOffsetBeats !== null) {
@@ -293,6 +294,7 @@ export async function stopRecording(
     activeRecordingRef.current = [];
     activeRecordingRef.capturedRootIdentity = null;
     activeRecordingRef.midiAdmissions = [];
+    activeRecordingRef.passOrigins = new Map();
 
     if (clipIds.length === 0) {
         return 'closed';

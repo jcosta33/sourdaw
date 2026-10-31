@@ -44,6 +44,9 @@ import { type Take } from '../../../models/TakeLane';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -349,6 +352,120 @@ describe('MIDI loop recordings', () => {
         expect(takes.filter((take) => take.sourceOffsetBeats !== undefined)).toEqual([{ ...planned, endBeat: 10.5 }]);
         expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1 });
         expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+    });
+
+    describe('with the loop edited while recording', () => {
+        function recordFromLoopStart(): Clip {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 8,
+            });
+            const [clip] = startRecording(8);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            return clip;
+        }
+
+        /** A wrap take as the scheduler stages it: its offset derived from the live loop. */
+        function stageWrap(
+            clip: Clip,
+            pass: { name: string; startBeat: number; endBeat: number; sourceOffsetBeats: number; index: number }
+        ): void {
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: pass.name,
+                startBeat: pass.startBeat,
+                endBeat: pass.endBeat,
+                sourceOffsetBeats: pass.sourceOffsetBeats,
+                recordingPassIndex: pass.index,
+            });
+        }
+
+        function holdNote(beat: number, passIndex: number) {
+            return admitRecordingMidiNoteOn({
+                trackId: TRACK_ID,
+                channel: 0,
+                note: 60,
+                velocity: 100,
+                audioTime: 1,
+                position: { beat, passIndex },
+            });
+        }
+
+        it('places a later pass on the edited loop its take is staged on', () => {
+            const clip = recordFromLoopStart();
+            transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+
+            // Pass 0 of the loop [8, 10) ends at 10, so pass 1 opens at source 2.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(3);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 10, sourceOffsetBeats: 0, index: 0 });
+            expect(holdNote(9, 1)).toMatchObject({ onsetSourceBeat: 3, onsetPassIndex: 1 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 10, sourceOffsetBeats: 2, index: 1 });
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, sourceOffsetBeats: 2 });
+        });
+
+        it('keeps a pass on one placement when the loop is edited inside it', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const held = holdNote(9, 1);
+            transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+            admitRecordingMidiNoteOff({ channel: 0, note: 60, audioTime: 1.25, position: { beat: 9.5, passIndex: 1 } });
+
+            expect(held).toMatchObject({ onsetSourceBeat: 5, releaseSourceBeat: 5.5 });
+            // The scheduler derives pass 1's offset from the shortened loop; the
+            // pass itself opened at source 4 and its take must read it there.
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 10, sourceOffsetBeats: 2, index: 1 });
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, endBeat: 10, sourceOffsetBeats: 4 });
+            // Pass 1 ran [8, 10) from source 4, so pass 2 opens at source 6.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 8.5, passIndex: 2 })).toBe(6.5);
+
+            playheadWrapCountRef.current = 2;
+            await stopRecording(9.5);
+            flushAutomergeStorageWrites();
+            expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 2, sourceOffsetBeats: 6 });
+        });
+
+        it('opens a pass take where the pass began when the loop start moves back inside it', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(5);
+
+            transportStore.set({ ...transportStore.value!, loopStart: 6 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 6, endBeat: 12, sourceOffsetBeats: 6, index: 1 });
+
+            // Pass 1 entered at 8, so beat 9 still reads source 5 through its take.
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 4 });
+            // Pass 2 enters at the moved loop start, a pass length of four on.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 6, passIndex: 2 })).toBe(8);
+        });
+
+        it('reads a relocated pass through the take staged for it', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 10.5,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 9,
+            });
+            const onset = holdNote(9.5, 1)?.onsetSourceBeat;
+
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 12, sourceOffsetBeats: 4, index: 1 });
+
+            const take = passTake('Pass 1');
+            expect(onset).toBe(take.sourceOffsetBeats! + 9.5 - take.startBeat);
+        });
     });
 
     it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {

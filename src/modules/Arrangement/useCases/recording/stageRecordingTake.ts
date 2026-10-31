@@ -1,7 +1,11 @@
 import { createTake, createTakeLane, type Take, type TakeLane } from '../../models/TakeLane';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { takeLaneStore } from '../../stores/takeLaneStore';
+import { type Track } from '../../stores/trackStore';
 
+import { closeRecordingPass } from './closeRecordingPass';
+import { passSourceBeat } from './passSourceBeat';
+import { recordingPassOrigin } from './recordingPassOrigin';
 import { recordingPassTiming } from './recordingPassTiming';
 
 type StageRecordingTakeInput = {
@@ -21,6 +25,26 @@ type StageRecordingTakeInput = {
     plannedPassEnd?: boolean;
     nextPassStartBeat?: number;
 };
+
+/**
+ * A MIDI wrap take reads its pass on the placement its events were given, never
+ * the loop the scheduler derived its offset from. A later pass opens no earlier
+ * than the beat it entered at: a loop start moved back inside the pass names
+ * beats the pass never recorded. Staging the pass also fixes where the next one
+ * begins.
+ */
+function placeMidiPass(track: Track, input: StageRecordingTakeInput): StageRecordingTakeInput {
+    const pass = input.recordingPassIndex;
+    const clip = track.clips.find((candidate) => candidate.id === input.clipId);
+    if (track.kind !== 'midi' || pass === undefined || input.sourceOffsetBeats === undefined || !clip) {
+        return input;
+    }
+    const origin = pass === 0 ? null : recordingPassOrigin(pass);
+    const startBeat = origin ? Math.max(input.startBeat, origin.beat) : input.startBeat;
+    const sourceOffsetBeats = passSourceBeat(clip.startBeat, pass, startBeat);
+    closeRecordingPass(pass, input.endBeat, input.nextPassStartBeat ?? input.startBeat);
+    return sourceOffsetBeats === null ? input : { ...input, startBeat, sourceOffsetBeats };
+}
 
 function nextOpenMidiTake(candidate: Take, input: StageRecordingTakeInput): Take {
     if (
@@ -111,6 +135,7 @@ export function stageRecordingTake(
         }
         return undefined;
     }
+    const placed = placeMidiPass(track, input);
 
     const lane = state.lanes.find((existing) => existing.trackId === input.trackId);
     let replacement: Take | undefined;
@@ -133,9 +158,9 @@ export function stageRecordingTake(
             take = createTake(
                 input.clipId,
                 input.name,
-                recordingPassTiming.nextStartBeat(input.clipId) ?? input.startBeat,
+                recordingPassTiming.nextStartBeat(input.clipId) ?? placed.startBeat,
                 input.endBeat,
-                input.sourceOffsetBeats
+                placed.sourceOffsetBeats
             );
         }
     }
