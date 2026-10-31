@@ -7,7 +7,7 @@ import { playheadPositionRef } from '#/modules/Transport/stores';
 
 import { createTrack, type Clip, type Track } from '../../../models/Track';
 import { clipSelectionStore } from '../../../stores/clipSelectionStore';
-import { setAutoScroll } from '../../../stores/timelineViewStore';
+import { setAutoScroll, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { useTimelineInteractions } from '../../hooks/useTimelineInteractions';
 import { TimelineSurface } from '../TimelineSurface';
 
@@ -143,6 +143,7 @@ vi.mock('../../../stores/timelineViewStore', () => {
     return {
         timelineViewStore: store,
         setAutoScroll: vi.fn(),
+        setTimelineViewportHeight: vi.fn(),
         setScrollX: vi.fn(setScrollX),
         setTimelineZoom: vi.fn(setTimelineZoom),
     };
@@ -294,6 +295,37 @@ describe('TimelineSurface', () => {
         expect(container.querySelector('canvas')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Browse timeline clips' })).not.toBeInTheDocument();
         expect(screen.queryByRole('listbox', { name: 'Timeline clips' })).not.toBeInTheDocument();
+    });
+
+    it('reports the canvas viewport height whenever its container resizes', () => {
+        const resizeCallbacks: ResizeObserverCallback[] = [];
+        vi.stubGlobal(
+            'ResizeObserver',
+            class {
+                constructor(callback: ResizeObserverCallback) {
+                    resizeCallbacks.push(callback);
+                }
+                observe(): void {}
+                unobserve(): void {}
+                disconnect(): void {}
+            }
+        );
+
+        try {
+            renderWithTooltip(<TimelineSurface />);
+            expect(setTimelineViewportHeight).not.toHaveBeenCalled();
+
+            for (const callback of resizeCallbacks) {
+                callback(
+                    [{ contentRect: new DOMRectReadOnly(0, 0, 900, 312) } as ResizeObserverEntry],
+                    {} as ResizeObserver
+                );
+            }
+
+            expect(setTimelineViewportHeight).toHaveBeenCalledWith(312);
+        } finally {
+            vi.unstubAllGlobals();
+        }
     });
 
     it('should render PresenceOverlay', async () => {

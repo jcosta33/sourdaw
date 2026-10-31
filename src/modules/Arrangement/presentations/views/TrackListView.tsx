@@ -33,13 +33,14 @@ import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCas
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
-import { timelineViewStore, setScrollY, setTimelineViewportHeight } from '../../stores/timelineViewStore';
+import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
 import { TakeLanePanel } from './TakeLanesView';
+import { TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT } from './timelineHorizontalScrollbar';
 import { TrackHeader } from './TrackHeader';
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
@@ -99,9 +100,9 @@ export const TrackListView = ({
             if (!el) {
                 return;
             }
-            // Report this container's real height before clamping — it is the
-            // canonical scrollable track-list viewport.
-            setTimelineViewportHeight(el.clientHeight);
+            // The timeline canvas owns the store's viewport height; the spacer
+            // below gives this list the same scroll range, so scrollTop maps
+            // straight onto the shared offset.
             setScrollY(el.scrollTop);
         });
     };
@@ -317,7 +318,7 @@ export const TrackListView = ({
             </DawHeaderBand>
             <div
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto overflow-x-hidden"
+                className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
                 onKeyDown={handleKeyDown}
             >
@@ -372,6 +373,12 @@ export const TrackListView = ({
                         </div>
                     ) : null}
                 </div>
+                <div
+                    aria-hidden="true"
+                    data-testid="track-list-scrollbar-spacer"
+                    className="shrink-0"
+                    style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
+                />
             </div>
         </Stack>
     );

@@ -12,7 +12,13 @@ import { previewDirtyFlag } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore, defaultClipSelectionState } from '../../stores/clipSelectionStore';
 import { markerStore } from '../../stores/markerStore';
 import { takeLaneStore } from '../../stores/takeLaneStore';
-import { setAutoScroll, setScrollX, setTimelineZoom, timelineViewStore } from '../../stores/timelineViewStore';
+import {
+    setAutoScroll,
+    setScrollX,
+    setTimelineViewportHeight,
+    setTimelineZoom,
+    timelineViewStore,
+} from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../../useCases/buildTimelineRenderModel';
 import { getTimelineSurfaceMinimumHeight } from '../../useCases/getTimelineSurfaceMinimumHeight';
@@ -330,6 +336,9 @@ export const TimelineSurface = (): ReactElement => {
             for (const entry of entries) {
                 const { width, height } = entry.contentRect;
                 rendererRef.current?.resize(width, height);
+                // The store clamps vertical scroll against this viewport, so it
+                // must be right before the first wheel event, not after it.
+                setTimelineViewportHeight(height);
             }
             // Immediately re-render after resize to prevent a 1-frame flash.
             // Setting canvas.width/height clears all pixel data, but the dirty

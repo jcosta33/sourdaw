@@ -39,6 +39,7 @@ const activeDevicePanelStateMock = vi.hoisted(() => ({
 }));
 const elasticEditorPanelMock = vi.hoisted(() => vi.fn());
 const dismissAlphaNoticeMock = vi.hoisted(() => vi.fn());
+const arrangementMinimumHeightMock = vi.hoisted(() => ({ value: 0 }));
 
 // Mock external dependencies
 vi.mock('#/infra/store/useStore', () => ({
@@ -98,6 +99,7 @@ vi.mock('#/modules/MixerConsole/presentations/views', async (importOriginal) => 
 
 vi.mock('#/modules/TimelineEditor/presentations/views', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/TimelineEditor/presentations/views')>()),
+    useArrangementMinimumHeight: () => arrangementMinimumHeightMock.value,
     ClipView: () => <div data-testid="clip-view">Clip View</div>,
     AutomationBottomPanel: () => <div data-testid="automation-panel">Automation</div>,
     InspectorPanel: ({ style }: { style?: React.CSSProperties }) => (
@@ -735,6 +737,56 @@ describe('AppShell', () => {
             const dockStack = screen.getByRole('tabpanel').parentElement;
             expect(dockStack).not.toHaveClass('shrink-0');
             expect(dockStack).toHaveStyle({ minHeight: '280px' });
+        });
+    });
+
+    describe('arrangement and bottom-dock vertical allocation', () => {
+        afterEach(() => {
+            arrangementMinimumHeightMock.value = 0;
+        });
+
+        it('gives the arrangement the space the bottom panels leave, floored by the arrangement minimum', () => {
+            arrangementMinimumHeightMock.value = 212;
+
+            render(<AppShell>Content</AppShell>);
+
+            const main = document.getElementById('main-content');
+            expect(main).toHaveClass('flex-1', 'min-h-0');
+            expect(main).not.toHaveClass('min-h-min');
+            expect(main).toHaveStyle({ minHeight: '212px' });
+        });
+
+        it('lets the mixer dock shrink while retaining its 120px CSS floor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: true,
+                mixerHeight: 200,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const dockStack = screen.getByRole('tabpanel').parentElement;
+            expect(dockStack).not.toHaveClass('shrink-0');
+            expect(dockStack).toHaveStyle({ height: '200px', minHeight: '120px' });
+        });
+
+        it('lets the virtual keyboard shrink while retaining its 80px CSS floor', () => {
+            workspaceState = createWorkspaceState({
+                sidebarOpen: false,
+                inspectorOpen: false,
+                mixerOpen: false,
+                virtualKeyboardOpen: true,
+                virtualKeyboardHeight: 160,
+            });
+            vi.mocked(useWorkspaceState).mockImplementation(() => workspaceState);
+
+            render(<AppShell>Content</AppShell>);
+
+            const keyboardDock = screen.getByTestId('virtual-keyboard-dock');
+            expect(keyboardDock).not.toHaveClass('shrink-0');
+            expect(keyboardDock).toHaveStyle({ height: '160px', minHeight: '80px' });
         });
     });
 

@@ -127,6 +127,23 @@ describe('timelineViewStore view helpers', () => {
         expect(timelineViewStore.value?.scrollY).toBe(120);
     });
 
+    it('re-clamps scrollY when the reported viewport grows past the remaining content', () => {
+        trackStore.set({
+            tracks: [{ id: 'a', kind: 'audio', height: 100 } as any, { id: 'b', kind: 'audio', height: 100 } as any],
+            selectedTrackId: null,
+        });
+        setTimelineViewportHeight(50);
+        setScrollY(150);
+        expect(timelineViewStore.value?.scrollY).toBe(150);
+
+        // The window grows: only 200 - 120 = 80px can scroll, so an offset of
+        // 150 would leave blank canvas below the last row.
+        setTimelineViewportHeight(120);
+
+        expect(timelineViewStore.value?.viewportHeight).toBe(120);
+        expect(timelineViewStore.value?.scrollY).toBe(80);
+    });
+
     it('should not write viewport height when the store is null', () => {
         timelineViewStore.set(null);
         setTimelineViewportHeight(50);
@@ -146,11 +163,11 @@ describe('timelineViewStore view helpers', () => {
     });
 });
 
-// setScrollY derives the vertical scroll ceiling from the project's non-master
-// track heights. The domain contract: the master track renders outside the
-// scrollable track list (it must never count toward the scrollable height), a
-// track missing a height falls back to 64px, and the ceiling is clamped so the
-// last track can scroll fully into view but no further.
+// setScrollY derives the vertical scroll ceiling from the rows the timeline
+// lays out. The domain contract: the master track renders outside the
+// scrollable track list (it must never count toward the scrollable height),
+// collapsed-folder children are not laid out, folder rows are 26px, and the
+// ceiling is clamped so the last row can scroll fully into view but no further.
 describe('setScrollY track-height ceiling', () => {
     beforeEach(() => {
         timelineViewStore.set({
@@ -184,18 +201,25 @@ describe('setScrollY track-height ceiling', () => {
         expect(timelineViewStore.value?.scrollY).toBe(150);
     });
 
-    it('defaults a missing track height to 64px', () => {
-        // Track with no height field relies on the 64px fallback so an empty
-        // height never collapses the ceiling to zero.
+    it('clamps to the rows the canvas lays out: collapsed-folder children are excluded and folders count 26px', () => {
+        // The canvas renderers skip children of a collapsed folder and draw the
+        // folder row at 26px. A ceiling summed over every non-master track
+        // (100 + 100 + 400 + 400 = 1000) would let the canvas scroll past its
+        // last row while the header list stops earlier.
         trackStore.set({
-            tracks: [{ id: 'a', kind: 'audio' } as any, { id: 'b', kind: 'audio', height: 64 } as any],
+            tracks: [
+                { id: 'a', kind: 'audio', height: 100 } as any,
+                { id: 'folder', kind: 'folder', height: 100, collapsed: true } as any,
+                { id: 'in-1', kind: 'audio', parentId: 'folder', height: 400 } as any,
+                { id: 'in-2', kind: 'audio', parentId: 'folder', height: 400 } as any,
+            ],
             selectedTrackId: null,
         });
 
-        // total = 64 (fallback) + 64 (explicit) = 128, viewport = 0 -> maxY 128.
-        setTimelineViewportHeight(0);
+        // visible rows: 100 + 26 = 126, viewport = 50 -> maxY 76.
+        setTimelineViewportHeight(50);
         setScrollY(500);
-        expect(timelineViewStore.value?.scrollY).toBe(128);
+        expect(timelineViewStore.value?.scrollY).toBe(76);
     });
 
     it('treats a null trackStore as an empty track list (ceiling 0)', () => {

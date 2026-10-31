@@ -21,10 +21,7 @@ import {
     BeatRulerBar,
     TimelineChromeSurface,
     TrackListView,
-    ARRANGEMENT_BAR_HEIGHT,
-    BEAT_RULER_HEIGHT,
-    MARKER_LANE_HEIGHT,
-    getAdjustmentLayerStripHeight,
+    TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack, importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
@@ -53,7 +50,8 @@ import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLane';
+import { getArrangementChromeHeight } from './arrangementLayout';
+import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { TimelineMinimapResizeHandle } from './TimelineMinimapResizeHandle';
 
@@ -230,7 +228,7 @@ export const ArrangeView = (): ReactElement => {
     }
 
     return (
-        <Row align="stretch" className="h-full min-h-min" ref={arrangeRowRef}>
+        <Row align="stretch" className="h-full" ref={arrangeRowRef}>
             {dualViewOpen ? (
                 <>
                     <Stack
@@ -250,14 +248,12 @@ export const ArrangeView = (): ReactElement => {
                 <>
                     <TrackListView
                         style={{ width: displayedTrackListWidth, minWidth: displayedTrackListWidth }}
-                        extraHeaderHeight={
-                            ARRANGEMENT_BAR_HEIGHT +
-                            getAdjustmentLayerStripHeight(adjustmentLayerCount) +
-                            (hasMarkers ? MARKER_LANE_HEIGHT : 0) +
-                            (showMinimap ? activeMinimapHeight : 0) +
-                            BEAT_RULER_HEIGHT +
-                            (hasChords ? CHORD_TRACK_LANE_HEIGHT : 0)
-                        }
+                        extraHeaderHeight={getArrangementChromeHeight({
+                            adjustmentLayerCount,
+                            hasMarkers,
+                            minimapHeight: showMinimap ? activeMinimapHeight : 0,
+                            hasChords,
+                        })}
                     />
                     <ResizeHandle
                         direction="vertical"
@@ -268,7 +264,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <Stack
                 grow
-                className="overflow-hidden relative min-w-0 min-h-min"
+                className="overflow-hidden relative min-w-0"
                 ref={timelineContainerRef}
                 style={{ minWidth: MIN_TIMELINE_COLUMN_WIDTH }}
             >
@@ -316,7 +312,7 @@ const TimelineHScrollbar = ({
     pixelsPerBeat: number;
     tracks: HScrollbarTrack[];
     viewportWidth: number;
-}): ReactElement | null => {
+}): ReactElement => {
     // Reduce rather than `Math.max(256, ...allEndBeats)`: a project with enough
     // clips blows the engine's call-argument limit and throws
     // `RangeError: Maximum call stack size exceeded` instead of computing a width.
@@ -326,9 +322,18 @@ const TimelineHScrollbar = ({
     );
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
 
-    // Only show when content actually overflows the viewport
+    // The strip is always reserved, because the track list ends with a spacer of
+    // the same height; only the thumb depends on the content overflowing.
     if (totalContentWidth <= viewportWidth) {
-        return null;
+        return (
+            <TimelineChromeSurface
+                tone="subtle"
+                className="select-none"
+                style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
+                aria-hidden="true"
+                data-testid="timeline-horizontal-scrollbar"
+            />
+        );
     }
 
     const maxScrollX = totalContentWidth - viewportWidth;
@@ -388,8 +393,9 @@ const TimelineHScrollbar = ({
         <TimelineChromeSurface
             tone="subtle"
             className="select-none"
-            style={{ height: 10 }}
+            style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
             aria-label="Timeline horizontal scrollbar"
+            data-testid="timeline-horizontal-scrollbar"
         >
             <div
                 className="daw-scrollbar-thumb absolute rounded-full"

@@ -9,6 +9,7 @@ import { normalizeTrack } from '../../../models/Track';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../../hooks/useTracks';
+import { TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT } from '../timelineHorizontalScrollbar';
 import { TrackListView } from '../TrackListView';
 
 type TrackHeaderMockProps = {
@@ -302,12 +303,10 @@ describe('TrackListView', () => {
         rafSpy.mockRestore();
     });
 
-    it('reports the scroll container real height before clamping scrollY (F7)', () => {
-        // Regression guard: `handleScroll` must call `setTimelineViewportHeight`
-        // with the container's own `clientHeight` on every flushed frame, so
-        // `setScrollY`'s clamp always sees the real, current viewport size
-        // rather than a stale or hardcoded one. Deleting that call leaves this
-        // spec's other assertions green — this is the only test guarding it.
+    it('leaves the viewport height to the timeline canvas when the headers scroll', () => {
+        // The canvas owns the store's viewport height. The header list is taller
+        // than the canvas by the horizontal scrollbar strip, so reporting its
+        // own clientHeight would make the shared clamp disagree with the canvas.
         const rafCallbacks: FrameRequestCallback[] = [];
         const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
             rafCallbacks.push(cb);
@@ -316,15 +315,36 @@ describe('TrackListView', () => {
 
         const { container } = renderWithTooltip(<TrackListView />);
         const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+        scrollEl.scrollTop = 40;
 
         fireEvent.scroll(scrollEl);
+        rafCallbacks[0]?.(0);
+
+        expect(setScrollY).toHaveBeenCalledWith(40);
         expect(setTimelineViewportHeight).not.toHaveBeenCalled();
 
-        rafCallbacks[0]?.(0);
-        expect(setTimelineViewportHeight).toHaveBeenCalledTimes(1);
-        expect(setTimelineViewportHeight).toHaveBeenCalledWith(scrollEl.clientHeight);
-
         rafSpy.mockRestore();
+    });
+
+    it('keeps the scroller from contributing its content height to the arrangement column', () => {
+        // `flex: 1` has a 0% basis that resolves to content size when the
+        // container height is indefinite, which grew the whole arrangement to
+        // the height of every track.
+        const { container } = renderWithTooltip(<TrackListView />);
+        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+
+        expect(scrollEl).toHaveClass('min-h-0');
+        expect(scrollEl).toHaveClass('flex-[1_1_0px]');
+        expect(scrollEl).not.toHaveClass('flex-1');
+    });
+
+    it('ends the scrolled content with a spacer as tall as the timeline horizontal scrollbar', () => {
+        const { container } = renderWithTooltip(<TrackListView />);
+        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+        const spacer = scrollEl.lastElementChild as HTMLElement;
+
+        expect(spacer).toHaveAttribute('data-testid', 'track-list-scrollbar-spacer');
+        expect(spacer).toHaveStyle({ height: `${TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT}px` });
     });
 
     it('selects the first track on ArrowDown when nothing is selected', () => {

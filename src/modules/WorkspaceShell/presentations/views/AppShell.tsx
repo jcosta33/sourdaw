@@ -56,7 +56,12 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { RoutingMatrix } from '#/modules/Routing/presentations/views';
 import { LoopStationPanel, SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { SetlistPanel } from '#/modules/Setlist/presentations/views';
-import { AutomationBottomPanel, ClipView, InspectorPanel } from '#/modules/TimelineEditor/presentations/views';
+import {
+    AutomationBottomPanel,
+    ClipView,
+    InspectorPanel,
+    useArrangementMinimumHeight,
+} from '#/modules/TimelineEditor/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { TunerPanel } from '#/modules/Tuner/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
@@ -178,6 +183,8 @@ type BottomTabState = {
 };
 
 const EDITOR_MIN_HEIGHT = 280;
+const MIXER_MIN_HEIGHT = 120;
+const VIRTUAL_KEYBOARD_MIN_HEIGHT = 80;
 // Outlasts LaunchScreen's 650 ms exit fade.
 const LAUNCH_EXIT_UNMOUNT_MS = 700;
 
@@ -199,6 +206,7 @@ function launchExitUnmountDelayMs(): number {
  */
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
+    const arrangementMinimumHeight = useArrangementMinimumHeight();
     const {
         sidebarOpen,
         inspectorOpen,
@@ -704,14 +712,23 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, onChatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
-                    {/* Center: vertical split — arrangement over mixer */}
+                    {/* Center: vertical split — arrangement over the bottom panels.
+                        The arrangement takes what the panels leave, down to its
+                        minimum; each panel shrinks to its own minimum first. Only
+                        when every minimum together exceeds the window (the editor
+                        dock, an instrument panel and the keyboard on a short
+                        screen) does this column scroll, as the last resort. */}
                     <Stack
                         grow
                         className="min-w-0 overflow-x-hidden overflow-y-auto"
                         style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}
                     >
                         {/* Main arrangement area */}
-                        <main id="main-content" className="contain-content flex-1 min-h-min overflow-hidden">
+                        <main
+                            id="main-content"
+                            className="contain-content flex-1 min-h-0 overflow-hidden"
+                            style={{ minHeight: arrangementMinimumHeight }}
+                        >
                             {children}
                         </main>
 
@@ -919,16 +936,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         if (activeBottomTab === 'editor') {
                                             setEditorHeight((h) => Math.max(EDITOR_MIN_HEIGHT, h + d));
                                         } else {
-                                            setMixerHeight((h) => Math.max(120, h + d));
+                                            setMixerHeight((h) => Math.max(MIXER_MIN_HEIGHT, h + d));
                                         }
                                     }}
                                 />
                                 <Stack
-                                    shrink={activeBottomTab === 'editor'}
                                     className="contain-strict bg-surface-base overflow-hidden"
                                     style={{
                                         height: activeBottomTab === 'editor' ? editorHeight : mixerHeight,
-                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : undefined,
+                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : MIXER_MIN_HEIGHT,
                                     }}
                                 >
                                     {/* Bottom panel tab bar */}
@@ -1017,11 +1033,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 <DragResizeHandle
                                     side="top"
                                     onResize={(d) => {
-                                        const next = Math.max(80, Math.min(400, virtualKeyboardHeight + d));
+                                        const next = Math.max(
+                                            VIRTUAL_KEYBOARD_MIN_HEIGHT,
+                                            Math.min(400, virtualKeyboardHeight + d)
+                                        );
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
                                 />
-                                <div className="shrink-0 overflow-hidden" style={{ height: virtualKeyboardHeight }}>
+                                <div
+                                    className="overflow-hidden"
+                                    data-testid="virtual-keyboard-dock"
+                                    style={{ height: virtualKeyboardHeight, minHeight: VIRTUAL_KEYBOARD_MIN_HEIGHT }}
+                                >
                                     <VirtualKeyboard onClose={toggleVirtualKeyboard} />
                                 </div>
                             </>

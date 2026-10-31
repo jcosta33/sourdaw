@@ -50,8 +50,24 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     ArrangementBar: () => <div data-testid="arrangement-bar">Arrangement Bar</div>,
     MarkerLane: () => <div data-testid="marker-lane">Marker Lane</div>,
     BeatRulerBar: () => <div data-testid="beat-ruler">Beat Ruler</div>,
-    TimelineChromeSurface: ({ children, className }: { children?: React.ReactNode; className?: string }) => (
-        <div className={className}>{children}</div>
+    TimelineChromeSurface: ({
+        children,
+        className,
+        style,
+        'aria-label': ariaLabel,
+        'aria-hidden': ariaHidden,
+        'data-testid': testId,
+    }: {
+        children?: React.ReactNode;
+        className?: string;
+        style?: React.CSSProperties;
+        'aria-label'?: string;
+        'aria-hidden'?: boolean | 'true' | 'false';
+        'data-testid'?: string;
+    }) => (
+        <div className={className} style={style} aria-label={ariaLabel} aria-hidden={ariaHidden} data-testid={testId}>
+            {children}
+        </div>
     ),
     TrackListView: ({ style, extraHeaderHeight }: { style?: React.CSSProperties; extraHeaderHeight?: number }) => (
         <div data-testid="track-list-view" style={style} data-extra-height={extraHeaderHeight} />
@@ -59,6 +75,7 @@ vi.mock('#/modules/Arrangement/presentations/views', () => ({
     ARRANGEMENT_BAR_HEIGHT: 22,
     BEAT_RULER_HEIGHT: 18,
     MARKER_LANE_HEIGHT: 20,
+    TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT: 10,
 }));
 
 // Non-spread listing of only SessionView — avoids loading LoopStationPanel from
@@ -165,6 +182,7 @@ vi.mock('../TimelineMinimapResizeHandle', () => ({
 
 vi.mock('../Timeline/ChordTrackLane', () => ({
     ChordTrackLane: () => <div data-testid="chord-track-lane">Chord Track Lane</div>,
+    CHORD_TRACK_LANE_HEIGHT: 26,
 }));
 
 vi.mock('../Timeline/ScratchPadView', () => ({
@@ -582,6 +600,58 @@ describe('ArrangeView', () => {
 
         expect(() => render(<ArrangeView />)).not.toThrow();
         expect(document.querySelector('.daw-scrollbar-thumb')).toBeInTheDocument();
+    });
+
+    it('reserves the horizontal scrollbar strip even when the content fits, without a thumb', () => {
+        // The track list ends with a spacer of this height, so the two columns
+        // only share a scroll range if the strip never appears or disappears.
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 8 })],
+            selectedTrackId: 'track-1',
+        });
+
+        // jsdom lays nothing out; give the timeline column a width wider than the
+        // 256-beat minimum content (3072px) so nothing overflows.
+        const clientWidth = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(5000);
+
+        try {
+            render(<ArrangeView />);
+
+            const strip = screen.getByTestId('timeline-horizontal-scrollbar');
+            expect(strip).toHaveStyle({ height: '10px' });
+            expect(strip).toHaveAttribute('aria-hidden', 'true');
+            expect(strip).not.toHaveAttribute('aria-label');
+            expect(document.querySelector('.daw-scrollbar-thumb')).not.toBeInTheDocument();
+        } finally {
+            clientWidth.mockRestore();
+        }
+    });
+
+    it('labels the strip as the horizontal scrollbar while the content overflows', () => {
+        renderOverflowingTimeline();
+
+        const strip = screen.getByTestId('timeline-horizontal-scrollbar');
+        expect(strip).toHaveStyle({ height: '10px' });
+        expect(strip).toHaveAttribute('aria-label', 'Timeline horizontal scrollbar');
+        expect(strip).not.toHaveAttribute('aria-hidden');
+    });
+
+    it('leaves the arrangement row and timeline column free of intrinsic-height floors', () => {
+        // `min-height: min-content` made the arrangement as tall as every track
+        // and pushed the bottom panels out of the window. The shell now floors
+        // the arrangement explicitly.
+        vi.mocked(useTracks).mockReturnValue({
+            tracks: [makeTrack({ clipEndBeat: 8 })],
+            selectedTrackId: 'track-1',
+        });
+
+        render(<ArrangeView />);
+
+        const row = screen.getByTestId('track-list-view').parentElement;
+        const column = screen.getByTestId('arrangement-bar').parentElement;
+        expect(row).toHaveClass('h-full');
+        expect(row).not.toHaveClass('min-h-min');
+        expect(column).not.toHaveClass('min-h-min');
     });
 
     it('should coalesce horizontal scrollbar drag writes through the Arrangement use case', () => {
