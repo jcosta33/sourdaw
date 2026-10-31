@@ -1,0 +1,24 @@
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_ba80576e6f5cb5::t_3f6c88de224cab 328-332,339-343,351-387
+  s_ba80576e6f5cb5::t_c3a041cc54cf13 333-338,344-350
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_ba80576e6f5cb5::t_ddd86b2a16b4c3 1466-1469
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_ba80576e6f5cb5::t_761e49011df2e3 3089-3098
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ade49e00e25b8594884e9a2ca8bea4b3d3f3a932",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
