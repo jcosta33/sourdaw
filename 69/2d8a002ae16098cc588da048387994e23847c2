@@ -1,0 +1,24 @@
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_ba80576e6f5cb5::t_6c8206ad5f1dcc 820-864
+  s_ba80576e6f5cb5::t_50dd8d5e02184d 819
+src/app/captureCommandBatchPreflightState.ts
+  s_ba80576e6f5cb5::t_81837f69a94503 166-176
+  s_ba80576e6f5cb5::t_3e88baad0c4097 514-519
+  s_ba80576e6f5cb5::t_61d2c11f7984c7 497-499
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "692d8a002ae16098cc588da048387994e23847c2",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
