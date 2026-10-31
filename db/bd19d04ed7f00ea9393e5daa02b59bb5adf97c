@@ -1,0 +1,23 @@
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_88fc7e0d05bab6::t_e47e11980e7814 1632,1638-1641,1659,1710-1730,1783,2015-2107
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_88fc7e0d05bab6::t_8bfa88b2841bf2 174-176,1419-1436,1696-1706,1708,1864-1884,1886
+src/modules/AiRuntime/useCases/__tests__/metricLiteralAccounting.spec.ts
+  s_88fc7e0d05bab6::t_8655e9dbc1b299 162-170
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dbbd19d04ed7f00ea9393e5daa02b59bb5adf97c",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
