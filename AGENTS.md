@@ -151,13 +151,13 @@ any stance report so none anchors it. Does the head do what was asked, fit the a
 product, and keep the right scope? Do its tests observe their claimed subjects, and is every
 accepted finding repaired rather than silenced? Would the orchestrator merge it? Green `Gate` proves
 only the checks and scopes it observed. This global review is not a draw: it is not recorded in
-`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported
-reaches the public record through a blind draw whose stance names that failure mode, never the
-finding, and is posted once a draw reproduces it. A judgement no draw can reproduce — scope, product
-fit, or the wrong approach — is never posted as a finding: the orchestrator withholds approval and
-reshapes the change under [Delegation](#delegation), re-briefing the author on a new head or
-respinning or closing the PR. The orchestrator never approves a head it judges unfit, whatever the
-draws say.
+`draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported goes
+to a blind draw whose stance names that failure mode, never the finding, and is posted once a draw
+reproduces it. Anything no draw reproduces, concrete defect or judgement alike, is never posted:
+the orchestrator withholds approval and, under [Delegation](#delegation), re-briefs the author on a
+new head or respins or closes the PR. That hold is not a review and posts nothing; the
+request-changes rule governs posted findings. The orchestrator never approves a head it judges
+unfit, whatever the draws say.
 
 `review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
 `ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
