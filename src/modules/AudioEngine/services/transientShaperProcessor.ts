@@ -78,6 +78,10 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
                 this.acceptImmediateGain(event.data);
                 return;
             }
+            if (event.data.type === 'clear-gain') {
+                this.clearImmediateGain(event.data.name);
+                return;
+            }
             if (event.data.type === 'dispose') {
                 if (!this.disposed) {
                     this.disposed = true;
@@ -140,6 +144,12 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
         }
         this.immediateGains[name].value = value;
         this.immediateGains[name].frame = frame;
+    }
+
+    private clearImmediateGain(name: unknown): void {
+        if (isGainName(name)) {
+            this.immediateGains[name].frame = -1;
+        }
     }
 
     private render(

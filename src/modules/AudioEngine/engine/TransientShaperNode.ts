@@ -40,7 +40,8 @@ function bounded(value: number): number {
 function createGainControls(
     context: BaseAudioContext,
     param: (name: string) => AudioParam | undefined,
-    publishImmediateGain: (name: string, value: number, frame: number) => void
+    publishImmediateGain: (name: string, value: number, frame: number) => void,
+    clearImmediateGain: (name: string) => void
 ) {
     const currentFrame = (): number => Math.round(context.currentTime * context.sampleRate);
     const time = (frame: number): number => frameTime(Math.max(currentFrame(), frame), context.sampleRate);
@@ -73,6 +74,7 @@ function createGainControls(
             if (!target) {
                 return;
             }
+            let reachesNow = false;
             for (const segment of segments) {
                 if (
                     !Number.isSafeInteger(segment.startFrame) ||
@@ -88,6 +90,12 @@ function createGainControls(
                 if (segment.endFrame > segment.startFrame) {
                     target.linearRampToValueAtTime(bounded(segment.endValue), time(segment.endFrame));
                 }
+                reachesNow ||= segment.startFrame <= currentFrame();
+            }
+            // A posted write is only ever for the current frame, so automation
+            // that reaches it must decide that frame instead of the port.
+            if (reachesNow) {
+                clearImmediateGain(name);
             }
         },
     };
@@ -192,8 +200,11 @@ function createTransientShaperController(
         }
         return workletNode.parameters.get(name);
     };
-    const gainControls = createGainControls(context, param, (name, value, frame) =>
-        workletNode.port.postMessage({ type: 'gain', name, value, frame })
+    const gainControls = createGainControls(
+        context,
+        param,
+        (name, value, frame) => workletNode.port.postMessage({ type: 'gain', name, value, frame }),
+        (name) => workletNode.port.postMessage({ type: 'clear-gain', name })
     );
     workletNode.port.postMessage({ type: 'init' });
     return {

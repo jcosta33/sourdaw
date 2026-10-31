@@ -120,6 +120,29 @@ describe('shipping Transient Shaper processor with the actual compiled WASM', ()
         expect(caughtUp[0]).toBe(0);
         vi.stubGlobal('currentFrame', 0);
     });
+    it('applies a posted sustain change on the resume frame of a settled, non-transient input', async () => {
+        const { instance } = await processor();
+        for (let block = 0; block < 375; block++) {
+            render(instance, 128);
+        }
+        vi.stubGlobal('currentFrame', 48000);
+        instance.port.onmessage?.({ data: { type: 'gain', name: 'sustainGain', value: 0.25, frame: 48000 } });
+        const sustain = Float32Array.from({ length: 128 }, (_, frame) => (frame === 0 ? 1 : 0.25));
+        const resumed = render(instance, 128, undefined, new Float32Array([1]), sustain).output[0];
+        expect([resumed[0], resumed[1], resumed[127]]).toEqual([0.125, 0.125, 0.125]);
+        vi.stubGlobal('currentFrame', 0);
+    });
+    it('lets automation scheduled after a posted gain decide that frame once the post is cleared', async () => {
+        const { instance } = await processor();
+        for (const data of [
+            { type: 'gain', name: 'attackGain', value: 0.5, frame: 0 },
+            { type: 'clear-gain', name: '_resetEpoch' },
+            { type: 'clear-gain', name: 'attackGain' },
+        ]) {
+            instance.port.onmessage?.({ data });
+        }
+        expect(render(instance, 1, undefined, new Float32Array([2])).output[0][0]).toBe(1);
+    });
     it('scrubs nonfinite PCM and gains without poisoning later audio, fills missing channels and disposes once', async () => {
         const { instance } = await processor();
         const source = new Float32Array([Number.NaN, Number.POSITIVE_INFINITY, 0.5]);

@@ -186,6 +186,18 @@ describe('Transient Shaper host lifecycle and scheduling', () => {
         node.setParam('attackGain', 1);
         expect(fake.port.postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'gain', value: 1 }));
     });
+    it('clears a posted gain only when valid automation reaches the frame it was posted for', async () => {
+        const { node, fake } = await create();
+        node.setParam('attackGain', 0.5);
+        node.scheduleParam('attackGain', [{ startFrame: 12001, endFrame: 24000, startValue: 1, endValue: 2 }]);
+        node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 12000, startValue: Number.NaN, endValue: 2 }]);
+        node.scheduleParam('attackGain', [{ startFrame: 0, endFrame: 24000, startValue: 2, endValue: 2 }]);
+        expect(fake.port.postMessage.mock.calls.slice(1)).toEqual([
+            [{ type: 'gain', name: 'attackGain', value: 0.5, frame: 12000 }],
+            [{ type: 'clear-gain', name: 'attackGain' }],
+        ]);
+        dispose(node, fake);
+    });
     it('uses the final exact Float32 value as terminal failure and never wraps', async () => {
         initialEpoch = 16777214;
         const failure = vi.fn();
