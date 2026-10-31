@@ -1,0 +1,41 @@
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_3bb122e91d89a5::t_7e21207349f28c 156
+  s_3bb122e91d89a5::t_31a1c03553d3fd 483-484
+  s_3bb122e91d89a5::t_6daca4db66e278 496
+src/modules/AudioEngine/useCases/offlineRender/cropHistoryFromRenderedBuffer.ts
+  s_3bb122e91d89a5::t_319733076a067a 3-4,17-18,21,25,27
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_3bb122e91d89a5::t_517a1fd8c935bf 65
+  s_3bb122e91d89a5::t_56c4230631d39d 1,10-13,20-24,37,44-45,63-64,66,74-75
+src/modules/AudioEngine/repositories/clampRenderFrameCount.ts
+  s_3bb122e91d89a5::t_ad5cd23362aa9e 14-27
+  s_3bb122e91d89a5::t_d87c1653c5707e 42
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_3bb122e91d89a5::t_bd51bcdd7949b4 591
+  s_3bb122e91d89a5::t_010cb5c1b8bf19 193
+src/modules/AudioEngine/useCases/offlineRender/__tests__/cropHistoryFromRenderedBuffer.spec.ts
+  s_3bb122e91d89a5::t_6c015c21a8b1f3 1-152
+  s_3bb122e91d89a5::t_a2660d42505adb 153
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_3bb122e91d89a5::t_c27fb38d12aae4 72
+  s_3bb122e91d89a5::t_6edf54d3483110 105
+  s_3bb122e91d89a5::t_d56c4465babd89 109
+src/modules/AudioEngine/useCases/offlineRender/__tests__/executeOfflineRenderLockPriority.spec.ts
+  s_3bb122e91d89a5::t_a1ec0c7bac09ec 67-68
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03d449bbcfdc8249eeaa5b9e788c08a606bf0daa",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
