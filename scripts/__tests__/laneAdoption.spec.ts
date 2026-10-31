@@ -398,11 +398,6 @@ function nativeFixture() {
     writeFileSync(join(primary, '.gitignore'), '.agents/\n');
     writeFileSync(join(primary, 'foreign.txt'), 'original');
     writeFileSync(join(primary, 'scripts', 'publishLane.ts'), "throw new Error('stale-primary-publisher-executed');\n");
-    const oldContract = execFileSync(gitPath, ['show', 'origin/main:scripts/prContract.ts'], {
-        cwd: process.cwd(),
-        encoding: 'utf8',
-    });
-    writeFileSync(join(primary, 'scripts', 'prContract.ts'), oldContract);
     const git = (...args: string[]) =>
         execFileSync(gitPath, ['-c', 'core.hooksPath=/dev/null', ...args], {
             cwd: primary,

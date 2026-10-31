@@ -167,7 +167,7 @@
                 "sha256:c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4:LICENSE",
                 "sha256:c148064afc3d904d474c5f20ee39052ff86085a02d148552ce59f4d0ebd7aeb9:NOTICE",
                 "sha256:13a2ec7a8e56d685f18e90aca15d6fc0b3ff6486e9e8bfebe05ba5435035ec98:public/legal/DEPENDENCY-LICENSES.txt",
-                "sha256:0bfc4866b5c17c7c36bef8a01dce6295da8174a9c301c4282faf41c28704df4c:release/dependency-license-proofs.json"
+                "sha256:06fa6dc4d24a3d3175c76c437701a4ab2103eefe37d660c95224ed84d1e9a182:release/dependency-license-proofs.json"
             ],
             "licenses": [
                 "Apache-2.0",
@@ -1819,7 +1819,7 @@
     "snapshots": [
         {
             "path": "package.json",
-            "sha256": "fbe5641072facefc44851dae9a7ea0d2c7fe35cc53afbbe0c9b03932509f9307"
+            "sha256": "a7dcb1aec3cfb59bdd7d0afc19254f5675f8d56b38cda8b7a829bca88dc4bbc4"
         },
         {
             "path": "server/package.json",
@@ -2257,6 +2257,11 @@
         },
         {
             "surface": "project-source",
+            "file": "scripts/cleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
+        },
+        {
+            "surface": "project-source",
             "file": "scripts/dependencyLicenseReport.ts",
             "value": "https://crates.io/api/v1/crates/${slot}/${slot}/download",
             "templateSha256": "76033b3c969dd78f5a5033be69b396efae1e6de3ab36abb07552ce9c721667ae"
@@ -2289,6 +2294,17 @@
             "file": "scripts/githubAppIdentity.ts",
             "value": "https://x-access-token:${slot}@github.com/${slot}.git",
             "templateSha256": "5363763ce71d8744aa52b60c5d61d6f958cc1940a8e9ad9fec575ff6c11cbeb1"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/installCleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git"
+        },
+        {
+            "surface": "project-source",
+            "file": "scripts/installCleanupLanes.ts",
+            "value": "https://github.com/jcosta33/sourdaw.git",
+            "templateSha256": "48c2a8e056e9a57b98456f3376b3055cb2c5610b90d5512837e7f5594659fa15"
         },
         {
             "surface": "project-source",

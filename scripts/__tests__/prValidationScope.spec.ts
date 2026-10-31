@@ -32,6 +32,8 @@ import { isVitestCollected } from '../vitestCollectionPatterns';
 
 // Synchronous Git fixture and planner child-process work can exceed Vitest's 5000 ms default on shared CI runners.
 const GIT_PLANNER_CASE_TIMEOUT_MS = 30_000;
+// The serial immutable-route Git/Node matrix observed 32.4s on the shared host.
+const IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS = 60_000;
 const TUNER = 'src/modules/Tuner/presentations/views/TunerPanel.tsx';
 const TUNER_SPECS = ['tests/e2e/tuner.spec.ts', 'tests/e2e/tunerReferenceHomeEnd.spec.ts'] as const;
 const EXPORT = 'src/modules/AudioRendering/presentations/views/ExportDialog.tsx';
@@ -1023,6 +1025,8 @@ describe('required affected verification', () => {
             const known = {
                 test: 'node scripts/other.ts',
                 'retarget:plan': 'node scripts/retargetCapabilitySnapshot.ts',
+                'lane:cleanup': 'node scripts/cleanupLanes.ts',
+                'lane:cleanup:install': 'node scripts/installCleanupLanes.ts',
             };
             const baseline = { test: 'node scripts/other.ts' };
             const writePackage = (contents: string | null) => {
@@ -1242,7 +1246,7 @@ describe('required affected verification', () => {
             const renameHead = commit('rename package');
             expectBroad(renameBase, renameHead);
         },
-        GIT_PLANNER_CASE_TIMEOUT_MS
+        IMMUTABLE_PACKAGE_ROUTES_TIMEOUT_MS
     );
 
     it.each(SHARED_OR_BROWSER_OWNED_SCRIPTS)(
@@ -1296,6 +1300,19 @@ describe('required affected verification', () => {
         expect(plan.matrix.include).toEqual([]);
         expect(plan.reasons.map(({ path }) => path)).toEqual(REVIEW_DELIVERY_PATHS);
     });
+
+    it.each(['cleanupLanes', 'installCleanupLanes', 'laneActivity'])(
+        'selects cleanup tooling and its exact spec for %s',
+        (name) => {
+            for (const path of [`scripts/${name}.ts`, `scripts/__tests__/${name}.spec.ts`]) {
+                expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
+                    profile: 'tooling',
+                    browser: false,
+                    codeql: true,
+                });
+            }
+        }
+    );
 
     it.each(NEW_REVIEW_TOOLING_PATHS)('recognizes added review tooling path %s', (path) => {
         expect(selectValidationPlan([path], INVENTORY)).toMatchObject({
