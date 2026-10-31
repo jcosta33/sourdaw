@@ -1,0 +1,24 @@
+src/modules/AudioEngine/repositories/audioRecorder/__tests__/recordingCapturePlacement.integration.spec.ts
+  s_ba80576e6f5cb5::t_d2bcdc4667756d 740-745
+src/modules/Transport/useCases/playheadScheduler/__tests__/initialPlaybackWindow.integration.spec.ts
+  s_ba80576e6f5cb5::t_1ffb1d650eea2c 528-533,537-542
+  s_ba80576e6f5cb5::t_758c8e956ee183 770
+  s_ba80576e6f5cb5::t_73d1196b249fee 771-775
+  s_ba80576e6f5cb5::t_9ac8b39aabbde2 677
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "36092cce0d9d821573e31d87a85a50bcb552f527",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
