@@ -1,6 +1,8 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { confirmUser } from '#/utils/Notification/confirmUser';
+
 import { pendingProjectReplacements } from '../../../useCases/projectPersistence/pendingProjectReplacements';
 import { saveProject } from '../../../useCases/projectPersistence/saveProject/saveProject';
 import { createFromTemplate } from '../../../useCases/projectTemplates/templateDefinitions/createFromTemplate';
@@ -24,6 +26,11 @@ vi.mock('../../../useCases/projectPersistence/saveProject/saveProject', () => ({
     saveProject: vi.fn(),
 }));
 
+// The Don't Save dialog's answer; Cancel unless a case chooses otherwise.
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: vi.fn(),
+}));
+
 vi.mock('../../../useCases/projectTemplates/templateDefinitions/createFromTemplate', () => ({
     createFromTemplate: vi.fn(),
 }));
@@ -43,6 +50,7 @@ describe('TemplateChooser', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         mocks.projectStoreValue.value = null;
+        vi.mocked(confirmUser).mockResolvedValue(false);
     });
 
     it('should render without crashing', () => {
@@ -70,8 +78,12 @@ describe('TemplateChooser', () => {
         fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
 
         await waitFor(() =>
-            expect(createFromTemplate).toHaveBeenCalledWith('guard-spec-song', { shouldProceed: expect.any(Function) })
+            expect(createFromTemplate).toHaveBeenCalledWith('guard-spec-song', {
+                outgoingProject: 'save-closed-takes',
+                shouldProceed: expect.any(Function),
+            })
         );
+        expect(confirmUser).not.toHaveBeenCalled();
     });
 
     // Choosing the open project's Recent entry while the template is pending
@@ -111,17 +123,35 @@ describe('TemplateChooser', () => {
     // Issue 3694: a save can resolve true while the project is still dirty —
     // a plugin state capture rejected before commit warns and keeps that edit
     // out of project truth. Creating the template over it would destroy the
-    // edit, so the switch must refuse even though the save resolved.
-    it('refuses the template switch when the pre-switch save resolved but left the project dirty', async () => {
+    // edit, so the switch stays unless the user chooses Don't Save.
+    it('keeps the project open when the user cancels after a save that left the project dirty', async () => {
         mocks.projectStoreValue.value = { dirty: true };
         vi.mocked(saveProject).mockResolvedValue(true);
 
         render(<TemplateChooser open onClose={vi.fn()} />);
         fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
 
-        await waitFor(() => expect(saveProject).toHaveBeenCalledOnce());
-        await Promise.resolve();
-        await Promise.resolve();
+        await waitFor(() => expect(confirmUser).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(createFromTemplate).not.toHaveBeenCalled();
+    });
+
+    // A project that cannot be saved must not trap the user: Don't Save
+    // replaces it as a discard, so nothing saves the outgoing project again.
+    it("creates the template as a discard when the user chose Don't Save after a failed save", async () => {
+        mocks.projectStoreValue.value = { dirty: true };
+        vi.mocked(saveProject).mockResolvedValue(false);
+        vi.mocked(confirmUser).mockResolvedValue(true);
+        vi.mocked(createFromTemplate).mockResolvedValue(true);
+
+        render(<TemplateChooser open onClose={vi.fn()} />);
+        fireEvent.click(screen.getByRole('button', { name: /Guard Spec Song/ }));
+
+        await waitFor(() =>
+            expect(createFromTemplate).toHaveBeenCalledWith('guard-spec-song', {
+                outgoingProject: 'discard',
+                shouldProceed: expect.any(Function),
+            })
+        );
     });
 });

@@ -21,13 +21,14 @@ export const projectCommands: CallableCommandEntry[] = [
             void (async () => {
                 // Same guard as the menu's New Project: a failed save, or one
                 // that resolved with the project still dirty (a plugin capture
-                // rejected before commit), refuses the replacement — both
-                // surfaces already notified. Choosing the open project
-                // meanwhile withdraws it.
-                if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
+                // rejected before commit), asks whether to leave without
+                // saving; Cancel keeps the project open. Choosing the open
+                // project meanwhile withdraws it.
+                const outgoingProject = await saveProjectBeforeReplacement();
+                if (outgoingProject === 'stay' || !isStillChosen()) {
                     return;
                 }
-                void newProject(undefined, { shouldProceed: isStillChosen });
+                void newProject(undefined, { outgoingProject, shouldProceed: isStillChosen });
             })();
         },
     },

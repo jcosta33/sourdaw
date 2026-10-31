@@ -73,15 +73,16 @@ export const RecentProjectsMenu = (): ReactElement => {
     const handleNewProject = () => {
         const isStillChosen = pendingProjectReplacements.capture();
         void (async () => {
-            // Abort on a failed save or on a save that resolved with the
-            // project still dirty — a plugin capture rejected before commit
-            // keeps that edit uncaptured, and a new project would destroy it.
-            // Both refusal surfaces already notified; the project stays open.
-            // Choosing the open project meanwhile withdraws the new project.
-            if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
+            // A failed save, or one that resolved with the project still dirty
+            // (a plugin capture rejected before commit keeps that edit
+            // uncaptured), asks whether to leave without saving; Cancel keeps
+            // the project open. Choosing the open project meanwhile withdraws
+            // the new project.
+            const outgoingProject = await saveProjectBeforeReplacement();
+            if (outgoingProject === 'stay' || !isStillChosen()) {
                 return;
             }
-            void newProject(undefined, { shouldProceed: isStillChosen });
+            void newProject(undefined, { outgoingProject, shouldProceed: isStillChosen });
         })();
         setOpen(false);
     };
@@ -131,21 +132,18 @@ export const RecentProjectsMenu = (): ReactElement => {
         }
         const isStillChosen = pendingProjectReplacements.capture();
         void (async () => {
-            // Await the pre-switch save (audit #568 F2) and abort on its
-            // failure or on a save that resolved with the project still dirty
-            // — a plugin capture rejected before commit keeps that edit
-            // uncaptured, and loading over it would destroy it; both refusal
-            // surfaces already notified. Then react to the load outcome by
-            // reason (audit #568 F3): prune only a definitively missing
-            // entry, notify on transient failure, and do nothing when a newer
-            // transition superseded.
-            if (!(await saveProjectBeforeReplacement())) {
+            // Await the pre-switch save (audit #568 F2). A failed save, or one
+            // that resolved with the project still dirty (a plugin capture
+            // rejected before commit keeps that edit uncaptured), asks whether
+            // to leave without saving; Cancel keeps the project open. Then
+            // react to the load outcome by reason (audit #568 F3): prune only
+            // a definitively missing entry, notify on transient failure, and
+            // do nothing when a newer transition superseded.
+            const outgoingProject = await saveProjectBeforeReplacement();
+            if (outgoingProject === 'stay' || !isStillChosen()) {
                 return;
             }
-            if (!isStillChosen()) {
-                return;
-            }
-            const outcome = await loadRecentProject(entry.key, { shouldProceed: isStillChosen });
+            const outcome = await loadRecentProject(entry.key, { outgoingProject, shouldProceed: isStillChosen });
             if (outcome === 'not-found') {
                 notifyUser(`Could not find "${entry.name}" — removing it from recent projects.`, 'error');
                 removeFromRecentProjects(entry.key);

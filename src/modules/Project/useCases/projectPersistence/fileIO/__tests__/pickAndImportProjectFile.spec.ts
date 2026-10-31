@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
         notifyUser: vi.fn<(message: string, level?: 'info' | 'success' | 'warning' | 'error') => void>(),
         loggerError: vi.fn<(error: Error) => void>(),
         saveProject: vi.fn<() => Promise<boolean>>(),
+        confirmUser: vi.fn<() => Promise<boolean>>(),
         projectStoreValue,
     };
 });
@@ -57,6 +58,15 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: mocks.notifyUser,
 }));
 
+// The Don't Save dialog's answer; Cancel unless a case chooses otherwise.
+vi.mock('#/utils/Notification/confirmUser', () => ({
+    confirmUser: mocks.confirmUser,
+}));
+
+vi.mock('#/modules/CrdtDocument/useCases', () => ({
+    captureProjectIdentity: () => 'open-project-identity',
+}));
+
 vi.mock('#/infra/logger/appLogger', () => ({
     logger: {
         error: mocks.loggerError,
@@ -72,6 +82,7 @@ describe('pickAndImportProjectFile', () => {
         vi.clearAllMocks();
         mocks.runProjectLoadTransaction.mockReturnValue(transactionSentinel);
         mocks.saveProject.mockResolvedValue(true);
+        mocks.confirmUser.mockResolvedValue(false);
         mocks.projectStoreValue.value = null;
         projectLoadFailureStore.set(null);
     });
@@ -109,6 +120,7 @@ describe('pickAndImportProjectFile', () => {
         expect(mocks.runProjectLoadTransaction).toHaveBeenCalledTimes(1);
         expect(mocks.applyImportedProjectData).toHaveBeenCalledWith({
             data: projectJson,
+            outgoingProject: 'save-closed-takes',
             shouldProceed: expect.any(Function),
             transaction: transactionSentinel,
         });
@@ -197,8 +209,8 @@ describe('pickAndImportProjectFile', () => {
     // A save can resolve while the project is still dirty — a plugin state
     // capture rejected before commit warns and keeps that edit uncaptured.
     // Importing over the project would lose the edit exactly as a failed save
-    // would, and the capture already told the user why.
-    it('aborts the import when the pre-save resolves but leaves the project dirty', async () => {
+    // would, so the import waits for the user's choice and Cancel aborts it.
+    it('aborts the import when the user cancels after a pre-save that leaves the project dirty', async () => {
         const projectJson = { version: 1, meta: { name: 'Imported Song' } };
         mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
         mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
@@ -212,7 +224,7 @@ describe('pickAndImportProjectFile', () => {
         expect(mocks.notifyUser).not.toHaveBeenCalled();
     });
 
-    it('aborts the import when the pre-save of the dirty open project fails', async () => {
+    it('aborts the import when the user cancels after the pre-save of the dirty open project fails', async () => {
         const projectJson = { version: 1, meta: { name: 'Imported Song' } };
         mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
         mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
@@ -221,8 +233,26 @@ describe('pickAndImportProjectFile', () => {
         await expect(pickAndImportProjectFile()).resolves.toBe(false);
 
         expect(mocks.saveProject).toHaveBeenCalledOnce();
+        expect(mocks.confirmUser).toHaveBeenCalledOnce();
         expect(mocks.applyImportedProjectData).not.toHaveBeenCalled();
         expect(mocks.runProjectLoadTransaction).not.toHaveBeenCalled();
+    });
+
+    // A project that cannot be saved must not trap the user: Don't Save
+    // imports over it as a discard, so nothing saves the outgoing project again.
+    it("imports as a discard when the user chose Don't Save after the pre-save failed", async () => {
+        const projectJson = { version: 1, meta: { name: 'Imported Song' } };
+        mocks.pickFiles.mockResolvedValue([makeFile(JSON.stringify(projectJson))]);
+        mocks.applyImportedProjectData.mockResolvedValue(true);
+        mocks.projectStoreValue.value = { name: 'Open Song', createdAt: 1, dirty: true };
+        mocks.saveProject.mockResolvedValue(false);
+        mocks.confirmUser.mockResolvedValue(true);
+
+        await expect(pickAndImportProjectFile()).resolves.toBe(true);
+
+        expect(mocks.applyImportedProjectData).toHaveBeenCalledWith(
+            expect.objectContaining({ data: projectJson, outgoingProject: 'discard' })
+        );
     });
 
     it('does not pre-save when the open project has no unsaved changes', async () => {

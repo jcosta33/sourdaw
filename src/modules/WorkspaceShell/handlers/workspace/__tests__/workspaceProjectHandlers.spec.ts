@@ -80,7 +80,7 @@ vi.mock('#/utils/Notification/notifyUser', () => ({
 describe('Workspace Project Handlers', () => {
     beforeEach(() => {
         vi.clearAllMocks();
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(true);
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('save-closed-takes');
         projectEpoch.reset();
     });
 
@@ -88,27 +88,50 @@ describe('Workspace Project Handlers', () => {
         void handleNewProject.execute({ type: 'newProject' });
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
         await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(newProject).mock.calls[0]?.[1]?.outgoingProject).toBe('save-closed-takes');
     });
 
-    // Issue 3694: this action replaces the open project, so a guard refusal —
-    // a save that resolved with the project still dirty — must stop it.
-    it('handleNewProject refuses the replacement when the pre-switch guard refuses', async () => {
-        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue(false);
+    // A project that cannot be saved must not trap the user: Don't Save
+    // replaces it as a discard, so nothing saves the outgoing project again.
+    it("handleNewProject discards the outgoing project when the user chose Don't Save", async () => {
+        vi.mocked(saveProjectBeforeReplacement).mockResolvedValue('discard');
+        void handleNewProject.execute({ type: 'newProject' });
+        await vi.waitFor(() => expect(newProject).toHaveBeenCalledTimes(1));
+        expect(vi.mocked(newProject).mock.calls[0]?.[1]?.outgoingProject).toBe('discard');
+    });
+
+    // Issue 3694: this action replaces the open project, so Cancel after a
+    // failed or still-dirty save must stop it.
+    it('handleNewProject stays in the open project when the user cancels', async () => {
+        const choice = Promise.withResolvers<'stay'>();
+        vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(choice.promise);
         void handleNewProject.execute({ type: 'newProject' });
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
-        await Promise.resolve();
-        await Promise.resolve();
+        choice.resolve('stay');
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(newProject).not.toHaveBeenCalled();
+    });
+
+    it('handleNewProject does not start once the open project is chosen while the user decides', async () => {
+        const choice = Promise.withResolvers<'discard'>();
+        vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(choice.promise);
+        void handleNewProject.execute({ type: 'newProject' });
+        await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
+        pendingProjectReplacements.withdraw();
+        choice.resolve('discard');
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
         expect(newProject).not.toHaveBeenCalled();
     });
 
     // Choosing the open project's Recent entry while New is pending withdraws it.
     it('handleNewProject does not start once a pre-save that the open project choice outlasted finishes', async () => {
-        const save = Promise.withResolvers<boolean>();
+        const save = Promise.withResolvers<'save-closed-takes'>();
         vi.mocked(saveProjectBeforeReplacement).mockReturnValueOnce(save.promise);
         void handleNewProject.execute({ type: 'newProject' });
         await vi.waitFor(() => expect(saveProjectBeforeReplacement).toHaveBeenCalledTimes(1));
         pendingProjectReplacements.withdraw();
-        save.resolve(true);
+        save.resolve('save-closed-takes');
 
         await new Promise((resolve) => setTimeout(resolve, 0));
         expect(newProject).not.toHaveBeenCalled();

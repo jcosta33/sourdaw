@@ -347,16 +347,17 @@ export const TemplateChooser = ({ open, onClose, initialCategory = 'all' }: Temp
 
         void (async () => {
             try {
-                // Await the pre-switch save (audit #568 F2); abort on a failed
-                // save or on a save that resolved with the project still dirty
-                // — a plugin capture rejected before commit keeps that edit
-                // uncaptured, and the template would destroy it. Both refusal
-                // surfaces already notified; the current project stays open.
-                // Choosing the open project meanwhile withdraws the template.
-                if (!(await saveProjectBeforeReplacement()) || !isStillChosen()) {
+                // Await the pre-switch save (audit #568 F2). A failed save, or
+                // one that resolved with the project still dirty (a plugin
+                // capture rejected before commit keeps that edit uncaptured),
+                // asks whether to leave without saving; Cancel keeps the
+                // current project open. Choosing the open project meanwhile
+                // withdraws the template.
+                const outgoingProject = await saveProjectBeforeReplacement();
+                if (outgoingProject === 'stay' || !isStillChosen()) {
                     return;
                 }
-                await createFromTemplate(templateId, { shouldProceed: isStillChosen });
+                await createFromTemplate(templateId, { outgoingProject, shouldProceed: isStillChosen });
             } finally {
                 setIsLoading(false);
                 onClose();
