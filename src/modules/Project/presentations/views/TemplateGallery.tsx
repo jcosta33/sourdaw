@@ -4,8 +4,10 @@ import { type DawFilterChipOption, DawFilterChipGroup } from '#/components/daw/D
 import { Grid, Stack } from '#/components/layout';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
-import { ALL_TEMPLATES_FILTER, TEMPLATE_CATEGORY_PRESENTATION } from '../components/templateCategories';
 import { TemplateCard, type TemplateCardTemplate } from '../components/TemplateCard';
+import { ALL_TEMPLATES_FILTER, TEMPLATE_CATEGORY_PRESENTATION } from '../components/templateCategories';
+
+import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 type GalleryFilter = TemplateCategory | 'all';
 
@@ -59,7 +61,13 @@ export const TemplateGallery = ({
                 className="max-h-[420px] overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]"
             >
                 {visible.map((template) => (
-                    <TemplateCard key={template.id} template={template} onSelect={onSelect} disabled={disabled} />
+                    <TemplateCard
+                        key={template.id}
+                        template={template}
+                        preview={<TemplatePreviewThumb templateId={template.id} />}
+                        onSelect={onSelect}
+                        disabled={disabled}
+                    />
                 ))}
             </Grid>
         </Stack>

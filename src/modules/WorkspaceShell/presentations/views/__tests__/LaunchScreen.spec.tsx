@@ -18,7 +18,8 @@ const mocks = vi.hoisted(() => ({
     pickAndImportDawProject: vi.fn(),
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: mocks.executeUserAppAction,
 }));
 

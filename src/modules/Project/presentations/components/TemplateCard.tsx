@@ -1,11 +1,10 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type ReactNode } from 'react';
 
 import { cn } from '#/utils/Styles/cn';
 
 import { type TemplateCategory } from '../../models/ProjectTemplateTypes';
 
 import { TEMPLATE_CATEGORY_PRESENTATION } from './templateCategories';
-import { TemplatePreviewThumb } from './TemplatePreviewThumb';
 
 export type TemplateCardTemplate = {
     id: string;
@@ -16,13 +15,14 @@ export type TemplateCardTemplate = {
 
 type TemplateCardProps = {
     template: TemplateCardTemplate;
+    preview: ReactNode;
     onSelect: (templateId: string) => void;
     disabled?: boolean;
 };
 
 // A native button on purpose: the shared Button primitive sets whitespace-nowrap, which keeps a
 // long description from wrapping and pushes it past the card edge.
-export const TemplateCard = ({ template, onSelect, disabled = false }: TemplateCardProps): ReactElement => {
+export const TemplateCard = ({ template, preview, onSelect, disabled = false }: TemplateCardProps): ReactElement => {
     const tint = TEMPLATE_CATEGORY_PRESENTATION[template.category];
     const { Icon } = tint;
 
@@ -51,9 +51,7 @@ export const TemplateCard = ({ template, onSelect, disabled = false }: TemplateC
                 <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-muted-foreground">
                     {template.description}
                 </p>
-                <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">
-                    <TemplatePreviewThumb templateId={template.id} />
-                </div>
+                <div className="mt-2 overflow-hidden rounded-md border border-white/[0.06]">{preview}</div>
             </div>
         </button>
     );
