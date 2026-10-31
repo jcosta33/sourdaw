@@ -272,7 +272,10 @@ You adjudicate every finding; nothing reaches the author or the public record un
   detected it.
 - A blocker your global review found that no draw reported: dispatch a fresh blind draw whose
   stance names that failure mode, never your finding, and post the blocker once a draw reproduces
-  it. Do not approve the head meanwhile.
+  it. Do not approve the head meanwhile. A judgement no draw can reproduce (scope, product fit, or
+  the wrong approach) is never posted as a finding: withhold approval and reshape the change under
+  AGENTS.md [Delegation](../../../AGENTS.md#delegation), re-briefing the author on a new head or
+  respinning or closing the PR.
 
 ### h. Write `review.json`
 

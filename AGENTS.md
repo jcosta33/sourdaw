@@ -153,8 +153,11 @@ accepted finding repaired rather than silenced? Would the orchestrator merge it?
 only the checks and scopes it observed. This global review is not a draw: it is not recorded in
 `draws` and not bound by the reviewer cost ceiling. A blocker it finds that no draw reported
 reaches the public record through a blind draw whose stance names that failure mode, never the
-finding, and is posted once a draw reproduces it. The orchestrator never approves a head it judges
-unfit, whatever the draws say.
+finding, and is posted once a draw reproduces it. A judgement no draw can reproduce — scope, product
+fit, or the wrong approach — is never posted as a finding: the orchestrator withholds approval and
+reshapes the change under [Delegation](#delegation), re-briefing the author on a new head or
+respinning or closing the PR. The orchestrator never approves a head it judges unfit, whatever the
+draws say.
 
 `review:prepare` records the change's risk classes — `docs-only`, `small`, `small-tooling`,
 `ordinary`, `test-only`, `cross-domain`, `realtime-audio`, `native-security`, `undo` — in the head bundle's `risk-plan.json`,
