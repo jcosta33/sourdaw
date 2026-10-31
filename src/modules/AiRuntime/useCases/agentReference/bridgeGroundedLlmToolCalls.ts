@@ -8029,14 +8029,11 @@ function bridgeUnrefinedLlmToolCalls(
                       )
                       .map((candidate) => candidate.arguments)
                 : undefined;
-        const effect = getExecutableAppActionEffect(call.name);
         // A mixed request may state literal transport or monitoring controls beside creative work.
         // These effects confer no creative authority: ordinary grounding must prove the command,
         // target and value, and a read-only interpretation still forbids every write.
         const ordinaryLiteralControl =
-            creativeAuthority?.mode !== 'read-only' &&
-            effect?.dimensions.length === 1 &&
-            (effect.dimensions[0] === 'project-timing' || effect.dimensions[0] === 'monitoring');
+            creativeAuthority?.mode !== 'read-only' && isOrdinaryLiteralControl(getExecutableAppActionEffect(call.name));
         const creativeAdmission = ordinaryLiteralControl ? undefined : creativeAdmissionsByCallIndex?.get(index);
         const createdTargetIntent = getExplicitCreatedTargetIntent({
             bindings: visibleBindings,
@@ -8276,6 +8273,21 @@ function bridgeUnrefinedLlmToolCalls(
         ...(compilerActionCommandGraph === undefined ? {} : { actionCommandGraph: compilerActionCommandGraph }),
         rejections,
     };
+}
+
+/**
+ * A literal project-timing or monitoring control. A project-timing write such as a tempo change also
+ * reflows the arrangement and audio clips it carries; that reflow follows from the stated value and is
+ * not delegated creative work, so it does not demand creative authority over those dimensions.
+ */
+function isOrdinaryLiteralControl(effect: ReturnType<typeof getExecutableAppActionEffect>): boolean {
+    if (effect === null || effect.dimensions.length === 0) {
+        return false;
+    }
+    return (
+        effect.dimensions.includes('project-timing') ||
+        effect.dimensions.every((dimension) => dimension === 'monitoring')
+    );
 }
 
 function isInsertionAnchorRequired(requestedAnchorCount: number, assertedValue: unknown): boolean {
