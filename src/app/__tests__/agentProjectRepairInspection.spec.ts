@@ -1,6 +1,7 @@
 import * as Automerge from '@automerge/automerge';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { flushAutomergeStorageWrites } from '#/infra/store/storage/createAutomergeStorage';
 import {
     agentProjectInspectionPort,
     createCrdtDoc,
@@ -11,6 +12,7 @@ import {
     removeCrdtDoc,
     replaceCrdtDocInLineage,
 } from '#/modules/CrdtDocument/useCases';
+import { chordTrackStore } from '#/modules/MIDI/stores';
 
 import { captureAgentProjectInspectionState } from '../captureCommandBatchPreflightState';
 
@@ -278,6 +280,32 @@ describe('agent project repair inspection', () => {
             expect(inspectCurrentAgentProjectRepairState()).toBeNull();
         }
     );
+
+    it('admits a saved chord track whose first write copied its events into the migration base', () => {
+        seedRootDocument({ tracks: tracksSlot([masterBus(), track('track-a')]) });
+        // A demo, template or import writes the chord slot for the first time
+        // with chords in it; the store records that state as the slot's merge
+        // base, repeating every live chord id.
+        chordTrackStore.set({
+            enabled: true,
+            events: [
+                { id: 'chord-1', beat: 0, root: 0, quality: 'major', duration: 4 },
+                { id: 'chord-2', beat: 4, root: 7, quality: 'min7', duration: 4 },
+            ],
+        });
+        flushAutomergeStorageWrites();
+        const current = getCrdtDoc('root');
+        if (!current) {
+            throw new Error('Expected saved project');
+        }
+        expect(current.chordTrack).toMatchObject({
+            events: { 'chord-1': { deleted: false }, 'chord-2': { deleted: false } },
+            migrationBase: { events: [{ id: 'chord-1' }, { id: 'chord-2' }] },
+        });
+        replaceCrdtDocInLineage({ id: 'root', doc: Automerge.load(Automerge.save(current)) });
+
+        expect(inspectCurrentAgentProjectRepairState()).toBeNull();
+    });
 
     it('requires repair for duplicate point ids within one clip envelope', () => {
         seedRootDocument({
