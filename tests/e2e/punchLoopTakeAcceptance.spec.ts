@@ -1169,8 +1169,13 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
             ).toBeGreaterThan(0.3);
         }
         await page.evaluate(() => {
-            const events: { type: string; phase: string; stripTarget: boolean; rowDraggable: boolean }[] = [];
+            const events: { type: string; phase: string; stripTarget: boolean; inDraggableAncestor: boolean }[] = [];
             Reflect.set(window, '__punchCompGestureEvents', events);
+            // A handler can unmount the target (the drag preview inside the strip goes
+            // away on mouseup) before the bubble phase reaches the document, leaving
+            // it without ancestors. Classify once, in the capture phase, while it is
+            // still attached.
+            const classified = new WeakMap<Event, { strip: boolean; draggable: boolean }>();
             for (const type of ['mousedown', 'mousemove', 'mouseup', 'dragstart', 'drag', 'dragend', 'drop']) {
                 for (const capture of [true, false]) {
                     document.addEventListener(
@@ -1180,15 +1185,19 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                                 return;
                             }
                             const target = event.target instanceof Element ? event.target : null;
-                            const row = target?.closest('[role="row"]');
-                            if (!row) {
+                            const known = classified.get(event) ?? {
+                                strip: Boolean(target?.closest('[role="presentation"]')),
+                                draggable: Boolean(target?.closest('[draggable="true"]')),
+                            };
+                            classified.set(event, known);
+                            if (!known.strip && !known.draggable) {
                                 return;
                             }
                             events.push({
                                 type,
                                 phase: capture ? 'capture' : 'bubble',
-                                stripTarget: Boolean(target?.closest('[role="presentation"]')),
-                                rowDraggable: row.getAttribute('draggable') === 'true',
+                                stripTarget: known.strip,
+                                inDraggableAncestor: known.draggable,
                             });
                         },
                         capture
@@ -1205,11 +1214,11 @@ test('keeps real punch-loop PCM through comp, undo, export and reopen', async ({
                     type: string;
                     phase: string;
                     stripTarget: boolean;
-                    rowDraggable: boolean;
+                    inDraggableAncestor: boolean;
                 }[]
         );
         await writeFile(testInfo.outputPath('comp-gesture-events.json'), JSON.stringify(compEvents, null, 2));
-        expect(compEvents.filter((event) => event.type === 'dragstart' && event.rowDraggable)).toHaveLength(0);
+        expect(compEvents.filter((event) => event.type === 'dragstart' && event.inDraggableAncestor)).toHaveLength(0);
         expect(
             compEvents.filter((event) => event.type === 'mouseup' && event.phase === 'bubble' && event.stripTarget)
         ).toHaveLength(3);
