@@ -1,0 +1,19 @@
+tests/e2e/recordEditPlayback.spec.ts
+  s_b2471716de1374::t_3c737893b3bf24 51-85,155-182
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f815cc12d20a453fe48589ce56aae2c4d5db71da",
+  "prompts": {},
+  "sessions": {
+    "s_b2471716de1374": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_b2471716de1374",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
