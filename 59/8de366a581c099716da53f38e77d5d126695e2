@@ -1,0 +1,25 @@
+src/modules/Arrangement/models/__tests__/inlineMidiGeometry.spec.ts
+  s_7a8e1107313040::t_da16881dd1799e 193-247
+src/modules/Arrangement/models/InlineMidiGeometry.ts
+  s_7a8e1107313040::t_38206179bb8ad4 58-59,117,119-158,170,190-195,254,257-259,261
+src/modules/Arrangement/presentations/helpers/__tests__/timelineToolsInlineDraw.spec.ts
+  s_7a8e1107313040::t_dde575060c89b6 209-219
+src/modules/Arrangement/presentations/renderers/clipDrawing.ts
+  s_7a8e1107313040::t_b056eb4fc11d42 189,349,398-414,416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "598de366a581c099716da53f38e77d5d126695e2",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
