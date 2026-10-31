@@ -238,6 +238,7 @@ type MidiTakeFixtureOptions = {
     liveNoteIds?: readonly string[];
     sourceNoteIds?: readonly string[];
     secondTakeId?: string;
+    secondClipId?: string;
 };
 
 // A MIDI clip fragmented into clip-a and clip-b, each fragment's take carrying
@@ -255,7 +256,7 @@ function midiTakeProjectSlots(options: MidiTakeFixtureOptions = {}): Record<stri
                     outputId: 'master',
                     clips: [
                         { id: 'clip-a', startBeat: 0, endBeat: 2 },
-                        { id: 'clip-b', startBeat: 2, endBeat: 4 },
+                        { id: options.secondClipId ?? 'clip-b', startBeat: 2, endBeat: 4 },
                     ],
                     devices: [],
                     sends: [],
@@ -347,6 +348,21 @@ function rootDocumentWith(slots: Record<string, unknown>): Record<string, unknow
             ],
         },
         ...slots,
+    };
+}
+
+function arrangementsSlot(arrangementIds: readonly string[]): Record<string, unknown> {
+    return {
+        activeArrangementId: arrangementIds[0],
+        arrangements: arrangementIds.map((id) => ({ id, tracks: rootDocumentWith({}).tracks })),
+    };
+}
+
+function clipEnvelope(clipId: string, pointIds: readonly string[]): Record<string, unknown> {
+    return {
+        clipId,
+        enabled: true,
+        points: pointIds.map((id, index) => ({ id, beatOffset: index, gainDb: -6 })),
     };
 }
 
@@ -993,14 +1009,72 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.projectInvariantsValid).toBe(true);
     });
 
-    it('admits frozen MIDI take sources copying live row ids inside a document change', () => {
-        const state = inspectInsideDocumentChange(midiTakeProjectSlots());
+    // Inside a change every list read returns a fresh proxy, so each declared
+    // scope must hold by where it sits, not by which object it is.
+    it.each([
+        {
+            scope: 'arrangement snapshots copying the live track and clip ids',
+            document: () => rootDocumentWith({ arrangements: arrangementsSlot(['arrangement-1', 'arrangement-2']) }),
+        },
+        {
+            scope: 'gain points shared across two clip envelopes',
+            document: () =>
+                rootDocumentWith({
+                    gainEnvelopes: {
+                        envelopes: {
+                            'clip-vocal': clipEnvelope('clip-vocal', ['point-1']),
+                            'clip-copy': clipEnvelope('clip-copy', ['point-1']),
+                        },
+                    },
+                }),
+        },
+        { scope: 'frozen MIDI take sources copying the live row ids', document: () => midiTakeProjectSlots() },
+        {
+            scope: 'frozen MIDI take sources copying row ids inside an arrangement snapshot',
+            document: () => midiTakeArrangementDocument(),
+        },
+    ])('admits $scope inside a document change', ({ document }) => {
+        const state = inspectInsideDocumentChange(document());
 
         expect(state).toMatchObject({ audioGraphValid: true, projectInvariantsValid: true });
     });
 
-    it('still fails a row id repeated inside one frozen MIDI take source inside a document change', () => {
-        const state = inspectInsideDocumentChange(midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }));
+    it.each([
+        {
+            scope: 'two arrangement snapshots under one arrangement id',
+            document: () => rootDocumentWith({ arrangements: arrangementsSlot(['arrangement-1', 'arrangement-1']) }),
+        },
+        {
+            scope: 'an id repeated inside one arrangement snapshot',
+            document: () =>
+                rootDocumentWith({
+                    arrangements: {
+                        activeArrangementId: 'arrangement-1',
+                        arrangements: [
+                            { id: 'arrangement-1', tracks: { tracks: [{ id: 'track-a' }, { id: 'track-a' }] } },
+                        ],
+                    },
+                }),
+        },
+        {
+            scope: 'a row id repeated inside one frozen MIDI take source',
+            document: () => midiTakeProjectSlots({ sourceNoteIds: ['note-1', 'note-1'] }),
+        },
+        {
+            scope: 'a gain point id repeated inside one clip envelope',
+            document: () =>
+                rootDocumentWith({
+                    gainEnvelopes: { envelopes: { 'clip-vocal': clipEnvelope('clip-vocal', ['point-1', 'point-1']) } },
+                }),
+        },
+        {
+            // The staged structure check keys clips and tracks apart, so only
+            // the duplicate-id scan can see this collision.
+            scope: 'a live clip id repeating a live track id',
+            document: () => midiTakeProjectSlots({ secondClipId: 'track-keys' }),
+        },
+    ])('still fails $scope inside a document change', ({ document }) => {
+        const state = inspectInsideDocumentChange(document());
 
         expect(state.projectInvariantsValid).toBe(false);
     });

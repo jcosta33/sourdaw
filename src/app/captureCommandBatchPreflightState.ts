@@ -108,29 +108,6 @@ function recordId(id: unknown, ids: Set<string>, duplicates: Set<string>): void 
     ids.add(id);
 }
 
-function findDuplicateIds(value: unknown, ids: Set<string>, duplicates: Set<string>, visited: WeakSet<object>): void {
-    if (typeof value !== 'object' || value === null || visited.has(value)) {
-        return;
-    }
-    visited.add(value);
-    if (Array.isArray(value)) {
-        for (const item of value) {
-            findDuplicateIds(item, ids, duplicates, visited);
-        }
-        return;
-    }
-    const record = value as Record<string, unknown>;
-    recordId(record.id, ids, duplicates);
-    for (const child of Object.values(record)) {
-        findDuplicateIds(child, ids, duplicates, visited);
-    }
-}
-
-/** Scans `root` as one id namespace; the walk never enters `excludedRoots`. */
-function scanIdNamespace(root: unknown, excludedRoots: readonly object[], duplicates: Set<string>): void {
-    findDuplicateIds(root, new Set<string>(), duplicates, new WeakSet<object>(excludedRoots));
-}
-
 function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
         return null;
@@ -142,7 +119,7 @@ function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
 const EACH = Symbol('each');
 
 type IdScopeDeclaration = {
-    /** Document path to each scope root, from the root document's slots. */
+    /** Path to each scope root from the enclosing namespace's root: the root document, or the parent scope's root. */
     readonly path: readonly (string | typeof EACH)[];
     /** Each scope root's own `id` must also stay unique across this declaration's scopes. */
     readonly scopeIdsUniqueAcrossScopes: boolean;
@@ -155,7 +132,7 @@ const TAKE_SOURCE_SCOPE: IdScopeDeclaration = {
     path: ['takeLanes', 'lanes', EACH, 'takes', EACH, 'midiSource'],
     scopeIdsUniqueAcrossScopes: false,
     nestedScopes: [],
-    reason: "A re-key freezes the clip's original MIDI rows, ids included, on every fragment's take; original-row replacement addresses those rows by id.",
+    reason: "A re-key freezes the clip's original MIDI rows, ids included, on every fragment's take; original-row replacement addresses those rows by id (#5051).",
 };
 
 /**
@@ -193,19 +170,100 @@ const INDEPENDENT_ID_SCOPES: readonly IdScopeDeclaration[] = [
     TAKE_SOURCE_SCOPE,
 ];
 
-function resolveScopeRoots(value: unknown, path: IdScopeDeclaration['path']): object[] {
-    if (typeof value !== 'object' || value === null) {
-        return [];
+/** A declared scope part-way matched: the path steps still to take below the current node. */
+type PendingScope = {
+    readonly declaration: IdScopeDeclaration;
+    readonly remainingPath: IdScopeDeclaration['path'];
+};
+
+type FoundScope = {
+    readonly declaration: IdScopeDeclaration;
+    readonly root: unknown;
+};
+
+type IdNamespace = {
+    readonly ids: Set<string>;
+    readonly visited: WeakSet<object>;
+    readonly foundScopes: FoundScope[];
+};
+
+/** The scopes still matching after one step down: `key` for a record value, `null` for an array item. */
+function advancePendingScopes(pending: readonly PendingScope[], key: string | null): PendingScope[] {
+    const advanced: PendingScope[] = [];
+    for (const scope of pending) {
+        const [step, ...remainingPath] = scope.remainingPath;
+        if (step === EACH || (key !== null && step === key)) {
+            advanced.push({ declaration: scope.declaration, remainingPath });
+        }
     }
-    const [step, ...rest] = path;
-    if (step === undefined) {
-        return [value];
+    return advanced;
+}
+
+function visitIdNamespaceChild(
+    child: unknown,
+    pending: readonly PendingScope[],
+    namespace: IdNamespace,
+    duplicates: Set<string>
+): void {
+    const completed = pending.find((scope) => scope.remainingPath.length === 0);
+    if (completed) {
+        namespace.foundScopes.push({ declaration: completed.declaration, root: child });
+        return;
     }
-    if (step === EACH) {
-        const children: unknown[] = Object.values(value);
-        return children.flatMap((child) => resolveScopeRoots(child, rest));
+    walkIdNamespace(child, pending, namespace, duplicates);
+}
+
+/**
+ * Records every id under `value` into one namespace, setting aside each
+ * declared scope root it reaches. A scope is recognised by its path from the
+ * namespace root, never by object identity: inside a document change every
+ * list read returns a fresh proxy, so no object reference names a subtree.
+ */
+function walkIdNamespace(
+    value: unknown,
+    pending: readonly PendingScope[],
+    namespace: IdNamespace,
+    duplicates: Set<string>
+): void {
+    if (typeof value !== 'object' || value === null || namespace.visited.has(value)) {
+        return;
     }
-    return resolveScopeRoots(asRecord(value)?.[step], rest);
+    namespace.visited.add(value);
+    if (Array.isArray(value)) {
+        const itemScopes = advancePendingScopes(pending, null);
+        for (const item of value) {
+            visitIdNamespaceChild(item, itemScopes, namespace, duplicates);
+        }
+        return;
+    }
+    const record = value as Record<string, unknown>;
+    recordId(record.id, namespace.ids, duplicates);
+    for (const [key, child] of Object.entries(record)) {
+        visitIdNamespaceChild(child, advancePendingScopes(pending, key), namespace, duplicates);
+    }
+}
+
+/** Scans `root` as one namespace without its declared scopes, then each scope root in a namespace of its own. */
+function scanScopedIdNamespace(root: unknown, scopes: readonly IdScopeDeclaration[], duplicates: Set<string>): void {
+    const namespace: IdNamespace = { ids: new Set<string>(), visited: new WeakSet<object>(), foundScopes: [] };
+    walkIdNamespace(
+        root,
+        scopes.map((declaration) => ({ declaration, remainingPath: declaration.path })),
+        namespace,
+        duplicates
+    );
+    for (const declaration of scopes) {
+        const scopeIds = new Set<string>();
+        for (const found of namespace.foundScopes) {
+            if (found.declaration !== declaration) {
+                continue;
+            }
+            if (declaration.scopeIdsUniqueAcrossScopes) {
+                recordId(asRecord(found.root)?.id, scopeIds, duplicates);
+            }
+            scanScopedIdNamespace(found.root, declaration.nestedScopes, duplicates);
+        }
+    }
 }
 
 /**
@@ -520,32 +578,6 @@ function findProjectDuplicateIds(document: Readonly<Record<string, unknown>>): S
     const duplicateIds = new Set<string>();
     scanScopedIdNamespace(document, INDEPENDENT_ID_SCOPES, duplicateIds);
     return duplicateIds;
-}
-
-/** Scans `root` as one namespace without its declared scopes, then each scope root on its own. */
-function scanScopedIdNamespace(
-    root: unknown,
-    scopes: readonly IdScopeDeclaration[],
-    duplicateIds: Set<string>
-): void {
-    const declaredScopes = scopes.map((declaration) => ({
-        declaration,
-        roots: resolveScopeRoots(root, declaration.path),
-    }));
-    scanIdNamespace(
-        root,
-        declaredScopes.flatMap((scope) => scope.roots),
-        duplicateIds
-    );
-    for (const { declaration, roots } of declaredScopes) {
-        const scopeIds = new Set<string>();
-        for (const scopeRoot of roots) {
-            if (declaration.scopeIdsUniqueAcrossScopes) {
-                recordId(asRecord(scopeRoot)?.id, scopeIds, duplicateIds);
-            }
-            scanScopedIdNamespace(scopeRoot, declaration.nestedScopes, duplicateIds);
-        }
-    }
 }
 
 function captureProjectDocumentInspectionState(input: CaptureAgentProjectInspectionStateInput) {
