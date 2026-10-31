@@ -4,12 +4,12 @@ import { startRecording } from '#/modules/Arrangement/useCases';
 
 import { defaultTransportState } from '../../models/TransportState';
 import { playheadWrapCountRef } from '../../stores/playheadWrapCountRef';
-import '../schedulerWorker';
-import { metronomeSchedulingState } from '../../useCases/scheduling/metronomeSchedulingState';
 import { disposePlayheadScheduler } from '../../useCases/playheadScheduler/disposePlayheadScheduler';
 import { schedulerSession } from '../../useCases/playheadScheduler/schedulerSession';
 import { schedulerTimingDiagnostics } from '../../useCases/playheadScheduler/schedulerTimingDiagnostics';
 import { startPlayheadScheduler } from '../../useCases/playheadScheduler/startPlayheadScheduler';
+import { metronomeSchedulingState } from '../../useCases/scheduling/metronomeSchedulingState';
+import '../schedulerWorker';
 
 /**
  * #5889 — a punch loop recording froze just before its first loop seam: the
@@ -84,6 +84,10 @@ vi.mock('#/modules/Arrangement/stores', () => ({
     // factory that omits them fails the whole file at import, not at a test.
     persistDeviceParam: vi.fn(),
     resolveEligibleDeviceWriteTarget: vi.fn(),
+    appendClipToTrack: vi.fn(),
+    clipSelectionStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn(),
+    updateClipInStore: vi.fn(),
 }));
 vi.mock('#/modules/Collaboration/stores', () => ({ collaborationStore: { value: null } }));
 vi.mock('#/modules/Collaboration/useCases', () => ({ getAssetTransfer: () => null }));
