@@ -1,9 +1,12 @@
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { cancelActiveTimelineGesture } from '#/modules/Arrangement/useCases';
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import { triggerLiveNoteOff, triggerLiveNoteOn } from '#/modules/MIDI/useCases';
 import { setVirtualKeyboardOctave } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
 import { setVirtualKeyboardVelocity } from '#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setVirtualKeyboardVelocity';
+import { beginDragGesture } from '#/utils/UI/activeDragGesture';
 
 import { VirtualKeyboard } from '../VirtualKeyboard';
 
@@ -38,6 +41,15 @@ vi.mock('#/infra/logger/appLogger', () => ({
 vi.mock('#/modules/MIDI/useCases', () => ({
     triggerLiveNoteOn: vi.fn(() => Promise.resolve()),
     triggerLiveNoteOff: vi.fn(() => Promise.resolve()),
+}));
+
+// The real barrels pull in the engine and timeline, which never settle under jsdom.
+vi.mock('#/modules/AudioEngine/useCases', () => ({
+    resumeEngine: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    cancelActiveTimelineGesture: vi.fn(() => false),
 }));
 
 vi.mock('#/modules/WorkspaceShell/useCases/togglePanel/panelToggles/setVirtualKeyboardOctave', () => ({
@@ -244,11 +256,13 @@ describe('VirtualKeyboard', () => {
             expect(onMock).toHaveBeenCalledTimes(1);
         });
 
-        it('releases a held note on keyup even when focus has moved to another element', () => {
+        it('releases a held note on keyup even when focus has moved into a text field', () => {
             render(<VirtualKeyboard />);
+            const input = document.createElement('input');
+            document.body.append(input);
             fireEvent.keyDown(panel(), { code: 'KeyA' });
             offMock.mockClear();
-            fireEvent.keyUp(screen.getByTestId('velocity-slider'), { code: 'KeyA' });
+            fireEvent.keyUp(input, { code: 'KeyA' });
             expect(offMock).toHaveBeenCalledTimes(1);
             expect(offMock).toHaveBeenCalledWith(0, 60);
         });
@@ -787,8 +801,20 @@ describe('VirtualKeyboard', () => {
 
         it('consumes an unmapped letter so no window listener sees it', () => {
             render(<VirtualKeyboard />);
-            const notPrevented = fireEvent.keyDown(document.body, { code: 'KeyM', key: 'm' });
-            expect(notPrevented).toBe(false);
+            // Registered after the keyboard mounted: a later capture listener on the same node
+            // still runs after stopPropagation, so only an immediate stop hides the key from it.
+            const lateCaptureKeydowns: KeyboardEvent[] = [];
+            const recordLateCapture = (event: KeyboardEvent) => {
+                lateCaptureKeydowns.push(event);
+            };
+            window.addEventListener('keydown', recordLateCapture, { capture: true });
+            try {
+                const notPrevented = fireEvent.keyDown(document.body, { code: 'KeyM', key: 'm' });
+                expect(notPrevented).toBe(false);
+                expect(lateCaptureKeydowns).toHaveLength(0);
+            } finally {
+                window.removeEventListener('keydown', recordLateCapture, { capture: true });
+            }
             expect(bubbleKeydowns).toHaveLength(0);
             expect(onMock).not.toHaveBeenCalled();
         });
@@ -984,10 +1010,271 @@ describe('VirtualKeyboard', () => {
             expect(bubbleKeydowns).toHaveLength(1);
         });
 
+        it('stops guarding control keys once the panel unmounts', () => {
+            const { unmount } = render(<VirtualKeyboard />);
+            const slider = document.createElement('span');
+            slider.setAttribute('role', 'slider');
+            document.body.append(slider);
+            fireEvent.keyDown(slider, { code: 'ArrowRight', key: 'ArrowRight' });
+            expect(bubbleKeydowns).toHaveLength(0);
+
+            unmount();
+            fireEvent.keyDown(slider, { code: 'ArrowRight', key: 'ArrowRight' });
+            expect(bubbleKeydowns).toHaveLength(1);
+        });
+
         it('exposes the panel as a labelled region rather than a focus target', () => {
             render(<VirtualKeyboard />);
             const region = screen.getByRole('region', { name: 'Virtual Piano Keyboard' });
             expect(region).not.toHaveAttribute('tabindex');
+        });
+    });
+
+    // ── Surfaces that own their keys ──────────────────────────────────────────────
+    describe('surfaces that own keys', () => {
+        const onMock = vi.mocked(triggerLiveNoteOn);
+
+        const addCanvasEditor = (): HTMLCanvasElement => {
+            const canvas = document.createElement('canvas');
+            canvas.tabIndex = 0;
+            canvas.setAttribute('data-canvas-editor', '');
+            document.body.append(canvas);
+            return canvas;
+        };
+
+        afterEach(() => {
+            document.body.replaceChildren();
+        });
+
+        it.each([
+            ['Delete', { code: 'Delete', key: 'Delete' }],
+            ['Backspace', { code: 'Backspace', key: 'Backspace' }],
+            ['Enter', { code: 'Enter', key: 'Enter' }],
+            ['an arrow', { code: 'ArrowUp', key: 'ArrowUp' }],
+            ['a velocity preset digit', { code: 'Digit3', key: '3' }],
+            ['Shift+S', { code: 'KeyS', key: 'S', shiftKey: true }],
+        ])('lets %s reach a focused canvas editor', (_name, init) => {
+            render(<VirtualKeyboard />);
+            const canvas = addCanvasEditor();
+            const received = vi.fn();
+            canvas.addEventListener('keydown', received);
+            const notPrevented = fireEvent.keyDown(canvas, init);
+            expect(notPrevented).toBe(true);
+            expect(received).toHaveBeenCalledTimes(1);
+            expect(onMock).not.toHaveBeenCalled();
+        });
+
+        it('keeps the canvas editor from leaking its keys to window listeners', () => {
+            const seen: KeyboardEvent[] = [];
+            const record = (event: KeyboardEvent) => {
+                seen.push(event);
+            };
+            window.addEventListener('keydown', record);
+            try {
+                render(<VirtualKeyboard />);
+                fireEvent.keyDown(addCanvasEditor(), { code: 'Delete', key: 'Delete' });
+                expect(seen).toHaveLength(0);
+            } finally {
+                window.removeEventListener('keydown', record);
+            }
+        });
+
+        it('still plays musical keys while a canvas editor has focus', () => {
+            render(<VirtualKeyboard />);
+            const canvas = addCanvasEditor();
+            const received = vi.fn();
+            canvas.addEventListener('keydown', received);
+            const notPrevented = fireEvent.keyDown(canvas, { code: 'KeyA', key: 'a' });
+            expect(notPrevented).toBe(false);
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+            expect(received).not.toHaveBeenCalled();
+        });
+
+        it('swallows keys a canvas editor does not handle', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(addCanvasEditor(), { code: 'KeyM', key: 'm' })).toBe(false);
+        });
+
+        it('lets Enter activate a focused link', () => {
+            render(<VirtualKeyboard />);
+            const link = document.createElement('a');
+            link.setAttribute('href', '#main');
+            document.body.append(link);
+            expect(fireEvent.keyDown(link, { code: 'Enter', key: 'Enter' })).toBe(true);
+        });
+    });
+
+    // ── Escape is the lowest-priority owner ───────────────────────────────────────
+    describe('Escape priority', () => {
+        const cancelGestureMock = vi.mocked(cancelActiveTimelineGesture);
+
+        afterEach(() => {
+            document.body.replaceChildren();
+            document.documentElement.removeAttribute('data-drag-gesture-active');
+        });
+
+        it('closes on a plain Escape', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it.each(['dialog', 'alertdialog', 'menu', 'listbox'])(
+            'leaves Escape alone while a %s is open elsewhere in the document',
+            (role) => {
+                const onClose = vi.fn();
+                render(<VirtualKeyboard onClose={onClose} />);
+                const surface = document.createElement('div');
+                surface.setAttribute('role', role);
+                document.body.append(surface);
+                const notPrevented = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+                expect(notPrevented).toBe(true);
+                expect(onClose).not.toHaveBeenCalled();
+            }
+        );
+
+        it('lets an open context menu close itself instead of the keyboard', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const menu = document.createElement('div');
+            menu.setAttribute('role', 'menu');
+            document.body.append(menu);
+            // useContextMenuDismiss listens on document, below the keyboard's window capture.
+            const closeMenu = vi.fn();
+            document.addEventListener('keydown', closeMenu);
+            try {
+                fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            } finally {
+                document.removeEventListener('keydown', closeMenu);
+            }
+            expect(closeMenu).toHaveBeenCalledTimes(1);
+            expect(onClose).not.toHaveBeenCalled();
+        });
+
+        it('still closes when the keyboard itself is hosted inside a dialog surface', () => {
+            const onClose = vi.fn();
+            const host = document.createElement('div');
+            host.setAttribute('role', 'dialog');
+            document.body.append(host);
+            render(<VirtualKeyboard onClose={onClose} />, { container: host });
+            fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves Escape to a mouse drag so the drag cancels instead of the keyboard', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const endDrag = beginDragGesture();
+            try {
+                const dragCancel = vi.fn();
+                window.addEventListener('keydown', dragCancel);
+                try {
+                    fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+                } finally {
+                    window.removeEventListener('keydown', dragCancel);
+                }
+                expect(dragCancel).toHaveBeenCalledTimes(1);
+                expect(onClose).not.toHaveBeenCalled();
+            } finally {
+                endDrag();
+            }
+        });
+
+        it('cancels an active timeline gesture instead of closing', () => {
+            const onClose = vi.fn();
+            cancelGestureMock.mockReturnValueOnce(true);
+            render(<VirtualKeyboard onClose={onClose} />);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(notPrevented).toBe(false);
+            expect(cancelGestureMock).toHaveBeenCalledTimes(1);
+            expect(onClose).not.toHaveBeenCalled();
+        });
+    });
+
+    // ── AltGr, engine resume, Cmd release ─────────────────────────────────────────
+    describe('modifier and engine edge cases', () => {
+        const onMock = vi.mocked(triggerLiveNoteOn);
+        const offMock = vi.mocked(triggerLiveNoteOff);
+        const resumeMock = vi.mocked(resumeEngine);
+
+        it('consumes AltGr characters reported as Ctrl+Alt instead of passing them as a chord', () => {
+            render(<VirtualKeyboard />);
+            const notPrevented = fireEvent.keyDown(document.body, {
+                code: 'Digit8',
+                key: '[',
+                ctrlKey: true,
+                altKey: true,
+            });
+            expect(notPrevented).toBe(false);
+        });
+
+        it('consumes a key reported with the AltGraph modifier state', () => {
+            render(<VirtualKeyboard />);
+            const notPrevented = fireEvent.keyDown(document.body, {
+                code: 'Digit8',
+                key: '[',
+                modifierAltGraph: true,
+            });
+            expect(notPrevented).toBe(false);
+        });
+
+        it('still passes a plain Ctrl chord through', () => {
+            render(<VirtualKeyboard />);
+            expect(fireEvent.keyDown(document.body, { code: 'KeyS', key: 's', ctrlKey: true })).toBe(true);
+        });
+
+        it('resumes the audio engine when a computer key starts a note', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(document.body, { code: 'KeyM', key: 'm' });
+            expect(resumeMock).not.toHaveBeenCalled();
+
+            fireEvent.keyDown(document.body, { code: 'KeyA' });
+            expect(resumeMock).toHaveBeenCalledTimes(1);
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+        });
+
+        it('logs a failed engine resume without blocking the note', async () => {
+            const error = new Error('resume failed');
+            resumeMock.mockRejectedValueOnce(error);
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(document.body, { code: 'KeyA' });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+            await waitFor(() => {
+                expect(loggerWarn).toHaveBeenCalledWith('[Audio] Virtual keyboard engine resume failed:', error);
+            });
+        });
+
+        it('releases keyboard-held notes when Cmd is released after the note key was', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(document.body, { code: 'KeyA' }); // C4 = 60
+            fireEvent.keyDown(document.body, { code: 'KeyS' }); // D4 = 62
+            // macOS drops keyup for keys released while Cmd is down.
+            fireEvent.keyDown(document.body, { code: 'MetaLeft', key: 'Meta', metaKey: true });
+            expect(offMock).not.toHaveBeenCalled();
+
+            fireEvent.keyUp(document.body, { code: 'MetaLeft', key: 'Meta' });
+
+            const released = offMock.mock.calls.map(([, note]) => note).sort((a, b) => a - b);
+            expect(released).toEqual([60, 62]);
+            expect(screen.getByLabelText('C4 (MIDI 60)')).toHaveAttribute('aria-pressed', 'false');
+        });
+
+        it('lets a key pressed again after the Cmd release start a fresh note', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.keyDown(document.body, { code: 'KeyA' });
+            fireEvent.keyUp(document.body, { code: 'MetaLeft', key: 'Meta' });
+            onMock.mockClear();
+            fireEvent.keyDown(document.body, { code: 'KeyA' });
+            expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+        });
+
+        it('leaves a mouse-held note sounding when Cmd is released', () => {
+            render(<VirtualKeyboard />);
+            fireEvent.pointerDown(screen.getByLabelText('C4 (MIDI 60)'), { pointerId: 1 });
+            offMock.mockClear();
+            fireEvent.keyUp(document.body, { code: 'MetaLeft', key: 'Meta' });
+            expect(offMock).not.toHaveBeenCalled();
         });
     });
 });

@@ -36,9 +36,16 @@ import { Slider } from '#/components/ui/slider';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { logger } from '#/infra/logger/appLogger';
 import { useStore } from '#/infra/store/useStore';
-import { isNativeTextEditableTarget, isWithinModalSurface } from '#/modules/CommandInterface/useCases';
+import { cancelActiveTimelineGesture } from '#/modules/Arrangement/useCases';
+import { resumeEngine } from '#/modules/AudioEngine/useCases';
+import {
+    hasOpenModalSurface,
+    isNativeTextEditableTarget,
+    isWithinModalSurface,
+} from '#/modules/CommandInterface/useCases';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { workspaceStore, defaultWorkspaceState } from '../../stores/workspaceStore';
 import { setVirtualKeyboardOctave } from '../../useCases/togglePanel/panelToggles/setVirtualKeyboardOctave';
@@ -203,7 +210,30 @@ const CONTROL_NATIVE_KEYS = new Set([
     'PageDown',
 ]);
 const INTERACTIVE_CONTROL_SELECTOR =
-    'button, [role="slider"], [role="spinbutton"], [role="tab"], [role="radio"], [role="checkbox"], [role="switch"], [role="button"]';
+    'button, a[href], [role="slider"], [role="spinbutton"], [role="tab"], [role="radio"], [role="checkbox"], [role="switch"], [role="button"]';
+
+/**
+ * Keys a focused canvas editor (the piano roll) handles itself: delete, note nudges, and the
+ * step-input commands. Its letter shortcuts collide with the musical keys, which keep winning.
+ */
+const CANVAS_EDITOR_KEYS = new Set([
+    'Delete',
+    'Backspace',
+    'Enter',
+    'ArrowUp',
+    'ArrowDown',
+    'ArrowLeft',
+    'ArrowRight',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    'S',
+]);
+const CANVAS_EDITOR_SELECTOR = '[data-canvas-editor]';
 
 /** Surfaces where typing and navigation belong to the user's current task, not the keyboard. */
 const yieldsKeyboardToTarget = (target: EventTarget | null): boolean =>
@@ -211,10 +241,27 @@ const yieldsKeyboardToTarget = (target: EventTarget | null): boolean =>
     target instanceof HTMLSelectElement ||
     isWithinModalSurface(target);
 
-const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean =>
-    CONTROL_NATIVE_KEYS.has(event.key) &&
-    event.target instanceof Element &&
-    event.target.closest(INTERACTIVE_CONTROL_SELECTOR) !== null;
+const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    if (CONTROL_NATIVE_KEYS.has(event.key) && target.closest(INTERACTIVE_CONTROL_SELECTOR) !== null) {
+        return true;
+    }
+    return CANVAS_EDITOR_KEYS.has(event.key) && target.closest(CANVAS_EDITOR_SELECTOR) !== null;
+};
+
+/**
+ * Chromium on Windows reports AltGr as Ctrl+Alt. On layouts that type characters with it
+ * (AltGr+8 types `[` on German), that is text, not an app shortcut chord.
+ */
+const isAltGraphKey = (event: KeyboardEvent): boolean =>
+    event.getModifierState('AltGraph') || (event.ctrlKey && event.altKey);
+
+/** Escape belongs to whatever transient surface is on top; the keyboard is the lowest owner. */
+const escapeBelongsToAnotherSurface = (panel: Element | null): boolean =>
+    hasOpenModalSurface(panel) || isDragGestureActive();
 
 /**
  * What an open virtual keyboard does with a keydown:
@@ -225,12 +272,13 @@ const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean =>
  */
 type KeydownRule = 'passthrough' | 'close' | 'octave' | 'note' | 'control' | 'swallow';
 
-const classifyKeydown = (event: KeyboardEvent): KeydownRule => {
-    if (event.metaKey || event.ctrlKey || yieldsKeyboardToTarget(event.target)) {
+const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
+    const isShortcutChord = event.metaKey || (event.ctrlKey && !isAltGraphKey(event));
+    if (isShortcutChord || yieldsKeyboardToTarget(event.target)) {
         return 'passthrough';
     }
     if (event.code === 'Escape') {
-        return 'close';
+        return escapeBelongsToAnotherSurface(panel) ? 'passthrough' : 'close';
     }
     if (event.key === 'Tab') {
         return 'passthrough';
@@ -245,9 +293,10 @@ const classifyKeydown = (event: KeyboardEvent): KeydownRule => {
     return isNativeKeyOfFocusedControl(event) ? 'control' : 'swallow';
 };
 
+// Immediate, so a window capture listener registered after this one cannot see the key either.
 const consumeKeyEvent = (event: KeyboardEvent): void => {
     event.preventDefault();
-    event.stopPropagation();
+    event.stopImmediatePropagation();
 };
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -262,6 +311,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     const velocity = workspace.virtualKeyboardVelocity;
 
     const scrollRef = useRef<HTMLDivElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
 
     const [pressedNotes, setPressedNotes] = useState<Set<number>>(new Set());
     const [liveNoteStatus, setLiveNoteStatus] = useState<string | null>(null);
@@ -501,7 +551,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     });
 
     const onKeyDown = (event: KeyboardEvent) => {
-        const rule = classifyKeydown(event);
+        const rule = classifyKeydown(event, panelRef.current);
         if (rule === 'passthrough' || rule === 'control') {
             return;
         }
@@ -510,7 +560,10 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
         const code = event.code;
 
         if (rule === 'close') {
-            close?.();
+            // An in-progress timeline gesture is the topmost thing Escape dismisses.
+            if (!cancelActiveTimelineGesture()) {
+                close?.();
+            }
             return;
         }
         if (rule === 'octave') {
@@ -528,6 +581,11 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
             heldKeys.current.add(code);
             const midiNote = (currentOctave + 1) * 12 + semitone;
             heldKeyNotes.current.set(code, midiNote);
+            // Consuming the key starves the window gesture listener that resumes a
+            // suspended AudioContext, so the keyboard resumes the engine itself.
+            Promise.resolve(resumeEngine()).catch((error: unknown) => {
+                logger.warn('[Audio] Virtual keyboard engine resume failed:', error);
+            });
             noteOn(midiNote);
         }
     };
@@ -536,12 +594,30 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     // listeners. React's root listener sits below `document`, so the control has already
     // reacted by the time this runs.
     const onControlKeyDown = (event: KeyboardEvent) => {
-        if (classifyKeydown(event) === 'control') {
+        if (classifyKeydown(event, panelRef.current) === 'control') {
             event.stopPropagation();
         }
     };
 
+    /**
+     * macOS never delivers keyup for a key released while Cmd is held, so a note started
+     * from the computer keyboard would sound until blur. Releasing Cmd is the last chance to
+     * silence them. Scoped to keyboard-held notes: a note held by the mouse is unaffected.
+     */
+    const releaseKeyboardHeldNotes = () => {
+        const heldNotes = [...heldKeyNotes.current.values()];
+        heldKeys.current.clear();
+        heldKeyNotes.current.clear();
+        for (const midiNote of heldNotes) {
+            keyboardInputRef.current.triggerNoteOff(midiNote);
+        }
+    };
+
     const onKeyUp = (event: KeyboardEvent) => {
+        if (event.key === 'Meta') {
+            releaseKeyboardHeldNotes();
+            return;
+        }
         const code = event.code;
         heldKeys.current.delete(code);
 
@@ -620,6 +696,7 @@ export const VirtualKeyboard = ({ onClose }: VirtualKeyboardProps): ReactElement
     return (
         <Stack
             className="h-full w-full select-none overflow-hidden rounded-[20px] border border-white/8 bg-[linear-gradient(180deg,rgba(18,18,20,0.98),rgba(11,11,13,0.98))] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+            ref={panelRef}
             aria-label="Virtual Piano Keyboard"
             role="region"
         >
