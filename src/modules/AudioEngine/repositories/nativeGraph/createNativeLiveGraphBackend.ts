@@ -47,8 +47,8 @@ import {
     type AudioGraphApplyResult,
     type AudioGraphAttachedCrumbsInstance,
     type AudioGraphAttachedPlugin,
-    type AudioGraphBackend,
     type AudioGraphCommandBatch,
+    type NativeGrinderModelReceipt,
 } from '../../models/AudioGraphBackend';
 
 import { type NativeGraphTransport } from './nativeGraphTransport';
@@ -68,6 +68,8 @@ export type NativeLiveGraphBackendDeps = Readonly<{
      */
     transport: NativeGraphTransport;
     materialOwner?: ReturnType<typeof nativeTimelineMaterialLeases.captureOwner>;
+    /** Capture per-apply authority before queued material preparation can yield. */
+    captureNativeAdmission?: (batch: AudioGraphCommandBatch) => (() => void) | undefined;
     /**
      * Leases the decoded bank one device's `sampleBankKey` names, so the batch
      * can stage it before the engine is asked to map that device. Absent in a
@@ -147,6 +149,111 @@ function readAttachedCrumbsInstances(value: unknown): readonly AudioGraphAttache
     });
 }
 
+function nativeIdentity(value: unknown): value is string {
+    return (
+        typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
+    );
+}
+
+function readGrinderReceipts(value: unknown): readonly NativeGrinderModelReceipt[] {
+    if (!Array.isArray(value) || value.length > 16) {
+        throw new Error('Native NAM model receipts are missing or exceed the limit');
+    }
+    const receipts: NativeGrinderModelReceipt[] = [];
+    for (const raw of value) {
+        if (typeof raw !== 'object' || raw === null) {
+            throw new Error('Native NAM model receipt is malformed');
+        }
+        const row = raw as Record<string, unknown>;
+        if (
+            typeof row.trackId !== 'string' ||
+            typeof row.deviceId !== 'string' ||
+            typeof row.requestId !== 'string' ||
+            !row.requestId ||
+            row.requestId.length > 128 ||
+            !nativeIdentity(row.engineId) ||
+            !nativeIdentity(row.targetGeneration) ||
+            typeof row.contentHash !== 'string' ||
+            !/^[0-9a-f]{64}$/.test(row.contentHash)
+        ) {
+            throw new Error('Native NAM model receipt identity is malformed');
+        }
+        if (receipts.some((old) => old.deviceId === row.deviceId)) {
+            throw new Error('Native NAM duplicate model receipt');
+        }
+        receipts.push({
+            trackId: row.trackId,
+            deviceId: row.deviceId,
+            requestId: row.requestId,
+            engineId: row.engineId,
+            targetGeneration: row.targetGeneration,
+            contentHash: row.contentHash,
+        });
+    }
+    return receipts;
+}
+
+function readNativeModelAdmission(
+    payload: Record<string, unknown>,
+    batch: AudioGraphCommandBatch,
+    result: Extract<AudioGraphApplyResult, { application: 'applied' }>
+): AudioGraphApplyResult {
+    const wire = serializeAudioGraphCommandBatch(batch);
+    if (wire.schemaVersion !== 2) {
+        if (nativeIdentity(payload.engineId)) {
+            return { ...result, engineId: payload.engineId };
+        }
+        return result;
+    }
+    const admitted = payload.admittedBatch;
+    if (
+        !nativeIdentity(payload.engineId) ||
+        typeof admitted !== 'number' ||
+        !Number.isSafeInteger(admitted) ||
+        admitted < 1
+    ) {
+        throw new Error('Native NAM engine identity or fence is invalid');
+    }
+    const grinderModels = readGrinderReceipts(payload.grinderModels);
+    const expected: { trackId: string; deviceId: string; requestId: string }[] = [];
+    for (const command of wire.commands) {
+        if (command.kind === 'set-grinder-model') {
+            expected.push(command);
+        }
+        if (command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') {
+            const trackId = command.kind === 'create-track-strip' ? command.trackId : command.busId;
+            for (const device of command.devices) {
+                if (device.grinderModel) {
+                    expected.push({ trackId, deviceId: device.id, requestId: device.grinderModel.requestId });
+                }
+            }
+        }
+        if (command.kind === 'insert-device' && command.device.grinderModel) {
+            expected.push({
+                trackId: command.trackId,
+                deviceId: command.device.id,
+                requestId: command.device.grinderModel.requestId,
+            });
+        }
+    }
+    if (
+        grinderModels.length !== expected.length ||
+        expected.some(
+            (target) =>
+                !grinderModels.some(
+                    (receipt) =>
+                        receipt.engineId === payload.engineId &&
+                        receipt.trackId === target.trackId &&
+                        receipt.deviceId === target.deviceId &&
+                        receipt.requestId === target.requestId
+                )
+        )
+    ) {
+        throw new Error('Native NAM admission did not report every requested model');
+    }
+    return { ...result, engineId: payload.engineId, grinderModels };
+}
+
 /**
  * Read `apply_graph_commands`'s mirror of {@link AudioGraphApplyResult}.
  *
@@ -185,7 +292,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
         const admitted = payload.admittedBatch;
         const admittedBatch =
             typeof admitted === 'number' && Number.isFinite(admitted) ? { admittedBatch: admitted } : {};
-        return {
+        const result: Extract<AudioGraphApplyResult, { application: 'applied' }> = {
             acceptance: 'accepted',
             application: 'applied',
             ...correlation,
@@ -195,6 +302,7 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
             attachedPlugins: readAttachedPlugins(payload.attachedPlugins),
             attachedCrumbs: readAttachedCrumbsInstances(payload.attachedCrumbs),
         };
+        return readNativeModelAdmission(payload, batch, result);
     }
     const reason = payload.reason;
     return {
@@ -212,7 +320,16 @@ function readAppliedResult(value: unknown, batch: AudioGraphCommandBatch): Audio
     };
 }
 
-export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): AudioGraphBackend {
+function createNativeRollBatch(
+    transport: Readonly<{ positionSeconds: number; locate?: boolean }>
+): AudioGraphCommandBatch {
+    return {
+        schemaVersion: 1,
+        commands: [{ kind: 'set-transport', playing: true, ...transport }],
+    };
+}
+
+export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps) {
     const { transport, acquireNativeSampleBank } = deps;
     let disposed = false;
     const material = nativeTimelineMaterialLeases.createConsumer(transport, deps.materialOwner);
@@ -227,70 +344,96 @@ export function createNativeLiveGraphBackend(deps: NativeLiveGraphBackendDeps): 
      */
     const claimBackendId = `${NATIVE_LIVE_BACKEND_ID}:${crypto.randomUUID()}`;
 
-    return {
-        backendId: NATIVE_LIVE_BACKEND_ID,
-
-        async apply(batch: AudioGraphCommandBatch): Promise<AudioGraphApplyResult> {
-            if (disposed) {
-                return rejected('backend disposed');
-            }
-            if (batch.schemaVersion !== 1) {
-                return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
-            }
-            let captured: ReturnType<typeof material.capture>;
-            try {
-                captured = material.capture(batch.commands);
-            } catch (error) {
-                return rejected(reasonOf(error));
-            }
-            return material
-                .run(async () => {
-                    let claim;
+    async function apply(
+        batch: AudioGraphCommandBatch,
+        finalizeTransport?: () => Readonly<{ positionSeconds: number; locate: boolean }>
+    ): Promise<AudioGraphApplyResult> {
+        if (disposed) {
+            return rejected('backend disposed');
+        }
+        if (batch.schemaVersion !== 1) {
+            return rejected(`unsupported command schema version ${String(batch.schemaVersion)}`);
+        }
+        const validateAdmission = deps.captureNativeAdmission?.(batch);
+        let captured: ReturnType<typeof material.capture>;
+        try {
+            captured = material.capture(batch.commands);
+        } catch (error) {
+            return rejected(reasonOf(error));
+        }
+        return material
+            .run(async () => {
+                let claim;
+                try {
+                    claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
+                } catch (error) {
+                    return rejected(reasonOf(error));
+                }
+                let retained = false;
+                try {
+                    if (acquireNativeSampleBank) {
+                        await registerNativeSampleBanks({
+                            transport,
+                            commands: batch.commands,
+                            acquire: acquireNativeSampleBank,
+                            replaceTopology: batch.replaceTopology,
+                            backendId: claimBackendId,
+                        });
+                    }
+                    material.assertOpen();
+                    let admittedBatch = batch;
+                    let raw: unknown;
                     try {
-                        claim = await material.prepare(batch.commands, batch.replaceTopology, captured);
+                        validateAdmission?.();
+                        if (finalizeTransport) {
+                            // This callback belongs only to this apply. Consume it
+                            // before calling it, including a refusal that throws.
+                            const finalize = finalizeTransport;
+                            finalizeTransport = undefined;
+                            admittedBatch = createNativeRollBatch(finalize());
+                        }
+                        raw = await transport.applyGraphCommands({
+                            batch: serializeAudioGraphCommandBatch(admittedBatch, claim),
+                        });
                     } catch (error) {
                         return rejected(reasonOf(error));
                     }
-                    let retained = false;
-                    try {
-                        if (acquireNativeSampleBank) {
-                            await registerNativeSampleBanks({
-                                transport,
-                                commands: batch.commands,
-                                acquire: acquireNativeSampleBank,
-                                replaceTopology: batch.replaceTopology,
-                                backendId: claimBackendId,
-                            });
-                        }
-                        material.assertOpen();
-                        let raw: unknown;
-                        try {
-                            raw = await transport.applyGraphCommands({
-                                batch: serializeAudioGraphCommandBatch(batch, claim),
-                            });
-                        } catch (error) {
-                            return rejected(reasonOf(error));
-                        }
-                        const result = readAppliedResult(raw, batch);
-                        // A native fence is an admission fact even if this handle
-                        // closed while IPC was pending. Never recast it as not-applied.
-                        if (result.acceptance === 'accepted' && !material.isClosed()) {
-                            await material.accept(claim);
-                            retained = true;
-                        }
-                        return result;
-                    } finally {
-                        if (!retained) {
-                            await material.decline(claim);
-                        }
+                    const result = readAppliedResult(raw, admittedBatch);
+                    // A native fence is an admission fact even if this handle
+                    // closed while IPC was pending. Never recast it as not-applied.
+                    if (result.acceptance === 'accepted' && !material.isClosed()) {
+                        await material.accept(claim);
+                        retained = true;
                     }
-                })
-                .catch((error: unknown) => {
-                    if (material.isClosed()) {
-                        return rejected(reasonOf(error));
+                    return result;
+                } finally {
+                    if (!retained) {
+                        await material.decline(claim);
                     }
-                    throw error;
-                });
+                }
+            })
+            .catch((error: unknown) => {
+                if (material.isClosed()) {
+                    return rejected(reasonOf(error));
+                }
+                throw error;
+            });
+    }
+
+    return {
+        backendId: NATIVE_LIVE_BACKEND_ID,
+        get disposed(): boolean {
+            return disposed;
+        },
+        apply(batch: AudioGraphCommandBatch): Promise<AudioGraphApplyResult> {
+            return apply(batch);
+        },
+        /** A single roll's final position and carrier handoff, after material preparation. */
+        rollAtFinalAdmission(
+            positionSeconds: number,
+            finalize: () => Readonly<{ positionSeconds: number; locate: boolean }>
+        ): Promise<AudioGraphApplyResult> {
+            return apply(createNativeRollBatch({ positionSeconds }), finalize);
         },
 
         dispose(): void {

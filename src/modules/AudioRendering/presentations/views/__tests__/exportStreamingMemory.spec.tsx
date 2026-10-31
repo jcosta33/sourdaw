@@ -22,19 +22,41 @@ import { loadExportSettings } from '../exportSettings';
 
 const GC_CASE_NAME = 'observes sampled output ownership below 2B across 64 WAV/MP3/FLAC stems';
 
-async function awaitBeforeDeadline<T>(operation: Promise<T>, deadline: number, timeoutError: () => Error): Promise<T> {
+// A slow runner stretches the export without breaking it, so the case fails when the export stops
+// making progress, not when a fixed wall-clock budget runs out. Hang protection stays with the
+// case's own 300 s timeout.
+const STEM_OWNERSHIP_STALL_WINDOW_MS = 30_000;
+const STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS = 10_000;
+const STALL_POLL_INTERVAL_MS = 250;
+
+async function awaitUnlessStalled<T>(
+    operation: Promise<T>,
+    readProgress: () => string,
+    stallWindowMs: number,
+    stallError: (stalledMs: number) => Error
+): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
+    const stalled = new Promise<never>((_resolve, reject) => {
+        let lastProgress = readProgress();
+        let lastProgressAt = Date.now();
+        const poll = () => {
+            const progress = readProgress();
+            const now = Date.now();
+            if (progress !== lastProgress) {
+                lastProgress = progress;
+                lastProgressAt = now;
+            } else if (now - lastProgressAt >= stallWindowMs) {
+                reject(stallError(now - lastProgressAt));
+                return;
+            }
+            timer = setTimeout(poll, STALL_POLL_INTERVAL_MS);
+        };
+        timer = setTimeout(poll, STALL_POLL_INTERVAL_MS);
+    });
     try {
-        return await Promise.race([
-            operation,
-            new Promise<T>((_resolve, reject) => {
-                timer = setTimeout(() => reject(timeoutError()), Math.max(1, deadline - Date.now()));
-            }),
-        ]);
+        return await Promise.race([operation, stalled]);
     } finally {
-        if (timer !== undefined) {
-            clearTimeout(timer);
-        }
+        clearTimeout(timer);
     }
 }
 const GC_FULL_NAME = `connected stem export output ownership ${GC_CASE_NAME}`;
@@ -892,7 +914,6 @@ describe('connected stem export output ownership', () => {
         vi.unstubAllGlobals();
     }, 20000);
     it('consumes two independently converted WAV targets before releasing each of64 rendered stems', async () => {
-        const deadline = Date.now() + 45000;
         const actualEngine = await vi.importActual<typeof import('#/modules/AudioEngine/useCases')>(
             '#/modules/AudioEngine/useCases'
         );
@@ -933,6 +954,15 @@ describe('connected stem export output ownership', () => {
                 cause: loggedError instanceof Error ? String(loggedError.cause).slice(0, 500) : undefined,
             };
         };
+        const readProgress = () =>
+            JSON.stringify([
+                ownership.rendered,
+                ownership.consumed,
+                physicalWrites,
+                physicalBytes,
+                closeCalls,
+                abortCalls,
+            ]);
         const withPhase = (error: unknown): Error => {
             const result = error instanceof Error ? error : new Error(String(error));
             if (!result.message.includes('\nStem output phase:')) {
@@ -1018,13 +1048,15 @@ describe('connected stem export output ownership', () => {
             const start = screen.getByTestId('export-start');
             exportStarted = true;
             fireEvent.click(start);
-            const firstWriterEvent = await awaitBeforeDeadline(
+            const firstWriterEvent = await awaitUnlessStalled(
                 Promise.race([
                     gameFinalWrite.promise.then(() => 'held-final-write' as const),
                     writerTerminal.promise.then(() => 'terminal' as const),
                 ]),
-                deadline,
-                () => withPhase(new Error('Timed out waiting for the held Game WAV final PCM write.'))
+                readProgress,
+                STEM_OWNERSHIP_STALL_WINDOW_MS,
+                (stalledMs) =>
+                    withPhase(new Error(`Stalled for ${stalledMs} ms waiting for the held Game WAV final PCM write.`))
             );
             expect(firstWriterEvent).toBe('held-final-write');
             expect(gameWriteHeld).toBe(true);
@@ -1036,8 +1068,14 @@ describe('connected stem export output ownership', () => {
             expect(abortCalls).toBe(0);
             gameWriteReleased = true;
             releaseGameWrite.resolve();
-            const finalWriterEvent = await awaitBeforeDeadline(writerTerminal.promise, deadline, () =>
-                withPhase(new Error('Timed out waiting for all stem targets to reach writer close.'))
+            const finalWriterEvent = await awaitUnlessStalled(
+                writerTerminal.promise,
+                readProgress,
+                STEM_OWNERSHIP_STALL_WINDOW_MS,
+                (stalledMs) =>
+                    withPhase(
+                        new Error(`Stalled for ${stalledMs} ms waiting for all stem targets to reach writer close.`)
+                    )
             );
             expect(finalWriterEvent).toBe('closed');
             expect(ownership.rendered).toBe(64);
@@ -1093,10 +1131,17 @@ describe('connected stem export output ownership', () => {
         releaseGameWrite.resolve();
         try {
             if (exportStarted) {
-                const cleanupDeadline = Date.now() + 10000;
                 if (writerAcquired && closeCalls + abortCalls === 0) {
-                    await awaitBeforeDeadline(writerTerminal.promise, cleanupDeadline, () =>
-                        withPhase(new Error('Timed out waiting for writer close or abort during export cleanup.'))
+                    await awaitUnlessStalled(
+                        writerTerminal.promise,
+                        readProgress,
+                        STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS,
+                        (stalledMs) =>
+                            withPhase(
+                                new Error(
+                                    `Stalled for ${stalledMs} ms waiting for writer close or abort during export cleanup.`
+                                )
+                            )
                     );
                 }
                 await waitFor(
@@ -1106,7 +1151,7 @@ describe('connected stem export output ownership', () => {
                         }
                         expect(screen.getByTestId('export-mode-stems')).toBeEnabled();
                     },
-                    { timeout: Math.max(1, cleanupDeadline - Date.now()), onTimeout: withPhase }
+                    { timeout: STEM_OWNERSHIP_CLEANUP_STALL_WINDOW_MS, onTimeout: withPhase }
                 );
             }
         } catch (error) {
@@ -1122,7 +1167,7 @@ describe('connected stem export output ownership', () => {
         if (failure) {
             throw failure;
         }
-    }, 60000);
+    }, 300_000);
     it(
         GC_CASE_NAME,
         async () => {

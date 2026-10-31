@@ -1,25 +1,13 @@
-import { activeRecordingRef } from '../../stores/activeRecordingRef';
-
+import { passSourceBeat } from './passSourceBeat';
 import { recordingPassIndex } from './recordingPassIndex';
 
 type EventPosition = { beat: number; passIndex: number };
 
-/** One admitted event's unwrapped position in the clip opened by this recording. */
+/**
+ * One admitted event's unwrapped position in the clip opened by this recording,
+ * on the placement its pass fixed when it opened: the basis its take is staged on.
+ */
 export function sourceBeat(clipStartBeat: number, position: EventPosition): number | null {
     const pass = recordingPassIndex(position);
-    if (!Number.isFinite(position.beat) || pass === null) {
-        return null;
-    }
-    if (pass === 0) {
-        return Math.max(0, position.beat - clipStartBeat);
-    }
-    const loopLength = activeRecordingRef.loopEnd - activeRecordingRef.loopStart;
-    if (!activeRecordingRef.startedLooping || loopLength <= 0) {
-        return null;
-    }
-    return (
-        Math.max(0, activeRecordingRef.loopEnd - clipStartBeat) +
-        (pass - 1) * loopLength +
-        Math.max(0, position.beat - activeRecordingRef.loopStart)
-    );
+    return pass === null ? null : passSourceBeat(clipStartBeat, pass, position.beat);
 }
