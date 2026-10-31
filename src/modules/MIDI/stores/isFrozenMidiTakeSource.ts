@@ -8,10 +8,11 @@ function isFiniteBeat(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value);
 }
 
+/** String keys only: a source read from the document carries Automerge's symbol metadata. */
 function hasExactSourceKeys(value: object): boolean {
-    const keys = Reflect.ownKeys(value);
+    const keys = Object.keys(value);
     const allowed = ['sourceClipId', 'rows', 'sourceEntryBeat', 'sourceEndBeat', 'phaseHeadBeat', 'passLengthBeats'];
-    return keys.length === allowed.length && keys.every((key) => typeof key === 'string' && allowed.includes(key));
+    return keys.length === allowed.length && keys.every((key) => allowed.includes(key));
 }
 
 /** Presence is authoritative: an absent legacy source is handled by the caller. */

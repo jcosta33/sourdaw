@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
     configureAutomergeStoragePort,
+    findAutomergeStorageRawProjectionLosses,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { prepareAutomationTimeOperation, prepareAutomationTimeStateRestore } from '#/modules/Automation/useCases';
@@ -293,5 +294,21 @@ describe('Delete Time through a comped MIDI loop pass (#5112)', () => {
             noteRows([notesOf('source')]).filter(([pitch, start]) => pitch === 62 && start >= 8 && start < 10)
         ).toEqual([[62, 8.5]]);
         expectAuthority();
+    });
+
+    it('keeps the frozen sources it cuts readable from the saved document', async () => {
+        // Each fragment's take freezes the cut rows. Read back from the raw
+        // document, every source still decodes: no slot is held for repair.
+        arrangeLoopCompMidi();
+
+        await executeAppAction({ type: 'deleteTime', payload: { startBeat: 10, endBeat: 12 } });
+        flushAutomergeStorageWrites();
+
+        const document = getCrdtDoc<Project>('root');
+        if (!document) {
+            throw new Error('Expected the project document');
+        }
+        expect(takeLaneStore.value?.lanes[0]?.takes.filter((take) => take.midiSource !== undefined)).not.toEqual([]);
+        expect(findAutomergeStorageRawProjectionLosses({ docId: 'root', document })).toEqual([]);
     });
 });

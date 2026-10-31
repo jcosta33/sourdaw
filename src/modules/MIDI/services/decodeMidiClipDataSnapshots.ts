@@ -12,10 +12,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
-    return (
-        keys.every((key) => Object.hasOwn(value, key)) &&
-        Reflect.ownKeys(value).every((key) => typeof key === 'string' && keys.includes(key))
-    );
+    return keys.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => keys.includes(key));
 }
 
 function isFiniteNumber(value: unknown): value is number {
