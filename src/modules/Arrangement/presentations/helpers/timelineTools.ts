@@ -9,6 +9,7 @@ import { type RefObject } from 'react';
 import { getAutomationLanes } from '#/modules/Automation/useCases';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { type InlineMidiTimingClip, resolveInlineNoteBeat } from '../../models/InlineMidiGeometry';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { splitClipWithUndo } from '../../useCases/clipEditing/splitClipWithUndo';
@@ -50,18 +51,19 @@ export const handleCutTool = (x: number, y: number, beat: number): boolean => {
 
 // ── Draw tool ─────────────────────────────────────────────────────────────────
 
-// The cell under the pointer, not the nearest grid line, so the note lands where
-// the user sees the pointer. Length is the grid step, as in the piano roll;
-// with the grid off `addMidiNote` applies its minimum note length.
-const stampInlineMidiNote = (hit: ClipHitResult): void => {
-    if (hit.noteBeat === undefined || hit.pitch === undefined) {
+// The cell of the visible grid under the pointer, in arrangement beats, mapped into
+// the note's own beats; not the nearest grid line, so the note lands where the
+// user sees the pointer. Length is the grid step, as in the piano roll; with the
+// grid off `addMidiNote` applies its minimum note length.
+const stampInlineMidiNote = (hit: ClipHitResult, clip: InlineMidiTimingClip): void => {
+    if (hit.pointerBeat === undefined || hit.pitch === undefined) {
         return;
     }
     const snap = getGridSnap();
     commitInlineMidiNoteCreate({
         clipId: hit.clipId,
         pitch: hit.pitch,
-        startBeat: floorToGridCell(hit.noteBeat, snap),
+        startBeat: resolveInlineNoteBeat(clip, floorToGridCell(hit.pointerBeat, snap)),
         duration: snap,
         velocity: 100,
     });
@@ -83,7 +85,7 @@ export const handleDrawTool = (x: number, y: number, beat: number, drawDragRef: 
         const trackState = trackStore.value;
         const clip = trackState?.tracks.flatMap((time) => time.clips).find((context) => context.id === hit.clipId);
         if (clip?.isInlineEditing && clip.type === 'midi') {
-            stampInlineMidiNote(hit);
+            stampInlineMidiNote(hit, clip);
             return true;
         }
     }

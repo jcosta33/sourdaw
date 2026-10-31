@@ -3,6 +3,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { preferencesStore } from '#/modules/Preferences/stores';
 import { defaultPreferences } from '#/modules/Preferences/useCases';
 
+import {
+    forEachMidiNoteRect,
+    resolveMidiPitchWindow,
+    type InlineMidiGeometryClip,
+} from '../../../models/InlineMidiGeometry';
 import { type ClipRenderModel, type TimelineRenderModel } from '../../../models/TimelineRenderModel';
 import { commitInlineMidiNoteCreate } from '../../../useCases/timelineInteractions/commitInlineMidiNoteCreate';
 import { commitInlineMidiNoteDelete } from '../../../useCases/timelineInteractions/commitInlineMidiNoteDelete';
@@ -14,9 +19,16 @@ import { handleDrawTool } from '../timelineTools';
 
 const PIXELS_PER_BEAT = 50;
 
-const world = vi.hoisted(() => ({
-    clip: null as { startBeat: number; endBeat: number; midiNotes: Array<Record<string, unknown>> } | null,
-}));
+type WorldClip = {
+    startBeat: number;
+    endBeat: number;
+    midiOffsetBeats?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    midiNotes: Array<Record<string, unknown>>;
+};
+
+const world = vi.hoisted(() => ({ clip: null as WorldClip | null }));
 
 vi.mock('#/modules/Automation/useCases', () => ({ getAutomationLanes: vi.fn().mockReturnValue([]) }));
 vi.mock('../../../useCases/clipEditing/splitClipWithUndo', () => ({ splitClipWithUndo: vi.fn() }));
@@ -33,8 +45,11 @@ vi.mock('../../../stores/timelineViewStore', () => ({
 vi.mock('../../../stores/trackStore', () => ({
     trackStore: {
         get value() {
+            const { midiNotes: _notes, ...timing } = world.clip!;
             return {
-                tracks: [{ id: 't1', kind: 'midi', clips: [{ id: 'c1', type: 'midi', isInlineEditing: true }] }],
+                tracks: [
+                    { id: 't1', kind: 'midi', clips: [{ id: 'c1', type: 'midi', isInlineEditing: true, ...timing }] },
+                ],
             };
         },
     },
@@ -53,6 +68,9 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
             fadeOutBeats: 0,
             startBeat: clip.startBeat,
             endBeat: clip.endBeat,
+            midiOffsetBeats: clip.midiOffsetBeats,
+            loopEnabled: clip.loopEnabled,
+            loopLength: clip.loopLength,
             midiNotes: clip.midiNotes as ClipRenderModel['midiNotes'],
         };
         return {
@@ -88,9 +106,34 @@ vi.mock('../../../useCases/buildTimelineRenderModel', () => ({
     },
 }));
 
-const click = (clipBeat: number, contentY: number): void => {
-    const absoluteBeat = world.clip!.startBeat + clipBeat;
-    handleDrawTool(absoluteBeat * PIXELS_PER_BEAT, contentY, absoluteBeat, { current: null });
+// The empty inline window is 60..71 over a 76px area starting at y=2: twelve rows of 76 / 12 px.
+const ROW_HEIGHT = 76 / 12;
+const rowY = (row: number): number => 2 + ROW_HEIGHT * (row + 0.5);
+
+const clickAt = (arrangementBeat: number, contentY: number): void => {
+    handleDrawTool(arrangementBeat * PIXELS_PER_BEAT, contentY, arrangementBeat, { current: null });
+};
+
+const stampedStartBeats = (): number[] =>
+    vi.mocked(commitInlineMidiNoteCreate).mock.calls.map(([input]) => input.startBeat);
+
+const drawnRectOf = (noteId: string): { x: number; y: number; width: number; height: number } | undefined => {
+    const clip = world.clip!;
+    const frame = {
+        x: clip.startBeat * PIXELS_PER_BEAT,
+        width: (clip.endBeat - clip.startBeat) * PIXELS_PER_BEAT,
+        contentTop: 2,
+        contentHeight: 76,
+    };
+    const notes = clip.midiNotes as unknown as InlineMidiGeometryClip['midiNotes'];
+    const window = resolveMidiPitchWindow(notes, true, frame.contentHeight);
+    let found: { x: number; y: number; width: number; height: number } | undefined;
+    forEachMidiNoteRect({ ...clip, midiNotes: notes }, frame, window, { inline: true }, (note, x, y, width, height) => {
+        if (note.id === noteId) {
+            found = { x, y, width, height };
+        }
+    });
+    return found;
 };
 
 describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => {
@@ -111,35 +154,90 @@ describe('handleDrawTool on an inline MIDI clip, with the real hit test', () => 
     });
 
     it('stamps the cell under the pointer, clip-relative, at the pointer pitch', () => {
-        // Empty window is 54..66 over a 76px area starting at y=2 (rows of ~5.85px). Row 3 is pitch 63.
-        // 2.4 beats into the clip is the right half of the 2..2.5 cell of the half-beat grid.
-        click(2.4, 2 + 5.846 * 3.5);
+        // 10.4 is 2.4 beats into the clip: the right half of the 2..2.5 cell of the half-beat grid. Row 3 is pitch 68.
+        clickAt(10.4, rowY(3));
 
         expect(commitInlineMidiNoteCreate).toHaveBeenCalledWith({
             clipId: 'c1',
-            pitch: 63,
+            pitch: 68,
             startBeat: 2,
             duration: 0.5,
             velocity: 100,
         });
     });
 
-    it('hits the stamped note on a second click at the same point instead of stacking another', () => {
-        // Middle C is the one row whose note leaves the auto-fitted pitch window where it was.
-        const y = 2 + 5.846 * 6.5;
-        click(2.4, y);
-        click(2.4, y);
+    it('hits a note drawn off middle C on a second click at the same point instead of stacking another', () => {
+        clickAt(10.4, rowY(3));
+        clickAt(10.4, rowY(3));
 
         expect(commitInlineMidiNoteCreate).toHaveBeenCalledTimes(1);
         expect(commitInlineMidiNoteDelete).toHaveBeenCalledTimes(1);
         expect(commitInlineMidiNoteDelete).toHaveBeenCalledWith({ clipId: 'c1', noteId: 'n0' });
     });
 
-    it('stamps on the pitch row of each click, not on one fixed pitch', () => {
-        click(1, 2 + 5.846 * 0.5);
-        world.clip!.midiNotes.length = 0;
-        click(5, 2 + 5.846 * 11.5);
+    it('leaves a drawn note where it is when another note is drawn in a visible row', () => {
+        clickAt(10.4, rowY(3));
+        const before = drawnRectOf('n0');
 
-        expect(vi.mocked(commitInlineMidiNoteCreate).mock.calls.map(([input]) => input.pitch)).toEqual([66, 55]);
+        clickAt(12.2, rowY(9));
+        const after = drawnRectOf('n0');
+
+        expect(commitInlineMidiNoteCreate).toHaveBeenCalledTimes(2);
+        expect(before).toBeDefined();
+        expect(after).toEqual(before);
+    });
+
+    it('stamps on the pitch row of each click, not on one fixed pitch', () => {
+        clickAt(9, rowY(0));
+        world.clip!.midiNotes.length = 0;
+        clickAt(13, rowY(11));
+
+        expect(vi.mocked(commitInlineMidiNoteCreate).mock.calls.map(([input]) => input.pitch)).toEqual([71, 60]);
+    });
+
+    describe('a clip that starts off the grid', () => {
+        beforeEach(() => {
+            world.clip = { startBeat: 8.25, endBeat: 16.25, midiNotes: [] };
+        });
+
+        it('stamps the cell of the visible grid under the pointer, not a cell of the clip own beats', () => {
+            // The visible cell is 9..9.5, which is 0.75 beat into the clip; the clip-relative cell would be 0.5.
+            clickAt(9.1, rowY(3));
+
+            expect(stampedStartBeats()).toEqual([0.75]);
+        });
+
+        it('adds the content offset to the visible cell start', () => {
+            world.clip = { ...world.clip!, midiOffsetBeats: 0.25 };
+
+            clickAt(9.1, rowY(3));
+
+            expect(stampedStartBeats()).toEqual([1]);
+        });
+
+        it('maps the visible cell of a loop repeat back into the first pass', () => {
+            world.clip = { ...world.clip!, loopEnabled: true, loopLength: 3 };
+
+            // Visible cell 12.5..13 is 4.25 beats into the clip and 1.25 into its second pass.
+            clickAt(12.6, rowY(3));
+
+            expect(stampedStartBeats()).toEqual([1.25]);
+        });
+
+        it('clamps a cell that starts before the clip to the clip start', () => {
+            // The visible cell 8..8.5 begins 0.25 before the clip.
+            clickAt(8.3, rowY(3));
+
+            expect(stampedStartBeats()).toEqual([0]);
+        });
+
+        it('stamps the unsnapped pointer beat, mapped the same way, with the grid off', () => {
+            preferencesStore.set({ ...defaultPreferences, snapToGrid: false });
+            world.clip = { ...world.clip!, midiOffsetBeats: 0.25 };
+
+            clickAt(9.1, rowY(3));
+
+            expect(stampedStartBeats()[0]).toBeCloseTo(1.1, 6);
+        });
     });
 });

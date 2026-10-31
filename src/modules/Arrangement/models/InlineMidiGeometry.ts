@@ -1,10 +1,13 @@
 import { type ClipRenderModel } from './TimelineRenderModel';
 
-/** The clip fields the inline MIDI geometry law reads. */
-export type InlineMidiGeometryClip = Pick<
+/** The clip fields that place its content in time. */
+export type InlineMidiTimingClip = Pick<
     ClipRenderModel,
-    'startBeat' | 'endBeat' | 'midiNotes' | 'loopEnabled' | 'loopLength' | 'midiOffsetBeats'
+    'startBeat' | 'endBeat' | 'loopEnabled' | 'loopLength' | 'midiOffsetBeats'
 >;
+
+/** The clip fields the inline MIDI geometry law reads. */
+export type InlineMidiGeometryClip = InlineMidiTimingClip & Pick<ClipRenderModel, 'midiNotes'>;
 
 /** Where a clip's note area sits, in whatever pixel space the caller works in (canvas or content). */
 export type InlineMidiFrame = {
@@ -32,8 +35,9 @@ export type MidiNoteRect = {
     height: number;
 };
 
-/** The note-space position under a pointer: a source beat (the unit notes are stored in) and a pitch. */
+/** The position under a pointer: its arrangement beat, the source beat (the unit notes are stored in) and a pitch. */
 export type InlineMidiPointer = {
+    pointerBeat: number;
     noteBeat: number;
     pitch: number | null;
 };
@@ -53,22 +57,43 @@ export const MIN_MIDI_CONTENT_HEIGHT = 4;
 
 const MAX_LOOP_ITERATIONS = 100;
 const MIDDLE_C = 60;
-const MIN_INLINE_PITCH_SPAN = 12;
+const OCTAVE = 12;
 const MAX_MIDI_PITCH = 127;
 const INLINE_NOTE_MIN_WIDTH = 2;
 const PREVIEW_NOTE_MIN_WIDTH = 1;
+const LOOP_FOLD_EPSILON = 1e-9;
 
 /**
- * Pitches shown for `notes`. Inline editing pads the extent and shows at least
- * an octave; an empty inline clip shows the octave around middle C, exactly as
- * a one-note clip at middle C does.
+ * Inverse of the drawing law along time: the source note beat drawn at an
+ * arrangement beat. A beat before the clip start reads as the start. The beat is
+ * folded back through the loop length, then shifted by `midiOffsetBeats`, so a
+ * note stored at the result is drawn at `arrangementBeat`.
+ */
+export const resolveInlineNoteBeat = (clip: InlineMidiTimingClip, arrangementBeat: number): number => {
+    const clipDuration = clip.endBeat - clip.startBeat;
+    const clipBeat = Math.min(Math.max(arrangementBeat - clip.startBeat, 0), clipDuration);
+    const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
+    const offset = clip.midiOffsetBeats ?? 0;
+    if (!clip.loopEnabled || loopLen <= 0) {
+        return clipBeat + offset;
+    }
+    const folded = clipBeat % loopLen;
+    // A beat on a loop boundary that division error leaves just short of it belongs to the next pass.
+    return (loopLen - folded < LOOP_FOLD_EPSILON ? 0 : folded) + offset;
+};
+
+/**
+ * Pitches shown for `notes`. Inline editing shows whole octaves from C, from the
+ * one holding the lowest note to the one holding the highest, so drawing in a
+ * visible row never moves the rows; an empty clip shows the octave from middle C.
+ * Deleting the last note of an outer octave contracts the window.
  */
 export const resolveMidiPitchWindow = (
     notes: InlineMidiGeometryClip['midiNotes'],
     inline: boolean,
     contentHeight: number
 ): MidiPitchWindow => {
-    let minPitch = notes.length === 0 ? MIDDLE_C : 127;
+    let minPitch = notes.length === 0 ? MIDDLE_C : MAX_MIDI_PITCH;
     let maxPitch = notes.length === 0 ? MIDDLE_C : 0;
     // A spread (Math.min(...notes.map())) can blow the call stack for clips with
     // very many notes, so the extent is folded in one loop.
@@ -81,13 +106,8 @@ export const resolveMidiPitchWindow = (
         }
     }
     if (inline) {
-        minPitch -= 2;
-        maxPitch += 2;
-        if (maxPitch - minPitch < MIN_INLINE_PITCH_SPAN) {
-            const center = Math.round((maxPitch + minPitch) / 2);
-            minPitch = center - MIN_INLINE_PITCH_SPAN / 2;
-            maxPitch = center + MIN_INLINE_PITCH_SPAN / 2;
-        }
+        minPitch = Math.floor(minPitch / OCTAVE) * OCTAVE;
+        maxPitch = Math.min((Math.floor(maxPitch / OCTAVE) + 1) * OCTAVE - 1, MAX_MIDI_PITCH);
     }
     const pitchRange = Math.max(maxPitch - minPitch, 1);
     return { minPitch, maxPitch, pitchRange, rowHeight: contentHeight / (pitchRange + 1) };
@@ -192,7 +212,7 @@ export const findInlineMidiNoteAt = (
  * Inverse of the drawing law: the source beat and pitch row under a point in the
  * clip's note area. The beat is folded back through the loop length and
  * `midiOffsetBeats`, so a note stamped there is drawn under the pointer. Null
- * outside the note area; `pitch` is null on a row that is no MIDI pitch.
+ * outside the note area; `pitch` is null when the pointer is outside the pitch rows.
  */
 export const resolveInlineMidiPointer = (
     clip: InlineMidiGeometryClip,
@@ -206,18 +226,13 @@ export const resolveInlineMidiPointer = (
     }
     const clipDuration = clip.endBeat - clip.startBeat;
     const clipBeat = Math.min(Math.max(((pointerX - frame.x) / frame.width) * clipDuration, 0), clipDuration);
-    const loopLen = clip.loopEnabled && clip.loopLength ? clip.loopLength : clipDuration;
-    const loopBeat = loopLen > 0 && clip.loopEnabled ? clipBeat % loopLen : clipBeat;
-    const noteBeat = loopBeat + (clip.midiOffsetBeats ?? 0);
+    const pointerBeat = clip.startBeat + clipBeat;
+    const noteBeat = resolveInlineNoteBeat(clip, pointerBeat);
 
     const depth = pointerY - frame.contentTop;
     if (depth < 0 || depth >= frame.contentHeight) {
-        return { noteBeat, pitch: null };
+        return { pointerBeat, noteBeat, pitch: null };
     }
     const row = Math.min(Math.floor(depth / window.rowHeight), window.pitchRange);
-    const pitch = window.maxPitch - row;
-    if (pitch < 0 || pitch > MAX_MIDI_PITCH) {
-        return { noteBeat, pitch: null };
-    }
-    return { noteBeat, pitch };
+    return { pointerBeat, noteBeat, pitch: window.maxPitch - row };
 };

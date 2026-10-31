@@ -142,9 +142,9 @@ describe('hitTestClip', () => {
         mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
         mocks.buildTimelineRenderModel.mockReturnValue(makeRenderModel([track]));
 
-        // Note occupies beat 1..2 => pixel X 50..100; its vertical row sits at
-        // contentY ~32..48 for pitch 60 under an 80px track. Click X=75, Y=40.
-        const result = hitTestClip(75, 40);
+        // Note occupies beat 1..2 => pixel X 50..100; pitch 60 is the bottom row of
+        // the 60..71 window, contentY ~72..77 under an 80px track. Click X=75, Y=75.
+        const result = hitTestClip(75, 75);
 
         expect(result).toMatchObject({ clipId: 'clip-1', trackId: 'track-1', noteId: 'note-1', pitch: 60 });
     });
@@ -178,8 +178,8 @@ describe('hitTestClip', () => {
 
         // Notes are clip-relative, so this one is drawn 1 beat into a clip that starts at beat 8.
         const note = { id: 'note-1', startBeat: 1, duration: 1, pitch: 60, velocity: 100 };
-        // Pitch 60 sits in row 6 of the 54..66 window: contentY 37..43 in an 80px track.
-        const NOTE_ROW_Y = 40;
+        // Pitch 60 is the bottom row of the 60..71 window: contentY 71.7..78 in an 80px track.
+        const NOTE_ROW_Y = 75;
 
         it('hits a note where it is drawn, not at its absolute beat position', () => {
             mocks.getTrackAtY.mockReturnValue({ index: 0, id: 'track-1' });
@@ -218,8 +218,13 @@ describe('hitTestClip', () => {
                 makeRenderModel([inlineClipAt({ midiNotes: [], midiOffsetBeats: 1 })])
             );
 
-            // X 500 is 2 beats into the clip; the empty window is 54..66, so row 3 (y 20..26) is pitch 63.
-            expect(hitTestClip(500, 23)).toEqual({ clipId: 'clip-1', trackId: 'track-1', noteBeat: 3, pitch: 63 });
+            // X 500 is 2 beats into the clip, arrangement beat 10; the empty window is 71..60, so row 3 (y 21..27.5) is pitch 68.
+            expect(hitTestClip(500, 24)).toEqual({
+                clipId: 'clip-1',
+                trackId: 'track-1',
+                pointerBeat: 10,
+                pitch: 68,
+            });
         });
 
         it('returns no position for a non-inline clip', () => {
@@ -228,7 +233,7 @@ describe('hitTestClip', () => {
                 makeRenderModel([inlineClipAt({ isInlineEditing: false, midiNotes: [note] })])
             );
 
-            expect(hitTestClip(500, 23)).toEqual({ clipId: 'clip-1', trackId: 'track-1' });
+            expect(hitTestClip(500, 24)).toEqual({ clipId: 'clip-1', trackId: 'track-1' });
         });
     });
 

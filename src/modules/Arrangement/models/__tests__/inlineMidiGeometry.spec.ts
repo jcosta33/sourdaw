@@ -4,9 +4,11 @@ import {
     findInlineMidiNoteAt,
     forEachMidiNoteRect,
     resolveInlineMidiPointer,
+    resolveInlineNoteBeat,
     resolveMidiPitchWindow,
     type InlineMidiFrame,
     type InlineMidiGeometryClip,
+    type InlineMidiTimingClip,
 } from '../InlineMidiGeometry';
 
 type Note = InlineMidiGeometryClip['midiNotes'][number];
@@ -48,34 +50,80 @@ const collectRects = (clip: InlineMidiGeometryClip, frame: InlineMidiFrame) => {
 };
 
 describe('resolveMidiPitchWindow', () => {
-    it('shows the octave around middle C for an empty inline clip', () => {
+    it('shows the octave from middle C for an empty inline clip', () => {
         const window = resolveMidiPitchWindow([], true, 76);
 
-        expect(window).toMatchObject({ minPitch: 54, maxPitch: 66, pitchRange: 12 });
-        expect(window.rowHeight).toBeCloseTo(76 / 13);
+        expect(window).toMatchObject({ minPitch: 60, maxPitch: 71, pitchRange: 11 });
+        expect(window.rowHeight).toBeCloseTo(76 / 12);
     });
 
     it('gives an empty clip the window a single middle C note gives', () => {
         expect(resolveMidiPitchWindow([], true, 76)).toEqual(resolveMidiPitchWindow([note('c', 60, 0, 1)], true, 76));
     });
 
-    it('widens a narrow inline extent to an octave centred on it', () => {
-        const window = resolveMidiPitchWindow([note('a', 60, 0, 1), note('b', 64, 1, 1)], true, 76);
+    it('spans whole octaves from C that hold the lowest and the highest note', () => {
+        const window = resolveMidiPitchWindow([note('a', 62, 0, 1), note('b', 75, 1, 1)], true, 76);
 
-        // 58..66 is 8 semitones: centred on 62 and widened to 12.
-        expect(window).toMatchObject({ minPitch: 56, maxPitch: 68, pitchRange: 12 });
+        expect(window).toMatchObject({ minPitch: 60, maxPitch: 83, pitchRange: 23 });
     });
 
-    it('pads a wide inline extent by two semitones and leaves it otherwise', () => {
-        const window = resolveMidiPitchWindow([note('a', 40, 0, 1), note('b', 80, 1, 1)], true, 76);
+    it('keeps a note on the top pitch of its octave inside that octave', () => {
+        expect(resolveMidiPitchWindow([note('b', 71, 0, 1)], true, 76)).toMatchObject({ minPitch: 60, maxPitch: 71 });
+        expect(resolveMidiPitchWindow([note('c', 72, 0, 1)], true, 76)).toMatchObject({ minPitch: 72, maxPitch: 83 });
+    });
 
-        expect(window).toMatchObject({ minPitch: 38, maxPitch: 82, pitchRange: 44 });
+    it('stops the top octave at MIDI pitch 127', () => {
+        const window = resolveMidiPitchWindow([note('a', 125, 0, 1)], true, 80);
+
+        expect(window).toMatchObject({ minPitch: 120, maxPitch: 127, pitchRange: 7 });
+        expect(window.rowHeight).toBe(10);
+    });
+
+    it('does not move the rows when a note is added inside the span', () => {
+        const before = resolveMidiPitchWindow([note('a', 62, 0, 1), note('b', 75, 1, 1)], true, 76);
+        const after = resolveMidiPitchWindow([note('a', 62, 0, 1), note('b', 75, 1, 1), note('c', 66, 2, 1)], true, 76);
+
+        expect(after).toEqual(before);
     });
 
     it('uses the raw extent when not inline', () => {
         const window = resolveMidiPitchWindow([note('a', 60, 0, 1), note('b', 64, 1, 1)], false, 40);
 
         expect(window).toMatchObject({ minPitch: 60, maxPitch: 64, pitchRange: 4 });
+    });
+});
+
+describe('resolveInlineNoteBeat', () => {
+    const timing = (overrides: Partial<InlineMidiTimingClip> = {}): InlineMidiTimingClip => ({
+        startBeat: 8.25,
+        endBeat: 16.25,
+        ...overrides,
+    });
+
+    it('measures from the clip start', () => {
+        expect(resolveInlineNoteBeat(timing(), 9)).toBeCloseTo(0.75);
+    });
+
+    it('adds the content offset', () => {
+        expect(resolveInlineNoteBeat(timing({ midiOffsetBeats: 0.25 }), 9)).toBeCloseTo(1);
+    });
+
+    it('folds a later loop pass back onto the source', () => {
+        const clip = timing({ midiOffsetBeats: 1, loopEnabled: true, loopLength: 3 });
+
+        // 12.75 is 4.5 beats into the clip, 1.5 into its second pass.
+        expect(resolveInlineNoteBeat(clip, 12.75)).toBeCloseTo(2.5);
+    });
+
+    it('reads a loop boundary that division error leaves just short of it as the next pass start', () => {
+        const clip = timing({ loopEnabled: true, loopLength: 0.1 });
+
+        expect(0.3 % 0.1).toBeGreaterThan(0.09);
+        expect(resolveInlineNoteBeat({ ...clip, startBeat: 0 }, 0.3)).toBeCloseTo(0);
+    });
+
+    it('reads a beat before the clip start as the clip start', () => {
+        expect(resolveInlineNoteBeat(timing({ midiOffsetBeats: 0.5 }), 7)).toBeCloseTo(0.5);
     });
 });
 
@@ -148,14 +196,14 @@ describe('inline MIDI geometry law', () => {
         const frame = frameFor(clip);
         const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
 
-        // Top row is maxPitch (66); each row is rowHeight tall.
+        // Top row is maxPitch (71); each row is rowHeight tall.
         const topRow = resolveInlineMidiPointer(clip, frame, 100, frame.contentTop + window.rowHeight * 0.5);
         const thirdRow = resolveInlineMidiPointer(clip, frame, 100, frame.contentTop + window.rowHeight * 2.5);
         const bottomRow = resolveInlineMidiPointer(clip, frame, 100, frame.contentTop + frame.contentHeight - 0.5);
 
-        expect(topRow?.pitch).toBe(66);
-        expect(thirdRow?.pitch).toBe(64);
-        expect(bottomRow?.pitch).toBe(54);
+        expect(topRow?.pitch).toBe(71);
+        expect(thirdRow?.pitch).toBe(69);
+        expect(bottomRow?.pitch).toBe(60);
     });
 
     it('gives an empty inline clip rows to hit', () => {
@@ -164,20 +212,27 @@ describe('inline MIDI geometry law', () => {
 
         const pointer = resolveInlineMidiPointer(clip, frame, 100, frame.contentTop + frame.contentHeight / 2);
 
-        expect(pointer?.pitch).toBe(60);
+        // Row 6 of the 71..60 window.
+        expect(pointer?.pitch).toBe(65);
     });
 
-    it('reports no pitch outside the note area or on a row that is no MIDI pitch', () => {
-        const clip: InlineMidiGeometryClip = { startBeat: 0, endBeat: 4, midiNotes: [note('top', 127, 0, 1)] };
+    it('reports no pitch outside the pitch rows', () => {
+        const clip: InlineMidiGeometryClip = { startBeat: 0, endBeat: 4, midiNotes: [note('a', 60, 0, 1)] };
         const frame = frameFor(clip);
-        const window = resolveMidiPitchWindow(clip.midiNotes, true, frame.contentHeight);
-        const rowCentre = (row: number) => frame.contentTop + window.rowHeight * (row + 0.5);
 
-        // The octave window around 127 runs 121..133: rows above 127 are no pitch.
-        expect(window).toMatchObject({ minPitch: 121, maxPitch: 133 });
         expect(resolveInlineMidiPointer(clip, frame, 100, 1)?.pitch).toBeNull();
-        expect(resolveInlineMidiPointer(clip, frame, 100, rowCentre(0))?.pitch).toBeNull();
-        expect(resolveInlineMidiPointer(clip, frame, 100, rowCentre(6))?.pitch).toBe(127);
+        expect(
+            resolveInlineMidiPointer(clip, frame, 100, frame.contentTop + frame.contentHeight + 1)?.pitch
+        ).toBeNull();
+    });
+
+    it('reports the arrangement beat under the pointer beside the source beat', () => {
+        const clip = offsetLoopedClip();
+        const frame = frameFor(clip);
+
+        const pointer = resolveInlineMidiPointer(clip, frame, frame.x + 4.5 * PIXELS_PER_BEAT, 40);
+
+        expect(pointer?.pointerBeat).toBeCloseTo(12.5);
     });
 
     it('yields nothing for a note area too short to be drawn', () => {

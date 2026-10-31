@@ -197,7 +197,7 @@ describe('timelineTools', () => {
         });
 
         it('creates a new note at the pointer pitch when drawing inside an inline-editing midi clip', () => {
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 72, noteBeat: 4.25 });
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 72, pointerBeat: 4.25 });
             vi.mocked(getGridSnap).mockReturnValue(0.25);
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
@@ -218,20 +218,20 @@ describe('timelineTools', () => {
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
             // 4.4 is in the cell 4..4.5 but nearer its end; rounding would stamp at 4.5.
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.4 });
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 4.4 });
             handleDrawTool(0, 10, 4.4, { current: null });
             expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ startBeat: 4 }));
 
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.6 });
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 4.6 });
             handleDrawTool(0, 10, 4.6, { current: null });
             expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ startBeat: 4.5 }));
         });
 
-        it('stamps the clip-relative beat for a clip that starts later on the timeline', () => {
+        it('stamps the clip-relative beat of the visible cell for a clip that starts later on the timeline', () => {
             vi.mocked(getGridSnap).mockReturnValue(0.25);
             trackStoreMock.state = { tracks: [inlineMidiTrack(8)] };
-            // The pointer is at absolute beat 9.3, which is 1.3 beats into the clip.
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 1.3 });
+            // The pointer is at arrangement beat 9.3, 1.3 beats into a clip that starts at 8.
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 9.3 });
 
             handleDrawTool(0, 10, 9.3, { current: null });
 
@@ -243,7 +243,7 @@ describe('timelineTools', () => {
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
             for (const pitch of [48, 67, 96]) {
-                vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch, noteBeat: 1 });
+                vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch, pointerBeat: 1 });
                 handleDrawTool(0, 10, 1, { current: null });
                 expect(commitInlineMidiNoteCreate).toHaveBeenLastCalledWith(expect.objectContaining({ pitch }));
             }
@@ -264,7 +264,7 @@ describe('timelineTools', () => {
 
         it('stamps at the unsnapped pointer beat when the grid is off', () => {
             vi.mocked(getGridSnap).mockReturnValue(0);
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 4.37 });
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 4.37 });
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
             handleDrawTool(0, 10, 4.37, { current: null });
@@ -274,7 +274,7 @@ describe('timelineTools', () => {
 
         it('keeps a pointer on a grid line in the cell that starts there despite division error', () => {
             vi.mocked(getGridSnap).mockReturnValue(0.1);
-            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, noteBeat: 0.3 });
+            vi.mocked(hitTestClip).mockReturnValue({ clipId: 'c1', trackId: 't1', pitch: 60, pointerBeat: 0.3 });
             trackStoreMock.state = { tracks: [inlineMidiTrack(0)] };
 
             handleDrawTool(0, 10, 0.3, { current: null });

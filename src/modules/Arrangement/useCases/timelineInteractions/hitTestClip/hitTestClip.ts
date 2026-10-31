@@ -12,8 +12,8 @@ export type ClipHitResult = {
     trackId: string;
     noteId?: string;
     pitch?: number;
-    /** Inline MIDI clips only: the source beat under the pointer, in the unit notes are stored in. */
-    noteBeat?: number;
+    /** Inline MIDI clips only: the arrangement beat under the pointer. */
+    pointerBeat?: number;
     noteHeight?: number;
 };
 
@@ -70,7 +70,12 @@ export function hitTestClip(canvasX: number, canvasY: number): ClipHitResult | n
 
                 const pointer = resolveInlineMidiPointer(clip, frame, canvasX, contentY);
                 if (pointer && pointer.pitch !== null) {
-                    return { clipId: clip.id, trackId: track.id, noteBeat: pointer.noteBeat, pitch: pointer.pitch };
+                    return {
+                        clipId: clip.id,
+                        trackId: track.id,
+                        pointerBeat: pointer.pointerBeat,
+                        pitch: pointer.pitch,
+                    };
                 }
             }
             return { clipId: clip.id, trackId: track.id };
