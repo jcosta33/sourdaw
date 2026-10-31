@@ -11,6 +11,16 @@ function gainAtFrame(values: Float32Array | undefined, frame: number): number {
     return values?.[values.length === 1 ? 0 : frame] ?? Number.NaN;
 }
 
+/** A posted immediate write wins on its exact frame; every other frame reads the AudioParam. */
+function gainForFrame(
+    immediate: ImmediateGain,
+    immediateIndex: number,
+    values: Float32Array | undefined,
+    frame: number
+): number {
+    return frame === immediateIndex ? immediate.value : gainAtFrame(values, frame);
+}
+
 function isGainName(name: unknown): name is GainName {
     return name === 'attackGain' || name === 'sustainGain';
 }
@@ -152,8 +162,8 @@ class TransientShaperProcessor extends AudioWorkletProcessor {
         // Let unexpected WASM traps reach processorerror. The normal render
         // path creates no errors, messages, arrays or block-sized views.
         for (let frame = 0; frame < frames; frame++) {
-            const attack = frame === attackIndex ? immediateAttack.value : gainAtFrame(attackGain, frame);
-            const sustain = frame === sustainIndex ? immediateSustain.value : gainAtFrame(sustainGain, frame);
+            const attack = gainForFrame(immediateAttack, attackIndex, attackGain, frame);
+            const sustain = gainForFrame(immediateSustain, sustainIndex, sustainGain, frame);
             if (left && frame < left.length) {
                 left[frame] = instance.process_left(inLeft?.[frame] ?? 0, attack, sustain);
             }
