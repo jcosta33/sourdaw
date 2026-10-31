@@ -1,0 +1,49 @@
+src/modules/MixerConsole/presentations/views/Mixer/MasterChannelStrip.tsx
+  s_88fc7e0d05bab6::t_bb4414407290bc 4-5,8,19-21,27-29,409-433,436-437,446-452,455,475,486-487
+src/modules/MixerConsole/presentations/views/Mixer/__tests__/MasterChannelStrip.trackControls.spec.tsx
+  s_88fc7e0d05bab6::t_2d58b8fe5bd868 1-137
+src/modules/MixerConsole/presentations/views/MixerPanel.tsx
+  s_88fc7e0d05bab6::t_5f4437b824383f 48,229-233
+src/modules/MixerConsole/presentations/views/__tests__/MixerPanel.spec.tsx
+  s_88fc7e0d05bab6::t_d5aa2a9e73f62e 59-63,260-278,288
+src/modules/SessionLauncher/presentations/views/LoopStationPanel.tsx
+  s_55244eb93b97d1::t_f0cda285736cec 24
+src/modules/SessionLauncher/useCases/loopStation/__tests__/triggerPad.spec.ts
+  s_7a8e1107313040::t_2ef14de454e018 7,77-113
+src/modules/SessionLauncher/presentations/views/SessionView.tsx
+  s_88fc7e0d05bab6::t_9b825bc95a1fb1 22
+src/modules/SessionLauncher/useCases/loopStation/triggerPad.ts
+  s_88fc7e0d05bab6::t_a7a503658a7801 4,21-23,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "53b339196b56d0b06f6b4a79db5523d5aee83970",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
