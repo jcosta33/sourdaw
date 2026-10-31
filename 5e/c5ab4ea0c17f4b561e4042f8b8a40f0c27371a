@@ -1,0 +1,98 @@
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 2121-2137
+Cargo.lock
+  h_beb54bf43b47b7 2366
+crates/daw-dsp/Cargo.toml
+  h_beb54bf43b47b7 13-16
+crates/daw-dsp/benches/quantum-cost-table.json
+  h_beb54bf43b47b7 2-15,17-59,61-70,72-75,77-99,101-1469
+crates/daw-dsp/benches/quantum-cost-table.md
+  h_beb54bf43b47b7 7-10,29,42-43,62,77-78,86,99-101,108,110,118,129,144-148,150-151,157,176,182,184-189,201-202,204,206-224,228,230,237-239,247-248,252-255,257-258,262-263,277,287-306,333-336,436-440,443-444,473-475
+crates/daw-dsp/benches/wasm/renderTable.d.mts
+  h_beb54bf43b47b7 6
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  h_beb54bf43b47b7 74,149-192,236,240,243,261,311-314,319,347-348,363,368-369,372-373
+crates/daw-dsp/benches/wasm/run.mjs
+  h_beb54bf43b47b7 51,108,981,984,994-996,1012,1021,1065,1152-1157,1174
+crates/daw-dsp/src/knead/utils.rs
+  h_beb54bf43b47b7 3
+crates/daw-dsp/src/knead/yin.rs
+  h_beb54bf43b47b7 1-2
+crates/daw-dsp/src/lib.rs
+  h_beb54bf43b47b7 1-2,4,6,8,10,12,14,16,18,20,23,25,32
+crates/daw-dsp/src/primitives/mod.rs
+  h_beb54bf43b47b7 10
+crates/daw-dsp/src/primitives/pitch/mod.rs
+  h_beb54bf43b47b7 1-16
+crates/daw-dsp/src/primitives/pitch/mpm.rs
+  h_beb54bf43b47b7 1-308
+crates/daw-dsp/src/primitives/pitch/overlap.rs
+  h_beb54bf43b47b7 1-77
+crates/daw-dsp/src/primitives/pitch/pipeline.rs
+  h_beb54bf43b47b7 1-158
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  h_beb54bf43b47b7 1-106
+crates/daw-dsp/src/primitives/pitch/scoring.rs
+  h_beb54bf43b47b7 1-348
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  h_beb54bf43b47b7 1-202
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  h_beb54bf43b47b7 1-85
+crates/daw-dsp/tests/support/pitch_baseline/crumbs.rs
+  h_beb54bf43b47b7 1-158
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  h_beb54bf43b47b7 1-572
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  h_beb54bf43b47b7 1-26
+crates/daw-dsp/tests/support/pitch_baseline/psola.rs
+  h_beb54bf43b47b7 1-212
+crates/daw-dsp/tests/support/pitch_baseline/yin.rs
+  h_beb54bf43b47b7 1-119
+crates/scoring/AGENTS.md
+  h_beb54bf43b47b7 7-14
+crates/scoring/Cargo.toml
+  h_beb54bf43b47b7 14-15
+crates/scoring/src/lib.rs
+  h_beb54bf43b47b7 371-374
+crates/scoring/src/mpm.rs
+  h_beb54bf43b47b7 1-2
+crates/scoring/src/yin.rs
+  h_beb54bf43b47b7 1-4
+crates/scoring/tests/shared_pitch_contract.rs
+  h_beb54bf43b47b7 1-184
+crates/scoring/tests/support/pitch_baseline/mod.rs
+  h_beb54bf43b47b7 1-637
+crates/scoring/tests/support/pitch_baseline/mpm.rs
+  h_beb54bf43b47b7 1-215
+crates/scoring/tests/support/pitch_baseline/poly.rs
+  h_beb54bf43b47b7 1-225
+crates/scoring/tests/support/pitch_baseline/yin.rs
+  h_beb54bf43b47b7 1-343
+public/legal/DEPENDENCY-LICENSES.txt
+  h_beb54bf43b47b7 9
+public/wasm/scoring/scoring.d.ts
+  h_beb54bf43b47b7 1
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  h_beb54bf43b47b7 1
+release/dependency-license-proofs.json
+  h_beb54bf43b47b7 4,24,48
+scripts/__tests__/checkReleaseInventory.spec.ts
+  h_beb54bf43b47b7 3508-3511,3513-3517
+scripts/__tests__/quantumCostTableRendering.spec.ts
+  h_beb54bf43b47b7 1-150
+scripts/__tests__/quantumMeasurementCalibration.spec.ts
+  h_beb54bf43b47b7 401-404
+src/modules/AudioEngine/wasm/scoring.d.ts
+  h_beb54bf43b47b7 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5ec5ab4ea0c17f4b561e4042f8b8a40f0c27371a",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
