@@ -1,6 +1,7 @@
 import { automationStore } from '#/modules/Automation/stores';
 import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 
+import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
 import { timelineViewStore } from '../../stores/timelineViewStore';
 import { trackStore } from '../../stores/trackStore';
 import { buildTimelineRenderModel } from '../buildTimelineRenderModel';
@@ -67,7 +68,7 @@ export function hitTestAutomationSubLane(canvasX: number, canvasY: number): Auto
                 }
             }
         }
-        trackYOffset += totalHeight;
+        trackYOffset += getRenderedTrackExtent(track);
     }
 
     return null;

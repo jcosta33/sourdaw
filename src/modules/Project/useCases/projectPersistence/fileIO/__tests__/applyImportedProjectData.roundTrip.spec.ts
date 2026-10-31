@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import { clipSelectionStore, defaultClipSelectionState, takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
 import { clearUndoHistory } from '#/modules/Command/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import { midiStore, selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 
 import {
@@ -18,6 +18,7 @@ import { resetModuleStoresToDefault } from '../../helpers/resetModuleStoresToDef
 import { runProjectLoadTransaction } from '../../helpers/runProjectLoadTransaction';
 import { setProjectIdentityTransitionDependencies } from '../../projectIdentityTransitionDependencies';
 import { applyImportedProjectData } from '../applyImportedProjectData';
+import { serializeProjectMidi } from '../serializeProjectMidi';
 
 // Capture the ids the owner restore use case is asked to load — the keystone consequence is
 // that this list is NON-empty once the clip-shape mapping resolves bufferId.
@@ -883,6 +884,79 @@ describe('applyImportedProjectData round-trip hydration', () => {
 
         expect(midiStore.value?.notesByClipId['clip-midi']).toEqual([note]);
     });
+
+    it('exports and reimports recorded loop passes so a selected later pass plays only its own notes', async () => {
+        const note = { duration: 1, velocity: 100 };
+        const project = makeProject();
+        project.midi = serializeProjectMidi({
+            notesByClipId: {
+                'clip-midi': [
+                    { ...note, id: 'pass-0', pitch: 60, startBeat: 0, recordingPassIndex: 0 },
+                    { ...note, id: 'pass-1', pitch: 62, startBeat: 4, recordingPassIndex: 1 },
+                    { ...note, id: 'pass-2', pitch: 64, startBeat: 8, recordingPassIndex: 2 },
+                    { ...note, id: 'drawn', pitch: 67, startBeat: 9 },
+                ],
+            },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+        });
+        const fileContent = JSON.stringify(project);
+        const serialized: unknown = JSON.parse(fileContent);
+
+        await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(true);
+
+        const reopened = midiStore.value?.notesByClipId['clip-midi'] ?? [];
+        expect(selectMidiNotesForRecordingPass(reopened, 2).map((recorded) => recorded.id)).toEqual([
+            'pass-2',
+            'drawn',
+        ]);
+    });
+
+    it.each(['top-level', 'inactive saved arrangement'])(
+        'rejects a malformed note recording pass in %s MIDI before replacement',
+        async (route) => {
+            hydrateArrangementStoreFromProjectData({ data: makeProject() });
+            const before = {
+                project: structuredClone(projectStore.value),
+                tracks: structuredClone(trackStore.value),
+                arrangements: structuredClone(arrangementStore.value),
+                takes: structuredClone(takeLaneStore.value),
+                midi: structuredClone(midiStore.value),
+                epoch: crdtAuthority.epoch,
+            };
+            const project = makeProject();
+            const notesByClipId = {
+                'clip-a': [
+                    { id: 'recorded', pitch: 60, startBeat: 0, duration: 1, velocity: 100, recordingPassIndex: -1 },
+                ],
+            };
+            if (route === 'top-level') {
+                project.midi = { ...project.midi, notesByClipId };
+            } else {
+                project.arrangements = [
+                    { id: 'first', name: 'First' },
+                    { id: 'saved', name: 'Saved', midi: { notesByClipId, ccByClipId: {}, pitchBendByClipId: {} } },
+                ];
+                project.activeArrangementId = 'first';
+            }
+            const fileContent = JSON.stringify(project);
+            const serialized: unknown = JSON.parse(fileContent);
+
+            await expect(applyImportedProjectData({ data: serialized })).resolves.toBe(false);
+
+            expect(resetCrdtProject).not.toHaveBeenCalled();
+            expect(resetAudioGraph).not.toHaveBeenCalled();
+            expect(resetModuleStoresToDefault).not.toHaveBeenCalled();
+            expect(clearUndoHistory).not.toHaveBeenCalled();
+            expect(persistCrdtProject).not.toHaveBeenCalled();
+            expect(crdtAuthority.epoch).toBe(before.epoch);
+            expect(projectStore.value).toEqual(before.project);
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(arrangementStore.value).toEqual(before.arrangements);
+            expect(takeLaneStore.value).toEqual(before.takes);
+            expect(midiStore.value).toEqual(before.midi);
+        }
+    );
 
     it('exposes the imported tracks on the active arrangement snapshot', async () => {
         await applyImportedProjectData({ data: makeProject() });

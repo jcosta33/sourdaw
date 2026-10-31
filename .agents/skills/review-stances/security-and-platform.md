@@ -158,6 +158,20 @@ without exposing a path, File or raw error. Removing provenance dispatch or that
 redden the owning case. These renderer-boundary probes establish neither OS-dialog execution nor
 a security exposure.
 
+### 2026-10-27 — accepted NAM dimensions exceeded the runtime input width (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) added the LSTM loader with
+deeper cells sized to `hidden_size` while rendering passed a one-element input to every cell.
+The source establishes the length contradiction for `num_layers > 1 && hidden_size > 1`;
+no trap on the introducing head was measured. The missing coverage obligation was the layer/width
+cross-product. Historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Pass an exact-layout, finite-weight two-layer/hidden-size-2 file through the actual loader and
+prewarm entry. Require a named refusal before construction/prewarm, paired with successful
+single-layer/wide and stacked/hidden-size-1 controls. Count initial hidden/cell state and the head
+in the fixture, rather than guessing its length. Exercise the public import boundary and rebuilt
+WASM bytes too; a validated metadata object alone cannot prove runtime admission.
+
 ### 2026-10-27 — immutable identity proof could not cross the remote schema (introduced by PR #5705)
 
 PR #5705 (`7f4299b2f4bca1afd57b2cfce9656f3705d5a588`) selected `author { id }` from
@@ -508,6 +522,24 @@ exact ESRCH before settling or restoring source, retain unchanged escalation/con
 and reject persistent uncertainty with typed diagnostics. Inject EPERM then ESRCH around a real
 owned child, persistent EPERM through the deadline, and termination EPERM followed by absence;
 require only the first case to recover, with no extra group signals or loss of prior fatal evidence.
+
+### Control receipt admission must precede semantic authority (introduced by PR #4128)
+
+PR #4128 (`1d1471216e55823296bf84abcb4d2933ab0e3bee`) advanced interpretation after
+bounding its receipt without checking whether bounding had replaced success with failure. The
+parser's staged authority could then survive an unadmitted control. Historical private reviewer
+prompts, models and tiers are unknown. The missed boundary was receipt admission through actual
+authority consumption, beyond schema-valid selector arguments.
+
+Promote authority only after the actual bounded success receipt passes every carrier and byte
+admission. A compacted carrier, failed receipt or oversized raw control cannot substitute for that
+witness: discard unadmitted staged intent and keep effectful schemas and calls closed. Exercise an
+otherwise-valid control selected from the actual published catalog, followed by effectful use
+through the real parser and correction route. Require no continuation, escaped authority or
+proposal, preserving the correlated failure. Keep genuine in-budget local and hosted controls that
+restore the full effectful contracts. In a committed isolated probe, remove only the responsible
+discard/admission edge and require `does not let the actual parser carry failed control authority
+into a following proposal` in `metricIntent.spec.ts` to fail independently of manifest pins.
 
 ### 2026-10-29 — a declared Body choice never entered the worklet schema (PR #5254)
 

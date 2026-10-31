@@ -11,6 +11,7 @@ import { clampMidiData7 } from '#/utils/midiData';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type AutomationPoint } from '../../models/AutomationViewTypes';
+import { getRenderedTrackExtent } from '../../models/TimelineTrackExtent';
 import { type Clip } from '../../models/Track';
 import { clipDragPreviewRef, previewDirtyFlag, type ClipPreviewPosition } from '../../stores/clipDragPreviewRef';
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
@@ -529,7 +530,9 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
             if (now - lastPresenceBroadcastRef.current > 100) {
                 lastPresenceBroadcastRef.current = now;
                 const cursorBeat = getBeatFromX(x);
-                const tracks = trackStore.value?.tracks ?? [];
+                // The rendered rows, not the raw store list: collapsed children
+                // and the master row are not laid out.
+                const tracks = buildTimelineRenderModel().tracks;
                 const contentY = getContentY(y, getScrollY());
                 const trackHit = getTrackAtYHelper(tracks, Math.max(0, contentY));
                 // §fix-9 — Cursor-only delta: omit playheadBeat so it doesn't
@@ -804,7 +807,7 @@ export const useTimelineInteractions = (canvasRef: React.RefObject<HTMLCanvasEle
         const hitTrackIds: string[] = [];
         let trackYOffset = 0;
         for (const track of model.tracks) {
-            const h = track.height;
+            const h = getRenderedTrackExtent(track);
             if (!(trackYOffset + h < top || trackYOffset > bottom)) {
                 hitTrackIds.push(track.id);
                 for (const clip of track.clips) {

@@ -9,6 +9,7 @@ import { useStore } from '#/infra/store/useStore';
 import { cn } from '#/utils/Styles/cn';
 
 import { type Take, type CompRegion } from '../../models/TakeLane';
+import { showsVariationLanes } from '../../models/TimelineTrackExtent';
 import { takeLaneStore, type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { trackStore, type TrackStoreState } from '../../stores/trackStore';
 import { addTake } from '../../useCases/comping/addTake';
@@ -428,9 +429,7 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
 export const TakeLanesView = (): ReactElement => {
     const laneState = useStore(takeLaneStore, DEFAULT_LANE_STATE);
     const trackState = useStore(trackStore, DEFAULT_TRACK_STATE);
-    const activeTracks = trackState.tracks.filter(
-        (track) => track.showVariationLanes === true && track.kind !== 'master' && track.kind !== 'folder'
-    );
+    const activeTracks = trackState.tracks.filter(showsVariationLanes);
 
     if (activeTracks.length === 0) {
         const laneCount = laneState.lanes.length;

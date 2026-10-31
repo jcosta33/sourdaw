@@ -1,6 +1,9 @@
 import { compareAgentScopeMeasurements, measureAgentScopeRender } from '#/modules/AudioAnalysis/useCases';
 import { renderAgentPreviewMeasurementScope, retainAgentMeasurementRenders } from '#/modules/AudioRendering/useCases';
-import { previewVersionedCommandBatchEnvelope } from '#/modules/Command/useCases';
+import {
+    previewVersionedCommandBatchEnvelope,
+    type parseVersionedCommandBatchEnvelope,
+} from '#/modules/Command/useCases';
 import { digest } from '#/utils/canonicalDigest';
 
 import { ANALYSIS_MEASURE_TOOL_NAME } from '../models/AgentToolCatalogNames';
@@ -50,6 +53,9 @@ type ExecutePreviewMeasurementInput = {
     /** The run's read model, request and authority, which the proposal is compiled and grounded against. */
     preview: {
         context: ProjectContext;
+        origin?: 'planner' | 'approval-preview';
+        /** Internal proof refresh only; provider arguments cannot supply this capability. */
+        preparedBatch?: Extract<ReturnType<typeof parseVersionedCommandBatchEnvelope>, { status: 'valid' }>['envelope'];
         /** Snapshot of successful receipt-admitted compilations from earlier turns only. */
         retainedCompilations?: readonly RetainedCompilation[];
         prompt: string;
@@ -199,6 +205,17 @@ function successRead(
     const { startBeat, endBeat, sectionId } = measured.beats;
     const measuredPreview: MeasuredPreview = measuredPreviewWithSource(
         {
+            provenance: {
+                origin: input.preview.origin ?? 'planner',
+                callId: input.callId,
+                turn: input.turn,
+                runId: input.preview.runId,
+                targets: pairs.map(([baseline, preview]) => ({
+                    targetId: baseline.targetId,
+                    baseline: artifactOf(baseline),
+                    preview: artifactOf(preview),
+                })),
+            },
             scope: parsed.scope,
             range: { startBeat, endBeat, sectionId },
             targets,
@@ -258,6 +275,17 @@ function sourceRecipe(input: ExecutePreviewMeasurementInput) {
 
 function compileProposal(input: ExecutePreviewMeasurementInput) {
     try {
+        if (input.preview.preparedBatch !== undefined) {
+            return compilePreviewMeasurementProposal({
+                callId: input.callId,
+                source: { preparedBatch: input.preview.preparedBatch },
+                context: input.preview.context,
+                prompt: input.preview.prompt,
+                revision: input.projectRevision,
+                runId: input.preview.runId,
+                creativeAuthority: input.preview.readCreativeAuthority(),
+            });
+        }
         const recipe = sourceRecipe(input);
         if ('recipeCallId' in input.source && recipe === undefined) {
             return {

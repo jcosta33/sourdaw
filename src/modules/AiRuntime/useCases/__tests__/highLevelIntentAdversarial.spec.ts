@@ -11,6 +11,8 @@ import {
 import { generateToolPlanningOutcome } from '../llmOrchestration/inference';
 import { parsePromptToActions } from '../parsePromptToActions';
 
+import { literalMetricIntakeTurn, nonAcousticMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
     return {
@@ -43,7 +45,7 @@ const emptyProject: ProjectContext = {
 
 /** Names every created object and every beat, so only the attack under test can reject the batch. */
 const LITERAL_PROMPT =
-    'add a midi track named Blues Comp and add a midi clip named Twelve Bar on the Blues Comp track from beat 0 to beat 12 and add notes to the Twelve Bar clip';
+    'add a midi track named Blues Comp and add a midi clip named Twelve Bar on the Blues Comp track from beat 0 to beat 12 and add a note to the Twelve Bar clip at pitch 60, beat 0, duration 1 beat, velocity 96';
 
 const plan = {
     semantic: { classification: 'complex', uncertainty: [] },
@@ -105,6 +107,19 @@ async function planWith(
     context: ProjectContext = emptyProject
 ) {
     const mocked = vi.mocked(generateToolPlanningOutcome);
+    let intake = literalMetricIntakeTurn;
+    if (prompt === CREATIVE_PROMPT) {
+        intake = nonAcousticMetricIntakeTurn({
+            modeId: 'create',
+            dimensions: ['arrangement', 'midi-content'],
+            creationSlotObjectTypes: ['track'],
+            nestedCreationSlotObjectTypes: ['clip'],
+        });
+    }
+    mocked.mockImplementationOnce(async (_system, message, schemas) => ({
+        status: 'complete',
+        toolCalls: intake(message, schemas).map((call) => ({ ...call, id: 'intake' })),
+    }));
     for (const turn of turns) {
         mocked.mockResolvedValueOnce(turn);
     }
@@ -471,11 +486,11 @@ describe('high-level intent adversarial planning', () => {
      * at. Creating an object never buys authority over what surrounds it.
      */
     it.each([
-        ['soloTrack', { trackId: '$lead', soloed: true }],
-        ['armTrack', { trackId: '$lead', armed: true }],
-        ['duplicateTrack', { trackId: '$lead' }],
-        ['reorderTrack', { trackId: '$lead', newIndex: 0 }],
-    ])('(p) refuses %s on a plan-created track the request never asked to change', async (name, args) => {
+        ['soloTrack', { trackId: '$lead', soloed: true }, 'Provider action is not grounded in the user request'],
+        ['armTrack', { trackId: '$lead', armed: true }, 'Provider action is not grounded in the user request'],
+        ['duplicateTrack', { trackId: '$lead' }, 'Creative authority does not extend to routing effects'],
+        ['reorderTrack', { trackId: '$lead', newIndex: 0 }, 'Creative authority does not cover the track $lead'],
+    ])('(p) refuses %s outside the creative authority for a new track', async (name, args, reason) => {
         const result = await planWith(
             proposalRunFor(
                 ['addTrack', name],
@@ -488,7 +503,7 @@ describe('high-level intent adversarial planning', () => {
         );
 
         expect(result.actions).toEqual([]);
-        expect(result.rejectionReason).toContain('Provider action is not grounded in the user request');
+        expect(result.rejectionReason).toContain(reason);
     });
 
     it('(q) refuses a plan-created clip parked past the batch timeline budget', async () => {

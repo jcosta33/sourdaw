@@ -261,6 +261,16 @@ function isTransport(value: unknown): value is ProjectTransport {
     );
 }
 
+/** The rule `midiStore` hydration enforces: absent, or a pass counted from zero. */
+function hasValidRecordingPassIndex(value: UnknownRecord): boolean {
+    return (
+        !('recordingPassIndex' in value) ||
+        (typeof value.recordingPassIndex === 'number' &&
+            Number.isSafeInteger(value.recordingPassIndex) &&
+            value.recordingPassIndex >= 0)
+    );
+}
+
 function isMidiNote(value: unknown): boolean {
     return (
         isRecord(value) &&
@@ -275,6 +285,7 @@ function isMidiNote(value: unknown): boolean {
             keys: ['probability', 'pressure', 'slide', 'pitchBend'],
             type: 'number',
         }) &&
+        hasValidRecordingPassIndex(value) &&
         (value.expression === undefined ||
             (typeof value.duration === 'number' && isValidMidiNoteExpression(value.expression, value.duration)))
     );
@@ -679,10 +690,7 @@ function isTake(value: unknown): boolean {
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
         typeof value.selected === 'boolean' &&
         isValidTakePlacement(value) &&
-        (!('recordingPassIndex' in value) ||
-            (typeof value.recordingPassIndex === 'number' &&
-                Number.isSafeInteger(value.recordingPassIndex) &&
-                value.recordingPassIndex >= 0)) &&
+        hasValidRecordingPassIndex(value) &&
         (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }

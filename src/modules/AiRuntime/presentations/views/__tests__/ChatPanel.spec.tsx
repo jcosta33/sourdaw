@@ -6,6 +6,10 @@ import { MISSING_EXACT_CHECKPOINT_RECOVERY_REASON } from '../../../models/GetPen
 import * as retainedReviewProjection from '../../../useCases/selectRetainedSectionRenderManualReviews';
 import { ChatPanel } from '../ChatPanel';
 
+const useStoreMock = vi.hoisted(() => vi.fn());
+const metricApprovalMock = vi.hoisted(() => vi.fn());
+vi.mock('../../../useCases/getAgentApprovalView', () => ({ getAgentApprovalView: metricApprovalMock }));
+
 const retainedPreviewMocks = vi.hoisted(() => ({
     cache: vi.fn(),
     play: vi.fn(),
@@ -18,14 +22,7 @@ const retainedPreviewMocks = vi.hoisted(() => ({
 }));
 
 // Mock external dependencies - factories are hoisted, so define mocks inside
-vi.mock('#/infra/store/useStore', () => ({
-    useStore: vi.fn(() => ({
-        messages: [],
-        isGenerating: false,
-        chatMode: 'chat',
-        enableReasoning: false,
-    })),
-}));
+vi.mock('#/infra/store/useStore', () => ({ useStore: useStoreMock }));
 
 vi.mock('#/modules/AiRuntime/stores/chatStore', () => ({
     chatStore: { kind: 'chat' },
@@ -57,6 +54,26 @@ vi.mock('../../../useCases/confirmPendingChatActions', () => ({
 vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
 }));
+vi.mock('../../../useCases/reproposePendingChatActions', () => ({ reproposePendingChatActions: vi.fn() }));
+
+// A real subscribed presentation store; planning, approval and mutation remain separate use-case ports.
+vi.mock('../../../stores/pendingActionConfirmationStore', async () => {
+    const { createStore } = await import('#/infra/store/createStore');
+    const pendingActionConfirmationStore = createStore<{ confirmations: Array<{ id: string }> }>({
+        initialData: { confirmations: [] },
+    });
+    return {
+        pendingActionConfirmationStore,
+        clearPendingActionConfirmations: () => pendingActionConfirmationStore.set({ confirmations: [] }),
+        proposePendingActionConfirmation: (input: { id: string }) => {
+            const confirmations = pendingActionConfirmationStore.value?.confirmations ?? [];
+            pendingActionConfirmationStore.set({
+                confirmations: [...confirmations, { id: input.id }],
+            });
+            return { id: input.id };
+        },
+    };
+});
 
 vi.mock('../../../useCases/recoverAgentRunPendingEffects', () => ({
     recoverAgentRunPendingEffects: vi.fn(),
@@ -144,6 +161,8 @@ const { confirmPendingChatActions } = await import('../../../useCases/confirmPen
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
+const { clearPendingActionConfirmations, pendingActionConfirmationStore, proposePendingActionConfirmation } =
+    await import('../../../stores/pendingActionConfirmationStore');
 const { appendChatMessage } = await import('#/modules/AiRuntime/stores/chatStore');
 const { agentSectionRenderArtifactStore } = await import('#/modules/AudioRendering/stores');
 const { capabilityStore, isWebGpuAvailable } = await import('#/modules/BrowserAi/stores');
@@ -231,9 +250,58 @@ function createRetainedReview(input: {
     };
 }
 
+function usePendingChatState(state: {
+    messages: ChatMessage[];
+    isGenerating: boolean;
+    chatMode: 'prompt' | 'chat';
+    enableReasoning: boolean;
+}): void {
+    for (const message of state.messages) {
+        if (
+            message.pendingActionConfirmationStatus !== 'proposed' ||
+            message.pendingActionConfirmationId === undefined
+        ) {
+            continue;
+        }
+        proposePendingActionConfirmation({
+            id: message.pendingActionConfirmationId,
+            prompt: 'Set tempo to 120',
+            assistantMessageId: message.id,
+            actions: [{ type: 'setTempo', payload: { bpm: 120 } }],
+            actionLabels: ['Set tempo to 120'],
+            projectRevision: 'chat-presentation-revision',
+        });
+    }
+    function usePendingFixtureStore(store: unknown) {
+        const confirmations = useRealStore(pendingActionConfirmationStore);
+        const capability = useRealStore(capabilityStore);
+        const artifacts = useRealStore(agentSectionRenderArtifactStore);
+        if (store === pendingActionConfirmationStore) {
+            return confirmations;
+        }
+        if (store === agentRunStore) {
+            return { schemaVersion: 1, runs: [] };
+        }
+        if (store === capabilityStore) {
+            return capability;
+        }
+        if (store === agentSectionRenderArtifactStore) {
+            return artifacts;
+        }
+        return state;
+    }
+    useStoreMock.mockImplementation(usePendingFixtureStore);
+}
+
 describe('ChatPanel', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        clearPendingActionConfirmations();
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: { status: 'not-required', reason: null, criteria: [] },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+        });
         Element.prototype.scrollIntoView = vi.fn();
         capabilityStore.set({ phase: 'idle' });
         (useStore as ReturnType<typeof vi.fn>).mockImplementation((store: unknown) => {
@@ -426,7 +494,7 @@ describe('ChatPanel', () => {
     });
 
     it('should let the user confirm or cancel pending prompt actions', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+        usePendingChatState({
             messages: [
                 {
                     id: 'assistant-1',
@@ -453,9 +521,66 @@ describe('ChatPanel', () => {
         expect(cancelPendingChatActions).toHaveBeenCalledWith({ confirmationId: 'confirm-1' });
     });
 
+    it('keeps Confirm disabled until the subscribed metric approval view verifies the proposal', () => {
+        usePendingChatState({
+            messages: [
+                {
+                    id: 'metric-chat-card',
+                    role: 'assistant',
+                    content: 'Warm vocal proposal',
+                    timestamp: 1,
+                    isCommandAction: true,
+                    pendingActionConfirmationId: 'metric-chat-confirmation',
+                    pendingActionConfirmationStatus: 'proposed',
+                },
+            ],
+            isGenerating: false,
+            chatMode: 'prompt',
+            enableReasoning: false,
+        });
+        const criterion = 'Lead Vocal: spectral centroid must decrease over Chorus. Objective proxy only.';
+        metricApprovalMock.mockReturnValue({
+            canConfirm: false,
+            metricGoals: {
+                status: 'blocked',
+                reason: 'Actual compatible preview measurements are missing.',
+                criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+            },
+            rePreview: { available: true, reason: null },
+        });
+        render(<ChatPanel />);
+        expect(screen.getByText('Warm vocal proposal')).toBeInTheDocument();
+        expect(screen.getByText('Actual compatible preview measurements are missing.')).toBeInTheDocument();
+        expect(screen.getByText(criterion)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeDisabled();
+        expect(screen.getByRole('button', { name: 'Re-preview pending actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm pending actions' }));
+        expect(confirmPendingChatActions).not.toHaveBeenCalled();
+        metricApprovalMock.mockReturnValue({
+            canConfirm: true,
+            metricGoals: {
+                status: 'verified',
+                reason: null,
+                criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+            },
+            rePreview: { available: false, reason: 'The proposal still matches the current project.' },
+        });
+        act(() => {
+            pendingActionConfirmationStore.set({
+                confirmations: structuredClone(pendingActionConfirmationStore.value?.confirmations ?? []),
+            });
+        });
+        expect(screen.getByText('Objective verification: verified')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Confirm pending actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm pending actions' }));
+        expect(confirmPendingChatActions).toHaveBeenCalledExactlyOnceWith({
+            confirmationId: 'metric-chat-confirmation',
+        });
+    });
+
     // Red when the card a refinement replaced keeps a Confirm beside the replacement's own.
     it('offers Confirm only on the refined proposal, never on the one it replaced', () => {
-        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+        usePendingChatState({
             messages: [
                 {
                     id: 'assistant-replaced',

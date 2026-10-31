@@ -41,6 +41,7 @@ import {
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { setNotificationEventBus } from '#/utils/Notification/notificationEventBus';
 
+import { type ToolSchema } from '../../models/ToolDefinitions';
 import { cloudSession } from '../../repositories/cloudLlm/cloudSession';
 import { clearAiHistory } from '../../stores/aiActionHistoryStore';
 import { chatStore } from '../../stores/chatStore';
@@ -48,18 +49,67 @@ import {
     clearPendingActionConfirmations,
     getPendingActionConfirmation,
 } from '../../stores/pendingActionConfirmationStore';
+import { agentRunLifecycle } from '../agentRunLifecycle';
 import { confirmPendingChatActions } from '../confirmPendingChatActions';
+import { getAgentApprovalView } from '../getAgentApprovalView';
+import { metricGoalStateCodec } from '../metricGoalStateCodec';
 import { sendChatMessage as sendChatMessageUseCase } from '../sendChatMessage';
 
 import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import {
+    type ScriptedTurn,
+    readCreativeInterpretationCatalog,
+    selectCreativeInterpretationCall,
+} from './highLevelIntentWorkflowFixture';
+import { literalMetricIntakeTurn, readMetricPublication } from './metricGoalWorkflowFixture';
 import { withWorkflowCapabilitySelection } from './workflowCapabilitySelectionFixture';
 
 const SHARED_VOCAL_FX_PROMPT = 'Move vocal delays and reverbs to shared buses while preserving balance.';
 const SHARED_VOCAL_FX_PARAPHRASE =
     'Put the vocal delay and reverb effects on shared buses, keeping the current wet and dry balance intact.';
+// Exact coefficient preservation is a separate handler/Undo obligation from perceived balance.
+const SHARED_VOCAL_FX_CONTROL_PROMPT =
+    'Move vocal delays and reverbs to shared buses using the published device settings, send levels, and compensated track gains.';
+
+const sharedBalanceMetricIntake: ScriptedTurn = (userMessage, providerView) => {
+    const call = selectCreativeInterpretationCall({
+        catalog: readCreativeInterpretationCatalog(userMessage, providerView),
+        modeId: 'create',
+        creationSlotObjectTypes: ['track'],
+        dimensions: ['processing', 'arrangement'],
+    });
+    const objective = readMetricPublication({ function: advertisedAnswerSchema(providerView) }).find(
+        (candidate) => candidate.kind === 'unsupported'
+    );
+    if (objective === undefined) {
+        throw new TypeError('Expected the published unsupported perceptual balance objective.');
+    }
+    return [
+        {
+            ...call,
+            arguments: {
+                ...call.arguments,
+                answer: null,
+                metricIntent: {
+                    kind: 'perceptual',
+                    uncertainty: 'none',
+                    objectives: [
+                        {
+                            objectiveId: objective.id,
+                            scopeCandidateId: null,
+                            referenceScopeCandidateId: null,
+                            rangeCandidateId: null,
+                        },
+                    ],
+                },
+            },
+        },
+    ];
+};
 
 const fixtureStorageOwners = vi.hoisted(() => new Map<string, { flushPendingUnscopedWrite(): void }>());
 
@@ -555,7 +605,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
     if (
         !isRecord(discoveryReceipt) ||
         discoveryReceipt.status !== 'success' ||
-        discoveryReceipt.turn !== 1 ||
+        discoveryReceipt.turn !== 2 ||
         !isRecord(discoveryReceipt.data) ||
         discoveryReceipt.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discoveryReceipt.data.schemaVersion !== 1 ||
@@ -585,21 +635,23 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], finalCalls
 }
 
 /**
- * Wraps a WebLLM fixture so the first provider turn discovers the command
- * catalog it needs and only the second turn returns the actual plan, matching
- * the two-turn contract `runApplicationOwnedToolLoop` enforces.
+ * Runs actual intake before command discovery and the final proposal.
  */
 function createTurnTrackedWebLlmResponder(
-    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): (systemPrompt: string, userMessage: string) => Promise<string> {
     let turn = 0;
-    return (_systemPrompt, userMessage) => {
+    return (systemPrompt, userMessage) => {
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three WebLLM provider turns');
+        }
+        if (turn === 1) {
+            return Promise.resolve(JSON.stringify(intake(userMessage, systemPrompt)));
         }
         const finalCalls = buildFinalCalls(userMessage);
-        if (turn === 1) {
+        if (turn === 2) {
             return Promise.resolve(JSON.stringify(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getApplicationToolReceipts(userMessage), finalCalls);
@@ -628,7 +680,8 @@ function toolCallsResponse(calls: readonly ProviderPlanCall[]): Response {
 
 /** The hosted-provider equivalent of {@link createTurnTrackedWebLlmResponder}. */
 function createTurnTrackedHostedResponder(
-    buildFinalCalls: (userMessage: string) => ProviderPlanCall[]
+    buildFinalCalls: (userMessage: string) => ProviderPlanCall[],
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch> {
     let turn = 0;
     return (_input, init) => {
@@ -636,11 +689,16 @@ function createTurnTrackedHostedResponder(
             throw new TypeError('Expected hosted provider request body');
         }
         turn += 1;
-        if (turn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
+        if (turn > 3) {
+            throw new Error('Expected exactly three hosted provider turns');
         }
-        const finalCalls = buildFinalCalls(getHostedUserMessage(init.body));
+        const userMessage = getHostedUserMessage(init.body);
         if (turn === 1) {
+            const request = JSON.parse(init.body) as { tools: ToolSchema[] };
+            return Promise.resolve(toolCallsResponse(intake(userMessage, request.tools)));
+        }
+        const finalCalls = buildFinalCalls(userMessage);
+        if (turn === 2) {
             return Promise.resolve(toolCallsResponse(catalogDiscoveryPlan(finalCalls)));
         }
         assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), finalCalls);
@@ -706,14 +764,17 @@ function useHostedSharedVocalFxFixture(): void {
 }
 
 function useWebSharedVocalFxFixture(
-    transform: (plan: ProviderPlanCall[]) => ProviderPlanCall[] = (plan) => plan
+    transform: (plan: ProviderPlanCall[]) => ProviderPlanCall[] = (plan) => plan,
+    intake: ScriptedTurn = literalMetricIntakeTurn
 ): void {
     runtimeMocks.generateWebLlmCompletion.mockImplementation(
-        createTurnTrackedWebLlmResponder((userMessage) =>
-            withWorkflowCapabilitySelection(
-                'shared-vocal-fx-buses',
-                asCommandBatchProposal(transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage)))
-            )
+        createTurnTrackedWebLlmResponder(
+            (userMessage) =>
+                withWorkflowCapabilitySelection(
+                    'shared-vocal-fx-buses',
+                    asCommandBatchProposal(transform(createSharedVocalFxProviderPlanFromUserMessage(userMessage)))
+                ),
+            intake
         )
     );
 }
@@ -1060,13 +1121,54 @@ describe('shared vocal FX buses workflow', () => {
         vi.unstubAllGlobals();
     });
 
-    it('compiles EX-08 into one exact shared-delay/shared-reverb confirmation that preserves vocal balance', async () => {
+    it.each([SHARED_VOCAL_FX_PROMPT, SHARED_VOCAL_FX_PARAPHRASE])(
+        'keeps the original perceptual balance request visible and blocked without compatible evidence: %s',
+        async (prompt) => {
+            installSharedVocalFxFixture();
+            useWebSharedVocalFxFixture((plan) => plan, sharedBalanceMetricIntake);
+            settleFixtureProjectWrites();
+            const before = {
+                tracks: structuredClone(trackStore.value),
+                undo: structuredClone(undoStore.value),
+                revision: captureProjectRevision(),
+            };
+
+            await sendChatMessage(prompt);
+
+            const confirmationId = getConfirmationId();
+            const confirmation = getPendingActionConfirmation(confirmationId);
+            if (!confirmation) {
+                throw new TypeError('Expected the complete original balance proposal to remain visible.');
+            }
+            const metricState = confirmation.approvalSnapshot.metricGoalState;
+            expect(metricGoalStateCodec(metricState)?.authorities).toMatchObject([
+                { kind: 'perceptual', goals: [{ relation: 'unsupported' }] },
+            ]);
+            expect(confirmation.approvalSnapshot.agentApproval?.metricGoalState).toBe(metricState);
+            expect(agentRunLifecycle.get(confirmation.runId ?? '')?.plan?.metricGoalState).toBe(metricState);
+            expect(confirmation?.actions).toHaveLength(27);
+            expect(getAgentApprovalView({ confirmationId })).toMatchObject({
+                canConfirm: false,
+                metricGoals: { status: 'blocked' },
+            });
+            await expect(confirmPendingChatActions({ confirmationId })).resolves.toMatchObject({
+                status: 'failed',
+                reason: expect.stringMatching(/metric|objective|measur/u),
+            });
+            expect(trackStore.value).toEqual(before.tracks);
+            expect(undoStore.value).toEqual(before.undo);
+            expect(captureProjectRevision()).toBe(before.revision);
+            expect(runtimeMocks.renderOffline).not.toHaveBeenCalled();
+        }
+    );
+
+    it('compiles the separate literal coefficient-preservation control into one exact shared-effects confirmation', async () => {
         installSharedVocalFxFixture();
         useWebSharedVocalFxFixture();
 
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
-        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.generateWebLlmCompletion).toHaveBeenCalledTimes(3);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         expect(createSharedVocalFxProviderPlanFromUserMessage(getWebLlmUserMessage())).toEqual(
             sharedVocalFxProviderPlan
@@ -1182,11 +1284,11 @@ describe('shared vocal FX buses workflow', () => {
         expect(confirmation?.risk?.level).toBe('authority-sensitive');
     });
 
-    it('routes a semantic paraphrase through the same bounded shared-vocal-effects capability', async () => {
+    it('routes the explicit coefficient-preservation control through the bounded shared-vocal-effects capability', async () => {
         installSharedVocalFxFixture();
         useWebSharedVocalFxFixture();
 
-        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
         const confirmationId = getConfirmationId();
         expect(confirmationId).not.toBe('');
@@ -1206,10 +1308,10 @@ describe('shared vocal FX buses workflow', () => {
             .mockResolvedValueOnce(JSON.stringify(sharedVocalFxProviderPlan))
             .mockResolvedValueOnce(JSON.stringify([...sharedVocalFxProviderPlan, sharedVocalFxWorkflowSelection]));
 
-        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
 
-        await sendChatMessage(SHARED_VOCAL_FX_PARAPHRASE);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         expect(getConfirmationId()).toBe('');
     });
 
@@ -1217,9 +1319,9 @@ describe('shared vocal FX buses workflow', () => {
         installSharedVocalFxFixture();
         useHostedSharedVocalFxFixture();
 
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
-        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(2);
+        expect(runtimeMocks.fetch).toHaveBeenCalledTimes(3);
         const requestBody = runtimeMocks.fetch.mock.calls[0]?.[1]?.body;
         if (typeof requestBody !== 'string') {
             throw new TypeError('Expected one hosted provider request body');
@@ -1259,7 +1361,7 @@ describe('shared vocal FX buses workflow', () => {
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         useWebSharedVocalFxFixture(transform);
 
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
         expect(getConfirmationId()).toBe('');
         expect(trackStore.value?.tracks).toEqual(originalTracks);
@@ -1309,7 +1411,7 @@ describe('shared vocal FX buses workflow', () => {
         trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
         useWebSharedVocalFxFixture();
 
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
         expect(getConfirmationId()).toBe('');
         expect(undoStore.value?.past).toEqual([]);
@@ -1347,17 +1449,17 @@ describe('shared vocal FX buses workflow', () => {
         trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
         useWebSharedVocalFxFixture();
 
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
 
         expect(getConfirmationId()).toBe('');
         expect(undoStore.value?.past).toEqual([]);
     });
 
-    it('atomically moves both effects, receipts exact balance, and groups undo and redo', async () => {
+    it('atomically moves both effects, receipts exact coefficients, and groups undo and redo', async () => {
         installSharedVocalFxFixture();
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         useWebSharedVocalFxFixture();
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');
@@ -1528,7 +1630,7 @@ describe('shared vocal FX buses workflow', () => {
         mutate(tracks);
         trackStore.set({ tracks, selectedTrackId: null, ghostClips: [] });
         useWebSharedVocalFxFixture();
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');
@@ -1556,7 +1658,7 @@ describe('shared vocal FX buses workflow', () => {
         installSharedVocalFxFixture();
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         useWebSharedVocalFxFixture();
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');
@@ -1596,7 +1698,7 @@ describe('shared vocal FX buses workflow', () => {
         installSharedVocalFxFixture();
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         useWebSharedVocalFxFixture();
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');
@@ -1618,7 +1720,7 @@ describe('shared vocal FX buses workflow', () => {
         installSharedVocalFxFixture();
         const originalTracks = structuredClone(trackStore.value?.tracks ?? []);
         useWebSharedVocalFxFixture();
-        await sendChatMessage(SHARED_VOCAL_FX_PROMPT);
+        await sendChatMessage(SHARED_VOCAL_FX_CONTROL_PROMPT);
         const confirmation = getPendingActionConfirmation(getConfirmationId());
         if (!confirmation) {
             throw new Error('Expected EX-08 confirmation');

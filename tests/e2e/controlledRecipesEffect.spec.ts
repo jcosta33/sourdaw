@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 import { admitLoopbackProvider } from './admitLoopbackProvider';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
-import { startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
+import { literalWholeRequestIntake, startScriptedToolProvider, type ScriptedToolRequest } from './scriptedToolProvider';
 
 function tool(request: ScriptedToolRequest, name: string): string {
     const wire = name.replaceAll('.', '_');
@@ -291,8 +291,12 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
     const before = await state();
     const dry = await render();
     const provider = await startScriptedToolProvider((request, turn) => {
-        expect(turn).toBeLessThan(4);
-        if (turn === 0)
+        expect(turn).toBeLessThan(5);
+        if (turn === 0) {
+            return [literalWholeRequestIntake(request)];
+        }
+        const step = turn - 1;
+        if (step === 0)
             return [
                 {
                     id: 'project',
@@ -300,7 +304,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                     arguments: { type: 'object', page: { limit: 50 } },
                 },
             ];
-        if (turn === 1) {
+        if (step === 1) {
             receipt(request, 'project');
             return [
                 {
@@ -310,7 +314,7 @@ test('controlled drum gate reaches public proposal, linked stereo sound, Undo/Re
                 },
             ];
         }
-        if (turn === 2) {
+        if (step === 2) {
             const discovered = receipt(request, 'discover');
             expect(discovered.candidates).toEqual(
                 expect.arrayContaining([

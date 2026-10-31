@@ -30,6 +30,7 @@ import { unionProposalProtectionFacts } from '../agentReference/proposalGroundin
 import { preparedStemImportResources } from '../agentReference/registerPreparedStemImportResources';
 import { agentRunLifecycle } from '../agentRunLifecycle';
 import { agentRunWorkLease } from '../agentRunWorkLease';
+import { agentWorkBudget } from '../agentWorkBudget';
 import { ApplicationOwnedToolLoopRequestError } from '../applicationOwnedToolLoop';
 import { agentRunCancellation } from '../cancelAgentRun';
 import { describePendingActionConfirmation } from '../describePendingActionConfirmation';
@@ -716,6 +717,7 @@ async function dispatchPromptPlan(input: {
                 matchSelectorPredicates: result.matchSelectorPredicates,
                 adoptedRecipes: result.adoptedRecipes,
                 measuredPreview: result.measuredPreview,
+                metricGoalState: compiledActionExecution.metricGoalState,
                 batchPosition: getBatchPosition(result.batchSchedule),
                 groundingBasis,
                 protectionFacts,
@@ -977,24 +979,7 @@ export async function orchestratePromptChatRequest(
                           : { status: 'rejected' as const, reason: budgetReservation.reason ?? 'agent budget limit' };
                   }
                 : undefined,
-            onLocalWorkAttempt: ({ analysisCount, downloadBytes, storageBytes }) => {
-                const estimates = [
-                    ['localAnalysis', analysisCount],
-                    ['downloadBytes', downloadBytes],
-                    ['storageBytes', storageBytes],
-                ] as const;
-                return (
-                    agentRunLifecycle.reserveBudgetBatch({
-                        runId: admission.runId,
-                        attempts: estimates.map(([category, estimate]) => ({
-                            attemptId: `stem-preparation:${category}`,
-                            category,
-                            estimate,
-                            provenance: 'versioned-estimate',
-                        })),
-                    }).status === 'reserved'
-                );
-            },
+            onLocalWorkAttempt: agentWorkBudget.admitStemPreparation(admission.runId),
             providerPlanning: admission.providerPlanning ? 'enabled' : 'disabled',
             // Read before this request joins the thread, so the thread holds only its earlier turns.
             thread: readChatThreadContext(),

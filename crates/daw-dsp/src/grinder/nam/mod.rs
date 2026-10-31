@@ -19,6 +19,8 @@ mod conv;
 mod convnet;
 mod linear;
 mod lstm;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native_admission;
 mod wavenet;
 
 pub use convnet::ConvnetModel;
@@ -85,13 +87,17 @@ impl NamModel {
     }
 
     pub fn reset(&mut self) {
+        self.reset_state();
+        self.prewarm();
+    }
+
+    fn reset_state(&mut self) {
         match self {
             NamModel::Wavenet(model) => model.reset(),
             NamModel::Lstm(model) => model.reset(),
             NamModel::Convnet(model) => model.reset(),
             NamModel::Linear(model) => model.reset(),
         }
-        self.prewarm();
     }
 }
 

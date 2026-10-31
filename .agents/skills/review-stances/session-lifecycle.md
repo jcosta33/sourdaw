@@ -79,6 +79,21 @@ actual child entry separately and preserve the host's time origin; share one per
 across host and child, never replenishing it on successful startup. Storage failure requires
 manual recovery. Removing the phase fence or shared budget must fail the corresponding probe.
 
+### 2026-10-27 — unsupported NAM replacement needs sounding-model preservation (introduced by PR #5209)
+
+PR #5209 (`54ff77cd1f930903d6e5a6f9024a45c87b67b063`) introduced the real NAM runtime
+with an admitted stacked-wide LSTM shape whose deeper input width contradicts its render buffer.
+The missing coverage obligation is replacement refusal while an existing capture is sounding;
+historical private reviewer prompts, assigned stances and model tiers are unknown.
+
+Activate Capture mode and advance two identical loaded engines with identical input. Attempt the
+unsupported replacement on one only, then require its subsequent PCM to equal the continuing
+reference without a reset. Require nonzero output separated from a matched unloaded/dry control.
+`has_loaded_neural_model` plus finite output can pass while Circuit mode bypasses the capture.
+Pair empty-engine refusal with both supported topology boundaries; preserve the selected library
+entry at the real import UI. This proves the exercised shared/WASM route, not native transport or
+physical playback acceptance.
+
 ### 2026-10-27 — cached preview sources outlived their engine graph (preserved by PR #187)
 
 Commit `454de02a76069e5cec5fcee104eb9a64521e2f97` introduced the UI-owned preview source:
@@ -234,6 +249,24 @@ arm's stamps, and the other carrier's gate ramp and voice presence (`TrackNode.s
 delivers is the finding; a claim that "the other carrier covers it" without those two traces is
 discarded.
 
+### A refused monitoring Off must retain the admitted capture
+
+The setter's eager Off release first appears in `e21d1877c780a083dc704054ba7455476cf35c92`.
+The toggle already released eagerly in `4f410257b212bbbd2210fa6553f7aaa3394f69bc`;
+`e415a55cc406ba264dffbc229f4ac86f3e5caaab` later moved it from Track to Arrangement. GitHub
+reports no associated PR for the setter commit or the earlier toggle commit. PR #4255 narrowed
+the setter's global stop to a per-track stop but retained its
+pre-commit release. Review of #5091 exposed the rollback gap; it did not introduce it. Historical
+private review prompts and tiers are unknown.
+
+Start with committed and admitted On for two tracks sharing capture. Invoke a real Off gesture
+inside the actual CRDT transaction; while projection is Off and committed state remains On, reject
+and abort the write. Both original source edges must remain connected, with no stop or reacquisition,
+and projection must return to On. A committed Off releases only its owner; final Off stops the
+shared stream once. Pair a pending grant with committed Off and a stored-but-unadmitted On control.
+Reintroduce eager release in each setter and toggle route: the unchanged refused-Off integration
+cases must fail. Controlled media and a programmatic DOM click do not establish physical audibility.
+
 ### 2026-09-09 — the correction removed for every caller (caught in review of the #4020 repair)
 
 The repair for the entry above deleted the roll projection from the shared session start rather than
@@ -334,6 +367,23 @@ check that the MediaStreamTrack stops exactly once. Hold a permission grant thro
 resolve it and check that no deleted strip or edge is recreated. Abort and commit the single and
 bulk commands separately: the abort must retain every edge and stream, while the commit releases
 only owners whose IDs are absent from committed project truth.
+
+### Paused punch ownership must not outlive its roll (#5272)
+
+PR #305 (`b077ef6d34c`) fenced asynchronous pause teardown, but did not retire the old
+punch owner when Play arrived during recorder flush. Historical review prompts are unknown.
+Drive real Pause and Play with a held recorder terminal, a recorder fake that keeps the
+repository's same-track admission (a start behind a flushing session waits for it and is refused
+after any later stop), and production Command/CRDT. Pause, seek before the punch-in, Play, then
+either release the old flush before a later tick punches in, or punch in on that tick and release
+the flush while the successor's start waits. Require the successor flag, clip and scheduler to
+survive the late pause continuation, each completed capture to own its PCM, saved take and one
+history entry, and Undo/Redo to preserve its peer. Removing synchronous punch retirement must
+prevent the successor's punch-in; clearing the flag from, or dropping the `isPlaying` guard of, the
+late pause continuation must fail both orderings; admitting the start at once, or resolving the old
+terminal's clip from `activeRecordingRef`, must fail the waiting one. A successor that punches in
+from its initial window behind the held flush, and a start refused by a later Pause, are blocked by
+#5998 and #5999 and must be proved once those land.
 
 ### 2026-10-09 — admitted interests and optimistic deletion cross the monitor owner (PR #5011)
 

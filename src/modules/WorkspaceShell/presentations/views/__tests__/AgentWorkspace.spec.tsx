@@ -226,6 +226,8 @@ const intentGroup = (overrides: Partial<ApprovalIntentGroup> = {}): ApprovalInte
 });
 
 const approvalView = (overrides: Partial<ApprovalView> = {}): ApprovalView => ({
+    canConfirm: overrides.status === undefined || overrides.status === 'proposed',
+    metricGoals: { status: 'not-required', reason: null, criteria: [] },
     confirmationId: 'confirmation-1',
     status: 'proposed',
     error: null,
@@ -670,6 +672,50 @@ describe('AgentWorkspace', () => {
         rerender(<AgentWorkspace />);
 
         expect(screen.getByText('local only, never widens to a hosted provider')).toBeInTheDocument();
+    });
+
+    it('keeps an unverified metric proposal visible and subscribes to its approval transition', () => {
+        agentRunControlsMock.list.mockReturnValue([projection()]);
+        agentRunControlsMock.get.mockReturnValue(projection());
+        setRuns([run()]);
+        pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        const criterion = 'Lead Vocal: spectral centroid must decrease over Chorus. Objective proxy only.';
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                canConfirm: false,
+                intentGroups: [intentGroup()],
+                metricGoals: {
+                    status: 'blocked',
+                    reason: 'Actual compatible preview measurements are missing.',
+                    criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+                },
+                rePreview: { available: true, reason: null },
+            })
+        );
+        render(<AgentWorkspace />);
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeDisabled();
+        expect(screen.getByText('Actual compatible preview measurements are missing.')).toBeInTheDocument();
+        expect(screen.getByText(criterion)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Re-preview agent actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm agent actions' }));
+        expect(confirmPendingChatActionsMock).not.toHaveBeenCalled();
+        getAgentApprovalViewMock.mockReturnValue(
+            approvalView({
+                intentGroups: [intentGroup()],
+                metricGoals: {
+                    status: 'verified',
+                    reason: null,
+                    criteria: [{ goalId: 'warm-centroid', stepId: 'warm-vocal', criterionText: criterion }],
+                },
+            })
+        );
+        act(() => {
+            pendingActionConfirmationStore.set({ confirmations: [confirmation()] });
+        });
+        expect(screen.getByText('Objective verification: verified')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Confirm agent actions' })).toBeEnabled();
+        fireEvent.click(screen.getByRole('button', { name: 'Confirm agent actions' }));
+        expect(confirmPendingChatActionsMock).toHaveBeenCalledExactlyOnceWith({ confirmationId: 'confirmation-1' });
     });
 
     it('renders the semantic approval view for a pending proposal', () => {

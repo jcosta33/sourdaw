@@ -33,14 +33,26 @@ import { defaultPreferences, setTrackHeight } from '#/modules/Preferences/useCas
 import { setWorkspaceMode } from '#/modules/WorkspaceShell/useCases';
 import { confirmUser } from '#/utils/Notification/confirmUser';
 
-import { timelineViewStore, setScrollY, setTimelineViewportHeight } from '../../stores/timelineViewStore';
+import { getVariationLaneCount, getVariationLaneExtent, VARIATION_LANE_HEIGHT } from '../../models/TimelineTrackExtent';
+import { timelineViewStore, setScrollY } from '../../stores/timelineViewStore';
 import { getTrackTemplates } from '../../useCases/getTrackTemplates';
 import { selectTrack } from '../../useCases/toggleTrackState/selectTrack';
 import { useTracks } from '../hooks/useTracks';
 
 import { MiniMasterSpectrum } from './MiniMasterSpectrum';
-import { TakeLanePanel } from './TakeLanesView';
 import { TrackHeader } from './TrackHeader';
+
+/**
+ * Both columns scroll the same range when the header list ends with exactly the
+ * strip the canvas lacks below it (scrollbar, scratch pad). Until the canvas
+ * has reported a viewport there is nothing to measure against.
+ */
+function getHeaderSpacerHeight(scrollerHeight: number, canvasViewportHeight: number): number {
+    if (canvasViewportHeight <= 0) {
+        return 0;
+    }
+    return Math.max(0, scrollerHeight - canvasViewportHeight);
+}
 
 const HEIGHT_CYCLE: Preferences['trackHeight'][] = ['compact', 'normal', 'large'];
 const HEIGHT_LABELS: Record<Preferences['trackHeight'], string> = {
@@ -69,6 +81,8 @@ export const TrackListView = ({
     // re-render this non-virtualised header tree on every pixelsPerBeat /
     // scrollX / autoScrollEnabled change.
     const scrollY = useStoreSelector(timelineViewStore, (state) => state?.scrollY ?? 0);
+    const canvasViewportHeight = useStoreSelector(timelineViewStore, (state) => state?.viewportHeight ?? 0);
+    const [scrollerHeight, setScrollerHeight] = useState(0);
 
     useLayoutEffect(() => {
         const el = scrollRef.current;
@@ -99,12 +113,27 @@ export const TrackListView = ({
             if (!el) {
                 return;
             }
-            // Report this container's real height before clamping — it is the
-            // canonical scrollable track-list viewport.
-            setTimelineViewportHeight(el.clientHeight);
+            // The timeline canvas owns the store's viewport height; the spacer
+            // gives this list the same scroll range, so scrollTop maps
+            // straight onto the shared offset.
             setScrollY(el.scrollTop);
         });
     };
+
+    useLayoutEffect(() => {
+        const el = scrollRef.current;
+        if (!el) {
+            return undefined;
+        }
+        setScrollerHeight(el.clientHeight);
+        const observer = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                setScrollerHeight(entry.contentRect.height);
+            }
+        });
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, []);
 
     useLayoutEffect(() => {
         return () => {
@@ -317,7 +346,7 @@ export const TrackListView = ({
             </DawHeaderBand>
             <div
                 ref={scrollRef}
-                className="flex-1 overflow-y-auto overflow-x-hidden"
+                className="min-h-0 flex-[1_1_0px] overflow-y-auto overflow-x-hidden"
                 onScroll={handleScroll}
                 onKeyDown={handleKeyDown}
             >
@@ -353,10 +382,22 @@ export const TrackListView = ({
                                 }
                             >
                                 <TrackHeader track={track} isSelected={track.id === selectedTrackId} />
-                                {track.showVariationLanes === true &&
-                                track.kind !== 'folder' &&
-                                track.kind !== 'master' ? (
-                                    <TakeLanePanel trackId={track.id} trackName={track.name} trackColor={track.color} />
+                                {getVariationLaneCount(track) > 0 ? (
+                                    <div
+                                        data-testid={`variation-lanes-${track.id}`}
+                                        style={{ height: getVariationLaneExtent(track) }}
+                                    >
+                                        {track.alternatives.map((alternative) => (
+                                            <div
+                                                key={alternative.id}
+                                                data-testid="variation-lane-row"
+                                                className="box-border flex items-center overflow-hidden border-t border-border/20 bg-surface-well/60 px-3 text-[10px] text-muted-foreground"
+                                                style={{ height: VARIATION_LANE_HEIGHT }}
+                                            >
+                                                <span className="truncate">{alternative.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
                                 ) : null}
                             </div>
                         );
@@ -372,6 +413,12 @@ export const TrackListView = ({
                         </div>
                     ) : null}
                 </div>
+                <div
+                    aria-hidden="true"
+                    data-testid="track-list-scrollbar-spacer"
+                    className="shrink-0"
+                    style={{ height: getHeaderSpacerHeight(scrollerHeight, canvasViewportHeight) }}
+                />
             </div>
         </Stack>
     );

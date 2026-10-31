@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { getPluginById } from '#/modules/Arrangement/useCases';
+
 import { type ProjectContext, type ProjectContextTrack } from '../../models/ProjectContext';
 import { materializeActionStateGuards } from '../materializeActionStateGuards';
 
@@ -74,6 +76,69 @@ function createExistingTrack(frozen = false): ProjectContextTrack {
 }
 
 describe('materializeActionStateGuards', () => {
+    it.each([undefined, 'Hz', 'ms'] as const)(
+        'stamps only an omitted native unit after validating the actual created owner: %s',
+        (valueUnit) => {
+            const descriptor = getPluginById('builtin-filter');
+            const cutoff = descriptor?.parameters.find((parameter) => parameter.id === 'filter-cutoff');
+            if (!cutoff) {
+                throw new Error('Expected actual Filter cutoff descriptor');
+            }
+            const parameter = {
+                ...filterTypeParameter,
+                id: cutoff.id,
+                name: cutoff.name,
+                type: 'float' as const,
+                value: cutoff.defaultValue,
+                minValue: cutoff.minValue,
+                maxValue: cutoff.maxValue,
+                unit: cutoff.unit,
+            };
+            const actualContext = {
+                ...context,
+                availableDeviceTypes: [{ id: 'builtin-filter', name: 'Filter', parameters: [parameter] }],
+            };
+            const result = materializeActionStateGuards(
+                [
+                    { type: 'createBus', payload: { busId: 'bus-created', name: 'Plate' } },
+                    {
+                        type: 'addDevice',
+                        payload: { trackId: 'bus-created', deviceId: 'filter-created', deviceType: 'builtin-filter' },
+                    },
+                    {
+                        type: 'setDeviceParameter',
+                        payload: {
+                            deviceId: 'filter-created',
+                            paramId: cutoff.id,
+                            value: 250,
+                            valueUnit,
+                            expectedTrackId: 'bus-created',
+                            expectedDeviceType: 'builtin-filter',
+                            expectedValue: cutoff.defaultValue,
+                            expectedTrackFrozen: false,
+                        },
+                    },
+                ],
+                actualContext
+            );
+            expect(result).toMatchObject({
+                status: 'accepted',
+                actions: [
+                    { type: 'createBus' },
+                    { type: 'addDevice' },
+                    {
+                        type: 'setDeviceParameter',
+                        payload: {
+                            valueUnit: valueUnit ?? 'Hz',
+                            expectedDeviceIds: ['filter-created'],
+                            automationRecordingPolicy: 'suppressed',
+                        },
+                    },
+                ],
+            });
+        }
+    );
+
     it('projects an earlier application-assigned track before guarding its device insertion', () => {
         const result = materializeActionStateGuards(
             [

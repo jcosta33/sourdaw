@@ -33,6 +33,7 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
+    initTimelineScrollClamp,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -67,7 +68,6 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
-    configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
     stopAllScheduled,
@@ -181,7 +181,6 @@ import {
 } from '#/modules/PluginHost/useCases';
 import {
     agentCapabilityDiscoveryPort,
-    collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -244,6 +243,7 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
@@ -474,11 +474,7 @@ setProjectIdentityTransitionDependencies({
     },
 });
 
-// The audio-cache collectors pull the durable owned-id set at collection time
-// (issue #3777), so ordinary PCM a saved project still references survives the
-// age/budget sweeps while it is inactive. Enumeration stays a pull from the
-// persisted snapshots — no second ownership table to drift.
-configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
+initAudioBufferCacheAccess();
 initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
@@ -730,6 +726,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
+initTimelineScrollClamp();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

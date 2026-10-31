@@ -21,10 +21,7 @@ import {
     BeatRulerBar,
     TimelineChromeSurface,
     TrackListView,
-    ARRANGEMENT_BAR_HEIGHT,
-    BEAT_RULER_HEIGHT,
-    MARKER_LANE_HEIGHT,
-    getAdjustmentLayerStripHeight,
+    TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT,
 } from '#/modules/Arrangement/presentations/views';
 import { adjustmentLayerStore, timelineViewStore, markerStore } from '#/modules/Arrangement/stores';
 import { createTrack, importMidiFile, setTimelineHorizontalScrollbarScrollX } from '#/modules/Arrangement/useCases';
@@ -36,7 +33,12 @@ import { setTimelineMinimapHeight } from '#/modules/Preferences/useCases';
 import { captureProjectTransitionAuthority } from '#/modules/Project/useCases';
 import { SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { DEFAULT_TEMPO_BPM, transportStore } from '#/modules/Transport/stores';
-import { closeScratchPad, setSessionViewWidth, setTrackListWidth } from '#/modules/WorkspaceShell/useCases';
+import {
+    closeScratchPad,
+    setSessionViewWidth,
+    setTrackListWidth,
+    updateWorkspaceState,
+} from '#/modules/WorkspaceShell/useCases';
 import { isAudioFile } from '#/utils/audioFileExtensions';
 import {
     allocateMainFirstWidths,
@@ -53,7 +55,8 @@ import { useTracks } from '../hooks/useTracks';
 import { useWorkspaceState } from '../hooks/useWorkspaceState';
 
 import { ArrangeEmptyStateShell } from './ArrangeEmptyStateShell';
-import { ChordTrackLane, CHORD_TRACK_LANE_HEIGHT } from './Timeline/ChordTrackLane';
+import { getArrangementChromeHeight } from './arrangementLayout';
+import { ChordTrackLane } from './Timeline/ChordTrackLane';
 import { ScratchPadView } from './Timeline/ScratchPadView';
 import { TimelineMinimapResizeHandle } from './TimelineMinimapResizeHandle';
 
@@ -64,8 +67,15 @@ const SESSION_VIEW_MAX = 800;
 
 export const ArrangeView = (): ReactElement => {
     const { tracks } = useTracks();
-    const { trackListOpen, trackListWidth, scratchPadOpen, scratchPadHeight, dualViewOpen, sessionViewWidth } =
-        useWorkspaceState();
+    const {
+        trackListOpen,
+        trackListWidth,
+        scratchPadOpen,
+        scratchPadHeight,
+        scratchPadCollapsed,
+        dualViewOpen,
+        sessionViewWidth,
+    } = useWorkspaceState();
 
     const hasUserTracks = tracks.filter((time) => time.kind !== 'master' && time.kind !== 'folder').length > 0;
 
@@ -197,6 +207,16 @@ export const ArrangeView = (): ReactElement => {
         }));
     };
 
+    // The shell floors the arrangement from the minimap height that is
+    // rendered, which during a resize drag is the preview, not the persisted one.
+    const minimapPreviewHeight = minimapResizeState.previewHeight;
+    useLayoutEffect(() => {
+        updateWorkspaceState({ timelineMinimapPreviewHeight: minimapPreviewHeight });
+    }, [minimapPreviewHeight]);
+    useLayoutEffect(() => {
+        return () => updateWorkspaceState({ timelineMinimapPreviewHeight: null });
+    }, []);
+
     const hasMarkers = (markerState?.markers.length ?? 0) > 0;
     const hasChords = (chordState?.events.length ?? 0) > 0 || (chordState?.enabled ?? false);
     const adjustmentLayerCount = adjustmentState?.layers.length ?? 0;
@@ -230,7 +250,7 @@ export const ArrangeView = (): ReactElement => {
     }
 
     return (
-        <Row align="stretch" className="h-full min-h-min" ref={arrangeRowRef}>
+        <Row align="stretch" className="h-full" ref={arrangeRowRef}>
             {dualViewOpen ? (
                 <>
                     <Stack
@@ -250,14 +270,12 @@ export const ArrangeView = (): ReactElement => {
                 <>
                     <TrackListView
                         style={{ width: displayedTrackListWidth, minWidth: displayedTrackListWidth }}
-                        extraHeaderHeight={
-                            ARRANGEMENT_BAR_HEIGHT +
-                            getAdjustmentLayerStripHeight(adjustmentLayerCount) +
-                            (hasMarkers ? MARKER_LANE_HEIGHT : 0) +
-                            (showMinimap ? activeMinimapHeight : 0) +
-                            BEAT_RULER_HEIGHT +
-                            (hasChords ? CHORD_TRACK_LANE_HEIGHT : 0)
-                        }
+                        extraHeaderHeight={getArrangementChromeHeight({
+                            adjustmentLayerCount,
+                            hasMarkers,
+                            minimapHeight: showMinimap ? activeMinimapHeight : 0,
+                            hasChords,
+                        })}
                     />
                     <ResizeHandle
                         direction="vertical"
@@ -268,7 +286,7 @@ export const ArrangeView = (): ReactElement => {
             ) : null}
             <Stack
                 grow
-                className="overflow-hidden relative min-w-0 min-h-min"
+                className="overflow-hidden relative min-w-0"
                 ref={timelineContainerRef}
                 style={{ minWidth: MIN_TIMELINE_COLUMN_WIDTH }}
             >
@@ -298,7 +316,14 @@ export const ArrangeView = (): ReactElement => {
                     tracks={tracks}
                     viewportWidth={viewportWidth}
                 />
-                {scratchPadOpen ? <ScratchPadView height={scratchPadHeight} onToggle={closeScratchPad} /> : null}
+                {scratchPadOpen ? (
+                    <ScratchPadView
+                        height={scratchPadHeight}
+                        collapsed={scratchPadCollapsed}
+                        onCollapsedChange={(collapsed) => updateWorkspaceState({ scratchPadCollapsed: collapsed })}
+                        onToggle={closeScratchPad}
+                    />
+                ) : null}
             </Stack>
         </Row>
     );
@@ -316,7 +341,7 @@ const TimelineHScrollbar = ({
     pixelsPerBeat: number;
     tracks: HScrollbarTrack[];
     viewportWidth: number;
-}): ReactElement | null => {
+}): ReactElement => {
     // Reduce rather than `Math.max(256, ...allEndBeats)`: a project with enough
     // clips blows the engine's call-argument limit and throws
     // `RangeError: Maximum call stack size exceeded` instead of computing a width.
@@ -326,9 +351,18 @@ const TimelineHScrollbar = ({
     );
     const totalContentWidth = maxEndBeat * pixelsPerBeat;
 
-    // Only show when content actually overflows the viewport
+    // The strip is always reserved, because the track list ends with a spacer of
+    // the same height; only the thumb depends on the content overflowing.
     if (totalContentWidth <= viewportWidth) {
-        return null;
+        return (
+            <TimelineChromeSurface
+                tone="subtle"
+                className="select-none"
+                style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
+                aria-hidden="true"
+                data-testid="timeline-horizontal-scrollbar"
+            />
+        );
     }
 
     const maxScrollX = totalContentWidth - viewportWidth;
@@ -388,8 +422,9 @@ const TimelineHScrollbar = ({
         <TimelineChromeSurface
             tone="subtle"
             className="select-none"
-            style={{ height: 10 }}
+            style={{ height: TIMELINE_HORIZONTAL_SCROLLBAR_HEIGHT }}
             aria-label="Timeline horizontal scrollbar"
+            data-testid="timeline-horizontal-scrollbar"
         >
             <div
                 className="daw-scrollbar-thumb absolute rounded-full"
