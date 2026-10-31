@@ -464,6 +464,8 @@ export function cleanupLanes(port: CleanupPort, onlyHead?: string, queueOnly = f
                     );
                     record.status = safetyRefusal ? 'protected' : 'pending';
                     if (safetyRefusal) {
+                        // Attempts count consecutive inspection failures; a refusal is a normal cadence check.
+                        record.attempts = 0;
                         record.nextAttemptAt = port.now() + cleanupBackoff(1);
                     }
                     if (!safetyRefusal) {
