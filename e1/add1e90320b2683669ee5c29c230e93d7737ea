@@ -1,0 +1,293 @@
+.agents/skills/review-stances/test-validity.md
+  s_7a8e1107313040::t_287d13d322041b 495-508,2178-2193
+  s_7a8e1107313040::t_7beaf44be9d7f7 2194
+crates/daw-dsp/tests/support/pitch_baseline/mod.rs
+  s_7a8e1107313040::t_287d13d322041b 1-26
+docs/06-testing.md
+  s_7a8e1107313040::t_287d13d322041b 14
+crates/scoring/tests/support/pitch_baseline/mod.rs
+  s_7a8e1107313040::t_287d13d322041b 1-637
+crates/daw-dsp/src/lib.rs
+  s_7a8e1107313040::t_287d13d322041b 1-2,4,6,8,10,12,14,16,18,20,23,25,32
+crates/scoring/src/yin.rs
+  s_7a8e1107313040::t_287d13d322041b 1-4
+crates/daw-dsp/Cargo.toml
+  s_7a8e1107313040::t_287d13d322041b 13-16
+crates/daw-dsp/benches/quantum-cost-table.md
+  s_7a8e1107313040::t_287d13d322041b 7-10,29,42-43,62,77-78,86,99-101,108,110,118,129,144-148,150-151,157,176,182,184-189,201-202,204,206-224,228,230,237-239,247-248,252-255,257-258,262-263,277,287-306,333-336,436-440,443-444,473-475
+src/modules/CommandInterface/useCases/hasOpenModalSurface.ts
+  s_7a8e1107313040::t_287d13d322041b 1-19
+src/utils/UI/activeDragGesture.ts
+  s_7a8e1107313040::t_287d13d322041b 1-30
+crates/scoring/tests/support/pitch_baseline/yin.rs
+  s_7a8e1107313040::t_287d13d322041b 1-343
+src/modules/AudioRendering/models/DeliveryTarget.ts
+  s_7a8e1107313040::t_287d13d322041b 1-19
+crates/daw-dsp/src/primitives/mod.rs
+  s_7a8e1107313040::t_287d13d322041b 10
+tests/e2e/virtualKeyboardChord.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 12,18,28,37,39,43
+crates/daw-dsp/src/primitives/pitch/pipeline_tests.rs
+  s_7a8e1107313040::t_287d13d322041b 1-106
+crates/scoring/Cargo.toml
+  s_7a8e1107313040::t_287d13d322041b 14-15
+src/modules/AudioRendering/useCases/__tests__/resolveDeliveryTargets.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-75
+src/modules/TimelineEditor/presentations/hooks/usePianoRollInteractions.ts
+  s_7a8e1107313040::t_287d13d322041b 554-566,775,825,960
+  s_7a8e1107313040::t_63abe2ba9dbf18 794
+  s_7a8e1107313040::t_8e950f745e47df 553
+src/modules/AudioRendering/useCases/audioExport/streamExport.ts
+  s_7a8e1107313040::t_287d13d322041b 1,10,14-97,125-127,129-160,162,164-165,167-170,172,188-189,191-218,220-221,223-236
+tests/e2e/launchFlows.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 72-92
+src/modules/ContentBrowser/presentations/components/Sidebar/BrowserRouteBody.tsx
+  s_7a8e1107313040::t_287d13d322041b 1-48
+scripts/__tests__/productionFaustProbe.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-306
+src/modules/WorkspaceShell/presentations/views/__tests__/AppShell.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 942-969
+crates/daw-dsp/tests/support/pitch_baseline/yin.rs
+  s_7a8e1107313040::t_287d13d322041b 1-119
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 1,324-348
+  s_7a8e1107313040::t_d853293fc37c45 349
+src/modules/AudioRendering/useCases/applyDeliveryPreset.ts
+  s_7a8e1107313040::t_287d13d322041b 1-13
+src/modules/AudioRendering/useCases/getDeliveryPresets.ts
+  s_7a8e1107313040::t_287d13d322041b 1-5
+tests/production-e2e/productionFaustExport.e2e.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-473
+.github/workflows/validation.yml
+  s_7a8e1107313040::t_287d13d322041b 331-332,436-437,476-477,578-579,625-626,665-666,697-698,966-967
+scripts/healthGateWorkflowContract.ts
+  s_7a8e1107313040::t_287d13d322041b 260
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_7a8e1107313040::t_287d13d322041b 1,14,249,253-261,264-280,282,284-285,291,307,313-314,316,338,343,347,353,378,380-381,386-387,391,393-398,401-413,417-427,429,431-432
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 2,4-5,9,46-54,108-109,112-114,116,118-125,199-200,259,261-262,265-267,289-291,294-295,535,729-730,740,746,752,764-765,768,770-771,773-1336,1339-1356
+tests/e2e/workspacePanels.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 42-43,45,52,74
+crates/scoring/src/lib.rs
+  s_7a8e1107313040::t_287d13d322041b 371-374
+src/modules/AudioRendering/models/DeliveryPresets.ts
+  s_7a8e1107313040::t_287d13d322041b 1-89
+tests/e2e/exportFilePickerCapture.ts
+  s_7a8e1107313040::t_287d13d322041b 1,5,11-12,14-16,20-21,23,33-58,60,66-70,72,76-77,81-85,98-105,111-114,117-118,122,126,129-130,132-136,147-149,155-170,177,184-199,202-211,219-229,235-242,269-271,289,305-307,314,335-352,354-355,357-358
+scripts/__tests__/checkReleaseInventory.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 3508-3511,3513-3517
+src/app/__tests__/agentProjectRepairInspection.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 4,15,284-308
+  s_7a8e1107313040::t_0fefeef2b1c5dd 309
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 328-366,1061-1224,1226,1228-1229
+  s_7a8e1107313040::t_7ac1b5d07f31d6 1048-1060
+  s_7a8e1107313040::t_9c49f774d61b36 367,1225,1227
+tests/e2e/recordEditPlayback.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 66
+crates/daw-dsp/src/knead/utils.rs
+  s_7a8e1107313040::t_287d13d322041b 3
+crates/daw-dsp/benches/wasm/run.mjs
+  s_7a8e1107313040::t_287d13d322041b 51,108,981,984,994-996,1012,1021,1065,1152-1157,1174
+tests/e2e/virtualKeyboardGlide.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 26
+crates/daw-dsp/benches/wasm/renderTable.mjs
+  s_7a8e1107313040::t_287d13d322041b 74,149-192,236,240,243,261,311-314,319,347-348,363,368-369,372-373
+src/modules/CommandInterface/useCases/index.ts
+  s_7a8e1107313040::t_287d13d322041b 8-10
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_7a8e1107313040::t_287d13d322041b 1,25,334-335,341,360,374,398,408,410-414,459-460,464-470,472-473,502-505,507,511-528,530-566,570-575,577,579-603,605,607,616-617
+crates/daw-dsp/benches/quantum-cost-table.json
+  s_7a8e1107313040::t_287d13d322041b 2-15,17-59,61-70,72-75,77-99,101-1469
+crates/daw-dsp/src/primitives/pitch/mpm.rs
+  s_7a8e1107313040::t_287d13d322041b 1-308
+src/modules/TimelineEditor/presentations/hooks/__tests__/usePianoRollInteractions.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 534-593,857-876
+  s_7a8e1107313040::t_793daf43e4d07a 877
+tests/production-e2e/playwright.config.ts
+  s_7a8e1107313040::t_287d13d322041b 1-39
+src/modules/AudioRendering/useCases/resolveDeliveryTargets.ts
+  s_7a8e1107313040::t_287d13d322041b 1-139
+tests/e2e/virtualKeyboardTestId.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 21,30,32,35-40,47
+crates/scoring/tests/support/pitch_baseline/mpm.rs
+  s_7a8e1107313040::t_287d13d322041b 1-215
+scripts/__tests__/quantumMeasurementCalibration.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 401-404
+scripts/__tests__/fixtures/health-gate-workflows.snapshot.json
+  s_7a8e1107313040::t_287d13d322041b 114-115,281-282,384-385,454-455,518,721-722,836-837,880-881,994-995,1041-1042,1084-1085,1122-1123,1337-1338,1546-1547,1644-1645,1690-1691,1808-1809,1868-1874,1877-1878,1975-1976,2091-2092,2157-2158,2204-2205,2383-2384
+.agents/skills/review-stances/project-integrity.md
+  s_7a8e1107313040::t_287d13d322041b 138-151,1050-1061
+public/wasm/daw-dsp/daw_dsp.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1,1228-1262,1307-1330
+tests/e2e/keyboardShortcuts.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 54,57
+tests/production-e2e/productionTransportInput.ts
+  s_7a8e1107313040::t_287d13d322041b 1-561
+crates/scoring/tests/support/pitch_baseline/poly.rs
+  s_7a8e1107313040::t_287d13d322041b 1-225
+scripts/test-health-gate-scripts.sh
+  s_7a8e1107313040::t_287d13d322041b 356,1137-1141,1147-1151,1170-1171
+src/modules/AudioRendering/presentations/views/exportSettings.ts
+  s_7a8e1107313040::t_287d13d322041b 36-37,131,147-165
+src/utils/UI/__tests__/activeDragGesture.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-35
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  s_7a8e1107313040::t_287d13d322041b 42,46,48,77-78,169-191,193-200,304-320,322-323,325,327,329-333,335-341,345-358,360-363,366-375,400-401,403-435,438,452-453,486-489,497-498,511-513,535,609,611-612,617-620,623,658-660,664-670,672,674-675,689,746,779,883-889,1193-1194,1202-1206,1208-1238,1321-1343,1351-1357,1370,1390,1457-1475,1478
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/BrowserRouteBody.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 1-60
+crates/daw-dsp/tests/support/pitch_baseline/crumbs.rs
+  s_7a8e1107313040::t_287d13d322041b 1-158
+crates/scoring/tests/shared_pitch_contract.rs
+  s_7a8e1107313040::t_287d13d322041b 1-184
+src/modules/CommandInterface/useCases/isWithinTransientSurface.ts
+  s_7a8e1107313040::t_287d13d322041b 1-9
+crates/daw-dsp/tests/support/pitch_baseline/psola.rs
+  s_7a8e1107313040::t_287d13d322041b 1-212
+crates/daw-dsp/tests/shared_pitch_contract.rs
+  s_7a8e1107313040::t_287d13d322041b 1-202
+tests/e2e/virtualKeyboardPlayTestId.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 15,19,21-26,28-31,42
+src/modules/AudioEngine/wasm/scoring.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1
+src/modules/CommandInterface/useCases/__tests__/hasOpenModalSurface.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-59
+public/wasm/manifest.json
+  s_7a8e1107313040::t_287d13d322041b 12,16-18,21,40,44-46,49
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_7a8e1107313040::t_287d13d322041b 158,198
+src/modules/AudioRendering/useCases/__tests__/applyDeliveryPreset.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-25
+crates/daw-dsp/tests/shared_pitch_rt.rs
+  s_7a8e1107313040::t_287d13d322041b 1-85
+crates/daw-dsp/src/primitives/pitch/overlap.rs
+  s_7a8e1107313040::t_287d13d322041b 1-77
+src/modules/WorkspaceShell/AGENTS.md
+  s_7a8e1107313040::t_287d13d322041b 33
+tests/production-e2e/productionFaustProbe.ts
+  s_7a8e1107313040::t_287d13d322041b 1-267
+crates/daw-dsp/src/primitives/pitch/scoring.rs
+  s_7a8e1107313040::t_287d13d322041b 1-348
+.github/workflows/health-gates.yml
+  s_7a8e1107313040::t_287d13d322041b 89-90
+crates/scoring/AGENTS.md
+  s_7a8e1107313040::t_287d13d322041b 7-14
+public/wasm/scoring/scoring_bg.wasm.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1
+src/modules/AudioRendering/models/__tests__/deliveryPresets.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-27
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_7a8e1107313040::t_287d13d322041b 33,371-374
+public/wasm/scoring/scoring.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_7a8e1107313040::t_287d13d322041b 42
+scripts/__tests__/productionTransportInput.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-578
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_7a8e1107313040::t_287d13d322041b 15-21,39-45,48,199-326,339,569-571,573-576,578-580,583-584,587-594,596-597,601-603,606-614,616,618-623,625,627-637,641-643,652-653,655-657,660-672,723-724,726,763-764,808-824
+src/modules/ContentBrowser/presentations/components/Sidebar/SearchSummary.tsx
+  s_7a8e1107313040::t_287d13d322041b 12
+.github/workflows/nightly.yml
+  s_7a8e1107313040::t_287d13d322041b 76-77,162-163,200-201,302-303,377-383,385-386,492-493,618-619,678-679,718-719,993-994
+crates/daw-dsp/src/knead/yin.rs
+  s_7a8e1107313040::t_287d13d322041b 1-2
+crates/scoring/src/mpm.rs
+  s_7a8e1107313040::t_287d13d322041b 1-2
+.github/workflows/pr-checks.yml
+  s_7a8e1107313040::t_287d13d322041b 43-44
+src/app/captureCommandBatchPreflightState.ts
+  s_7a8e1107313040::t_94ff10057ece69 149-150,154-159,172,178,184,190,193,521,525-531,533,536,542,544,546
+  s_7a8e1107313040::t_287d13d322041b 111-115,118,123,125,129-133,141-142,144-148,151-153,162-164,166-171,173-177,179-183,185-189,191-192,194-198,200-206,208,514-517,532,534-535,537-541,543,545,547-549
+  s_7a8e1107313040::t_1d7244a1b609cf 550
+tests/e2e/exportAudioEvidence.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 108-111
+crates/daw-dsp/src/primitives/pitch/mod.rs
+  s_7a8e1107313040::t_287d13d322041b 1-16
+tests/e2e/shortcutBehavioralE2E.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 121
+crates/daw-dsp/src/primitives/pitch/pipeline.rs
+  s_7a8e1107313040::t_287d13d322041b 1-158
+tests/e2e/e2eUtils.ts
+  s_7a8e1107313040::t_287d13d322041b 111-113,116,118
+src/modules/TimelineEditor/presentations/helpers/mouseDrag.ts
+  s_7a8e1107313040::t_287d13d322041b 1-2,26,29
+release/dependency-license-proofs.json
+  s_7a8e1107313040::t_287d13d322041b 4,24,48
+.agents/skills/review-stances/session-lifecycle.md
+  s_7a8e1107313040::t_287d13d322041b 144-156
+src/modules/CommandInterface/useCases/isWithinModalSurface.ts
+  s_7a8e1107313040::t_287d13d322041b 1-8
+tests/e2e/finalE2EGaps.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 75-78,85-88,105
+tests/e2e/export.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 23
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 4,8-9,43,90,101-106,127,183,202-207,597,611,730,869-892,1012,1024,1078-1265,1378-1396,1507,1512,1527-1532,1875,1877,1882,1891-1893,1895-1896,1909-1911,1913-1920,1924-1926,1929-1936,1940-1942,1946-1953,2244,2246-2256,3054-3145
+scripts/__tests__/quantumCostTableRendering.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-150
+src/modules/CommandInterface/useCases/__tests__/isWithinTransientSurface.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-42
+src/modules/TimelineEditor/presentations/helpers/__tests__/mouseDrag.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 3-4,144-162
+  s_7a8e1107313040::t_5b5ac8de1e5d63 163
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 65-74
+public/wasm/daw-dsp/daw_dsp_bg.wasm.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1,80-114,159-182
+release/open-source-inventory.json
+  s_7a8e1107313040::t_287d13d322041b 169-170,405,1211,1216,1347,1350,1353,1842,1850
+crates/daw-dsp/benches/wasm/renderTable.d.mts
+  s_7a8e1107313040::t_287d13d322041b 6
+src/modules/AudioRendering/presentations/views/__tests__/exportStreamingMemory.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 24-39,776-778,894-1125
+scripts/__tests__/healthGatesWorkflow.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 394-396,952-957,967,1771-1773,1782-1855,3876-3923
+  s_7a8e1107313040::t_262341d5b48619 3924-3925
+src/modules/AudioEngine/wasm/daw_dsp.d.ts
+  s_7a8e1107313040::t_287d13d322041b 1,1228-1262,1307-1330
+crates/daw-dsp/tests/support/pitch_baseline/engine.rs
+  s_7a8e1107313040::t_287d13d322041b 1-572
+src/modules/AudioRendering/presentations/views/__tests__/exportSettings.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 248-255
+.github/workflows/heavy-gates.yml
+  s_7a8e1107313040::t_287d13d322041b 49-50,110-111,174
+playwright.config.ts
+  s_7a8e1107313040::t_287d13d322041b 128-131
+tsconfig.e2e.json
+  s_7a8e1107313040::t_287d13d322041b 14
+src/modules/AudioRendering/useCases/audioExport/__tests__/streamExport.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 9,20,43,196-594
+  s_7a8e1107313040::t_a31b5dd1afdfb4 595
+src/modules/WorkspaceShell/presentations/views/AppShell.tsx
+  s_7a8e1107313040::t_287d13d322041b 181-190,528,589
+src/modules/CommandInterface/useCases/__tests__/isWithinModalSurface.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-33
+src/modules/CommandInterface/presentations/views/keyboardShortcutsContract.ts
+  s_7a8e1107313040::t_287d13d322041b 7
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_7a8e1107313040::t_287d13d322041b 1,564-605
+  s_7a8e1107313040::t_a9cd135d04573d 606
+scripts/__tests__/exportFilePickerCapture.spec.ts
+  s_7a8e1107313040::t_287d13d322041b 1-342
+Cargo.lock
+  s_7a8e1107313040::t_eb551c86b8dc80 2366
+public/legal/DEPENDENCY-LICENSES.txt
+  s_7a8e1107313040::t_a43ea53628d72c 9
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e1add1e90320b2683669ee5c29c230e93d7737ea",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
