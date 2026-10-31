@@ -8033,7 +8033,8 @@ function bridgeUnrefinedLlmToolCalls(
         // These effects confer no creative authority: ordinary grounding must prove the command,
         // target and value, and a read-only interpretation still forbids every write.
         const ordinaryLiteralControl =
-            creativeAuthority?.mode !== 'read-only' && isOrdinaryLiteralControl(getExecutableAppActionEffect(call.name));
+            creativeAuthority?.mode !== 'read-only' &&
+            isOrdinaryLiteralControl(getExecutableAppActionEffect(call.name));
         const creativeAdmission = ordinaryLiteralControl ? undefined : creativeAdmissionsByCallIndex?.get(index);
         const createdTargetIntent = getExplicitCreatedTargetIntent({
             bindings: visibleBindings,
