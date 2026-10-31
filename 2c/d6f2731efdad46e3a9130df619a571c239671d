@@ -1,0 +1,25 @@
+src/modules/Arrangement/presentations/helpers/__tests__/timelineToolsInlineDraw.spec.ts
+  s_55244eb93b97d1::t_22bf5a6fe7f8b9 220-230
+src/modules/Arrangement/models/InlineMidiGeometry.ts
+  s_55244eb93b97d1::t_802a3b50fb1892 154-159,165,176,179,187-188,222-223
+src/modules/Arrangement/models/__tests__/inlineMidiGeometry.spec.ts
+  s_55244eb93b97d1::t_8e605041c5287a 244-301
+src/modules/Arrangement/presentations/renderers/__tests__/createWebGpuRenderer.spec.ts
+  s_55244eb93b97d1::t_4644ab4a9cb454 2145-2146,2148
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2cd6f2731efdad46e3a9130df619a571c239671d",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
