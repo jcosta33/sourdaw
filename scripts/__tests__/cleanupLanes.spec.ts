@@ -24,6 +24,7 @@ import { ownedGuardReceipt, readCleanupFile } from '../cleanupLaneBookkeeping.ts
 import {
     authenticateCleanup,
     cleanupBackoff,
+    cleanupDirectory,
     cleanupLanes,
     readCleanupRecords,
     withCleanupLock,
@@ -485,9 +486,9 @@ describe('automatic lane cleanup', () => {
             expect(existsSync(f.lane)).toBe(true);
             const [record] = readCleanupRecords(f.root);
             expect(record?.reason).not.toBe('');
-            expect(record?.attempts).toBe(1);
-            cleanupLanes(f.port);
-            expect(readCleanupRecords(f.root)[0]?.attempts).toBe(1);
+            expect(record?.attempts).toBe(0);
+            cleanupLanes({ ...f.port, now: () => f.port.now() + 1 });
+            expect(readCleanupRecords(f.root)[0]?.nextAttemptAt).toBe(record?.nextAttemptAt);
         } finally {
             f.dispose();
         }
@@ -587,6 +588,62 @@ describe('automatic lane cleanup', () => {
             expect(existsSync(blocked.lane)).toBe(true);
         } finally {
             blocked.dispose();
+        }
+    });
+
+    it('counts consecutive attempts that did not end in a safety refusal', () => {
+        const f = fixture();
+        try {
+            f.pr.state = 'OPEN';
+            f.pr.mergedAt = null;
+            cleanupLanes(f.port);
+            expect(readCleanupRecords(f.root)[0]?.status).toBe('protected');
+            expect(readCleanupRecords(f.root)[0]?.attempts).toBe(0);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('backs off one step after a generic failure that follows many protected retries', () => {
+        const f = fixture();
+        try {
+            f.pr.state = 'OPEN';
+            f.pr.mergedAt = null;
+            for (let attempt = 0; attempt < 10; attempt += 1) {
+                cleanupLanes(f.port);
+                f.advance();
+            }
+            f.port.removal.pullRequests = () => {
+                throw new Error('GitHub unavailable');
+            };
+            cleanupLanes(f.port);
+            const expected = f.port.now() + cleanupBackoff(1);
+            const record = readCleanupRecords(f.root)[0];
+            const circuit = JSON.parse(readFileSync(join(cleanupDirectory(f.root), 'inspection-backoff.json'), 'utf8'));
+            expect(record?.status).toBe('pending');
+            expect(record?.nextAttemptAt).toBe(expected);
+            expect(circuit.nextAttemptAt).toBe(expected);
+        } finally {
+            f.dispose();
+        }
+    });
+
+    it('still grows backoff across consecutive generic failures', () => {
+        const f = fixture();
+        try {
+            f.port.removal.pullRequests = () => {
+                throw new Error('GitHub unavailable');
+            };
+            const circuitPath = join(cleanupDirectory(f.root), 'inspection-backoff.json');
+            cleanupLanes(f.port);
+            expect(readCleanupRecords(f.root)[0]?.nextAttemptAt).toBe(f.port.now() + cleanupBackoff(1));
+            f.advance();
+            cleanupLanes(f.port);
+            const expected = f.port.now() + cleanupBackoff(2);
+            expect(readCleanupRecords(f.root)[0]?.nextAttemptAt).toBe(expected);
+            expect(JSON.parse(readFileSync(circuitPath, 'utf8')).nextAttemptAt).toBe(expected);
+        } finally {
+            f.dispose();
         }
     });
 
