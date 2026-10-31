@@ -1,0 +1,26 @@
+src/modules/AiRuntime/useCases/applicationOwnedToolLoop.ts
+  s_55244eb93b97d1::t_d5acf19382329f 2286-2288,2290
+  s_55244eb93b97d1::t_35ea491d92387b 1844-1849,2153-2211,2311-2318,2320-2325,2327,2329-2350
+src/modules/AiRuntime/AGENTS.md
+  s_55244eb93b97d1::t_d381e8ce9689df 58
+src/modules/AiRuntime/useCases/__tests__/previewMeasurement.spec.ts
+  s_55244eb93b97d1::t_1535b0ec5989c8 1448-1458,1466-1500
+src/modules/AiRuntime/useCases/__tests__/toolChoiceDirectives.spec.ts
+  s_55244eb93b97d1::t_142f4e1426d2c1 285-344,346-349,415-417,712,717-718,725-732
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b87c03d0bafa33351c77596658dcfe482921bccb",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
