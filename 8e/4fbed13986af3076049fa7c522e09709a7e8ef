@@ -1,0 +1,20 @@
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  s_ba80576e6f5cb5::t_73183bea93ab9a 4
+  s_ba80576e6f5cb5::t_1f186a9b638371 18
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8e4fbed13986af3076049fa7c522e09709a7e8ef",
+  "prompts": {},
+  "sessions": {
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
