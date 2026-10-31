@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_55244eb93b97d1::t_638b440d3ec1d4 8284
+  s_55244eb93b97d1::t_abf7b3b41e4631 8036,8278-8283,8285-8290
+  s_55244eb93b97d1::t_6d32df585b23e0 8291-8292
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "66a25a01a26ac51fc9999fe7aaa35aa9b3a31ad7",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
