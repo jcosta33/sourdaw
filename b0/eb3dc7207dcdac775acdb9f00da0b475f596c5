@@ -1,0 +1,26 @@
+src/app/captureCommandBatchPreflightState.ts
+  s_7a8e1107313040::t_dc544478515dee 166-182,184-186,195-199,520-525,540
+  s_7a8e1107313040::t_809aee9c9f7048 188-194
+  s_7a8e1107313040::t_8b07a9d5b4d2f2 183,187,545
+src/app/__tests__/captureCommandBatchPreflightState.spec.ts
+  s_7a8e1107313040::t_253c95558c6d6d 211-255,258-313
+  s_7a8e1107313040::t_7afce025d4a86b 256-257
+  s_7a8e1107313040::t_5d3ea79a9d84d6 923-981
+  s_7a8e1107313040::t_7d5c8477039b69 922
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b0eb3dc7207dcdac775acdb9f00da0b475f596c5",
+  "prompts": {},
+  "sessions": {
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
