@@ -971,6 +971,62 @@ describe('captureCommandBatchPreflightState', () => {
         expect(state.projectInvariantsValid).toBe(false);
     });
 
+    // Each multi-root scope: the first root is clean, so only a scan of a later
+    // root can see the repeated id.
+    it.each([
+        {
+            scope: 'a later arrangement snapshot',
+            slots: {
+                arrangements: {
+                    activeArrangementId: 'arrangement-1',
+                    arrangements: [
+                        { id: 'arrangement-1', tracks: { tracks: [{ id: 'track-a' }] } },
+                        { id: 'arrangement-2', tracks: { tracks: [{ id: 'track-b' }, { id: 'track-b' }] } },
+                    ],
+                },
+            },
+        },
+        {
+            scope: 'a later clip gain envelope',
+            slots: {
+                gainEnvelopes: {
+                    envelopes: {
+                        'clip-vocal': {
+                            clipId: 'clip-vocal',
+                            enabled: true,
+                            points: [{ id: 'point-1', beatOffset: 0, gainDb: -6 }],
+                        },
+                        'clip-copy': {
+                            clipId: 'clip-copy',
+                            enabled: true,
+                            points: [
+                                { id: 'point-2', beatOffset: 0, gainDb: -6 },
+                                { id: 'point-2', beatOffset: 1, gainDb: -12 },
+                            ],
+                        },
+                    },
+                },
+            },
+        },
+        {
+            scope: 'a later clip warp state',
+            slots: {
+                warpStates: {
+                    states: {
+                        'clip-a': { markers: [{ id: 'm-1' }] },
+                        'clip-b': { markers: [{ id: 'm-2' }, { id: 'm-2' }] },
+                    },
+                },
+            },
+        },
+    ])('still fails an id repeated inside $scope', ({ slots }) => {
+        mocks.getCrdtDoc.mockReturnValue(rootDocumentWith(slots));
+
+        const state = captureCommandBatchPreflightState({ assetReferences: [], targetIds: [] });
+
+        expect(state.projectInvariantsValid).toBe(false);
+    });
+
     it('still fails an undeclared slot that copies the live track rows', () => {
         // Fail-closed: a subtree repeats live ids legitimately only when it is
         // declared as an independent id scope.
