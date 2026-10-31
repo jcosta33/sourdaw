@@ -1,0 +1,41 @@
+src/modules/ContentBrowser/presentations/views/Sidebar/effectsTabHelpers.tsx
+  s_88fc7e0d05bab6::t_56f7ed2f8b97aa 198
+  s_88fc7e0d05bab6::t_16cf29bc46ea8a 158
+src/modules/ContentBrowser/presentations/components/Sidebar/__tests__/BrowserRouteBody.spec.tsx
+  s_88fc7e0d05bab6::t_56f7ed2f8b97aa 1-60
+src/modules/ContentBrowser/presentations/views/Sidebar/EffectsTab.tsx
+  s_88fc7e0d05bab6::t_2484eda1030b95 1,14,249,253-261,264-280,282,284-285,291,307,313-314,316,338,343,347,353,378,380-381,386-387,391,393-398,401-413,417-427,429,431-432
+src/modules/ContentBrowser/presentations/components/Sidebar/BrowserRouteBody.tsx
+  s_88fc7e0d05bab6::t_56f7ed2f8b97aa 1-48
+src/modules/ContentBrowser/presentations/components/Sidebar/SearchSummary.tsx
+  s_88fc7e0d05bab6::t_7887dfdd96a36f 12
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/InstrumentsTab.spec.tsx
+  s_88fc7e0d05bab6::t_0d70eb1e7e1d32 1,564-605
+  s_88fc7e0d05bab6::t_8c8aa400b5633f 606
+src/modules/ContentBrowser/presentations/views/Sidebar/InstrumentsTab.tsx
+  s_88fc7e0d05bab6::t_7887dfdd96a36f 408,410-414,459-460,464-470,472-473,502-505,507,511-528,530-566,570-575,577,579-603,605,607,616-617
+  s_88fc7e0d05bab6::t_67b660a648c8b4 1,25,334-335,341,360,374,398
+src/modules/ContentBrowser/presentations/components/Sidebar/PresetItem.tsx
+  s_88fc7e0d05bab6::t_56f7ed2f8b97aa 42
+src/modules/ContentBrowser/presentations/views/Sidebar/__tests__/EffectsTab.spec.tsx
+  s_88fc7e0d05bab6::t_0d70eb1e7e1d32 1,324-348
+  s_88fc7e0d05bab6::t_26a908a6564346 349
+release/open-source-inventory.json
+  s_88fc7e0d05bab6::t_6fb2b49932d7a8 1211
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "082d1ada1686f1dbcf9967e379ecb9da25aaefe0",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
