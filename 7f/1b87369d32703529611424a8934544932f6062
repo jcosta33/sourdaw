@@ -1,0 +1,45 @@
+vite.config.ts
+  s_3bb122e91d89a5::t_f321d079f2832e 55-63,67-71,78-82,84-92
+  s_3bb122e91d89a5::t_ba77cf31be039a 64-66
+  s_3bb122e91d89a5::t_6e679685933a3d 152
+  s_3bb122e91d89a5::t_7baa78e2be4f1b 212-217
+  s_88fc7e0d05bab6::t_9ccf4184c8bb9c 72-77,83
+src/infra/automerge/automergeStreamingEntry.ts
+  s_3bb122e91d89a5::t_757495fcd6cdd3 1-7,8,10-13
+  s_3bb122e91d89a5::t_fd864c426666c9 9
+.dependency-cruiser.cjs
+  s_3bb122e91d89a5::t_fd864c426666c9 828-829
+scripts/__tests__/viteAutomergeStreamingEntry.spec.ts
+  s_3bb122e91d89a5::t_aa9e719ca180be 1,3-5,7-10,12,16-18,28,31-32,59,60-73,93-104,105-112
+  s_3bb122e91d89a5::t_ffef38249cf73e 47-58,83-84,87-88,91
+  s_3bb122e91d89a5::t_937f117a484361 6,11,13-15,19-46,74-82,85-86,89-90,92
+  s_3bb122e91d89a5::t_e0ea275852d140 2
+src/modules/Collaboration/AGENTS.md
+  s_88fc7e0d05bab6::t_5141b382c007e0 23
+src/modules/CrdtDocument/AGENTS.md
+  s_88fc7e0d05bab6::t_3126a3143efb9d 37
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7f1b87369d32703529611424a8934544932f6062",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
