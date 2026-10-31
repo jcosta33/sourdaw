@@ -83,13 +83,38 @@ type TakeRowGesture = {
     startBeat: number;
 };
 
+type SoundingRange = {
+    startBeat: number;
+    endBeat: number;
+};
+
+/**
+ * The region a swipe shows and commits: the swipe clamped to the part of the take that can sound, kept only
+ * if what is left still meets the minimum span. Null when nothing that can sound is left to comp.
+ */
+const resolveSwipeRegion = (
+    swipeStartBeat: number,
+    swipeEndBeat: number,
+    sounding: SoundingRange | null,
+    minimumSpan: number
+): SoundingRange | null => {
+    if (!sounding) {
+        return null;
+    }
+    const startBeat = Math.max(Math.min(swipeStartBeat, swipeEndBeat), sounding.startBeat);
+    const endBeat = Math.min(Math.max(swipeStartBeat, swipeEndBeat), sounding.endBeat);
+    if (endBeat - startBeat < minimumSpan) {
+        return null;
+    }
+    return { startBeat, endBeat };
+};
+
 type TakeRowProps = {
     take: Take;
     minBeat: number;
     maxBeat: number;
-    /** The part of the take that can sound: its extent within its source clip. A swipe commits only this part. */
-    soundingStartBeat: number;
-    soundingEndBeat: number;
+    /** The take's extent within its source clip, the only part a swipe can comp. Null when no clip backs the take. */
+    sounding: SoundingRange | null;
     isActive: boolean;
     onPromote: () => void;
     onCreateRegion: (startBeat: number, endBeat: number) => void;
@@ -99,8 +124,7 @@ const TakeRow = ({
     take,
     minBeat,
     maxBeat,
-    soundingStartBeat,
-    soundingEndBeat,
+    sounding,
     isActive,
     onPromote,
     onCreateRegion,
@@ -119,6 +143,9 @@ const TakeRow = ({
         const span = maxBeat - minBeat;
         return minBeat + ratio * span;
     };
+
+    const swipeRegion = (swipeStartBeat: number, swipeEndBeat: number): SoundingRange | null =>
+        resolveSwipeRegion(swipeStartBeat, swipeEndBeat, sounding, Math.max(0.1, (maxBeat - minBeat) * 0.02));
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
         if (event.button !== 0 || !event.isPrimary || gestureRef.current) {
@@ -143,19 +170,10 @@ const TakeRow = ({
     const releaseSwipe = (gesture: TakeRowGesture, clientX: number): void => {
         gestureRef.current = null;
         setDrag(null);
-        const releaseBeat = beatFromPointer(clientX);
-        const startBeat = Math.min(gesture.startBeat, releaseBeat);
-        const endBeat = Math.max(gesture.startBeat, releaseBeat);
-        const minimumSpan = Math.max(0.1, (maxBeat - minBeat) * 0.02);
-        if (endBeat - startBeat < minimumSpan) {
-            return;
+        const region = swipeRegion(gesture.startBeat, beatFromPointer(clientX));
+        if (region) {
+            onCreateRegion(region.startBeat, region.endBeat);
         }
-        const soundingStart = Math.max(startBeat, soundingStartBeat);
-        const soundingEnd = Math.min(endBeat, soundingEndBeat);
-        if (soundingEnd <= soundingStart) {
-            return;
-        }
-        onCreateRegion(soundingStart, soundingEnd);
     };
 
     const handlePointerMove = (event: PointerEvent<HTMLDivElement>): void => {
@@ -212,10 +230,12 @@ const TakeRow = ({
         if (span <= 0) {
             return null;
         }
-        const startBeat = Math.min(drag.startBeat, drag.endBeat);
-        const endBeat = Math.max(drag.startBeat, drag.endBeat);
-        const left = ((startBeat - minBeat) / span) * 100;
-        const width = ((endBeat - startBeat) / span) * 100;
+        const region = swipeRegion(drag.startBeat, drag.endBeat);
+        if (!region) {
+            return null;
+        }
+        const left = ((region.startBeat - minBeat) / span) * 100;
+        const width = ((region.endBeat - region.startBeat) / span) * 100;
         return { left, width };
     })();
 
@@ -465,8 +485,14 @@ export const TakeLanePanel = ({ trackId, trackName, trackColor }: TakeLanePanelP
                                 take={take}
                                 minBeat={minBeat}
                                 maxBeat={maxBeat}
-                                soundingStartBeat={Math.max(take.startBeat, sourceClip?.startBeat ?? take.startBeat)}
-                                soundingEndBeat={Math.min(take.endBeat, sourceClip?.endBeat ?? take.endBeat)}
+                                sounding={
+                                    sourceClip
+                                        ? {
+                                              startBeat: Math.max(take.startBeat, sourceClip.startBeat),
+                                              endBeat: Math.min(take.endBeat, sourceClip.endBeat),
+                                          }
+                                        : null
+                                }
                                 isActive={take.selected}
                                 onPromote={() => handlePromote(take)}
                                 onCreateRegion={(startBeat, endBeat) => handleCreateRegion(take, startBeat, endBeat)}

@@ -369,7 +369,7 @@ describe('TakeLanePanel', () => {
             expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 0.8, endBeat: 4, takeId: 'take1' });
         });
 
-        it('draws a take that overhangs its clips inside the strip and lets the overhang be swiped', () => {
+        it('draws an overhanging take inside the strip but previews and commits only the part inside its clip', () => {
             const strip = renderSwipePanel(makeTake({ id: 'take1', name: 'Take A', startBeat: 2, endBeat: 12 }), [
                 makeClip({ id: 'c1', startBeat: 4, endBeat: 8 }),
             ]);
@@ -381,14 +381,43 @@ describe('TakeLanePanel', () => {
 
             fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 160 });
             fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 196 });
+            expect(strip.children).toHaveLength(1);
             fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 196 });
             expect(mocks.setCompRegion).not.toHaveBeenCalled();
 
             fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 100 });
             fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 160 });
+            const preview = strip.children[1] as HTMLElement;
+            expect(parseFloat(preview.style.left)).toBeCloseTo(50);
+            expect(parseFloat(preview.style.width)).toBeCloseTo(10);
             fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 160 });
             expect(mocks.setCompRegion).toHaveBeenCalledTimes(1);
             expect(mocks.setCompRegion).toHaveBeenCalledWith('t1', { startBeat: 7, endBeat: 8, takeId: 'take1' });
+        });
+
+        it('commits nothing when the swipe clamps to a sliver below the minimum span', () => {
+            const strip = renderSwipePanel(makeTake({ id: 'take1', name: 'Take A', startBeat: 0, endBeat: 12 }), [
+                makeClip({ id: 'c1', startBeat: 0, endBeat: 8 }),
+            ]);
+            // Strip spans 0..12 at 200px: beat 7.99 is 133.17px and beat 9 is 150px, so 0.01 beat survives the clip.
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 133.17 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
+        });
+
+        it('shows no preview and commits nothing for a take with no source clip', () => {
+            const strip = renderSwipePanel(
+                makeTake({ id: 'take1', name: 'Take A', clipId: 'missing', endBeat: 8 }),
+                clip0to8
+            );
+            expect((strip.children[0] as HTMLElement).style.width).toBe('100%');
+            fireEvent.pointerDown(strip, { ...PRIMARY_POINTER, clientX: 50 });
+            fireEvent.pointerMove(strip, { pointerId: 1, buttons: 1, clientX: 150 });
+            expect(strip.children).toHaveLength(1);
+            fireEvent.pointerUp(strip, { pointerId: 1, button: 0, clientX: 150 });
+            expect(mocks.setCompRegion).not.toHaveBeenCalled();
         });
 
         it('commits a chorded release once, at the move that reports the primary button gone', () => {
