@@ -1,0 +1,21 @@
+src/modules/AiRuntime/useCases/__tests__/comparativeRequests.spec.ts
+  s_33ff4c66c5d3fc::t_eb089e1d4fe7bb 1640,1653-1659,1691,1702,1767
+src/modules/AiRuntime/useCases/parsePromptToActions.ts
+  s_33ff4c66c5d3fc::t_1a6089b21f4283 1936-1937,1960,1968-1973
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f3ad3b692265bd87d5d06b865d65a961cf0e7b6b",
+  "prompts": {},
+  "sessions": {
+    "s_33ff4c66c5d3fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_33ff4c66c5d3fc",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
