@@ -1,0 +1,60 @@
+.agents/skills/review-stances/audio-param-frame-timing.md
+  h_beb54bf43b47b7 5-10,17-19,27-38
+.agents/skills/review-stances/correctness.md
+  h_beb54bf43b47b7 237-248
+.agents/skills/review-stances/session-lifecycle.md
+  h_beb54bf43b47b7 252-269,371-387
+.agents/skills/review-stances/test-validity.md
+  h_beb54bf43b47b7 822-833
+scripts/e2eSpecDurations.json
+  h_beb54bf43b47b7 94-95
+src/modules/Arrangement/handlers/recording/__tests__/commitRecording.integration.spec.ts
+  h_beb54bf43b47b7 84-89,992-1029
+src/modules/Arrangement/handlers/recording/handleCommitRecording.ts
+  h_beb54bf43b47b7 13
+src/modules/Arrangement/models/PluginDescriptors/__tests__/descriptorEngineParamWeld.spec.ts
+  h_beb54bf43b47b7 726-732,735,737
+src/modules/Arrangement/useCases/recording/commitRecording.ts
+  h_beb54bf43b47b7 10,15,132-133,176-179
+src/modules/Arrangement/useCases/recording/fitFlatTakesToClip.ts
+  h_beb54bf43b47b7 1-35
+src/modules/Arrangement/useCases/recording/withMinimumRecordingLength.ts
+  h_beb54bf43b47b7 1-14
+src/modules/AudioEngine/engine/TransientShaperNode.ts
+  h_beb54bf43b47b7 40-47,56-69,77,93-98,203-208,223-224,227
+src/modules/AudioEngine/engine/__tests__/TransientShaperNode.spec.ts
+  h_beb54bf43b47b7 153-198
+src/modules/AudioEngine/services/__tests__/transientShaperProcessor.spec.ts
+  h_beb54bf43b47b7 4,18,99-146
+src/modules/AudioEngine/services/transientShaperProcessor.ts
+  h_beb54bf43b47b7 6-9,14-31,37-47,72-84,114,135-154,168-171,175-176
+src/modules/AudioRendering/presentations/views/ExportDialog.tsx
+  h_beb54bf43b47b7 85-91,217-220,224-238,255-256,481,489-491,753,847,875-877
+src/modules/AudioRendering/presentations/views/__tests__/ExportDialog.spec.tsx
+  h_beb54bf43b47b7 2968-3152
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchLoopCapturePlacement.integration.spec.ts
+  h_beb54bf43b47b7 462-468,3380-3407,3473
+src/modules/Transport/useCases/playheadScheduler/__tests__/punchPausePlayCommand.integration.spec.ts
+  h_beb54bf43b47b7 1-557
+src/modules/Transport/workers/__tests__/schedulerWorkerTimerPhaseStall.spec.ts
+  h_beb54bf43b47b7 1-393
+tests/e2e/exportAudioEvidence.spec.ts
+  h_beb54bf43b47b7 4,8-13,16-21,23-62,68,82-83,95-102,112,114,117-127,132,136-139,150
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  h_beb54bf43b47b7 1-100
+tests/e2e/exportAudioEvidenceHarness.ts
+  h_beb54bf43b47b7 1-115
+tests/e2e/transientShaperEffect.spec.ts
+  h_beb54bf43b47b7 575-587,589-598,632-634,646
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82f9860c83822ceda29b03c7e5221e089f0d4209",
+  "prompts": {},
+  "humans": {
+    "h_beb54bf43b47b7": {
+      "author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
