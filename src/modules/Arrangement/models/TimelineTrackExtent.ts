@@ -6,14 +6,20 @@ export const VARIATION_LANE_HEIGHT = 24;
 type LaneHostingTrack = Pick<Track, 'kind' | 'showVariationLanes' | 'alternatives'>;
 
 /**
- * How many variation lanes sit under a track: one per alternative while the
- * track's toggle is on. Folder and master rows never host lanes.
+ * Whether a track has variation lanes switched on and can host them. Folder and
+ * master rows never do. This says the toggle is on, not how many lane rows the
+ * canvas draws: a track with no alternatives yet still shows its take panel.
  */
-export function getVariationLaneCount(track: LaneHostingTrack): number {
+export function showsVariationLanes(track: Pick<Track, 'kind' | 'showVariationLanes'>): boolean {
     if (track.kind === 'folder' || track.kind === 'master') {
-        return 0;
+        return false;
     }
-    return track.showVariationLanes === true ? track.alternatives.length : 0;
+    return track.showVariationLanes === true;
+}
+
+/** How many lane rows sit under a track: one per alternative while its lanes are shown. */
+export function getVariationLaneCount(track: LaneHostingTrack): number {
+    return showsVariationLanes(track) ? track.alternatives.length : 0;
 }
 
 /** Height of the block of variation lanes under a track's own row. */

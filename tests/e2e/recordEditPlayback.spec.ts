@@ -108,21 +108,13 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
         expect(timelineBox.height).toBeGreaterThanOrEqual(80);
         expect(editorBox.height).toBeGreaterThanOrEqual(280);
 
-        // The center split owns the overflow. Reaching the keyboard must scroll
-        // that split instead of clipping either dock out of the document.
+        // Both docks must stay reachable without the document scrolling. The
+        // center split shrinks the arrangement and docks to their minimums and
+        // only scrolls itself when even those minimums overflow the window.
         await keyboard.scrollIntoViewIfNeeded();
         await expect(keyboard).toBeInViewport();
-        const centerScrollTop = await keyboard.evaluate((element) => {
-            let parent = element.parentElement;
-            while (parent) {
-                if (getComputedStyle(parent).overflowY === 'auto') {
-                    return parent.scrollTop;
-                }
-                parent = parent.parentElement;
-            }
-            return null;
-        });
-        expect(centerScrollTop).toBeGreaterThan(0);
+        const documentScrollTop = await page.evaluate(() => document.scrollingElement?.scrollTop ?? 0);
+        expect(documentScrollTop).toBe(0);
         await expectUsableTimelineRow(canvas);
 
         // Edit: open the piano roll and stamp one more note into the clip —

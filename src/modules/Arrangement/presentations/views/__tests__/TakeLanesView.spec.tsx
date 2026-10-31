@@ -105,6 +105,17 @@ describe('TakeLanesView', () => {
         expect(screen.getByText(/toggle "variation lanes"/i)).toBeInTheDocument();
     });
 
+    it('opens the panel for a track whose toggle is on but that has no alternatives yet, so a first take can be added', () => {
+        state.trackState = {
+            tracks: [makeTrack({ id: 't1', name: 'Bass', kind: 'midi', showVariationLanes: true, alternatives: [] })],
+            selectedTrackId: null,
+        };
+        render(<TakeLanesView />);
+        expect(screen.getByText('Takes · Bass')).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Add take' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Initialize take lane' })).toBeInTheDocument();
+    });
+
     it('renders one panel per eligible track and excludes master/folder tracks even when toggled on', () => {
         state.trackState = {
             tracks: [

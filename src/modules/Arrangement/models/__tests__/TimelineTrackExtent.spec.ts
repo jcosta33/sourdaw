@@ -4,6 +4,7 @@ import {
     getRenderedTrackExtent,
     getRenderedTrackTops,
     getVariationLaneCount,
+    showsVariationLanes,
     getVariationLaneExtent,
     VARIATION_LANE_HEIGHT,
 } from '../TimelineTrackExtent';
@@ -54,6 +55,33 @@ describe('getVariationLaneCount and getVariationLaneExtent', () => {
     it('scales with the alternative count', () => {
         expect(getVariationLaneExtent(makeTrack('audio', { showVariationLanes: true }, 1))).toBe(24);
         expect(getVariationLaneExtent(makeTrack('audio', { showVariationLanes: true }, 5))).toBe(120);
+    });
+});
+
+describe('showsVariationLanes', () => {
+    it.each(['audio', 'midi', 'bus'] as const)(
+        'is true for a %s track with the toggle on, whatever its alternatives',
+        (kind) => {
+            expect(showsVariationLanes(makeTrack(kind, { showVariationLanes: true }))).toBe(true);
+            expect(showsVariationLanes(makeTrack(kind, { showVariationLanes: true }, 0))).toBe(true);
+        }
+    );
+
+    it('is false with the toggle off or unset', () => {
+        expect(showsVariationLanes(makeTrack('audio', { showVariationLanes: false }))).toBe(false);
+        expect(showsVariationLanes(makeTrack('audio'))).toBe(false);
+    });
+
+    it.each(['folder', 'master'] as const)('is false for a %s row even with the toggle on', (kind) => {
+        expect(showsVariationLanes(makeTrack(kind, { showVariationLanes: true }))).toBe(false);
+    });
+
+    it('leaves a toggled-on track with no alternatives with zero lane rows', () => {
+        const track = makeTrack('midi', { showVariationLanes: true }, 0);
+
+        expect(showsVariationLanes(track)).toBe(true);
+        expect(getVariationLaneCount(track)).toBe(0);
+        expect(getVariationLaneExtent(track)).toBe(0);
     });
 });
 
