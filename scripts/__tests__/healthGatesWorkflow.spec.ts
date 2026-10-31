@@ -1798,19 +1798,21 @@ function isSetupNodeCacheStep(step: UnknownRecord): boolean {
     return typeof cache === 'string' && cache.length > 0;
 }
 
-function installsNodeUnsoftened(step: UnknownRecord): boolean {
+// The setup-pnpm composite installs the verified bootstrap runtime, which
+// assertVerifiedPnpmCallers pins its following setup-node to; a plain install
+// must name the very node-version the softened step asks for.
+function installsNodeUnsoftened(step: UnknownRecord, nodeVersion: unknown): boolean {
     if (step['continue-on-error'] !== undefined) {
         return false;
     }
     if (step.uses === './.github/actions/setup-pnpm') {
         return true;
     }
-    return (
-        typeof step.uses === 'string' &&
-        step.uses.startsWith('actions/setup-node@') &&
-        step.with !== undefined &&
-        recordAt(step, 'with').cache === undefined
-    );
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@') || step.with === undefined) {
+        return false;
+    }
+    const options = recordAt(step, 'with');
+    return options.cache === undefined && options['node-version'] === nodeVersion;
 }
 
 function assertCacheRestoreFallsThrough(set: WorkflowSet): void {
@@ -1837,9 +1839,10 @@ function assertCacheRestoreFallsThrough(set: WorkflowSet): void {
                         `${label} must cap the cache restore at ${CACHE_RESTORE_STEP_MAX_MINUTES} minutes or fewer`
                     );
                 }
-                if (!steps.slice(0, index).some(installsNodeUnsoftened)) {
+                const nodeVersion = recordAt(step, 'with')['node-version'];
+                if (!steps.slice(0, index).some((earlier) => installsNodeUnsoftened(earlier, nodeVersion))) {
                     throw new Error(
-                        `${label} must follow an unsoftened Node install so softening costs only the cache`
+                        `${label} must follow an unsoftened install of the same Node so softening costs only the cache`
                     );
                 }
             }
@@ -3901,7 +3904,15 @@ describe('health gates workflow contract', () => {
             1
         );
         expect(() => assertCacheRestoreFallsThrough(softenedInstall)).toThrow(
-            'nightly.yml job collab-server step Set up Node must follow an unsoftened Node install so softening costs only the cache'
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // An install of another Node would leave that runtime in place when the cache step fails.
+        const otherRuntime = cloneWorkflows('cache step after an install of another Node');
+        recordAt(stepNamed(jobAt(otherRuntime.nightly, 'collab-server'), 'Install Node'), 'with')['node-version'] =
+            '22';
+        expect(() => assertCacheRestoreFallsThrough(otherRuntime)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
         );
 
         // Only setup-node itself may soften for a cache; another action naming a cache may not.
