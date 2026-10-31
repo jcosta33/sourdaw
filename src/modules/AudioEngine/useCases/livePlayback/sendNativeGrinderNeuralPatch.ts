@@ -27,6 +27,12 @@ function identity(value: unknown): value is string {
         typeof value === 'string' && /^[1-9][0-9]{0,19}$/.test(value) && BigInt(value) <= 18_446_744_073_709_551_615n
     );
 }
+function holdsGrinder(state: typeof trackStore.value, trackId: string, deviceId: string): boolean {
+    const device = state?.tracks
+        .find((track) => track.id === trackId)
+        ?.devices.find((candidate) => candidate.id === deviceId);
+    return device?.type.toLowerCase() === 'grinder';
+}
 function admitted(result: AudioGraphApplyResult): Applied {
     if (result.application !== 'applied') {
         throw new Error(result.reason);
@@ -133,10 +139,7 @@ export async function sendNativeGrinderNeuralPatch(input: Input): Promise<void> 
         throw new Error('Native NAM session is unavailable');
     }
     const epoch = nativeLiveGraphSession.rearmEpoch;
-    const target = trackStore.value?.tracks
-        .find((track) => track.id === input.trackId)
-        ?.devices.find((device) => device.id === input.deviceId);
-    if (!target || target.type.toLowerCase() !== 'grinder') {
+    if (!holdsGrinder(trackStore.value, input.trackId, input.deviceId)) {
         throw new Error('Native NAM device is unavailable');
     }
     const latest = latestByBackend.get(backend) ?? new Map<string, object>();
@@ -147,13 +150,11 @@ export async function sendNativeGrinderNeuralPatch(input: Input): Promise<void> 
     const token = {};
     latest.set(input.deviceId, token);
     let removed = false;
-    // Project replacement/removal must not revive a queued same-id device.
+    // Removal and project replacement (whose projection reset empties the track store before
+    // hydration) must not revive a queued same-id device. Persisted parameter edits replace the
+    // device object, so identity is the track and device ids, never the object.
     const unsubscribe = trackStore.subscribe((state) => {
-        if (
-            !state?.tracks.some(
-                (track) => track.id === input.trackId && track.devices.some((device) => device === target)
-            )
-        ) {
+        if (!holdsGrinder(state, input.trackId, input.deviceId)) {
             removed = true;
         }
     });

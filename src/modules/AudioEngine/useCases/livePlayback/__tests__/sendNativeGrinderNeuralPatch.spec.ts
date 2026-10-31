@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { trackStore, type Track } from '#/modules/Arrangement/stores';
+import { persistDeviceParam, trackStore, type Track } from '#/modules/Arrangement/stores';
 
 import { type AudioGraphBackend, type AudioGraphApplyResult } from '../../../models/AudioGraphBackend';
 import { stoppedEngineTransportPosition } from '../../../models/EngineTransportPosition';
@@ -335,6 +335,91 @@ describe('native Grinder queued request ownership', () => {
         await clearing;
         expect(calls).toBe(2);
         expect(latest.contentHash).toBe('0'.repeat(64));
+    });
+
+    function gatedModelBackend(): {
+        current: AudioGraphBackend;
+        applied: Promise<void>;
+        release: () => void;
+        calls: () => number;
+    } {
+        let firstApply!: () => void;
+        const applied = new Promise<void>((resolve) => {
+            firstApply = resolve;
+        });
+        let release!: () => void;
+        const gate = new Promise<void>((resolve) => {
+            release = resolve;
+        });
+        let latest = receipt;
+        let calls = 0;
+        const current: AudioGraphBackend = {
+            backendId: 'native/live',
+            disposed: false,
+            dispose: vi.fn(),
+            apply: async (batch) => {
+                const command = batch.commands[0];
+                if (command?.kind !== 'set-grinder-model' || command.modelJson === null) {
+                    throw new Error('unexpected test operation');
+                }
+                calls += 1;
+                firstApply();
+                await gate;
+                latest = {
+                    ...receipt,
+                    requestId: command.requestId,
+                    contentHash: createHash('sha256').update(command.modelJson).digest('hex'),
+                };
+                return { ...admitted, grinderModels: [latest] };
+            },
+        };
+        vi.mocked(getEngineTransportPosition).mockImplementation(async () => ({
+            ...stoppedEngineTransportPosition,
+            running: true,
+            engineId: latest.engineId,
+            batchesApplied: 7,
+            grinderModels: [latest],
+        }));
+        return { current, applied, release, calls: () => calls };
+    }
+
+    const linearModel = '{"architecture":"Linear","config":{"receptive_field":1,"bias":false},"weights":[0.5]}';
+
+    it('completes a model write while the same device persists a sibling parameter', async () => {
+        trackStore.set({ tracks: [holdingGrinder()], selectedTrackId: null, ghostClips: [] });
+        const native = gatedModelBackend();
+        nativeLiveGraphSession.backend = native.current;
+        const loading = sendNativeGrinderNeuralPatch({
+            kind: 'write',
+            trackId: 't',
+            deviceId: 'd',
+            modelJson: linearModel,
+            values: { neuralModelMode: 1 },
+        });
+        await native.applied;
+        persistDeviceParam('d', 'cabIrSlot', 1);
+        expect(trackStore.value?.tracks[0]?.devices[0]?.parameterValues.cabIrSlot).toBe(1);
+        native.release();
+        await loading;
+        expect(native.calls()).toBe(1);
+    });
+
+    it('supersedes a model write when its device is removed mid-write', async () => {
+        trackStore.set({ tracks: [holdingGrinder()], selectedTrackId: null, ghostClips: [] });
+        const native = gatedModelBackend();
+        nativeLiveGraphSession.backend = native.current;
+        const loading = sendNativeGrinderNeuralPatch({
+            kind: 'write',
+            trackId: 't',
+            deviceId: 'd',
+            modelJson: linearModel,
+            values: { neuralModelMode: 1 },
+        });
+        const refused = expect(loading).rejects.toThrow(/superseded/);
+        await native.applied;
+        trackStore.set({ tracks: [{ ...holdingGrinder(), devices: [] }], selectedTrackId: null, ghostClips: [] });
+        native.release();
+        await refused;
     });
 
     it('refuses completion after native handle disposal even if the same engine reaches the fence', async () => {
