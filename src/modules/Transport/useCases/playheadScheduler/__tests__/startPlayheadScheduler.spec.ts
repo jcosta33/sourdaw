@@ -610,21 +610,22 @@ describe('startPlayheadScheduler', () => {
         expect(vi.mocked(panicYeastRuntime)).toHaveBeenCalledTimes(1);
     });
 
-    it('keeps a tick no longer than the look-ahead on the continuing window', async () => {
+    it('keeps the continuing window when a gap past the look-ahead leaves it less than one look-ahead overdue', async () => {
         transportStoreState.value = playingState({ playheadPosition: 0 });
         startPlayheadScheduler();
         const worker = schedulerSession.worker as unknown as {
             onmessage: ((event: { data: unknown }) => void) | null;
         };
-        ctxTime.now = 0.05;
+        ctxTime.now = 0.0625;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));
         const continuingFrom = schedulerSession.lastScheduledBeat;
         vi.mocked(scheduleMidiNotes).mockClear();
 
-        // Exactly one look-ahead later: late by nothing the window did not cover.
-        ctxTime.now = 0.15;
+        // A 0.125 s gap (exact in binary) outruns the 0.1 s look-ahead, but the
+        // window it continues ended 0.025 s ago: its events play that late.
+        ctxTime.now = 0.1875;
         emitSchedulerTick(worker);
         await new Promise((resolve) => setTimeout(resolve, 0));
         await new Promise((resolve) => setTimeout(resolve, 0));

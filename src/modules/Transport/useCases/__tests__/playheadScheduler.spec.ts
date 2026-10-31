@@ -98,6 +98,9 @@ vi.mock('../../models/TempoMap', () => ({
     // exercises the tick's control flow, not the integration; the integration
     // itself is covered where the tempo map is real.
     secondsBetweenBeats: vi.fn((_changes: unknown, fromBeat: number, toBeat: number) => (toBeat - fromBeat) / 2),
+    beatAtSecondsFromAnchor: vi.fn(
+        (_changes: unknown, anchorBeat: number, elapsedSeconds: number) => anchorBeat + elapsedSeconds * 2
+    ),
 }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(

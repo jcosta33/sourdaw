@@ -4,6 +4,7 @@ import { defaultTransportState } from '../../../models/TransportState';
 import { playheadClockRef } from '../../../stores/playheadClockRef';
 import { playheadWrapCountRef } from '../../../stores/playheadWrapCountRef';
 import { metronomeSchedulingState } from '../../scheduling/metronomeSchedulingState';
+import { panicYeastRuntime } from '../../transportControls/panicYeastRuntime';
 import { disposePlayheadScheduler } from '../disposePlayheadScheduler';
 import { schedulerSession } from '../schedulerSession';
 import { startPlayheadScheduler } from '../startPlayheadScheduler';
@@ -61,6 +62,12 @@ vi.mock('#/modules/CrdtDocument/useCases', () => ({
     ),
 }));
 vi.mock('#/modules/Arrangement/stores', () => ({
+    appendClipToTrack: vi.fn<typeof import('#/modules/Arrangement/stores').appendClipToTrack>(),
+    clipSelectionStore: { value: null },
+    resolveEligibleClipWriteTarget: vi.fn<typeof import('#/modules/Arrangement/stores').resolveEligibleClipWriteTarget>(
+        () => ({ status: 'ineligible' })
+    ),
+    updateClipInStore: vi.fn(() => false),
     adjustmentLayerStore: { value: null },
     gainEnvelopeStore: { value: null },
     getTrackEligibility: vi.fn(),
@@ -449,6 +456,62 @@ describe('startPlayheadScheduler after a main-thread stall', () => {
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(2.25 * BEATS_PER_SECOND, 9);
     });
 
+    it('plays an event a gap just past the look-ahead left overdue, late, without a relocation', async () => {
+        trackStoreState.value = { tracks: [midiTrack('drums')] };
+        midiStoreState.value = {
+            notesByClipId: { drums: noteOnEveryBeat() },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            probabilitySeed: 1,
+        };
+        transportStoreState.value = playingState();
+
+        startPlayheadScheduler();
+        // The last regular tick (1.375 s) schedules up to 1.475 s: beat 3, at
+        // 1.5 s, is still ahead of the window.
+        await tickFor(1.375);
+        expect(notes.some(({ pitch }) => pitch === 43)).toBe(false);
+        const epochBeforeGap = schedulerSession.discontinuityEpoch;
+        vi.mocked(panicYeastRuntime).mockClear();
+
+        // A routine 130 ms gap: the window start is 30 ms overdue, within one
+        // look-ahead, so beat 3 is played 5 ms late rather than dropped.
+        await advanceAudioClock(0.13);
+
+        expect(notes.filter(({ pitch }) => pitch === 43)).toEqual([
+            { pitch: 43, time: expect.closeTo(1.5, 9), requestedAt: expect.closeTo(1.505, 9) },
+        ]);
+        expect(clickRequests.filter(({ time }) => Math.abs(time - 1.5) < 1e-9)).toHaveLength(1);
+        expect(vi.mocked(panicYeastRuntime)).not.toHaveBeenCalled();
+        expect(schedulerSession.discontinuityEpoch).toBe(epochBeforeGap);
+    });
+
+    it('drops the events of a stall that left the window more than a look-ahead overdue', async () => {
+        trackStoreState.value = { tracks: [midiTrack('drums')] };
+        midiStoreState.value = {
+            notesByClipId: { drums: noteOnEveryBeat() },
+            ccByClipId: {},
+            pitchBendByClipId: {},
+            probabilitySeed: 1,
+        };
+        transportStoreState.value = playingState();
+
+        startPlayheadScheduler();
+        await tickFor(1.375);
+        const epochBeforeGap = schedulerSession.discontinuityEpoch;
+        vi.mocked(panicYeastRuntime).mockClear();
+
+        // 250 ms with no tick: the window start (1.475 s) is 150 ms behind the
+        // clock, so beat 3 (1.5 s) is stale and the window opens at the
+        // playhead as a relocation.
+        await advanceAudioClock(0.25);
+
+        expect(notes.filter(({ pitch }) => pitch === 43)).toEqual([]);
+        expect(clickRequests.filter(({ time }) => Math.abs(time - 1.5) < 1e-9)).toEqual([]);
+        expect(vi.mocked(panicYeastRuntime)).toHaveBeenCalledTimes(1);
+        expect(schedulerSession.discontinuityEpoch).toBe(epochBeforeGap + 1);
+    });
+
     it('lands a stall that crosses several loop seams on the pass the audio clock is in', async () => {
         // Loop [0, 2) at 120 BPM is a one-second pass; past the loop end the
         // map drops to 60 BPM, a zone a looping roll never travels.
@@ -469,6 +532,9 @@ describe('startPlayheadScheduler after a main-thread stall', () => {
 
         expect(schedulerSession.accumulatedPosition).toBeCloseTo(1.2, 9);
         expect(playheadClockRef.beat).toBeCloseTo(1.2, 9);
+        // Both seams the audio crossed count, so a loop-recorded event after
+        // the stall is dated in the pass it was played in.
+        expect(playheadWrapCountRef.current).toBe(2);
         // The first click after the stall is the pass's beat 0 at 3.0 s
         // (beat 1.2 → 2 is 0.4 s) — none from the passes the stall skipped.
         await tickFor(0.5);
