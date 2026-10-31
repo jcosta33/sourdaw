@@ -41,6 +41,7 @@ import { midiStore } from '#/modules/MIDI/stores';
 import { resolveToken } from '#/utils/UI/resolveToken';
 
 import { colorWithAlpha, brightenColor } from '../../helpers/oklchColor';
+import { type PianoRollTakeNotes } from '../../helpers/projectPianoRollTakeNotes';
 import { useLaneDragSession, type LanePointerPosition } from '../../hooks/useLaneDragSession';
 
 type MidiNote = NonNullable<typeof midiStore.value>['notesByClipId'][string][number];
@@ -144,12 +145,13 @@ const selectionTouchedClipIds = (
 const buildLaneNotes = (
     clipId: string | null,
     notesByClipId: Record<string, MidiNote[]>,
+    primaryClipNotes: MidiNote[] | undefined,
     openedClipNotes: Record<string, MidiNote[]> | undefined,
     selectedNoteIds: Set<string>
 ): LaneNoteEntry[] => {
     const entries: LaneNoteEntry[] = [];
     if (clipId) {
-        for (const note of notesByClipId[clipId] ?? []) {
+        for (const note of primaryClipNotes ?? notesByClipId[clipId] ?? []) {
             entries.push({ note, clipId });
         }
     }
@@ -167,9 +169,15 @@ type UndoChange = { clipId: string; id: string; oldVal: number; newVal: number }
 /** The value of every note in a gesture's scope when it starts, keyed by note id. */
 const captureInitialValues = (
     entries: LaneNoteEntry[],
-    getValue: (note: MidiNote) => number
-): Map<string, { clipId: string; value: number }> =>
-    new Map(entries.map((entry) => [entry.note.id, { clipId: entry.clipId, value: getValue(entry.note) }]));
+    getValue: (note: MidiNote) => number,
+    storedId: (viewId: string) => string
+): Map<string, { clipId: string; storedId: string; value: number }> =>
+    new Map(
+        entries.map((entry) => [
+            entry.note.id,
+            { clipId: entry.clipId, storedId: storedId(entry.note.id), value: getValue(entry.note) },
+        ])
+    );
 
 /**
  * Diff the live store against a gesture's captured start, reading each note
@@ -177,16 +185,24 @@ const captureInitialValues = (
  * per gesture, every note addressed through its owner clip.
  */
 const collectUndoChanges = (
-    initialValues: Map<string, { clipId: string; value: number }>,
+    initialValues: Map<string, { clipId: string; storedId: string; value: number }>,
     getValue: (note: MidiNote) => number
 ): UndoChange[] => {
     const changes: UndoChange[] = [];
-    for (const [id, initial] of initialValues.entries()) {
-        const finalNote = (midiStore.value?.notesByClipId[initial.clipId] ?? []).find((node) => node.id === id);
+    const seen = new Set<string>();
+    for (const initial of initialValues.values()) {
+        const key = JSON.stringify([initial.clipId, initial.storedId]);
+        if (seen.has(key)) {
+            continue;
+        }
+        seen.add(key);
+        const finalNote = (midiStore.value?.notesByClipId[initial.clipId] ?? []).find(
+            (node) => node.id === initial.storedId
+        );
         if (finalNote) {
             const newVal = getValue(finalNote);
             if (newVal !== initial.value) {
-                changes.push({ clipId: initial.clipId, id, oldVal: initial.value, newVal });
+                changes.push({ clipId: initial.clipId, id: initial.storedId, oldVal: initial.value, newVal });
             }
         }
     }
@@ -222,6 +238,9 @@ const replayChanges = (
 
 type NotePropertyLaneProps = {
     clipId: string | null;
+    primaryClipNotes?: MidiNote[];
+    takeProjections?: ReadonlyMap<string, PianoRollTakeNotes>;
+    setFrozenValue?: (viewId: string, value: number) => void;
     /**
      * Track of the primary clip. Kept in the shared lane-props shape every
      * property lane wrapper passes; this lane itself resolves colors per clip
@@ -263,6 +282,9 @@ type NotePropertyLaneProps = {
 
 export const NotePropertyLane = ({
     clipId,
+    primaryClipNotes,
+    takeProjections,
+    setFrozenValue,
     selectedNoteIds,
     openedClipNotes,
     beatWidth,
@@ -289,7 +311,55 @@ export const NotePropertyLane = ({
         selectedTrackId: null,
     });
 
-    const laneNotes = buildLaneNotes(clipId, midiState.notesByClipId, openedClipNotes, selectedNoteIds);
+    const laneNotes = buildLaneNotes(
+        clipId,
+        midiState.notesByClipId,
+        primaryClipNotes,
+        openedClipNotes,
+        selectedNoteIds
+    );
+    const pendingFrozenValues = useRef(new Map<string, number>());
+    const frozenOwner = (viewId: string) => {
+        for (const projection of takeProjections?.values() ?? []) {
+            const owner = projection.ownersByViewId.get(viewId);
+            if (owner) {
+                return owner;
+            }
+        }
+        return undefined;
+    };
+    const baseGapOwner = (viewId: string) => {
+        for (const projection of takeProjections?.values() ?? []) {
+            const owner = projection.baseOwnersByViewId.get(viewId);
+            if (owner) {
+                return owner;
+            }
+        }
+        return undefined;
+    };
+    const storedId = (viewId: string): string => baseGapOwner(viewId)?.row.id ?? viewId;
+    const writeValue = (ownerClipId: string, viewId: string, value: number): void => {
+        if (frozenOwner(viewId)) {
+            pendingFrozenValues.current.set(viewId, value);
+        } else {
+            setValue(ownerClipId, storedId(viewId), value);
+        }
+    };
+    const commitFrozenValues = (): void => {
+        const committedRows = new Set<string>();
+        for (const [viewId, value] of pendingFrozenValues.current) {
+            const owner = frozenOwner(viewId);
+            if (!owner) {
+                continue;
+            }
+            const key = JSON.stringify([owner.sourceClipId, owner.row.id]);
+            if (!committedRows.has(key)) {
+                committedRows.add(key);
+                setFrozenValue?.(viewId, value);
+            }
+        }
+        pendingFrozenValues.current.clear();
+    };
 
     // Every clip in scope resolves its own color, the same lookup the piano
     // roll's renderer uses for opened clips — a secondary clip's bars must not
@@ -497,7 +567,7 @@ export const NotePropertyLane = ({
         if (event.shiftKey && sortedSelected.length >= 2) {
             const firstNote = sortedSelected[0]!.note;
             const lastNote = sortedSelected[sortedSelected.length - 1]!.note;
-            const initialValues = captureInitialValues(sortedSelected, getValue);
+            const initialValues = captureInitialValues(sortedSelected, getValue, storedId);
             const startVal = initialValues.get(firstNote.id)?.value ?? getValue(firstNote);
             const beatSpan = lastNote.startBeat - firstNote.startBeat;
 
@@ -508,7 +578,7 @@ export const NotePropertyLane = ({
                         const time = (node.startBeat - firstNote.startBeat) / beatSpan;
                         interpolated = startVal + (endVal - startVal) * time;
                     }
-                    setValue(ownerClipId, node.id, Math.round(interpolated));
+                    writeValue(ownerClipId, node.id, Math.round(interpolated));
                 }
             };
 
@@ -517,6 +587,7 @@ export const NotePropertyLane = ({
             };
 
             const onCommit = (): void => {
+                commitFrozenValues();
                 const changes = collectUndoChanges(initialValues, getValue);
                 if (changes.length > 0) {
                     pushUndoEntry(
@@ -548,18 +619,19 @@ export const NotePropertyLane = ({
 
         // ── A8: Continuous velocity painting (single or drag-through) ─────
         const pressedEntry = hitNote;
-        const origValues = captureInitialValues(laneNotes, getValue);
+        const origValues = captureInitialValues(laneNotes, getValue, storedId);
 
         const onMove = (position: LanePointerPosition): void => {
             const point = toLanePoint(position.clientX, position.clientY);
             // Paint the note currently under the cursor (horizontal movement)
             const entryAtX = hitNoteAtX(point.x);
             if (entryAtX) {
-                setValue(entryAtX.clipId, entryAtX.note.id, valueFromLaneY(point.y, h));
+                writeValue(entryAtX.clipId, entryAtX.note.id, valueFromLaneY(point.y, h));
             }
         };
 
         const onCommit = (): void => {
+            commitFrozenValues();
             const changes = collectUndoChanges(origValues, getValue);
             if (changes.length > 0) {
                 pushUndoEntry(
@@ -584,7 +656,7 @@ export const NotePropertyLane = ({
             move: onMove,
             commit: onCommit,
         });
-        setValue(pressedEntry.clipId, pressedEntry.note.id, valueAt(event));
+        writeValue(pressedEntry.clipId, pressedEntry.note.id, valueAt(event));
     };
 
     const handleRampDrag = (side: 'left' | 'right', event: PointerEvent<HTMLDivElement>) => {
@@ -610,7 +682,7 @@ export const NotePropertyLane = ({
         const startLeftVal = getValue(firstNote.note);
         const startRightVal = getValue(lastNote.note);
 
-        const initialValues = captureInitialValues(sortedSelected, getValue);
+        const initialValues = captureInitialValues(sortedSelected, getValue, storedId);
 
         const captureTarget = event.currentTarget;
 
@@ -628,11 +700,12 @@ export const NotePropertyLane = ({
                     const time = (node.startBeat - firstNote.note.startBeat) / beatSpan;
                     interpolated = currentLeft + (currentRight - currentLeft) * time;
                 }
-                setValue(ownerClipId, node.id, Math.round(interpolated));
+                writeValue(ownerClipId, node.id, Math.round(interpolated));
             }
         };
 
         const onCommit = () => {
+            commitFrozenValues();
             const changes = collectUndoChanges(initialValues, getValue);
 
             if (changes.length > 0) {

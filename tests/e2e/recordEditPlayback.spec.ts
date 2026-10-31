@@ -98,7 +98,7 @@ test.describe('Record, edit, playback — MIDI clip lifecycle', () => {
 
         // Open the on-screen keyboard — the E2E stand-in for a MIDI input.
         await page.getByTestId('toggle-virtual-keyboard').click();
-        const keyboard = page.getByRole('application', { name: 'Virtual Piano Keyboard' });
+        const keyboard = page.getByRole('region', { name: 'Virtual Piano Keyboard' });
         await expect(keyboard).toBeVisible({ timeout: 10_000 });
 
         // Arm + record: recording auto-starts the transport — an explicit

@@ -5,11 +5,13 @@ import {
 
 import { type CompRegion, type Take, type TakeLane } from '../models/TakeLane';
 
+import { applyTakeFieldOperation } from './applyTakeFieldOperation';
 import {
     captureBaseGapAudioSources,
     replaceBaseGapAudioSources,
     reconcileBaseGapAudioSourceDelta,
 } from './baseGapAudioSourceDelta';
+import { captureMidiSourceChanges } from './captureMidiTakeSourceDelta';
 import { type CompAudioSourceInputContext } from './compAudioSourceInputs';
 import {
     applyCompAudioSourcePromotions,
@@ -17,10 +19,8 @@ import {
     type CompAudioSourceAuthorization,
 } from './compAudioSourcePromotions';
 import { captureCompRegionSourceOperations } from './compRegionAudioSourceDelta';
+import { cloneValue, optionalNumber, optionalString, valuesEqual } from './takeLaneJournalValues';
 import {
-    type OptionalStringValue,
-    type OptionalNumberValue,
-    type OptionalTakeNumberField,
     type TakeFieldOperation,
     type TakeLaneWriteIntent,
     type LaneWriteOperation,
@@ -45,49 +45,6 @@ export type {
 } from './takeLaneWriteTypes';
 
 let pendingWriteIntent: { readonly intent: TakeLaneWriteIntent; readonly owner: object | undefined } | undefined;
-
-function cloneValue<Value>(value: Value): Value {
-    return structuredClone(value);
-}
-
-function valuesEqual(left: unknown, right: unknown): boolean {
-    if (Object.is(left, right)) {
-        return true;
-    }
-    if (Array.isArray(left) || Array.isArray(right)) {
-        return (
-            Array.isArray(left) &&
-            Array.isArray(right) &&
-            left.length === right.length &&
-            left.every((value, index) => valuesEqual(value, right[index]))
-        );
-    }
-    if (!left || !right || typeof left !== 'object' || typeof right !== 'object') {
-        return false;
-    }
-    const leftRecord = left as Record<string, unknown>;
-    const rightRecord = right as Record<string, unknown>;
-    const leftKeys = Object.keys(leftRecord).sort();
-    const rightKeys = Object.keys(rightRecord).sort();
-    return (
-        leftKeys.length === rightKeys.length &&
-        leftKeys.every((key, index) => key === rightKeys[index] && valuesEqual(leftRecord[key], rightRecord[key]))
-    );
-}
-
-function optionalString(source: TakeLane, field: 'automationLaneId'): OptionalStringValue {
-    if (Object.hasOwn(source, field) && source[field] !== undefined) {
-        return { present: true, value: source[field] };
-    }
-    return { present: false };
-}
-
-function optionalNumber(source: Take, field: OptionalTakeNumberField): OptionalNumberValue {
-    if (Object.hasOwn(source, field) && source[field] !== undefined) {
-        return { present: true, value: source[field] };
-    }
-    return { present: false };
-}
 
 function previousIdentity<Item extends { readonly id: string }>(items: readonly Item[], index: number): string | null {
     return index > 0 ? (items[index - 1]?.id ?? null) : null;
@@ -136,6 +93,7 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
         'passSourceEndSeconds',
         'passOriginBeat',
         'passOriginSourceSeconds',
+        'recordingPassIndex',
     ] as const) {
         const beforeValue = optionalNumber(before, field);
         const nextValue = optionalNumber(next, field);
@@ -150,6 +108,7 @@ function captureTakeFieldOperations(laneId: string, before: Take, next: Take): T
             });
         }
     }
+    operations.push(...captureMidiSourceChanges(laneId, before, next));
     return operations;
 }
 
@@ -409,43 +368,6 @@ function insertAfter<Item extends { readonly id: string }>(
 
 function replaceLane(state: TakeLaneStoreValue, replacement: TakeLane): TakeLaneStoreValue {
     return { lanes: state.lanes.map((lane) => (lane.id === replacement.id ? replacement : lane)) };
-}
-
-function applyTakeFieldOperation(
-    state: TakeLaneStoreValue,
-    lane: TakeLane,
-    operation: TakeFieldOperation
-): TakeLaneStoreValue | undefined {
-    const take = findTake(lane, operation.takeId);
-    if (!take) {
-        return undefined;
-    }
-    let replacementTake: Take;
-    if (operation.kind === 'take-optional-number-field') {
-        if (!valuesEqual(optionalNumber(take, operation.field), operation.expected)) {
-            return undefined;
-        }
-        replacementTake = cloneValue(take);
-        if (operation.replacement.present) {
-            replacementTake[operation.field] = operation.replacement.value;
-        } else {
-            delete replacementTake[operation.field];
-        }
-    } else if (operation.kind === 'take-selected-field') {
-        if (take.selected !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, selected: operation.replacement };
-    } else {
-        if (take[operation.field] !== operation.expected) {
-            return undefined;
-        }
-        replacementTake = { ...take, [operation.field]: operation.replacement };
-    }
-    return replaceLane(state, {
-        ...lane,
-        takes: lane.takes.map((candidate) => (candidate.id === take.id ? replacementTake : candidate)),
-    });
 }
 
 function applyLaneOperation(

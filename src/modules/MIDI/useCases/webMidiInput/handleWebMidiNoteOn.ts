@@ -1,5 +1,6 @@
 import { inject } from '#/infra/di/inject';
 import { logger } from '#/infra/logger/appLogger';
+import { activeRecordingRef } from '#/modules/Arrangement/stores';
 import { applyNoteExpression, audioEngine, startFaustNote } from '#/modules/AudioEngine/useCases';
 import { applyVelocityCurve, createGrandBouleStore } from '#/modules/GrandBoule/stores';
 import { isBypassedNoteReceiver, resolveDrumKitBy, resolveDrumKitOutputGain } from '#/utils/deviceTypeMatching';
@@ -19,7 +20,7 @@ import { activeNotes, channelToNote } from '../../repositories/webMidi/state';
 import { handleWebMidiNoteOff } from './handleWebMidiNoteOff';
 import { midiMessageHandlerDependencies } from './midiMessageHandlerDependencies';
 import { recordHeldNoteExpression } from './recordHeldNoteExpression';
-import { resolveAdmittedEventBeat } from './resolveAdmittedEventBeat';
+import { resolveAdmittedEventPosition } from './resolveAdmittedEventPosition';
 import { resolveBendRangeSemitones } from './resolveBendRangeSemitones';
 import { resolveChannelBendAtNoteStart } from './resolveChannelBendAtNoteStart';
 import { resolveDeviceNode } from './resolveDeviceNode';
@@ -59,7 +60,7 @@ export const handleWebMidiNoteOn = inject({
 
             const generation = memberExpressionGeneration.current;
             const eventTime = resolveInputEventTime({ timeStamp });
-            const admittedBeat = resolveAdmittedEventBeat({ timeStamp, eventTime });
+            const admittedPosition = resolveAdmittedEventPosition({ timeStamp, eventTime });
 
             const noteKey = createWebMidiNoteKey(channel, note);
             const mpeEnabled = getMpeEnabled();
@@ -96,6 +97,13 @@ export const handleWebMidiNoteOn = inject({
             }
 
             const transport = deps.getTransportStoreValue();
+            let recordingClipId: string | undefined;
+            if (transport?.isRecording) {
+                recordingClipId = deps
+                    .getTrackStoreState()
+                    ?.tracks.find((track) => track.id === targetTrackId)
+                    ?.clips.find((clip) => clip.type === 'midi' && activeRecordingRef.current.includes(clip.id))?.id;
+            }
             const engine = audioEngine;
             // When the key was struck, not when this handler got its turn on
             // the main thread (audit MD-1). Everything downstream — the voice
@@ -108,11 +116,15 @@ export const handleWebMidiNoteOn = inject({
 
             const noteData: ActiveNoteData = {
                 startTime: eventTime,
-                startBeat: transport ? admittedBeat : 0,
+                startBeat: transport ? admittedPosition.beat : 0,
+                recordingPassIndex: transport ? admittedPosition.passIndex : undefined,
+                recordingAdmissionId:
+                    typeof timeStamp === 'object' && timeStamp !== null ? timeStamp.recordingAdmissionId : undefined,
                 channel,
                 note,
                 velocity,
                 trackId: targetTrackId,
+                recordingClipId,
                 instrumentTrackId: targetTrackId,
                 noteInstanceId,
                 pressure: memberExpression?.pressure,

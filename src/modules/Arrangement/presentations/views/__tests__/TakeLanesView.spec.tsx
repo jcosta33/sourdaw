@@ -266,4 +266,38 @@ describe('TakeLanePanel', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Remove comp region Take A' }));
         expect(mocks.removeCompRegion).toHaveBeenCalledWith('t1', 2);
     });
+
+    it('keeps the drag preview and take extent pointer-transparent so a release always targets the strip', () => {
+        state.trackState = {
+            tracks: [
+                makeTrack({
+                    id: 't1',
+                    name: 'Vox',
+                    kind: 'audio',
+                    clips: [makeClip({ id: 'c1', startBeat: 0, endBeat: 8 })],
+                }),
+            ],
+            selectedTrackId: null,
+        };
+        state.laneState = {
+            lanes: [
+                {
+                    id: 'lane1',
+                    trackId: 't1',
+                    takes: [makeTake({ id: 'take1', name: 'Take A' })],
+                    activeCompRegions: [],
+                },
+            ],
+        };
+        const { container } = renderPanel();
+        const strip = container.querySelector('[role="presentation"]')!;
+        fireEvent.mouseDown(strip, { button: 0, clientX: 50 });
+        fireEvent.mouseMove(strip, { clientX: 150 });
+
+        const decorations = Array.from(strip.children);
+        expect(decorations.length).toBeGreaterThanOrEqual(2);
+        for (const decoration of decorations) {
+            expect(decoration.classList.contains('pointer-events-none')).toBe(true);
+        }
+    });
 });

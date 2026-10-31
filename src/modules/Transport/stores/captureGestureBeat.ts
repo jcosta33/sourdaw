@@ -29,6 +29,8 @@
  * is the deferred-completion authority #3799 forbids.
  */
 
+import { valuesEqual } from '#/utils/structuralEquality';
+
 import { getTempoAtBeat } from '../models/TempoMap';
 
 import { getGestureClockSource } from './gestureClockSource';
@@ -45,28 +47,39 @@ import { transportStore } from './transportStore';
  */
 export const MAX_PROJECTION_SECONDS = 0.1;
 
-export function captureGestureBeat(): number {
+type GestureClockCapture = {
+    beat: number;
+    audioTimeSeconds: number | null;
+    pendingLoopSeam: typeof playheadClockRef.pendingLoopSeam;
+};
+
+function withoutSeam(beat: number): GestureClockCapture {
+    return { beat, audioTimeSeconds: null, pendingLoopSeam: null };
+}
+
+/** The scalar beat and any scheduled browser boundary share one carrier and clock read. */
+export function captureGestureClock(): GestureClockCapture {
     const transport = transportStore.value;
     if (!transport) {
         // Pre-hydration there is no position to stamp; recording gates drop the
         // value anyway (`recordAutomationValue` refuses an unhydrated transport).
-        return 0;
+        return withoutSeam(0);
     }
     if (!transport.isPlaying) {
         // Discrete transitions (stop, pause, seek) write the store, so while the
         // transport is parked it — not the scheduler's torn-down anchor — is
         // the position in force.
-        return transport.playheadPosition;
+        return withoutSeam(transport.playheadPosition);
     }
     if (playheadClockRef.hold !== null) {
-        return Math.max(0, playheadClockRef.hold.beat);
+        return withoutSeam(Math.max(0, playheadClockRef.hold.beat));
     }
 
     const source = getGestureClockSource();
     if (!source) {
         // No bootstrap: answer the scheduler's last committed position rather
         // than the start beat. See `gestureClockSource.ts` for the contract.
-        return Math.max(0, playheadClockRef.beat);
+        return withoutSeam(Math.max(0, playheadClockRef.beat));
     }
 
     // The cursor follows the transport that produces the sound (ADR 0039): while
@@ -74,11 +87,30 @@ export function captureGestureBeat(): number {
     // is the beat the event lands on, exactly as `runTick` draws it.
     const nativeCursor = source.readNativeCursorBeats();
     if (nativeCursor !== null) {
-        return nativeCursor;
+        return withoutSeam(nativeCursor);
     }
 
     const audioTime = source.getAudioTimeSeconds();
     const elapsedSeconds = Math.max(0, Math.min(audioTime - playheadClockRef.audioTimeSeconds, MAX_PROJECTION_SECONDS));
     const tempo = getTempoAtBeat(tempoMapStore.value?.changes ?? [], playheadClockRef.beat, transport.tempo);
-    return Math.max(0, playheadClockRef.beat + (elapsedSeconds * tempo) / 60);
+    const pending = playheadClockRef.pendingLoopSeam;
+    const ownsClock =
+        pending !== null &&
+        pending.generation === playheadClockRef.generation &&
+        pending.anchorBeat === playheadClockRef.beat &&
+        pending.anchorAudioTimeSeconds === playheadClockRef.audioTimeSeconds &&
+        transport.isLooping &&
+        pending.loopStart === transport.loopStart &&
+        pending.loopEnd === transport.loopEnd &&
+        pending.tempo === transport.tempo &&
+        valuesEqual(pending.tempoMapChanges, tempoMapStore.value?.changes ?? null);
+    return {
+        beat: Math.max(0, playheadClockRef.beat + (elapsedSeconds * tempo) / 60),
+        audioTimeSeconds: audioTime,
+        pendingLoopSeam: ownsClock ? pending : null,
+    };
+}
+
+export function captureGestureBeat(): number {
+    return captureGestureClock().beat;
 }

@@ -118,7 +118,7 @@ test.describe('Panel shortcuts', () => {
 
     test('Cmd+Shift+K shows then hides the virtual keyboard', async ({ page }) => {
         const toggle = page.getByRole('button', { name: 'Toggle virtual keyboard' });
-        const keyboard = page.getByRole('application', { name: /Virtual Piano Keyboard/i });
+        const keyboard = page.getByRole('region', { name: /Virtual Piano Keyboard/i });
 
         await expect(toggle).not.toHaveAttribute('aria-pressed', 'true');
         await expect(keyboard).toHaveCount(0);

@@ -24,8 +24,26 @@ function isModifiedByTransition(take: Take, other: Take): boolean {
         take.passDepthSeconds !== other.passDepthSeconds ||
         take.passSourceEndSeconds !== other.passSourceEndSeconds ||
         take.passOriginBeat !== other.passOriginBeat ||
-        take.passOriginSourceSeconds !== other.passOriginSourceSeconds
+        take.passOriginSourceSeconds !== other.passOriginSourceSeconds ||
+        take.recordingPassIndex !== other.recordingPassIndex ||
+        !valuesEqual(take.midiSource, other.midiSource)
     );
+}
+
+function reconcileModifiedTake(target: Take, source: Take | undefined, liveTake: Take): Take {
+    const peerRows =
+        source?.midiSource &&
+        target.midiSource &&
+        liveTake.midiSource &&
+        source.midiSource.sourceClipId === liveTake.midiSource.sourceClipId &&
+        valuesEqual(source.midiSource.rows, target.midiSource.rows)
+            ? liveTake.midiSource.rows
+            : undefined;
+    const reconciledTake = { ...target, selected: liveTake.selected };
+    if (peerRows && target.midiSource) {
+        reconciledTake.midiSource = { ...target.midiSource, rows: structuredClone(peerRows) };
+    }
+    return reconciledTake;
 }
 
 /**
@@ -102,7 +120,7 @@ function reconcileTransitionTakes(
             continue;
         }
         if (modifiedIds.has(target.id)) {
-            reconciled.push({ ...target, selected: liveTake.selected });
+            reconciled.push(reconcileModifiedTake(target, fromById.get(target.id), liveTake));
             continue;
         }
         reconciled.push(liveTake);
@@ -135,7 +153,9 @@ function takesMatch(left: readonly Take[], right: readonly Take[]): boolean {
                 take.passDepthSeconds === other.passDepthSeconds &&
                 take.passSourceEndSeconds === other.passSourceEndSeconds &&
                 take.passOriginBeat === other.passOriginBeat &&
-                take.passOriginSourceSeconds === other.passOriginSourceSeconds
+                take.passOriginSourceSeconds === other.passOriginSourceSeconds &&
+                take.recordingPassIndex === other.recordingPassIndex &&
+                valuesEqual(take.midiSource, other.midiSource)
             );
         })
     );

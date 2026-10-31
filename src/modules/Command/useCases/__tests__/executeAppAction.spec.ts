@@ -32,6 +32,7 @@ import type {
     AppAction,
     HandlerDescribeResult,
     HandlerExecutionResult,
+    HandlerMaterializationContext,
     HandlerValidationContext,
 } from '#/utils/handlerContract';
 import type { ActionUndoEntry } from '../../models/UndoEntry';
@@ -1139,7 +1140,7 @@ describe('executeAppAction', () => {
             waitForSnapshotTransaction: () => wait,
         });
         const action: SetEditingToolAction = { type: 'setEditingTool', payload: { tool: 'select' } };
-        const materialize = vi.fn((candidate: SetEditingToolAction) => {
+        const materialize = vi.fn((candidate: SetEditingToolAction, _context?: HandlerMaterializationContext) => {
             candidate.payload.tool = 'marquee';
         });
         const handler = create_mock_handler<SetEditingToolAction>({
@@ -1160,6 +1161,7 @@ describe('executeAppAction', () => {
             { type: 'setEditingTool', payload: { tool: 'marquee' } },
             expect.any(Object)
         );
+        expect(materialize.mock.calls[0]?.[1]).toBeUndefined();
         expect(action.payload.tool).toBe('select');
     });
 

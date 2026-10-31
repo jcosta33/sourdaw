@@ -1,6 +1,9 @@
 import { type AudioSourceSnapshot, type AudioSourceTile } from '#/utils/audioSourceTime';
+import { type MidiTakeSourceSnapshot } from '#/utils/handlerContract';
 
 import { type TempoTimeline } from './TempoTimeline';
+
+export type MidiTakeSource = MidiTakeSourceSnapshot;
 
 export type Take = {
     id: string;
@@ -50,6 +53,10 @@ export type Take = {
     /** Original clip-media basis; rebasing a stretched clip head must not move pass eligibility. */
     passOriginBeat?: number;
     passOriginSourceSeconds?: number;
+    /** Exact original MIDI rows and pass phase captured before clip re-keying. */
+    midiSource?: MidiTakeSource;
+    /** Original recording pass; absent for legacy and manually made takes. */
+    recordingPassIndex?: number;
 };
 
 export type TakeLane = {

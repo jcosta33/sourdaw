@@ -65,6 +65,8 @@ export type MidiNote = {
     articulation?: string;
     /** Expression changes after note-on; see `MidiNoteExpression`. */
     expression?: MidiNoteExpression;
+    /** Original recording pass; absent for legacy and manually made notes. */
+    recordingPassIndex?: number;
 };
 
 export const MIDI_NOTE_REQUIRED_KEYS = ['id', 'pitch', 'startBeat', 'duration', 'velocity'] as const;
@@ -77,6 +79,7 @@ export const MIDI_NOTE_OPTIONAL_KEYS = [
     'channel',
     'articulation',
     'expression',
+    'recordingPassIndex',
 ] as const;
 
 export type MidiCC = {

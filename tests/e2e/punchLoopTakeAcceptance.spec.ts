@@ -31,6 +31,7 @@ const MIC_SAMPLE_RATE = 48_000;
 const MIC_SECONDS = 24;
 const MARKER_SECONDS = 0.4;
 const MODIFIER = process.platform === 'darwin' ? 'Meta' : 'Control';
+const COMP_RELEASE_INSET_PX = 1.2;
 const CAPTURE_FRONTIER_BOUND_BEATS = (2 * RECORDING_RENDER_QUANTUM_FRAMES * TEMPO) / (MIC_SAMPLE_RATE * 60);
 
 type CapturedTake = {
@@ -250,7 +251,8 @@ async function createCompRegion(
     const y = box.y + box.height / 2;
     await page.mouse.move(x(startBeat), y);
     await page.mouse.down();
-    await page.mouse.move(x(endBeat), y, { steps: 8 });
+    // Release inside the drag preview, which spans to the strip's inner edge; the strip must still be the target.
+    await page.mouse.move(x(endBeat) - COMP_RELEASE_INSET_PX, y, { steps: 8 });
     await page.mouse.up();
 }
 
