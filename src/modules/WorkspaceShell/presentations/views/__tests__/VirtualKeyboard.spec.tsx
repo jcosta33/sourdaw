@@ -1095,6 +1095,48 @@ describe('VirtualKeyboard', () => {
             expect(fireEvent.keyDown(addCanvasEditor(), { code: 'KeyM', key: 'm' })).toBe(false);
         });
 
+        describe('with focus on an option of a persistent listbox', () => {
+            const addOption = (): HTMLElement => {
+                const listbox = document.createElement('div');
+                listbox.setAttribute('role', 'listbox');
+                const option = document.createElement('div');
+                option.setAttribute('role', 'option');
+                option.tabIndex = 0;
+                listbox.append(option);
+                document.body.append(listbox);
+                return option;
+            };
+
+            it('still plays musical keys', () => {
+                render(<VirtualKeyboard />);
+                const notPrevented = fireEvent.keyDown(addOption(), { code: 'KeyA', key: 'a' });
+                expect(notPrevented).toBe(false);
+                expect(onMock).toHaveBeenCalledWith(0, 60, 100);
+            });
+
+            it('still closes on Escape', () => {
+                const onClose = vi.fn();
+                render(<VirtualKeyboard onClose={onClose} />);
+                fireEvent.keyDown(addOption(), { code: 'Escape', key: 'Escape' });
+                expect(onClose).toHaveBeenCalledTimes(1);
+            });
+
+            it('swallows keys the list does not handle', () => {
+                render(<VirtualKeyboard />);
+                expect(fireEvent.keyDown(addOption(), { code: 'KeyM', key: 'm' })).toBe(false);
+            });
+
+            it.each(['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '])('lets %s through to the list', (key) => {
+                render(<VirtualKeyboard />);
+                const option = addOption();
+                const received = vi.fn();
+                option.addEventListener('keydown', received);
+                expect(fireEvent.keyDown(option, { code: key, key })).toBe(true);
+                expect(received).toHaveBeenCalledTimes(1);
+                expect(onMock).not.toHaveBeenCalled();
+            });
+        });
+
         it('lets Enter activate a focused link', () => {
             render(<VirtualKeyboard />);
             const link = document.createElement('a');
@@ -1128,6 +1170,33 @@ describe('VirtualKeyboard', () => {
             document.body.append(library);
             fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
             expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('closes on Escape while only a tooltip popper is open', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const popper = document.createElement('div');
+            popper.setAttribute('data-radix-popper-content-wrapper', '');
+            const tooltip = document.createElement('div');
+            tooltip.setAttribute('role', 'tooltip');
+            popper.append(tooltip);
+            document.body.append(popper);
+            const notPrevented = fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' });
+            expect(notPrevented).toBe(false);
+            expect(onClose).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves Escape alone while a select listbox popper is open', () => {
+            const onClose = vi.fn();
+            render(<VirtualKeyboard onClose={onClose} />);
+            const popper = document.createElement('div');
+            popper.setAttribute('data-radix-popper-content-wrapper', '');
+            const listbox = document.createElement('div');
+            listbox.setAttribute('role', 'listbox');
+            popper.append(listbox);
+            document.body.append(popper);
+            expect(fireEvent.keyDown(document.body, { code: 'Escape', key: 'Escape' })).toBe(true);
+            expect(onClose).not.toHaveBeenCalled();
         });
 
         it.each(['dialog', 'alertdialog', 'menu'])(

@@ -38,6 +38,16 @@ describe('hasOpenModalSurface', () => {
         expect(hasOpenModalSurface()).toBe(true);
     });
 
+    it('ignores a tooltip even though its popper wrapper is open', () => {
+        const popper = document.createElement('div');
+        popper.setAttribute('data-radix-popper-content-wrapper', '');
+        const tooltip = document.createElement('div');
+        tooltip.setAttribute('role', 'tooltip');
+        popper.append(tooltip);
+        document.body.append(popper);
+        expect(hasOpenModalSurface()).toBe(false);
+    });
+
     it('ignores a surface that hosts the excepted element but counts a sibling', () => {
         const host = addSurface('dialog');
         const inside = document.createElement('div');

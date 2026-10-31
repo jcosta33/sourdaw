@@ -41,7 +41,7 @@ import { resumeEngine } from '#/modules/AudioEngine/useCases';
 import {
     hasOpenModalSurface,
     isNativeTextEditableTarget,
-    isWithinModalSurface,
+    isWithinTransientSurface,
 } from '#/modules/CommandInterface/useCases';
 import { triggerLiveNoteOn, triggerLiveNoteOff } from '#/modules/MIDI/useCases';
 import { cn } from '#/utils/Styles/cn';
@@ -235,11 +235,36 @@ const CANVAS_EDITOR_KEYS = new Set([
 ]);
 const CANVAS_EDITOR_SELECTOR = '[data-canvas-editor]';
 
+/**
+ * Keys a focused option in a persistent listbox (the sample library) handles itself:
+ * list navigation and activation. Every other key there is the keyboard's as usual.
+ */
+const LISTBOX_OWN_KEYS = new Set(['ArrowUp', 'ArrowDown', 'Home', 'End', 'Enter', ' ']);
+const LISTBOX_SELECTOR = '[role="listbox"]';
+
+/**
+ * A listbox owns the whole keyboard only while it is part of a transient surface (a dialog,
+ * a menu or an open select). A bare listbox is always mounted, so it yields only its own keys.
+ */
+const isListboxKeyOwner = (target: Element, key: string): boolean => {
+    if (isWithinTransientSurface(target)) {
+        return true;
+    }
+    return target.closest(LISTBOX_SELECTOR) !== null && LISTBOX_OWN_KEYS.has(key);
+};
+
 /** Surfaces where typing and navigation belong to the user's current task, not the keyboard. */
-const yieldsKeyboardToTarget = (target: EventTarget | null): boolean =>
-    (target instanceof Element && isNativeTextEditableTarget(target)) ||
-    target instanceof HTMLSelectElement ||
-    isWithinModalSurface(target);
+const yieldsKeyboardToTarget = (event: KeyboardEvent): boolean => {
+    const target = event.target;
+    if (!(target instanceof Element)) {
+        return false;
+    }
+    return (
+        isNativeTextEditableTarget(target) ||
+        target instanceof HTMLSelectElement ||
+        isListboxKeyOwner(target, event.key)
+    );
+};
 
 const isNativeKeyOfFocusedControl = (event: KeyboardEvent): boolean => {
     const target = event.target;
@@ -274,7 +299,7 @@ type KeydownRule = 'passthrough' | 'close' | 'octave' | 'note' | 'control' | 'sw
 
 const classifyKeydown = (event: KeyboardEvent, panel: Element | null): KeydownRule => {
     const isShortcutChord = event.metaKey || (event.ctrlKey && !isAltGraphKey(event));
-    if (isShortcutChord || yieldsKeyboardToTarget(event.target)) {
+    if (isShortcutChord || yieldsKeyboardToTarget(event)) {
         return 'passthrough';
     }
     if (event.code === 'Escape') {

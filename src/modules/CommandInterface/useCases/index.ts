@@ -6,6 +6,7 @@ export { resetShortcutMappings } from './resetShortcutMappings';
 export { isKeyboardEditableTarget } from './isKeyboardEditableTarget';
 export { isNativeTextEditableTarget } from './isNativeTextEditableTarget';
 export { hasOpenModalSurface } from './hasOpenModalSurface';
+export { isWithinTransientSurface } from './isWithinTransientSurface';
 export { isWithinModalSurface } from './isWithinModalSurface';
 export { CANVAS_EDITOR_COMMAND_EVENT, dispatchCanvasEditorCommand } from './dispatchCanvasEditorCommand';
 export { isCanvasEditorCommandRequest } from './isCanvasEditorCommandRequest';
