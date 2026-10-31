@@ -1,0 +1,101 @@
+tests/e2e/templateAndInspectorFinal.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 25
+src/modules/AiRuntime/useCases/agentReference/admitCompiledTargets.ts
+  s_55244eb93b97d1::t_e195d000ba252f 80-81,88-98,109-116,333,399,457,468,524-526,532,543-545,547,573,575-576,600-657,660-669,672,678,682-714
+src/modules/AudioEngine/useCases/offlineRender/__tests__/executeOfflineRenderLockPriority.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 67-68
+src/modules/WorkspaceShell/presentations/views/__tests__/LaunchScreen.spec.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 21-22,26-27,31-32,121-135,331
+src/components/daw/DawFilterChipGroup.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-103
+src/modules/AudioEngine/useCases/configureLiveAudioBufferReferences.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-15
+src/modules/Project/AGENTS.md
+  s_55244eb93b97d1::t_e195d000ba252f 22
+tests/e2e/launchFlows.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 22
+src/modules/Project/presentations/views/index.ts
+  s_55244eb93b97d1::t_e195d000ba252f 4
+src/modules/Project/presentations/views/TemplateChooser.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 3,6,12-13,218,226,286-292
+src/app/__tests__/bootstrap.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 198,302,809-811,1192-1194,1196-1199
+src/modules/AudioEngine/useCases/offlineRender/resolveHistoryAwareRenderContext.ts
+  s_55244eb93b97d1::t_e195d000ba252f 2,11-14,21-25,38,45-46,64-67,75-76
+src/modules/Project/presentations/components/TemplateCard.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-58
+src/components/daw/__tests__/DawFilterChipGroup.spec.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-89
+src/app/bootstrap.ts
+  s_55244eb93b97d1::t_e195d000ba252f 246,477
+src/modules/AudioEngine/repositories/clampRenderFrameCount.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-2,30
+src/modules/Project/presentations/views/__tests__/TemplatePreviewThumb.spec.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-28
+src/modules/Project/presentations/views/TemplateGallery.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-75
+src/modules/AudioEngine/useCases/offlineRender/cropHistoryFromRenderedBuffer.ts
+  s_55244eb93b97d1::t_e195d000ba252f 3-4,17-18,21,25,27
+src/modules/AudioEngine/useCases/offlineRender/executeOfflineRender.ts
+  s_55244eb93b97d1::t_e195d000ba252f 72,105,109
+src/modules/Project/presentations/views/__tests__/TemplateChooser.spec.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 39-44,133-170
+  s_55244eb93b97d1::t_fbf5ce8aa0d9b4 171
+src/modules/Project/presentations/views/__tests__/TemplateGallery.spec.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-140
+src/modules/AudioEngine/useCases/__tests__/exportStems.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1,4-8,1378-1525
+  s_55244eb93b97d1::t_256bcd5c8e2143 1526
+src/modules/AudioEngine/useCases/offlineRender/renderTrackSubgraphOffline.ts
+  s_55244eb93b97d1::t_e195d000ba252f 193,591
+src/modules/WorkspaceShell/presentations/views/LaunchScreen.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1,3,9,29-30,131,141,201-202,223-227,447-451
+src/modules/AudioEngine/stores/__tests__/audioBufferCache.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 845-897
+src/modules/AudioEngine/stores/audioBufferCache.ts
+  s_55244eb93b97d1::t_e195d000ba252f 20,106-107,113-122,129,155
+src/modules/AudioEngine/useCases/index.ts
+  s_55244eb93b97d1::t_e195d000ba252f 30
+src/modules/AiRuntime/useCases/agentReference/bridgeGroundedLlmToolCalls.ts
+  s_55244eb93b97d1::t_e195d000ba252f 57,59,61,207-208,4594,4887,5015,5046,5104,7996-8002,8082
+src/modules/AudioEngine/useCases/exportStems.ts
+  s_55244eb93b97d1::t_e195d000ba252f 156,483-484,496
+src/modules/Project/presentations/components/templateCategories.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-65
+src/modules/AiRuntime/useCases/agentReference/__tests__/admitCompiledTargets.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-167
+scripts/__tests__/resourceGuard.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1005,1010,1012,1065,1071,1101,1125,1136
+src/modules/AudioEngine/stores/liveAudioBufferReferences.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-26
+src/app/__tests__/initAudioBufferCacheAccess.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-59
+src/modules/Project/presentations/views/TemplatePreviewThumb.tsx
+  s_55244eb93b97d1::t_e195d000ba252f 1-242
+src/modules/AudioEngine/repositories/countRenderFrames.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-13
+scripts/resourceGuard.ts
+  s_55244eb93b97d1::t_e195d000ba252f 164-165
+src/app/initAudioBufferCacheAccess.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-19
+src/modules/AudioEngine/useCases/offlineRender/__tests__/cropHistoryFromRenderedBuffer.spec.ts
+  s_55244eb93b97d1::t_e195d000ba252f 1-153
+src/modules/Project/useCases/index.ts
+  s_55244eb93b97d1::t_e195d000ba252f 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75e83e1787cab1216b48cbe9a088d9bc6fe9f24b",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
