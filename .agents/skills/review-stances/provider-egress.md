@@ -72,6 +72,26 @@ succeed and `MAX_SAFE_INTEGER + 1` to refuse before a measurement record is retu
 The per-run provider fold must likewise check all additions atomically before cache write and keep
 overflow terminal, with no partial total update or retry.
 
+## Escape: billed usage on rejected, partial or cached responses
+
+PRs #4393, #2648 and #4407 each dropped or misstated paid usage while their fixtures passed. Use
+unequal raw, cache-read and cache-write counts and assert the provider's documented inclusive total
+and separate counters through the real producer, protocol accumulator, run budget and cost
+projection; a terminal output-only stream event must not add the input counters twice. Report each
+required counter as null in turn: the reservation stays non-final until both are known, settles
+once after a complete report, and every rendered cost surface distinguishes a pending reservation
+from a final provider total. Stub an OpenAI-compatible 200 with two choices and inclusive usage 63/9
+through the real adapter, inference and run accounting: require one 72-token cost carrying the
+original attempt, provider and model, a typed retryable failure and zero executable tool calls.
+Dropping usage on the rejection path must fail that case.
+
+## Escape: internal level fields missed the provider wire
+
+PR #4392 asserted producer objects and a master/track-only projection. Inspect
+`buildAgentContext().message` in full and delta modes, change an unselected track's clip, send and
+gain lane independently of its gain and name, and require every linear value beside its decibel
+reading, removals represented, and exactly one law header.
+
 ## Escape: opaque Bearer scheme values
 
 [PR #4491](https://github.com/jcosta33/sourdaw/pull/4491), introduced by
