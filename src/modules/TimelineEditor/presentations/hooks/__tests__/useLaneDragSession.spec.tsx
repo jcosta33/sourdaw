@@ -347,6 +347,63 @@ describe('useLaneDragSession', () => {
         });
     });
 
+    describe('capture released by removing the captured element', () => {
+        // The browser reports that release at the Document, never at the removed element, so no
+        // handler on the lane container ever sees it (Pointer Events, "Implicit release of pointer
+        // capture").
+        it('commits the drag once, clears the mark and the Escape owner, and frees the lane', () => {
+            const { callbacks, handle } = renderArmedLane();
+            fireEvent.pointerMove(handle, { pointerId: 3, clientX: 40, clientY: 10 });
+
+            fireEvent.lostPointerCapture(document, { pointerId: 3 });
+
+            expect(callbacks.commit).toHaveBeenCalledTimes(1);
+            expect(isDragGestureActive()).toBe(false);
+
+            pressEscape();
+            expect(callbacks.cancel).not.toHaveBeenCalled();
+            expect(callbacks.commit).toHaveBeenCalledTimes(1);
+
+            fireEvent.pointerDown(handle, { pointerId: 4, button: 0, clientX: 10, clientY: 10 });
+            fireEvent.pointerMove(handle, { pointerId: 4, clientX: 50, clientY: 20 });
+            expect(callbacks.move).toHaveBeenLastCalledWith({ clientX: 50, clientY: 20 });
+            expect(isDragGestureActive()).toBe(true);
+        });
+
+        it('is not ended by another pointer losing its capture', () => {
+            const { callbacks, handle } = renderArmedLane();
+
+            fireEvent.lostPointerCapture(document, { pointerId: 8 });
+            fireEvent.pointerMove(handle, { pointerId: 3, clientX: 90, clientY: 40 });
+
+            expect(callbacks.commit).not.toHaveBeenCalled();
+            expect(isDragGestureActive()).toBe(true);
+            expect(callbacks.move).toHaveBeenCalledWith({ clientX: 90, clientY: 40 });
+        });
+
+        it('leaves no lostpointercapture listener on document after any exit', () => {
+            const addSpy = vi.spyOn(document, 'addEventListener');
+            const removeSpy = vi.spyOn(document, 'removeEventListener');
+            const lostCaptureHandlers = (calls: unknown[][]): unknown[] =>
+                calls.filter((call) => call[0] === 'lostpointercapture').map((call) => call[1]);
+            const liveListeners = (): number => {
+                const removed = lostCaptureHandlers(removeSpy.mock.calls);
+                return lostCaptureHandlers(addSpy.mock.calls).filter((handler) => !removed.includes(handler)).length;
+            };
+
+            const lane = renderArmedLane();
+            expect(liveListeners()).toBe(1);
+            fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+            expect(liveListeners()).toBe(0);
+
+            const escaped = renderArmedLane();
+            expect(liveListeners()).toBe(1);
+            pressEscape();
+            expect(liveListeners()).toBe(0);
+            escaped.unmount();
+        });
+    });
+
     describe('Escape listener teardown', () => {
         it.each([
             [

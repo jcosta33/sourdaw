@@ -144,6 +144,11 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
     useEffect(() => {
         pixelsPerBeatRef.current = pixelsPerBeat;
     });
+    // Likewise the chords: a drag's commit must see whether its chord is still there when it ends.
+    const eventsRef = useRef(state.events);
+    useEffect(() => {
+        eventsRef.current = state.events;
+    });
 
     const beatToX = (beat: number): number => beat * pixelsPerBeat - scrollX;
 
@@ -298,7 +303,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
             if (!mountedRef.current) {
                 return;
             }
-            if (pendingRef.current || previewBeat === event.beat) {
+            const chordStillExists = eventsRef.current.some((current) => current.id === event.id);
+            if (!chordStillExists || pendingRef.current || previewBeat === event.beat) {
                 setDragState(null);
                 return;
             }

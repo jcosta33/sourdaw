@@ -227,6 +227,37 @@ describe('ChordTrackLane', () => {
         expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
+    it('ends the drag when the dragged chord is deleted mid-drag, and dispatches nothing for it', async () => {
+        const otherEvent = { id: 'c2', beat: 12, duration: 4, root: 7, quality: 'major' };
+        mockChordState = { enabled: false, events: [oneEvent, otherEvent] };
+        const view = render(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
+        const block = getChordBlock();
+        executeAppAction.mockResolvedValueOnce(undefined);
+        const mark = 'data-drag-gesture-active';
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 31 });
+        fireEvent.pointerMove(block, { clientX: 96, pointerId: 31 });
+        await runAndSettle(() => fireEvent.keyDown(block, { key: 'Delete' }));
+        mockChordState = { enabled: false, events: [otherEvent] };
+        view.rerender(<ChordTrackLane pixelsPerBeat={16} scrollX={0} viewportWidth={1000} />);
+        expect(block).not.toBeInTheDocument();
+        expect(document.documentElement).toHaveAttribute(mark);
+
+        // The browser fires the release of a removed capture target at the Document.
+        fireEvent.lostPointerCapture(document, { pointerId: 31 });
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'removeChordEvent', payload: { eventId: 'c1' } });
+        expect(document.documentElement).not.toHaveAttribute(mark);
+
+        const other = screen.getByRole('button', { name: 'G chord at beat 12' });
+        Object.defineProperty(other, 'setPointerCapture', { configurable: true, value: vi.fn() });
+        fireEvent.pointerDown(other, { button: 0, clientX: 192, pointerId: 32 });
+        expect(other.setPointerCapture).toHaveBeenCalledWith(32);
+        fireEvent.pointerMove(other, { clientX: 224, pointerId: 32 });
+        expect(other).toHaveStyle({ left: '224px' });
+    });
+
     it('commits the previewed beat once when the window blurs mid-drag', () => {
         renderChordLane();
         const block = getChordBlock();
