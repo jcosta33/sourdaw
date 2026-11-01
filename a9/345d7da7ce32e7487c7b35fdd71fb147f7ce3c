@@ -1,0 +1,64 @@
+src/modules/AiRuntime/__tests__/agentSystemAcceptance.spec.ts
+  s_55244eb93b97d1::t_43c6e6670fc373 182,210,3552,3555,3559,3562,3569-3678
+  s_55244eb93b97d1::t_3e7de83cbaaa8a 3698
+  s_55244eb93b97d1::t_ad580547fb8b69 3754
+  s_55244eb93b97d1::t_0cf7263efbcaf9 3435-3447,3452-3491
+  s_55244eb93b97d1::t_be5d5252885efa 1915-1921
+  s_55244eb93b97d1::t_6c5f59b4e3b474 75
+  s_55244eb93b97d1::t_d40683b63ea420 257
+  s_55244eb93b97d1::t_f26c3690d1a63e 1777
+  s_55244eb93b97d1::t_cdc27e8f67a9af 3332-3350,3352,3354-3355,3358
+  s_55244eb93b97d1::t_abae6052ca0c2d 183-193
+  s_55244eb93b97d1::t_3500306ccba9f9 1005-1009
+  s_55244eb93b97d1::t_0c766d04790e2e 3448-3451
+  s_55244eb93b97d1::t_a0738a29cd2ddb 4187
+  s_55244eb93b97d1::t_2a8e5de5dc1d55 1784-1787
+  s_55244eb93b97d1::t_8287f5bf6a4e5f 201-202
+  s_55244eb93b97d1::t_d0ddfac385bdbe 309-310
+  s_55244eb93b97d1::t_15b8a5631cbcc7 3719-3723,3725,3728,3730
+  s_55244eb93b97d1::t_f76b945807a8bd 4104-4186,4188-4224,4229-4344
+  s_55244eb93b97d1::t_f6f2e935b23d71 473
+  s_55244eb93b97d1::t_f6e3d0c8392899 1057,1063
+  s_55244eb93b97d1::t_dbd9becf91466d 1899-1902
+  s_55244eb93b97d1::t_96ef4cd2b0ebc6 4225-4228
+  s_55244eb93b97d1::t_6b908a30ec94c6 446-472,474-484
+  s_55244eb93b97d1::t_63a956a4eef53d 3547
+  s_55244eb93b97d1::t_1cadecc1de83c7 3528
+  s_55244eb93b97d1::t_06263106d0ea61 211-226
+  s_55244eb93b97d1::t_55553d66353ecf 501-503,505-508
+  s_55244eb93b97d1::t_0d05df24c14ddf 1746-1776,1778-1783,1788
+  s_55244eb93b97d1::t_91c13e99799b59 4432
+  s_55244eb93b97d1::t_445c039d6ab564 3359
+evidence/agent-campaign/corpora/held-out.json
+  s_55244eb93b97d1::t_f062fe4b50a2bc 3198,3250,3298
+  s_55244eb93b97d1::t_c07a1afb3f6aa0 3434
+  s_55244eb93b97d1::t_e47c8595449ce9 3379
+  s_55244eb93b97d1::t_61a5d3788d1995 3427
+  s_55244eb93b97d1::t_c34e76e59706a0 3341-3378,3380-3426,3428-3433,3435-3436
+evidence/agent-campaign/corpora/development.json
+  s_55244eb93b97d1::t_635df04ef24e6f 3249,3296,3349
+  s_55244eb93b97d1::t_e6bda221ad1fad 3392-3428,3430-3435,3437-3476,3478-3486
+  s_55244eb93b97d1::t_19479312b72307 3436
+  s_55244eb93b97d1::t_b25cb848bb1444 3477
+  s_55244eb93b97d1::t_60fe4e4c95d5f4 3429
+docs/architecture/agent-release-gates.md
+  s_55244eb93b97d1::t_9197e6a3dcf3bf 85-98
+evidence/agent-campaign/manifest.json
+  s_55244eb93b97d1::t_7b58602179d02a 6,800,808,820
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9345d7da7ce32e7487c7b35fdd71fb147f7ce3c",
+  "prompts": {},
+  "sessions": {
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
