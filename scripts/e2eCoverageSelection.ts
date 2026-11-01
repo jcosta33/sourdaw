@@ -39,8 +39,6 @@ export type CoverageSources = {
     mapCommitBlob: (path: string) => string | null | undefined;
     baseText: (path: string) => string;
     headText: (path: string) => string;
-    /** `git diff -U0` of the path from the merge-base to the head. */
-    zeroContextDiff: (path: string) => string;
 };
 
 export type CoverageSelectionInput = {
@@ -132,15 +130,10 @@ export function coverageMapFrom(text: string | undefined, createdAt: string | un
     }
 }
 
-type Region = readonly [start: number, end: number];
+type Token = { kind: ts.SyntaxKind | 'body'; text: string; pos: number };
 
-type SideIndex = {
-    lineStarts: readonly number[];
-    text: string;
-    bodies: readonly Region[];
-    typeOnly: readonly Region[];
-    tokens: readonly Region[];
-};
+/** Every runtime token of one side, and the same stream with each function body collapsed to one placeholder. */
+type TokenStreams = { full: readonly Token[]; outside: readonly Token[] };
 
 function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration & { body: ts.ConciseBody } {
     return (
@@ -153,14 +146,6 @@ function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration &
             ts.isSetAccessorDeclaration(node)) &&
         node.body !== undefined
     );
-}
-
-// The code between a block body's braces, or an arrow's whole expression body.
-function bodyRegion(body: ts.ConciseBody, source: ts.SourceFile): Region {
-    if (ts.isBlock(body)) {
-        return [body.getStart(source) + 1, body.end - 1];
-    }
-    return [body.getStart(source), body.end];
 }
 
 function hasDeclareModifier(node: ts.Node): boolean {
@@ -184,6 +169,11 @@ function isTypeOnlyDeclaration(node: ts.Node): boolean {
     return ts.isStatement(node) && !ts.isEnumDeclaration(node) && hasDeclareModifier(node);
 }
 
+// JSDoc nodes are comments the parser attaches to declarations; they never execute.
+function isJsDoc(node: ts.Node): boolean {
+    return node.kind >= ts.SyntaxKind.FirstJSDocNode && node.kind <= ts.SyntaxKind.LastJSDocNode;
+}
+
 function syntaxErrorsIn(path: string, text: string): number {
     const output = ts.transpileModule(text, {
         fileName: path,
@@ -193,109 +183,76 @@ function syntaxErrorsIn(path: string, text: string): number {
     return output.diagnostics?.length ?? 0;
 }
 
-function indexSide(path: string, text: string): SideIndex {
+// Leaf tokens keep their exact source text, so string and template contents count while
+// comments and whitespace, which are trivia between tokens, do not.
+function tokenStreams(path: string, text: string): TokenStreams {
+    if (text.includes('\0')) {
+        throw new Error('is binary');
+    }
     if (syntaxErrorsIn(path, text) > 0) {
         throw new Error('does not parse');
     }
     const kind = path.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
-    const bodies: Region[] = [];
-    const typeOnly: Region[] = [];
-    const tokens: Region[] = [];
-    const visit = (node: ts.Node): void => {
-        if (isFunctionWithBody(node)) {
-            bodies.push(bodyRegion(node.body, source));
-        }
-        if (isTypeOnlyDeclaration(node)) {
-            typeOnly.push([node.getStart(source), node.end]);
-        }
+    const full: Token[] = [];
+    const outside: Token[] = [];
+    const visit = (node: ts.Node, isOutside: boolean): void => {
         const children = node.getChildren(source);
-        if (children.length === 0 && node.kind !== ts.SyntaxKind.EndOfFileToken) {
-            tokens.push([node.getStart(source), node.end]);
+        if (children.length === 0) {
+            const token = { kind: node.kind, text: node.getText(source), pos: node.getStart(source) };
+            full.push(token);
+            if (isOutside) {
+                outside.push(token);
+            }
+            return;
         }
         for (const child of children) {
-            visit(child);
+            if (isJsDoc(child) || isTypeOnlyDeclaration(child) || child.kind === ts.SyntaxKind.EndOfFileToken) {
+                continue;
+            }
+            const isBody = isFunctionWithBody(node) && child === node.body;
+            if (isBody && isOutside) {
+                outside.push({ kind: 'body', text: '', pos: child.getStart(source) });
+            }
+            visit(child, isOutside && !isBody);
         }
     };
-    visit(source);
-    return { lineStarts: source.getLineStarts(), text, bodies, typeOnly, tokens };
+    visit(source, true);
+    return { full, outside };
 }
 
-type LineKind = 'inert' | 'body' | 'outside';
-
-function within(regions: readonly Region[], start: number, end: number): boolean {
-    return regions.some(([regionStart, regionEnd]) => start >= regionStart && end <= regionEnd);
+function sameToken(left: Token | undefined, right: Token | undefined): boolean {
+    return left !== undefined && right !== undefined && left.kind === right.kind && left.text === right.text;
 }
 
-// A blank or comment-only line, or one inside a type-only declaration, never executes; any
-// other line must sit strictly inside a function body.
-function classifyLine(side: SideIndex, line: number): LineKind {
-    const lineStart = side.lineStarts[line - 1];
-    if (lineStart === undefined) {
-        return 'outside';
+function firstDifference(base: readonly Token[], head: readonly Token[]): number {
+    const length = Math.max(base.length, head.length);
+    for (let index = 0; index < length; index += 1) {
+        if (!sameToken(base[index], head[index])) {
+            return index;
+        }
     }
-    const lineEnd = side.lineStarts[line] ?? side.text.length;
-    const content = side.text.slice(lineStart, lineEnd);
-    const leading = content.length - content.trimStart().length;
-    const trailing = content.length - content.trimEnd().length;
-    const start = lineStart + leading;
-    const end = lineEnd - trailing;
-    if (start >= end || !side.tokens.some(([tokenStart, tokenEnd]) => tokenStart < end && tokenEnd > start)) {
-        return 'inert';
-    }
-    if (within(side.bodies, start, end)) {
-        return 'body';
-    }
-    return within(side.typeOnly, start, end) ? 'inert' : 'outside';
-}
-
-type Hunk = { baseStart: number; baseCount: number; headStart: number; headCount: number };
-
-function parseHunks(diff: string): Hunk[] {
-    if (/^Binary files /m.test(diff)) {
-        throw new Error('is a binary diff');
-    }
-    const hunks: Hunk[] = [];
-    for (const match of diff.matchAll(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm)) {
-        hunks.push({
-            baseStart: Number(match[1]),
-            baseCount: match[2] === undefined ? 1 : Number(match[2]),
-            headStart: Number(match[3]),
-            headCount: match[4] === undefined ? 1 : Number(match[4]),
-        });
-    }
-    return hunks;
-}
-
-function lineRange(start: number, count: number): number[] {
-    return Array.from({ length: count }, (_, offset) => start + offset);
+    return -1;
 }
 
 type FileVerdict = { kind: 'body' | 'inert' } | { kind: 'outside'; where: string };
 
-/** Whether every zero-context hunk sits inside function bodies on both sides, or touches only inert lines. */
-export function classifyChange(path: string, baseText: string, headText: string, diff: string): FileVerdict {
-    const base = indexSide(path, baseText);
-    const head = indexSide(path, headText);
-    let verdict: FileVerdict = { kind: 'inert' };
-    for (const hunk of parseHunks(diff)) {
-        const sides = [
-            { label: 'base', index: base, lines: lineRange(hunk.baseStart, hunk.baseCount) },
-            { label: 'head', index: head, lines: lineRange(hunk.headStart, hunk.headCount) },
-        ];
-        for (const { label, index, lines } of sides) {
-            for (const line of lines) {
-                const kind = classifyLine(index, line);
-                if (kind === 'outside') {
-                    return { kind: 'outside', where: `${label} line ${line}` };
-                }
-                if (kind === 'body') {
-                    verdict = { kind: 'body' };
-                }
-            }
-        }
+/**
+ * Compares the runtime token streams of both sides directly. Equal streams are inert; streams
+ * that differ only inside function bodies are a body change; anything else is outside, located
+ * at the head side's first differing token for diagnosis.
+ */
+export function classifyChange(path: string, baseText: string, headText: string): FileVerdict {
+    const base = tokenStreams(path, baseText);
+    const head = tokenStreams(path, headText);
+    const outsideAt = firstDifference(base.outside, head.outside);
+    if (outsideAt >= 0) {
+        const position = head.outside[outsideAt]?.pos ?? headText.length;
+        // Counted as git counts lines, so lone CR, U+2028 and U+2029 never shift the report.
+        const line = headText.slice(0, position).split('\n').length;
+        return { kind: 'outside', where: `head line ${line}` };
     }
-    return verdict;
+    return firstDifference(base.full, head.full) >= 0 ? { kind: 'body' } : { kind: 'inert' };
 }
 
 const HISTORICAL = /^(?:D|T|R\d+|C\d+)$/;
@@ -344,7 +301,7 @@ function staleness(path: string, map: CoverageMap, sources: CoverageSources): st
 
 function changeVerdict(path: string, sources: CoverageSources): FileVerdict | string {
     try {
-        return classifyChange(path, sources.baseText(path), sources.headText(path), sources.zeroContextDiff(path));
+        return classifyChange(path, sources.baseText(path), sources.headText(path));
     } catch (error) {
         return `${path}: ${error instanceof Error ? error.message : 'cannot be classified'}`;
     }
@@ -441,8 +398,6 @@ export function gitCoverageSources(root: string, base: string, head: string, map
         mapCommitBlob: (path) => (mapCommitPresent ? blobAt(root, mapCommit, path) : undefined),
         baseText: (path) => git(root, ['cat-file', 'blob', `${base}:${path}`]),
         headText: (path) => git(root, ['cat-file', 'blob', `${head}:${path}`]),
-        zeroContextDiff: (path) =>
-            git(root, ['diff', '--no-color', '--no-ext-diff', '--no-textconv', '-U0', base, head, '--', path]),
     };
 }
 

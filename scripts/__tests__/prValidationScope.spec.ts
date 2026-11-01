@@ -940,7 +940,7 @@ describe('required affected verification', () => {
             expect(topLevel.reasons).toEqual([
                 {
                     path: feature,
-                    reason: expect.stringContaining(`${feature}: change outside a function body at base line 1`),
+                    reason: expect.stringContaining(`${feature}: change outside a function body at head line 1`),
                 },
             ]);
         },

@@ -1,9 +1,4 @@
-import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-
-import { afterAll, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { offPageSources, type RuntimeGraph } from '../e2eAffectedGraph';
 import {
@@ -81,22 +76,6 @@ const PANEL_BASE = `export function FeedPanel({ title }: { title: string }) {
 }
 `;
 
-const scratch = mkdtempSync(join(tmpdir(), 'e2e-coverage-selection-'));
-afterAll(() => rmSync(scratch, { recursive: true, force: true }));
-
-function zeroContextDiff(base: string, head: string): string {
-    writeFileSync(join(scratch, 'base'), base);
-    writeFileSync(join(scratch, 'head'), head);
-    const result = spawnSync('git', ['diff', '--no-index', '--no-color', '-U0', 'base', 'head'], {
-        cwd: scratch,
-        encoding: 'utf8',
-    });
-    if (result.status !== 1) {
-        throw new Error(`expected a difference: ${result.stderr}`);
-    }
-    return result.stdout;
-}
-
 type FileFixture = { base: string; head: string; baseBlob: string | null; mapBlob?: string | null };
 
 function sourcesOf(files: Readonly<Record<string, FileFixture>>): CoverageSources {
@@ -112,7 +91,6 @@ function sourcesOf(files: Readonly<Record<string, FileFixture>>): CoverageSource
         mapCommitBlob: (path) => file(path).mapBlob,
         baseText: (path) => file(path).base,
         headText: (path) => file(path).head,
-        zeroContextDiff: (path) => zeroContextDiff(file(path).base, file(path).head),
     };
 }
 
@@ -122,9 +100,30 @@ const RUNTIME: RuntimeView = {
     offPage: new Set([WORKER, WORKLET, WORKLET_DSP]),
 };
 
-function feedEdit(head: string): FileFixture {
-    return { base: FEED_BASE, head, baseBlob: 'f'.repeat(40) };
+function feedEdit(head: string, base = FEED_BASE): FileFixture {
+    return { base, head, baseBlob: 'f'.repeat(40) };
 }
+
+// A file the map never saw execute, unchanged since the map commit.
+function neverEdit(base: string, head: string): FileFixture {
+    return { base, head, baseBlob: 'a'.repeat(40), mapBlob: 'a'.repeat(40) };
+}
+
+const TEMPLATED = FEED_BASE.replace('return this.name;', 'return `<${this.name}>\n</>`;');
+const CRLF = FEED_BASE.replaceAll('\n', '\r\n');
+const DOCUMENTED = FEED_BASE.replace('export function feed', '/** Keeps the first items. */\nexport function feed');
+const SIDE_EFFECT = 'const LIMIT = 10;\nregisterSideEffect();\n';
+const COMMENTED_SIDE_EFFECT = FEED_BASE.replace(
+    'const LIMIT = 10;\n',
+    'const LIMIT = 10;\n/*\nregisterSideEffect();\n*/\n'
+);
+const LIVE_SIDE_EFFECT = FEED_BASE.replace('const LIMIT = 10;\n', SIDE_EFFECT);
+const EXPORTED = FEED_BASE.replace('const LIMIT = 10;', 'export const LIMIT = 10;');
+const BANNER = FEED_BASE.replace('const LIMIT = 10;\n', 'const LIMIT = 10;\nexport const BANNER = `feed\nready`;\n');
+// Git sees four lines; a lone CR or U+2028 inside the comment is a line break only to TypeScript.
+const SEPARATED = (separator: string): string =>
+    `// a${separator}b\nexport function f(): number {\n    let x = 1; return x;\n} const TOP = 1;\n`;
+const GETTER = 'export const box = {\n    get size(): number {\n        return 1;\n    },\n};\n';
 
 function select(
     files: Readonly<Record<string, FileFixture>>,
@@ -157,8 +156,10 @@ describe('coverage-map selection narrows', () => {
         ],
         ['a method body', FEED_BASE.replace('return this.name;', 'return this.name.trim();')],
         ['a deleted body line', FEED_BASE.replace('        return this.name;\n', '')],
-    ])('to exactly the file specs, always-selected and unmapped specs for %s', (_, head) => {
-        const selection = select({ [FEED]: feedEdit(head) });
+        ['a blank line inside a template literal within a body', TEMPLATED.replace('>\n</>', '>\n\n</>'), TEMPLATED],
+        ['a body edit in a CRLF file', CRLF.replace('slice(0, LIMIT)', 'slice(1, LIMIT)'), CRLF],
+    ])('to exactly the file specs, always-selected and unmapped specs for %s', (_, head, base?: string) => {
+        const selection = select({ [FEED]: feedEdit(head, base) });
         expect(selectedSpecs(selection)).toEqual([SPEC('alpha'), SPEC('delta'), SPEC('fresh'), SPEC('gamma')]);
         expect(selection).toMatchObject({
             kind: 'specs',
@@ -209,6 +210,12 @@ describe('coverage-map selection narrows', () => {
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
     });
 
+    it('treats a getter body in a top-level object literal as a function body', () => {
+        const selection = select({ [NEVER]: neverEdit(GETTER, GETTER.replace('return 1', 'return 2')) });
+        expect(selectedSpecs(selection)).toEqual(EXTRAS);
+        expect(selection).toMatchObject({ paths: [{ reason: expect.stringContaining('function-body change') }] });
+    });
+
     it.each([
         ['type-only', FEED_BASE.replace('{ id: string }', '{ id: string; label?: string }')],
         ['comment-only', FEED_BASE.replace('// Feed helpers.', '// Helpers for the feed.')],
@@ -217,8 +224,11 @@ describe('coverage-map selection narrows', () => {
             'inserted interface',
             FEED_BASE.replace('// Feed helpers.\n', '// Feed helpers.\ninterface Extra {\n    note: string;\n}\n'),
         ],
-    ])('contributes no file specs for a %s change', (_, head) => {
-        const selection = select({ [FEED]: feedEdit(head) });
+        ['block-comment', FEED_BASE.replace('// Feed helpers.\n', '// Feed helpers.\n/* More helpers. */\n')],
+        ['JSDoc', DOCUMENTED.replace('first items', 'leading items'), DOCUMENTED],
+        ['top-level blank-lines', FEED_BASE.replace('}\n\nexport class', '}\n\n\n\nexport class')],
+    ])('contributes no file specs for a %s change', (_, head, base?: string) => {
+        const selection = select({ [FEED]: feedEdit(head, base) });
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
         expect(selection).toMatchObject({
             paths: [{ reason: expect.stringContaining('type-only or comment change') }],
@@ -228,13 +238,13 @@ describe('coverage-map selection narrows', () => {
 
 describe('coverage-map selection stays full', () => {
     it.each([
-        ['an import line', FEED_BASE.replace("'../../../utils/math'", "'../../../utils/maths'"), 'base line 1'],
-        ['a top-level const', FEED_BASE.replace('LIMIT = 10', 'LIMIT = 11'), 'base line 5'],
-        ['a class property initializer', FEED_BASE.replace('size = 3', 'size = 4'), 'base line 13'],
+        ['an import line', FEED_BASE.replace("'../../../utils/math'", "'../../../utils/maths'"), 'head line 1'],
+        ['a top-level const', FEED_BASE.replace('LIMIT = 10', 'LIMIT = 11'), 'head line 5'],
+        ['a class property initializer', FEED_BASE.replace('size = 3', 'size = 4'), 'head line 13'],
         [
             'a parameter list',
             FEED_BASE.replace('items: readonly FeedItem[])', 'items: readonly FeedItem[], extra = 0)'),
-            'base line 7',
+            'head line 7',
         ],
         ['an enum member', FEED_BASE.replace('    B,\n', '    B,\n    C,\n'), 'head line 23'],
         [
@@ -246,12 +256,32 @@ describe('coverage-map selection stays full', () => {
             'a hunk spanning out of a body',
             FEED_BASE.replace(
                 '    return kept.map((item) => ({ ...item, id: clamp(item.id) }));\n}',
-                '    return kept;\n} // end of feed'
+                '    return kept;\n}\nfeed([]);'
             ),
-            'base line 10',
+            'head line 11',
         ],
-    ])('for a change to %s', (_, head, where) => {
-        expect(select({ [FEED]: feedEdit(head) })).toEqual({
+        ['removed comment delimiters around a top-level call', LIVE_SIDE_EFFECT, 'head line 6', COMMENTED_SIDE_EFFECT],
+        ['added comment delimiters around a top-level call', COMMENTED_SIDE_EFFECT, 'head line 10', LIVE_SIDE_EFFECT],
+        [
+            'a commented-out top-level export',
+            EXPORTED.replace('export const', '// export const'),
+            'head line 7',
+            EXPORTED,
+        ],
+        [
+            'a blank line inside a top-level template literal',
+            BANNER.replace('feed\n', 'feed\n\n'),
+            'head line 6',
+            BANNER,
+        ],
+        [
+            'a whitespace-only line inside a top-level template literal',
+            BANNER.replace('feed\n', 'feed\n    \n'),
+            'head line 6',
+            BANNER,
+        ],
+    ])('for a change to %s', (_, head, where, base?: string) => {
+        expect(select({ [FEED]: feedEdit(head, base) })).toEqual({
             kind: 'full',
             reason: `${FEED}: change outside a function body at ${where}`,
         });
@@ -337,6 +367,17 @@ describe('coverage-map selection stays full', () => {
         });
     });
 
+    it.each([
+        ['U+2028', '\u2028'],
+        ['a lone CR', '\r'],
+    ])('for a top-level edit after %s inside a comment', (_, separator) => {
+        const base = SEPARATED(separator);
+        expect(select({ [NEVER]: neverEdit(base, base.replace('TOP = 1', 'TOP = 2')) })).toEqual({
+            kind: 'full',
+            reason: `${NEVER}: change outside a function body at head line 4`,
+        });
+    });
+
     it('for a file that does not parse', () => {
         const head = FEED_BASE.replace('slice(0, LIMIT)', 'slice(0, LIMIT');
         expect(select({ [FEED]: feedEdit(head) })).toEqual({ kind: 'full', reason: `${FEED}: does not parse` });
@@ -354,7 +395,7 @@ describe('coverage-map selection stays full', () => {
                     mapBlob: 'a'.repeat(40),
                 },
             })
-        ).toEqual({ kind: 'full', reason: `${NEVER}: change outside a function body at base line 1` });
+        ).toEqual({ kind: 'full', reason: `${NEVER}: change outside a function body at head line 1` });
     });
 
     it('when the runtime graph is unavailable', () => {
