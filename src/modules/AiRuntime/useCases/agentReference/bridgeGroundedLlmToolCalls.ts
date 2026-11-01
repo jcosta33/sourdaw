@@ -98,7 +98,7 @@ import {
     type DrumPreviewBranchesRequestScope,
 } from './getDrumPreviewBranchesPromptScope';
 import { getDrumRoutingPromptScope } from './getDrumRoutingPromptScope';
-import { getExplicitClipProtection } from './getExplicitlyProtectedClips';
+import { getExplicitClipProtection, getUnresolvedClipProtectionMembers } from './getExplicitlyProtectedClips';
 import {
     getMidiOverlapTransformPromptScope,
     type MidiOverlapTransformRequestScope,
@@ -159,6 +159,7 @@ import { isAgentReferenceCapabilityCandidate } from './isAgentReferenceCapabilit
 import { isBatchLocalDeviceParameterTarget } from './isBatchLocalDeviceParameterTarget';
 import { projectBatchLocalCreation } from './projectBatchLocalCreation';
 import { proposalCommandShape } from './proposalCommandShape';
+import { protectionObjectForms } from './protectionObjectForms';
 import { proposalProtection } from './proposalProtection';
 import { readExplicitProtections } from './readExplicitProtections';
 import { readStoredCardRemoval } from './readStoredCardRemoval';
@@ -7146,13 +7147,17 @@ function refuseWhenProtectionIsUnresolved(
             `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
-    // A protection binding any clip is a clip protection, so every member must resolve. Without clip
-    // evidence the track reader alone decides, since a bare name there may be a quality, not an object.
+    // A protection binding any clip is a clip protection, so every member it lists must name an object.
+    // Without clip evidence the track reader alone decides, since a bare name there may be a quality.
     const clipProtection = readClipProtection(input.prompt, context, protections);
-    if (!clipProtection.complete && clipProtection.clips.length > 0) {
-        const clips = clipProtection.clips.map((clip) => `"${clip.name}"`).join(', ');
+    const unnamedMembers =
+        clipProtection.clips.length > 0
+            ? findUnnamedClipProtectionMembers(input.prompt, clipProtection.read, context)
+            : [];
+    if (unnamedMembers.length > 0) {
+        const references = unnamedMembers.map((member) => `"${member}"`).join(', ');
         return refuseProtectedRequest(
-            `Protection of ${clips} lists a member that resolves to no clip or track, so the request is refused`
+            `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`
         );
     }
     const wholeTracks = context.tracks.filter((track) => protections.protectedTrackIds.includes(track.id));
@@ -7175,24 +7180,49 @@ function refuseWhenProtectionIsUnresolved(
 }
 
 /**
- * The clips a request's explicit protections and exclusions keep, and whether every member resolved.
- * A resolved track clause is blanked and the request read again only when the whole request does not
- * parse completely, since removing a following track clause can extend an earlier exclusion.
+ * The clips a request's explicit protections and exclusions keep, whether every member resolved, and
+ * the text that reading was taken from. A resolved track clause is blanked and the request read again
+ * only when the whole request does not parse completely, since removing a following track clause can
+ * extend an earlier exclusion; the blanked text keeps every offset of the request.
  */
 function readClipProtection(
     prompt: string,
     context: ProjectContext,
     trackProtections: ReturnType<typeof readExplicitProtections>
-): ReturnType<typeof getExplicitClipProtection> {
+): ReturnType<typeof getExplicitClipProtection> & { read: string } {
     const clipProtection = getExplicitClipProtection(prompt, context);
     if (clipProtection.complete) {
-        return clipProtection;
+        return { ...clipProtection, read: prompt };
     }
     const clipPrompt = trackProtections.resolvedTrackClauses.reduce(
         (text, { start, end }) => `${text.slice(0, start)}${' '.repeat(end - start)}${text.slice(end)}`,
         prompt
     );
-    return getExplicitClipProtection(clipPrompt, context);
+    return { ...getExplicitClipProtection(clipPrompt, context), read: clipPrompt };
+}
+
+/**
+ * The clip protection list members, read from `read`, that name nothing: no clip, track, device,
+ * parameter or group the reference masking hides, nor the project's conventional routing, and written
+ * as a name ("Omega" beside a missing clip, never "the loop"). A quoted member names an object only
+ * when that object's name is its whole quoted text.
+ */
+function findUnnamedClipProtectionMembers(prompt: string, read: string, context: ProjectContext): string[] {
+    const masked = scanPromptQuotedText(prompt).maskedText;
+    const candidates = refinementRequestReading.candidates(context);
+    return getUnresolvedClipProtectionMembers(read, context).flatMap((member) => {
+        const tokens = protectionObjectForms.readTokens(prompt, masked, member);
+        if (!protectionObjectForms.writesUnboundName(tokens)) {
+            return [];
+        }
+        const quoted = tokens.some((token) => token.quoted);
+        const named = quoted ? member.text.replaceAll(/^["'“”‘’]+|["'“”‘’]+$/gu, '') : member.text;
+        const references = refinementRequestReading.references(named, candidates);
+        const namesObject = quoted
+            ? references.some((reference) => reference.start === 0 && reference.end === named.length)
+            : references.length > 0;
+        return namesObject ? [] : [named];
+    });
 }
 
 function refuseProtectedRequest(reason: string): BridgeGroundedLlmToolCallsResult {

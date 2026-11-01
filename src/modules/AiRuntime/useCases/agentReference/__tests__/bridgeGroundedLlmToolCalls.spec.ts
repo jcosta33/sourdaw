@@ -8977,11 +8977,12 @@ describe('protected control ownership', () => {
 describe('explicit clip exclusions on the ordinary direct route', () => {
     const velocityCall = { name: 'setAllVelocities', arguments: { clipId: 'clip-midi', velocity: 96 } };
     const velocityAction = { type: 'setAllVelocities', payload: { clipId: 'clip-midi', velocity: 96 } };
+    const request = 'set note velocities in Piano MIDI to 96, ';
 
-    function withGuitarClips(names: readonly string[]): ProjectContext {
+    function withGuitarObjects(clipNames: readonly string[], devices: ProjectTrack['devices'] = []): ProjectContext {
         const context = createMidiClipContext();
         const midi = context.tracks.find((track) => track.id === vocals.id)!.clips[0]!;
-        const clips = names.map((name, index) => ({
+        const added = clipNames.map((name, index) => ({
             ...midi,
             id: `clip-guitar-${index}`,
             name,
@@ -8991,40 +8992,54 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
         return {
             ...context,
             tracks: context.tracks.map((track) =>
-                track.id === guitar.id ? { ...track, clipCount: clips.length, clips } : track
+                track.id === guitar.id
+                    ? {
+                          ...track,
+                          clipCount: track.clips.length + added.length,
+                          clips: [...track.clips, ...added],
+                          deviceCount: track.devices.length + devices.length,
+                          devices: [...track.devices, ...devices],
+                      }
+                    : track
             ),
         };
     }
 
-    it.each([
-        ['an unquoted whole-name clip whose split members resolve to nothing', ['Alpha and Omega'], 'Alpha and Omega'],
-        ['a list with one unresolved member', ['Alpha'], 'Alpha'],
-    ])('refuses %s before returning any action', (_case, clipNames, protectedName) => {
-        const result = bridge(
-            [velocityCall],
-            'set note velocities in Piano MIDI to 96, excluding Alpha and Omega',
-            withGuitarClips(clipNames)
-        );
-
-        expect(result).toEqual({
+    function unnamedRefusal(references: string) {
+        return {
             actions: [],
             rejections: [
                 {
                     index: 0,
                     name: '<batch>',
-                    reason: `Protection of "${protectedName}" lists a member that resolves to no clip or track, so the request is refused`,
+                    reason: `Protection names ${references}, which resolves to no track, clip, device or group, so the request is refused`,
                 },
             ],
-        });
+        };
+    }
+
+    it.each([
+        ['an unquoted whole-name clip whose split members name nothing', ['Alpha and Omega'], '"Alpha", "Omega"'],
+        ['a list with one member naming nothing', ['Alpha'], '"Omega"'],
+    ])('refuses %s before returning any action', (_case, clipNames, references) => {
+        expect(bridge([velocityCall], `${request}excluding Alpha and Omega`, withGuitarObjects(clipNames))).toEqual(
+            unnamedRefusal(references)
+        );
+    });
+
+    it('refuses a quoted member that only contains a project name', () => {
+        expect(
+            bridge(
+                [velocityCall],
+                `${request}excluding Guitar Pad and "Vocals Omega"`,
+                withGuitarObjects(['Guitar Pad'])
+            )
+        ).toEqual(unnamedRefusal('"Vocals Omega"'));
     });
 
     it('reads a quoted clip name as one literal reference and edits the other clip', () => {
         expect(
-            bridge(
-                [velocityCall],
-                'set note velocities in Piano MIDI to 96, excluding "Alpha and Omega"',
-                withGuitarClips(['Alpha and Omega'])
-            )
+            bridge([velocityCall], `${request}excluding "Alpha and Omega"`, withGuitarObjects(['Alpha and Omega']))
         ).toEqual({ actions: [velocityAction], rejections: [] });
     });
 
@@ -9032,17 +9047,41 @@ describe('explicit clip exclusions on the ordinary direct route', () => {
         ['every listed member resolves', 'excluding Alpha and Omega', ['Alpha and Omega', 'Alpha', 'Omega']],
         ['the exclusion names one clip', 'excluding Alpha', ['Alpha']],
     ])('edits a different clip when %s', (_case, exclusion, clipNames) => {
-        expect(
-            bridge([velocityCall], `set note velocities in Piano MIDI to 96, ${exclusion}`, withGuitarClips(clipNames))
-        ).toEqual({ actions: [velocityAction], rejections: [] });
+        expect(bridge([velocityCall], `${request}${exclusion}`, withGuitarObjects(clipNames))).toEqual({
+            actions: [velocityAction],
+            rejections: [],
+        });
+    });
+
+    it.each([
+        'leave Guitar Pad unchanged and keep it punchy',
+        'leave Guitar Pad unchanged, then keep it punchy',
+        'leave Guitar Pad unchanged; keep it punchy',
+        'leave Guitar Pad unchanged and keep the groove tight',
+        'leave Guitar Pad unchanged, then keep the groove tight',
+        'leave Guitar Pad unchanged; keep the groove tight',
+        'except Guitar Pad and the FX return',
+        'leave Guitar Pad and the Master unchanged',
+        'excluding Guitar Pad and the Master',
+        'leave Guitar Pad and the Plate Reverb unchanged',
+        'excluding Guitar Pad and Vocals EQ',
+        'except Guitar Pad and the loop',
+        'except Guitar Pad and all other clips',
+    ])('edits a different clip beside a clip protection whose other member names a non-clip: %s', (protection) => {
+        const context = withGuitarObjects(
+            ['Guitar Pad'],
+            [{ id: 'device-plate', name: 'Plate Reverb', type: 'reverb', bypassed: false, parameters: [] }]
+        );
+        expect(bridge([velocityCall], `${request}${protection}`, context)).toEqual({
+            actions: [velocityAction],
+            rejections: [],
+        });
     });
 
     it.each(['excluding Piano MIDI', 'excluding "Piano MIDI"'])(
         'refuses an edit to the clip the request protects with %s',
         (exclusion) => {
-            expect(
-                bridge([velocityCall], `set note velocities in Piano MIDI to 96, ${exclusion}`, withGuitarClips([]))
-            ).toEqual({
+            expect(bridge([velocityCall], `${request}${exclusion}`, withGuitarObjects([]))).toEqual({
                 actions: [],
                 rejections: [
                     {

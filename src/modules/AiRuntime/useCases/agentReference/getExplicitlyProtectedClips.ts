@@ -4,7 +4,7 @@ import { getSelectedClipReferenceIds } from '../../transformers/promptParser/sel
 
 import { normalizePromptText } from './groundingStrategies/normalizePromptText';
 import { CONNECTIVE_WORDS, CONVENTIONAL_WORDS, protectionObjectForms } from './protectionObjectForms';
-import { protectionSlots } from './readProtectionSlots';
+import { protectionSlots, type Range } from './readProtectionSlots';
 import { resolveAgentReference } from './resolveAgentReference';
 
 export type ExplicitlyProtectedClip = { id: string; name: string };
@@ -35,11 +35,13 @@ const exclusionVerbPattern = /\b(?:excluding|except)\b/giu;
 const protectionClauseBoundaryPattern = new RegExp(protectionClauseBoundary, 'giu');
 const referenceSeparatorPattern = /,\s*(?:and\b\s*)?|\s+and\s+/giu;
 
+/** A list member's text and where it stands in the request. */
+type ReferenceMember = Range & { text: string };
 type ProtectedReferenceParse = {
     complete: boolean;
-    references: { whole: string; members: string[] }[];
+    references: { whole: string; members: ReferenceMember[] }[];
 };
-type ReferenceListParse = { complete: boolean; references: string[] };
+type ReferenceListParse = { complete: boolean; references: ReferenceMember[] };
 
 function hasDanglingProtectionClause(maskedPrompt: string, completeVerbStarts: ReadonlySet<number>): boolean {
     const boundaries = [...maskedPrompt.matchAll(protectionClauseBoundaryPattern)];
@@ -57,28 +59,36 @@ function hasDanglingProtectionClause(maskedPrompt: string, completeVerbStarts: R
     return false;
 }
 
-function splitProtectedReferenceList(reference: string): ReferenceListParse {
+function readReferenceMember(reference: string, offset: number, start: number, end: number): ReferenceMember {
+    const raw = reference.slice(start, end);
+    const text = raw.trim();
+    const memberStart = offset + start + (raw.length - raw.trimStart().length);
+    return { text, start: memberStart, end: memberStart + text.length };
+}
+
+/** Split a protected reference at its list separators; `offset` is where the reference stands in the request. */
+function splitProtectedReferenceList(reference: string, offset: number): ReferenceListParse {
     const quoteScan = scanPromptQuotedText(reference);
     const maskedReference = quoteScan.maskedText.trim();
     if (!quoteScan.complete || /^and\b|\band$/iu.test(maskedReference)) {
         return { complete: false, references: [] };
     }
 
-    const references: string[] = [];
+    const references: ReferenceMember[] = [];
     let start = 0;
     for (const separator of quoteScan.maskedText.matchAll(referenceSeparatorPattern)) {
         if (separator.index === undefined) {
             continue;
         }
-        const item = reference.slice(start, separator.index).trim();
-        if (item.length === 0 || /^and\b|\band$/iu.test(scanPromptQuotedText(item).maskedText.trim())) {
+        const item = readReferenceMember(reference, offset, start, separator.index);
+        if (item.text.length === 0 || /^and\b|\band$/iu.test(scanPromptQuotedText(item.text).maskedText.trim())) {
             return { complete: false, references: [] };
         }
         references.push(item);
         start = separator.index + separator[0].length;
     }
-    const finalItem = reference.slice(start).trim();
-    if (finalItem.length === 0 || /^and\b|\band$/iu.test(scanPromptQuotedText(finalItem).maskedText.trim())) {
+    const finalItem = readReferenceMember(reference, offset, start, reference.length);
+    if (finalItem.text.length === 0 || /^and\b|\band$/iu.test(scanPromptQuotedText(finalItem.text).maskedText.trim())) {
         return { complete: false, references: [] };
     }
     references.push(finalItem);
@@ -92,8 +102,8 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
     let complete = !emptyProtectionPattern.test(quoteScan.maskedText);
     const completeVerbStarts = new Set<number>();
     const completeExclusionStarts = new Set<number>();
-    const addReference = (reference: string) => {
-        const parsed = splitProtectedReferenceList(reference);
+    const addReference = (reference: string, offset: number) => {
+        const parsed = splitProtectedReferenceList(reference, offset);
         complete &&= parsed.complete;
         const whole = reference.trim();
         if (whole.length > 0) {
@@ -114,8 +124,8 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
             completeExclusionStarts.add(match.index);
         }
         const referenceOffset = match[0].indexOf(match[1]);
-        const reference = prompt.slice(match.index + referenceOffset, match.index + referenceOffset + match[1].length);
-        addReference(reference);
+        const referenceStart = match.index + referenceOffset;
+        addReference(prompt.slice(referenceStart, referenceStart + match[1].length), referenceStart);
     }
 
     for (const slot of protectionSlots.read(quoteScan.maskedText)) {
@@ -136,7 +146,7 @@ function getProtectedReferenceTexts(prompt: string, context: ProjectContext): Pr
             continue;
         }
         completeVerbStarts.add(range.start);
-        addReference(reference);
+        addReference(reference, slot.start);
     }
 
     complete &&= !hasDanglingProtectionClause(quoteScan.maskedText, completeVerbStarts);
@@ -233,10 +243,14 @@ function isAggregateControlReference(reference: string): boolean {
     );
 }
 
-export function getExplicitClipProtection(prompt: string, context: ProjectContext): ExplicitClipProtection {
+function readClipProtection(
+    prompt: string,
+    context: ProjectContext
+): ExplicitClipProtection & { unresolvedMembers: ReferenceMember[] } {
     const clips = context.tracks.flatMap((track) => track.clips);
     const parsedReferences = getProtectedReferenceTexts(prompt, context);
     const protectedIds = new Set<string>();
+    const unresolvedMembers: ReferenceMember[] = [];
 
     let complete = parsedReferences.complete;
     for (const { whole, members } of parsedReferences.references) {
@@ -258,14 +272,17 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
         if (wholeIsLiteralName && wholeIsQuoted) {
             continue;
         }
-        const resolvedMembers = members.map((member) => ({
-            ids: resolveProtectedClipIds(member, clips, context),
-            trackOnly: isTrackOnlyReference(member, context),
-            aggregateControl: isAggregateControlReference(member),
-        }));
-        for (const member of resolvedMembers) {
-            complete &&= member.ids.length > 0 || member.trackOnly || member.aggregateControl;
-            for (const clipId of member.ids) {
+        for (const member of members) {
+            const ids = resolveProtectedClipIds(member.text, clips, context);
+            const resolved =
+                ids.length > 0 ||
+                isTrackOnlyReference(member.text, context) ||
+                isAggregateControlReference(member.text);
+            complete &&= resolved;
+            if (!resolved) {
+                unresolvedMembers.push(member);
+            }
+            for (const clipId of ids) {
                 protectedIds.add(clipId);
             }
         }
@@ -274,5 +291,19 @@ export function getExplicitClipProtection(prompt: string, context: ProjectContex
     return {
         clips: clips.filter((clip) => protectedIds.has(clip.id)).map(({ id, name }) => ({ id, name })),
         complete,
+        unresolvedMembers,
     };
+}
+
+export function getExplicitClipProtection(prompt: string, context: ProjectContext): ExplicitClipProtection {
+    const { clips, complete } = readClipProtection(prompt, context);
+    return { clips, complete };
+}
+
+/**
+ * The protection list members that resolve to no clip, no track by its exact name and no aggregate
+ * control, each with its place in the request, so a caller can read what else a member may name.
+ */
+export function getUnresolvedClipProtectionMembers(prompt: string, context: ProjectContext): ReferenceMember[] {
+    return readClipProtection(prompt, context).unresolvedMembers;
 }
