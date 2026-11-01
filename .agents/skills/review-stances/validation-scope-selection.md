@@ -35,7 +35,8 @@ planner or workflow-contract spec; a green result means the spec does not guard 
    absent and inherited `baseUrl`; malformed configuration stays fail-closed. #5291's first repair still followed
    a root-level shadow when implicit `paths` sat in a nested extended config: plant that shadow beside a real
    nested target importing a changed feature, keep surrounding imports valid, and require the producer to follow
-   the declaring base or select full before traversal. A correct full-selection result cannot prove root scope.
+   the declaring base or select full before traversal. Inherited explicit `baseUrl` coverage alone does not
+   establish implicit alias inheritance. A correct full-selection result cannot prove root scope.
 5. **An advisory selector must run against a head that predates it (#5140).** The E2E shadow job launched its CLI
    from the candidate checkout; an older head such as #5119's `a36a2751182fadfb55bc5e4a45b7bd798d6bc489` has no
    shadow CLI and failed with `MODULE_NOT_FOUND` before writing a report. Run the real CLI against distinct Git

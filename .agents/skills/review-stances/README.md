@@ -41,7 +41,8 @@ mutation and dropping the narrative; add a probe only for a failure mode none na
 only when a named test or rule enforces it, and record that test or rule under `## Retired lessons`.
 A class that cannot carry five honest probes folds into the closest file whose class contains it,
 whose lead then names the absorbed class; one that no file contains stays separate and says why
-under `## Scope`.
+under `## Scope`. When a probe or lesson moves to another file, leave a pointer to its new home (file
+and probe number) in a `## Relocated` section, the last section of the file it left.
 
 Release tracked-set drift lessons live in `release-provenance-drift.md`.
 

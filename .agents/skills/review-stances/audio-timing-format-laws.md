@@ -50,14 +50,14 @@ to run, and the check that must go red. Report the concrete break or none.
    quantum; or suspend an `OfflineAudioContext` at every quantum and write through the AudioParam alone to
    see where the clamp moves the event. A device whose re-entry or immediate change must hold on the frame a
    suspended context resumes on carries it through its port.
-7. **A resume-frame gate must be an edge, not a write at `currentTime` (#5914).** An exclusive audition
-   closed the programme with a gain gate written at raw `currentTime` while suspended; on a resume frame above
-   its integer frame the gate closed one sample late and about one run in five read a nonzero programme
-   sample on the first resumed frame. Its browser case asserted the gate's event time equal to
-   `currentTime` (pinning the defect) and its unit fixtures applied every gain write at once. A disconnect
-   or connect is a control message the rendering loop runs before the next quantum, so it holds from that
-   quantum's first frame. Render from such a frame through a fixture applying Chromium's step rule (a time
-   clamped up to `currentTime`, taking effect on the first frame at or after it) and assert the first sample.
+7. **A resume-frame gate must be an edge, not a write at `currentTime` (#5914).** An exclusive audition closed the
+   programme with a gain gate written at raw `currentTime` while suspended; on a resume frame above its integer frame
+   the gate closed one sample late and about one run in five read a nonzero programme sample on the first resumed
+   frame. Its browser case asserted the gate's event time equal to `currentTime` (pinning the defect) and its unit
+   fixtures applied every gain write at once. A disconnect or connect is a control message the rendering loop runs
+   before the next quantum, so it holds from that quantum's first frame, suspended or running. Render from such a
+   frame through a fixture applying Chromium's step rule (a time clamped up to `currentTime`, taking effect on the
+   first frame at or after it) and assert the first sample.
 8. **MIDI note correlation crosses the rack boundary.** When a transform stores a Note On decision for a
    later Note Off, drive supplied `noteInstanceId` values through `MidiRack`: one equal-pitch note, change the
    deciding parameter while held, then attack and release a second identity first. Assert emitted identity

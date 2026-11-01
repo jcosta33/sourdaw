@@ -122,20 +122,6 @@ or none.
     "publishes complete semantic intake and safe reads before restoring exact effectful contracts after success"
     are partial coverage: none asserts the compacted-carrier input.
 
-## Relocated
-
-- Lane removal and merged-lane cleanup (#1802), merge-state landed proof, historical parent substitution
-  (#5615, #5627), dependency authority movement, split PR metadata (#2357/#4420), acknowledged marker
-  vanishing (#5639), `baseRef`/`baseRefOid` field requirements, registered provenance source identity, and the
-  GitHub Actor `id` schema (#5705) → `closure-authority-proof.md`.
-- Darwin and Linux storage census, `LINK` type, pathname diagnostics, capped catalogs, start-time excuse,
-  foreign same-UID attribution, temporary-storage ownership, hosted test isolation, and process-group
-  inspection EPERM (#5274, #5331, #5345, #5443, #4899, #5240) → `guard-reclamation-proof.md`.
-- Delivery authority from an earlier PR state (#4586, #5032), the old-receipt publication bypass (#5111) and
-  the reviewer confirm token permission (#4411) → `review-authorization.md`.
-- Repair ancestry against the finding revision (#4411) → `public-repair-records.md`.
-- A new fenced command reaching the trusted launcher (#5639) → `trusted-script-delivery.md` probe 1.
-
 ## Retired lessons
 
 - A declared Body choice never entered the worklet schema (#5254) → enforced by
@@ -147,3 +133,17 @@ or none.
   before replacing an armed target or scheduling another timeout" and
   `src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts` "should not start learning when MIDI input is
   unsupported".
+
+## Relocated
+
+- Lane removal and merged-lane cleanup (#1802), merge-state landed proof, historical parent substitution
+  (#5615, #5627), dependency authority movement, split PR metadata (#2357/#4420), acknowledged marker
+  vanishing (#5639), `baseRef`/`baseRefOid` field requirements, registered provenance source identity, and the
+  GitHub Actor `id` schema (#5705) → `closure-authority-proof.md` probes 1 to 10.
+- Darwin and Linux storage census, `LINK` type, pathname diagnostics, capped catalogs, start-time excuse,
+  foreign same-UID attribution, temporary-storage ownership, hosted test isolation, and process-group
+  inspection EPERM (#5274, #5331, #5345, #5443, #4899, #5240) → `guard-reclamation-proof.md` probes 1 to 12.
+- Delivery authority from an earlier PR state (#4586, #5032), the old-receipt publication bypass (#5111) and
+  the reviewer confirm token permission (#4411) → `review-authorization.md` probes 10, 7 and 11.
+- Repair ancestry against the finding revision (#4411) → `public-repair-records.md` probe 11.
+- A new fenced command reaching the trusted launcher (#5639) → `trusted-script-delivery.md` probe 1.

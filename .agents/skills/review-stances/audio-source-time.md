@@ -68,8 +68,11 @@ red and the mutation that must fail it. Report the concrete break or none.
    reconciliation, then save/load: the exact fraction in raw source fields and unchanged peer object IDs and
    fields. Keep direct scalar edits, ordinary fractions, integers and negative-zero controls (rewriting every
    numeric leaf through scalar assignment loses the bulk path's negative zero); inspect only just-assigned
-   composites and inserted rows. This prevents corruption on future publications; it does not repair truncated
-   data. Do not round the producer, relax strict source snapshots or put Float64 wrappers into bulk payloads.
+   composites and actually inserted rows; an unchanged root or peer tuple is not this write's to inspect. Preserve
+   per-row conflicts and changed-owned-row identity in the existing concurrent storage probes. This prevents
+   corruption on those accepted future publications. It neither repairs already-truncated data nor claims a
+   general repair for every numeric input or every direct dependency import route. Do not round the producer,
+   relax strict source snapshots, or put Float64 wrapper objects into bulk payloads.
 8. **Recording birth evidence comes from the first-publication receipt.** An outer storage scope does not
    hold `startRecording` unpublished: its own transaction publishes clip and take together, so a later identical
    peer append tests duplicate detection, not the first-publication predicate. Probe through the real recording
@@ -83,10 +86,10 @@ red and the mutation that must fail it. Report the concrete break or none.
    .1-second entry from beat 1.5 to 1.75 under 120 BPM: the owner entry becomes .225 seconds and the exclusive
    source ending stays .35 seconds, through the real gesture, preview and typed save/reopen Undo/Redo; updating
    legacy beats alone must fail. Cover exact optional-field restoration, signed pre-roll, bounded stretch and
-   finite or implicit loops whose first entry differs from later entries. Captured Undo state follows the
+   finite or implicit loops whose first entry differs from later H/W entries. Captured Undo state follows the
    `restoreClip` trust boundary: validate a lawful captured before-state, its exact forward projection, the
-   paired history actions and current retained-owner authority; reject malformed or mismatched tuples and
-   wrong owners before writes; preserve unrelated clip facets, peer rows and independent comp anchors. A later
+   paired history actions and current retained-owner authority. Reject malformed or mismatched retained tuples
+   and wrong owners before writes; preserve unrelated clip facets, peer rows and independent comp anchors. A later
    audible fragment does not authenticate a first entry discarded across a seam.
 10. **Saved split history authenticates its source window against the forward publication.** Paired history
     snapshots can agree on an invented source window. Corrupt both copies with finite valid source seconds
@@ -99,4 +102,6 @@ red and the mutation that must fail it. Report the concrete break or none.
     must fail the paired finite-source corruption case. A late take retirement proof does not attest the split's
     window. Keep the unmodified beat-only audio fixture emitted by Undo5812 as a compatibility control: wholly
     beat-only history keeps that producer's law, and complete removal of every modern field, marker and proof
-    remains the declared legacy ambiguity, separate from positive modern source authentication.
+    remains the declared legacy ambiguity; these checks do not establish arbitrary history authenticity or
+    classify erased and renamed events. Keep that characterization separate from the historical fixture and from
+    positive modern source authentication.

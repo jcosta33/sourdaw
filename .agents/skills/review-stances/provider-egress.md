@@ -70,9 +70,11 @@ committed head and require the same caller oracles to fail without changing spec
    a prose exemption; the descriptor alone, quoted as a scheme or in an Authorization header refuses, and arbitrary
    lowercase hyphenated values stay literals between ordinary words. Restoring the broad alphabet-and-context
    exemption (which admitted runtime-composed opaque material through the stance builder and SDK delegate) must fail
-   the source, finding, complete-envelope and stance refusal cases. Pair the exact descriptive sentence with a valid
-   matching-cache read and zero provider or fetch calls; keep dotted/alphabetic literals with trailing words as
-   refusal controls.
+   the source, finding, complete-envelope and stance refusal cases. Actual credential material equal to the explicit
+   descriptor in that prose context remains an accepted documentation-marker residual, like the explicit
+   placeholder marker above; this is not semantic prose classification or sanitization of arbitrary source. Pair
+   the exact descriptive sentence with a valid matching-cache read and zero provider or fetch calls; keep
+   dotted/alphabetic literals with trailing words as refusal controls.
 9. **Explicit Authorization headers use RFC 6750's one-character minimum.** Include a quoted header key paired with
    its value and the escaped representation inside serialized JSON; do not borrow the generic assignment screen's
    16-character floor. Probe one-, fifteen- and sixteen-character literals and the public RFC example in complete

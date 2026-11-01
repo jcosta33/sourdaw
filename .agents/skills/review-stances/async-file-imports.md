@@ -29,15 +29,16 @@ that must fail the case.
    Pair those refusals with a current successful import, current failures and ordinary edits during the wait, which
    the accepted import must preserve. Removing the project-lifetime conjunct must fail the replacement case.
 4. **A completed import never reaches storage or autosave admission (Scala import `0960a49339`; #4883, #5397 kept it;
-   found at #5761 review `2c845ad3e0`).** A valid browser import reached the real store and CRDT while leaving
-   `dirty: false`; the installed tracker watches tracks and tempo, so their positive controls do not prove import
-   bookkeeping, and autosave admits only dirty projects. Run a successful import against the real normalized project
-   store, CRDT adapter and installed dirty tracker; flush the actual write and require both the imported table and
-   dirty state, proving the tracker active with its normal positive control. Cancellation, malformed input,
-   supersession and project replacement leave a clean current project clean. Keep the loading guard and recheck
-   request ownership before bookkeeping and after synchronous dirty subscribers, before publishing success. A mocked
-   store or mocked tuning-write and notice assertions cannot prove autosave admission; this evidence does not
-   establish a live save/reopen loss.
+   found at #5761 review `2c845ad3e0`).** The Scala import wrote project tuning without calling `markDirty`, so a
+   valid browser import reached the real store and CRDT while leaving `dirty: false`; the installed tracker watches
+   tracks and tempo, so their positive controls do not prove import bookkeeping, and autosave admits only dirty
+   projects. Run a successful import against the real normalized project store, CRDT adapter and installed dirty
+   tracker; flush the actual write and require both the imported table and dirty state, proving the tracker active
+   with its normal positive control; writing the tuning without `markDirty` must fail that dirty-state assertion.
+   Cancellation, malformed input, supersession and project replacement leave a clean current project clean. Keep the
+   loading guard and recheck request ownership before bookkeeping and after synchronous dirty subscribers, before
+   publishing success. A mocked store or mocked tuning-write and notice assertions cannot prove autosave admission;
+   this evidence does not establish a live save/reopen loss.
 5. **Every await after decode re-checks the accepted sample (Crumbs: `c8c1257477` unfenced continuation; #5041
    guarded only decode; #5780).** Telemetry and peaks stayed separate stale-publication windows. Hold each await
    independently against the real session store. Complete B before releasing A, and separately leave B decoding:

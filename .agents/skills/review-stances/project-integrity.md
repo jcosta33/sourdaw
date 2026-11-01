@@ -1,15 +1,15 @@
 # Lesson library: project integrity
 
-Defects where saved, replayed, imported or recovered project truth disagrees with what the musician committed:
-Save certifying data that is not durable, admission accepting what hydration discards, saved entries replaying into
-foreign owners, identity namespaces colliding across reload, imports losing source material, recovery replacing a
-running project, and a saved value missing from the first visible control. Project truth is the CRDT root; stores,
-engine state and session history are its projections or witnesses. Drive production actions and real Automerge bytes
-(save, binary reload, fresh projections, hydrated history) and read raw CRDT truth beside every projection; a probe
-that mocks the owner, starts at epoch 0 or stays in memory observes none of these boundaries. Split out (a stance
-matching one carries that file, not this one): replay against foreign or replaced truth in `replay-authority.md`;
-Command entry, state oracles and regeneration footprints in `command-entry-and-state-oracles.md`. Runtime-monitor
-companions live in `session-lifecycle.md`.
+Defects where saved, replayed, imported or recovered project truth disagrees with what the musician committed: Save
+certifying data that is not durable, admission accepting what hydration discards, saved history rows whose captured
+relations no longer bind after reload, identity namespaces colliding across reload, imports losing source material,
+recovery replacing a running project, and a saved value missing from the first visible control. Project truth is the
+CRDT root; stores, engine state and session history are its projections or witnesses. Drive production actions and
+real Automerge bytes (save, binary reload, fresh projections, hydrated history) and read raw CRDT truth beside every
+projection; a probe that mocks the owner, starts at epoch 0 or stays in memory observes none of these boundaries.
+Split out (a stance matching one carries that file, not this one): replay against foreign or replaced truth in
+`replay-authority.md`; Command entry, state oracles and regeneration footprints in
+`command-entry-and-state-oracles.md`. Runtime-monitor companions live in `session-lifecycle.md`.
 
 ## Standing probes
 
@@ -32,7 +32,7 @@ companions live in `session-lifecycle.md`.
    cache restoration before encoding and the encoded PCM is inspected. Dropping the frozen ID fails before
    encoding; stale prints stay excluded and the empty-clip all-buffer fallback stays. Owner mocks satisfy the live
    callable result contract (a void strip mock threw inside recovery, was caught, and the spec stayed green); read
-   logged recovery failures before trusting a pass (`test-validity.md` probe 4).
+   logged recovery failures before trusting a pass (`test-observation-scope.md` probe 6).
 3. **Admission accepts only what hydration keeps (#4987, #5064, #3354, #1425, #515).** Failure: a project file or
    saved history entry passes admission, then the owning hydrator or restore owner discards or mis-writes it,
    taking selected takes, comp regions or nested satellites with it. Probe the serialized candidate before any

@@ -46,12 +46,21 @@ Report a probe that cannot run with its exact mutation, named check and limitati
    typed diagnostic.
    (#5624, #5240, #5115, #5320, #5331)
 
-6. **The claim depends on a real external system the test replaces.**
+6. **A test double or controlled system cannot fail the way the real boundary does.**
    Probe: exercise the real thing: the default launcher and owner fence, a real Git DAG, the installed tool, the
    SDK in its server environment, the live GraphQL schema, the pinned scanner, the served entry under the
    production CSP, the compiled build rather than the dev loader, and a transport buffer at production size. A
-   custom dispatcher can bypass a global request mock.
-   (#5639, #4271, #5615, #5705, #5595, #5363, #5284)
+   custom dispatcher can bypass a global request mock. Where a double stays, type each mock from the exported
+   callable and return its complete current result, so a stale owner result cannot pose as tested recovery. Fake
+   a host receiver-sensitively, so an unbound method call throws. Derive fixtures from the producer's definition
+   (live schema, upload-name template, the query the adapter emits), never from the consumer's regex or a
+   hand-written response. Replace call spies and mocked authority with the real owner, and keep real state apart
+   from any read projection that could hide it. Mutate what the double hid (drop `this`, change the result
+   shape, add a segment, write outside the barrel, omit a still-present remote record from reads) and require
+   the case to fail. Beside a valid commit, inject each extra write through the real store (a duplicate barrel
+   action, an unrelated entity, a wrong value on an authorized field); with a real controller, fail the actual
+   storage write once and repeat the cancellation. Read logged errors even when every assertion passes.
+   (#5639, #4271, #5615, #5705, #5595, #5363, #5284, #2097, #4496, #1949, #4577, #5649, #474, #2597, #2811, #2035)
 
 7. **A configuration value, snapshot or count stands for runtime behavior.**
    Probe: a configuration value, successful scan, snapshot, literal checkout depth or request count proves no
