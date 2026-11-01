@@ -1,0 +1,32 @@
+src/modules/WorkspaceShell/presentations/views/VirtualKeyboard.tsx
+  s_fec7059b7a251c::t_79961a57fe3c77 301-304,307
+  s_fec7059b7a251c::t_04e205d0125187 308
+  s_fec7059b7a251c::t_57b399036ee8c7 311
+src/modules/TimelineEditor/presentations/views/Timeline/ChordTrackLane.tsx
+  s_fec7059b7a251c::t_5cd125123a5b8b 292
+  s_fec7059b7a251c::t_6bc26fa3b19c5a 142-146
+src/modules/WorkspaceShell/presentations/views/__tests__/VirtualKeyboard.spec.tsx
+  s_fec7059b7a251c::t_6fc8ae749b3577 1315-1335
+src/modules/WorkspaceShell/AGENTS.md
+  s_fec7059b7a251c::t_77e7f257781be8 33
+src/modules/TimelineEditor/presentations/views/Timeline/__tests__/ChordTrackLane.spec.tsx
+  s_fec7059b7a251c::t_c3ec1ee61ea1ab 208-210
+  s_fec7059b7a251c::t_0b6873347bdde8 225-227
+  s_fec7059b7a251c::t_136206a65aad82 240-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6efac6dce4ded5d98960fe4824d2c5e6c8ce9cae",
+  "prompts": {},
+  "sessions": {
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
