@@ -81,48 +81,6 @@ function projectDocumentWithoutCommandCheckpoint(document: Record<string, unknow
     return projectDocument;
 }
 
-function withoutSaveTimestamp(projectMeta: unknown): unknown {
-    if (!isRecord(projectMeta)) {
-        return projectMeta;
-    }
-    const { updatedAt: _saveTimestamp, ...meta } = projectMeta;
-    return meta;
-}
-
-/**
- * The active arrangement's entry copies the live slots (`tracks`, `automation`, `midi`, the tempo
- * and time-signature maps, `markers`, take lanes), which the comparison still reads on their own;
- * only its id and name are its own.
- */
-function withoutActiveArrangementSnapshot(arrangements: unknown): unknown {
-    if (!isRecord(arrangements) || !Array.isArray(arrangements.arrangements)) {
-        return arrangements;
-    }
-    const activeId = arrangements.activeArrangementId;
-    return {
-        ...arrangements,
-        arrangements: arrangements.arrangements.map((entry: unknown) =>
-            isRecord(entry) && entry.id === activeId ? { id: entry.id, name: entry.name } : entry
-        ),
-    };
-}
-
-/**
- * What a save writes into root besides content: it stamps `projectMeta.updatedAt` before it
- * serializes, and refreshes the active arrangement's entry from the live slots
- * (`syncCurrentArrangementToStore`). Every other root field, those live slots included, still counts.
- */
-function projectDocumentWithoutCommandCheckpointOrSaveWrites(
-    document: Record<string, unknown>
-): Record<string, unknown> {
-    const projectDocument = projectDocumentWithoutCommandCheckpoint(document);
-    return {
-        ...projectDocument,
-        projectMeta: withoutSaveTimestamp(projectDocument.projectMeta),
-        arrangements: withoutActiveArrangementSnapshot(projectDocument.arrangements),
-    };
-}
-
 function readProjectedDocument(
     document: Record<string, unknown> | undefined,
     project: RootProjection
@@ -234,16 +192,10 @@ export function projectRevisionMatchesLiveIgnoringCommandCheckpoint(expectedRevi
 }
 
 /**
- * As `projectRevisionMatchesLiveIgnoringCommandCheckpoint`, and also tolerating what a save writes
- * into root: the save timestamp (`projectMeta.updatedAt`) and the active arrangement's copy of the
- * live slots. A save between capture and check is then no project change, while every other
- * `projectMeta` field (name, key, scale, tuning, brief, identity), the live slots themselves and the
- * active arrangement's id and name still count. For a reader that only asks "is this still the same
- * project content"; command admission keeps the stricter check.
+ * The root comparison the checkpoint-tolerant matcher runs, shared with matchers that tolerate more
+ * of what root records: each passes the projection of root it counts as project truth.
  */
-export function projectRevisionMatchesLiveIgnoringSaveWrites(expectedRevision: string): boolean {
-    return projectRevisionMatchesLiveWithinRootProjection(
-        expectedRevision,
-        projectDocumentWithoutCommandCheckpointOrSaveWrites
-    );
-}
+export const rootRevisionMatching = {
+    matchesLiveWithin: projectRevisionMatchesLiveWithinRootProjection,
+    withoutCommandCheckpoint: projectDocumentWithoutCommandCheckpoint,
+} as const;

@@ -3,10 +3,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { automergeRepository } from '../../repositories/automergeRepository';
 import { captureProjectRevision } from '../captureProjectRevision';
-import {
-    projectRevisionMatchesLiveIgnoringSaveWrites,
-    projectRevisionMatchesLiveIgnoringCommandCheckpoint,
-} from '../projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+import { projectRevisionMatchesLiveIgnoringCommandCheckpoint } from '../projectRevisionMatchesLiveIgnoringCommandCheckpoint';
+import { projectRevisionMatchesLiveIgnoringSaveWrites } from '../projectRevisionMatchesLiveIgnoringSaveWrites';
 
 function projectTruth(document: Record<string, unknown> | undefined): unknown {
     if (!document) {

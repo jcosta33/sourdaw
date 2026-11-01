@@ -18,6 +18,16 @@ const STALE_ANSWER_NOTICES: Record<Exclude<OpenAnswerInChatResult, 'opened'>, st
         'The project changed after this answer, so it was not added to the chat. Ask again for an answer about the project as it is now.',
 };
 
+/** Repeated detail lines keep distinct keys by counting the copies before each. */
+function keyDetailRows(changeId: string, details: readonly string[]): { detail: string; key: string }[] {
+    return details.map((detail, detail_position) => {
+        const occurrence = details
+            .slice(0, detail_position)
+            .filter((previous_detail) => previous_detail === detail).length;
+        return { detail, key: `${changeId}-${detail}-${occurrence}` };
+    });
+}
+
 export const AiChangeToast = (): ReactElement | null => {
     const [changes, setChanges] = useState<AiChangeNotification[]>([]);
 
@@ -55,15 +65,7 @@ export const AiChangeToast = (): ReactElement | null => {
             { id: `${latest.id}-stale`, summary, details: [], timestamp: Date.now(), kind: 'notice' },
             ...prev.slice(1),
         ]);
-    const detailRows = latest.details.map((detail, detail_position) => {
-        const occurrence = latest.details
-            .slice(0, detail_position)
-            .filter((previous_detail) => previous_detail === detail).length;
-        return {
-            detail,
-            key: `${latest.id}-${detail}-${occurrence}`,
-        };
-    });
+    const detailRows = keyDetailRows(latest.id, latest.details);
 
     return (
         <DawUtilityPanel
