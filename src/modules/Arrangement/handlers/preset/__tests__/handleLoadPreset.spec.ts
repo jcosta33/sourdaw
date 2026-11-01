@@ -455,6 +455,81 @@ describe('handleLoadPreset', () => {
         });
     });
 
+    it('captures the inverse of a load onto a track an earlier addTrack in the same batch creates', () => {
+        mocks.getTrackStoreState.mockReturnValue({ tracks: [] });
+        const planned = action({
+            trackId: 'preset-track-1',
+            expectedProjectRevision: undefined,
+            expectedBefore: {
+                id: 'preset-track-1',
+                kind: 'midi',
+                devices: [{ id: 'preset-initial-device-1', type: 'builtin-synth', parameterIds: [] }],
+            },
+        });
+        const add = {
+            type: 'addTrack' as const,
+            payload: {
+                id: 'preset-track-1',
+                initialAlternativeId: 'preset-alternative-1',
+                initialDeviceId: 'preset-initial-device-1',
+                name: 'Glass Pad',
+                kind: 'midi' as const,
+            },
+        };
+
+        const description = handleLoadPreset.describe(planned, { actions: [add, planned], actionIndex: 1 });
+
+        expect(description.inverseAction).toMatchObject({
+            type: 'restorePresetDeviceChain',
+            payload: {
+                trackId: 'preset-track-1',
+                expectedBefore: {
+                    id: 'preset-track-1',
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                replacementDevices: [{ id: 'preset-initial-device-1', type: 'builtin-synth' }],
+            },
+        });
+    });
+
+    it('refuses a preset load with no devices but restores an empty prior chain', async () => {
+        const empty = action({ devices: [] });
+
+        expect(validate(empty)).toBe(false);
+        await expect(Promise.resolve(handleLoadPreset.execute(empty))).resolves.toEqual({ status: 'conflict' });
+        expect(mocks.updateTrack).not.toHaveBeenCalled();
+
+        mocks.getTrackStoreState.mockReturnValue({
+            tracks: [{ id: 'toaster-folder', kind: 'folder', frozen: false, devices: [newDevice] }],
+        });
+        const restore = {
+            type: 'restorePresetDeviceChain' as const,
+            payload: {
+                trackId: 'toaster-folder',
+                expectedBefore: {
+                    id: 'toaster-folder',
+                    kind: 'folder' as const,
+                    devices: [{ id: 'preset-device-1', type: 'builtin-synth', parameterIds: ['cutoff'] }],
+                },
+                expectedFrozen: false,
+                replacementDevices: [],
+            },
+        };
+
+        const writtenChains: DeviceSnapshot[][] = [];
+        mocks.updateTrack.mockImplementation(
+            (_id: string, update: (track: { devices: readonly DeviceSnapshot[] }) => { devices: DeviceSnapshot[] }) => {
+                writtenChains.push(update({ devices: [newDevice] }).devices);
+            }
+        );
+
+        expect(handleRestorePresetDeviceChain.validate?.(restore, { actions: [restore], actionIndex: 0 })).toBe(true);
+        await expect(
+            Promise.resolve(handleRestorePresetDeviceChain.execute(restore, { actions: [restore], actionIndex: 0 }))
+        ).resolves.toMatchObject({ status: 'written' });
+        expect(writtenChains).toEqual([[]]);
+    });
+
     const runtimeFailureCases: ReadonlyArray<
         readonly [label: string, runtimeResult: ApplyDeviceChainRuntimeDeltaResult, remediation: string]
     > = [

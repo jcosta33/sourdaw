@@ -10,7 +10,7 @@ import {
 } from '#/utils/handlerContract';
 
 import { getTrackEligibility, shouldCreateLiveTrackStrip } from '../../stores/trackEligibility';
-import { type Device, type Track } from '../../stores/trackStore';
+import { type Track } from '../../stores/trackStore';
 import { compileTrackStripInitializationSnapshot } from '../../useCases/compileTrackStripInitializationSnapshot';
 import { applyDeviceChainRuntimeDelta } from '../../useCases/device/applyDeviceChainRuntimeDelta';
 import { hasLiveProjectHostTrack } from '../../useCases/device/hasLiveProjectHostTrack';
@@ -24,6 +24,8 @@ import { matchesMaterializedPresetDevices } from '../../useCases/preset/matchesM
 import { runtimeGraphTopology } from '../../useCases/runtimeGraphTopology';
 import { updateTrack } from '../../useCases/updateTrack';
 import { getPlannedTrackState } from '../getPlannedTrackState';
+
+import { toPresetProjectDevices } from './toPresetProjectDevices';
 
 type LoadPresetAction = Extract<AppAction, { type: 'loadPreset' }>;
 type RuntimeDeviceDeltaResult = ReturnType<typeof applyDeviceChainRuntimeDelta>;
@@ -51,20 +53,6 @@ function isValidReplacementDevice(device: DeviceSnapshot): boolean {
     );
 }
 
-function toProjectDevices(devices: readonly DeviceSnapshot[]): Device[] {
-    return devices.map((device) => ({
-        id: device.id,
-        name: device.name,
-        type: device.type,
-        bypassed: device.bypassed,
-        parameterValues: { ...device.parameterValues },
-        ...(device.externalPluginId ? { externalPluginId: device.externalPluginId } : {}),
-        ...(device.externalInstanceId ? { externalInstanceId: device.externalInstanceId } : {}),
-        ...(device.externalStateChunk ? { externalStateChunk: device.externalStateChunk } : {}),
-        ...(device.deviceState ? { deviceState: structuredClone(device.deviceState) } : {}),
-    }));
-}
-
 function resolveReplacement(
     input: {
         trackId: string;
@@ -88,7 +76,6 @@ function resolveReplacement(
         (current !== null && !hasUniqueDeviceIds(current.devices)) ||
         !hasUniqueDeviceIds(planned.devices) ||
         !hasUniqueDeviceIds(input.devices) ||
-        input.devices.length === 0 ||
         input.devices.length > 64 ||
         input.devices.some((device) => !isValidReplacementDevice(device)) ||
         !runtimeGraphTopology.matchesNode(planned, input.expectedBefore)
@@ -98,8 +85,16 @@ function resolveReplacement(
     return current ?? planned;
 }
 
+/**
+ * A preset load always installs at least one device. Its restoring inverse
+ * may legitimately put back an empty chain, such as a new Toaster folder's.
+ */
+function hasPresetDevices(action: LoadPresetAction): boolean {
+    return action.payload.devices.length > 0;
+}
+
 function createReplacementTopology(before: Track, replacementDevices: readonly DeviceSnapshot[]): Track {
-    return { ...before, devices: toProjectDevices(replacementDevices) };
+    return { ...before, devices: toPresetProjectDevices(replacementDevices) };
 }
 
 function isReplacementStillAuthoritative(after: Track): boolean {
@@ -235,8 +230,15 @@ function expectedAfterTopology(action: LoadPresetAction): DeviceChainTopologySna
     };
 }
 
-function describeLoadPreset(action: LoadPresetAction) {
-    const current = findUniqueTrack(action.payload.trackId);
+/**
+ * A batch describes every member before any executes, so a load onto a track
+ * an earlier `addTrack` creates reads that track's planned chain, the same
+ * projection `validate` admits it against.
+ */
+function describeLoadPreset(action: LoadPresetAction, context?: HandlerValidationContext) {
+    const current = context
+        ? getPlannedTrackState(context, action.payload.trackId)
+        : findUniqueTrack(action.payload.trackId);
     const inverseAction =
         current && runtimeGraphTopology.matchesNode(current, action.payload.expectedBefore)
             ? {
@@ -261,6 +263,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
         const preset = findPresetById(action.payload.presetId);
         return (
             preset !== null &&
+            hasPresetDevices(action) &&
             matchesMaterializedPresetDevices(preset, action.payload.devices) &&
             resolveReplacement(
                 {
@@ -276,6 +279,7 @@ export const handleLoadPreset = createHandler<'loadPreset'>({
     },
     execute: (action, context) => {
         if (
+            !hasPresetDevices(action) ||
             resolveReplacement(
                 {
                     trackId: action.payload.trackId,
