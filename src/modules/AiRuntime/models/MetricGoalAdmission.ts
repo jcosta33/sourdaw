@@ -42,7 +42,12 @@ export type MetricGoal<MetricId extends string> = {
 export type MetricRequestAuthority<MetricId extends string> = {
     readonly schemaVersion: 1;
     readonly authorityId: string;
-    readonly origin: 'complete-literal-parser' | 'configured-joint-intake' | 'admitted-workflow';
+    /**
+     * Who admitted the request's meaning: the complete literal parser, the configured joint intake, an
+     * admitted workflow, or the user taking up a suggestion an answer offered, which names one recipe on
+     * one track and states no objective of its own.
+     */
+    readonly origin: 'complete-literal-parser' | 'configured-joint-intake' | 'admitted-workflow' | 'answer-suggestion';
     readonly callId: string | null;
     readonly turn: number | null;
     readonly catalogId: string;

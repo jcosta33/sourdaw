@@ -6,6 +6,7 @@ import { isAiRuntimeConfigurationChangedError } from '../errors/AiRuntimeConfigu
 import { type AgentRunCreationRefusalReason, describeAgentRunCreationRefusal } from '../models/AgentResourceLimits';
 import { getCreativeSelectionSnapshot } from '../models/CreativeInterpretation';
 import { type PlannedIntentResult } from '../models/IntentResult';
+import { type AnswerSuggestion } from '../models/PlanningOutcome';
 import { type ModelProviderResult, type ModelProviderStreamIdentity } from '../models/ModelProviderProtocol';
 import { type PlanningProfile, guardReadonlyPlanningResult } from '../models/PlanningProfile';
 import { type StemImportPromptScope } from '../models/StemImportCapability';
@@ -36,6 +37,8 @@ type PlanPromptActionsInput = {
     profile?: PlanningProfile;
     /** The chat thread's state before this request; a request from outside a thread passes none. */
     thread?: ThreadContext | null;
+    /** An earlier answer's suggestion the user asked to see proposed, compiled without a provider. */
+    suggestion?: AnswerSuggestion;
 };
 
 /**
@@ -191,6 +194,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         await preparedStemImportCleanup.discardBestEffort(stemImportScope.actionSeed.stems);
     };
     const profileOptions = input.profile === undefined ? {} : { profile: input.profile };
+    const suggestionOptions = input.suggestion === undefined ? {} : { suggestion: input.suggestion };
     let result;
     try {
         result = await parsePromptToActions({
@@ -205,6 +209,7 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
             onMeasurementAttempt,
             thread: input.thread,
             ...profileOptions,
+            ...suggestionOptions,
         });
         if (input.profile === 'readonly-answer') {
             result = guardReadonlyPlanningResult(result);
@@ -213,7 +218,9 @@ export async function planPromptActions(input: PlanPromptActionsInput): Promise<
         const rejectionEvidence = result.rejectionEvidence;
         const correctableValidationFailure = isCorrectableRejection(result.rejectionReason);
         const correctionAdmission = input.onProviderAttempt;
+        // A suggestion's refusal names the project state that refused it; no provider can correct that.
         if (
+            input.suggestion === undefined &&
             correctableValidationFailure &&
             correctionAdmission !== undefined &&
             input.signal?.aborted !== true &&
