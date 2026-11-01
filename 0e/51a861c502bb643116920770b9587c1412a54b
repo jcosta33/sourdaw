@@ -1,0 +1,19 @@
+src/modules/AudioEngine/repositories/offlineScheduler/__tests__/compileAutomationEventsBeatInversion.spec.ts
+  s_3bb122e91d89a5::t_1b425d2513f270 202-219
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0e51a861c502bb643116920770b9587c1412a54b",
+  "prompts": {},
+  "sessions": {
+    "s_3bb122e91d89a5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c34436e9-fbdc-4e2d-b5d7-c42222d8b4d8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
