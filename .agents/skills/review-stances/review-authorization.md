@@ -31,7 +31,9 @@ decision must follow the producer's provenance, not the continued presence of on
 - For an absent-lock recovery, start from an exact landed version-2 receipt and an unbound modern
   dossier. Require two stable exact remote reads, one append-only publication binding, and no new
   POST on a second recovery or a native publish replay. Restoring the early return from the receipt
-  must fail the owning case; a fresh-owner recovery case exercises another branch (#5111).
+  must fail the owning case; a fresh-owner recovery case exercises another branch. Recovering from
+  a merged PR's landed receipt must bind the publication with no retrospective delivery
+  authorization; a recovery that grants authorization there must fail the owning case (#5111).
 - Force a definitive 422 after the journaled pre-write transition of a review publication. Recovery
   may release the lock only when the prepared bundle digest, head, reviewer actor and remote review
   enumeration all match; mutate each field in turn and require the exact owner to stay retained (#3342).

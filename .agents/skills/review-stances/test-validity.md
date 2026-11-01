@@ -304,9 +304,11 @@ configuration (`scripts/test-health-gate-scripts.sh`) unchanged.
 
 ## Retired lessons
 
+Relocated, not retired: linked automation followers reaching the sampler (#931, #4392) in `saved-control-projection.md`; billed usage and provider-wire level fields (#4407, #2648, #4393, #4392) in `provider-egress.md`; recovery receipts and lock release (#5111, #3342) in `review-authorization.md`; canvas fresh paint (#5780, #5247) in `rendered-ui-layout.md`; the optimizer-reload HMR fence (#5874) in `e2e-server-provenance.md`; App import reattempt (#3356) in `startup-entry-availability.md`; rewrite destination ancestry (#4271) in `git-notes-preimage.md`.
+
 - Listing `vi.mock` barrel factories break when a diff adds a barrel export or import → enforced by `pnpm test:barrel-mocks` (`scripts/checkBarrelMockCoverage.ts`), Validation › Types and contracts › Barrel mock coverage
 - A Vitest-green spec is not type evidence → enforced by `pnpm typecheck:test`, `pnpm typecheck:scripts` and `pnpm typecheck:e2e` in Validation › Types and contracts
-- Rust-only changes skipped campaign fixture freshness → enforced by Validation › Types and contracts › Campaign fixture freshness, pinned by `scripts/__tests__/healthGatesWorkflow.spec.ts` "requires campaign fixture freshness for Rust-only changes"
+- Rust-only changes skipped campaign fixture freshness → enforced by `scripts/__tests__/agentCampaignHarness.spec.ts` "records each fixture as the tree actually holds it" (the digest-mismatch assertion), which Validation › Types and contracts › Campaign fixture freshness runs, with that step's wiring pinned by `scripts/__tests__/healthGatesWorkflow.spec.ts` "requires campaign fixture freshness for Rust-only changes"
 - The required Rust job fetched its compiler before restoring caches → enforced by `scripts/__tests__/healthGatesWorkflow.spec.ts` "restores only an exact installed Linux compiler before setup and health gates"
 - An exact Rust toolchain cache hit missing the host `rust-std` → enforced by `scripts/__tests__/ensurePinnedRustToolchain.spec.ts` "rejects an exact hit missing only the host standard library without installing", "rejects metadata-present host standard libraries that rustc cannot use" and "rejects an expected-name restore whose channel manifest declares another nightly"
 - Literal launch-overlay waits below the shared first-paint bound → enforced by `scripts/__tests__/e2eLaunchOverlayBound.spec.ts` "gives every explicit overlay wait the shared first-paint bound"
