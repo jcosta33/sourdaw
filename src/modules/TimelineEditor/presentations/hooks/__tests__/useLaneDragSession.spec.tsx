@@ -1,17 +1,18 @@
-import { render, screen, within, fireEvent } from '@testing-library/react';
 import { type PointerEvent, type ReactElement } from 'react';
-import { describe, it, expect, vi, afterEach } from 'vitest';
+
+import { render, screen, within, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, afterEach, type Mock } from 'vitest';
 
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
-import { useLaneDragSession } from '../useLaneDragSession';
+import { type LanePointerPosition, useLaneDragSession } from '../useLaneDragSession';
 
 type SessionCallbacks = {
-    move: ReturnType<typeof vi.fn>;
-    commit: ReturnType<typeof vi.fn>;
-    cancel: ReturnType<typeof vi.fn>;
+    move: Mock<(position: LanePointerPosition) => void>;
+    commit: Mock<() => void>;
+    cancel: Mock<() => void>;
     /** Clicks that reach the lane host, the ancestor a release's click lands on without capture. */
-    click: ReturnType<typeof vi.fn>;
+    click: Mock<() => void>;
 };
 
 /** The smallest lane: one handle that arms a session on press, inside a host carrying the handlers. */
@@ -38,7 +39,12 @@ const LaneHarness = ({ callbacks }: { callbacks: SessionCallbacks }): ReactEleme
 
 type ArmedLane = { callbacks: SessionCallbacks; handle: HTMLElement; host: HTMLElement; unmount: () => void };
 
-const makeCallbacks = (): SessionCallbacks => ({ move: vi.fn(), commit: vi.fn(), cancel: vi.fn(), click: vi.fn() });
+const makeCallbacks = (): SessionCallbacks => ({
+    move: vi.fn<(position: LanePointerPosition) => void>(),
+    commit: vi.fn<() => void>(),
+    cancel: vi.fn<() => void>(),
+    click: vi.fn<() => void>(),
+});
 
 const renderArmedLane = (): ArmedLane => {
     const callbacks = makeCallbacks();
