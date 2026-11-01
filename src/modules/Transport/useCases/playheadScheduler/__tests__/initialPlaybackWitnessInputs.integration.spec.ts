@@ -614,14 +614,13 @@ describe('initial playback witness reads only the prepared inputs (#6012)', () =
     // A muted track prepares only while a pre-fader send reaches an existing
     // bus, so the bus set is an input even though the Yeast track is unchanged.
     it('still refuses Play when the bus a muted Yeast track’s pre-fader send feeds is removed while it prepares', async () => {
-        editTracks((tracks) => [
-            ...tracks.map((candidate) =>
-                candidate.id === YEAST_TRACK_ID
-                    ? { ...candidate, muted: true, sends: [{ busId: BUS_TRACK_ID, level: 1, preFader: true }] }
-                    : candidate
-            ),
-            track(BUS_TRACK_ID, 'bus', {}),
-        ]);
+        const muteBehindBusSend = (candidate: Track): Track => {
+            if (candidate.id !== YEAST_TRACK_ID) {
+                return candidate;
+            }
+            return { ...candidate, muted: true, sends: [{ busId: BUS_TRACK_ID, level: 1, preFader: true }] };
+        };
+        editTracks((tracks) => [...tracks.map(muteBehindBusSend), track(BUS_TRACK_ID, 'bus', {})]);
         await expectRefusalWhenEditedWhileYeastPrepares(() =>
             editTracks((tracks) => tracks.filter((candidate) => candidate.id !== BUS_TRACK_ID))
         );
