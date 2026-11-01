@@ -9,6 +9,7 @@ import {
     toggleInspector,
     toggleMixer,
     toggleAutomationPanel,
+    getToolShortcutHint,
 } from '#/modules/WorkspaceShell/useCases';
 
 import { type CallableCommandEntry } from '../searchCommandRegistry';
@@ -197,7 +198,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Select Tool',
         description: 'Switch to the select tool',
         category: 'Tools',
-        shortcut: 'S / 1',
+        shortcut: getToolShortcutHint('select'),
         action: { type: 'setEditingTool', payload: { tool: 'select' } },
     },
     {
@@ -205,7 +206,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Cut Tool',
         description: 'Switch to the cut / split tool',
         category: 'Tools',
-        shortcut: 'C / 2',
+        shortcut: getToolShortcutHint('cut'),
         action: { type: 'setEditingTool', payload: { tool: 'cut' } },
     },
     {
@@ -213,7 +214,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Draw Tool',
         description: 'Switch to the draw tool',
         category: 'Tools',
-        shortcut: 'D / 3',
+        shortcut: getToolShortcutHint('draw'),
         action: { type: 'setEditingTool', payload: { tool: 'draw' } },
     },
     {
@@ -221,7 +222,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Automation Tool',
         description: 'Switch to the automation tool',
         category: 'Tools',
-        shortcut: 'A / 4',
+        shortcut: getToolShortcutHint('automation'),
         action: { type: 'setEditingTool', payload: { tool: 'automation' } },
     },
     {
@@ -229,7 +230,7 @@ export const viewCommands: CallableCommandEntry[] = [
         label: 'Stretch Tool',
         description: 'Switch to the stretch tool',
         category: 'Tools',
-        shortcut: 'T / 5',
+        shortcut: getToolShortcutHint('stretch'),
         action: { type: 'setEditingTool', payload: { tool: 'stretch' } },
     },
 
