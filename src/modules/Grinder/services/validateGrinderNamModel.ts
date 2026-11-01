@@ -324,6 +324,32 @@ function waveNetArrayHeadOutputSize(layer: UnknownRecord): number {
     return requirePositiveInt(layer, 'bottleneck', 'Invalid NAM model: bottleneck must be a positive integer');
 }
 
+/** The runtime carries each array's output into the next through one scratch
+ * span sized from the first array's channels, and each array's head into the
+ * next through one sized to the widest head. An array that feeds another must
+ * keep the first array's channels (only the final array may differ), and every
+ * head an array is seeded with must fill its accumulation exactly. Native
+ * admission refuses the same shapes. */
+function rejectWaveNetScratchWidthChanges(layers: readonly UnknownRecord[]): void {
+    const first_channels = layers[0]!.channels;
+    for (let index = 1; index < layers.length - 1; index++) {
+        if (layers[index]!.channels !== first_channels) {
+            throw new Error(
+                `Invalid NAM model: layer array ${index}: channels must equal the first array's channels; only the final array may differ`
+            );
+        }
+    }
+    const widest_head = Math.max(...layers.map((layer) => readWaveNetArrayHead(layer).head_size));
+    for (let index = 1; index < layers.length; index++) {
+        const head_input_size = waveNetArrayHeadOutputSize(layers[index]!);
+        if (head_input_size !== widest_head) {
+            throw new Error(
+                `Invalid NAM model: layer array ${index}: head input size (${head_input_size}) must equal the widest array head_size (${widest_head})`
+            );
+        }
+    }
+}
+
 function waveNetWeightCount(config: UnknownRecord): number {
     const layers = config.layers;
     if (!Array.isArray(layers) || layers.length === 0) {
@@ -351,6 +377,9 @@ function waveNetWeightCount(config: UnknownRecord): number {
             }
         }
     }
+    rejectWaveNetScratchWidthChanges(
+        layers.map((layer: unknown) => requireObject(layer, 'Invalid NAM model: layer arrays must be objects'))
+    );
 
     let count = 0;
     let last_head_size = 1;

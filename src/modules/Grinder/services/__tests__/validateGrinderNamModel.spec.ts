@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { validateGrinderNamModel } from '../validateGrinderNamModel';
@@ -41,6 +45,50 @@ function mutate(mutator: (value: Record<string, unknown>) => void): string {
 
 function expectError(text: string, pattern: RegExp): void {
     expect(() => validateGrinderNamModel(JSON.parse(text), 'probe.nam')).toThrow(pattern);
+}
+
+const NAM_FIXTURES = resolve(
+    fileURLToPath(import.meta.url),
+    '../../../../../../crates/daw-dsp/src/grinder/nam/fixtures'
+);
+
+/** `[input_size, channels, head_size]` for one legacy-head layer array. */
+type WaveNetArrayShape = readonly [number, number, number];
+
+/** A mono WaveNet over legacy-head arrays (no head bias, kernel 1, one
+ * dilation, ungated, layer1x1 active) with its exact weight count, and a
+ * single-conv post-stack head when the last head is not mono. */
+function waveNetCapture(shapes: readonly WaveNetArrayShape[]): unknown {
+    let weight_count = 1;
+    const layers = shapes.map(([input_size, channels, head_size]) => {
+        // Rechannel, dilated conv with bias, input mixin, layer1x1 with bias,
+        // and the head rechannel fed by the bottleneck (channels).
+        weight_count += input_size * channels + 2 * (channels * channels + channels) + channels + channels * head_size;
+        return {
+            input_size,
+            condition_size: 1,
+            channels,
+            head_size,
+            head_bias: false,
+            kernel_size: 1,
+            dilations: [1],
+            activation: 'Tanh',
+            gated: false,
+        };
+    });
+    const last_head = shapes.at(-1)![2];
+    let head: unknown = null;
+    if (last_head !== 1) {
+        weight_count += last_head + 1;
+        head = { channels: 1, out_channels: 1, kernel_sizes: [1], activation: 'Tanh' };
+    }
+    return {
+        version: '0.5.4',
+        architecture: 'WaveNet',
+        config: { layers, head, head_scale: 0.02 },
+        weights: Array.from({ length: weight_count }, (_, index) => Math.sin(index + 1) * 0.25),
+        sample_rate: 48_000,
+    };
 }
 
 describe('validateGrinderNamModel', () => {
@@ -155,6 +203,65 @@ describe('validateGrinderNamModel', () => {
             }),
             /input_size must equal the preceding array's channels/
         );
+    });
+
+    it('rejects an array that feeds another at a narrower channel count than the first array', () => {
+        // #5981: array 1 feeds array 2 at one channel; the runtime carries
+        // array outputs through scratch sized from array 0's two channels.
+        expect(() =>
+            validateGrinderNamModel(
+                waveNetCapture([
+                    [1, 2, 1],
+                    [2, 1, 1],
+                    [1, 1, 1],
+                ]),
+                'narrowing.nam'
+            )
+        ).toThrow(/layer array 1: channels must equal the first array's channels; only the final array may differ/);
+    });
+
+    it('rejects an array seeded with a head wider than its own head accumulation', () => {
+        for (const shapes of [
+            [
+                [1, 2, 2],
+                [2, 2, 3],
+            ],
+            [
+                [1, 2, 2],
+                [2, 2, 1],
+                [2, 1, 1],
+            ],
+        ] satisfies WaveNetArrayShape[][]) {
+            expect(() => validateGrinderNamModel(waveNetCapture(shapes), 'wide-head.nam')).toThrow(
+                /head input size \(\d+\) must equal the widest array head_size \([23]\)/
+            );
+        }
+    });
+
+    it('accepts the WaveNet shapes native admission accepts', () => {
+        const captures: unknown[] = [
+            JSON.parse(readFileSync(resolve(NAM_FIXTURES, 'wavenet.nam'), 'utf8')),
+            JSON.parse(readFileSync(resolve(NAM_FIXTURES, 'gated_wavenet_synthetic.nam'), 'utf8')),
+            // Equal widths throughout, mono final head.
+            waveNetCapture([
+                [1, 2, 2],
+                [2, 2, 2],
+                [2, 2, 1],
+            ]),
+            // The final array may narrow: nothing reads its channels afterwards.
+            waveNetCapture([
+                [1, 2, 1],
+                [2, 1, 1],
+            ]),
+            // A final head narrower than the heads before it.
+            waveNetCapture([
+                [1, 2, 2],
+                [2, 2, 1],
+            ]),
+        ];
+        for (const capture of captures) {
+            expect(validateGrinderNamModel(capture, 'admitted.nam').architecture).toBe('WaveNet');
+        }
     });
 
     it('rejects unknown activations by name', () => {

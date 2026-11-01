@@ -686,6 +686,18 @@ impl WavenetModel {
                 )));
             }
         }
+        // One scratch span sized from the first array carries each array's
+        // output into the next, so every array that feeds another must keep
+        // that width; only the final array, whose output nothing reads, may
+        // differ. Native admission refuses the same shape.
+        let first_channels = layers[0].get("channels").and_then(Value::as_u64);
+        for (index, array) in layers.iter().enumerate().take(layers.len() - 1).skip(1) {
+            if array.get("channels").and_then(Value::as_u64) != first_channels {
+                return Err(NamModelError::InvalidConfig(format!(
+                    "layer array {index}: channels must equal the first array's channels; only the final array may differ"
+                )));
+            }
+        }
 
         let mut layer_arrays = Vec::with_capacity(layers.len());
         for array_config in layers {
@@ -709,13 +721,24 @@ impl WavenetModel {
         };
 
         // The chain feeding each array's head accumulation is structural:
-        // array i's head inputs carry the previous array's head output.
+        // array i's head inputs carry the previous array's head output, read
+        // whole from one scratch span sized to the widest head of any array.
+        let head_size = layer_arrays
+            .iter()
+            .map(|array| array.head_output.len())
+            .max()
+            .unwrap_or(1);
         for index in 1..layer_arrays.len() {
             let previous_head_size = layer_arrays[index - 1].head_output.len();
             let head_input_size = layer_arrays[index].head_input_size;
             if head_input_size != previous_head_size {
                 return Err(NamModelError::InvalidConfig(format!(
                     "layer array {index}: head input size ({head_input_size}) must equal the preceding array's head_size ({previous_head_size})"
+                )));
+            }
+            if head_input_size != head_size {
+                return Err(NamModelError::InvalidConfig(format!(
+                    "layer array {index}: head input size ({head_input_size}) must equal the widest array head_size ({head_size})"
                 )));
             }
         }
@@ -747,11 +770,6 @@ impl WavenetModel {
             }
         }
 
-        let head_size = layer_arrays
-            .iter()
-            .map(|array| array.head_output.len())
-            .max()
-            .unwrap_or(1);
         let last_head_size = layer_arrays
             .last()
             .map(|array| array.head_output.len())
