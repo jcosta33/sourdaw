@@ -144,6 +144,11 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
     useEffect(() => {
         pixelsPerBeatRef.current = pixelsPerBeat;
     });
+    // Likewise the chords: a drag's commit must see whether its chord is still there when it ends.
+    const eventsRef = useRef(state.events);
+    useEffect(() => {
+        eventsRef.current = state.events;
+    });
 
     const beatToX = (beat: number): number => beat * pixelsPerBeat - scrollX;
 
@@ -298,7 +303,8 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
             if (!mountedRef.current) {
                 return;
             }
-            if (pendingRef.current || previewBeat === event.beat) {
+            const chordStillExists = eventsRef.current.some((current) => current.id === event.id);
+            if (!chordStillExists || pendingRef.current || previewBeat === event.beat) {
                 setDragState(null);
                 return;
             }
@@ -540,14 +546,18 @@ export const ChordTrackLane = ({ pixelsPerBeat, scrollX, viewportWidth }: ChordT
             {/* ── Chord blocks ── */}
             <div className="relative flex-1 h-full" {...dragHandlers}>
                 {state.events.map((event) => {
-                    const displayedBeat = dragState?.eventId === event.id ? dragState.previewBeat : event.beat;
+                    const dragPreviewBeat = dragState?.eventId === event.id ? dragState.previewBeat : null;
+                    const isDragged = dragPreviewBeat !== null;
+                    const displayedBeat = dragPreviewBeat ?? event.beat;
                     const x = beatToX(displayedBeat);
                     const width = event.duration * pixelsPerBeat;
                     const color = ROOT_COLORS[event.root % 12]!;
 
                     // Cull off-screen blocks against the real viewport width — a fixed
-                    // guess here hid chord blocks on wide viewports (#2039).
-                    if (x + width < -20 || x > viewportWidth + 20) {
+                    // guess here hid chord blocks on wide viewports (#2039). The dragged
+                    // block holds pointer capture, so it stays mounted wherever its preview
+                    // sits: unmounting it would release capture and end the drag early.
+                    if (!isDragged && (x + width < -20 || x > viewportWidth + 20)) {
                         return null;
                     }
 
