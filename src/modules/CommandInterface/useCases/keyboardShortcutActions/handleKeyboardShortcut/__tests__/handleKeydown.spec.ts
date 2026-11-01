@@ -856,6 +856,32 @@ describe('handleKeydown', () => {
                 payload: { clipId: 'clip-7' },
             });
         });
+
+        it('keeps duplicateClipToNextBar to a one-clip selection, like the clip context menu', () => {
+            shortcutStoreMock.value.definitions = [
+                {
+                    id: 'test.dup-next-bar',
+                    defaultKeys: ['F1'],
+                    action: {
+                        type: 'appAction',
+                        action: { type: 'duplicateClipToNextBar', payload: { clipId: 'selected' } },
+                    },
+                },
+            ];
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-a', 'clip-b', 'clip-c'];
+            clipSelectionStoreMock.value.selectedClipId = 'clip-b';
+
+            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
+            expect(executeUserAppAction).not.toHaveBeenCalled();
+
+            clipSelectionStoreMock.value.selectedClipIds = ['clip-b'];
+            expect(handleKeydown(descriptor({ key: 'F1' }))).toBe(true);
+            expect(executeUserAppAction).toHaveBeenCalledTimes(1);
+            expect(executeUserAppAction).toHaveBeenCalledWith({
+                type: 'duplicateClipToNextBar',
+                payload: { clipId: 'clip-b' },
+            });
+        });
     });
 
     describe('executeShortcutAction — callback dispatch', () => {
