@@ -1,0 +1,24 @@
+src/modules/Preferences/AGENTS.md
+  s_0314bb17e5dee3::t_01f70e14a00352 7
+src/modules/AudioRendering/AGENTS.md
+  s_0314bb17e5dee3::t_ffad36e08ef50f 11
+  s_0314bb17e5dee3::t_e1371c899a8893 31
+src/modules/Crumbs/AGENTS.md
+  s_0314bb17e5dee3::t_332a88909d3f52 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "72d051d42a5756b9beda333badb7ce15479572ee",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
