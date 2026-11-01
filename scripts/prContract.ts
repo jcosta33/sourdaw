@@ -13,7 +13,7 @@ import {
     linkSync,
     unlinkSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 
 /**
  * The conventional-commit types a change may carry. One list serves three readers: the pull-request
@@ -918,7 +918,7 @@ export function canonicalPath(path: string, resolveExisting: (path: string) => s
 
 export function containsPath(container: string, candidate: string): boolean {
     const relation = relative(container, candidate);
-    return relation === '' || (!relation.startsWith('..') && !isAbsolute(relation));
+    return relation !== '..' && !relation.startsWith(`..${sep}`) && !isAbsolute(relation);
 }
 
 /** Present custody is deliberately separate from historical stack/fork evidence. */
