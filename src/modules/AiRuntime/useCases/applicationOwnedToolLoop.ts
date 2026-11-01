@@ -1841,12 +1841,12 @@ type IdentifiedToolCall = { call: ToolCallResult; callId: string };
 /** What native history records for a turn whose executed calls are only part of its reply. */
 type NativeTurnRecord = { calls: readonly IdentifiedToolCall[]; receipts: readonly ApplicationToolReceipt[] };
 
-/** How the loop answers one reply to the single-measurement step. */
 /** A valid decline on the measurement step, as its admission answered it. */
 type StepDecline =
     | { status: 'admitted'; calls: IdentifiedToolCall[]; record: NativeTurnRecord }
     | { status: 'refused'; callId: string; reason: string };
 
+/** How the loop answers one reply to the single-measurement step. */
 type MeasurementStepReply =
     | { status: 'rejected'; reason: string; receipts: ApplicationToolReceipt[] }
     | { status: 'unmeasured'; kept: HeldTerminal | null }
