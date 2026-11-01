@@ -2541,3 +2541,15 @@ file once #5917 merged. A spec must not read refs, history or remotes that a CI 
 does not fetch. Grep changed specs for `origin/`, `HEAD~` and `merge-base`, then compare against
 the checkout depth of every job that collects them: `unit` uses `fetch-depth: 0`, while
 `tooling-unit` uses the default shallow checkout.
+
+### 2026-11-01 — a parametrised case looped heavy renders inside its body (#6000, fixed in #6014)
+
+PR #6000 added an `it.each` in `cropHistoryFromRenderedBuffer.spec.ts` whose body looped two sample
+rates and four tails, eight renders of up to millions of frames per case. On a loaded CI shard the
+case exceeded the 5 s timeout and failed the Gate of an unrelated pull request. #6014 split it into
+one row per combination.
+
+A parametrised case must not loop heavy work inside its body. Put the product in the table, so each
+case's cost fits the timeout and a failure names its combination. When reviewing an `it.each`, look
+for `for` loops, `forEach` or nested tables in the case body that multiply its renders, decodes or
+fixtures.
