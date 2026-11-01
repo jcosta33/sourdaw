@@ -23,7 +23,7 @@ The RT path is `DeviceRenderer::render_with_timing` in `crates/daw-engine/src/au
 
 **Why:** any of these can take longer than a device period, and a missed deadline is an audible dropout.
 
-**Enforced by:** the `assert_no_alloc` guards of rule 6 for allocation and free; review only for locks, blocking, syscalls and logging — no lint catches them.
+**Enforced by:** `assert_no_alloc` guards over daw-engine's `DeviceRenderer` render, `AudioScheduler::update_graph` and `process_block` (`apply_alloc_guards` in `scheduler.rs`, `compensation_render_alloc_guards` in `audio_thread.rs`), `TimelineGraph::render` (`timeline.rs`), the capture ring (`capture.rs`) and retrospective writer (`retrospective.rs`), and over `CrumbsPluginSlot` (`take_callback_transitions_never_allocate_or_free` in `native_bridge.rs`, `callback_lifecycle_probe` in `sourdaw-native/src/commands/crumbs.rs`). Review only for allocation in `HostedPluginSlot::process_audio` and `process_with_events`, which no guard drives, and in daw-plugin-host, which has no guard; review only for locks, blocking, syscalls and logging everywhere — no lint catches them.
 
 ### 2. Change the graph only through `GraphCommand` on the command ring
 
@@ -43,7 +43,7 @@ Every owning payload — instance, delay line, clip buffer, note batch, tempo ma
 
 ### 4. Fixed capacity: refuse and count, never grow
 
-Callback tables are reserved once (`EFFECT_TABLE_CAPACITY`, `CRUMBS_CAPTURE_RESERVE`, `MAX_TIMELINE_TRACKS` and its siblings in `timeline.rs`). Past capacity the callback refuses, retires the payload, and counts it in `TimelineRtDiagnosticsSnapshot` or `ActiveMidiRtDiagnosticsSnapshot`. The control side admits first (`EngineHandle::ensure_effect_table_headroom`, batch admission) so the caller receives an `Err` the callback cannot return.
+Callback tables are reserved once (`EFFECT_TABLE_CAPACITY` and `CRUMBS_CAPTURE_RESERVE` in `scheduler.rs`, `MAX_TIMELINE_TRACKS` and `MAX_TIMELINE_BUSES` in `timeline.rs`). Past capacity the callback refuses, retires the payload, and counts it in `TimelineRtDiagnosticsSnapshot` or `ActiveMidiRtDiagnosticsSnapshot`. The control side admits first (`EngineHandle::ensure_effect_table_headroom`, batch admission) so the caller receives an `Err` the callback cannot return.
 
 **Why:** a push past a reserve reallocates inside the deadline, and a silent drop plays a project the user did not make.
 
@@ -79,7 +79,7 @@ Put allocation guards in a `#[cfg(debug_assertions)]` module: `disable_release` 
 
 **Why:** offline is the null-test oracle for live playback; one implementation means a difference is a transport defect.
 
-**Enforced by:** `the_same_batch_renders_bit_identical_output_twice` (`offline.rs`), `a_fermenter_note_renders_the_same_samples_live_and_offline` (`scheduler.rs`); live/offline parity for any other body is review only.
+**Enforced by:** `the_same_batch_renders_bit_identical_output_twice` (`offline.rs`) for determinism; `a_clip_through_a_gain_renders_the_expected_samples` and `a_render_spanning_many_blocks_places_the_clip_on_its_absolute_frames` (`offline.rs`) for exact samples across an `OFFLINE_BLOCK_FRAMES` boundary at that one block size; `a_fermenter_note_renders_the_same_samples_live_and_offline` (`scheduler.rs`) for 128- against 512-frame blocks, for that instrument only. Block-size independence for any other body is review only.
 
 ### 9. Teardown order is field order
 
