@@ -13,6 +13,7 @@ import {
     runOutsideAutomergeStoragePublisherScope,
 } from '#/infra/store/storage/createAutomergeStorage';
 import { audioBufferCache } from '#/modules/AudioEngine/stores';
+import { projectOfflineAudioClipPlaybacks } from '#/modules/AudioEngine/useCases';
 import { getAudioRenderingHandlers } from '#/modules/AudioRendering/useCases';
 import { automationStore, type AutomationLane } from '#/modules/Automation/stores';
 import { getAutomationHandlers } from '#/modules/Automation/useCases';
@@ -1579,11 +1580,12 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
             trim = 1.75,
             map = false,
             withTakes = false,
-            unplacedRegion = false
+            unplacedRegion = false,
+            slowFromBeat = 2
         ) {
             const changes = [{ id: 'audio-trim-base', beat: 0, tempo: 120, curve: 'instant' as const }];
             if (map) {
-                changes.push({ id: 'audio-trim-slow', beat: 2, tempo: 60, curve: 'instant' });
+                changes.push({ id: 'audio-trim-slow', beat: slowFromBeat, tempo: 60, curve: 'instant' });
             }
             tempoMapStore.set({ changes });
             const source = {
@@ -2274,6 +2276,74 @@ describe('slice-three clip actions / session-undo mirror round trips', () => {
                 }).toEqual(satellites);
             }
         );
+
+        it('keeps the beat-16 downbeat material on its song second when a head handle is trimmed back across a tempo change (#5042)', async () => {
+            // 120 BPM until beat 14, then 60: beat 8.5 is 4.25 s, beat 16 is
+            // 7 s + 2 s = 9 s. The clip enters at 6 s of source at beat 16, so
+            // the trim to 8.5 reveals 4.75 s of handle and enters at 1.25 s.
+            const downbeatSecond = 9;
+            const downbeatSource = 6;
+            const liveSourceAt = (clip: Clip, beat: number) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: clip.endBeat - clip.startBeat,
+                    iterationStartBeat: beat,
+                    iterationEndBeat: clip.endBeat,
+                    stretchRatio: 1,
+                    tempoAtClipStart: readTempoAtBeat({ beat: clip.startBeat }),
+                    secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+                })[0]?.sourceStartSeconds;
+            const offlinePlayback = (clip: Clip, regionStartBeat: number) => {
+                const [playback] = projectOfflineAudioClipPlaybacks({
+                    clip,
+                    bufferDurationSeconds: 30,
+                    regionStartBeat,
+                    regionStartSec: readSecondsAtBeat({ beat: regionStartBeat }),
+                    durationSeconds: 30,
+                    compensationDelay: 0,
+                    projectBeatToSeconds: (beat) => readSecondsAtBeat({ beat }),
+                    resolveTempoAtBeat: (beat) => readTempoAtBeat({ beat }),
+                });
+                if (!playback) {
+                    throw new Error('Expected the offline source read');
+                }
+                return playback;
+            };
+            const expectDownbeatHeld = (clip: Clip | undefined) => {
+                if (!clip) {
+                    throw new Error('Expected the trimmed clip');
+                }
+                expect(readSecondsAtBeat({ beat: 16 })).toBe(downbeatSecond);
+                expect(liveSourceAt(clip, 16)).toBeCloseTo(downbeatSource, 12);
+                expect(offlinePlayback(clip, 16).bufferOffsetSec).toBeCloseTo(downbeatSource, 12);
+                // From the clip's own head, the offline render reaches the
+                // downbeat material at the downbeat's song second.
+                const fromHead = offlinePlayback(clip, 0);
+                expect(fromHead.startSec + (downbeatSource - fromHead.bufferOffsetSec)).toBeCloseTo(downbeatSecond, 12);
+            };
+
+            const { before } = await trimAudio(
+                { startBeat: 16, endBeat: 24, audioOffsetBeats: 6, audioOffsetSeconds: downbeatSource },
+                8.5,
+                true,
+                false,
+                false,
+                14
+            );
+            expectDownbeatHeld(before);
+            const after = structuredClone(clipOnTrack(TRACK_ID, 'clip-a'));
+            expect(after?.startBeat).toBe(8.5);
+            expect(after?.audioOffsetSeconds).toBeCloseTo(1.25, 12);
+            expectDownbeatHeld(after);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(before);
+            expectDownbeatHeld(clipOnTrack(TRACK_ID, 'clip-a'));
+
+            await redo();
+            expect(clipOnTrack(TRACK_ID, 'clip-a')).toEqual(after);
+            expectDownbeatHeld(clipOnTrack(TRACK_ID, 'clip-a'));
+        });
 
         it('preserves unrelated live name, gain and mute during the exact owned restore', async () => {
             const { before } = await trimAudio({ startBeat: 1.5, endBeat: 2, audioOffsetSeconds: 0.1 });

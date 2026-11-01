@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+
 import { reverseClip } from '../reverseClip';
 
 const mocks = vi.hoisted(() => ({
@@ -72,7 +74,71 @@ vi.mock('#/modules/Transport/stores', () => ({
             beat,
             defaultTempo: mocks.transportTempo,
         }),
+    readSecondsAtBeat: ({ beat }: { beat: number }) => integratedSecondsAtBeat(beat),
+    readBeatAtSamples: () => {
+        throw new Error('reverse never maps source seconds back to beats');
+    },
 }));
+
+/** Song seconds at a beat through the mocked instant-step tempo map. */
+function integratedSecondsAtBeat(beat: number): number {
+    const steps = [...mocks.tempoMapChanges].sort((left, right) => left.beat - right.beat);
+    let seconds = 0;
+    let cursor = 0;
+    let tempo = mocks.transportTempo;
+    for (const step of steps) {
+        if (step.beat >= beat) {
+            break;
+        }
+        seconds += ((Math.max(cursor, step.beat) - cursor) * 60) / tempo;
+        cursor = Math.max(cursor, step.beat);
+        tempo = step.tempo;
+    }
+    return seconds + ((beat - cursor) * 60) / tempo;
+}
+
+type CanonicalClip = {
+    id: string;
+    type: 'audio';
+    audioBufferId: string;
+    name: string;
+    startBeat: number;
+    endBeat: number;
+    fadeInBeats: number;
+    fadeOutBeats: number;
+    audioOffsetBeats?: number;
+    audioOffsetSeconds?: number;
+    audioUnwrappedOffsetSeconds?: number;
+    audioLoopStartSeconds?: number;
+    audioLoopPassEntrySeconds?: number;
+    audioLoopPassOriginBeat?: number;
+    stretchMode?: 'off' | 'repitch' | 'timestretch';
+    stretchRatio?: number;
+    loopEnabled?: boolean;
+    loopLength?: number;
+    loopOriginBeat?: number;
+};
+
+/** The first source second the live and offline readers play for a clip. */
+function readerEntrySeconds(clip: CanonicalClip): number {
+    const segment = projectAudioLoopPassSegments({
+        clip,
+        loopLengthBeats: clip.loopLength ?? clip.endBeat - clip.startBeat,
+        iterationStartBeat: clip.startBeat,
+        iterationEndBeat: clip.endBeat,
+        stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+        tempoAtClipStart: mocks.readTempoAtBeat({
+            changes: mocks.tempoMapChanges,
+            beat: clip.startBeat,
+            defaultTempo: mocks.transportTempo,
+        }),
+        secondsAtBeat: integratedSecondsAtBeat,
+    })[0];
+    if (!segment) {
+        throw new Error('the readers project no segment for the clip');
+    }
+    return segment.sourceStartSeconds;
+}
 
 describe('reverseClip', () => {
     let mockCtx: any;
@@ -831,5 +897,167 @@ describe('reverseClip', () => {
         expect(mockCtx.createBuffer).not.toHaveBeenCalled();
         expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
         expect(mocks.updateClip).not.toHaveBeenCalled();
+    });
+
+    describe('canonical source entry', () => {
+        function reverseWithBuffer(clip: CanonicalClip, sourceSamples: number, sampleRate = 8) {
+            const originalData = new Float32Array(sourceSamples);
+            for (let index = 0; index < sourceSamples; index++) {
+                originalData[index] = index;
+            }
+            const reversedData = new Float32Array(sourceSamples);
+            let publishedClip: CanonicalClip | undefined;
+            mocks.getTrackState.mockReturnValue({ tracks: [{ id: 'track-1', clips: [clip] }] });
+            mocks.updateClip.mockImplementation(
+                (_clipId: string, updater: (candidate: CanonicalClip) => CanonicalClip) => {
+                    publishedClip = updater(clip);
+                    return true;
+                }
+            );
+            mocks.getCachedAudioBuffer.mockReturnValue({
+                numberOfChannels: 1,
+                length: sourceSamples,
+                sampleRate,
+                getChannelData: vi.fn(() => originalData),
+            });
+            mockCtx.createBuffer.mockReturnValue({
+                numberOfChannels: 1,
+                length: sourceSamples,
+                getChannelData: vi.fn(() => reversedData),
+            });
+            const didWrite = reverseClip('c1', 'reversed-1');
+            return { didWrite, publishedClip, originalData, reversedData };
+        }
+
+        const baseClip = {
+            id: 'c1',
+            type: 'audio' as const,
+            audioBufferId: 'buf1',
+            name: 'Sample',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+        };
+
+        it('mirrors the entry across a tempo change so the readers play the original window backwards', () => {
+            // 120 BPM to beat 2, then 60: the span [1, 3) is 0.5 s + 1 s of song
+            // time. Entering at 0.5 s the readers leave at 2 s, so in the 4 s
+            // mirrored buffer the passage opens at 4 − 2 = 2 s. A flat reading at
+            // either tempo (1 s or 2 s of span) lands elsewhere.
+            mocks.transportTempo = 120;
+            mocks.tempoMapChanges = [
+                { beat: 0, tempo: 120, curve: 'instant' },
+                { beat: 2, tempo: 60, curve: 'instant' },
+            ];
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 1,
+                endBeat: 3,
+                audioOffsetBeats: 9,
+                audioOffsetSeconds: 0.5,
+            };
+
+            const { didWrite, publishedClip, originalData, reversedData } = reverseWithBuffer(clip, 32);
+
+            expect(didWrite).toBe(true);
+            expect(publishedClip?.audioOffsetSeconds).toBeCloseTo(2, 12);
+            expect(readerEntrySeconds(publishedClip!)).toBeCloseTo(2, 12);
+            // The first reversed sample the readers play is the last sample of
+            // the window they played forwards, which ended at source second 2.
+            expect(reversedData[2 * 8]).toBe(originalData[2 * 8 - 1]);
+            for (const key of [
+                'audioUnwrappedOffsetSeconds',
+                'audioLoopStartSeconds',
+                'audioLoopPassEntrySeconds',
+                'audioLoopPassOriginBeat',
+            ]) {
+                expect(Object.hasOwn(publishedClip!, key)).toBe(false);
+            }
+        });
+
+        it('mirrors the window the stretched readers consume, not the timeline span', () => {
+            // Two beats at 60 BPM read 1 s of source at ratio 0.5: [0.5, 1.5)
+            // mirrors to [2.5, 3.5) in the 4 s buffer.
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 0,
+                endBeat: 2,
+                audioOffsetSeconds: 0.5,
+                stretchMode: 'timestretch',
+                stretchRatio: 0.5,
+            };
+
+            const { publishedClip } = reverseWithBuffer(clip, 32);
+
+            expect(publishedClip?.audioOffsetSeconds).toBeCloseTo(2.5, 12);
+            expect(readerEntrySeconds(publishedClip!)).toBeCloseTo(2.5, 12);
+        });
+
+        it('restamps every present provenance field at the mirrored head of the fresh basis', () => {
+            // A looped clip [2, 6) entering at 1 s reads to 5 s; the 8 s buffer
+            // mirrors that passage to open at 3 s, and the loop grid opens there.
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 2,
+                endBeat: 6,
+                audioOffsetSeconds: 1,
+                audioUnwrappedOffsetSeconds: 0.75,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 0.9,
+                audioLoopPassOriginBeat: 1,
+                loopEnabled: true,
+                loopLength: 4,
+                loopOriginBeat: 1,
+            };
+
+            const { publishedClip } = reverseWithBuffer(clip, 64);
+
+            expect(publishedClip).toMatchObject({
+                audioOffsetSeconds: 3,
+                audioUnwrappedOffsetSeconds: 3,
+                audioLoopStartSeconds: 3,
+                audioLoopPassEntrySeconds: 3,
+                audioLoopPassOriginBeat: 2,
+                loopOriginBeat: 2,
+            });
+            expect(readerEntrySeconds(publishedClip!)).toBeCloseTo(3, 12);
+        });
+
+        it('restores the original entry when the mirrored clip is reversed again', () => {
+            mocks.transportTempo = 120;
+            mocks.tempoMapChanges = [
+                { beat: 0, tempo: 120, curve: 'instant' },
+                { beat: 2, tempo: 60, curve: 'instant' },
+            ];
+            const clip: CanonicalClip = { ...baseClip, startBeat: 1, endBeat: 3, audioOffsetSeconds: 0.5 };
+
+            const first = reverseWithBuffer(clip, 32).publishedClip!;
+            const second = reverseWithBuffer(first, 32).publishedClip!;
+
+            expect(second.audioOffsetSeconds).toBeCloseTo(0.5, 12);
+        });
+
+        it('refuses a canonical entry it cannot mirror rather than keeping the old entry', () => {
+            const clip: CanonicalClip = {
+                ...baseClip,
+                startBeat: 0,
+                endBeat: 1,
+                audioOffsetSeconds: Number.NaN,
+            };
+
+            const { didWrite } = reverseWithBuffer(clip, 32);
+
+            expect(didWrite).toBe(false);
+            expect(mocks.updateClip).not.toHaveBeenCalled();
+            expect(mocks.cacheAudioBuffer).not.toHaveBeenCalled();
+        });
+
+        it('keeps a beat-only clip free of canonical fields', () => {
+            const clip: CanonicalClip = { ...baseClip, startBeat: 0, endBeat: 1, audioOffsetBeats: 1 };
+
+            const { publishedClip } = reverseWithBuffer(clip, 32);
+
+            expect(publishedClip?.audioOffsetBeats).toBe(2);
+            expect(Object.hasOwn(publishedClip!, 'audioOffsetSeconds')).toBe(false);
+        });
     });
 });

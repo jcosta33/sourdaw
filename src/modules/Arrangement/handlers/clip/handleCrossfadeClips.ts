@@ -1,21 +1,14 @@
 import { createHandler } from '#/utils/createHandler';
 
 import { type Clip } from '../../models/Track';
+import { captureClipAudioSource, type ClipAudioSourceFields } from '../../useCases/clipEditing/clipAudioSourceFields';
 import { consumedStretchFactor } from '../../useCases/clipEditing/consumedStretchFactor';
+import { crossfadeClipBLoopOriginEntry } from '../../useCases/clipEditing/crossfadeClipBLoopOriginEntry';
 import { crossfadeClips, DEFAULT_CROSSFADE_BEATS } from '../../useCases/clipEditing/crossfadeClips';
+import { resolveCrossfadeClipB } from '../../useCases/clipEditing/resolveCrossfadeClipB';
 import { getTrackStoreState } from '../../useCases/getTrackStoreState';
+import { liveTempoTimeline } from '../../useCases/liveTempoTimeline';
 import { toHandlerExecutionResult } from '../toHandlerExecutionResult';
-
-function computeMaxTimelinePreRoll(clipB: Clip): { stretchFactor: number; maxTimelinePreRoll: number } {
-    const stretchFactor = consumedStretchFactor(clipB);
-    if (clipB.type === 'midi') {
-        return { stretchFactor, maxTimelinePreRoll: Math.max(0, clipB.midiOffsetBeats ?? 0) };
-    }
-    return {
-        stretchFactor,
-        maxTimelinePreRoll: Math.max(0, clipB.audioOffsetBeats ?? 0) / stretchFactor,
-    };
-}
 
 function isValidCrossfadeGeometry(
     clipAEndBeat: number,
@@ -45,10 +38,14 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     const halfDuration = durationBeats / 2;
     const clipAEndBeat = clipA.endBeat + halfDuration;
 
-    const { stretchFactor, maxTimelinePreRoll } = computeMaxTimelinePreRoll(clipB);
-    const unclampedClipBStart = clipB.startBeat - halfDuration;
-    const boundedClipBStart = Math.max(0, clipB.startBeat - maxTimelinePreRoll);
-    const clipBStartBeat = Math.max(unclampedClipBStart, boundedClipBStart);
+    const stretchFactor = consumedStretchFactor(clipB);
+    // The forward leg's own plan, so redo replays exactly what it writes.
+    const clipBPlan = resolveCrossfadeClipB(clipB, halfDuration, liveTempoTimeline);
+    if (!clipBPlan) {
+        return null;
+    }
+    const clipBStartBeat = clipBPlan.startBeat;
+    const newClipBAudioSource = clipBPlan.audioSource;
     const overlap = clipAEndBeat - clipBStartBeat;
     const clipBDelta = clipBStartBeat - clipB.startBeat;
     const contentDelta = clipBDelta * stretchFactor;
@@ -81,6 +78,7 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
         clipBLoopOriginBeat?: number;
+        clipBAudioSource?: ClipAudioSourceFields;
     } = {
         clipAEndBeat: clipA.endBeat,
         clipAFadeOutBeats: clipA.fadeOutBeats,
@@ -96,6 +94,10 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     if (clipB.loopOriginBeat !== undefined) {
         previous.clipBLoopOriginBeat = clipB.loopOriginBeat;
     }
+    const previousAudioSource = captureClipAudioSource(clipB);
+    if (previousAudioSource) {
+        previous.clipBAudioSource = previousAudioSource;
+    }
 
     const next: {
         clipAEndBeat: number;
@@ -105,6 +107,7 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
         clipBAudioOffsetBeats?: number;
         clipBMidiOffsetBeats?: number;
         clipBLoopOriginBeat?: number;
+        clipBAudioSource?: ClipAudioSourceFields;
     } = {
         clipAEndBeat,
         clipAFadeOutBeats: overlap,
@@ -117,13 +120,16 @@ function computeCrossfadeSnapshots(clipA: Clip, clipB: Clip, durationBeats: numb
     if (newClipBMidiOffsetBeats !== undefined) {
         next.clipBMidiOffsetBeats = newClipBMidiOffsetBeats;
     }
+    if (newClipBAudioSource) {
+        next.clipBAudioSource = newClipBAudioSource;
+    }
     if (clipB.loopOriginBeat !== undefined) {
-        // The forward leg shifts an audio clip B's anchor by
-        // `clipBDelta - contentDelta` and leaves a MIDI clip B's untouched;
-        // the redo snapshot records the same result so both legs restore the
-        // anchor their side of the crossfade held (#5198).
-        next.clipBLoopOriginBeat =
-            clipB.type === 'audio' ? clipB.loopOriginBeat + (clipBDelta - contentDelta) : clipB.loopOriginBeat;
+        // The forward leg shifts a beat-only audio clip B's anchor by
+        // `clipBDelta - contentDelta` and leaves a MIDI or canonical clip B's
+        // untouched; the redo snapshot records the same result so both legs
+        // restore the anchor their side of the crossfade held (#5198).
+        const shifted = crossfadeClipBLoopOriginEntry(clipB, clipBDelta, contentDelta);
+        next.clipBLoopOriginBeat = 'loopOriginBeat' in shifted ? shifted.loopOriginBeat : clipB.loopOriginBeat;
     }
 
     return { previous, next };

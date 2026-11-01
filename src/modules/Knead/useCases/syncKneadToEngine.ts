@@ -1,6 +1,7 @@
 import { trackStore } from '#/modules/Arrangement/stores';
 import { audioEngine } from '#/modules/AudioEngine/useCases';
 import { readSecondsAtBeat, readTempoAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { resolveAudioSourceOffsetSeconds } from '#/utils/audioSourceTime';
 
 import { kneadStore, type KneadClipState } from '../stores/kneadStore';
 
@@ -11,8 +12,9 @@ import { kneadStore, type KneadClipState } from '../stores/kneadStore';
  *
  * Two clocks meet there and both are integrated here, on the main thread,
  * because the audio thread has neither of them. The clip's start beat goes
- * through the tempo map. The audio offset does not: it is converted at the
- * flat tempo governing the start beat, the same law the audio projector
+ * through the tempo map. The source entry does not: a canonical clip's signed
+ * `audioOffsetSeconds` is read as is, and a legacy beat offset is converted at
+ * the flat tempo governing the start beat, the same law the audio projector
  * applies (`projectOfflineAudioClipPlaybacks`) — the material was rendered at
  * one tempo, so a change inside the offset span moves the clip on the
  * timeline, never the point it seeks to inside the file. With both halves in
@@ -45,12 +47,11 @@ function pushKneadStateToEngine(): void {
                 const clipState = state.clips[clip.id];
                 if (clipState) {
                     const clipTempo = readTempoAtBeat({ beat: clip.startBeat });
-                    const clipSecondsPerBeat = Number.isFinite(clipTempo) && clipTempo > 0 ? 60 / clipTempo : 0;
                     // A negative offset (left edge dragged past the file's
                     // start) opens a silent pre-roll: the anchor moves the
                     // other way, and the negative lookup window matches no
                     // blob — exactly the span in which nothing sounds.
-                    const audioOffsetSeconds = (clip.audioOffsetBeats ?? 0) * clipSecondsPerBeat;
+                    const audioOffsetSeconds = resolveAudioSourceOffsetSeconds(clip, clipTempo);
                     trackClipsState[clip.id] = {
                         ...clipState,
                         startBeat: clip.startBeat,

@@ -234,4 +234,75 @@ describe('restoreCrossfadeClips', () => {
         });
         expect(result).toBe(true);
     });
+
+    describe('canonical clip B source clock', () => {
+        const replacement = {
+            clipAEndBeat: 8,
+            clipAFadeOutBeats: 0,
+            clipBStartBeat: 8.25,
+            clipBFadeInBeats: 0,
+            clipBAudioOffsetBeats: 4,
+            clipBAudioSource: { audioOffsetSeconds: 2, audioUnwrappedOffsetSeconds: 2.5 },
+        };
+        const liveClipB = makeClip('c2', {
+            type: 'audio',
+            startBeat: 7.75,
+            endBeat: 12,
+            fadeInBeats: 0.75,
+            audioOffsetBeats: 3.5,
+            audioOffsetSeconds: 1.625,
+            audioUnwrappedOffsetSeconds: 2.125,
+            audioLoopStartSeconds: 1.625,
+        });
+
+        function restoredClipB(input: typeof replacement | Record<string, unknown>) {
+            const clipA = makeClip('c1', { endBeat: 8.5, fadeOutBeats: 0.75 });
+            mockGetTrackState.mockReturnValue(makeState([clipA, liveClipB]));
+            const result = restoreCrossfadeClips({
+                clipAId: 'c1',
+                clipBId: 'c2',
+                replacement: input as typeof replacement,
+            });
+            const mapper = mockMapAllTracks.mock.calls[0]?.[0];
+            const clips = mapper ? mapper(makeState([clipA, liveClipB]).tracks[0]).clips : [];
+            return { result, clipB: clips.find((clip: { id: string }) => clip.id === 'c2') };
+        }
+
+        it('puts the captured clock back whole, a key it lacks restored absent', () => {
+            const { result, clipB } = restoredClipB(replacement);
+
+            expect(result).toBe(true);
+            expect(clipB).toMatchObject({
+                startBeat: 8.25,
+                audioOffsetBeats: 4,
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 2.5,
+            });
+            expect(Object.hasOwn(clipB, 'audioLoopStartSeconds')).toBe(false);
+        });
+
+        it('refuses a capture that is not an exact source clock without writing', () => {
+            const { result } = restoredClipB({
+                ...replacement,
+                clipBAudioSource: { audioUnwrappedOffsetSeconds: 2.5 },
+            });
+
+            expect(result).toBe(false);
+            expect(mockMapAllTracks).not.toHaveBeenCalled();
+        });
+
+        it('leaves the live clock untouched for a legacy capture without one', () => {
+            const { clipBAudioSource: _clock, ...legacy } = replacement;
+
+            const { result, clipB } = restoredClipB(legacy);
+
+            expect(result).toBe(true);
+            expect(clipB).toMatchObject({
+                startBeat: 8.25,
+                audioOffsetSeconds: 1.625,
+                audioUnwrappedOffsetSeconds: 2.125,
+                audioLoopStartSeconds: 1.625,
+            });
+        });
+    });
 });
