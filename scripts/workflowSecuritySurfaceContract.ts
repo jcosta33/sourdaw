@@ -87,7 +87,11 @@ export const REQUIRED_CHECK_OWNER = { workflow: 'health-gates.yml', job: 'gate' 
 // a literal prefix, so no matrix value or output can evaluate it to Gate.
 export const JOB_NAME_EXPRESSION_PINS: JobPins<string> = {
     'heavy-gates.yml': { e2e: 'Affected end-to-end ${{ matrix.id }}' },
-    'nightly.yml': { unit: 'Unit suite ${{ matrix.shard }}/4', e2e: 'End-to-end ${{ matrix.shard }}/12' },
+    'nightly.yml': {
+        unit: 'Unit suite ${{ matrix.shard }}/4',
+        e2e: 'End-to-end ${{ matrix.shard }}/12',
+        'e2e-coverage': 'End-to-end coverage ${{ matrix.shard }}/12',
+    },
     'validation.yml': { unit: 'Unit suite ${{ matrix.shard }}/4' },
 };
 

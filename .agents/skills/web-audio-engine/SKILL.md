@@ -95,7 +95,7 @@ Recording artifacts need identity independent of wall-clock time: generate one c
 
 **Why:** a pre-copy cursor check can admit mixed PCM, and a signed or low-word rollover can make a full ring turn look empty. Clearing the stop deadline on the producer acknowledgment allows a stalled final drain to retain the input session indefinitely.
 
-**Enforced by:** `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts` (signed and unsigned boundary publication); the worker copy, stop fence, and artifact identity are review only (probes: `review-stances/session-lifecycle.md`).
+**Enforced by:** `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts` (signed and unsigned boundary publication); the worker copy, stop fence, and artifact identity are review only (probes: `review-stances/recording-session-ownership.md`).
 
 ### 10. wasm-bindgen DSP uses a pointer and frame-count ABI
 
@@ -115,4 +115,4 @@ Native plugin host isolation beyond the shared RT rules — see `plugin-hosting`
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — channels and engine/executor model.
 - [src/modules/AudioEngine/AGENTS.md](../../../src/modules/AudioEngine/AGENTS.md) — WASM pipeline and worklet wiring.
 - `.dependency-cruiser.cjs` — `worklets-*`, `presentation-no-engine-runtime-imports`, `react-only-in-presentation`.
-- Review probes for recording rings, stop fence, and artifact identity: `../review-stances/session-lifecycle.md`.
+- Review probes for recording rings, stop fence, and artifact identity: `../review-stances/recording-session-ownership.md`.

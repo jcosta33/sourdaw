@@ -287,6 +287,8 @@ const NIGHTLY_REPORT_NEEDS = [
     'desktop-measure',
     'e2e',
     'e2e-report',
+    'e2e-coverage',
+    'e2e-coverage-map',
     'browser-ai-webgpu',
     'codeql',
     'secrets',
@@ -4357,7 +4359,7 @@ describe('health gates workflow contract', () => {
             const candidate = loadWorkflow(file).parsed;
             callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
         }
-        expect(callers).toBe(26);
+        expect(callers).toBe(28);
 
         const oldBootstrap = structuredClone(validationWorkflow);
         stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
