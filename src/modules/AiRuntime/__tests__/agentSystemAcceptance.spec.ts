@@ -28,7 +28,7 @@ import {
     resetCrdtProjectAuthority,
     settlePendingProjectWritesAndCaptureRevision,
 } from '#/modules/CrdtDocument/useCases';
-import { projectStore } from '#/modules/Project/stores';
+import { defaultProjectStoreState, projectStore } from '#/modules/Project/stores';
 import { parseSemanticProjectQueryInput } from '#/modules/Project/useCases';
 import { defaultTransportState, transportStore } from '#/modules/Transport/stores';
 import { clampFaderGain, resolveLevelFields, TRACK_FADER_LAW } from '#/utils/audioLevelLaw';
@@ -70,6 +70,7 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from '../useCases/__tests__/aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerIntake } from '../useCases/__tests__/answerWireFixture';
 import {
     assertDiscoveredCommandSchemas,
     declineCall,
@@ -159,6 +160,9 @@ const THRESHOLDS_DOC_PATH = 'docs/architecture/agent-release-gates.md';
 /** The file name both corpora must name, so one project answers every case in both of them. */
 const FIXTURE_PROJECT_FILE = 'fixture-project.json';
 
+/** The identity the fixture project is opened under when a question queries it. */
+const FIXTURE_PROJECT_ID = 'aaaaaaaa-aaaa-8aaa-8aaa-aaaaaaaaaaaa';
+
 /** The outcome classes the `boundary` prompt class exists to hold, each needing a case of its own. */
 const BOUNDARY_OUTCOME_CLASSES: readonly AgentAcceptanceOutcomeClass[] = [
     'clarify-required',
@@ -178,7 +182,7 @@ const MINIMUM_SEALED_CLASS_CASES = 3;
  * generator.
  */
 type CorpusProviderTurn =
-    | { kind: 'intake'; intent: 'literal' }
+    | { kind: 'intake'; intent: 'literal' | 'answer' }
     | { kind: 'search'; intents: string[] }
     | { kind: 'discover'; names: string[] }
     | { kind: 'propose'; items: Record<string, unknown>[]; plan?: AgentPlanProposal }
@@ -398,6 +402,12 @@ function isString(value: unknown): value is string {
 }
 
 /**
+ * A descriptive question's intake: the project-facts answer branch of the interpretation selector the
+ * provider was actually offered, read from its advertised schema rather than restated here.
+ */
+const answerIntakeTurn: ScriptedTurn = (_userMessage, providerView) => [advertisedAnswerIntake(providerView)];
+
+/**
  * Maps one corpus-declared provider turn to the same scripted-turn builders the workflow fixture
  * proves against production. `priorProposalId` reads the card a refinement names in `refines`.
  */
@@ -407,10 +417,13 @@ function toScriptedTurn(
 ): ScriptedTurn {
     switch (turn.kind) {
         case 'intake':
-            if (turn.intent !== 'literal') {
-                throw new TypeError('The corpus intake variant has no configured producer.');
+            if (turn.intent === 'literal') {
+                return literalMetricIntakeTurn;
             }
-            return literalMetricIntakeTurn;
+            if (turn.intent === 'answer') {
+                return answerIntakeTurn;
+            }
+            throw new TypeError('The corpus intake variant has no configured producer.');
         case 'search':
             return () => searchCalls(turn.intents);
         case 'discover':
@@ -862,6 +875,32 @@ async function runCorpusCase(
     if (testCase.promptClass === 'refinement') {
         return runRefinementCase(testCase, barrel);
     }
+    if (testCase.oracle.kind !== 'answer') {
+        return runSingleTurnCase(testCase, barrel, alongside);
+    }
+    // `project.query` reads the open project, so a question is asked of the fixture project loaded
+    // into the real stores and document, under a canonical identity a semantic query can answer for.
+    const projectBefore = projectStore.value;
+    openChatProject();
+    projectStore.set({
+        ...structuredClone(defaultProjectStoreState),
+        projectId: FIXTURE_PROJECT_ID,
+        initialized: true,
+        loading: false,
+    });
+    try {
+        return await runSingleTurnCase(testCase, barrel, alongside);
+    } finally {
+        projectStore.set(projectBefore);
+        closeChatProject();
+    }
+}
+
+async function runSingleTurnCase(
+    testCase: CorpusCase,
+    barrel: BarrelWriteLog,
+    alongside?: () => Promise<void>
+): Promise<CaseRun> {
     const writesBefore = barrel.count();
     const projectBefore = captureProjectTruth();
     const observed = await observeProjectChanges(async () => {
@@ -1712,17 +1751,17 @@ describe('agent acceptance corpora', () => {
             }
         });
 
-        it('declares one positive intake before every scripted mutation within the existing turn ceiling', () => {
+        it('declares one positive intake before every scripted mutation or answer within the existing turn ceiling', () => {
             for (const testCase of corpus.cases) {
                 for (const frame of [testCase, testCase.prior]) {
                     if (frame === undefined) {
                         continue;
                     }
-                    const mutations = frame.providerTurns.some(
-                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands'
+                    const interpreted = frame.providerTurns.some(
+                        (turn) => turn.kind === 'propose' || turn.kind === 'propose-commands' || turn.kind === 'answer'
                     );
                     const intakes = frame.providerTurns.filter((turn) => turn.kind === 'intake');
-                    if (mutations) {
+                    if (interpreted) {
                         expect(frame.providerTurns[0]?.kind, `${testCase.id}: ${frame.prompt}`).toBe('intake');
                         expect(frame.providerTurns[0]).toEqual(intakes[0]);
                         expect(intakes).toHaveLength(1);
