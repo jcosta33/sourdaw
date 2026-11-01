@@ -154,6 +154,157 @@ function beatAtTime(firstBeat: number, secondBeat: number, time: number, project
     return (lower + upper) / 2;
 }
 
+/** A stretch of a segment's visible span, bounded by its ends and the tempo changes inside it. */
+type BeatPiece = {
+    startBeat: number;
+    endBeat: number;
+    startTime: number;
+    endTime: number;
+};
+
+/**
+ * How a sampled segment finds the beat under each grid time.
+ *
+ * The projection is quantised to whole samples, so `beatAtTime`'s full-range
+ * bisection converges on the edge of a one-sample rounding step, not on a truer
+ * beat, and spends over forty projections on every sample. A piece that passes
+ * the straightness test is interpolated along its chord, so a sample's beat
+ * projects within that test's tolerance (0.1 ms, about five samples at 48 kHz)
+ * of its grid time: a short, gently curved stretch of a ramp can pass it. A
+ * piece that fails it is bisected from the previous sample's bracket down to a
+ * small fraction of one grid step, within one sample of the full-range bisection.
+ */
+type SampledPiece =
+    (BeatPiece & { kind: 'straight' }) | (BeatPiece & { kind: 'ramp'; startProjection: number; endProjection: number });
+
+/**
+ * How far, in seconds, the projection may stray from a piece's chord at its
+ * quarter and half points for the piece to count as straight. The same bound
+ * the linear-curve single-step shortcut has always accepted.
+ */
+const STRAIGHTNESS_TOLERANCE_SECONDS = 1e-4;
+/** Bisection stops once its bracket is this fraction of one grid step's beats — far inside one sample. */
+const RAMP_BRACKET_FRACTION = 2 ** -12;
+/** The full-range bisection's own depth, kept as a ceiling on the warm-started one. */
+const MAX_BISECTION_STEPS = 40;
+
+function projectsStraight({ startBeat, endBeat, startTime, endTime }: BeatPiece, projectBeat: BeatProjector): boolean {
+    const beatSpan = endBeat - startBeat;
+    const timeSpan = endTime - startTime;
+    return (
+        Math.abs(projectBeat(startBeat + beatSpan / 4) - (startTime + timeSpan / 4)) < STRAIGHTNESS_TOLERANCE_SECONDS &&
+        Math.abs(projectBeat(startBeat + beatSpan / 2) - (startTime + timeSpan / 2)) < STRAIGHTNESS_TOLERANCE_SECONDS
+    );
+}
+
+function classifyPiece(piece: BeatPiece, straight: boolean, projectBeat: BeatProjector): SampledPiece {
+    if (straight) {
+        return { ...piece, kind: 'straight' };
+    }
+    return {
+        ...piece,
+        kind: 'ramp',
+        startProjection: projectBeat(piece.startBeat),
+        endProjection: projectBeat(piece.endBeat),
+    };
+}
+
+/** Cuts the span at each tempo change strictly inside it; no change beat becomes a sample of its own. */
+function splitAtTempoChanges(
+    span: BeatPiece,
+    innerChangeBeats: readonly number[],
+    projectBeat: BeatProjector
+): SampledPiece[] {
+    const beats = [span.startBeat, ...innerChangeBeats, span.endBeat];
+    const times = [span.startTime, ...innerChangeBeats.map(projectBeat), span.endTime];
+    return beats.slice(0, -1).map((startBeat, index) => {
+        const piece = { startBeat, endBeat: beats[index + 1]!, startTime: times[index]!, endTime: times[index + 1]! };
+        return classifyPiece(piece, projectsStraight(piece, projectBeat), projectBeat);
+    });
+}
+
+/** The beat under each of the ascending grid `times`, piece by piece. */
+function sampleGridBeats(
+    pieces: readonly SampledPiece[],
+    times: readonly number[],
+    gridStepSeconds: number,
+    projectBeat: BeatProjector
+): number[] {
+    const beats: number[] = [];
+    let pieceIndex = 0;
+    // A beat known to project before the next, later, sample time.
+    let rampFloor: number | undefined;
+    for (const time of times) {
+        while (pieceIndex < pieces.length - 1 && time > pieces[pieceIndex]!.endTime) {
+            pieceIndex++;
+            rampFloor = undefined;
+        }
+        const piece = pieces[pieceIndex]!;
+        if (piece.kind === 'straight') {
+            beats.push(beatAtLinearTime(piece, time));
+            continue;
+        }
+        const found = beatOnRamp(piece, time, rampFloor ?? piece.startBeat, gridStepSeconds, projectBeat);
+        beats.push(found.beat);
+        rampFloor = found.floor;
+    }
+    return beats;
+}
+
+function beatAtLinearTime({ startBeat, endBeat, startTime, endTime }: BeatPiece, time: number): number {
+    if (time <= startTime) {
+        return startBeat;
+    }
+    if (time >= endTime) {
+        return endBeat;
+    }
+    const beat = startBeat + (endBeat - startBeat) * ((time - startTime) / (endTime - startTime));
+    return Math.min(endBeat, Math.max(startBeat, beat));
+}
+
+/**
+ * Bisects a ramp piece for `time`, starting from `floor`, a beat that projects
+ * before it (the piece start, or the previous sample's lower bound, since grid
+ * times ascend). The upper bound walks forward one grid step's beats, doubling,
+ * until it projects at or past `time`; the result never leaves the piece.
+ */
+function beatOnRamp(
+    piece: Extract<SampledPiece, { kind: 'ramp' }>,
+    time: number,
+    floor: number,
+    gridStepSeconds: number,
+    projectBeat: BeatProjector
+): { beat: number; floor: number } {
+    if (time <= piece.startProjection) {
+        return { beat: piece.startBeat, floor: piece.startBeat };
+    }
+    if (time >= piece.endProjection) {
+        return { beat: piece.endBeat, floor };
+    }
+    const stepBeats = ((piece.endBeat - piece.startBeat) * gridStepSeconds) / (piece.endTime - piece.startTime);
+    if (!(stepBeats > 0) || !Number.isFinite(stepBeats)) {
+        return { beat: beatAtTime(piece.startBeat, piece.endBeat, time, projectBeat), floor };
+    }
+    let lower = floor;
+    let reach = stepBeats;
+    let upper = Math.min(piece.endBeat, lower + reach);
+    while (upper < piece.endBeat && projectBeat(upper) < time) {
+        lower = upper;
+        reach *= 2;
+        upper = Math.min(piece.endBeat, lower + reach);
+    }
+    const tolerance = stepBeats * RAMP_BRACKET_FRACTION;
+    for (let iteration = 0; iteration < MAX_BISECTION_STEPS && upper - lower > tolerance; iteration++) {
+        const middle = (lower + upper) / 2;
+        if (projectBeat(middle) < time) {
+            lower = middle;
+        } else {
+            upper = middle;
+        }
+    }
+    return { beat: (lower + upper) / 2, floor: lower };
+}
+
 /**
  * Sort by beat, keeping ties.
  *
@@ -415,15 +566,19 @@ export function compileAutomationEvents(
             continue;
         }
 
-        const beatSpan = visibleEndBeat - visibleStartBeat;
         const timeSpan = visibleEnd - visibleStart;
-        const hasTempoBoundary = changes.some(
-            (change) => change.beat > visibleStartBeat && change.beat < visibleEndBeat
-        );
-        const hasLinearTimeProjection =
-            !hasTempoBoundary &&
-            Math.abs(projectBeat(visibleStartBeat + beatSpan / 4) - (visibleStart + timeSpan / 4)) < 1e-4 &&
-            Math.abs(projectBeat(visibleStartBeat + beatSpan / 2) - (visibleStart + timeSpan / 2)) < 1e-4;
+        const innerChangeBeats = [
+            ...new Set(
+                changes.map((change) => change.beat).filter((beat) => beat > visibleStartBeat && beat < visibleEndBeat)
+            ),
+        ].sort((alpha, beta) => alpha - beta);
+        const visibleSpan: BeatPiece = {
+            startBeat: visibleStartBeat,
+            endBeat: visibleEndBeat,
+            startTime: visibleStart,
+            endTime: visibleEnd,
+        };
+        const hasLinearTimeProjection = innerChangeBeats.length === 0 && projectsStraight(visibleSpan, projectBeat);
         // A non-linear curve (bezier, smooth, exponential, s-curve — or a
         // linear one crossing a tempo change) is pre-sampled into linear
         // segments. That grid has to be at least as fine as the slew tick, or
@@ -433,13 +588,27 @@ export function compileAutomationEvents(
         // Only tightened when a slew is actually configured — gain and pan are
         // a-rate and unslewed on both sides, and pay nothing for this.
         const sampleIntervalSec = Math.min(AUTOMATION_SAMPLE_INTERVAL_SEC, options?.slew?.tickSeconds ?? Infinity);
-        const steps =
-            current.point.curve === 'linear' && hasLinearTimeProjection
-                ? 1
-                : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
-        for (let step = 1; step <= steps; step++) {
-            const time = visibleStart + ((visibleEnd - visibleStart) * step) / steps;
-            const beat = beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat);
+        const isSingleStep = current.point.curve === 'linear' && hasLinearTimeProjection;
+        const steps = isSingleStep ? 1 : Math.max(1, Math.ceil(timeSpan / sampleIntervalSec));
+        const times = Array.from(
+            { length: steps },
+            (_, offset) => visibleStart + ((visibleEnd - visibleStart) * (offset + 1)) / steps
+        );
+        const beats = isSingleStep
+            ? times.map((time) => beatAtTime(visibleStartBeat, visibleEndBeat, time, projectBeat))
+            : sampleGridBeats(
+                  innerChangeBeats.length === 0
+                      ? [classifyPiece(visibleSpan, hasLinearTimeProjection, projectBeat)]
+                      : splitAtTempoChanges(visibleSpan, innerChangeBeats, projectBeat),
+                  times,
+                  timeSpan / steps,
+                  projectBeat
+              );
+        for (let step = 0; step < steps; step++) {
+            const time = times[step]!;
+            // The segment's last sample sits on its cropped end, whose beat the
+            // full bisection above already solved; no approximation replaces it.
+            const beat = !isSingleStep && step === steps - 1 ? visibleEndBeat : beats[step]!;
             appendEvent(events, {
                 type: 'linear',
                 timeSeconds: time - regionStartSeconds,

@@ -38,14 +38,17 @@ export function DialogOverlay({ className, ...props }: ComponentProps<typeof Dia
 export function DialogContent({
     className,
     children,
+    overlayClassName,
     showCloseButton = true,
     ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
+    /** Classes for the scrim, which has to share a raised layer with its content. */
+    overlayClassName?: string;
     showCloseButton?: boolean;
 }) {
     return (
         <DialogPortal data-slot="dialog-portal">
-            <DialogOverlay />
+            <DialogOverlay className={overlayClassName} />
             <DialogPrimitive.Content
                 data-slot="dialog-content"
                 className={cn(
