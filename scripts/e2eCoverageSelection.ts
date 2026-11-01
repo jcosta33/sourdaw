@@ -130,9 +130,13 @@ export function coverageMapFrom(text: string | undefined, createdAt: string | un
     }
 }
 
-type Token = { kind: ts.SyntaxKind | 'body'; text: string; pos: number };
+// A leaf token, the entry to or exit from a syntax node, or a collapsed function body.
+type Token = { role: 'leaf' | 'enter' | 'exit' | 'body'; kind: ts.SyntaxKind; text: string; pos: number };
 
-/** Every runtime token of one side, and the same stream with each function body collapsed to one placeholder. */
+/**
+ * One side's runtime parse tree flattened in pre-order, and the same stream with each function
+ * body collapsed to one placeholder.
+ */
 type TokenStreams = { full: readonly Token[]; outside: readonly Token[] };
 
 function isFunctionWithBody(node: ts.Node): node is ts.FunctionLikeDeclaration & { body: ts.ConciseBody } {
@@ -184,7 +188,9 @@ function syntaxErrorsIn(path: string, text: string): number {
 }
 
 // Leaf tokens keep their exact source text, so string and template contents count while
-// comments and whitespace, which are trivia between tokens, do not.
+// comments and whitespace, which are trivia between tokens, do not. Node entry and exit markers
+// make the comparison structural: a line break that automatic semicolon insertion turns into a
+// different parse changes the tree even when the leaves stay the same.
 function tokenStreams(path: string, text: string): TokenStreams {
     if (text.includes('\0')) {
         throw new Error('is binary');
@@ -196,33 +202,72 @@ function tokenStreams(path: string, text: string): TokenStreams {
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind);
     const full: Token[] = [];
     const outside: Token[] = [];
+    const emit = (token: Token, isOutside: boolean): void => {
+        full.push(token);
+        if (isOutside) {
+            outside.push(token);
+        }
+    };
     const visit = (node: ts.Node, isOutside: boolean): void => {
         const children = node.getChildren(source);
+        const pos = node.getStart(source);
         if (children.length === 0) {
-            const token = { kind: node.kind, text: node.getText(source), pos: node.getStart(source) };
-            full.push(token);
-            if (isOutside) {
-                outside.push(token);
-            }
+            emit({ role: 'leaf', kind: node.kind, text: node.getText(source), pos }, isOutside);
             return;
         }
+        emit({ role: 'enter', kind: node.kind, text: '', pos }, isOutside);
         for (const child of children) {
             if (isJsDoc(child) || isTypeOnlyDeclaration(child) || child.kind === ts.SyntaxKind.EndOfFileToken) {
                 continue;
             }
             const isBody = isFunctionWithBody(node) && child === node.body;
             if (isBody && isOutside) {
-                outside.push({ kind: 'body', text: '', pos: child.getStart(source) });
+                outside.push({ role: 'body', kind: child.kind, text: '', pos: child.getStart(source) });
             }
             visit(child, isOutside && !isBody);
         }
+        emit({ role: 'exit', kind: node.kind, text: '', pos: node.end }, isOutside);
     };
     visit(source, true);
     return { full, outside };
 }
 
 function sameToken(left: Token | undefined, right: Token | undefined): boolean {
-    return left !== undefined && right !== undefined && left.kind === right.kind && left.text === right.text;
+    return (
+        left !== undefined &&
+        right !== undefined &&
+        left.role === right.role &&
+        left.kind === right.kind &&
+        left.text === right.text
+    );
+}
+
+// esbuild and TypeScript read these comment pragmas per file, so comments carrying them are not
+// trivia. Matching anywhere in the text, case-insensitively, can only over-match.
+const JSX_PRAGMA = /@jsx\w*(?:[^\S\r\n]+\S+)?/gi;
+
+type Pragma = { text: string; pos: number };
+
+function jsxPragmas(text: string): Pragma[] {
+    return Array.from(text.matchAll(JSX_PRAGMA), (match) => ({ text: match[0], pos: match.index }));
+}
+
+// Counted as git counts lines, so lone CR, U+2028 and U+2029 never shift the report.
+function lineOf(text: string, position: number): number {
+    return text.slice(0, position).split('\n').length;
+}
+
+function pragmaDifference(baseText: string, headText: string): string | null {
+    const base = jsxPragmas(baseText);
+    const head = jsxPragmas(headText);
+    const length = Math.max(base.length, head.length);
+    for (let index = 0; index < length; index += 1) {
+        if (base[index]?.text !== head[index]?.text) {
+            const pragma = head[index];
+            return `head line ${pragma === undefined ? 1 : lineOf(headText, pragma.pos)}`;
+        }
+    }
+    return null;
 }
 
 function firstDifference(base: readonly Token[], head: readonly Token[]): number {
@@ -238,19 +283,21 @@ function firstDifference(base: readonly Token[], head: readonly Token[]): number
 type FileVerdict = { kind: 'body' | 'inert' } | { kind: 'outside'; where: string };
 
 /**
- * Compares the runtime token streams of both sides directly. Equal streams are inert; streams
- * that differ only inside function bodies are a body change; anything else is outside, located
- * at the head side's first differing token for diagnosis.
+ * Compares the runtime parse trees and JSX pragmas of both sides directly. Equal streams are
+ * inert; streams that differ only inside function bodies are a body change; anything else is
+ * outside, located at the head side's first differing token or pragma for diagnosis.
  */
 export function classifyChange(path: string, baseText: string, headText: string): FileVerdict {
     const base = tokenStreams(path, baseText);
     const head = tokenStreams(path, headText);
+    const pragmaAt = pragmaDifference(baseText, headText);
+    if (pragmaAt !== null) {
+        return { kind: 'outside', where: pragmaAt };
+    }
     const outsideAt = firstDifference(base.outside, head.outside);
     if (outsideAt >= 0) {
         const position = head.outside[outsideAt]?.pos ?? headText.length;
-        // Counted as git counts lines, so lone CR, U+2028 and U+2029 never shift the report.
-        const line = headText.slice(0, position).split('\n').length;
-        return { kind: 'outside', where: `head line ${line}` };
+        return { kind: 'outside', where: `head line ${lineOf(headText, position)}` };
     }
     return firstDifference(base.full, head.full) >= 0 ? { kind: 'body' } : { kind: 'inert' };
 }

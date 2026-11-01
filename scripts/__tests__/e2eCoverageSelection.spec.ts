@@ -124,6 +124,11 @@ const BANNER = FEED_BASE.replace('const LIMIT = 10;\n', 'const LIMIT = 10;\nexpo
 const SEPARATED = (separator: string): string =>
     `// a${separator}b\nexport function f(): number {\n    let x = 1; return x;\n} const TOP = 1;\n`;
 const GETTER = 'export const box = {\n    get size(): number {\n        return 1;\n    },\n};\n';
+// Automatic semicolon insertion parses a line break after `return` or before `++` differently.
+const SPLIT_RETURN = FEED_BASE.replace('return this.name;', 'return\n            this.name;');
+const POSTFIX = 'let a = 0;\nlet b = 0;\na++\nb\n';
+const STEP = `export function step(): number {\n    ${POSTFIX.replaceAll('\n', '\n    ')}return a + b;\n}\n`;
+const PANEL_PRAGMA = `/** @jsxImportSource preact */\n${PANEL_BASE}`;
 
 function select(
     files: Readonly<Record<string, FileFixture>>,
@@ -158,6 +163,8 @@ describe('coverage-map selection narrows', () => {
         ['a deleted body line', FEED_BASE.replace('        return this.name;\n', '')],
         ['a blank line inside a template literal within a body', TEMPLATED.replace('>\n</>', '>\n\n</>'), TEMPLATED],
         ['a body edit in a CRLF file', CRLF.replace('slice(0, LIMIT)', 'slice(1, LIMIT)'), CRLF],
+        ['a line break after a return', SPLIT_RETURN],
+        ['a line break removed after a return', FEED_BASE, SPLIT_RETURN],
     ])('to exactly the file specs, always-selected and unmapped specs for %s', (_, head, base?: string) => {
         const selection = select({ [FEED]: feedEdit(head, base) });
         expect(selectedSpecs(selection)).toEqual([SPEC('alpha'), SPEC('delta'), SPEC('fresh'), SPEC('gamma')]);
@@ -210,6 +217,11 @@ describe('coverage-map selection narrows', () => {
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
     });
 
+    it('treats a line break before a postfix increment in a body as a body change', () => {
+        const selection = select({ [NEVER]: neverEdit(STEP, STEP.replace('a++\n    b', 'a\n    ++b')) });
+        expect(selection).toMatchObject({ paths: [{ reason: expect.stringContaining('function-body change') }] });
+    });
+
     it('treats a getter body in a top-level object literal as a function body', () => {
         const selection = select({ [NEVER]: neverEdit(GETTER, GETTER.replace('return 1', 'return 2')) });
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
@@ -227,6 +239,13 @@ describe('coverage-map selection narrows', () => {
         ['block-comment', FEED_BASE.replace('// Feed helpers.\n', '// Feed helpers.\n/* More helpers. */\n')],
         ['JSDoc', DOCUMENTED.replace('first items', 'leading items'), DOCUMENTED],
         ['top-level blank-lines', FEED_BASE.replace('}\n\nexport class', '}\n\n\n\nexport class')],
+        [
+            'call-wrapping',
+            FEED_BASE.replace(
+                'kept.map((item) => ({ ...item, id: clamp(item.id) }))',
+                'kept.map(\n        (item) => ({ ...item, id: clamp(item.id) })\n    )'
+            ),
+        ],
     ])('contributes no file specs for a %s change', (_, head, base?: string) => {
         const selection = select({ [FEED]: feedEdit(head, base) });
         expect(selectedSpecs(selection)).toEqual(EXTRAS);
@@ -375,6 +394,25 @@ describe('coverage-map selection stays full', () => {
         expect(select({ [NEVER]: neverEdit(base, base.replace('TOP = 1', 'TOP = 2')) })).toEqual({
             kind: 'full',
             reason: `${NEVER}: change outside a function body at head line 4`,
+        });
+    });
+
+    it('for a line break before a postfix increment in top-level code', () => {
+        expect(select({ [NEVER]: neverEdit(POSTFIX, POSTFIX.replace('a++\nb', 'a\n++b')) })).toEqual({
+            kind: 'full',
+            reason: `${NEVER}: change outside a function body at head line 3`,
+        });
+    });
+
+    it.each([
+        ['added', PANEL_BASE, PANEL_PRAGMA, 'head line 1'],
+        ['removed', PANEL_PRAGMA, PANEL_BASE, 'head line 1'],
+        ['edited', PANEL_PRAGMA, PANEL_PRAGMA.replace('preact', 'solid-js'), 'head line 1'],
+        ['added after the first line', PANEL_BASE, `${PANEL_BASE}/* @jsx h */\n`, 'head line 4'],
+    ])('for a JSX pragma %s', (_, base, head, where) => {
+        expect(select({ [PANEL]: { base, head, baseBlob: 'e'.repeat(40) } })).toEqual({
+            kind: 'full',
+            reason: `${PANEL}: change outside a function body at ${where}`,
         });
     });
 

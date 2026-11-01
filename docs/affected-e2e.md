@@ -109,13 +109,16 @@ decided:
 - Each changed file's blob at the merge-base equals the map's blob, so the map describes the code
   being changed. A file the map does not list must exist unchanged at the map commit; no browser
   spec then executed any of its functions.
-- The merge-base and head contents parse, and their token streams agree outside function bodies.
-  Each side is reduced to its tokens by kind and exact text, so comments and whitespace drop out
-  while string and template-literal contents, including blank lines inside a template, still
-  count. Type-only declarations are dropped from both sides, and the outside comparison collapses
-  each function, method, constructor, or accessor body to one placeholder. Equal full streams are a
-  comment or type-only change; streams equal only outside bodies are a body change. Comparing
-  tokens rather than diff lines means a comment toggle that revives or retires top-level code
+- The merge-base and head contents parse, their JSX pragma comments (`@jsx`, `@jsxFrag`,
+  `@jsxImportSource`, `@jsxRuntime`) match, and their parse trees agree outside function bodies.
+  Each side is flattened to its syntax nodes in pre-order and its tokens by kind and exact text, so
+  comments and whitespace drop out while string and template-literal contents, including blank
+  lines inside a template, still count, and a line break that automatic semicolon insertion parses
+  differently changes the tree. Pragma comments count because the compilers apply them per file.
+  Type-only declarations are dropped from both sides, and the outside comparison collapses each
+  function, method, constructor, or accessor body to one placeholder. Equal full trees are a
+  comment or type-only change; trees equal only outside bodies are a body change. Comparing trees
+  rather than diff lines means a comment toggle that revives or retires top-level code
   stays full, whatever lines the diff touches. A body change can affect behaviour only when the
   function runs, and the map lists every spec in which some function of that file ran. Top-level
   changes stay full: module bodies run at boot in every spec, and top-level values reach functions
