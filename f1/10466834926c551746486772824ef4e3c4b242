@@ -1,0 +1,128 @@
+src/modules/Arrangement/useCases/comping/__tests__/prepareMidiTakeSourceCapture.spec.ts
+  s_ba80576e6f5cb5::t_69f1abaa957be4 3
+  s_ba80576e6f5cb5::t_c7509cb6b0a3fc 9,168,178,183,185-198,208,261-283
+src/modules/MIDI/stores/frozenMidiTakeRepeats.ts
+  s_ba80576e6f5cb5::t_dc4e9bc3bf04e1 1-2,5-15,18,20,22-24,26-27,30-38,40-41,44,47-51,55-66,72,76-78,81,86-92,95-96
+src/utils/handlerContract.ts
+  s_ba80576e6f5cb5::t_a0ac69c492cc97 714
+  s_ba80576e6f5cb5::t_fe739187770e7a 712
+  s_ba80576e6f5cb5::t_e6ab537916996c 713,715
+src/modules/Arrangement/useCases/comping/captureTakeReKeyTransitions.ts
+  s_ba80576e6f5cb5::t_34e7cc6eb5589d 181-192,207,217,220,227,236,238
+  s_ba80576e6f5cb5::t_c2aeca0d037d43 198
+  s_ba80576e6f5cb5::t_76af63b202dc96 193-197
+  s_ba80576e6f5cb5::t_0b35c9acf80905 199-201,204-206
+  s_ba80576e6f5cb5::t_907b1d6afa6568 208-210,214-216
+  s_ba80576e6f5cb5::t_1f051c47d8433d 218-219
+  s_ba80576e6f5cb5::t_9ff0f767e80092 221-226
+  s_ba80576e6f5cb5::t_0a01fe0abb8c19 228-230,233-235
+  s_ba80576e6f5cb5::t_09f436964422d1 237
+  s_ba80576e6f5cb5::t_d4f4aad08bb4be 239-240
+  s_ba80576e6f5cb5::t_068280d705fea7 14,202-203,211-213,231-232,244-246,248,261,270-271,278,281,283,321-323,328,332-334
+src/modules/Transport/useCases/scheduling/scheduleMidiNotes.ts
+  s_ba80576e6f5cb5::t_5f5984f0421066 863,867
+  s_ba80576e6f5cb5::t_89677cf1b30ecf 1018
+src/modules/Transport/useCases/scheduling/prepareYeastTrackNotes.ts
+  s_ba80576e6f5cb5::t_df93b7c3132eb0 398-402,404,412
+src/modules/MIDI/stores/isFrozenMidiTakeSource.ts
+  s_ba80576e6f5cb5::t_c5eb32c1c102b5 16,20,35
+  s_ba80576e6f5cb5::t_f08460ad134612 21-23,25-26,29-32
+  s_ba80576e6f5cb5::t_e4f539256efbc2 51
+  s_ba80576e6f5cb5::t_3e8f3a8ca2b2db 33-34
+src/modules/MIDI/stores/index.ts
+  s_ba80576e6f5cb5::t_01551a4b937270 35
+src/modules/MIDI/stores/__tests__/frozenMidiTakeRepeats.spec.ts
+  s_ba80576e6f5cb5::t_98e3ffd5544d58 3,22-23,33-40,43-44,46-47,50-51,53,55-57,61-64,68-72,74-78
+  s_ba80576e6f5cb5::t_aa8ea44af54d68 79-80
+src/modules/MIDI/stores/projectFrozenMidiTakeWindow.ts
+  s_ba80576e6f5cb5::t_3304f7325a9618 130
+  s_ba80576e6f5cb5::t_91f59d09c8d3ab 1,35,73-75,84,92-96,103-109,112-116,121,126-127,129,132-137,142,148-157,201,216,218
+  s_ba80576e6f5cb5::t_f408cc92263a1f 12,21-22,30-34
+  s_ba80576e6f5cb5::t_df29bda510d97f 68-72,76-83,85-91,102,110-111,117-120,122-125,128,131,138-141,143-147,158-175,177-182,190,198,222-225
+  s_ba80576e6f5cb5::t_c3bdffd2cd767c 97-101
+  s_ba80576e6f5cb5::t_86b9ca9871c202 36
+  s_ba80576e6f5cb5::t_a35e18bcaf7ba0 226-228
+  s_ba80576e6f5cb5::t_689abe107c44ca 229-230,233,243,245-250
+src/modules/Arrangement/useCases/comping/boundMidiTakeSourceAtDeletedSpan.ts
+  s_0314bb17e5dee3::t_4993c4aa6f1b7f 1-39
+src/modules/AudioEngine/useCases/livePlayback/__tests__/projectLiveMidiProgramme.spec.ts
+  s_7a8e1107313040::t_45773d71b46228 369-370
+src/modules/AudioEngine/useCases/livePlayback/projectLiveMidiProgramme.ts
+  s_fec7059b7a251c::t_8a09c0f9db4ff2 295,299
+src/modules/Command/useCases/versionedCommandArgumentKeys.ts
+  s_0314bb17e5dee3::t_a20b58a6b41fde 951-952
+src/modules/TimelineEditor/presentations/helpers/__tests__/projectPianoRollTakeNotes.spec.ts
+  s_9091c7fb2989db::t_b3903a7510b320 47-48,52-53,60-61,64-65,68-69,73,77-78,83,87,91
+src/modules/Transport/useCases/scheduling/__tests__/scheduleMidiNotes.spec.ts
+  s_7a8e1107313040::t_15123ad036992c 1065-1066,1188-1251,1253,5033
+src/modules/Transport/useCases/scheduling/resolveFrozenMidiControllerPasses.ts
+  s_fec7059b7a251c::t_2f6318a7c57713 17,25
+src/modules/Arrangement/handlers/recording/__tests__/loopRecordedInsideLoop.integration.spec.ts
+  s_ba80576e6f5cb5::t_6436f78f4050b7 631,652,671-673,675-705,707-714,734,738-822,832
+src/modules/AudioEngine/useCases/offlineRender/__tests__/scheduleTrackClips.spec.ts
+  s_ba80576e6f5cb5::t_d5f70f108b78c5 399-400,426,509,928-929,944-1005
+src/modules/AudioEngine/useCases/offlineRender/scheduleTrackClips.ts
+  s_ba80576e6f5cb5::t_98669c102e9a29 79,82,881-883,898,1094-1096,1110
+src/modules/MIDI/stores/__tests__/isFrozenMidiTakeSource.spec.ts
+  s_ba80576e6f5cb5::t_477ea1c2883ec2 59-61,63,65-72,76,84-87
+src/modules/MIDI/useCases/midiClipData/__tests__/projectFrozenMidiTakeWindow.spec.ts
+  s_ba80576e6f5cb5::t_5c806f381df460 6,8,51,59-63,66,68-69,71,73-75,85-87,122,168-174,226,233,256,258,261,268,275,282,288-293,298,302-305,316,322,361,376-382,392-395,412,429,434-435,439,442-443,452,457,461,465,471-580
+src/modules/TimelineEditor/presentations/helpers/__tests__/editPianoRollTakeNote.integration.spec.tsx
+  s_ba80576e6f5cb5::t_7224ba37dc2439 96-98,155,641,683,701
+src/modules/TimelineEditor/presentations/helpers/projectPianoRollTakeNotes.ts
+  s_ba80576e6f5cb5::t_1e88a2b74381ac 7,22-23,68-69,99,107-116,182,188,197,203-205,249
+src/modules/TimelineEditor/presentations/views/ClipView/__tests__/PianoRoll.spec.tsx
+  s_ba80576e6f5cb5::t_1bd6f5185154fe 293-294
+src/modules/Transport/useCases/scheduling/__tests__/resolveChannelBendClips.spec.ts
+  s_ba80576e6f5cb5::t_d3f1cf60978d8f 50-59
+src/modules/Transport/useCases/scheduling/__tests__/resolveStoredControllerClips.spec.ts
+  s_ba80576e6f5cb5::t_8ac8f0a58b2032 53-62,71-73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f110466834926c551746486772824ef4e3c4b242",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_7a8e1107313040": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "54399ae9-2148-45f8-8043-53b64cc39d76",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_ba80576e6f5cb5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2d4d65f2-3931-48b5-a0a8-a4d86a7bd0a7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_fec7059b7a251c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a7e284f4-0d83-40f5-8212-419d6ca3c2d5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
