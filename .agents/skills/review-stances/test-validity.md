@@ -2617,3 +2617,12 @@ A parametrised case must not loop heavy work inside its body. Put the product in
 case's cost fits the timeout and a failure names its combination. When reviewing an `it.each`, look
 for `for` loops, `forEach` or nested tables in the case body that multiply its renders, decodes or
 fixtures.
+
+## Standing probe: maintained editor E2E must admit its subject and observe it (#1536, #1590)
+
+The MIDI and expression coverage escaped because its outcomes could pass without the editor.
+Create the asserted track and clip deterministically, then require editor admission before
+interacting. Each advertised outcome needs a visible product readout or control state that fails
+if the deciding canvas or selector is removed; optional locators and early successful returns are
+not evidence. Playback evidence must observe two distinct valid post-start Bars.Beats.Ticks
+positions, since one non-start sample can come from a scheduler that emits only one tick.

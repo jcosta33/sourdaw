@@ -4,10 +4,7 @@ Orchestral multi-sample acoustic instrument engine (strings, brass, woodwinds, p
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `configureLevainZoneTableBuilder`, `getDecodedBankDiagnostics`, `getLevainArticulationId`, `commitLevainDeviceState`, `hydrateLevainStateFromProject`, `initLevainDeviceStatePersistence`, `prepareOfflineLevain`, `registerLevainDevice`, `unregisterLevainDevice`.
-- **Stores** (`stores/index.ts`): `defaultLevainState`, `levainStore`, `setEngineReady`, `LevainState`.
-- **Views** (`presentations/views/index.ts`): `LevainPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

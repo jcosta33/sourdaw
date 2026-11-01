@@ -4,10 +4,7 @@ Mastering and spectral shaping suite (parametric EQ, dynamic EQ, multiband dynam
 
 ## Public Contract Surface
 
-- **Use Cases** (`useCases/index.ts`): `prepareOfflineProof`, `registerProofDevice`, `unregisterProofDevice`, `syncFullPatch`.
-- **Stores** (`stores/index.ts`): `proofStore`, `updateProofMeters`, `clearProofMeters`.
-- **Views** (`presentations/views/index.ts`): `ProofPanel`.
-- **Events** (`events/index.ts`): No public events.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

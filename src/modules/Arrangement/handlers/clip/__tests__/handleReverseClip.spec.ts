@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import { resolveClipLoopOriginAdvance } from '#/utils/clipLoopOrigin';
 
 import { handleRestoreReversedClip } from '../handleRestoreReversedClip';
@@ -39,6 +40,11 @@ vi.mock('#/modules/Transport/stores', () => ({
         },
     },
     readTempoAtBeat: ({ beat }: { beat: number }) => mocks.readTempoAtBeat({ beat }),
+    // A flat map at the transport tempo.
+    readSecondsAtBeat: ({ beat }: { beat: number }) => (beat * 60) / mocks.transportTempo,
+    readBeatAtSamples: () => {
+        throw new Error('reverse never maps source seconds back to beats');
+    },
 }));
 vi.mock('../../../stores/updateClipInStore', () => ({
     updateClipInStore: mocks.updateClipInStore,
@@ -539,5 +545,244 @@ describe('handleReverseClip', () => {
 
     it('is undoable', () => {
         expect(handleReverseClip.undoable).toBe(true);
+    });
+
+    describe('canonical source entry', () => {
+        type LiveClip = {
+            id: string;
+            type: 'audio';
+            name: string;
+            audioBufferId: string;
+            startBeat: number;
+            endBeat: number;
+            fadeInBeats: number;
+            fadeOutBeats: number;
+            audioOffsetBeats?: number;
+            audioOffsetSeconds?: number;
+            audioUnwrappedOffsetSeconds?: number;
+            audioLoopStartSeconds?: number;
+            audioLoopPassEntrySeconds?: number;
+            audioLoopPassOriginBeat?: number;
+            loopEnabled?: boolean;
+            loopLength?: number;
+            loopOriginBeat?: number;
+        };
+
+        function readerEntrySeconds(clip: LiveClip): number {
+            const segment = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats: clip.endBeat - clip.startBeat,
+                iterationStartBeat: clip.startBeat,
+                iterationEndBeat: clip.endBeat,
+                stretchRatio: 1,
+                tempoAtClipStart: mocks.transportTempo,
+                secondsAtBeat: (beat) => (beat * 60) / mocks.transportTempo,
+            })[0];
+            if (!segment) {
+                throw new Error('the readers project no segment for the clip');
+            }
+            return segment.sourceStartSeconds;
+        }
+
+        // 60 BPM, a 4 s buffer: the clip [0, 1) enters at 0.25 s and reads to
+        // 1.25 s, so the mirrored entry is 4 − 1.25 = 2.75 s.
+        const originalClip: LiveClip = {
+            id: 'c1',
+            type: 'audio',
+            name: 'Verse',
+            audioBufferId: 'buffer-1',
+            startBeat: 0,
+            endBeat: 1,
+            fadeInBeats: 0.25,
+            fadeOutBeats: 1.5,
+            audioOffsetBeats: 1,
+            audioOffsetSeconds: 0.25,
+            audioUnwrappedOffsetSeconds: 0.5,
+        };
+        const reversedClip: LiveClip = {
+            ...originalClip,
+            name: 'Verse (reversed)',
+            audioBufferId: 'reversed-command-1',
+            fadeInBeats: 1.5,
+            fadeOutBeats: 0.25,
+            audioOffsetBeats: 2,
+            audioOffsetSeconds: 2.75,
+            audioUnwrappedOffsetSeconds: 2.75,
+        };
+
+        function describeReverse() {
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [originalClip] }] });
+            const description = handleReverseClip.describe({
+                type: 'reverseClip',
+                payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+            });
+            const inverse = description.inverseAction;
+            const redo = description.redoAction;
+            if (!inverse || inverse.type !== 'restoreReversedClip') {
+                throw new Error('expected a restoreReversedClip inverse');
+            }
+            if (!redo || redo.type !== 'restoreReversedClip') {
+                throw new Error('expected a restoreReversedClip redo');
+            }
+            return { inverse, redo };
+        }
+
+        it('carries the original clock in the inverse and the mirrored clock in the redo', () => {
+            const { inverse, redo } = describeReverse();
+
+            expect(inverse.payload.audioSource).toEqual({
+                audioOffsetSeconds: 0.25,
+                audioUnwrappedOffsetSeconds: 0.5,
+            });
+            expect(redo.payload.audioSource).toEqual({
+                audioOffsetSeconds: 2.75,
+                audioUnwrappedOffsetSeconds: 2.75,
+            });
+        });
+
+        it('round-trips the readers entry through undo then redo', () => {
+            const { inverse, redo } = describeReverse();
+            let live: LiveClip = reversedClip;
+            mocks.updateClipInStore.mockImplementation(
+                (_clipId: string, updater: (candidate: LiveClip) => LiveClip) => {
+                    live = updater(live);
+                }
+            );
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [live] }] });
+            expect(handleRestoreReversedClip.execute(inverse)).toEqual({ status: 'written' });
+            expect(live).toMatchObject({ audioBufferId: 'buffer-1', audioOffsetSeconds: 0.25 });
+            expect(live.audioUnwrappedOffsetSeconds).toBe(0.5);
+            expect(readerEntrySeconds(live)).toBe(0.25);
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [live] }] });
+            expect(handleRestoreReversedClip.execute(redo)).toEqual({ status: 'written' });
+            expect(live).toMatchObject({ audioBufferId: 'reversed-command-1', audioOffsetSeconds: 2.75 });
+            expect(live.audioUnwrappedOffsetSeconds).toBe(2.75);
+            expect(readerEntrySeconds(live)).toBe(2.75);
+        });
+
+        it.each([
+            'audioUnwrappedOffsetSeconds',
+            'audioLoopStartSeconds',
+            'audioLoopPassEntrySeconds',
+            'audioLoopPassOriginBeat',
+        ] as const)('restores %s absent when the capture lacks it', (field) => {
+            const { inverse } = describeReverse();
+            let live: LiveClip = {
+                ...reversedClip,
+                audioUnwrappedOffsetSeconds: 2.75,
+                audioLoopStartSeconds: 2.75,
+                audioLoopPassEntrySeconds: 2.75,
+                audioLoopPassOriginBeat: 0,
+            };
+            const { [field]: _absent, ...capture } = {
+                audioOffsetSeconds: 0.25,
+                audioUnwrappedOffsetSeconds: 0.5,
+                audioLoopStartSeconds: 0.1,
+                audioLoopPassEntrySeconds: 0.2,
+                audioLoopPassOriginBeat: -1,
+            };
+            mocks.updateClipInStore.mockImplementation(
+                (_clipId: string, updater: (candidate: LiveClip) => LiveClip) => {
+                    live = updater(live);
+                }
+            );
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [live] }] });
+
+            expect(
+                handleRestoreReversedClip.execute({ ...inverse, payload: { ...inverse.payload, audioSource: capture } })
+            ).toEqual({ status: 'written' });
+
+            expect(Object.hasOwn(live, field)).toBe(false);
+            expect(live).toMatchObject(capture);
+        });
+
+        it('restores every provenance field of a looped clip exactly through undo then redo', () => {
+            // 60 BPM, an 10 s buffer: [4, 6) enters at 2 s and reads to 4 s, so
+            // the mirrored head is 6 s and the fresh grid opens there at beat 4.
+            mocks.getCachedAudioBuffer.mockReturnValue({ length: 80, sampleRate: 8 });
+            const clock = {
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 3,
+            };
+            const mirrored = {
+                audioOffsetSeconds: 6,
+                audioUnwrappedOffsetSeconds: 6,
+                audioLoopStartSeconds: 6,
+                audioLoopPassEntrySeconds: 6,
+                audioLoopPassOriginBeat: 4,
+            };
+            const looped: LiveClip = {
+                ...originalClip,
+                startBeat: 4,
+                endBeat: 6,
+                loopEnabled: true,
+                loopLength: 2,
+                loopOriginBeat: 3,
+                ...clock,
+            };
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [looped] }] });
+            const description = handleReverseClip.describe({
+                type: 'reverseClip',
+                payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+            });
+            const inverse = description.inverseAction;
+            const redo = description.redoAction;
+            if (inverse?.type !== 'restoreReversedClip' || redo?.type !== 'restoreReversedClip') {
+                throw new Error('expected restoreReversedClip inverse and redo');
+            }
+            expect(inverse.payload.audioSource).toEqual(clock);
+            expect(redo.payload.audioSource).toEqual(mirrored);
+            let live: LiveClip = {
+                ...looped,
+                ...mirrored,
+                audioBufferId: 'reversed-command-1',
+                name: 'Verse (reversed)',
+                loopOriginBeat: 4,
+            };
+            mocks.updateClipInStore.mockImplementation(
+                (_clipId: string, updater: (candidate: LiveClip) => LiveClip) => {
+                    live = updater(live);
+                }
+            );
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [live] }] });
+            expect(handleRestoreReversedClip.execute(inverse)).toEqual({ status: 'written' });
+            expect(live).toMatchObject({ ...clock, audioBufferId: 'buffer-1', loopOriginBeat: 3 });
+
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [live] }] });
+            expect(handleRestoreReversedClip.execute(redo)).toEqual({ status: 'written' });
+            expect(live).toMatchObject({ ...mirrored, audioBufferId: 'reversed-command-1', loopOriginBeat: 4 });
+        });
+
+        it('refuses a capture that is not an exact source clock before writing', () => {
+            const { inverse } = describeReverse();
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [reversedClip] }] });
+
+            const result = handleRestoreReversedClip.execute({
+                ...inverse,
+                payload: { ...inverse.payload, audioSource: { audioUnwrappedOffsetSeconds: 1 } },
+            });
+
+            expect(result).toEqual({ status: 'no-write' });
+            expect(mocks.updateClipInStore).not.toHaveBeenCalled();
+        });
+
+        it('leaves a beat-only clip without a captured clock in either direction', () => {
+            const { audioOffsetSeconds: _entry, audioUnwrappedOffsetSeconds: _unwrapped, ...beatOnly } = originalClip;
+            mocks.getTrackStoreState.mockReturnValue({ tracks: [{ id: 't1', clips: [beatOnly] }] });
+
+            const description = handleReverseClip.describe({
+                type: 'reverseClip',
+                payload: { clipId: 'c1', reversedBufferId: 'reversed-command-1' },
+            });
+
+            expect(description.inverseAction?.payload).not.toHaveProperty('audioSource');
+            expect(description.redoAction?.payload).not.toHaveProperty('audioSource');
+        });
     });
 });

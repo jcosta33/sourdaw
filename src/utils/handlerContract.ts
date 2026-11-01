@@ -727,6 +727,17 @@ export type CompTakeLaneSnapshot = {
     baseGapAudioSources?: AudioSourceTile[];
 };
 
+/** An audio clip's canonical source clock, captured whole by an edit's inverse
+ * and redo. Each key absent here is restored absent. */
+export type ClipAudioSourceSnapshot = Pick<
+    ClipStateSnapshot,
+    | 'audioOffsetSeconds'
+    | 'audioUnwrappedOffsetSeconds'
+    | 'audioLoopStartSeconds'
+    | 'audioLoopPassEntrySeconds'
+    | 'audioLoopPassOriginBeat'
+>;
+
 /** Source facets captured by the Arrangement owner before a tempo edit.
  * These are bounded value deltas, never replacement tracks or take lanes. */
 export type TempoAudioClipFieldsSnapshot = Pick<
@@ -2465,6 +2476,10 @@ export type AppAction =
               audioOffsetBeats?: number;
               /** Loop anchor the restore puts back; optional so older undo entries still decode. */
               loopOriginBeat?: number;
+              /** Canonical source clock the restore puts back exactly. Present only for a
+               *  clip carrying `audioOffsetSeconds`; absent leaves the live fields untouched,
+               *  so beat-only clips and older undo entries restore as before. */
+              audioSource?: ClipAudioSourceSnapshot;
               blobs?: KneadPitchBlobSnapshot[];
               contour?: PitchContourSnapshot;
           };
@@ -2551,6 +2566,13 @@ export type AppAction =
                    * live anchor is left untouched.
                    */
                   clipBLoopOriginBeat?: number;
+                  /**
+                   * Clip B's canonical source clock, present only when clip B
+                   * carries `audioOffsetSeconds`. The restore puts it back
+                   * whole; legacy entries without it leave the live clock
+                   * untouched.
+                   */
+                  clipBAudioSource?: ClipAudioSourceSnapshot;
               };
               replacement: {
                   clipAEndBeat: number;
@@ -2560,6 +2582,7 @@ export type AppAction =
                   clipBAudioOffsetBeats?: number;
                   clipBMidiOffsetBeats?: number;
                   clipBLoopOriginBeat?: number;
+                  clipBAudioSource?: ClipAudioSourceSnapshot;
               };
           };
       }

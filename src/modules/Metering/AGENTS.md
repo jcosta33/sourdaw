@@ -8,11 +8,7 @@ Owns real-time visual audio meters, scopes, and spectrum visualizations (peak/RM
 
 ## Public Contract Surface
 
-- **`presentations/views`**: `AnalysisPanel`, `Goniometer`, `LevelMeter`, `LUFSMeter`, `Oscilloscope`, `PhaseCorrelationDisplay`, `SpatialPanner`, `Spectrogram`, `SpectrumAnalyzer`, `Wavetable3D`, `WebGpuSpectrumAnalyzer`.
-- **`useCases`**: None.
-- **`events`**: None.
-- **`stores`**: None.
-- **Handler maps**: None.
+Public surface: `presentations/views/index.ts` only; the module exports no use cases, stores, events or handlers.
 
 ## Key Subsystems
 

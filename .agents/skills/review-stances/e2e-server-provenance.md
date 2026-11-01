@@ -30,3 +30,10 @@ selected local/nightly persistence fixture may build and own its temporary previ
 its listener and output cleanup, and keep shipping builds free of the inspection entry.
 Removing a source dependency changes the tested serving route; it does not identify the
 physical actor behind prior source-graph cancellations.
+
+## Rendered acceptance must come from the lane's own server (escaped via #4032)
+
+Before treating rendered acceptance as evidence for a lane, verify that the served deciding source
+and port belong to that lane. A reused shared dev server does not prove a lane's layout; isolate
+the lane's server without stopping a foreign one. Probe by pointing the acceptance at a server
+serving another checkout: the identity assertion must refuse it.
