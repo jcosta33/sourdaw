@@ -13,7 +13,7 @@ description: >-
 
 The engine executes playback and processing — live timing, graph topology, worklet lifecycle — as a derived projection of project truth. It is never a second source of truth.
 
-## Core rules
+## Rules
 
 ### 1. One live `AudioContext`
 
@@ -21,17 +21,23 @@ Root sources, worklets, buses, automation targets, metering, and monitor output 
 
 **Why:** separate live contexts cannot share a clock or graph; they drift and double-allocate hardware buffers.
 
+**Enforced by:** review only.
+
 ### 2. Custom real-time DSP runs in `AudioWorklet`
 
-Never `ScriptProcessorNode`. Worklet code stays isolated from app modules, helpers, and the desktop bridge. The depcruise `worklets-no-*` rules are **error** but match `src/modules/<M>/worklets/**` only; processors under `public/audio/worklets/` fall outside them, so nothing checks those and the isolation there rests on you.
+Never `ScriptProcessorNode`. Worklet code stays isolated from app modules, helpers, and the desktop bridge. The depcruise `worklets-*` rules are **error** but match `src/modules/<M>/worklets/**` only; processors under `public/audio/worklets/` fall outside them, so nothing checks those and the isolation there rests on you.
 
 **Why:** `ScriptProcessorNode` runs on the main thread; worklets run on the audio render thread and must stay isolated.
+
+**Enforced by:** dependency-cruiser `worklets-no-module-runtime-imports` and `worklets-no-app-helper-or-desktop-ipc` for `src/modules/<M>/worklets/**` only; `ScriptProcessorNode` and `public/audio/worklets/` isolation are review only.
 
 ### 3. Continuous control uses `AudioParam`
 
 Where an `AudioParam` can drive the value, use it. Never simulate sample-accurate control with React state, UI timers, or polling loops.
 
 **Why:** `AudioParam` is scheduled on the audio thread with sample accuracy; main-thread timers cannot be.
+
+**Enforced by:** review only (probe: `review-stances/audio-param-frame-timing.md`).
 
 ### 4. Parameter changes are not topology changes
 
@@ -40,11 +46,15 @@ Where an `AudioParam` can drive the value, use it. Never simulate sample-accurat
 
 **Why:** routing a hot parameter gesture through a graph rebuild is the most common engine performance bug.
 
+**Enforced by:** review only.
+
 ### 5. Reconcile, never recreate
 
 Update the changed parameter, the changed routing edge, the affected nodes. Never "something changed → rebuild the engine".
 
 **Why:** a blanket rebuild tears down live nodes mid-playback and drops expensive runtime state.
+
+**Enforced by:** review only.
 
 ### 6. Offline export is a separate deterministic path
 
@@ -52,13 +62,15 @@ Rebuild the graph from project truth. Never piggyback on live playback state or 
 
 **Why:** the live engine carries transient runtime state; reusing it makes exports non-deterministic.
 
+**Enforced by:** review only.
+
 ### 7. RT-adjacent paths forbid the slow world
 
 Never on an RT-adjacent path: unbounded allocation, locks, DOM/React updates, filesystem/network I/O, desktop bridge calls, JSON parse, noisy logging, create/destroy churn in hot loops. Schedule with look-ahead or equivalent. Never bind audio correctness to React render, mount order, rAF, or visibility.
 
-For wasm-bindgen DSP, slice arguments allocate and copy in generated glue even when the TypeScript call site creates no arrays. Expose fixed input pointers and a numeric frame-count process ABI, validate every channel span before touching linear memory, cache typed views by memory-buffer identity, and refresh them both before input copy and after processing can grow memory. Rust write-pointer exports must take exclusive access and derive `*mut T` from `as_mut_ptr`; native parity code must never cast an `as_ptr`-derived `*const T` to mutable. Prove shipped steady state by wrapping the allocator export of the actual committed WASM module; a mock cannot observe generated marshalling.
-
 **Why:** a missed audio deadline is an audible dropout; UI timing is best-effort and pausable.
+
+**Enforced by:** review only.
 
 ### 8. Engine executes; project truth decides
 
@@ -67,37 +79,31 @@ For wasm-bindgen DSP, slice arguments allocate and copy in generated glue even w
 
 Latency-compensation values come from project, plugin, or routing truth; applying them to live playback is engine work.
 
-UI displays summaries and requests changes via commands. It never owns playback phase, playhead progression, loop execution, or scheduling boundaries. Presentation must not import engine/runtime (`presentation-no-engine-runtime-imports`); React stays in presentation (`react-only-in-presentation`).
+UI displays summaries and requests changes via commands. It never owns playback phase, playhead progression, loop execution, or scheduling boundaries.
 
 **Why:** conflating runtime handles with project meaning makes save/load and collaboration impossible.
 
+**Enforced by:** dependency-cruiser `presentation-no-engine-runtime-imports` and `react-only-in-presentation`.
+
 ### 9. Recording rings publish a cumulative, versioned position
 
-A recording worklet must never publish a signed 32-bit cursor as the history
-contract. Publish an odd sequence before overwriting ring data, then the full
-nonnegative cumulative sample count, then an even sequence. A worker copies
-only an interval bracketed by the same stable sequence and cumulative count;
-it retries an in-progress or changed copy and abandons a lapped interval rather
-than writing substituted PCM. Test real 128-frame writes across signed and
-unsigned word rollover, capacity minus one/exact/plus one, and a writer paused
-inside the consumer copy.
+A recording worklet must never publish a signed 32-bit cursor as the history contract. Publish an odd sequence before overwriting ring data, then the full nonnegative cumulative sample count, then an even sequence. A worker copies only an interval bracketed by the same stable sequence and cumulative count; it retries an in-progress or changed copy and abandons a lapped interval rather than writing substituted PCM.
 
-Stopping has the same ownership fence: accept only the captured session's
-producer-stop acknowledgment, make one final worker drain against that count,
-and keep the original flush deadline armed through acknowledgment. A missing
-acknowledgment or flush cleans that exact captured session without touching a
-successor for the same track.
+Stopping has the same ownership fence: accept only the captured session's producer-stop acknowledgment, make one final worker drain against that count, and keep the original flush deadline armed through acknowledgment. A missing acknowledgment or flush cleans that exact captured session without touching a successor for the same track.
 
-Recording artifacts need identity independent of wall-clock time. Generate one
-cryptographically unique temp-file name at worker initialization, then verify
-two isolated workers sharing a filename-keyed staged OPFS at one timestamp:
-each delivered WAV retains its own PCM and removing one staging entry cannot
-remove the other's.
+Recording artifacts need identity independent of wall-clock time: generate one cryptographically unique temp-file name at worker initialization.
 
-**Why:** a pre-copy cursor check can admit mixed PCM, and a signed or low-word
-rollover can make a full ring turn look empty. Clearing the stop deadline on
-the producer acknowledgment allows a stalled final drain to retain the input
-session indefinitely.
+**Why:** a pre-copy cursor check can admit mixed PCM, and a signed or low-word rollover can make a full ring turn look empty. Clearing the stop deadline on the producer acknowledgment allows a stalled final drain to retain the input session indefinitely.
+
+**Enforced by:** `src/modules/AudioEngine/worklets/__tests__/recordingProcessor.spec.ts` (signed and unsigned boundary publication); the worker copy, stop fence, and artifact identity are review only (probes: `review-stances/session-lifecycle.md`).
+
+### 10. wasm-bindgen DSP uses a pointer and frame-count ABI
+
+For wasm-bindgen DSP, slice arguments allocate and copy in generated glue even when the TypeScript call site creates no arrays. Expose fixed input pointers and a numeric frame-count process ABI, validate every channel span before touching linear memory, cache typed views by memory-buffer identity, and refresh them both before input copy and after processing can grow memory. Rust write-pointer exports must take exclusive access and derive `*mut T` from `as_mut_ptr`; native parity code must never cast an `as_ptr`-derived `*const T` to mutable. Prove shipped steady state by wrapping the allocator export of the actual committed WASM module; a mock cannot observe generated marshalling.
+
+**Why:** generated glue allocates on the audio thread (rule 7) where the call site looks allocation-free, and a stale typed view reads detached memory after growth.
+
+**Enforced by:** review only.
 
 ## Out of scope
 
@@ -109,3 +115,4 @@ Native plugin host isolation beyond the shared RT rules — see `plugin-hosting`
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — channels and engine/executor model.
 - [src/modules/AudioEngine/AGENTS.md](../../../src/modules/AudioEngine/AGENTS.md) — WASM pipeline and worklet wiring.
 - `.dependency-cruiser.cjs` — `worklets-*`, `presentation-no-engine-runtime-imports`, `react-only-in-presentation`.
+- Review probes for recording rings, stop fence, and artifact identity: `../review-stances/session-lifecycle.md`.

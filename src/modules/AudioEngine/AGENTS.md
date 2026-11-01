@@ -8,11 +8,7 @@ Owns the WebAudio runtime graph (`AudioContext`, track/bus strips, send/sidechai
 
 ## Public Contract Surface
 
-- **`useCases`**: Audio context & engine lifecycle (`initializeAudioEngine`, `getAudioContext`, `audioEngine`, `getAudioTime`, `getEngineState`, `getEngineDiagnostics`, `getEngineHealth`, `isEngineAudioAvailable`, `refreshEngineRtDiagnostics`, `resetAudioGraph`, `resumeEngine`, `waitForDevices`), audio buffer cache (`audioBufferCache`, `cacheAudioBuffer`, `getCachedAudioBuffer`, `decodeAudioFile`, `decodeAudioFileBuffer`), recording feeds (`startAudioRecording`, `stopAudioRecording`, `startInputMonitoring`, `stopInputMonitoring`, `stopTrackInputMonitoring`, `reconcileAutoInputMonitoring`, `suspendAutoInputMonitoring`, `syncAutoInputMonitoring`), Levain zone tables built off the render thread (`buildLevainZoneTables`), device controls (`buildDeviceChain`, `updateDeviceParam`, `updateDevicePatch`, `scheduleDeviceParam`, `scheduleDeviceKeyOn`, `scheduleDeviceKeyOff`), track/bus audio controls (`setTrackGain`, `setTrackPan`, `scheduleTrackGain`, `scheduleTrackPan`, `ensureTrackStrip`, `removeTrackStrip`, `deactivateTrackStrip`, `ensureBusStrip`, `removeBusStrip`, `setSend`, `wireSidechainRoute`), offline rendering (`renderOffline`, `exportStems`, `renderTrackSubgraphOffline`), latency compensation (`getTrackLatency`, `getCompensationDelay`, `getSidechainKeyDelay`, `getLatencyReport`, `reportLatency`), graph compilation & delta (`compileAudioGraphTopology`, `applyRuntimeGraphDelta`, `compileRuntimeGraphDelta`), and handler map `getFinalFeatureHandlers`.
-- **`events`**: `AudioDeviceLoadedPayload`, `AudioDeviceRemovedPayload`.
-- **`stores`**: `audioBufferCache`, `audioGraphStore` (`defaultAudioGraphState`), `audioRecordingStore`, `adjustmentApplicationStore`.
-- **`presentations/views`**: `AudioDevicePicker`, `MidiDevicePicker`, `PluginBrowser`, `PluginScanSettings`.
-- **Handler maps**: `getFinalFeatureHandlers`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `events/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

@@ -4,7 +4,7 @@ Workspace sidebar presentation container and navigation tabs (Project, Instrumen
 
 ## Public Contract Surface
 
-- `presentations/views`: `Sidebar`, `SidebarPanelActions`.
+Public surface: `presentations/views/index.ts`.
 
 ## Key Subsystems
 

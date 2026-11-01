@@ -4,8 +4,7 @@ Tuner device panel UI and real-time pitch telemetry ingestion (detected note, ce
 
 ## Public Contract Surface
 
-- `stores`: `tunerStore`, `updateTunerTelemetry`.
-- `presentations/views`: `TunerPanel`.
+Public surface: `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 

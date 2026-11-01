@@ -221,6 +221,31 @@ describe('syncKneadToEngine', () => {
         expect(lastPushedStartSeconds()).toBeCloseTo(1, 12);
     });
 
+    /**
+     * A canonical clip's signed source entry is authoritative over the legacy
+     * beat offset the live scheduler and offline projector no longer read, so
+     * the anchor must follow the entry or the blobs land on another passage.
+     */
+    it('pulls the anchor back by the canonical source entry, not the legacy beat offset', () => {
+        tempoMapStore.set({ changes: TEMPO_CHANGES });
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 12, endBeat: 16, audioOffsetBeats: 2, audioOffsetSeconds: 3.25 }],
+        } as unknown as Track);
+
+        // Song second 8 at beat 12, entering 3.25 s into the source.
+        expect(lastPushedStartSeconds()).toBeCloseTo(8 - 3.25, 12);
+    });
+
+    it('reads a canonical zero entry as an unshifted anchor even beside a legacy beat offset', () => {
+        setTrack({
+            ...trackWithKnead(),
+            clips: [{ id: 'clip-1', startBeat: 2, endBeat: 6, audioOffsetBeats: 2, audioOffsetSeconds: 0 }],
+        } as unknown as Track);
+
+        expect(lastPushedStartSeconds()).toBeCloseTo(1, 12);
+    });
+
     it('treats a clip with no audio offset as an unshifted anchor', () => {
         setTrack({
             ...trackWithKnead(),

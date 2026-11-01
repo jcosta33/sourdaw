@@ -1081,3 +1081,70 @@ pending-seam pass index must count the late wrap. On the next tick, the next pas
 must be requested before its seam frame, and it must land exactly on that frame. Reverting the
 post-wrap seam projection in `startPlayheadScheduler.ts` must fail both cases in
 `startPlayheadSchedulerLoopSeamTiming.spec.ts`.
+
+## Standing probes: AI action bridge, prompt segmentation and request authority
+
+Moved from the `llm-action-bridge` skill. Each probe names the input that breaks and the mutation
+that should fail the named check.
+
+### Execution context must reach every dispatcher route (PR #1949, PR #2988)
+
+The public execution-context signal and batch propagation had direct-handler coverage, and
+deferred-work telemetry came later, but the single-action dispatcher entrypoint was uncovered.
+Drive public command execution context through single and batch dispatch, and through both runtime
+and project handlers. Prove cancellation and deferred-work attempts at a real consumer, not a
+forwarding mock; dropping the context on the single-action entrypoint alone must fail a case.
+
+### Segmentation must keep each action's qualifiers
+
+Segment a multi-action prompt and require each action to retain its own exclusions, qualifiers and
+reference ambiguity without borrowing adjacent action text. Vary connectors and punctuation. Mutate
+literal-ID versus display-name evidence and Unicode-overlap evidence: an exact identifier must never
+erase genuine ambiguity, and a clause boundary must never widen a destructive action or collapse
+competing targets.
+
+### Deterministic admission needs a grammar that consumes the whole request
+
+Test a complete exact command across the registry before applying open-ended complexity heuristics.
+Reserved context references resolve before unquoted display names. An unquoted multiword value is
+semantic input unless a bounded grammar proves the whole value literal. Fuzzy search rank, partial
+text, context availability or the first matching registry entry is discovery evidence only: feed one
+and require a refusal. Once a partial proposal reaches validation, approval and receipts, the omitted
+intent cannot be reconstructed and an ambiguity can look like a deliberate edit.
+
+### Source authority and protections come from the original request text
+
+- Masked text supports intent discovery and segmentation only; it never proves literal source syntax
+  or target authority. Deterministic, direct and compiler-backed proposals derive source authority
+  from the same original text and the same complete selection set; a primary selection field does not
+  prove the selection is unique. Compiler-resolved identities validate selector structure only.
+- Reserved selection phrases apply only outside quotes, so quoted project names stay literal. Parse
+  quote boundaries once with an offset-preserving scanner that treats in-word apostrophes as content.
+- Extract preservation clauses quote-aware from the original whole request, resolve every bounded
+  list member independently while retaining whole-name evidence, and conservatively union every
+  protected candidate. An incomplete explicit protection is a rejection, never an empty permission
+  set. Enforce protections after final target resolution including compiler overrides, and carry
+  protected objects into the application-owned proposal scope.
+- Build project-reference masks from immutable original-text spans and render them once; a generated
+  intent marker must never become evidence for a later reference match. Where a grammar permits an
+  optional connector, classify source and value from one quote-aware original-text parse, and keep
+  semantic whitespace inside a protection reference without joining separate punctuation-bounded
+  clauses.
+- When a free-form value can contain the connector that separates a target from that value,
+  enumerate whitespace-delimited, quote-aware source boundaries and ground each source prefix through
+  the canonical reference resolver. Reference evidence must consume the complete source prefix,
+  including a complete known owner qualifier; a contained name is insufficient. Admit only one
+  uniquely grounded source-and-value interpretation, and never let a provider target choose between
+  competing boundaries.
+
+A project-name placeholder can resemble executable grammar, and a qualifier split away from an
+action still limits what the whole request authorizes.
+
+## Standing probe: MIDI note-correlation regressions must cross the rack boundary
+
+Moved from the `testing-file-layout` skill. When a MIDI transform or filter stores a Note On
+decision for a later Note Off, drive supplied `noteInstanceId` values through `MidiRack`. Attack one
+equal-pitch note, change the deciding parameter while it remains held, then attack and release a
+second identity before the first. Assert the emitted identity and the transformed pitch or
+suppression. Replace instance correlation with channel/pitch FIFO: the case must fail. Keep
+identityless FIFO coverage separate.
