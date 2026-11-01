@@ -19,11 +19,13 @@ import { previewMidiOverlay } from '../agentDomainPreview/previewMidiOverlay';
 import { resolveAgentDomainPreviewSupport } from '../agentDomainPreview/resolveAgentDomainPreviewSupport';
 import { resolveAgentPreviewDomains } from '../agentDomainPreview/resolveAgentPreviewDomains';
 import { compileAgentActionExecution } from '../compileAgentActionExecution';
+import { compilePlannedActionCommandBatch } from '../compilePlannedActionCommandBatch';
 
 import {
     configureAiWorkflowCommandCheckpointRuntime,
     resetAiWorkflowCommandCheckpointRuntime,
 } from './aiWorkflowCommandCheckpointRuntime';
+import { configuredLiteralMetricState } from './metricGoalWorkflowFixture';
 
 vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     ...(await importOriginal<typeof import('#/modules/AudioEngine/useCases')>()),
@@ -517,17 +519,23 @@ describe('agent domain preview adapters', () => {
             playheadPosition: 0,
         };
 
-        function compile(action: AppAction, mode: 'apply' | 'preview') {
-            return compileAgentActionExecution({
+        function compile(action: AppAction, mode: 'apply' | 'preview', intent: string) {
+            const commandInput = {
                 actions: [action],
                 actionLabels: ['Preview gate action'],
                 context,
                 group: { groupId: 'group-preview-gate', groupLabel: 'Preview gate' },
-                intent: 'Exercise the preview gate',
-                mode,
+                intent,
                 projectRevision: captureProjectRevision(),
-                requiresConfirmation: false,
                 runId: 'run-preview-gate',
+            };
+            // Domain preview support is separate from positive whole-request literal admission.
+            const prepared = compilePlannedActionCommandBatch({ ...commandInput, autoCommit: false });
+            return compileAgentActionExecution({
+                ...commandInput,
+                mode,
+                requiresConfirmation: false,
+                metricGoalState: configuredLiteralMetricState(prepared.commandBatch),
             });
         }
 
@@ -563,7 +571,7 @@ describe('agent domain preview adapters', () => {
         });
 
         it('escalates an allowed batch whose preview domain is unsupported to explicit confirmation', () => {
-            const compiled = compile(trimClipStart, 'apply');
+            const compiled = compile(trimClipStart, 'apply', 'Trim Loop clip start to beat 1');
 
             expect(compiled.requiresConfirmation).toBe(true);
             expect(compiled.allowApproval).toBeNull();
@@ -571,7 +579,7 @@ describe('agent domain preview adapters', () => {
         });
 
         it('leaves an allowed batch whose preview domain is supported on the auto-commit path', () => {
-            const compiled = compile(addDevice, 'apply');
+            const compiled = compile(addDevice, 'apply', 'Add a Crust device to Lead');
 
             expect(compiled.requiresConfirmation).toBe(false);
             expect(compiled.allowApproval).not.toBeNull();
@@ -579,7 +587,7 @@ describe('agent domain preview adapters', () => {
         });
 
         it('leaves preview mode unconfirmed when a domain preview is unsupported', () => {
-            const compiled = compile(trimClipStart, 'preview');
+            const compiled = compile(trimClipStart, 'preview', 'Trim Loop clip start to beat 1');
 
             expect(compiled.requiresConfirmation).toBe(false);
             expect(compiled.interactionMode).toBe('preview');

@@ -12,6 +12,8 @@ import { materializeActionStateGuards } from '../materializeActionStateGuards';
 import { parsePromptToActions } from '../parsePromptToActions';
 import { stampProcessingOnlyParameterPolicy } from '../stampProcessingOnlyParameterPolicy';
 
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
+
 vi.mock('../llmOrchestration/inference', async (importOriginal) => {
     const original = await importOriginal<typeof import('../llmOrchestration/inference')>();
     return {
@@ -269,6 +271,10 @@ describe('planner routes that reach the chokepoint', () => {
 
     it('stamps a provider-proposed device parameter edit', async () => {
         const mocked = vi.mocked(generateToolPlanningOutcome);
+        mocked.mockImplementationOnce(async (_system, userMessage, schemas) => ({
+            status: 'complete',
+            toolCalls: literalMetricIntakeTurn(userMessage, schemas),
+        }));
         mocked.mockResolvedValueOnce({
             status: 'complete',
             toolCalls: [

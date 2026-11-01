@@ -15,17 +15,21 @@ function isExactFacetPair(
     laneId: string,
     trackId: string,
     takesKey: string,
-    regionsKey: string
+    regionsKey: string,
+    gapKey: string
 ): boolean {
     // The store decoder enforces exact takes and lawful, sorted comp regions.
     const takes: unknown = Reflect.get(value, takesKey);
     const activeCompRegions: unknown = Reflect.get(value, regionsKey);
-    const skeleton = {
+    const skeleton: Record<string, unknown> = {
         id: laneId,
         trackId,
         takes,
         activeCompRegions,
     };
+    if (Object.hasOwn(value, gapKey)) {
+        skeleton.baseGapAudioSources = Reflect.get(value, gapKey);
+    }
     return decodeExactTakeLaneSnapshots([skeleton]) !== null;
 }
 
@@ -34,7 +38,11 @@ export function isReKeyLaneTransition(value: unknown): value is TakeReKeyLaneTra
         return false;
     }
     if (
-        Reflect.ownKeys(value).length !== RE_KEY_LANE_TRANSITION_KEYS.length ||
+        Reflect.ownKeys(value).some(
+            (key) =>
+                typeof key !== 'string' ||
+                ![...RE_KEY_LANE_TRANSITION_KEYS, 'baseGapAudioSourcesBefore', 'baseGapAudioSourcesAfter'].includes(key)
+        ) ||
         !RE_KEY_LANE_TRANSITION_KEYS.every((key) => Object.hasOwn(value, key))
     ) {
         return false;
@@ -50,7 +58,7 @@ export function isReKeyLaneTransition(value: unknown): value is TakeReKeyLaneTra
         return false;
     }
     return (
-        isExactFacetPair(value, laneId, trackId, 'takesBefore', 'regionsBefore') &&
-        isExactFacetPair(value, laneId, trackId, 'takesAfter', 'regionsAfter')
+        isExactFacetPair(value, laneId, trackId, 'takesBefore', 'regionsBefore', 'baseGapAudioSourcesBefore') &&
+        isExactFacetPair(value, laneId, trackId, 'takesAfter', 'regionsAfter', 'baseGapAudioSourcesAfter')
     );
 }

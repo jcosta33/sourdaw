@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { type Clip, type TakeLaneStoreState, takeLaneStore } from '#/modules/Arrangement/stores';
 import { resolveClipsWithComping } from '#/modules/Arrangement/useCases';
+import { selectMidiNotesForRecordingPass } from '#/modules/MIDI/stores';
 
 import { selectMidiNotesForLoopWindow } from '../selectMidiNotesForLoopWindow';
 
@@ -80,9 +81,9 @@ const NOTES: readonly ScheduledMidiNote[] = Array.from({ length: 16 }, (_, index
     clipId: 'rec-m',
 }));
 
-function selectRegionHead(fragment: Clip): readonly ScheduledMidiNote[] {
+function selectRegionHead(fragment: Clip, notes: readonly ScheduledMidiNote[] = NOTES): readonly ScheduledMidiNote[] {
     return selectMidiNotesForLoopWindow({
-        notes: NOTES,
+        notes,
         iterationStartBeat: fragment.startBeat,
         loopLengthBeats: 4,
         midiOffsetBeats: fragment.midiOffsetBeats ?? 0,
@@ -132,6 +133,36 @@ describe('comped MIDI take fragment window under an anchored looped source', () 
 
         expect(selectRegionHead(anchored[1]!).map((note) => note.id)).toEqual(
             selectRegionHead(unanchored[1]!).map((note) => note.id)
+        );
+    });
+
+    it('carries an unfrozen recorded pass through the real comp resolver into raw note admission', () => {
+        const selectedTake = { ...midiPassTake('pass-3', 8, 8), recordingPassIndex: 1 };
+        takeLaneStore.set({
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [selectedTake],
+                    activeCompRegions: [{ startBeat: 8, endBeat: 12, takeId: selectedTake.id }],
+                },
+            ],
+        });
+        const fragment = resolveClipsWithComping('t1', [midiSource(0)]).find((clip) => clip.regionStartBeat === 8)!;
+        expect(fragment.midiTakeSource).toBeUndefined();
+        expect(fragment.midiTakeRecordingPassIndex).toBe(1);
+        const notes = [
+            { ...NOTES[0]!, id: 'previous-pass', recordingPassIndex: 0 },
+            { ...NOTES[8]!, id: 'selected-pass', recordingPassIndex: 1 },
+            { ...NOTES[8]!, id: 'manual-note' },
+        ];
+        const admitted = selectRegionHead(
+            fragment,
+            selectMidiNotesForRecordingPass(notes, fragment.midiTakeRecordingPassIndex)
+        );
+        expect(admitted.map((note) => note.id)).toEqual(['selected-pass', 'manual-note']);
+        expect(() => selectMidiNotesForRecordingPass([{ ...NOTES[8]!, recordingPassIndex: undefined }], 1)).toThrow(
+            'Invalid MIDI note recording pass index'
         );
     });
 });

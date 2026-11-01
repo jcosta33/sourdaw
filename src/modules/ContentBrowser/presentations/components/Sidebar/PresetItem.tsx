@@ -39,7 +39,7 @@ export const PresetItem = ({
     return (
         <Stack
             gap={1.5}
-            className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer mb-1.5 shadow-sm"
+            className="group rounded-md px-3 py-2.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 cursor-pointer shadow-sm"
             onClick={onClick}
             onContextMenu={onContextMenu}
             title={selectedTrackId ? 'Click to load onto selected track' : 'Click to create a new track'}

@@ -1,6 +1,7 @@
-import { expect, test, type Page, type Locator } from '@playwright/test';
+import { type Page, type Locator } from '@playwright/test';
 import { stringify as superjsonStringify } from 'superjson';
 
+import { expect, test } from './e2eTest';
 import {
     LAUNCH_SCREEN_FIRST_PAINT_TIMEOUT_MS,
     launch_new_project,

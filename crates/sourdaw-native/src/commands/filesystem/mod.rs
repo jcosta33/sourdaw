@@ -2626,7 +2626,9 @@ mod tests {
     fn export_transactions_forged_manifest_is_refused_without_deleting_or_overwriting_it() {
         let dir = TempExportDir::create("forged");
         let private = dir.path("private");
-        drop(ExportFileRegistry::open(&private).unwrap());
+        create_private_state_directory(&private).unwrap();
+        let key: Vec<u8> = (0..32).collect();
+        std::fs::write(private.join("export-files.key"), key).unwrap();
         let victim = dir.path("user.wav");
         std::fs::write(&victim, b"user file").unwrap();
         let record = ExportTempRecord {
@@ -2643,10 +2645,8 @@ mod tests {
         .unwrap();
         let manifest = private.join("export-files.json");
         std::fs::write(&manifest, &forged).unwrap();
-        assert!(ExportFileRegistry::open(&private)
-            .err()
-            .unwrap()
-            .contains("Unauthenticated"));
+        let error = ExportFileRegistry::open(&private).err().unwrap();
+        assert!(error.contains("Unauthenticated"), "{error}");
         assert_eq!(std::fs::read(&victim).unwrap(), b"user file");
         assert_eq!(std::fs::read(&manifest).unwrap(), forged);
     }

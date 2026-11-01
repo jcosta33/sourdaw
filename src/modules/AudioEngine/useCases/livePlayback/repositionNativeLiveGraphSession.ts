@@ -48,6 +48,7 @@ import { armNativeLiveAutomationWriter } from './armNativeLiveAutomationWriter';
 import { currentStripTracks } from './currentStripTracks';
 import { nativeLiveAutomationWriter } from './nativeLiveAutomationWriterState';
 import { nativeLiveGraphSession, queueOnNativeLiveGraphSession } from './nativeLiveGraphSessionState';
+import { nativeRecordingCaptureClockState } from './nativeRecordingCaptureClock';
 import { rearmNativeLiveMidiWriterInPlace } from './rearmNativeLiveMidiWriterInPlace';
 import { reportAttachedPlugins } from './reportAttachedPlugins';
 
@@ -70,15 +71,31 @@ export function repositionNativeLiveGraphSession(
         if (!nativeLiveGraphSession.rolling) {
             return { outcome: 'declined', reason: 'native transport is parked' };
         }
-        const result = await backend.apply({
-            schemaVersion: 1,
-            commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
-        });
+        const captureMutation = nativeRecordingCaptureClockState.beginMutation('locate');
+        let result: Awaited<ReturnType<typeof backend.apply>>;
+        try {
+            result = await backend.apply({
+                schemaVersion: 1,
+                commands: [{ kind: 'set-transport', playing: true, positionSeconds: input.positionSeconds }],
+            });
+        } catch (error) {
+            nativeRecordingCaptureClockState.settleMutation(captureMutation, 'unknown');
+            throw error;
+        }
         reportAttachedPlugins(result);
         if (result.application !== 'applied') {
+            nativeRecordingCaptureClockState.settleMutation(captureMutation, 'rejected');
             // The session and its topology stand: a refused locate means the
             // engine is still where it was, not that the graph went away.
             return { outcome: 'declined', reason: result.reason };
+        }
+        if (nativeRecordingCaptureClockState.settleMutation(captureMutation, 'applied')) {
+            nativeRecordingCaptureClockState.retainAdmission(
+                nativeLiveGraphSession.captureAdmissions.at(-1)?.geometry ?? undefined,
+                result.admittedBatch ?? null,
+                true,
+                captureMutation
+            );
         }
         const pass = nativeLiveAutomationWriter.pass;
         if (pass) {

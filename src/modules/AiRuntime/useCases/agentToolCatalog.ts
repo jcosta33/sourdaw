@@ -29,11 +29,6 @@ import {
 } from '../models/AgentToolCatalogNames';
 import { ANALYSIS_MEASURE_MAX_ID_LENGTH, ANALYSIS_MEASURE_MAX_TARGETS } from '../models/AnalysisMeasureLimits';
 import {
-    ANSWER_RESPOND_MAX_CALL_ID_LENGTH,
-    ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS,
-    ANSWER_RESPOND_MAX_TEXT_LENGTH,
-} from '../models/AnswerRespond';
-import {
     COMMAND_BATCH_DECLINE_KINDS,
     COMMAND_BATCH_DECLINE_MAX_QUESTION_LENGTH,
     COMMAND_BATCH_DECLINE_MAX_QUESTIONS,
@@ -50,6 +45,8 @@ import {
 import { SEMANTIC_COMMAND_LIST_V1_JSON_SCHEMA } from '../models/SemanticCommandList';
 import { PROPOSAL_REFINES_MAX_LENGTH } from '../models/ThreadContext';
 import { type ToolSchema } from '../models/ToolDefinitions';
+
+import { createCanonicalAnswerRespondParameters } from './createCanonicalAnswerRespondParameters';
 
 export {
     AGENT_CAPABILITIES_TOOL_NAME,
@@ -473,19 +470,15 @@ export function getAgentToolCatalogSchemas(): readonly ToolSchema[] {
             },
             ['kind', 'reason', 'questions']
         ),
-        tool(
-            ANSWER_RESPOND_TOOL_NAME,
-            `Answer the request in text instead of changing the project. Use this when the request asks for information or analysis rather than for a change. Before answering a question about the level, tone, dynamics, stereo image or timing of a track, bus, section or the master, call ${ANALYSIS_MEASURE_TOOL_NAME} on that scope and cite the figures it returns. List in evidenceCallIds the callId of every earlier successful call of this run whose receipt the answer relies on. An answer never proposes a change: return this call alone in its turn.`,
-            {
-                text: { type: 'string', minLength: 1, maxLength: ANSWER_RESPOND_MAX_TEXT_LENGTH },
-                evidenceCallIds: {
-                    type: 'array',
-                    maxItems: ANSWER_RESPOND_MAX_EVIDENCE_CALL_IDS,
-                    items: { type: 'string', minLength: 1, maxLength: ANSWER_RESPOND_MAX_CALL_ID_LENGTH },
-                },
+        {
+            type: 'function',
+            function: {
+                name: ANSWER_RESPOND_TOOL_NAME,
+                description:
+                    'Alone, {} enters read-only answering without output or bonus; after frozen intake, {intakeCallId,statements} completes from successful reads. Select closed statements referencing receipt callId; the application owns prose, figures, comparisons and ties. Measured audio requires analysis.measure after intake, matching subject, scope, range and metrics. Recipes are attributed knowledge, not project measurements.',
+                parameters: createCanonicalAnswerRespondParameters(),
             },
-            ['text', 'evidenceCallIds']
-        ),
+        },
         tool(COMMAND_HISTORY_TOOL_NAME, 'Read bounded, revision-bearing command history.', {
             page: {
                 type: 'object',

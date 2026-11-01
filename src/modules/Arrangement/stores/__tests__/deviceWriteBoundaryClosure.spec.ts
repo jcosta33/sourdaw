@@ -528,10 +528,11 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // writes a device.
         'src/modules/AiRuntime/useCases/compilePlannedActionCommandBatch.ts': 7,
         // Count provenance: AC-013 compiles immutable approval and execution
-        // metadata. These references are imports, declarations, calls, and
-        // ReturnType projections around Command envelope compilers; none loads,
-        // hydrates, or writes a device or AudioEngine node.
-        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 10,
+        // metadata. Four additional matches are the private auto-commit batch
+        // helper's declaration, two ReturnType projections, and call. The
+        // versioned Command envelope compiler moved into that helper; none of
+        // these references loads, hydrates, or writes a device or AudioEngine node.
+        'src/modules/AiRuntime/useCases/compileAgentActionExecution.ts': 14,
         'src/modules/AiRuntime/useCases/compileAgentRiskApproval.ts': 1,
         // Count provenance: 0 in code, was 3 — confirmation admission moved to
         // agentRequestOrchestration/resolveConfirmationAdmission (#3048), taking
@@ -548,27 +549,32 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         // and call). These pure helpers compile or admit data into a versioned Command
         // envelope; they do not perform device IO or hydration.
         'src/modules/AiRuntime/useCases/compilePreviewMeasurementProposal.ts': 11,
-        // Count provenance: new file entry, measured 6 — the `compilePreviewMeasurementProposal`
-        // import, module-path literal, call and type-level
+        // Count provenance: measured 7 — the `compilePreviewMeasurementProposal`
+        // import, module-path literal, two calls and type-level
         // `Parameters<typeof compilePreviewMeasurementProposal>` reference, plus the
         // local `compileProposal` declaration and call. The type reference adds no IO;
         // measurement still uses the same grounding and versioned-envelope route, with
         // no device hydration or write.
-        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 6,
+        'src/modules/AiRuntime/useCases/executePreviewMeasurement.ts': 7,
+        // Count provenance: new prefix-preview file has an envelope-compiler
+        // import, type projection and call, plus a local helper declaration and
+        // call. It slices and verifies immutable Command metadata; no device
+        // or AudioEngine write occurs here.
+        'src/modules/AiRuntime/useCases/prepareMetricGoalPreview.ts': 5,
         // Pending-effect continuation records keep only command-envelope types;
         // their two matches are type imports and type projections, never device IO.
         'src/modules/AiRuntime/useCases/createAgentRunPendingEffectContinuation.ts': 2,
         'src/modules/AiRuntime/useCases/issueAgentCommandApprovalBinding.ts': 3,
         'src/modules/AiRuntime/useCases/validateAgentRiskApproval.ts': 7,
         'src/modules/AiRuntime/useCases/prepareAgentRunPendingEffectContinuation.ts': 2,
-        // Count provenance: new file entry, measured 8 — four
-        // `compileAgentRiskApproval` (import, return-type projection, local
-        // annotation, call), two `compilePartialCommandBatchAcceptance` (import
+        // Count provenance: measured 10 — six `compileAgentRiskApproval`
+        // references (import identifier and path, two ReturnType projections,
+        // two calls), two `compilePartialCommandBatchAcceptance` (import
         // and call) and two `compileSelectedSubset` (declaration and call). The
-        // ninth lexical match, `compilePendingActionCommandEnvelopes`, is a
-        // comment recording why an original command's position is its action's.
+        // `compilePendingActionCommandEnvelopes` is mentioned only in a comment
+        // recording why an original command's position is its action's.
         // Re-proposal compiles command batches only; it reaches no device sink.
-        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 8,
+        'src/modules/AiRuntime/useCases/reproposePendingChatActions.ts': 10,
         'src/modules/AiRuntime/useCases/recordAgentRunPendingEffectContinuation.ts': 2,
         // Count provenance: 0 in code, was 2 — pure receipt projection moved to
         // projectAgentRunReceiptSaga (#3052), taking every
@@ -853,7 +859,10 @@ const EXPECTED_SINK_COUNTS: Record<SinkFamily, CountByPath> = {
         'src/modules/AiRuntime/useCases/groundCompiledCommandBatch.ts': 1,
         'src/modules/AiRuntime/useCases/llmOrchestration/inference.ts': 1,
         'src/modules/AiRuntime/useCases/modelProviderProtocol.ts': 3,
-        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 3,
+        // Count provenance: three new matches are the preview-proposal
+        // compiler's import identifier, module path and call. It prepares
+        // immutable Command metadata for proof, not device hydration or a write.
+        'src/modules/AiRuntime/useCases/parsePromptToActions.ts': 6,
         // Count provenance: new file entry, measured 1 — the module path in the
         // compiled-evidence type import from compileArbitraryCommandList. The file
         // splits immutable compiled evidence into slices; no device hydration or write.
@@ -2169,8 +2178,6 @@ describe('device write boundary closure', () => {
         },
     ])('rejects $name through the production closure assertion', ({ path, source }) => {
         const files = readProductionSources(process.cwd());
-        expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(
-            /sink census changed/
-        );
+        expect(() => assertProductionClosure([...files, productionSource(path, source)])).toThrow(path);
     });
 });

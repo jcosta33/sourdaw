@@ -1,4 +1,4 @@
-import bitcrusherRateProcessorUrl from '../../../services/bitcrusherRateProcessor.ts?worker&url';
+import { bitcrusherRateProcessorUrl } from '../../../engine/workletProcessorUrls';
 
 /**
  * Register the bitcrusher's sample-and-hold processor on an offline context.

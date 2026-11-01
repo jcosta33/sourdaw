@@ -179,6 +179,7 @@ import { type Device } from '../../../models/TrackViewTypes';
 import { type NativeGraphTransport } from '../../../repositories/nativeGraph/nativeGraphTransport';
 import { nativeTimelineMaterialLeases } from '../../../repositories/nativeGraph/nativeTimelineMaterialLeases';
 import { type NativeGraphWireBatch } from '../../../repositories/nativeGraph/serializeAudioGraphCommand';
+import { importWorkletProcessor } from '../../../testing/importWorkletProcessor';
 
 import {
     createFixtureAudioBuffer,
@@ -211,7 +212,7 @@ vi.stubGlobal('OfflineAudioContext', harness.OfflineAudioContext);
 // SharedArrayBuffer is available, which it is under Node. Registering the real
 // processor keeps the live topology faithful instead of testing a shape the
 // product never builds.
-await import('../../../services/meteringProcessor');
+await importWorkletProcessor('metering-processor');
 
 const { TrackNode } = await import('../../../engine/TrackNode');
 const { createDeviceReadinessDiagnostics } = await import('../../../engine/deviceReadinessDiagnostics');

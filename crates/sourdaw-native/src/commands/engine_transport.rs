@@ -46,7 +46,9 @@ use daw_engine::transport_map::{
     LoopRegion, TempoMap, TempoSegment, TimeSignatureMap, TimeSignatureSegment, TransportMapError,
     TransportMaps,
 };
-use serde::{Deserialize, Serialize};
+use daw_engine::{CaptureClockQuality, CaptureClockSnapshot};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
 /// One tempo segment of the arrangement's map, in seconds on the engine clock.
@@ -112,6 +114,41 @@ pub struct TransportMapsApplied {
     pub admitted_batch: u64,
 }
 
+/// A held peak as it crosses the JSON bridge.
+///
+/// JSON cannot carry an infinite number, and `serde_json` turns one into
+/// `null`, which the renderer would read as silence. An output that blew up
+/// is a measurement the meter must show, so an infinite peak travels as the
+/// exact string `"Infinity"` and every other peak stays a plain number. The
+/// renderer's `peakLevel` reader is the other half of this rule. Peaks come
+/// from `f32::max` folds, so they are never NaN.
+struct WirePeak(f64);
+
+impl Serialize for WirePeak {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if self.0 == f64::INFINITY {
+            serializer.serialize_str("Infinity")
+        } else {
+            serializer.serialize_f64(self.0)
+        }
+    }
+}
+
+fn serialize_peak<S: Serializer>(peak: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+    WirePeak(*peak).serialize(serializer)
+}
+
+fn serialize_peak_map<S: Serializer>(
+    peaks: &BTreeMap<String, f64>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(peaks.len()))?;
+    for (strip_id, peak) in peaks {
+        map.serialize_entry(strip_id, &WirePeak(*peak))?;
+    }
+    map.end()
+}
+
 /// Where the engine's transport stands, as one wire payload.
 ///
 /// `running` distinguishes a stopped engine from an engine parked at frame
@@ -144,29 +181,40 @@ pub struct TransportMapsApplied {
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EngineTransportPosition {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub grinder_models: Vec<super::graph::GrinderModelReceipt>,
     pub running: bool,
     pub playing: bool,
     pub position_seconds: f64,
     pub playhead_frame: f64,
     pub loop_wraps: f64,
     pub batches_applied: f64,
+    /// String: witnessed handle; null: modern no-handle; absent: unavailable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_incarnation: Option<Option<String>>,
     pub tempo: f64,
     pub time_sig_num: u16,
     pub time_sig_denom: u16,
-    /// The engine's held master peak, linear and non-negative. Zero for an
+    /// The engine's held master peak, linear and non-negative, or the string
+    /// `"Infinity"` when the output blew up (see [`WirePeak`]). Zero for an
     /// engine that is not running, which is also what a running engine
     /// handing the device silence reports — `running` is what tells them
     /// apart, exactly as it does for every other number here. When `running`
     /// is false because the render callback has stalled, this and the other
     /// position fields on the payload are the last values that callback
     /// published, not what anyone is currently hearing.
+    #[serde(serialize_with = "serialize_peak")]
     pub master_peak: f64,
     /// Every timeline track strip's own held peak, keyed by the strip id the
     /// renderer knows it by — one entry per track strip the registry holds,
     /// held at the engine like the master. A strip the registry has not
     /// registered is absent from the map, never zero: zero would claim a
     /// reading the engine never published for it, while an absent key says
-    /// plainly that none exists yet.
+    /// plainly that none exists yet. Each value follows the `masterPeak` wire
+    /// rule: linear, non-negative, and `"Infinity"` for a strip that blew up.
+    #[serde(serialize_with = "serialize_peak_map")]
     pub strip_peaks: BTreeMap<String, f64>,
     /// What every native Tuner body last detected, keyed by the device id the
     /// renderer knows it by — one entry per scoring device the registry
@@ -182,6 +230,53 @@ pub struct EngineTransportPosition {
     /// the rate a needle is painted at, and a tuner body has no port of its
     /// own to push a reading over the way the Web Audio twin's worklet does.
     pub tuner_telemetry: BTreeMap<String, TunerTelemetryPayload>,
+    pub capture_clock: Option<EngineCaptureClock>,
+    pub capture_clock_query: Option<EngineCaptureClockQuery>,
+}
+
+/// Native monotonic seconds, not Unix or renderer time. This date belongs to
+/// the position/wrap/batch in this reply, including when delivery is delayed.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineCaptureClock {
+    pub epoch: u64,
+    pub stream_epoch: u64,
+    pub sample_rate: f64,
+    pub presentation_seconds: f64,
+    pub quality: EngineCaptureClockQuality,
+    /// Measured local query uncertainty; not a bound on hardware accuracy.
+    pub uncertainty_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum EngineCaptureClockQuality {
+    Estimated,
+    Degraded,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineCaptureClockQuery {
+    pub epoch: u64,
+    pub entered_seconds: f64,
+    pub leaving_seconds: f64,
+}
+
+impl From<CaptureClockSnapshot> for EngineCaptureClock {
+    fn from(clock: CaptureClockSnapshot) -> Self {
+        Self {
+            epoch: clock.epoch,
+            stream_epoch: clock.stream_epoch,
+            sample_rate: clock.sample_rate,
+            presentation_seconds: clock.presentation_seconds,
+            quality: match clock.quality {
+                CaptureClockQuality::Estimated => EngineCaptureClockQuality::Estimated,
+                CaptureClockQuality::Degraded => EngineCaptureClockQuality::Degraded,
+            },
+            uncertainty_seconds: clock.uncertainty_seconds,
+        }
+    }
 }
 
 /// One Tuner body's detection, in the wire's units.
@@ -239,18 +334,23 @@ fn transport_position_payload(
     rendering: bool,
 ) -> EngineTransportPosition {
     EngineTransportPosition {
+        engine_id: None,
+        grinder_models: Vec::new(),
         running: rendering,
         playing: snapshot.playing,
         position_seconds: snapshot.playhead_frame as f64 / sample_rate,
         playhead_frame: snapshot.playhead_frame as f64,
         loop_wraps: snapshot.loop_wraps as f64,
         batches_applied: snapshot.batches_applied as f64,
+        engine_incarnation: None,
         tempo: snapshot.tempo,
         time_sig_num: snapshot.time_sig_num,
         time_sig_denom: snapshot.time_sig_denom,
         master_peak: f64::from(master_peak),
         strip_peaks,
         tuner_telemetry,
+        capture_clock: snapshot.capture_clock.map(EngineCaptureClock::from),
+        capture_clock_query: None,
     }
 }
 
@@ -496,8 +596,13 @@ pub async fn engine_transport_position(
         .map_err(|error| format!("Failed to lock engine: {error}"))?;
 
     let Some(engine) = engine_guard.as_mut() else {
-        return Ok(EngineTransportPosition::default());
+        return Ok(EngineTransportPosition {
+            engine_incarnation: Some(None),
+            ..EngineTransportPosition::default()
+        });
     };
+
+    let (epoch, entered_seconds) = engine.capture_clock_now();
 
     let sample_rate = f64::from(engine.sample_rate());
     let rendering = engine.is_rendering();
@@ -516,14 +621,23 @@ pub async fn engine_transport_position(
     // here costs the callback nothing and needs no channel of its own.
     let tuner_telemetry = tuner_telemetry_payload(registry_guard.scoring_readings());
 
-    Ok(transport_position_payload(
+    let mut payload = transport_position_payload(
         snapshot,
         meter.master_peak,
         strip_peaks,
         tuner_telemetry,
         sample_rate,
         rendering,
-    ))
+    );
+    payload.capture_clock_query = Some(EngineCaptureClockQuery {
+        epoch,
+        entered_seconds,
+        leaving_seconds: engine.capture_clock_now().1,
+    });
+    payload.engine_id = Some(engine.instance_id().to_string());
+    payload.grinder_models = registry_guard.native_grinder_readback(engine.instance_id());
+    payload.engine_incarnation = registry_guard.engine_incarnation().map(Some);
+    Ok(payload)
 }
 
 #[cfg(test)]
@@ -1067,12 +1181,28 @@ mod tests {
     #[test]
     fn the_position_payload_serializes_with_camel_case_keys() {
         let json = serde_json::to_string(&EngineTransportPosition {
+            engine_id: None,
+            grinder_models: Vec::new(),
             running: true,
             playing: true,
             position_seconds: 1.5,
             playhead_frame: 72_000.0,
             loop_wraps: 2.0,
             batches_applied: 11.0,
+            engine_incarnation: None,
+            capture_clock: Some(EngineCaptureClock {
+                epoch: 7,
+                stream_epoch: 2,
+                sample_rate: 48_000.0,
+                presentation_seconds: 12.25,
+                quality: EngineCaptureClockQuality::Estimated,
+                uncertainty_seconds: None,
+            }),
+            capture_clock_query: Some(EngineCaptureClockQuery {
+                epoch: 7,
+                entered_seconds: 12.3,
+                leaving_seconds: 12.35,
+            }),
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
@@ -1105,8 +1235,56 @@ mod tests {
                 r#""tempo":128.0,"timeSigNum":5,"timeSigDenom":4,"masterPeak":0.5,"#,
                 r#""stripPeaks":{"strip-a":0.25,"strip-b":0.5},"#,
                 r#""tunerTelemetry":{"d-tuner":{"active":true,"frequency":440.5,"#,
-                r#""cents":-2.5,"confidence":0.75,"noteIndex":9,"octave":4,"midiNote":69}}}"#
+                r#""cents":-2.5,"confidence":0.75,"noteIndex":9,"octave":4,"midiNote":69}},"#,
+                r#""captureClock":{"epoch":7,"streamEpoch":2,"sampleRate":48000.0,"presentationSeconds":12.25,"quality":"estimated","uncertaintySeconds":null},"#,
+                r#""captureClockQuery":{"epoch":7,"enteredSeconds":12.3,"leavingSeconds":12.35}}"#
             )
+        );
+    }
+
+    #[test]
+    fn the_position_payload_serializes_exact_engine_and_model_identity() {
+        let json = serde_json::to_value(EngineTransportPosition {
+            engine_id: Some("9007199254740993".to_string()),
+            grinder_models: vec![crate::commands::graph::GrinderModelReceipt {
+                track_id: "track-a".to_string(),
+                device_id: "grinder-a".to_string(),
+                engine_id: "9007199254740993".to_string(),
+                target_generation: "17".to_string(),
+                request_id: "19".to_string(),
+                content_hash: "a".repeat(64),
+            }],
+            ..EngineTransportPosition::default()
+        })
+        .expect("position model identity should serialize");
+
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "engineId": "9007199254740993",
+                "grinderModels": [{
+                    "trackId": "track-a",
+                    "deviceId": "grinder-a",
+                    "engineId": "9007199254740993",
+                    "targetGeneration": "17",
+                    "requestId": "19",
+                    "contentHash": "a".repeat(64)
+                }],
+                "running": false,
+                "playing": false,
+                "positionSeconds": 0.0,
+                "playheadFrame": 0.0,
+                "loopWraps": 0.0,
+                "batchesApplied": 0.0,
+                "tempo": 0.0,
+                "timeSigNum": 0,
+                "timeSigDenom": 0,
+                "masterPeak": 0.0,
+                "stripPeaks": {},
+                "tunerTelemetry": {},
+                "captureClock": null,
+                "captureClockQuery": null
+            })
         );
     }
 
@@ -1215,6 +1393,38 @@ mod tests {
         assert_eq!(position.master_peak, 0.25);
     }
 
+    /// JSON has no infinity and `serde_json` writes one as `null`, which the
+    /// renderer reads as silence. A blown-up output must reach it as the
+    /// `"Infinity"` token, and every finite peak must stay a plain number.
+    #[test]
+    fn an_infinite_peak_crosses_the_bridge_as_the_infinity_token() {
+        let wire = serde_json::to_value(EngineTransportPosition {
+            master_peak: f64::INFINITY,
+            strip_peaks: [("a".to_string(), f64::INFINITY), ("b".to_string(), 0.5)]
+                .into_iter()
+                .collect(),
+            ..EngineTransportPosition::default()
+        })
+        .expect("position serializes");
+
+        assert_eq!(wire["masterPeak"], serde_json::json!("Infinity"));
+        assert_eq!(wire["stripPeaks"]["a"], serde_json::json!("Infinity"));
+        assert_eq!(wire["stripPeaks"]["b"], serde_json::json!(0.5));
+    }
+
+    #[test]
+    fn a_finite_peak_stays_a_json_number() {
+        let wire = serde_json::to_value(EngineTransportPosition {
+            master_peak: 0.25,
+            strip_peaks: [("a".to_string(), 0.0)].into_iter().collect(),
+            ..EngineTransportPosition::default()
+        })
+        .expect("position serializes");
+
+        assert_eq!(wire["masterPeak"], serde_json::json!(0.25));
+        assert_eq!(wire["stripPeaks"]["a"], serde_json::json!(0.0));
+    }
+
     /// Every field of a reading comes from the one snapshot the engine
     /// published, `batchesApplied` included. That field is what a caller uses
     /// to date the reading against a command it sent, so a count drawn from a
@@ -1230,6 +1440,14 @@ mod tests {
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
+            capture_clock: Some(CaptureClockSnapshot {
+                epoch: 7,
+                stream_epoch: 2,
+                sample_rate: 48_000.0,
+                presentation_seconds: 12.25,
+                quality: CaptureClockQuality::Degraded,
+                uncertainty_seconds: Some(0.001),
+            }),
         };
 
         let position = transport_position_payload(
@@ -1245,6 +1463,10 @@ mod tests {
         assert_eq!(position.playhead_frame, 72_000.0);
         assert_eq!(position.position_seconds, 1.5);
         assert_eq!(position.loop_wraps, 2.0);
+        assert_eq!(
+            position.capture_clock,
+            snapshot.capture_clock.map(EngineCaptureClock::from)
+        );
     }
 
     /// Mutation this guards: hardcoding `running: true` again. A stalled
@@ -1262,6 +1484,7 @@ mod tests {
             tempo: 128.0,
             time_sig_num: 5,
             time_sig_denom: 4,
+            capture_clock: None,
         };
 
         let position = transport_position_payload(
@@ -1286,8 +1509,35 @@ mod tests {
         let position = crate::block_on_test(engine_transport_position(&state))
             .expect("position should be readable");
 
-        assert_eq!(position, EngineTransportPosition::default());
+        assert_eq!(
+            position,
+            EngineTransportPosition {
+                engine_incarnation: Some(None),
+                ..EngineTransportPosition::default()
+            }
+        );
+        let wire = serde_json::to_value(&position).expect("position serializes");
+        assert!(wire
+            .get("engineIncarnation")
+            .is_some_and(serde_json::Value::is_null));
         assert!(!position.running);
+    }
+
+    #[test]
+    fn capture_clock_query_brackets_the_read_in_the_engine_epoch_before_any_callback() {
+        let state = AppState::default();
+        let (engine, _commands, _retired) = daw_engine::engine_handle_for_command_capture(8);
+        let (epoch, before) = engine.capture_clock_now();
+        *state.engine.lock().unwrap() = Some(engine);
+        let position = crate::block_on_test(engine_transport_position(&state)).unwrap();
+        let query = position.capture_clock_query.unwrap();
+        assert_eq!(query.epoch, epoch);
+        assert!(query.entered_seconds >= before);
+        assert!(query.leaving_seconds >= query.entered_seconds);
+        assert!(
+            position.capture_clock.is_none(),
+            "a query cannot date a sample no callback published"
+        );
     }
 
     /// Without an engine there is nowhere to put the maps. Answering `Ok` would

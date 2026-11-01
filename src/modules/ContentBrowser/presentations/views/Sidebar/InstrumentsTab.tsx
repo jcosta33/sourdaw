@@ -1,10 +1,9 @@
-import { type ReactElement, useState } from 'react';
+import { Fragment, type ReactElement, useState } from 'react';
 
 import { Save, X, ChevronRight, Star, Folder, Music2, Drum, Music, Piano, Disc3 } from 'lucide-react';
 
 import { DawCompactSelect } from '#/components/daw/DawCompactSelect';
 import { DawPickerRow } from '#/components/daw/DawPickerRow';
-import { DawSectionDivider } from '#/components/daw/DawSectionDivider';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Input } from '#/components/ui/input';
@@ -23,6 +22,7 @@ import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type SoundPresetView as SoundPreset, type SoundPresetCategory } from '../../../models/SoundPresetViewTypes';
 import { executePresetLoad } from '../../../useCases/executePresetLoad';
+import { BrowserRouteBody, BrowserRouteFooter, BrowserRouteSection } from '../../components/Sidebar/BrowserRouteBody';
 import { EmptyState } from '../../components/Sidebar/EmptyState';
 import {
     InstrumentCard,
@@ -331,18 +331,14 @@ export const InstrumentsTab = ({
         const totalCount = allResults.length + premiumMatches.length;
 
         return (
-            <Stack gap={1.5} className="animate-in fade-in duration-100">
-                <SearchSummary count={totalCount} query={query} className="px-1 py-0.5" />
+            <BrowserRouteBody>
+                <SearchSummary count={totalCount} query={query} />
                 {totalCount > 0 ? (
                     <>
                         {premiumMatches.map((id) => {
                             const card = renderPremiumInstrument(id);
                             if (card) {
-                                return (
-                                    <div key={id} className="mb-3 mt-1.5 px-0.5 drop-shadow-sm">
-                                        {card}
-                                    </div>
-                                );
+                                return <Fragment key={id}>{card}</Fragment>;
                             }
                             return null;
                         })}
@@ -361,7 +357,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No instruments found." />
                 )}
-            </Stack>
+            </BrowserRouteBody>
         );
     }
 
@@ -375,7 +371,7 @@ export const InstrumentsTab = ({
         }
 
         return (
-            <Stack gap={1.5} className="animate-in slide-in-from-right-4 duration-200">
+            <BrowserRouteBody>
                 {/* Preset list (header handled by Sidebar back bar with icon) */}
                 {renderPresets.length > 0 ? (
                     renderPresets.map((preset) => (
@@ -399,7 +395,7 @@ export const InstrumentsTab = ({
                 ) : (
                     <EmptyState message="No presets in this category." />
                 )}
-            </Stack>
+            </BrowserRouteBody>
         );
     }
 
@@ -409,15 +405,13 @@ export const InstrumentsTab = ({
     );
 
     return (
-        <Stack className="px-1.5 pb-4 animate-in slide-in-from-left-4 duration-200">
+        <BrowserRouteBody>
             {/* ── House Specials ─────────────────────────────────── */}
-            <Stack gap={1.5} className="mb-3">
-                <DawSectionDivider
-                    label="Play Dough"
-                    className="mb-0.5 px-1"
-                    labelClassName="font-bold text-[var(--color-accent-orange)]"
-                    lineClassName="bg-[var(--color-accent-orange)]/15"
-                />
+            <BrowserRouteSection
+                label="Play Dough"
+                labelClassName="font-bold text-[var(--color-accent-orange)]"
+                lineClassName="bg-[var(--color-accent-orange)]/15"
+            >
                 <InstrumentCard
                     icon={Music2}
                     label="Fermenter"
@@ -462,23 +456,21 @@ export const InstrumentsTab = ({
                         theme={GRAND_BOULE_THEME}
                     />
                 ) : null}
-            </Stack>
-            <DawSectionDivider
+            </BrowserRouteSection>
+            <BrowserRouteSection
                 label="Standard grain"
-                className="mb-1 px-1"
                 labelClassName="font-bold text-[var(--color-accent-cyan)]"
                 lineClassName="bg-[var(--color-accent-cyan)]/15"
-            />
-            {/* Sound preset category groups */}
-            {INSTRUMENT_GROUPS.map((group) => {
-                const groupCats = group.categories.filter((cat) => categoriesWithPresets.includes(cat));
-                if (groupCats.length === 0) {
-                    return null;
-                }
+            >
+                {/* Sound preset category groups */}
+                {INSTRUMENT_GROUPS.map((group) => {
+                    const groupCats = group.categories.filter((cat) => categoriesWithPresets.includes(cat));
+                    if (groupCats.length === 0) {
+                        return null;
+                    }
 
-                return (
-                    <div key={group.label} className="mb-2">
-                        <Stack gap={1.5}>
+                    return (
+                        <Fragment key={group.label}>
                             {groupCats.map((cat) => {
                                 const presetsInCat = soundPresets.filter((param) => param.category === cat);
                                 const CatIcon = CATEGORY_ICONS[cat] ?? Folder;
@@ -507,112 +499,112 @@ export const InstrumentsTab = ({
                                     />
                                 );
                             })}
-                        </Stack>
-                    </div>
-                );
-            })}
+                        </Fragment>
+                    );
+                })}
+            </BrowserRouteSection>
             {/* My Presets & Save */}
-            <DawSectionDivider
+            <BrowserRouteSection
                 label="User Library"
-                className="mb-3 mt-4 px-1"
                 labelClassName="font-bold text-[var(--color-accent-orange)]"
                 lineClassName="bg-[var(--color-accent-orange)]/15"
-            />
-            <Row gap={1} className="mb-2">
-                <DawPickerRow
-                    compact
-                    className="flex-1 px-2 py-1.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
-                    startSlot={<Star className="size-4 text-[var(--color-accent-peach)]" aria-hidden="true" />}
-                    heading="My Presets"
-                    description={`${filteredUser.length} saved`}
-                    endSlot={
-                        <Row gap={1}>
-                            <span className="text-[10px] text-muted-foreground tabular-nums">
-                                {filteredUser.length}
-                            </span>
-                            <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
-                        </Row>
-                    }
-                    onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
-                />
+            >
+                <Row gap={1}>
+                    <DawPickerRow
+                        compact
+                        className="flex-1 px-2 py-1.5 bg-gradient-to-br from-surface-raised to-surface-base border border-border/20 transition-colors hover:from-surface-overlay hover:border-border/40 shadow-sm"
+                        startSlot={<Star className="size-4 text-[var(--color-accent-peach)]" aria-hidden="true" />}
+                        heading="My Presets"
+                        description={`${filteredUser.length} saved`}
+                        endSlot={
+                            <Row gap={1}>
+                                <span className="text-[10px] text-muted-foreground tabular-nums">
+                                    {filteredUser.length}
+                                </span>
+                                <ChevronRight className="size-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                            </Row>
+                        }
+                        onClick={() => pushRoute({ id: 'instruments-user', title: 'My Presets' })}
+                    />
 
-                {selectedTrack ? (
-                    <>
-                        {!showSaveForm ? (
+                    {selectedTrack ? (
+                        <>
+                            {!showSaveForm ? (
+                                <Button
+                                    variant="ghost"
+                                    size="icon-xs"
+                                    className="h-9 w-9 border border-border/20 bg-surface-raised hover:border-border/40 text-muted-foreground hover:text-foreground shadow-sm"
+                                    onClick={() => setShowSaveForm(true)}
+                                    title={`Save "${selectedTrack.name}" as preset`}
+                                    aria-label={`Save "${selectedTrack.name}" as preset`}
+                                >
+                                    <Save className="size-4" aria-hidden="true" />
+                                </Button>
+                            ) : null}
+                        </>
+                    ) : null}
+                </Row>
+                {/* Save form (inline) */}
+                {showSaveForm && selectedTrack ? (
+                    <Stack
+                        gap={1.5}
+                        className="px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100"
+                    >
+                        <Row gap={1}>
+                            <Input
+                                type="text"
+                                placeholder="Preset name…"
+                                value={saveFormName}
+                                onChange={(event) => setSaveFormName(event.target.value)}
+                                className="h-7 text-xs flex-1 bg-surface-default border-border/50 focus-visible:border-border/80"
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter') {
+                                        handleSavePreset();
+                                    }
+                                }}
+                                autoFocus
+                            />
                             <Button
                                 variant="ghost"
                                 size="icon-xs"
-                                className="h-9 w-9 border border-border/20 bg-surface-raised hover:border-border/40 text-muted-foreground hover:text-foreground shadow-sm"
-                                onClick={() => setShowSaveForm(true)}
-                                title={`Save "${selectedTrack.name}" as preset`}
-                                aria-label={`Save "${selectedTrack.name}" as preset`}
+                                className="h-7 w-7 hover:bg-surface-overlay"
+                                onClick={() => {
+                                    setShowSaveForm(false);
+                                    setSaveFormName('');
+                                }}
+                                aria-label="Cancel"
                             >
-                                <Save className="size-4" aria-hidden="true" />
+                                <X className="size-3.5" />
                             </Button>
-                        ) : null}
-                    </>
+                        </Row>
+                        <Row gap={1.5} className="mt-1">
+                            <DawCompactSelect
+                                value={saveFormCategory}
+                                onChange={(event) => setSaveFormCategory(event.target.value as SoundPresetCategory)}
+                                tone="inset"
+                                className="flex-1 px-1 text-[11px] h-7 bg-surface-default"
+                            >
+                                {PRESET_CATEGORIES.map((cat) => (
+                                    <option key={cat} value={cat}>
+                                        {cat}
+                                    </option>
+                                ))}
+                            </DawCompactSelect>
+                            <Button
+                                variant="default"
+                                size="xs"
+                                className="text-[11px] h-7 px-3 bg-[var(--color-accent-orange)] text-orange-950 hover:bg-[var(--color-accent-orange)]/90"
+                                onClick={handleSavePreset}
+                                disabled={!saveFormName.trim()}
+                            >
+                                Save
+                            </Button>
+                        </Row>
+                    </Stack>
                 ) : null}
-            </Row>
-            {/* Save form (inline) */}
-            {showSaveForm && selectedTrack ? (
-                <Stack
-                    gap={1.5}
-                    className="px-2 py-2 rounded-md bg-gradient-to-br from-surface-raised to-surface-base border border-border/40 shadow-sm animate-in fade-in duration-100 mb-2"
-                >
-                    <Row gap={1}>
-                        <Input
-                            type="text"
-                            placeholder="Preset name…"
-                            value={saveFormName}
-                            onChange={(event) => setSaveFormName(event.target.value)}
-                            className="h-7 text-xs flex-1 bg-surface-default border-border/50 focus-visible:border-border/80"
-                            onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
-                                    handleSavePreset();
-                                }
-                            }}
-                            autoFocus
-                        />
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="h-7 w-7 hover:bg-surface-overlay"
-                            onClick={() => {
-                                setShowSaveForm(false);
-                                setSaveFormName('');
-                            }}
-                            aria-label="Cancel"
-                        >
-                            <X className="size-3.5" />
-                        </Button>
-                    </Row>
-                    <Row gap={1.5} className="mt-1">
-                        <DawCompactSelect
-                            value={saveFormCategory}
-                            onChange={(event) => setSaveFormCategory(event.target.value as SoundPresetCategory)}
-                            tone="inset"
-                            className="flex-1 px-1 text-[11px] h-7 bg-surface-default"
-                        >
-                            {PRESET_CATEGORIES.map((cat) => (
-                                <option key={cat} value={cat}>
-                                    {cat}
-                                </option>
-                            ))}
-                        </DawCompactSelect>
-                        <Button
-                            variant="default"
-                            size="xs"
-                            className="text-[11px] h-7 px-3 bg-[var(--color-accent-orange)] text-orange-950 hover:bg-[var(--color-accent-orange)]/90"
-                            onClick={handleSavePreset}
-                            disabled={!saveFormName.trim()}
-                        >
-                            Save
-                        </Button>
-                    </Row>
-                </Stack>
-            ) : null}
+            </BrowserRouteSection>
             {/* Blank track shortcut */}
-            <div className="border-t border-border/20 pt-2 mt-1">
+            <BrowserRouteFooter>
                 <DawPickerRow
                     compact
                     className="px-2 py-1.5"
@@ -621,7 +613,7 @@ export const InstrumentsTab = ({
                     onClick={handleAddBlankMidiTrack}
                     title="Add a blank MIDI track with a default synthesizer"
                 />
-            </div>
-        </Stack>
+            </BrowserRouteFooter>
+        </BrowserRouteBody>
     );
 };

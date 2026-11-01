@@ -1,10 +1,11 @@
-import { expect, test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import { type Locator, type Page, type TestInfo } from '@playwright/test';
 
 import {
     getBrowserAiWebGpuHardwareRequirement,
     probeBrowserWebGpuHardware,
     requireBrowserWebGpuHardware,
 } from './browserAiHardware';
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const CAPABILITY_STORAGE_KEY = 'sourdaw-browser-ai-capability';

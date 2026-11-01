@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -16,7 +15,7 @@ async function open_yeast_panel(page: import('@playwright/test').Page): Promise<
     await page.getByRole('option', { name: 'Add MIDI Track' }).click();
 
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Effects', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Effects', exact: true }).click();
     await browser.getByRole('button', { name: 'MIDI FX' }).click();
 
     const yeastCard = browser.getByRole('button', { name: 'Yeast' });

@@ -48,6 +48,24 @@ type HandlerMintedIdReader = (argumentsValue: CommandArguments) => CommandApplic
  */
 const HANDLER_MINTED_ID_READERS: ReadonlyMap<string, HandlerMintedIdReader> = new Map([
     [
+        'editTempoMap',
+        (argumentsValue) => {
+            const plan = argumentsValue.rowPlan;
+            if (!isRecord(plan) || !Array.isArray(plan.before) || !Array.isArray(plan.after)) {
+                return [];
+            }
+            const beforeIds = new Set(
+                plan.before.flatMap((row: unknown) => (isRecord(row) && typeof row.id === 'string' ? [row.id] : []))
+            );
+            return plan.after.flatMap((row: unknown, index) => {
+                if (!isRecord(row) || typeof row.id !== 'string' || beforeIds.has(row.id)) {
+                    return [];
+                }
+                return readStringId(row, 'id', `rowPlan.after[${String(index)}].id`);
+            });
+        },
+    ],
+    [
         'glueClips',
         (argumentsValue) => [
             ...readStringId(argumentsValue, 'targetClipId', 'targetClipId'),

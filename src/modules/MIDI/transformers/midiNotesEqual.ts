@@ -16,6 +16,8 @@ function midiNoteEqual(left: MidiNote, right: MidiNote): boolean {
         left.pitchBendRangeSemitones === right.pitchBendRangeSemitones &&
         left.channel === right.channel &&
         left.articulation === right.articulation &&
+        left.recordingPassIndex === right.recordingPassIndex &&
+        Object.hasOwn(left, 'recordingPassIndex') === Object.hasOwn(right, 'recordingPassIndex') &&
         valuesEqual(left.expression, right.expression)
     );
 }

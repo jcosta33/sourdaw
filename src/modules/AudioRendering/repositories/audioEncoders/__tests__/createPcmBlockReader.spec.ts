@@ -52,3 +52,28 @@ describe('bounded PCM reader', () => {
         }
     });
 });
+
+describe('replayable PCM reader', () => {
+    it('reuses a measured peak and never asks for a complete target channel', () => {
+        const requests: number[] = [];
+        const reader = createPcmBlockReader({
+            source: {
+                length: 96000,
+                sampleRate: 48000,
+                numberOfChannels: 1,
+                samplePeak: 0.5,
+                gain: 0.5,
+                readChannels: (_start, length) => {
+                    requests.push(length);
+                    return [new Float32Array(length).fill(0.5)];
+                },
+            },
+            bitDepth: 16,
+            dither: { mode: 'none' },
+        });
+        expect(requests).toEqual([]);
+        const block = reader.read(1152);
+        expect(requests).toEqual([1152]);
+        expect(block.channels[0]![0]).toBe(Math.round(0.25 * 32767));
+    });
+});

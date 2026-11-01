@@ -27,6 +27,9 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { defaultTransportState, readSecondsAtBeat, tempoMapStore, transportStore } from '#/modules/Transport/stores';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
+import { projectClipLoopExpansion } from '#/utils/clipLoopProjection';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -36,6 +39,7 @@ import {
 
 import { ClipDummy } from '../../../__tests__/ClipDummy';
 import { TrackDummy } from '../../../__tests__/TrackDummy';
+import { type Clip } from '../../../models/Track';
 import { trackStore, type TrackStoreState } from '../../../stores/trackStore';
 import { getArrangementHandlers } from '../../../useCases/getArrangementHandlers';
 import { handleCrossfadeClips } from '../handleCrossfadeClips';
@@ -702,4 +706,241 @@ describe('crossfade recorded leading silence through command history', () => {
             expect(undoStore.value?.future).toHaveLength(0);
         }
     );
+
+    it('shifts a beat-only stretched clip B anchor forward, back on undo and forward again on redo', async () => {
+        // Stretch 2: the start retreats half a beat while the offset retreats a
+        // whole one, so the anchor moves by -0.5 - (-1) = +0.5 to keep the region.
+        const track = TrackDummy.create({
+            id: 'track-1',
+            clips: [
+                ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                ClipDummy.create({
+                    id: 'c2',
+                    startBeat: 4,
+                    endBeat: 8,
+                    audioOffsetBeats: 2,
+                    stretchMode: 'timestretch',
+                    stretchRatio: 2,
+                    loopEnabled: true,
+                    loopLength: 4,
+                    loopOriginBeat: 4,
+                }),
+            ],
+        });
+        trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+        flushAutomergeStorageWrites();
+        const clipB = () => {
+            flushAutomergeStorageWrites();
+            const projected = trackStore.value!.tracks[0]!.clips;
+            expect(getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.clips).toEqual(projected);
+            return projected[1]!;
+        };
+
+        await executeAppAction({
+            type: 'crossfadeClips',
+            payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+        });
+        expect(clipB()).toMatchObject({ startBeat: 3.5, audioOffsetBeats: 1, loopOriginBeat: 4.5 });
+        expect(Object.hasOwn(clipB(), 'audioOffsetSeconds')).toBe(false);
+
+        expect((await undo()).headConsumed).toBe(true);
+        expect(notifications).toEqual([]);
+        expect(clipB()).toMatchObject({ startBeat: 4, audioOffsetBeats: 2, loopOriginBeat: 4 });
+
+        await redo();
+        expect(notifications).toEqual([]);
+        expect(clipB()).toMatchObject({ startBeat: 3.5, audioOffsetBeats: 1, loopOriginBeat: 4.5 });
+    });
+
+    describe('canonical clip B source entry', () => {
+        afterEach(() => {
+            tempoMapStore.set({ changes: [] });
+            transportStore.set(defaultTransportState);
+        });
+
+        function readerSourceSecondsAt(clip: Clip, beat: number): number {
+            const segment = projectAudioLoopPassSegments({
+                clip,
+                loopLengthBeats: projectClipLoopExpansion({
+                    clipDurationBeats: clip.endBeat - clip.startBeat,
+                    configuredLoopLengthBeats: clip.loopLength,
+                    loopEnabled: clip.loopEnabled ?? false,
+                }).loopLengthBeats,
+                iterationStartBeat: beat,
+                iterationEndBeat: clip.endBeat,
+                stretchRatio: clip.stretchMode && clip.stretchMode !== 'off' ? (clip.stretchRatio ?? 1) : 1,
+                tempoAtClipStart: 60,
+                secondsAtBeat: (at) => readSecondsAtBeat({ beat: at }),
+            })[0];
+            if (!segment) {
+                throw new Error('the readers project no segment for the clip');
+            }
+            return segment.sourceStartSeconds;
+        }
+
+        it('keeps a looped stretched clip B on its loop phase through crossfade, undo and redo', async () => {
+            transportStore.set({ ...defaultTransportState, tempo: 60 });
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 4,
+                        endBeat: 8,
+                        stretchMode: 'timestretch',
+                        stretchRatio: 2,
+                        loopEnabled: true,
+                        loopLength: 2,
+                        loopOriginBeat: 4,
+                        audioLoopPassOriginBeat: 4,
+                        audioOffsetBeats: 2,
+                        audioOffsetSeconds: 2,
+                        audioUnwrappedOffsetSeconds: 2,
+                        audioLoopStartSeconds: 2,
+                        audioLoopPassEntrySeconds: 2,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const beats = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5];
+            const reads = (clip: Clip) => beats.map((beat) => readerSourceSecondsAt(clip, beat));
+            const readsBefore = reads(before[1]!);
+            const expectReadsHeld = (clip: Clip) => {
+                for (const [index, read] of reads(clip).entries()) {
+                    expect(read, `beat ${beats[index]}`).toBeCloseTo(readsBefore[index]!, 12);
+                }
+            };
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            expect(after[1]).toMatchObject({ startBeat: 3.5, loopOriginBeat: 4, audioLoopPassOriginBeat: 4 });
+            expectReadsHeld(after[1]!);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+            expectReadsHeld(trackStore.value!.tracks[0]!.clips[1]!);
+        });
+
+        it('restores every provenance field of a looped clip B exactly through undo then redo', async () => {
+            transportStore.set({ ...defaultTransportState, tempo: 60 });
+            const clock = {
+                audioOffsetSeconds: 2,
+                audioUnwrappedOffsetSeconds: 1.5,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 3,
+            };
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 4 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 4,
+                        endBeat: 8,
+                        loopEnabled: true,
+                        loopLength: 2,
+                        loopOriginBeat: 3,
+                        audioOffsetBeats: 2,
+                        ...clock,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            // The entry continues half a beat back; the grid fields hold.
+            expect(after[1]).toMatchObject({
+                startBeat: 3.5,
+                loopOriginBeat: 3,
+                audioLoopStartSeconds: 0.5,
+                audioLoopPassEntrySeconds: 1,
+                audioLoopPassOriginBeat: 3,
+            });
+            expect(after[1]!.audioOffsetSeconds).toBeCloseTo(1.5, 12);
+            expect(after[1]!.audioUnwrappedOffsetSeconds).toBeCloseTo(1, 12);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(before);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(trackStore.value!.tracks[0]!.clips).toEqual(after);
+        });
+
+        it('keeps clip B material on its beats across a tempo change through crossfade, undo and redo', async () => {
+            // 120 BPM to beat 8, then 60. Clip B retreats from 8.25 to 7.75,
+            // spanning 0.125 s + 0.25 s of song time.
+            transportStore.set({ ...defaultTransportState, tempo: 120 });
+            tempoMapStore.set({
+                changes: [
+                    { id: 'tempo-a', beat: 0, tempo: 120, curve: 'instant' },
+                    { id: 'tempo-b', beat: 8, tempo: 60, curve: 'instant' },
+                ],
+            });
+            const track = TrackDummy.create({
+                id: 'track-1',
+                clips: [
+                    ClipDummy.create({ id: 'c1', startBeat: 0, endBeat: 8 }),
+                    ClipDummy.create({
+                        id: 'c2',
+                        startBeat: 8.25,
+                        endBeat: 12,
+                        audioOffsetBeats: 4,
+                        audioOffsetSeconds: 2,
+                        audioUnwrappedOffsetSeconds: 2.5,
+                    }),
+                ],
+            });
+            trackStore.set({ tracks: [track], selectedTrackId: track.id, ghostClips: [] });
+            flushAutomergeStorageWrites();
+            const before = structuredClone(trackStore.value!.tracks[0]!.clips);
+            const clipB = () => {
+                flushAutomergeStorageWrites();
+                const projected = trackStore.value!.tracks[0]!.clips;
+                expect(getCrdtDoc<{ tracks: TrackStoreState }>('root')?.tracks.tracks[0]?.clips).toEqual(projected);
+                return projected[1]!;
+            };
+            const downbeatSource = readerSourceSecondsAt(before[1]!, 8.25);
+            expect(downbeatSource).toBe(2);
+
+            await executeAppAction({
+                type: 'crossfadeClips',
+                payload: { clipAId: 'c1', clipBId: 'c2', durationBeats: 1 },
+            });
+            const after = structuredClone(trackStore.value!.tracks[0]!.clips);
+            expect(clipB()).toMatchObject({ startBeat: 7.75 });
+            expect(clipB().audioOffsetSeconds).toBeCloseTo(1.625, 12);
+            expect(clipB().audioUnwrappedOffsetSeconds).toBeCloseTo(2.125, 12);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBeCloseTo(downbeatSource, 12);
+
+            expect((await undo()).headConsumed).toBe(true);
+            expect(notifications).toEqual([]);
+            expect(clipB()).toEqual(before[1]);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBe(downbeatSource);
+
+            await redo();
+            expect(notifications).toEqual([]);
+            expect(clipB()).toEqual(after[1]);
+            expect(readerSourceSecondsAt(clipB(), 8.25)).toBeCloseTo(downbeatSource, 12);
+        });
+    });
 });

@@ -25,24 +25,35 @@ import {
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
-import { midiStore } from '#/modules/MIDI/stores';
+import {
+    frozenMidiTakeRepeats,
+    midiStore,
+    projectFrozenMidiTakeWindow,
+    selectMidiNotesForRecordingPass,
+} from '#/modules/MIDI/stores';
 import {
     isValidMidiTimeStateRestorePlan,
     prepareMidiGlobalTimeTransaction,
     prepareMidiTimeStateRestore,
 } from '#/modules/MIDI/useCases';
+import { defaultTransportState, playheadWrapCountRef, transportStore } from '#/modules/Transport/stores';
 import {
     isValidTimelineMapStateRestorePlan,
     prepareTimelineMapStateRestore,
     prepareTimelineMapTimeOperation,
 } from '#/modules/Transport/useCases';
-import { type AppAction } from '#/utils/handlerContract';
+import { type AppAction, type MidiClipDataActionSnapshot } from '#/utils/handlerContract';
 
 import { TrackDummy } from '../../../__tests__/TrackDummy';
 import { type Take } from '../../../models/TakeLane';
+import { type TempoTimeline } from '../../../models/TempoTimeline';
 import { type Clip } from '../../../models/Track';
 import { takeLaneStore } from '../../../stores/takeLaneStore';
 import { trackStore } from '../../../stores/trackStore';
+import { prepareMidiTakeSourceCapture } from '../../../useCases/comping/prepareMidiTakeSourceCapture';
+import { admitRecordingMidiNoteOff } from '../../../useCases/recording/admitRecordingMidiNoteOff';
+import { admitRecordingMidiNoteOn } from '../../../useCases/recording/admitRecordingMidiNoteOn';
+import { recordingMidiSourceBeatAt } from '../../../useCases/recording/recordingMidiSourceBeatAt';
 import { stageRecordingTake } from '../../../useCases/recording/stageRecordingTake';
 import { startRecording } from '../../../useCases/recording/startRecording';
 import { stopRecording } from '../../../useCases/recording/stopRecording';
@@ -52,6 +63,18 @@ import { setTimeOperationDependencies } from '../../../useCases/timeOperations/t
 const TRACK_ID = 'track-midi';
 const LOOP_START_BEAT = 8;
 const LOOP_END_BEAT = 16;
+
+const constantTempo: TempoTimeline = {
+    secondsAtBeat: (beat) => beat / 2,
+    beatAtSeconds: (seconds) => seconds * 2,
+    tempoAtBeat: () => 120,
+};
+
+const noRows: MidiClipDataActionSnapshot = {
+    notes: { present: true, value: [] },
+    controlChanges: { present: false, value: [] },
+    pitchBends: { present: false, value: [] },
+};
 
 const noActionHistoryMetadataPort = {
     record: () => [],
@@ -155,8 +178,10 @@ function heardPitches(fromBeat: number, toBeat: number): (number | null)[] {
     return heard;
 }
 
-describe('MIDI loop recordings under Delete Time', () => {
+describe('MIDI loop recordings', () => {
     beforeEach(() => {
+        transportStore.set(defaultTransportState);
+        playheadWrapCountRef.current = 0;
         configureAutomergeStoragePort(null);
         resetCrdtProjectAuthority('MIDI loop recording delete time integration');
         removeCrdtDoc('root');
@@ -192,6 +217,8 @@ describe('MIDI loop recordings under Delete Time', () => {
     });
 
     afterEach(() => {
+        transportStore.set(defaultTransportState);
+        playheadWrapCountRef.current = 0;
         clearUndoHistory();
         resetActionReplayAuthority();
         clearHandlerRegistry();
@@ -275,5 +302,652 @@ describe('MIDI loop recordings under Delete Time', () => {
             flushAutomergeStorageWrites();
             expect(recordedClip()).toEqual(recorded);
         });
+    });
+
+    it('leaves a planned next pass open when Stop precedes its wrap', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Completed pass 0',
+            startBeat: 8,
+            endBeat: 12,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        await stopRecording(11);
+        flushAutomergeStorageWrites();
+
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1, endBeat: 11 });
+        expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+    });
+
+    it('retimes a planned pass end in place when a relocation ends that pass first', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Planned pass 0',
+            startBeat: 8,
+            endBeat: 12,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+        });
+        const planned = passTake('Planned pass 0');
+        stageRecordingTake({
+            trackId: TRACK_ID,
+            clipId: clip.id,
+            name: 'Relocated pass 0',
+            startBeat: 8,
+            endBeat: 10.5,
+            sourceOffsetBeats: 0,
+            recordingPassIndex: 0,
+            replacedTakeId: planned.id,
+            nextPassStartBeat: 9,
+        });
+
+        const takes = takeLaneStore.value?.lanes[0]?.takes ?? [];
+        expect(takes.filter((take) => take.sourceOffsetBeats !== undefined)).toEqual([{ ...planned, endBeat: 10.5 }]);
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 1 });
+        expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+    });
+
+    describe('with the loop edited while recording', () => {
+        function recordFromLoopStart(): Clip {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 8,
+            });
+            const [clip] = startRecording(8);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            return clip;
+        }
+
+        /** A wrap take as the scheduler stages it: its offset derived from the live loop. */
+        function stageWrap(
+            clip: Clip,
+            pass: { name: string; startBeat: number; endBeat: number; sourceOffsetBeats: number; index: number }
+        ): void {
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: pass.name,
+                startBeat: pass.startBeat,
+                endBeat: pass.endBeat,
+                sourceOffsetBeats: pass.sourceOffsetBeats,
+                recordingPassIndex: pass.index,
+            });
+        }
+
+        function holdNote(beat: number, passIndex: number) {
+            return admitRecordingMidiNoteOn({
+                trackId: TRACK_ID,
+                channel: 0,
+                note: 60,
+                velocity: 100,
+                audioTime: 1,
+                position: { beat, passIndex },
+            });
+        }
+
+        function holdNoteOnset(beat: number, passIndex: number): number {
+            const held = holdNote(beat, passIndex);
+            if (!held) {
+                throw new Error('Expected the recording to admit the note');
+            }
+            return held.onsetSourceBeat;
+        }
+
+        it('places a later pass on the edited loop its take is staged on', () => {
+            const clip = recordFromLoopStart();
+            transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+
+            // Pass 0 of the loop [8, 10) ends at 10, so pass 1 opens at source 2.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(3);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 10, sourceOffsetBeats: 0, index: 0 });
+            expect(holdNote(9, 1)).toMatchObject({ onsetSourceBeat: 3, onsetPassIndex: 1 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 10, sourceOffsetBeats: 2, index: 1 });
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, sourceOffsetBeats: 2 });
+        });
+
+        it('keeps a pass on one placement when the loop is edited inside it', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const held = holdNote(9, 1);
+            transportStore.set({ ...transportStore.value!, loopEnd: 10 });
+            admitRecordingMidiNoteOff({ channel: 0, note: 60, audioTime: 1.25, position: { beat: 9.5, passIndex: 1 } });
+
+            expect(held).toMatchObject({ onsetSourceBeat: 5, releaseSourceBeat: 5.5 });
+            // The scheduler derives pass 1's offset from the shortened loop; the
+            // pass itself opened at source 4 and its take must read it there.
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 10, sourceOffsetBeats: 2, index: 1 });
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, endBeat: 10, sourceOffsetBeats: 4 });
+            // Pass 1 ran [8, 10) from source 4, so pass 2 opens at source 6.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 8.5, passIndex: 2 })).toBe(6.5);
+
+            playheadWrapCountRef.current = 2;
+            await stopRecording(9.5);
+            flushAutomergeStorageWrites();
+            expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 2, sourceOffsetBeats: 6 });
+        });
+
+        it('seals the stopped pass on the placement its notes were given when the loop start moves forward', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const early = holdNoteOnset(8.5, 1);
+            const held = holdNoteOnset(9, 1);
+            transportStore.set({ ...transportStore.value!, loopStart: 9 });
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(10);
+            flushAutomergeStorageWrites();
+            const take = passTake('Take 1');
+            expect(held).toBe(5);
+            // Takes play a pass from the clip start; both notes sound where they were struck, inside the take.
+            expect(clip.startBeat + held - take.sourceOffsetBeats!).toBe(9);
+            expect(clip.startBeat + early - take.sourceOffsetBeats!).toBe(8.5);
+            expect(take.startBeat).toBeLessThanOrEqual(8.5);
+        });
+
+        it('keeps the notes of a wrapped pass inside its take when the loop start moves forward', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            const early = holdNoteOnset(8.5, 1);
+            transportStore.set({ ...transportStore.value!, loopStart: 9 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 9, endBeat: 12, sourceOffsetBeats: 5, index: 1 });
+
+            const take = passTake('Pass 1');
+            expect(clip.startBeat + early - take.sourceOffsetBeats!).toBe(8.5);
+            expect(take.startBeat).toBeLessThanOrEqual(8.5);
+        });
+
+        it('opens a pass take where the pass began when the loop start moves back inside it', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 9, passIndex: 1 })).toBe(5);
+
+            transportStore.set({ ...transportStore.value!, loopStart: 6 });
+            stageWrap(clip, { name: 'Pass 1', startBeat: 6, endBeat: 12, sourceOffsetBeats: 6, index: 1 });
+
+            // Pass 1 entered at 8, so beat 9 still reads source 5 through its take.
+            expect(passTake('Pass 1')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 4 });
+            // Pass 2 enters at the moved loop start, a pass length of four on.
+            expect(recordingMidiSourceBeatAt(clip.id, { beat: 6, passIndex: 2 })).toBe(8);
+        });
+
+        it('reads a relocated pass through the take staged for it', () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 10.5,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 9,
+            });
+            const onset = holdNote(9.5, 1)?.onsetSourceBeat;
+
+            stageWrap(clip, { name: 'Pass 1', startBeat: 8, endBeat: 12, sourceOffsetBeats: 4, index: 1 });
+
+            const take = passTake('Pass 1');
+            expect(onset).toBe(take.sourceOffsetBeats! + 9.5 - clip.startBeat);
+        });
+
+        function releaseNote(beat: number, passIndex: number): void {
+            admitRecordingMidiNoteOff({ channel: 0, note: 60, audioTime: 2, position: { beat, passIndex } });
+        }
+
+        it('plays a comped pass a jump entered on the beats it was struck', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 9,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 10,
+            });
+            holdNote(10, 1);
+            releaseNote(10.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11.5);
+            flushAutomergeStorageWrites();
+            await compPass('Take 1');
+
+            expect(heardPitches(8, 12)).toEqual([null, null, 60, null]);
+        });
+
+        it('plays a comped later pass of a recording begun inside the loop on the beats it was struck', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 10,
+            });
+            const [clip] = startRecording(10);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            holdNote(11, 1);
+            releaseNote(11.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11.75);
+            flushAutomergeStorageWrites();
+            await compPass('Take 1');
+
+            expect(heardPitches(10, 12)).toEqual([null, 60]);
+        });
+
+        async function compFirstPassAfterOneWrap(stopBeat: number): Promise<void> {
+            playheadWrapCountRef.current = 1;
+            await stopRecording(stopBeat);
+            flushAutomergeStorageWrites();
+            await compPass('Pass 0');
+        }
+
+        it('plays a comped first pass of a recording begun before the loop on the beats it was struck', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: true,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 6,
+            });
+            const [clip] = startRecording(6);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+            holdNote(9, 0);
+            releaseNote(9.5, 0);
+            // The scheduler stages the first pass with the run-up as its offset.
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(6, 12)).toEqual([null, null, null, 60, null, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
+            // Re-keying a take (split, Delete Time) strides by a finished pass, which spans the loop.
+            const takes = takeLaneStore.value?.lanes[0]?.takes ?? [];
+            for (const take of [passTake('Pass 0'), passTake('Take 1')]) {
+                expect(
+                    prepareMidiTakeSourceCapture({
+                        clip: recordedClip(),
+                        take,
+                        siblingTakes: takes,
+                        rows: noRows,
+                        timeline: constantTempo,
+                    })?.passLengthBeats
+                ).toBe(4);
+            }
+        });
+
+        describe('frozen by a split, read through the frozen take helpers', () => {
+            /**
+             * Recorded from 6 in loop [8, 12) with one wrap, stopped at 9.5:
+             * pass 0 strikes 6.5 in its run-up and 9 inside the loop, pass 1
+             * strikes 8.5, and an untagged note is drawn at media beat 4.25.
+             */
+            async function recordWithRunUp(stopBeat = 9.5): Promise<void> {
+                transportStore.set({
+                    ...defaultTransportState,
+                    isLooping: true,
+                    loopStart: 8,
+                    loopEnd: 12,
+                    playheadPosition: 6,
+                });
+                const [clip] = startRecording(6);
+                if (!clip) {
+                    throw new Error('Expected a provisional MIDI recording');
+                }
+                transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true });
+                holdNote(6.5, 0);
+                releaseNote(6.75, 0);
+                holdNote(9, 0);
+                releaseNote(9.25, 0);
+                stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+                holdNote(8.5, 1);
+                releaseNote(8.75, 1);
+                playheadWrapCountRef.current = 1;
+                await stopRecording(stopBeat);
+                flushAutomergeStorageWrites();
+                await dispatch({
+                    type: 'addNotes',
+                    payload: {
+                        clipId: clip.id,
+                        notes: [{ pitch: 72, startBeat: 4.25, duration: 0.25, velocity: 100 }],
+                    },
+                });
+            }
+
+            async function compOver(takeName: string, startBeat: number, endBeat: number): Promise<void> {
+                await dispatch({
+                    type: 'setCompRegion',
+                    payload: { trackId: TRACK_ID, takeId: passTake(takeName).id, startBeat, endBeat },
+                });
+            }
+
+            /**
+             * Every note-on the track holds in [fromBeat, toBeat), with its
+             * pitch: a live fragment read by hand from its clip's rows at its
+             * media offset, a frozen one through the frozen take helpers over
+             * each repeat of its captured source. The production readers'
+             * parity, live against frozen, is projectLiveMidiProgramme's and
+             * the schedulers' own suites.
+             */
+            function heardNotes(fromBeat: number, toBeat: number): [beat: number, pitch: number][] {
+                const notes = resolveClipsWithComping(TRACK_ID, recordedClips()).flatMap(
+                    (fragment): [number, number][] => {
+                        const source = fragment.midiTakeSource;
+                        if (source) {
+                            return frozenMidiTakeRepeats(
+                                source,
+                                fragment,
+                                fragment.startBeat,
+                                fragment.endBeat
+                            ).flatMap(
+                                ({ absoluteOccurrenceIndex }) =>
+                                    projectFrozenMidiTakeWindow({
+                                        source,
+                                        fragment,
+                                        recordingPassIndex: fragment.midiTakeRecordingPassIndex,
+                                        absoluteOccurrenceIndex,
+                                        fromBeat: fragment.startBeat,
+                                        toBeat: fragment.endBeat,
+                                    })?.notes.map((note): [number, number] => [note.startBeat, note.pitch]) ?? []
+                            );
+                        }
+                        return selectMidiNotesForRecordingPass(
+                            midiStore.value?.notesByClipId[fragment.id] ?? [],
+                            fragment.midiTakeRecordingPassIndex
+                        )
+                            .map((note): [number, number] => [
+                                fragment.startBeat + note.startBeat - (fragment.midiOffsetBeats ?? 0),
+                                note.pitch,
+                            ])
+                            .filter(([beat]) => beat >= fragment.startBeat && beat < fragment.endBeat);
+                    }
+                );
+                return notes
+                    .filter(([beat]) => beat >= fromBeat && beat < toBeat)
+                    .toSorted((left, right) => left[0] - right[0]);
+            }
+
+            function heardOnsets(fromBeat: number, toBeat: number): number[] {
+                return heardNotes(fromBeat, toBeat).map(([beat]) => beat);
+            }
+
+            async function splitInsideTheLoop(): Promise<void> {
+                await dispatch({
+                    type: 'splitClip',
+                    payload: { clipId: recordedClip().id, beat: 10, rightClipId: 'recording-right' },
+                });
+            }
+
+            it('plays a comped first pass’s run-up after the split on the beats it was struck', async () => {
+                await recordWithRunUp();
+                await compOver('Pass 0', 6, 12);
+                const live = heardOnsets(6, 12);
+                expect(live).toEqual([6.5, 9, 10.25]);
+
+                await splitInsideTheLoop();
+
+                // The split cuts Pass 0 itself, and its comp follows the take's pieces, so the
+                // run-up plays through the uncomped clip piece rather than the frozen repeat.
+                expect(passTake('Pass 0').midiSource).toMatchObject({ sourceEntryBeat: 2, phaseHeadBeat: 8 });
+                expect(heardOnsets(6, 12)).toEqual(live);
+            });
+
+            it('keeps a frozen run-up and its Delete Time bound through an edit of the run-up row and its undo', async () => {
+                await recordWithRunUp();
+                await compOver('Pass 0', 6, 12);
+                await splitInsideTheLoop();
+                // Cuts Pass 0's frozen piece [8, 10) after 9.5, so the piece keeping its id reads to source 3.5.
+                await dispatch({ type: 'deleteTime', payload: { startBeat: 9.5, endBeat: 9.75 } });
+                const bounded = passTake('Pass 0');
+                expect(bounded.midiSource).toMatchObject({ readEndBeat: 3.5 });
+                const sources = () => takeLaneStore.value?.lanes[0]?.takes.map((take) => take.midiSource);
+                const frozenSources = sources();
+                const heard = heardNotes(6, 12);
+                expect(heard).toContainEqual([6.5, 60]);
+                const runUp = bounded.midiSource?.rows.notes.value.find((note) => note.startBeat === 0.5);
+                if (!runUp || !bounded.midiSource) {
+                    throw new Error('Expected the frozen run-up row');
+                }
+
+                await dispatch({
+                    type: 'replaceOriginalMidiTakeRow',
+                    payload: {
+                        laneId: takeLaneStore.value!.lanes[0]!.id,
+                        takeId: bounded.id,
+                        sourceClipId: bounded.midiSource.sourceClipId,
+                        rowId: runUp.id,
+                        rowKind: 'note',
+                        expected: runUp,
+                        replacement: { ...runUp, startBeat: 0.75 },
+                        expectedSlotPresent: true,
+                        replacementSlotPresent: true,
+                        copyScope: 'capture',
+                    },
+                });
+
+                expect(passTake('Pass 0').midiSource).toMatchObject({ readEndBeat: 3.5 });
+                expect(heardNotes(6, 12)).toContainEqual([6.75, 60]);
+                expect(heardNotes(6, 12)).not.toContainEqual([6.5, 60]);
+
+                await undo();
+                flushAutomergeStorageWrites();
+
+                expect(sources()).toEqual(frozenSources);
+                expect(heardNotes(6, 12)).toEqual(heard);
+            });
+
+            it('keeps a later pass comped over its run-up playing it from the clip start when a split cuts its take', async () => {
+                // Stopped at 11, Take 1 runs [8, 11), so the split at 10 cuts the take itself. Its comp
+                // over [6, 12) reads the untagged 4.25 at 6.25; the clip under it would sound pass 0's 6.5.
+                await recordWithRunUp(11);
+                await compOver('Take 1', 6, 12);
+                const live = heardNotes(6, 12);
+                expect(live).toEqual([
+                    [6.25, 72],
+                    [8.5, 60],
+                ]);
+
+                await splitInsideTheLoop();
+
+                expect(heardNotes(6, 12)).toEqual(live);
+            });
+
+            it('sounds none of the time a Delete Time cut from a looping frozen take’s head, folded or not', async () => {
+                // Pitch 80 is drawn at media 1.5, beat 7.5, inside the deleted [7, 9): Pass 0's head is cut.
+                await recordWithRunUp();
+                await dispatch({
+                    type: 'addNotes',
+                    payload: {
+                        clipId: recordedClip().id,
+                        notes: [{ pitch: 80, startBeat: 1.5, duration: 0.25, velocity: 100 }],
+                    },
+                });
+                transportStore.set({ ...transportStore.value!, isPlaying: false, isRecording: false });
+                await dispatch({ type: 'setClipLoop', payload: { clipId: recordedClip().id, enabled: true } });
+                await dispatch({ type: 'setClipLoopLength', payload: { clipId: recordedClip().id, loopLength: 4 } });
+                await compOver('Pass 0', 6, 12);
+                expect(heardNotes(6, 12).map(([, pitch]) => pitch)).toContain(80);
+
+                await dispatch({ type: 'deleteTime', payload: { startBeat: 7, endBeat: 9 } });
+
+                const frozen = resolveClipsWithComping(TRACK_ID, recordedClips()).filter(
+                    (fragment) => fragment.midiTakeSource !== undefined
+                );
+                expect(frozen.some((fragment) => fragment.loopEnabled === true)).toBe(true);
+                expect(heardNotes(0, 32).map(([, pitch]) => pitch)).not.toContain(80);
+            });
+
+            it('plays a later pass comped from before its take start, untagged rows included', async () => {
+                await recordWithRunUp();
+                await compOver('Take 1', 6, 12);
+                const live = heardOnsets(6, 12);
+                // The untagged note sounds where live reads media 4.25 for the pass; pass 0's notes stay out.
+                expect(live).toEqual([6.25, 8.5]);
+
+                await splitInsideTheLoop();
+
+                expect(passTake('Take 1').midiSource).toMatchObject({ sourceEntryBeat: 6, phaseHeadBeat: 8 });
+                expect(heardOnsets(6, 12)).toEqual(live);
+
+                await undo();
+                flushAutomergeStorageWrites();
+                expect(recordedClips()).toHaveLength(1);
+                expect(passTake('Take 1')).not.toHaveProperty('midiSource');
+                expect(heardOnsets(6, 12)).toEqual(live);
+            });
+        });
+
+        it('plays a comped first pass on the beats it was struck when looping is switched on inside it', async () => {
+            transportStore.set({
+                ...defaultTransportState,
+                isLooping: false,
+                loopStart: 8,
+                loopEnd: 12,
+                playheadPosition: 6,
+            });
+            const [clip] = startRecording(6);
+            if (!clip) {
+                throw new Error('Expected a provisional MIDI recording');
+            }
+            transportStore.set({ ...transportStore.value!, isPlaying: true, isRecording: true, isLooping: true });
+            holdNote(10, 0);
+            releaseNote(10.5, 0);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(8, 12)).toEqual([null, null, 60, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
+        });
+
+        it('plays a comped first pass on the beats it was struck when the loop start moves forward inside it', async () => {
+            const clip = recordFromLoopStart();
+            transportStore.set({ ...transportStore.value!, loopStart: 10 });
+            holdNote(11, 0);
+            releaseNote(11.5, 0);
+            // The scheduler derives the first pass's offset from the moved loop start.
+            stageWrap(clip, { name: 'Pass 0', startBeat: 10, endBeat: 12, sourceOffsetBeats: 2, index: 0 });
+
+            await compFirstPassAfterOneWrap(11);
+
+            expect(heardPitches(10, 12)).toEqual([null, 60]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 10, endBeat: 12, sourceOffsetBeats: 0 });
+        });
+
+        it('plays a comped first pass recorded from the loop start on the beats it was struck', async () => {
+            const clip = recordFromLoopStart();
+            holdNote(9, 0);
+            releaseNote(9.5, 0);
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+
+            await compFirstPassAfterOneWrap(9);
+
+            expect(heardPitches(8, 12)).toEqual([null, 60, null, null]);
+            expect(passTake('Pass 0')).toMatchObject({ startBeat: 8, endBeat: 12, sourceOffsetBeats: 0 });
+        });
+
+        it('seals a pass a jump entered where the jump landed', async () => {
+            const clip = recordFromLoopStart();
+            stageWrap(clip, { name: 'Pass 0', startBeat: 8, endBeat: 12, sourceOffsetBeats: 0, index: 0 });
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: 'Relocated pass 0',
+                startBeat: 8,
+                endBeat: 9,
+                sourceOffsetBeats: 0,
+                recordingPassIndex: 0,
+                replacedTakeId: passTake('Pass 0').id,
+                nextPassStartBeat: 10,
+            });
+            const held = holdNoteOnset(10.5, 1);
+
+            playheadWrapCountRef.current = 1;
+            await stopRecording(11);
+            flushAutomergeStorageWrites();
+            const take = passTake('Take 1');
+            expect(take).toMatchObject({ startBeat: 10, endBeat: 11 });
+            expect(clip.startBeat + held - take.sourceOffsetBeats!).toBe(10.5);
+        });
+    });
+
+    it('keeps the open take available through a third wrap, then seals its fourth-pass phase', async () => {
+        transportStore.set({
+            ...defaultTransportState,
+            isLooping: true,
+            loopStart: 8,
+            loopEnd: 12,
+            playheadPosition: 8,
+        });
+        const [clip] = startRecording(8);
+        if (!clip) {
+            throw new Error('Expected a provisional MIDI recording');
+        }
+        for (const pass of [0, 1, 2] as const) {
+            stageRecordingTake({
+                trackId: TRACK_ID,
+                clipId: clip.id,
+                name: `Completed pass ${pass}`,
+                startBeat: 8,
+                endBeat: 12,
+                sourceOffsetBeats: pass * 4,
+                recordingPassIndex: pass,
+            });
+        }
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 3 });
+        expect(passTake('Take 1')).not.toHaveProperty('sourceOffsetBeats');
+
+        transportStore.set({ ...transportStore.value!, isPlaying: true });
+        playheadWrapCountRef.current = 3;
+        await stopRecording(9.5);
+        flushAutomergeStorageWrites();
+
+        expect(passTake('Take 1')).toMatchObject({ recordingPassIndex: 3, sourceOffsetBeats: 12, endBeat: 9.5 });
     });
 });

@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 test.describe('MIDI Editor & Piano Roll', () => {
@@ -40,7 +39,7 @@ test.describe('MIDI Editor & Piano Roll', () => {
         // The Piano roll editor canvas should be visible in the bottom panel
         const pianoRoll = page.locator('[aria-label="Piano roll editor"]');
         await expect(pianoRoll).toBeVisible();
-        
+
         // Check for the Piano Roll toolbar
         const toolBarItem = page.getByRole('button', { name: /Chord/i });
         await expect(toolBarItem).toBeVisible();

@@ -61,6 +61,7 @@ const trackStripStub = {
     preFaderTap: { connect: () => {} },
 };
 
+vi.mock('#/modules/CrdtDocument/useCases', () => ({ captureProjectRootIdentity: () => 'scheduler-fixture-root' }));
 vi.mock('#/infra/logger/appLogger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('#/modules/CrdtDocument/useCases', () => ({
     captureProjectRootIdentity: vi.fn<typeof import('#/modules/CrdtDocument/useCases').captureProjectRootIdentity>(
@@ -124,6 +125,9 @@ vi.mock('#/modules/Automation/useCases', () => ({
 }));
 vi.mock('#/modules/Arrangement/useCases', () => ({
     takeOwnsRecordingRoot: vi.fn(() => true),
+    prepareRecoveredRecording: vi.fn(),
+    admitRecordingCaptureClock: vi.fn(),
+    observeRecordingPassEntry: vi.fn(),
     discardRecording: vi.fn(),
     startRecording: vi.fn(() => []),
     stopRecording: vi.fn(),
@@ -142,6 +146,8 @@ vi.mock('#/modules/Arrangement/useCases', () => ({
     getSynthParamsForTrack: () => ({}),
 }));
 vi.mock('#/modules/AudioEngine/useCases', () => ({
+    ensureCachedAudioBuffersDurable: vi.fn(),
+    createNativeRecordingCaptureClock: () => ({ last: null, read: () => ({ carrier: 'browser' as const }) }),
     analyzePitchForClip: vi.fn(),
     ensureBusStrip: vi.fn(),
     getEngineState: vi.fn(),
@@ -551,6 +557,42 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
         });
     });
 
+    describe('late loop wrap that hands its pass over at the seam', () => {
+        // Longer than the look-ahead (0.2 beats), so a seam can be scheduled, and
+        // short enough that a stall landing 0.15 beats into a pass is both inside
+        // one look-ahead of the loop end and less than one look-ahead past the
+        // loop start, so the stall skip does not mark the window by itself.
+        const SEAM_LOOP = { loopStart: 3.4, loopEnd: 3.7 };
+
+        it('restores the value in force at the loop start ahead of the dying window, then plays its press', async () => {
+            loadClip(pedalLane());
+            transportStoreState.value = playingState({ playheadPosition: 2, isLooping: true, ...SEAM_LOOP });
+            startPlayheadScheduler();
+            await runTick();
+            expect(pedalCalls).toEqual([]);
+
+            // Stalled until the audio stands at 3.85, 0.15 beats past the loop
+            // end: the late wrap lands at 3.55 and the pass it opens reaches its
+            // own seam at 3.7 within this tick's look-ahead.
+            const stalledTickSeconds = ctxTime.now + (3.85 - schedulerSession.accumulatedPosition) / BEATS_PER_SECOND;
+            ctxTime.now = stalledTickSeconds - TICK_SECONDS;
+            await runTick();
+            const seamSeconds = stalledTickSeconds + 0.075;
+            expect(schedulerSession.pendingSeam?.seamAudioTime).toBeCloseTo(seamSeconds, 9);
+
+            // The dying window opens at the loop start as a relocation, on that
+            // pass's own clock (the loop start sounded 0.3 beats before the seam):
+            // the up in force there comes first, then the press at 3.5, then the
+            // incoming pass's own restore of that up on the seam frame.
+            const secondsBeforeSeam = (beats: number) => beats / BEATS_PER_SECOND;
+            expect(pedalCalls).toEqual([
+                { position: 0, frame: frameOf(seamSeconds - secondsBeforeSeam(0.3)) },
+                { position: 1, frame: frameOf(seamSeconds - secondsBeforeSeam(0.2)) },
+                { position: 0, frame: frameOf(seamSeconds) },
+            ]);
+        });
+    });
+
     describe('follow-action jump', () => {
         async function playUntilPedalDown(): Promise<void> {
             await runTicksUntil(() => pedalCalls.some((call) => call.position === 1), 50);
@@ -626,6 +668,27 @@ describe('startPlayheadScheduler stored controller restore at a relocation', () 
 
             expect(pedalCalls).toEqual([]);
             expect(otherPedalCalls).toEqual([]);
+        });
+    });
+
+    describe('main-thread stall', () => {
+        it('chases the lift a stall skipped, so the pedal pressed before it is not left down', async () => {
+            // Down at 0.5 and up at 2.5: the lift falls inside a stall from 0.35 s
+            // to 1.55 s (beats 0.7 to 3.1) that no tick runs through.
+            loadClip([pedal('up-0', 0, 0), pedal('down', 127, 0.5), pedal('up', 0, 2.5)]);
+            transportStoreState.value = playingState();
+            startPlayheadScheduler();
+            for (let tick = 0; tick < 5; tick++) {
+                await runTick();
+            }
+            expect(pedalCalls.map((call) => call.position)).toEqual([0, 1]);
+
+            ctxTime.now += 1.2 - TICK_SECONDS;
+            await runTick();
+
+            // The lift is not replayed at its passed frame; the value in force at
+            // the playhead is sent where the window opens, which is now.
+            expect(pedalCalls.slice(2)).toEqual([{ position: 0, frame: frameOf(ctxTime.now) }]);
         });
     });
 });

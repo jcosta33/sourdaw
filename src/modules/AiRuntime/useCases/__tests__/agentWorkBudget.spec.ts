@@ -69,4 +69,71 @@ describe('agent work budget', () => {
             reason: 'maxRenderJobs',
         });
     });
+
+    it('reserves stem analysis, download, and storage together under the existing attempt identities', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'stem-work-run',
+            request: 'Import selected stems.',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+            budgets: {
+                limits: { localAnalysis: 2, downloadBytes: 4, storageBytes: 8 },
+                consumed: {},
+            },
+        });
+        const admit = agentWorkBudget.admitStemPreparation('stem-work-run');
+
+        expect(admit({ analysisCount: 2, downloadBytes: 4, storageBytes: 8 })).toBe(true);
+        expect(admit({ analysisCount: 2, downloadBytes: 4, storageBytes: 8 })).toBe(true);
+        expect(agentRunLifecycle.get('stem-work-run')?.budgetAttempts).toMatchObject([
+            {
+                attemptId: 'stem-preparation:localAnalysis',
+                category: 'localAnalysis',
+                reserved: 2,
+                provenance: 'versioned-estimate',
+            },
+            {
+                attemptId: 'stem-preparation:downloadBytes',
+                category: 'downloadBytes',
+                reserved: 4,
+                provenance: 'versioned-estimate',
+            },
+            {
+                attemptId: 'stem-preparation:storageBytes',
+                category: 'storageBytes',
+                reserved: 8,
+                provenance: 'versioned-estimate',
+            },
+        ]);
+        expect(agentRunLifecycle.get('stem-work-run')?.budgets.consumed).toEqual({
+            localAnalysis: 2,
+            downloadBytes: 4,
+            storageBytes: 8,
+        });
+    });
+
+    it('leaves all stem categories unreserved when one hard limit refuses the batch', () => {
+        agentRunLifecycle.clear();
+        agentRunLifecycle.create({
+            runId: 'stem-limited-run',
+            request: 'Import selected stems.',
+            mode: 'macro',
+            createdRevision: 'revision-a',
+            budgets: {
+                limits: { localAnalysis: 2, downloadBytes: 4, storageBytes: 1 },
+                consumed: {},
+            },
+        });
+
+        expect(
+            agentWorkBudget.admitStemPreparation('stem-limited-run')({
+                analysisCount: 2,
+                downloadBytes: 4,
+                storageBytes: 8,
+            })
+        ).toBe(false);
+        expect(agentRunLifecycle.get('stem-limited-run')?.budgetAttempts).toEqual([]);
+        expect(agentRunLifecycle.get('stem-limited-run')?.budgets.consumed).toEqual({});
+    });
 });

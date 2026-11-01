@@ -5,8 +5,8 @@ import {
     configureAutomergeStoragePort,
     flushAutomergeStorageWrites,
 } from '#/infra/store/storage/createAutomergeStorage';
-import { takeLaneStore } from '#/modules/Arrangement/stores';
-import { getArrangementHandlers } from '#/modules/Arrangement/useCases';
+import { takeLaneStore, trackStore } from '#/modules/Arrangement/stores';
+import { createTrack, getArrangementHandlers } from '#/modules/Arrangement/useCases';
 import { clearHandlerRegistry, registerHandlerMap } from '#/modules/Command/stores';
 import {
     commandBatchPreflightPort,
@@ -177,6 +177,34 @@ describe('compilePendingActionCommandEnvelopes', () => {
             createCrdtDoc('root');
             registerCrdtStorageRuntime();
             registerHandlerMap(getArrangementHandlers());
+            trackStore.set({
+                tracks: [
+                    {
+                        ...createTrack({
+                            id: 'track-1',
+                            name: 'Track 1',
+                            kind: 'midi',
+                            initialAlternativeId: 'alt-1',
+                            withoutDefaultDevice: true,
+                        }),
+                        clips: lane.takes.map((take) => ({
+                            id: take.clipId,
+                            trackId: 'track-1',
+                            name: 'Test Clip',
+                            type: 'midi' as const,
+                            startBeat: 0,
+                            endBeat: 8,
+                            fadeInBeats: 0,
+                            fadeOutBeats: 0,
+                            gain: 1,
+                            color: '#ff0000',
+                            locked: false,
+                            muted: false,
+                        })),
+                    },
+                ],
+                selectedTrackId: null,
+            });
             takeLaneStore.set({ lanes: [structuredClone(lane)] });
             flushAutomergeStorageWrites();
             vi.stubGlobal('navigator', {
@@ -250,6 +278,7 @@ describe('compilePendingActionCommandEnvelopes', () => {
             vi.unstubAllGlobals();
             clearHandlerRegistry();
             takeLaneStore.set({ lanes: [] });
+            trackStore.set({ tracks: [], selectedTrackId: null });
             flushAutomergeStorageWrites();
             removeCrdtDoc('root');
             configureAutomergeStoragePort(null);

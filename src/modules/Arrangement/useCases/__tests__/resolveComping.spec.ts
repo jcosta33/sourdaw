@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 
+import { type MidiTakeSource } from '../../models/TakeLane';
 import { type Clip } from '../../models/Track';
 import { type TakeLaneStoreState } from '../../stores/takeLaneStore';
 import { resolveClipsWithComping } from '../resolveComping';
@@ -433,5 +434,62 @@ describe('resolveClipsWithComping', () => {
             [4, 8, 5],
         ]);
         expect(out.every((clip) => !Object.hasOwn(clip, 'audioOffsetBeats'))).toBe(true);
+    });
+
+    it('carries only the selected fragment’s frozen MIDI owner and original row identity', () => {
+        const source: MidiTakeSource = {
+            sourceClipId: 'original',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: {
+                    present: true,
+                    value: [{ id: 'original-row', pitch: 60, startBeat: 5, duration: 1, velocity: 100 }],
+                },
+                controlChanges: { present: false, value: [] },
+                pitchBends: { present: false, value: [] },
+            },
+        };
+        mocks.takeLaneStoreValue.value = {
+            lanes: [
+                {
+                    id: 'lane-1',
+                    trackId: 't1',
+                    takes: [
+                        {
+                            id: 'selected',
+                            clipId: 'right',
+                            name: 'Selected',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: true,
+                            midiSource: source,
+                        },
+                        {
+                            id: 'unselected',
+                            clipId: 'right',
+                            name: 'Unselected',
+                            startBeat: 0,
+                            endBeat: 8,
+                            selected: false,
+                            midiSource: source,
+                        },
+                    ],
+                    activeCompRegions: [{ startBeat: 2, endBeat: 4, takeId: 'selected' }],
+                },
+            ],
+        };
+
+        const programme = resolveClipsWithComping('t1', [testClip({ id: 'right', startBeat: 0, endBeat: 8 })]);
+
+        expect(programme.map((clip) => [clip.startBeat, clip.endBeat, clip.midiTakeId])).toEqual([
+            [0, 2, undefined],
+            [2, 4, 'selected'],
+            [4, 8, undefined],
+        ]);
+        expect(programme[1]?.midiTakeSource?.sourceClipId).toBe('original');
+        expect(programme[1]?.midiTakeSource?.rows.notes.value.map((note) => note.id)).toEqual(['original-row']);
     });
 });

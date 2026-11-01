@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
         return null;
     },
     bootstrap: vi.fn(),
+    reportError: vi.fn(),
+    logError: vi.fn<(error: Error) => void>(),
     clearInheritedRetrospectiveCaptureArm: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
@@ -117,6 +119,10 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
 
 vi.mock('#/styles/main.css', () => ({}));
 
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.logError, setWriters: vi.fn() },
+}));
+
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
     resetBrowserDisplayScaleForChildStartup: mocks.resetBrowserDisplayScaleForChildStartup,
@@ -144,6 +150,10 @@ vi.mock('#/modules/AiRuntime/useCases', () => ({
 }));
 
 vi.mock('#/modules/MIDI/useCases', () => ({
+    snapshotMidiClipData: vi.fn<typeof import('#/modules/MIDI/useCases').snapshotMidiClipData>(),
+    sealHeldRecordedMidiNotes: vi.fn<typeof import('#/modules/MIDI/useCases').sealHeldRecordedMidiNotes>(),
+    replaceFrozenMidiTakeRow: vi.fn<typeof import('#/modules/MIDI/useCases').replaceFrozenMidiTakeRow>(),
+    captureEventPositionAt: vi.fn<typeof import('#/modules/MIDI/useCases').captureEventPositionAt>(),
     isExactMidiClipDataActionSnapshot: mocks.isExactMidiClipDataActionSnapshot,
     decodeMidiClipDataSnapshots: vi.fn(() => null),
     setWebMidiRuntimeEventBus: mocks.setWebMidiRuntimeEventBus,
@@ -473,6 +483,8 @@ describe('app main composition', () => {
         expect(createRoot).toHaveBeenCalledOnce();
         expectFirstPaintBusesRegisteredBeforeRender();
         expect(mocks.reloadApplication).not.toHaveBeenCalled();
+        expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
         expect(appRenderObserved).toBe(true);
         expect(mocks.reportError).not.toHaveBeenCalled();
     });
@@ -537,6 +549,30 @@ describe('app main composition', () => {
             expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
         }
     );
+
+    it('logs the persistent App import failure, raising no page error, before rendering the terminal view', async () => {
+        const failure = new Error('controlled persistent import failure');
+        mocks.resolveAppComposition.mockReturnValue('application');
+        mocks.loadApp.mockRejectedValue(failure);
+
+        await import('../main');
+        await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
+
+        expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).toHaveBeenCalledOnce();
+        // Vitest wraps a module rejection in its own mock-factory error and keeps the original as `cause`.
+        expect(mocks.logError).toHaveBeenCalledWith(
+            expect.objectContaining({ cause: expect.objectContaining({ cause: failure }) })
+        );
+        const logOrder = mocks.logError.mock.invocationCallOrder[0];
+        const terminalRenderOrder = mocks.render.mock.invocationCallOrder[1];
+        expect(logOrder).toBeDefined();
+        expect(terminalRenderOrder).toBeDefined();
+        if (logOrder === undefined || terminalRenderOrder === undefined) {
+            throw new Error('The log or the terminal render did not run');
+        }
+        expect(logOrder).toBeLessThan(terminalRenderOrder);
+    });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
         mocks.resolveAppComposition.mockReturnValue('desktop-startup-error');

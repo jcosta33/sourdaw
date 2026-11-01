@@ -23,6 +23,30 @@ const schedule_device_key_on = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    admitRecordingMidiNoteOff: () => undefined,
+    admitRecordingMidiNoteOn: () => undefined,
+    admitRecordingMidiExpression: () => undefined,
+    findOpenRecordingMidiAdmission: () => undefined,
+    findOpenRecordingMidiMemberAdmission: () => undefined,
+    getRecordingMidiAdmission: () => undefined,
+    retireRecordingMidiAdmission: () => undefined,
+    takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        admitRecordingMidiNoteOn: () => null,
+        admitRecordingMidiNoteOff: () => undefined,
+        admitRecordingMidiExpression: () => undefined,
+        findOpenRecordingMidiAdmission: () => undefined,
+        findOpenRecordingMidiMemberAdmission: () => undefined,
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 type TestMidiEvent = {
     timeSamples: number;
     kind: { type: 'noteOff'; channel: number; note: number };

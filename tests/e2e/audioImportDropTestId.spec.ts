@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 // A minimal valid WAV: 44-byte header + mono 16-bit PCM at 44100 Hz. Built in
@@ -49,7 +48,12 @@ test.describe('Audio clip import — context menu Import Audio', () => {
         // Need a track to import into.
         const midi = page.locator('button').filter({ hasText: 'MIDI' }).filter({ hasText: 'Keys' });
         await midi.click();
-        await page.getByRole('grid', { name: /Track list/i }).first().getByRole('row').first().waitFor({ state: 'visible' });
+        await page
+            .getByRole('grid', { name: /Track list/i })
+            .first()
+            .getByRole('row')
+            .first()
+            .waitFor({ state: 'visible' });
     });
 
     test('importing a WAV adds an audio clip to the track', async ({ page }) => {

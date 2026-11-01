@@ -6,6 +6,8 @@ import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
 
+const INSTRUMENT_PANEL_MIN_HEIGHT = 160;
+
 type InstrumentBottomPanelProps = {
     label: string;
     /** Tailwind text color class for the label, e.g. "text-[var(--color-accent-lavender)]" */
@@ -28,10 +30,13 @@ export const InstrumentBottomPanel = ({
     children,
 }: InstrumentBottomPanelProps): ReactElement => (
     <>
-        <DragResizeHandle side="top" onResize={(data) => onResize((h) => Math.max(160, h + data))} />
+        <DragResizeHandle
+            side="top"
+            onResize={(data) => onResize((h) => Math.max(INSTRUMENT_PANEL_MIN_HEIGHT, h + data))}
+        />
         <div
-            className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden shrink-0 animate-in slide-in-from-bottom-2 duration-200`}
-            style={{ height }}
+            className={`contain-strict flex flex-col bg-surface-base border-t ${borderColor} overflow-hidden animate-in slide-in-from-bottom-2 duration-200`}
+            style={{ height, minHeight: INSTRUMENT_PANEL_MIN_HEIGHT }}
         >
             <Row
                 justify="between"

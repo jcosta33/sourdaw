@@ -9,7 +9,8 @@ const mocks = vi.hoisted(() => ({
     takeLaneStoreValue: { value: null as TakeLaneStoreState | null },
 }));
 
-vi.mock('#/modules/Command/useCases', () => ({
+vi.mock('#/modules/Command/useCases', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('#/modules/Command/useCases')>()),
     executeUserAppAction: mocks.executeUserAppAction,
 }));
 

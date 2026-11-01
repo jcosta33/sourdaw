@@ -6,11 +6,13 @@ import {
     Suspense,
     useEffect,
     useLayoutEffect,
+    useRef,
     useState,
 } from 'react';
 
 import { X } from 'lucide-react';
 
+import { DawTabStrip, getDawTabId, type DawTabStripItem } from '#/components/daw/DawTabStrip';
 import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { DragResizeHandle } from '#/components/ui/DragResizeHandle';
@@ -27,7 +29,9 @@ import {
     AiActionHistoryPanel,
     MixAnalysisPanel,
 } from '#/modules/AiRuntime/presentations/views';
+import { TakeLanesView } from '#/modules/Arrangement/presentations/views';
 import { clipSelectionStore, defaultClipSelectionState, trackStore } from '#/modules/Arrangement/stores';
+import { detectVariationLaneEnabling, hasVariationLanes } from '#/modules/Arrangement/useCases';
 import { ExportDialog } from '#/modules/AudioRendering/presentations/views';
 import { ModulationMatrix } from '#/modules/Automation/presentations/views';
 import { BacteriaPanel } from '#/modules/Bacteria/presentations/views';
@@ -56,7 +60,12 @@ import { ProofChamberPanel } from '#/modules/ProofChamber/presentations/views';
 import { RoutingMatrix } from '#/modules/Routing/presentations/views';
 import { LoopStationPanel, SessionView } from '#/modules/SessionLauncher/presentations/views';
 import { SetlistPanel } from '#/modules/Setlist/presentations/views';
-import { AutomationBottomPanel, ClipView, InspectorPanel } from '#/modules/TimelineEditor/presentations/views';
+import {
+    AutomationBottomPanel,
+    ClipView,
+    InspectorPanel,
+    useArrangementMinimumHeight,
+} from '#/modules/TimelineEditor/presentations/views';
 import { ToasterPanel } from '#/modules/Toaster/presentations/views';
 import { TunerPanel } from '#/modules/Tuner/presentations/views';
 import { YeastPanel } from '#/modules/Yeast/presentations/views';
@@ -71,6 +80,7 @@ import { alphaNoticeStore } from '../../stores/alphaNoticeStore';
 import { dismissAlphaNotice } from '../../useCases/dismissAlphaNotice';
 import { onShowDevicePanel } from '../../useCases/panels/devicePanels/onShowDevicePanel';
 import { showDevicePanel } from '../../useCases/panels/devicePanels/showDevicePanel';
+import { revealDeviceInInspector } from '../../useCases/panels/revealDeviceInInspector';
 import { closeBranchManager } from '../../useCases/togglePanel/panelToggles/closeBranchManager';
 import { openMixer } from '../../useCases/togglePanel/panelToggles/openMixer';
 import { toggleMixer } from '../../useCases/togglePanel/panelToggles/toggleMixer';
@@ -120,6 +130,7 @@ const SIDEBAR_PANEL_ACTIONS: SidebarPanelActions = {
     showGrandBoule: (deviceId) => showDevicePanel('grand-boule', deviceId),
     showLevain: (deviceId) => showDevicePanel('levain', deviceId),
     showToaster: (deviceId) => showDevicePanel('toaster', deviceId),
+    revealDevice: revealDeviceInInspector,
 };
 const CollaborationPanelLazy = lazy(() =>
     import('#/modules/Collaboration/presentations/views').then((m) => ({
@@ -170,6 +181,7 @@ type BottomTabValue =
     | 'loopStation'
     | 'modulation'
     | 'elastic'
+    | 'takes'
     | 'agent';
 
 type BottomTabState = {
@@ -177,7 +189,67 @@ type BottomTabState = {
     selectedClipId: string | null;
 };
 
+// The dock tabs in display order. Elastic and Takes are conditional; see `isBottomTabVisible`.
+const BOTTOM_TABS: readonly DawTabStripItem<BottomTabValue>[] = [
+    { id: 'mixer', label: 'Mixer', activeClassName: 'text-primary' },
+    { id: 'editor', label: 'Editor', activeClassName: 'text-[var(--color-accent-cyan)]' },
+    { id: 'automation', label: 'Automation', activeClassName: 'text-[var(--color-accent-lavender)]' },
+    { id: 'session', label: 'Session', activeClassName: 'text-[var(--color-accent-mint)]' },
+    { id: 'routing', label: 'Routing', activeClassName: 'text-[var(--color-accent-peach)]' },
+    { id: 'analysis', label: 'Analysis', activeClassName: 'text-[var(--color-accent-lavender)]' },
+    {
+        id: 'setlist',
+        label: 'Setlist',
+        activeClassName: 'text-[var(--color-accent-amber)]',
+        attributes: { 'data-onboarding': 'setlist-tab' },
+    },
+    {
+        id: 'loopStation',
+        label: 'Loop Station',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-onboarding': 'loop-station-tab' },
+    },
+    {
+        id: 'modulation',
+        label: 'Modulation',
+        activeClassName: 'text-[var(--color-accent-cyan)]',
+        attributes: { 'data-onboarding': 'modulation-tab' },
+    },
+    {
+        id: 'agent',
+        label: 'Agent',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-testid': 'agent-tab-button' },
+    },
+    {
+        id: 'elastic',
+        label: 'Elastic',
+        activeClassName: 'text-[var(--color-accent-peach)]',
+        attributes: { 'data-testid': 'elastic-tab-button' },
+    },
+    {
+        id: 'takes',
+        label: 'Takes',
+        activeClassName: 'text-[var(--color-accent-mint)]',
+        attributes: { 'data-testid': 'takes-tab-button' },
+    },
+];
+const BOTTOM_TAB_ID_PREFIX = 'bottom-dock-tab';
+const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
+
 const EDITOR_MIN_HEIGHT = 280;
+const MIXER_MIN_HEIGHT = 120;
+const VIRTUAL_KEYBOARD_MIN_HEIGHT = 80;
+// Outlasts LaunchScreen's 650 ms exit fade.
+const LAUNCH_EXIT_UNMOUNT_MS = 700;
+
+/**
+ * Under reduced motion the launch overlay drops its exit transition, so it is
+ * unmounted at once rather than left as a transparent aria-modal dialog.
+ */
+function launchExitUnmountDelayMs(): number {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : LAUNCH_EXIT_UNMOUNT_MS;
+}
 
 /**
  * The shell proper. `MobileGate` sits *above* this component, in the root route, so on
@@ -189,6 +261,7 @@ const EDITOR_MIN_HEIGHT = 280;
  */
 export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const workspaceState = useWorkspaceState();
+    const arrangementMinimumHeight = useArrangementMinimumHeight();
     const {
         sidebarOpen,
         inspectorOpen,
@@ -233,6 +306,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         tracksSnapshot.tracks.some((track) =>
             track.clips.some((clip) => clip.id === selectedClipId && clip.type === 'audio')
         );
+    const takesTabAvailable = hasVariationLanes(tracksSnapshot.tracks);
     const aiState = useStore(aiStore, { tasks: [], isPanelOpen: false });
     const aiPanelOpen = aiState.isPanelOpen;
     const alphaDismissed = useStore(alphaNoticeStore);
@@ -243,9 +317,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     const selectedClipChanged = bottomTabState.selectedClipId !== selectedClipId;
     const selectedClipBottomTab = selectedClipChanged && selectedClipId !== null ? 'editor' : bottomTabState.value;
     const elasticBottomTabUnavailable = selectedClipBottomTab === 'elastic' && !isAudioClipSelected;
-    const bottomTab: BottomTabValue = elasticBottomTabUnavailable ? 'editor' : selectedClipBottomTab;
+    const takesBottomTabUnavailable = selectedClipBottomTab === 'takes' && !takesTabAvailable;
+    let bottomTab: BottomTabValue = selectedClipBottomTab;
+    if (elasticBottomTabUnavailable) {
+        bottomTab = 'editor';
+    } else if (takesBottomTabUnavailable) {
+        bottomTab = 'mixer';
+    }
 
-    if (selectedClipChanged || elasticBottomTabUnavailable) {
+    if (selectedClipChanged || elasticBottomTabUnavailable || takesBottomTabUnavailable) {
         setBottomTabState({
             value: bottomTab,
             selectedClipId,
@@ -353,6 +433,25 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
             unsubscribe();
         };
     }, [project.initialized, alphaDismissed]);
+
+    // Switching a track's variation lanes on reveals the take panel, which lives
+    // in the Takes tab. It acts on that edge only: a project loading with lanes
+    // already on, or lanes switching off, must not move the dock, and the user
+    // can leave the tab while lanes stay on. The first observation only seeds
+    // the comparison.
+    const variationLanesShownRef = useRef<ReadonlyMap<string, boolean> | null>(null);
+    useEffect(() => {
+        const { shown, enabledTrackIds } = detectVariationLaneEnabling(
+            variationLanesShownRef.current,
+            tracksSnapshot.tracks
+        );
+        variationLanesShownRef.current = shown;
+        if (enabledTrackIds.length === 0) {
+            return;
+        }
+        setBottomTabState({ value: 'takes', selectedClipId });
+        openMixer();
+    }, [tracksSnapshot.tracks, selectedClipId]);
 
     // Auto-switch bottom tab when clip selected
     useEffect(() => {
@@ -515,7 +614,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
     // ─── Launch screen overlay state ───────────────────────────────────────
     // We start hidden (loading:true is the default). New-user loading completion
     // shows the launch screen; initialization derives the exit animation and the
-    // existing timer unmounts it after 700ms.
+    // existing timer unmounts it after the fade (at once under reduced motion).
     const [showLaunch, setShowLaunch] = useState(false);
     // The launch-overlay exit must be MONOTONIC. `project.initialized` is a
     // transient projectStore flag (stripped from the CRDT, reconstructed on
@@ -576,41 +675,20 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
         }
         const timer = setTimeout(() => {
             setShowLaunch(false);
-        }, 700);
+        }, launchExitUnmountDelayMs());
         return () => clearTimeout(timer);
     }, [launchExiting]);
 
-    // Bottom-dock tab id helpers. `id`/`aria-controls`/`aria-labelledby` wire
-    // each tab to the single shared tabpanel so AT announces the dock as one
-    // tablist instead of N unrelated buttons.
-    const bottomTabButtonId = (value: BottomTabValue): string => `bottom-dock-tab-${value}`;
-    const BOTTOM_TABPANEL_ID = 'bottom-dock-tabpanel';
-
-    // Renders one dock tab with the `role="tab"` / `aria-selected` semantics,
-    // preserving each tab's existing variant, accent colour and data-* hooks.
-    const renderBottomTab = (
-        value: BottomTabValue,
-        label: string,
-        activeClassName: string,
-        extraProps: Record<string, string> = {}
-    ): ReactNode => {
-        const selected = activeBottomTab === value;
-        return (
-            <Button
-                role="tab"
-                id={bottomTabButtonId(value)}
-                aria-selected={selected}
-                aria-controls={BOTTOM_TABPANEL_ID}
-                variant={selected ? 'secondary' : 'ghost'}
-                size="xs"
-                className={selected ? activeClassName : ''}
-                onClick={() => setBottomTab(value)}
-                {...extraProps}
-            >
-                {label}
-            </Button>
-        );
+    const isBottomTabVisible = (value: BottomTabValue): boolean => {
+        if (value === 'elastic') {
+            return isAudioClipSelected;
+        }
+        if (value === 'takes') {
+            return takesTabAvailable;
+        }
+        return true;
     };
+    const visibleBottomTabs = BOTTOM_TABS.filter((tab) => isBottomTabVisible(tab.id));
 
     // Bottom-dock tab content. `routing` renders the same RoutingMatrix branch
     // the original ternary chain used for its final fallback.
@@ -636,6 +714,8 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                 return <ModulationMatrix />;
             case 'elastic':
                 return <ElasticEditorPanel />;
+            case 'takes':
+                return <TakeLanesView />;
             case 'agent':
                 return <AgentWorkspace requestedRun={requestedAgentRun} />;
             default:
@@ -694,14 +774,23 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                     {renderSidePanel(chatPanelOpen, prefs.panelPlacementChat, 'left', chatNode, onChatResize)}
                     {renderSidePanel(aiPanelOpen, prefs.panelPlacementAi, 'left', aiNode('left'), onAiResize)}
 
-                    {/* Center: vertical split — arrangement over mixer */}
+                    {/* Center: vertical split — arrangement over the bottom panels.
+                        The arrangement takes what the panels leave, down to its
+                        minimum; each panel shrinks to its own minimum first. Only
+                        when every minimum together exceeds the window (the editor
+                        dock, an instrument panel and the keyboard on a short
+                        screen) does this column scroll, as the last resort. */}
                     <Stack
                         grow
                         className="min-w-0 overflow-x-hidden overflow-y-auto"
                         style={{ minWidth: MIN_ARRANGE_COLUMN_WIDTH }}
                     >
                         {/* Main arrangement area */}
-                        <main id="main-content" className="contain-content flex-1 min-h-min overflow-hidden">
+                        <main
+                            id="main-content"
+                            className="contain-content flex-1 min-h-0 overflow-hidden"
+                            style={{ minHeight: arrangementMinimumHeight }}
+                        >
                             {children}
                         </main>
 
@@ -909,16 +998,15 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                         if (activeBottomTab === 'editor') {
                                             setEditorHeight((h) => Math.max(EDITOR_MIN_HEIGHT, h + d));
                                         } else {
-                                            setMixerHeight((h) => Math.max(120, h + d));
+                                            setMixerHeight((h) => Math.max(MIXER_MIN_HEIGHT, h + d));
                                         }
                                     }}
                                 />
                                 <Stack
-                                    shrink={activeBottomTab === 'editor'}
                                     className="contain-strict bg-surface-base overflow-hidden"
                                     style={{
                                         height: activeBottomTab === 'editor' ? editorHeight : mixerHeight,
-                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : undefined,
+                                        minHeight: activeBottomTab === 'editor' ? EDITOR_MIN_HEIGHT : MIXER_MIN_HEIGHT,
                                     }}
                                 >
                                     {/* Bottom panel tab bar */}
@@ -933,50 +1021,16 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                             borderBottom: '1px solid rgba(0,0,0,0.4)',
                                         }}
                                     >
-                                        <Row gap={0.5} role="tablist" aria-label="Bottom dock">
-                                            {renderBottomTab('mixer', 'Mixer', 'text-primary')}
-                                            {renderBottomTab('editor', 'Editor', 'text-[var(--color-accent-cyan)]')}
-                                            {renderBottomTab(
-                                                'automation',
-                                                'Automation',
-                                                'text-[var(--color-accent-lavender)]'
-                                            )}
-                                            {renderBottomTab('session', 'Session', 'text-[var(--color-accent-mint)]')}
-                                            {renderBottomTab('routing', 'Routing', 'text-[var(--color-accent-peach)]')}
-                                            {renderBottomTab(
-                                                'analysis',
-                                                'Analysis',
-                                                'text-[var(--color-accent-lavender)]'
-                                            )}
-                                            {renderBottomTab('setlist', 'Setlist', 'text-[var(--color-accent-amber)]', {
-                                                'data-onboarding': 'setlist-tab',
-                                            })}
-                                            {renderBottomTab(
-                                                'loopStation',
-                                                'Loop Station',
-                                                'text-[var(--color-accent-mint)]',
-                                                { 'data-onboarding': 'loop-station-tab' }
-                                            )}
-                                            {renderBottomTab(
-                                                'modulation',
-                                                'Modulation',
-                                                'text-[var(--color-accent-cyan)]',
-                                                { 'data-onboarding': 'modulation-tab' }
-                                            )}
-                                            {renderBottomTab('agent', 'Agent', 'text-[var(--color-accent-mint)]', {
-                                                'data-testid': 'agent-tab-button',
-                                            })}
-                                            {isAudioClipSelected
-                                                ? renderBottomTab(
-                                                      'elastic',
-                                                      'Elastic',
-                                                      'text-[var(--color-accent-peach)]',
-                                                      { 'data-testid': 'elastic-tab-button' }
-                                                  )
-                                                : null}
-                                        </Row>
-
-                                        <div className="flex-1" />
+                                        <DawTabStrip
+                                            label="Bottom dock"
+                                            idPrefix={BOTTOM_TAB_ID_PREFIX}
+                                            items={visibleBottomTabs}
+                                            activeId={activeBottomTab}
+                                            panelId={BOTTOM_TABPANEL_ID}
+                                            onChange={setBottomTab}
+                                            className="flex-1"
+                                            scrollerClassName="gap-0.5 py-px"
+                                        />
 
                                         <Button
                                             variant="ghost"
@@ -991,7 +1045,7 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                     <div
                                         role="tabpanel"
                                         id={BOTTOM_TABPANEL_ID}
-                                        aria-labelledby={bottomTabButtonId(activeBottomTab)}
+                                        aria-labelledby={getDawTabId(BOTTOM_TAB_ID_PREFIX, activeBottomTab)}
                                         tabIndex={0}
                                         className="flex-1 overflow-hidden"
                                     >
@@ -1007,11 +1061,18 @@ export const AppShell = ({ children }: AppShellProps): ReactElement => {
                                 <DragResizeHandle
                                     side="top"
                                     onResize={(d) => {
-                                        const next = Math.max(80, Math.min(400, virtualKeyboardHeight + d));
+                                        const next = Math.max(
+                                            VIRTUAL_KEYBOARD_MIN_HEIGHT,
+                                            Math.min(400, virtualKeyboardHeight + d)
+                                        );
                                         updateWorkspaceState({ virtualKeyboardHeight: next });
                                     }}
                                 />
-                                <div className="shrink-0 overflow-hidden" style={{ height: virtualKeyboardHeight }}>
+                                <div
+                                    className="overflow-hidden"
+                                    data-testid="virtual-keyboard-dock"
+                                    style={{ height: virtualKeyboardHeight, minHeight: VIRTUAL_KEYBOARD_MIN_HEIGHT }}
+                                >
                                     <VirtualKeyboard onClose={toggleVirtualKeyboard} />
                                 </div>
                             </>

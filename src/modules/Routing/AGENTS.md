@@ -8,11 +8,7 @@ Owns auxiliary send routing, bus strips, sidechain routes, sidechain capability 
 
 ## Public Contract Surface
 
-- **`useCases`**: `ensureBusStrip`, `setBusGain`, `setSend`, `removeSend`, `hydrateSidechainRoutes`, `addSidechainRoute`, `addSidechainRouteSnapshot`, `removeSidechainRoute`, `removeSidechainRouteSnapshot`, `restoreSidechainRoutes`, `getSidechainRoutesForTrack`, `getAllSidechainRoutes`, `getSidechainTargetCapability`, `setSidechainRoutes`, `wireSidechainRoutes`, `getNodeViewHandlers`.
-- **`stores`**: `sidechainStore` (`defaultSidechainStoreState`, type `SidechainStoreState`).
-- **`presentations/views`**: `RoutingMatrix`, `RoutingGraph`.
-- **`events`**: None.
-- **Handler maps**: `getNodeViewHandlers` (`handleToggleNodeView`).
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -31,5 +27,5 @@ Owns auxiliary send routing, bus strips, sidechain routes, sidechain capability 
 
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
-- **Focused unit tests**: `pnpm test:run <changed-spec>`
+- **Focused unit tests**: `pnpm guard --profile focused -- pnpm test:run <changed-spec>`
 - PR CI checks module boundaries; inspect that result after cross-module changes.

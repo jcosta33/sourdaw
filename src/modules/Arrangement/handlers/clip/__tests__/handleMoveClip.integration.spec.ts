@@ -15,10 +15,12 @@ import {
 } from '#/modules/Command/useCases';
 import {
     createCrdtDoc,
+    getCrdtDoc,
     registerCrdtStorageRuntime,
     removeCrdtDoc,
     resetCrdtProjectAuthority,
 } from '#/modules/CrdtDocument/useCases';
+import { projectAudioLoopPassSegments } from '#/utils/audioSourceTime';
 import {
     type ConfirmPayload,
     type NotifyPayload,
@@ -109,6 +111,125 @@ describe('handleMoveClip atomic integration', () => {
         automationStore.set({ lanes: [] });
         configureAutomergeStoragePort(null);
         removeCrdtDoc('root');
+    });
+
+    it('moves a trimmed stretched audio loop without changing its physical source phase, including undo and redo', async () => {
+        const source = ClipDummy.create({
+            id: 'clip-1',
+            trackId: 'track-1',
+            startBeat: 6,
+            endBeat: 14,
+            audioOffsetBeats: 99,
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+            audioLoopPassOriginBeat: 4,
+            loopOriginBeat: 2,
+            loopEnabled: true,
+            loopLength: 4,
+            stretchMode: 'timestretch',
+            stretchRatio: 2,
+        });
+        const state = trackStore.value!;
+        trackStore.set({
+            ...state,
+            tracks: state.tracks.map((track) => (track.id === 'track-1' ? { ...track, clips: [source] } : track)),
+        });
+
+        const rawClip = () =>
+            getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')
+                ?.tracks?.tracks.flatMap((track) => track.clips)
+                .find((clip) => clip.id === 'clip-1');
+        const projectedClip = () =>
+            trackStore.value?.tracks.flatMap((track) => track.clips).find((clip) => clip.id === 'clip-1');
+        const expectedSource = {
+            audioOffsetSeconds: -0.25,
+            audioUnwrappedOffsetSeconds: 3.5,
+            audioLoopStartSeconds: 1.5,
+            audioLoopPassEntrySeconds: 4.5,
+        };
+        const expectPlacement = (
+            startBeat: number,
+            trackId: string,
+            loopOriginBeat: number,
+            passOriginBeat: number,
+            persisted = true
+        ) => {
+            for (const clip of persisted ? [rawClip(), projectedClip()] : [projectedClip()]) {
+                expect(clip).toMatchObject({
+                    id: 'clip-1',
+                    trackId,
+                    startBeat,
+                    endBeat: startBeat + 8,
+                    ...expectedSource,
+                    loopOriginBeat,
+                    audioLoopPassOriginBeat: passOriginBeat,
+                });
+            }
+        };
+        const expectSourcePhase = () => {
+            const clip = projectedClip()!;
+            // The first trimmed pass retains its signed entry until the wrap;
+            // subsequent head and wrap windows read the distinct stored seconds.
+            // The project clock changes from 120 to 60 BPM at beat 12.
+            const secondsAtBeat = (beat: number) => (beat <= 12 ? beat / 2 : 6 + beat - 12);
+            const windows = [clip.startBeat, clip.startBeat + 4].flatMap((iterationStartBeat) =>
+                projectAudioLoopPassSegments({
+                    clip,
+                    loopLengthBeats: 4,
+                    iterationStartBeat,
+                    iterationEndBeat: iterationStartBeat + 4,
+                    stretchRatio: 2,
+                    tempoAtClipStart: clip.startBeat < 12 ? 120 : 60,
+                    secondsAtBeat,
+                }).map((part) => [iterationStartBeat + part.startOffsetBeats, part.sourceStartSeconds])
+            );
+            expect(windows).toEqual([
+                [clip.startBeat, -0.25],
+                [clip.startBeat + 2, 4.5],
+                [clip.startBeat + 4, 1.5],
+                [clip.startBeat + 6, 4.5],
+            ]);
+        };
+
+        expectPlacement(6, 'track-1', 2, 4, false);
+        expectSourcePhase();
+        expect(
+            await executeAppActionBatch(
+                [{ type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 } }],
+                { source: 'manual', requireCompensation: true }
+            )
+        ).toMatchObject({ status: 'committed' });
+        expectPlacement(16, 'track-2', 12, 14);
+        expectSourcePhase();
+
+        await undo();
+        expectPlacement(6, 'track-1', 2, 4);
+        expectSourcePhase();
+        await redo();
+        expectPlacement(16, 'track-2', 12, 14);
+        expectSourcePhase();
+    });
+
+    it('keeps absent source-clock fields absent on an ordinary move', async () => {
+        expect(
+            await executeAppActionBatch(
+                [{ type: 'moveClip', payload: { clipId: 'clip-1', trackId: 'track-2', startBeat: 16 } }],
+                { source: 'manual', requireCompensation: true }
+            )
+        ).toMatchObject({ status: 'committed' });
+        const projected = trackStore.value?.tracks[1]?.clips[0];
+        const raw = getCrdtDoc<{ tracks?: NonNullable<(typeof trackStore)['value']> }>('root')?.tracks?.tracks[1]
+            ?.clips[0];
+        for (const clip of [projected, raw]) {
+            expect(clip).toBeDefined();
+            expect(Object.hasOwn(clip!, 'audioOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(clip!, 'audioUnwrappedOffsetSeconds')).toBe(false);
+            expect(Object.hasOwn(clip!, 'audioLoopStartSeconds')).toBe(false);
+            expect(Object.hasOwn(clip!, 'audioLoopPassEntrySeconds')).toBe(false);
+            expect(Object.hasOwn(clip!, 'audioLoopPassOriginBeat')).toBe(false);
+        }
     });
 
     it('retains three-clip order and exact material through a same-track move, undo and redo', async () => {

@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { configureAutomergeStoragePort } from '#/infra/store/storage/createAutomergeStorage';
 
+import { ClipDummy } from '../../__tests__/ClipDummy';
+import { resolveClipsWithComping } from '../../useCases/resolveComping';
 import {
     decodeExactTakeLaneSnapshots,
     defaultTakeLaneStoreState,
@@ -469,6 +471,66 @@ describe('sanitize_take_lane_store_state', () => {
         });
     });
 
+    it('preserves every canonical take clock field without adding them to legacy takes', () => {
+        const legacy = { id: 'legacy', clipId: 'clip-1', name: 'Legacy', startBeat: 0, endBeat: 4, selected: true };
+        const canonical = {
+            ...legacy,
+            id: 'canonical',
+            sourceOffsetBeats: 4,
+            sourceOffsetSeconds: 0,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+            passSourceEndSeconds: 4,
+            passOriginBeat: 0,
+            passOriginSourceSeconds: -1,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [legacy, canonical],
+            activeCompRegions: [
+                { startBeat: 0, endBeat: 2, takeId: legacy.id },
+                { startBeat: 2, endBeat: 4, takeId: canonical.id },
+            ],
+        };
+        const state = { lanes: [lane] };
+        expect(sanitize_take_lane_store_state(state)).toBe(state);
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+        // Exercise normalization too: an unrelated extra key must not drop the clock.
+        expect(sanitize_take_lane_store_state({ ...state, extra: true })).toEqual(state);
+    });
+
+    it.each([
+        { sourceOffsetSeconds: -1 },
+        { sourceOffsetSeconds: Number.NaN },
+        { sourceOffsetSeconds: Number.POSITIVE_INFINITY },
+        { sourceOffsetSeconds: '1' },
+        { sourceOffsetSeconds: undefined },
+        { passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passSourceEndSeconds: 2 },
+        { sourceOffsetBeats: 4, passAnchorSeconds: -2, passDepthSeconds: 2, passOriginBeat: 0 },
+    ])('rejects a malformed modern take and its comp reference %j', (placement) => {
+        const take = {
+            id: 'selected',
+            clipId: 'clip-1',
+            name: 'Selected',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            ...placement,
+        };
+        const lane = {
+            id: 'lane-1',
+            trackId: 'track-1',
+            takes: [take],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: take.id }],
+        };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(sanitize_take_lane_store_state({ lanes: [lane] })).toEqual({
+            lanes: [{ ...lane, takes: [], activeCompRegions: [] }],
+        });
+    });
+
     it('should read a lane holding a placed pass as exact, taking it as it is', () => {
         // Exactness is what a time operation's inverse plan is decoded with, so
         // a lane holding a placed pass that read as inexact could not be undone.
@@ -494,6 +556,87 @@ describe('sanitize_take_lane_store_state', () => {
 
         expect(sanitize_take_lane_store_state(state)).toBe(state);
         expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+    });
+
+    it('retains a present frozen MIDI source through exact snapshots and hydration', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: { present: true, value: [] },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+            sourceEntryBeat: 0,
+            sourceEndBeat: 4,
+            phaseHeadBeat: -0,
+            passLengthBeats: 4,
+        };
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: source,
+                    recordingPassIndex: 0,
+                },
+            ],
+            activeCompRegions: [],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toEqual([lane]);
+        const sanitized = sanitize_take_lane_store_state({ lanes: [lane] });
+        expect(sanitized.lanes[0]?.takes[0]?.midiSource).toEqual(source);
+        expect(sanitized.lanes[0]?.takes[0]?.recordingPassIndex).toBe(0);
+        expect(Object.is(sanitized.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat, -0)).toBe(true);
+    });
+
+    it('refuses malformed present MIDI source instead of dropping its take or comp selection', () => {
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    midiSource: { sourceClipId: 'clip-1', rows: null },
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-1' }],
+        };
+
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(() => sanitize_take_lane_store_state({ lanes: [lane] })).toThrow('Invalid frozen MIDI take source');
+    });
+
+    it('refuses a malformed present recording pass identity before sanitizing its take', () => {
+        const lane = {
+            id: 'lane-midi',
+            trackId: 'track-midi',
+            takes: [
+                {
+                    id: 'pass-1',
+                    clipId: 'clip-1',
+                    name: 'Pass 1',
+                    startBeat: 0,
+                    endBeat: 4,
+                    selected: true,
+                    recordingPassIndex: -1,
+                },
+            ],
+            activeCompRegions: [{ startBeat: 0, endBeat: 4, takeId: 'pass-1' }],
+        };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(() => sanitize_take_lane_store_state({ lanes: [lane] })).toThrow('Invalid MIDI recording pass identity');
     });
 
     it('should preserve a pass placement, a negative anchor included, and drop takes carrying a malformed one', () => {
@@ -570,12 +713,40 @@ describe('takeLaneStore', () => {
     });
 
     it('should preserve valid CRDT hydration without writing back', async () => {
+        const source = {
+            sourceClipId: 'clip-1',
+            rows: {
+                notes: {
+                    present: true as const,
+                    value: [
+                        { id: 'recorded', pitch: 60, startBeat: 5, duration: 1, velocity: 100, recordingPassIndex: 1 },
+                    ],
+                },
+                controlChanges: { present: true as const, value: [] },
+                pitchBends: { present: true as const, value: [] },
+            },
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+        };
         const valid_state = {
             lanes: [
                 {
                     id: 'lane-1',
                     trackId: 'track-1',
-                    takes: [],
+                    takes: [
+                        {
+                            id: 'take-1',
+                            clipId: 'clip-1',
+                            name: 'Recorded',
+                            startBeat: 0,
+                            endBeat: 4,
+                            selected: true,
+                            recordingPassIndex: 1,
+                            midiSource: source,
+                        },
+                    ],
                     activeCompRegions: [],
                 },
             ],
@@ -586,6 +757,90 @@ describe('takeLaneStore', () => {
         await flush_pending_frame();
 
         expect(takeLaneStore.value).toEqual(valid_state);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.rows.notes.value[0]?.recordingPassIndex).toBe(1);
+        expect(takeLaneStore.value?.lanes[0]?.takes[0]?.midiSource?.phaseHeadBeat).toBe(0);
+        expect(mutation_count).toBe(0);
+    });
+
+    it('hydrates the carrier after rejecting an empty source interval and its comp reference', async () => {
+        const carrier = ClipDummy.create({ id: 'clip-1', startBeat: 8, endBeat: 16 });
+        const legacy = {
+            id: 'legacy-pass',
+            clipId: carrier.id,
+            name: 'Legacy without endpoint',
+            startBeat: 8,
+            endBeat: 16,
+            selected: false,
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+        };
+        const empty = { ...legacy, id: 'empty-pass', selected: true, passSourceEndSeconds: 2 };
+        const lane = {
+            id: 'lane-1',
+            trackId: carrier.trackId,
+            takes: [legacy, empty],
+            activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: empty.id }],
+        };
+        const legacyLane = { ...lane, takes: [legacy], activeCompRegions: [] };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(decodeExactTakeLaneSnapshots([legacyLane])).toEqual([legacyLane]);
+        fake_doc.takeLanes = { lanes: [lane] };
+        const savedCarrier = { tracks: [{ id: carrier.trackId, clips: [carrier] }] };
+        fake_doc.tracks = savedCarrier;
+
+        takeLaneStore.hydrate();
+        await flush_pending_frame();
+
+        expect(takeLaneStore.value).toEqual({ lanes: [legacyLane] });
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([legacy.id]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([]);
+        expect(fake_doc.tracks).toBe(savedCarrier);
+        expect(savedCarrier.tracks[0]!.clips).toEqual([carrier]);
+        expect(resolveClipsWithComping(carrier.trackId, savedCarrier.tracks[0]!.clips)).toEqual([
+            { ...carrier, regionStartBeat: 8, regionEndBeat: 16, sourceStartBeat: 8 },
+        ]);
+        expect(mutation_count).toBe(0);
+    });
+
+    it('hydrates the carrier after rejecting an empty source interval and its comp reference', async () => {
+        const carrier = ClipDummy.create({ id: 'clip-1', startBeat: 8, endBeat: 16 });
+        const legacy = {
+            id: 'legacy-pass',
+            clipId: carrier.id,
+            name: 'Legacy without endpoint',
+            startBeat: 8,
+            endBeat: 16,
+            selected: false,
+            sourceOffsetBeats: 4,
+            passAnchorSeconds: -2,
+            passDepthSeconds: 2,
+        };
+        const empty = { ...legacy, id: 'empty-pass', selected: true, passSourceEndSeconds: 2 };
+        const lane = {
+            id: 'lane-1',
+            trackId: carrier.trackId,
+            takes: [legacy, empty],
+            activeCompRegions: [{ startBeat: 8, endBeat: 16, takeId: empty.id }],
+        };
+        const legacyLane = { ...lane, takes: [legacy], activeCompRegions: [] };
+        expect(decodeExactTakeLaneSnapshots([lane])).toBeNull();
+        expect(decodeExactTakeLaneSnapshots([legacyLane])).toEqual([legacyLane]);
+        fake_doc.takeLanes = { lanes: [lane] };
+        const savedCarrier = { tracks: [{ id: carrier.trackId, clips: [carrier] }] };
+        fake_doc.tracks = savedCarrier;
+
+        takeLaneStore.hydrate();
+        await flush_pending_frame();
+
+        expect(takeLaneStore.value).toEqual({ lanes: [legacyLane] });
+        expect(takeLaneStore.value?.lanes[0]?.takes.map((take) => take.id)).toEqual([legacy.id]);
+        expect(takeLaneStore.value?.lanes[0]?.activeCompRegions).toEqual([]);
+        expect(fake_doc.tracks).toBe(savedCarrier);
+        expect(savedCarrier.tracks[0]!.clips).toEqual([carrier]);
+        expect(resolveClipsWithComping(carrier.trackId, savedCarrier.tracks[0]!.clips)).toEqual([
+            { ...carrier, regionStartBeat: 8, regionEndBeat: 16, sourceStartBeat: 8 },
+        ]);
         expect(mutation_count).toBe(0);
     });
 });

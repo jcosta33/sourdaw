@@ -5,7 +5,7 @@
  * automation lane all author the descriptor's camelCase id; `set_param`
  * (`crates/daw-dsp/src/crust/engine.rs`) matches snake_case and answers a name
  * it does not know by doing nothing. Two hosts hand that engine a name: the
- * worklet posts `set_param` through `services/crustProcessor.ts`, and the
+ * worklet posts `set_param` through `worklets/crustProcessor.ts`, and the
  * native body hands the same name to the same engine through
  * `CrustBody::set_param` (`crates/daw-engine/src/scheduler.rs`). One table
  * serves both, so a strip that moves between the two runtimes cannot find one

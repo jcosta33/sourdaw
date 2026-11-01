@@ -145,6 +145,10 @@ vi.mock('#/modules/Arrangement/useCases', async () => {
 vi.mock('#/modules/MIDI/useCases', async () => {
     const actual = await vi.importActual<typeof import('#/modules/MIDI/useCases')>('#/modules/MIDI/useCases');
     return {
+        captureEventPositionAt: actual.captureEventPositionAt,
+        replaceFrozenMidiTakeRow: actual.replaceFrozenMidiTakeRow,
+        sealHeldRecordedMidiNotes: actual.sealHeldRecordedMidiNotes,
+        snapshotMidiClipData: actual.snapshotMidiClipData,
         projectClipControllerEvents: vi.fn(),
         projectClipControllerRestore: vi.fn(),
         isExactMidiClipDataActionSnapshot: actual.isExactMidiClipDataActionSnapshot,
@@ -277,6 +281,7 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     // The same census: the project session quiescer imports the disarm, and
     // this suite never reaches a session teardown.
     disarmRetrospectiveCapture: vi.fn(),
+    openCachedAudioBufferHold: vi.fn(() => ({ retain: vi.fn(), release: vi.fn() })),
     soundsNativeNotes: vi.fn(() => false),
     updateDeviceParam: vi.fn(),
     holdWebFallbackDeviceParam: vi.fn(),
@@ -319,6 +324,11 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
     clearReportedLatency: vi.fn(),
     clearRuntimeCachedAudioBuffers: vi.fn(),
     createBufferSource: vi.fn(),
+    createNativeRecordingCaptureClock: vi.fn(() => ({
+        admission: null,
+        last: null,
+        read: () => ({ carrier: 'browser' as const }),
+    })),
     createRuntimeGraphTopologyFingerprint: vi.fn(),
     decodeAudioFile: vi.fn(),
     discardDecodedAudioFile: vi.fn(),

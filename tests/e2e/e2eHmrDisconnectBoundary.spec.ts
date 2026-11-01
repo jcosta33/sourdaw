@@ -3,8 +3,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
-import { expect, test } from '@playwright/test';
 import { createServer, type ServerOptions, type WebSocketClient } from 'vite';
+
+import { expect, test } from './e2eTest';
 
 function deferred<T>() {
     let complete!: (value: T) => void;

@@ -16,6 +16,7 @@ export function registerHandlerCommitValidation(
     postcondition?: DocumentValidation
 ): void {
     const documentChecks = new Map<string, Array<HandlerCommitValidation['validateDocument']>>();
+    const beforeMutationChecks = new Map<string, Array<NonNullable<HandlerCommitValidation['beforeMutation']>>>();
     for (const guard of guards) {
         transaction.validateCommit(() => {
             const reason = guard.beforeCommit();
@@ -24,6 +25,18 @@ export function registerHandlerCommitValidation(
             }
             return null;
         });
+        if (guard.beforeMutation) {
+            const checks = beforeMutationChecks.get(guard.documentId) ?? [];
+            const check = guard.beforeMutation;
+            checks.push((document) => {
+                const reason = check(document);
+                if (reason) {
+                    throw new AutomergeStorageWriteConflictError(reason);
+                }
+                return null;
+            });
+            beforeMutationChecks.set(guard.documentId, checks);
+        }
         const checks = documentChecks.get(guard.documentId) ?? [];
         checks.push((document) => {
             const reason = guard.validateDocument(document);
@@ -40,14 +53,30 @@ export function registerHandlerCommitValidation(
         documentChecks.set(postcondition.documentId, checks);
     }
     for (const [documentId, checks] of documentChecks) {
-        transaction.validateDocument(documentId, (document) => {
-            for (const check of checks) {
-                const reason = check(document);
-                if (reason) {
-                    return reason;
+        let beforeMutation: HandlerCommitValidation['beforeMutation'];
+        if (beforeMutationChecks.has(documentId)) {
+            beforeMutation = (document) => {
+                for (const check of beforeMutationChecks.get(documentId) ?? []) {
+                    const reason = check(document);
+                    if (reason) {
+                        return reason;
+                    }
                 }
-            }
-            return null;
-        });
+                return null;
+            };
+        }
+        transaction.validateDocument(
+            documentId,
+            (document) => {
+                for (const check of checks) {
+                    const reason = check(document);
+                    if (reason) {
+                        return reason;
+                    }
+                }
+                return null;
+            },
+            beforeMutation
+        );
     }
 }

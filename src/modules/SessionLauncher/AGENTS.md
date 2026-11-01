@@ -4,11 +4,7 @@ Owns clip launcher matrix scenes, pad triggers, and live loop-station multi-laye
 
 ## Public Contract Surface
 
-- `stores/`: `sessionLaunchStore` (`SessionLaunchState`), `loopStationStore` (`LoopSlot`, `LoopSlotState`, `LoopLayer`, `LoopStationState`).
-- `useCases/`: Session launch (`launchSessionScene`, `stopAllSessionSlots`, `toggleSessionSlot`), loop station (`toggleRecord`, `triggerPad`, `triggerScene`, `triggerSlot`, `stopAllSlots`), `getSessionLauncherHandlers`.
-- `events/`: No public domain event payloads exported.
-- `presentations/views/`: `SessionView`, `LoopStationPanel`.
-- Handlers: `getSessionLauncherHandlers()`.
+Public surface: `useCases/index.ts`, `stores/index.ts`, `presentations/views/index.ts`.
 
 ## Key Subsystems
 
@@ -29,5 +25,5 @@ Owns clip launcher matrix scenes, pad triggers, and live loop-station multi-laye
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

@@ -291,9 +291,9 @@ function expandEditStep(context: StepContext, chosen: readonly ExpandedParameter
 export function expandMixRecipe(
     input: RecipeExpansionInput,
     context: ProjectContext,
-    ordinal: number
+    ordinal: number,
+    catalog: MixRecipeCatalog = getMixRecipeCatalog()
 ): ExpandMixRecipeResult {
-    const catalog = getMixRecipeCatalog();
     const recipe = catalog.recipes.find((candidate) => candidate.id === input.recipeId);
     if (recipe === undefined) {
         return refuse(`recipe.expand recipeId "${input.recipeId}" is not a recipe in the catalog.`);

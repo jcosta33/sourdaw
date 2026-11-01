@@ -8,7 +8,6 @@ import {
     isComplexPrompt,
     searchPresets,
     getAvailablePresets,
-    resolvePresetActions,
     onPromptDraft,
     notifyAiChange,
     isLlmAvailable,
@@ -221,13 +220,6 @@ export const usePromptExecution = (): PromptExecutionState => {
         if (operationRef.current || approvalRef.current) {
             return;
         }
-        const actions = resolvePresetActions({
-            presetId: result.preset.id,
-            context: presetContext,
-        });
-        if (actions.length === 0) {
-            return;
-        }
         const controller = new AbortController();
         operationRef.current = controller;
         setFuzzyResults([]);
@@ -236,8 +228,7 @@ export const usePromptExecution = (): PromptExecutionState => {
             const submission = await submitAdmittedPromptRequest({
                 prompt: result.preset.label,
                 source: 'preset',
-                actions,
-                requiresConfirmation: result.preset.isDestructive,
+                preset: { id: result.preset.id, expectedContext: presetContext },
                 signal: controller.signal,
             });
             if (submission.status === 'awaiting-approval') {

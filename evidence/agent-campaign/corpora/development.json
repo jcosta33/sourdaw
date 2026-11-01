@@ -19,8 +19,7 @@
             "sealed": true
         },
         "bulk-by-role": {
-            "sealed": false,
-            "pendingContract": "canonical track roles and selector predicates in transform.compile"
+            "sealed": true
         },
         "comparative-by-measurement": {
             "sealed": false,
@@ -42,8 +41,7 @@
             "sealed": true
         },
         "question": {
-            "sealed": false,
-            "pendingContract": "PlanningOutcome kind answer"
+            "sealed": true
         },
         "boundary": {
             "sealed": true
@@ -56,6 +54,10 @@
             "class": "execute-exact",
             "prompt": "create a blues song with a twelve bar progression",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create a midi track", "add a clip", "add midi notes"]
@@ -171,6 +173,10 @@
             "class": "execute-exact",
             "prompt": "create a blues song with a twelve bar progression, set tempo to 96 bpm",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create a midi track", "add a clip", "add midi notes", "change the project tempo"]
@@ -300,6 +306,10 @@
             "prompt": "create 2 audio tracks named Lead Vocals, Backing Vocals",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create a midi track"]
                 },
@@ -358,6 +368,10 @@
             "prompt": "create a synth pad track",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create a midi track"]
                 },
@@ -399,6 +413,10 @@
             "class": "execute-exact",
             "prompt": "create a folder track named Drums Bus",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create a midi track"]
@@ -693,6 +711,10 @@
             "prompt": "Add a compressor to the Bass DI and set its ratio to 6:1.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
                 },
@@ -766,6 +788,10 @@
             "class": "execute-exact",
             "prompt": "Add an EQ to the Lead Vocal and set its low gain to -3 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
@@ -841,6 +867,10 @@
             "prompt": "Add a delay to the Guitar and set its time to 375 ms.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["add a device to a track", "set a device parameter"]
                 },
@@ -915,6 +945,10 @@
             "prompt": "Set the Lead Vocal volume to -6 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["set track gain"]
                 },
@@ -970,6 +1004,10 @@
             "class": "execute-exact",
             "prompt": "Turn the Bass DI down 3 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1027,6 +1065,10 @@
             "prompt": "Set the master to -1 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["set master gain"]
                 },
@@ -1070,6 +1112,10 @@
             "class": "execute-exact",
             "prompt": "Set the Kick send to the Drum Bus to -6 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set send"]
@@ -1128,6 +1174,10 @@
             "class": "execute-exact",
             "prompt": "Create a bus called Vocal Reverb and send the Lead Vocal to it at -12 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
@@ -1201,6 +1251,10 @@
             "prompt": "Make a new bus named Guitar Room and send the Guitar to it at -18 dB.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
                 },
@@ -1272,6 +1326,10 @@
             "class": "execute-exact",
             "prompt": "Create a Parallel Drums bus and send the Kick to it at -6 dB and the Snare at -9 dB.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["create bus", "add send"]
@@ -1372,6 +1430,10 @@
             "prompt": "Dip the Lead Vocal by 6 dB in the Chorus.",
             "providerTurns": [
                 {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
                     "kind": "search",
                     "intents": ["dip a track level across a section"]
                 },
@@ -1437,6 +1499,10 @@
             "class": "execute-exact",
             "prompt": "Duck the Kick send to the Drum Bus to -12 dB over bars 5 to 8.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["duck a send level over a bar range"]
@@ -1505,6 +1571,10 @@
             "class": "execute-exact",
             "prompt": "Automate the Bass DI compressor threshold to -30 from beat 16 to beat 48.",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["automate a device parameter over a beat range"]
@@ -1576,6 +1646,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB and turn Snare down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1607,6 +1681,10 @@
             },
             "prompt": "make the lead vocal 1.5 dB",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1666,6 +1744,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB and turn Snare down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1697,6 +1779,10 @@
             },
             "prompt": "make the snare 1 dB",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1756,6 +1842,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB and mute Guitar",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -1787,6 +1877,10 @@
             },
             "prompt": "make it 2 dB",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain", "mute track"]
@@ -1846,6 +1940,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB and turn Snare down 2 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -1877,6 +1975,10 @@
             },
             "prompt": "not the snare",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -1922,6 +2024,10 @@
                 "prompt": "Turn Keys down 2 dB and mute Guitar",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -1953,6 +2059,10 @@
             },
             "prompt": "drop the Keys change",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain", "mute track"]
@@ -1998,6 +2108,10 @@
                 "prompt": "Turn Keys down 2 dB and mute Guitar",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -2029,6 +2143,10 @@
             },
             "prompt": "remove the Guitar mute",
             "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
                 {
                     "kind": "search",
                     "intents": ["set track gain"]
@@ -2073,6 +2191,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2120,6 +2242,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2165,6 +2291,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2212,6 +2342,10 @@
                 "prompt": "Turn Bass DI down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2249,6 +2383,10 @@
             "prior": {
                 "prompt": "Turn Bass DI down 3 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2288,6 +2426,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2325,6 +2467,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2372,6 +2518,10 @@
                 "prompt": "Turn Lead Vocal down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2418,6 +2568,10 @@
                 "prompt": "Turn Bass DI down 3 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2463,6 +2617,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 1 dB and turn Bass DI down 2 dB",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain"]
@@ -2515,6 +2673,10 @@
                 "prompt": "Turn Lead Vocal down 1 dB and mute Lead Vocal",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
                     },
@@ -2565,6 +2727,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 2 dB and mute Bass DI",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
@@ -2625,6 +2791,10 @@
             "prior": {
                 "prompt": "Turn Lead Vocal down 1 dB and mute Lead Vocal",
                 "providerTurns": [
+                    {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
                     {
                         "kind": "search",
                         "intents": ["set track gain", "mute track"]
@@ -2700,6 +2870,10 @@
                 "prompt": "Set Lead Vocal to -8 dB",
                 "providerTurns": [
                     {
+                        "kind": "intake",
+                        "intent": "literal"
+                    },
+                    {
                         "kind": "search",
                         "intents": ["set track gain"]
                     },
@@ -2742,6 +2916,652 @@
                     "gainDb": -15
                 }
             ]
+        },
+        {
+            "id": "AC054-DEV-BULK-1",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set the gain of all four drum tracks to -3 dB.",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -3
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "all": [
+                                        {
+                                            "roleFamily": "drums"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 4
+                                }
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set the gain of all four drum tracks to -3 dB.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-kick", "track-snare", "track-hi-hat", "track-overheads"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-lead-vocal",
+                                "track-backing-vocal-left",
+                                "track-backing-vocal-right",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "gainDb": -3
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "gainDb": -3
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-hi-hat",
+                            "gainDb": -3
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-overheads",
+                            "gainDb": -3
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-snare", "track-hi-hat", "track-overheads"],
+                    "protectedIds": [
+                        "track-lead-vocal",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 4
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-BULK-2",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set the gain of both backing vocal tracks to -6 dB.",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -6
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "all": [
+                                        {
+                                            "role": "backing vocal"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 2
+                                }
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set the gain of both backing vocal tracks to -6 dB.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-backing-vocal-left", "track-backing-vocal-right"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-kick",
+                                "track-snare",
+                                "track-hi-hat",
+                                "track-overheads",
+                                "track-lead-vocal",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-left",
+                            "gainDb": -6
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-backing-vocal-right",
+                            "gainDb": -6
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-backing-vocal-left", "track-backing-vocal-right"],
+                    "protectedIds": [
+                        "track-kick",
+                        "track-snare",
+                        "track-hi-hat",
+                        "track-overheads",
+                        "track-lead-vocal",
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC054-DEV-BULK-3",
+            "promptClass": "bulk-by-role",
+            "class": "execute-exact",
+            "prompt": "Set kick and snare volume to -2 dB.",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "literal"
+                },
+                {
+                    "kind": "search",
+                    "intents": ["set track gain"]
+                },
+                {
+                    "kind": "discover",
+                    "names": ["setTrackGain"]
+                },
+                {
+                    "kind": "propose",
+                    "items": [
+                        {
+                            "id": "set-role-gain",
+                            "name": "setTrackGain",
+                            "arguments": {
+                                "gainDb": -2
+                            },
+                            "selector": {
+                                "targetArgument": "trackId",
+                                "entity": "track",
+                                "match": {
+                                    "any": [
+                                        {
+                                            "role": "kick"
+                                        },
+                                        {
+                                            "role": "snare"
+                                        }
+                                    ]
+                                },
+                                "quantity": {
+                                    "unit": "targets",
+                                    "exactly": 2
+                                }
+                            }
+                        }
+                    ],
+                    "plan": {
+                        "semantic": {
+                            "classification": "complex",
+                            "uncertainty": []
+                        },
+                        "objective": "Set kick and snare volume to -2 dB.",
+                        "constraints": ["Leave tracks outside the selected role set unchanged."],
+                        "scope": {
+                            "targetIds": ["track-kick", "track-snare"],
+                            "targetRanges": [],
+                            "protectedTargetIds": [
+                                "track-hi-hat",
+                                "track-overheads",
+                                "track-lead-vocal",
+                                "track-backing-vocal-left",
+                                "track-backing-vocal-right",
+                                "track-bass-di"
+                            ],
+                            "protectedRanges": []
+                        },
+                        "capabilityIds": [],
+                        "assetIds": [],
+                        "alternatives": [],
+                        "validationStrategy": ["Validate role membership and exact gain values."],
+                        "stoppingConditions": ["Stop if the selected role set differs from the requested targets."]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "proposal",
+                "actions": [
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-kick",
+                            "gainDb": -2
+                        }
+                    },
+                    {
+                        "type": "setTrackGain",
+                        "payload": {
+                            "trackId": "track-snare",
+                            "gainDb": -2
+                        }
+                    }
+                ],
+                "invariants": {
+                    "touchedIdsWithin": ["track-kick", "track-snare"],
+                    "protectedIds": [
+                        "track-hi-hat",
+                        "track-overheads",
+                        "track-lead-vocal",
+                        "track-backing-vocal-left",
+                        "track-backing-vocal-right",
+                        "track-bass-di"
+                    ],
+                    "maxCommands": 2
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-1",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "descriptive",
+            "prompt": "What tempo is this song at?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "tempo"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "tempo"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The project tempo setting is 120 BPM; the time signature is 4/4.\n\nThe “tempo” query returned 1 item(s) on this page out of 1 matching item(s).",
+                "query": {
+                    "type": "tempo",
+                    "facts": {
+                        "tempo": 120
+                    }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-2",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "descriptive",
+            "prompt": "How many buses are in this session?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "object"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "summary"
+                            },
+                            {
+                                "kind": "project-fact",
+                                "fact": "tracks"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The project has 10 audio/MIDI track(s), 2 bus(es), and 0 folder(s). Master output is separate. Tempo is 120 BPM in 4/4.\n\nProject tracks: “Kick” (“audio”, 0 captured clip(s)); “Snare” (“audio”, 0 captured clip(s)); “Hi-Hat” (“audio”, 0 captured clip(s)); “Overheads” (“audio”, 0 captured clip(s)); “Bass DI” (“audio”, 0 captured clip(s)); “Lead Vocal” (“audio”, 0 captured clip(s)); “Backing Vocals L” (“audio”, 0 captured clip(s)); “Backing Vocals R” (“audio”, 0 captured clip(s)); “Guitar” (“audio”, 0 captured clip(s)); “Keys” (“midi”, 0 captured clip(s)); “Drum Bus” (“bus”, 0 captured clip(s)); “Reverb Bus” (“bus”, 0 captured clip(s)).\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
+                "query": {
+                    "type": "object",
+                    "facts": {
+                        "name": "Drum Bus",
+                        "trackKind": "bus"
+                    },
+                    "total": 16
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-3",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "descriptive",
+            "prompt": "Where's the Lead Vocal fader set?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer"
+                },
+                {
+                    "kind": "query",
+                    "id": "query",
+                    "args": {
+                        "type": "object"
+                    }
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "project-fact",
+                                "fact": "settings"
+                            },
+                            {
+                                "kind": "query-page",
+                                "callId": "query"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Project fader settings (linear gain, not measured audio): master 0.8; “Kick” 1; “Snare” 1; “Hi-Hat” 1; “Overheads” 1; “Bass DI” 1; “Lead Vocal” 1; “Backing Vocals L” 1; “Backing Vocals R” 1; “Guitar” 1; “Keys” 1; “Drum Bus” 1; “Reverb Bus” 1.\n\nThe “object” query returned 16 item(s) on this page out of 16 matching item(s).",
+                "query": {
+                    "type": "object",
+                    "facts": {
+                        "name": "Lead Vocal",
+                        "gain": 1
+                    }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-4",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "What would you do to the snare to give it more punch?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Snare"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["punchy"],
+                    "targetName": "Snare",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "drums-punchy"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Transient passes, body compresses” describes “punchy” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The source still has its transients; a pre-limited loop has nothing left to let through.”. Contraindications: “Skip when a fast peak limiter already sits ahead of this point.”; “Skip on brushed or very soft playing, where the body is all there is.”. Authored parameter windows: “Threshold” -20–-12 “dB”; “Ratio” 3–5 “:1”; “Attack” 20–30 “ms”; “Release” 60–120 “ms”; “Makeup” 3–6 “dB”. Choose Propose this to prepare it for “Snare” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "drums-punchy",
+                    "targetName": "Snare"
+                },
+                "suggestion": {
+                    "recipeId": "drums-punchy",
+                    "targetId": "track-snare"
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-5",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "suggestion",
+            "prompt": "How could I make the lead vocal warmer?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-catalog",
+                    "scopeTrack": "Lead Vocal"
+                },
+                {
+                    "kind": "recipe",
+                    "id": "recipe",
+                    "descriptors": ["warmer"],
+                    "targetName": "Lead Vocal",
+                    "role": "vocal",
+                    "limit": 1
+                },
+                {
+                    "kind": "answer",
+                    "id": "answer",
+                    "args": {
+                        "intakeCallId": "intake",
+                        "statements": [
+                            {
+                                "kind": "recipe",
+                                "callId": "recipe",
+                                "recipeId": "vocal-warm"
+                            }
+                        ]
+                    }
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "The catalog recipe “Chest-register lift with a softened upper shelf” describes “warm” (“produces”). These are authored suggestions, not measurements of this project. Prerequisites: “The vocal track already carries a high-pass or has no room rumble below 80 Hz.”. Contraindications: “Skip when the vocal already reads congested between 200 Hz and 400 Hz; clear that first.”; “Skip when the arrangement relies on the vocal to carry the top of the mix.”. Authored parameter windows: “Low Freq” 140–180 “Hz”; “Low Gain” 1.5–3 “dB”; “High Freq” 9000–12000 “Hz”; “High Gain” -2.5–-0.5 “dB”. Choose Propose this to prepare it for “Lead Vocal” as a proposal, using the middle of each authored window; nothing changes until you approve it.",
+                "recipe": {
+                    "recipeId": "vocal-warm",
+                    "targetName": "Lead Vocal"
+                },
+                "suggestion": {
+                    "recipeId": "vocal-warm",
+                    "targetId": "track-lead-vocal"
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-6",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "How loud is the master in the chorus?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "master" },
+                    "metrics": ["integratedLoudness", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Chorus” (beats 48–80), Master output integrated loudness is -10.45 LUFS (exact).\n\nOver “Chorus” (beats 48–80), Master output RMS level is -13.47 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "master" },
+                    "rangeName": "Chorus",
+                    "metrics": { "integratedLoudness": -10.45, "rms": -13.47 }
+                }
+            }
+        },
+        {
+            "id": "AC005-DEV-QUESTION-7",
+            "promptClass": "question",
+            "class": "answer-exact",
+            "questionKind": "measured",
+            "prompt": "What are the peak and RMS levels on the snare during the verse?",
+            "providerTurns": [
+                {
+                    "kind": "intake",
+                    "intent": "answer-measured",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "topics": ["level"]
+                },
+                {
+                    "kind": "measure",
+                    "id": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse"
+                },
+                {
+                    "kind": "metric-answer",
+                    "id": "answer",
+                    "intakeCallId": "intake",
+                    "measureCallId": "measure",
+                    "target": { "kind": "track", "name": "Snare" },
+                    "metrics": ["truePeak", "rms"]
+                }
+            ],
+            "oracle": {
+                "kind": "answer",
+                "text": "Over “Verse” (beats 16–48), “Snare” true peak is -27.95 dBTP (exact).\n\nOver “Verse” (beats 16–48), “Snare” RMS level is -30.97 dBFS (exact).",
+                "measurement": {
+                    "target": { "kind": "track", "name": "Snare" },
+                    "rangeName": "Verse",
+                    "metrics": { "truePeak": -27.95, "rms": -30.97 }
+                }
+            }
         }
     ]
 }

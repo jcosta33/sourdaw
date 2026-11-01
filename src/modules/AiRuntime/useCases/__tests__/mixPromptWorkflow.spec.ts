@@ -55,6 +55,8 @@ import {
     configureAiWorkflowCommandPreflightFixture,
     resetAiWorkflowCommandPreflightFixture,
 } from './aiWorkflowCommandPreflightFixture';
+import { advertisedAnswerSchema } from './answerWireFixture';
+import { literalMetricIntakeTurn } from './metricGoalWorkflowFixture';
 
 const PROMPT =
     'Set Lead Vocal gain to 70%, pan Guitar Left 20% left and Guitar Right 20% right, and mute Room Mic, leaving the Drum Bus unchanged.';
@@ -198,6 +200,22 @@ function getHostedRequestBody(): string {
     return body;
 }
 
+function assertAdvertisedToolSchema(
+    schema: ReturnType<typeof advertisedAnswerSchema>
+): asserts schema is ReturnType<typeof advertisedAnswerSchema> &
+    import('../../models/ToolDefinitions').ToolSchema['function'] {
+    const parameters = schema.parameters;
+    if (
+        parameters.type !== 'object' ||
+        !isRecord(parameters.properties) ||
+        !Array.isArray(parameters.required) ||
+        !parameters.required.every((entry: unknown) => typeof entry === 'string') ||
+        (parameters.additionalProperties !== undefined && typeof parameters.additionalProperties !== 'boolean')
+    ) {
+        throw new TypeError('Expected the actual advertised object tool schema.');
+    }
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -297,7 +315,7 @@ function assertDiscoveredCommandSchemas(receipts: readonly unknown[], names: rea
     if (
         !isRecord(discovery) ||
         discovery.status !== 'success' ||
-        discovery.turn !== 1 ||
+        discovery.turn !== 2 ||
         !isRecord(discovery.data) ||
         discovery.data.schema !== 'sourdaw.agent-tool-catalog' ||
         discovery.data.schemaVersion !== 1 ||
@@ -342,12 +360,14 @@ function toolCallsResponse(calls: readonly ProviderCall[]): Response {
 function setProviderPlan(plan: readonly ProviderCall[]): void {
     const names = [...new Set(plan.map((call) => call.name))];
     let webLlmTurn = 0;
-    runtimeMocks.generateWebLlmCompletion.mockImplementation((_systemPrompt, userMessage) => {
+    runtimeMocks.generateWebLlmCompletion.mockImplementation((systemPrompt, userMessage) => {
+        const phase = webLlmTurn % 3;
         webLlmTurn += 1;
-        if (webLlmTurn > 2) {
-            throw new Error('Expected exactly two WebLLM provider turns');
+        // The exact mixer controls are literal; every correction still enters through live intake.
+        if (phase === 0) {
+            return Promise.resolve(JSON.stringify(literalMetricIntakeTurn(userMessage, systemPrompt)));
         }
-        if (webLlmTurn === 1) {
+        if (phase === 1) {
             return Promise.resolve(
                 JSON.stringify([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
             );
@@ -360,15 +380,8 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
         if (typeof init?.body !== 'string') {
             throw new TypeError('Expected hosted provider request body');
         }
+        const phase = hostedTurn % 3;
         hostedTurn += 1;
-        if (hostedTurn > 2) {
-            throw new Error('Expected exactly two hosted provider turns');
-        }
-        if (hostedTurn === 1) {
-            return Promise.resolve(
-                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
-            );
-        }
         const request: unknown = JSON.parse(init.body);
         const userMessage =
             isRecord(request) && Array.isArray(request.messages)
@@ -378,6 +391,20 @@ function setProviderPlan(plan: readonly ProviderCall[]): void {
                 : undefined;
         if (!isRecord(userMessage) || typeof userMessage.content !== 'string') {
             throw new TypeError('Expected hosted provider user message');
+        }
+        if (phase === 0) {
+            const schema = advertisedAnswerSchema(request);
+            assertAdvertisedToolSchema(schema);
+            return Promise.resolve(
+                toolCallsResponse(
+                    literalMetricIntakeTurn(userMessage.content, [{ type: 'function', function: schema }])
+                )
+            );
+        }
+        if (phase === 1) {
+            return Promise.resolve(
+                toolCallsResponse([{ name: 'agent.catalog.discover', arguments: { category: 'command', names } }])
+            );
         }
         assertDiscoveredCommandSchemas(getReplayedToolReceipts(init.body), names);
         return Promise.resolve(toolCallsResponse(asCommandBatchProposal(plan)));

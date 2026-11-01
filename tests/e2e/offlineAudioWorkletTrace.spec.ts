@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { gunzipSync } from 'node:zlib';
 
-import { expect, test, type CDPSession, type TestInfo } from '@playwright/test';
+import { type CDPSession, type TestInfo } from '@playwright/test';
 
 import {
     admitOfflineAudioWorkletTrace,
@@ -10,6 +10,8 @@ import {
     OFFLINE_TRACE_PHASES,
     type TraceAdmission,
 } from '../../scripts/offlineAudioWorkletTrace';
+
+import { expect, test } from './e2eTest';
 
 const QUANTUM_FRAMES = 128;
 const SAMPLE_RATE = 48_000;

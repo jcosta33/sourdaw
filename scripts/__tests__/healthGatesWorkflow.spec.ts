@@ -13,6 +13,7 @@ import {
     requireBrowserWebGpuHardware,
 } from '../../tests/e2e/browserAiHardware';
 import browserAiWebGpuAdmissionConfig from '../../tests/e2e/browserAiWebGpuAdmission.playwright.config';
+import { COLD_FIRST_PAINT_TIMEOUT_MS } from '../../tests/e2e/coldFirstPaintBudget';
 import { ADMITTED_CONDITION, assertApprovalGatedRequiredCheck } from '../approvalGatedWorkflowContract';
 import { assertDeployWebBuildRun, assertDeployWebJobNoVercelPull } from '../deployWebWorkflowContract';
 import {
@@ -152,13 +153,18 @@ const TOKEN_REFERENCE = /GITHUB_TOKEN|GH_TOKEN|github\.token|\$\{\{\s*secrets\./
 const BROWSER_AI_WEBGPU_JOB = 'browser-ai-webgpu';
 const BROWSER_AI_WEBGPU_JOB_NAME = 'Browser AI WebGPU admission';
 const BROWSER_AI_WEBGPU_CONDITION = 'inputs.browser-ai';
-const BROWSER_AI_WEBGPU_RUNNER = 'macos-14';
+const BROWSER_AI_WEBGPU_RUNNER = 'macos-15';
 const BROWSER_AI_WEBGPU_SCRIPT_NAME = 'test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_COMMAND = 'pnpm test:e2e:browser-ai-webgpu-admission';
 const BROWSER_AI_WEBGPU_LOG = 'browser-ai-webgpu-admission.log';
-const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 17 * 60_000;
-const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 18;
-const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 40;
+const BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS = 19 * 60_000;
+const BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES = 20;
+const BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES = 42;
+// Four admission tests run serially, each bounded at 180 seconds.
+const BROWSER_AI_WEBGPU_TESTS_MS = 4 * 180_000;
+// Dev-server start, two browser launches and teardown need this much beyond
+// the cold warmup and the tests.
+const BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS = 2 * 60_000;
 const BROWSER_AI_WEBGPU_DIAGNOSTIC_PATHS = [
     BROWSER_AI_WEBGPU_LOG,
     'test-results/**/trace.zip',
@@ -175,7 +181,7 @@ const BROWSER_AI_WEBGPU_STEP_CAPS = new Map([
     ['Set up Node', 3],
     ['Install dependencies', 2],
     ['Install Chromium', 2],
-    ['Run Browser AI WebGPU admission', 18],
+    ['Run Browser AI WebGPU admission', 20],
     ['Upload Browser AI WebGPU diagnostics', 2],
 ]);
 const BROWSER_AI_WEBGPU_PACKAGE_SCRIPT =
@@ -391,6 +397,9 @@ type SoftenedStepPin = Readonly<{ workflow: string; job: string; step: string }>
 const CONTINUE_ON_ERROR_STEP_PINS: readonly SoftenedStepPin[] = [
     { workflow: 'validation.yml', job: 'decide', step: PATHS_FILTER_FIRST_ATTEMPT_STEP },
 ];
+// A setup-node cache step may soften because its failure only costs the
+// cache; the cap keeps a refused restore inside the deliberate 5-minute step cap.
+const CACHE_RESTORE_STEP_MAX_MINUTES = 5;
 // A softened shard step reports a failing suite as a passing required check.
 const SUITE_SHARD_STEP = 'Run shard';
 // The census walks production sources once per train, outside the unit shards,
@@ -510,7 +519,7 @@ function assertRequiredScopePlan(candidate: UnknownRecord): void {
     const pnpm = stepNamed(scope, 'Set up pnpm');
     if (
         typeof pnpm.uses !== 'string' ||
-        !pnpm.uses.startsWith('pnpm/action-setup@') ||
+        pnpm.uses !== './.github/actions/setup-pnpm' ||
         recordAt(pnpm, 'with').package_json_file !== 'package.json'
     ) {
         throw new Error('required scope must install the repository package manager');
@@ -896,12 +905,62 @@ function assertBoundedAlsaInstall(job: UnknownRecord, label: string): void {
     }
 }
 
+function assertVerifiedPnpmCallers(candidate: UnknownRecord, control: boolean): number {
+    let callers = 0;
+    const jobs = recordAt(candidate, 'jobs');
+    for (const [jobName, value] of Object.entries(jobs)) {
+        const job = asRecord(value, 'pnpm caller job');
+        if (!Array.isArray(job.steps)) {
+            continue;
+        }
+        const steps = job.steps.map((step) => asRecord(step, 'pnpm caller step'));
+        for (const [index, setup] of steps.entries()) {
+            if (typeof setup.uses === 'string' && setup.uses.startsWith('pnpm/action-setup@')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            if (setup.name !== PNPM_SETUP_STEP) {
+                continue;
+            }
+            callers += 1;
+            if (setup.uses !== (control ? './control/.github/actions/setup-pnpm' : './.github/actions/setup-pnpm')) {
+                throw new Error(`${jobName} must use verified pnpm acquisition`);
+            }
+            const manifest = setup.with === undefined ? undefined : recordAt(setup, 'with').package_json_file;
+            if (control ? manifest !== 'source/package.json' : manifest !== undefined && manifest !== 'package.json') {
+                throw new Error(`${jobName} must select the source pnpm manifest`);
+            }
+            const node = steps[index + 1];
+            if (node?.name !== NODE_SETUP_STEP || node.if !== setup.if) {
+                throw new Error(`${jobName} must retain the later Node caller and its admission`);
+            }
+            const nodeVersion = recordAt(node, 'with')['node-version'];
+            const selectedVersion =
+                nodeVersion === '${{ env.NODE_VERSION }}' ? recordAt(candidate, 'env').NODE_VERSION : nodeVersion;
+            if (selectedVersion !== '24.19.0') {
+                throw new Error(`${jobName} later Node must match the verified bootstrap runtime`);
+            }
+            const checkout = steps
+                .slice(0, index)
+                .find((step) => typeof step.uses === 'string' && step.uses.startsWith('actions/checkout@'));
+            if (!checkout) {
+                throw new Error(`${jobName} must acquire its local setup action before execution`);
+            }
+        }
+    }
+    return callers;
+}
+
 function assertLintTimeBudgets(candidate: UnknownRecord): void {
     const lint = jobAt(candidate, 'lint');
     if (stepNamed(lint, 'Checkout')['timeout-minutes'] !== 10) {
         throw new Error('lint checkout must have a ten-minute timeout');
     }
-    const prep = ['Set up pnpm', 'Set up Node', 'Install dependencies'];
+    // The pnpm store restore is capped well below the other setup steps because
+    // a refused restore falls through to the install step.
+    if (stepNamed(lint, 'Set up Node')['timeout-minutes'] !== 3) {
+        throw new Error('lint step Set up Node must have a three-minute timeout');
+    }
+    const prep = ['Set up pnpm', 'Install dependencies'];
     for (const name of prep) {
         if (stepNamed(lint, name)['timeout-minutes'] !== 5) {
             throw new Error(`lint step ${name} must have a five-minute timeout`);
@@ -911,7 +970,7 @@ function assertLintTimeBudgets(candidate: UnknownRecord): void {
         throw new Error('lint execution must have a twenty-minute timeout');
     }
     const jobTimeout = lint['timeout-minutes'];
-    const stepTotal = 10 + prep.length * 5 + 20;
+    const stepTotal = 10 + 3 + prep.length * 5 + 20;
     if (typeof jobTimeout !== 'number' || jobTimeout < stepTotal + 5 || jobTimeout > 50) {
         throw new Error('lint job must include five minutes for cleanup after all step budgets');
     }
@@ -1715,11 +1774,88 @@ function assertNoContinueOnError(set: WorkflowSet): void {
                 }
                 const label = stepLabel(file, jobId, step);
                 const pin = pins.get(`${file}${jobId}${typeof step.name === 'string' ? step.name : ''}`);
+                if (isSetupNodeCacheStep(step) && step['continue-on-error'] === true) {
+                    continue;
+                }
                 if (pin === undefined || step['continue-on-error'] !== true) {
                     throw new Error(`${label} must not continue on error`);
                 }
             }
         }
+    }
+}
+
+// A setup-node package-manager cache restore is a speed-up, never a proof: the
+// install step after it is correct uncached. When the Actions cache refuses or
+// stalls the restore ("Failed to restore: Egress is over the account limit."),
+// the step must fall through to that install instead of hanging in setup-node
+// until the job dies (#5929). setup-node's restore takes no download timeout of
+// its own, so the step cap is the bound. The step is the one place softening is
+// allowed, and only after an earlier unsoftened step has installed Node, so the
+// softening can cost the cache and never the runtime.
+function isSetupNodeCacheStep(step: UnknownRecord): boolean {
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@')) {
+        return false;
+    }
+    if (step.with === undefined) {
+        return false;
+    }
+    const cache = recordAt(step, 'with').cache;
+    return typeof cache === 'string' && cache.length > 0;
+}
+
+// The setup-pnpm composite installs the verified bootstrap runtime, which
+// assertVerifiedPnpmCallers pins its following setup-node to; a plain install
+// must name the very node-version the softened step asks for.
+function installsNodeUnsoftened(step: UnknownRecord, nodeVersion: unknown): boolean {
+    if (step['continue-on-error'] !== undefined) {
+        return false;
+    }
+    if (step.uses === './.github/actions/setup-pnpm') {
+        return true;
+    }
+    if (typeof step.uses !== 'string' || !step.uses.startsWith('actions/setup-node@') || step.with === undefined) {
+        return false;
+    }
+    const options = recordAt(step, 'with');
+    return options.cache === undefined && options['node-version'] === nodeVersion;
+}
+
+function assertCacheRestoreFallsThrough(set: WorkflowSet): void {
+    let cacheSteps = 0;
+    for (const [file, candidate] of workflowFiles(set)) {
+        for (const [jobId, jobValue] of Object.entries(recordAt(candidate, 'jobs'))) {
+            const steps = jobSteps(file, jobId, asRecord(jobValue, `${file} job ${jobId}`));
+            for (const [index, step] of steps.entries()) {
+                if (!isSetupNodeCacheStep(step)) {
+                    continue;
+                }
+                cacheSteps += 1;
+                const label = stepLabel(file, jobId, step);
+                if (step['continue-on-error'] !== true) {
+                    throw new Error(`${label} must continue on error so a refused cache restore falls through`);
+                }
+                const stepMinutes = step['timeout-minutes'];
+                if (
+                    typeof stepMinutes !== 'number' ||
+                    stepMinutes < 1 ||
+                    stepMinutes > CACHE_RESTORE_STEP_MAX_MINUTES
+                ) {
+                    throw new Error(
+                        `${label} must cap the cache restore at ${CACHE_RESTORE_STEP_MAX_MINUTES} minutes or fewer`
+                    );
+                }
+                const nodeVersion = recordAt(step, 'with')['node-version'];
+                if (!steps.slice(0, index).some((earlier) => installsNodeUnsoftened(earlier, nodeVersion))) {
+                    throw new Error(
+                        `${label} must follow an unsoftened install of the same Node so softening costs only the cache`
+                    );
+                }
+            }
+        }
+    }
+    if (cacheSteps === 0) {
+        throw new Error('no setup-node cache step found; the fall-through sweep would assert nothing');
     }
 }
 
@@ -2155,7 +2291,7 @@ function assertBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its selected hardware condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (job['timeout-minutes'] !== BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES) {
         throw new Error(
@@ -2213,7 +2349,7 @@ function assertNightlyBrowserAiWebGpuJob(candidate: UnknownRecord): void {
         throw new Error('Browser AI WebGPU job must retain its heavy E2E scope condition');
     }
     if (job['runs-on'] !== BROWSER_AI_WEBGPU_RUNNER) {
-        throw new Error('Browser AI WebGPU job must use the standard macos-14 runner');
+        throw new Error('Browser AI WebGPU job must use the standard macos-15 runner');
     }
     if (stringAt(stepNamed(job, 'Install Chromium'), 'run') !== 'pnpm exec playwright install chromium') {
         throw new Error('Browser AI WebGPU job must install Chromium directly');
@@ -2628,6 +2764,14 @@ describe('health gates workflow contract', () => {
         recordAt(stepNamed(jobAt(wrongControl, 'build-artifacts'), 'Checkout workflow control'), 'with').ref =
             '${{ github.sha }}';
         expect(() => assertHostedWasmWorkflow(wrongControl)).toThrow('workflow control');
+        const sourceBootstrap = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceBootstrap, 'build-artifacts'), 'Set up pnpm').uses =
+            './source/.github/actions/setup-pnpm';
+        expect(() => assertHostedWasmWorkflow(sourceBootstrap)).toThrow('pnpm setup from workflow control');
+        const controlTarget = structuredClone(hostedWasm);
+        recordAt(stepNamed(jobAt(controlTarget, 'build-artifacts'), 'Set up pnpm'), 'with').package_json_file =
+            'control/package.json';
+        expect(() => assertHostedWasmWorkflow(controlTarget)).toThrow('pnpm target from the source manifest');
         const privileged = structuredClone(hostedWasm);
         privileged.on = { pull_request_target: {} };
         expect(() => assertHostedWasmWorkflow(privileged)).toThrow('unprivileged PR trigger');
@@ -3735,6 +3879,56 @@ describe('health gates workflow contract', () => {
         });
     });
 
+    it('lets a refused or stalled setup-node cache restore fall through to an uncached install', () => {
+        expect(() => assertCacheRestoreFallsThrough(workflowSet())).not.toThrow();
+        expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
+
+        const hardened = cloneWorkflows('hardened pnpm cache step');
+        const hardenedStep = stepNamed(jobAt(hardened.validation, 'lint'), 'Set up Node');
+        delete hardenedStep['continue-on-error'];
+        expect(() => assertCacheRestoreFallsThrough(hardened)).toThrow(
+            'validation.yml job lint step Set up Node must continue on error so a refused cache restore falls through'
+        );
+
+        const unbounded = cloneWorkflows('unbounded pnpm cache step');
+        delete stepNamed(jobAt(unbounded.health, 'scope'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unbounded)).toThrow(
+            'health-gates.yml job scope step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        // The rule follows any package-manager cache, not only pnpm.
+        const unboundedNpm = cloneWorkflows('unbounded npm cache step');
+        delete stepNamed(jobAt(unboundedNpm.validation, 'rust'), 'Set up Node')['timeout-minutes'];
+        expect(() => assertCacheRestoreFallsThrough(unboundedNpm)).toThrow(
+            'validation.yml job rust step Set up Node must cap the cache restore at 5 minutes or fewer'
+        );
+
+        const softenedInstall = cloneWorkflows('cache step without an unsoftened Node install');
+        const collabSteps = arrayAt(jobAt(softenedInstall.nightly, 'collab-server'), 'steps');
+        collabSteps.splice(
+            collabSteps.indexOf(stepNamed(jobAt(softenedInstall.nightly, 'collab-server'), 'Install Node')),
+            1
+        );
+        expect(() => assertCacheRestoreFallsThrough(softenedInstall)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // An install of another Node would leave that runtime in place when the cache step fails.
+        const otherRuntime = cloneWorkflows('cache step after an install of another Node');
+        recordAt(stepNamed(jobAt(otherRuntime.nightly, 'collab-server'), 'Install Node'), 'with')['node-version'] =
+            '22';
+        expect(() => assertCacheRestoreFallsThrough(otherRuntime)).toThrow(
+            'nightly.yml job collab-server step Set up Node must follow an unsoftened install of the same Node so softening costs only the cache'
+        );
+
+        // Only setup-node itself may soften for a cache; another action naming a cache may not.
+        const foreignCache = cloneWorkflows('non-setup-node cache step');
+        stepNamed(jobAt(foreignCache.health, 'scope'), 'Set up Node').uses = 'example/actions/setup-node@v1';
+        expect(() => assertNoContinueOnError(foreignCache)).toThrow(
+            'health-gates.yml job scope step Set up Node must not continue on error'
+        );
+    });
+
     it('sweeps every job and step for softening, with only the pinned conditional steps', () => {
         expect(() => assertNoContinueOnError(workflowSet())).not.toThrow();
         expect(() => assertUnconditionalSteps(workflowSet())).not.toThrow();
@@ -4155,6 +4349,33 @@ describe('health gates workflow contract', () => {
         );
     });
 
+    it('keeps every pnpm acquisition on the verified action and the same later Node runtime', () => {
+        let callers = 0;
+        for (const file of readdirSync(join(repositoryRoot, '.github/workflows')).filter((file) =>
+            /\.ya?ml$/.test(file)
+        )) {
+            const candidate = loadWorkflow(file).parsed;
+            callers += assertVerifiedPnpmCallers(candidate, file === 'wasm-artifacts.yml');
+        }
+        expect(callers).toBe(26);
+
+        const oldBootstrap = structuredClone(validationWorkflow);
+        stepNamed(jobAt(oldBootstrap, 'lint'), PNPM_SETUP_STEP).uses =
+            'pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86';
+        expect(() => assertVerifiedPnpmCallers(oldBootstrap, false)).toThrow('verified pnpm acquisition');
+        const mismatchedRuntime = structuredClone(nightly);
+        recordAt(stepNamed(jobAt(mismatchedRuntime, 'build'), NODE_SETUP_STEP), 'with')['node-version'] = '22';
+        expect(() => assertVerifiedPnpmCallers(mismatchedRuntime, false)).toThrow(
+            'match the verified bootstrap runtime'
+        );
+        const unguardedDeploy = structuredClone(nightly);
+        delete stepNamed(jobAt(unguardedDeploy, DEPLOY_WEB_JOB), PNPM_SETUP_STEP).if;
+        expect(() => assertVerifiedPnpmCallers(unguardedDeploy, false)).toThrow('later Node caller and its admission');
+        const sourceAction = structuredClone(hostedWasm);
+        stepNamed(jobAt(sourceAction, 'build-artifacts'), PNPM_SETUP_STEP).uses = './source/.github/actions/setup-pnpm';
+        expect(() => assertVerifiedPnpmCallers(sourceAction, true)).toThrow('verified pnpm acquisition');
+    });
+
     it('requires Set up pnpm immediately before Set up Node on every pnpm-cached nightly and heavy-lane job', () => {
         expect(() => assertPnpmBeforeNodeOrder(nightly)).not.toThrow();
         expect(() => assertPnpmBeforeNodeOrder(heavyWorkflow)).not.toThrow();
@@ -4468,6 +4689,11 @@ describe('health gates workflow contract', () => {
         expect(() => assertBrowserAiWebGpuJob(heavyWorkflow)).not.toThrow();
         expect(() => assertNightlyBrowserAiWebGpuJob(nightly)).not.toThrow();
         expect(() => assertBrowserAiWebGpuProofChain(packageManifest, browserAiWebGpuConfig)).not.toThrow();
+        // The whole-run limit must still fit the tests' own bounds after the
+        // cold warmup has spent all of its allowance.
+        expect(
+            BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS - COLD_FIRST_PAINT_TIMEOUT_MS - BROWSER_AI_WEBGPU_TESTS_MS
+        ).toBeGreaterThanOrEqual(BROWSER_AI_WEBGPU_RUN_OVERHEAD_MS);
         expect(BROWSER_AI_WEBGPU_GLOBAL_TIMEOUT_MS / 60_000).toBeLessThan(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES);
         expect(BROWSER_AI_WEBGPU_STEP_TIMEOUT_MINUTES).toBeLessThan(BROWSER_AI_WEBGPU_JOB_TIMEOUT_MINUTES);
 
@@ -4518,11 +4744,11 @@ describe('health gates workflow contract', () => {
             }
         }
 
-        for (const runner of ['self-hosted', 'macos-14-large', 'macos-14-xlarge']) {
+        for (const runner of ['self-hosted', 'macos-14', 'macos-15-large', 'macos-15-xlarge']) {
             const premiumRunner = asRecord(structuredClone(heavyWorkflow), `${runner} Browser AI heavyWorkflow`);
             jobAt(premiumRunner, BROWSER_AI_WEBGPU_JOB)['runs-on'] = runner;
             expect(() => assertBrowserAiWebGpuJob(premiumRunner)).toThrow(
-                'Browser AI WebGPU job must use the standard macos-14 runner'
+                'Browser AI WebGPU job must use the standard macos-15 runner'
             );
         }
 

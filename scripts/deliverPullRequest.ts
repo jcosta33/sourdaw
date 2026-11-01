@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
+import { runCleanup } from './cleanupLanes.ts';
 import {
     AUTHOR_BOT_NODE_ID,
     AUTHOR_MINT_PERMISSIONS,
@@ -4485,6 +4486,8 @@ export type DeliverySerialization = PullRequestMutationSerialization;
 export { withPullRequestMutationLock as withPullRequestDeliveryLock };
 
 export type DeliveryCoordinatorDependencies = {
+    cleanupAfterDelivery?: (primaryRoot: string, head: string) => Promise<void>;
+    reportCleanupFailure?: (message: string) => void;
     primaryRoot: () => string;
     serializeDelivery: DeliverySerialization;
     authenticateAuthor: (primaryRoot: string, permissions: MintPermissions) => Promise<DeliveryAuthentication>;
@@ -4509,6 +4512,10 @@ export type DeliveryCoordinatorDependencies = {
 function defaultDeliveryCoordinatorDependencies(cwd: string): DeliveryCoordinatorDependencies {
     return {
         primaryRoot: () => resolvePrimaryRoot(),
+        cleanupAfterDelivery: async (primaryRoot, head) => {
+            await runCleanup(primaryRoot, head);
+        },
+        reportCleanupFailure: (message) => console.error(message),
         serializeDelivery: withPullRequestMutationLock,
         authenticateAuthor: (primaryRoot, permissions) =>
             authenticateRole({ primaryRoot, role: 'author', permissions }),
@@ -4574,6 +4581,7 @@ export async function coordinateDelivery(
     dependencies: DeliveryCoordinatorDependencies = defaultDeliveryCoordinatorDependencies(process.cwd())
 ): Promise<void> {
     const primaryRoot = dependencies.primaryRoot();
+    let deliveredHead: string | undefined;
     await dependencies.serializeDelivery(
         primaryRoot,
         number,
@@ -4626,12 +4634,23 @@ export async function coordinateDelivery(
                     },
                     markRemoteMutationKnownAbsent
                 );
+                deliveredHead = mergeSnapshot.headRefOid;
             } finally {
                 trackerAuth?.session.dispose();
                 authorAuth.session.dispose();
             }
         }
     );
+    // Cleanup is local follow-up work. A retained lane must never turn a completed merge into failure.
+    if (deliveredHead !== undefined && dependencies.cleanupAfterDelivery !== undefined) {
+        try {
+            await dependencies.cleanupAfterDelivery(primaryRoot, deliveredHead);
+        } catch {
+            dependencies.reportCleanupFailure?.(
+                'Delivery completed; lane cleanup is pending. Inspect pnpm lane:cleanup --status and worker-error.log.'
+            );
+        }
+    }
 }
 
 export type DeliverCliTrustedDependencies = {

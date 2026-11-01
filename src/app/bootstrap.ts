@@ -33,6 +33,7 @@ import {
     setTrackPan as setTrackPanArrangement,
     setDeviceParameter,
     initStalenessDetection,
+    initTimelineScrollClamp,
     setArrangementEventBus,
     setClipAudioAssetStager,
     setOfflineRenderDependencies,
@@ -41,6 +42,15 @@ import {
     getDeviceContractVersionForCommand,
     getDeviceTypesForCommandDeviceIds,
     reserveNextTrackColorForCommand,
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
 } from '#/modules/Arrangement/useCases';
 import { setMixAnalysisDisplayLifecycle } from '#/modules/AudioAnalysis/useCases';
 import {
@@ -58,7 +68,6 @@ import {
     configureRuntimeGraphProjectRevisionValidator,
     configureRuntimeGraphTopologyValidator,
     recordNativeChainReleases,
-    configureDurableAudioBufferOwnership,
     isTunerTelemetryNativelyOwned,
     startMainThreadLongTaskObservation,
     stopAllScheduled,
@@ -108,10 +117,10 @@ import {
     commandRuntimeRepairPort,
     setCommandEventBus,
     syncActionReplayMetadata,
+    resetActionReplayAuthority,
     stampSessionUndoWitness,
 } from '#/modules/Command/useCases';
 import { setMidiLearnDependencies } from '#/modules/ControlSurface/useCases';
-import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import {
     agentProjectInspectionPort,
     initBranchState,
@@ -124,6 +133,7 @@ import {
     markActionHistoryEntryReverted,
     recordActionHistoryEntries,
     recordActionHistoryEntry,
+    subscribeToPublishedActionHistory,
     clearActionHistory as clearCrdtActionHistory,
     registerCrdtStorageRuntime,
     sessionUndoWitnessStampPort,
@@ -162,6 +172,7 @@ import {
     destroyWebMidi,
     setWebMidiRealtimeProcessor,
     setWebMidiRuntimeEventBus,
+    setRecordingMidiAdmissionPort,
 } from '#/modules/MIDI/useCases';
 import { externalPluginParameterStore } from '#/modules/PluginHost/stores';
 import {
@@ -170,7 +181,6 @@ import {
 } from '#/modules/PluginHost/useCases';
 import {
     agentCapabilityDiscoveryPort,
-    collectDurableOwnedAudioBufferIds,
     getDurableProjectOwnerId,
     productionBriefActionBatchAdmission,
     initGrooveTemplateDirtyTracking,
@@ -233,9 +243,11 @@ import {
 import { composeGrandBoule } from './composeGrandBoule';
 import { getAgentProtocolManifest } from './getAgentProtocolManifest';
 import { getProductionCommandHandlerMaps } from './getProductionCommandHandlerMaps';
+import { initAudioBufferCacheAccess } from './initAudioBufferCacheAccess';
 import { initCrumbsModePush } from './initCrumbsModePush';
 import { initDeviceStateReconciliation } from './initDeviceStateReconciliation';
 import { initInputMonitoringProjectAccess } from './initInputMonitoringProjectAccess';
+import { initLevainDeviceStateProjectAccess } from './initLevainDeviceStateProjectAccess';
 import { nativeBuiltinParameterName } from './nativeBuiltinParameterNames';
 import { nativeModAssignments } from './nativeModAssignments';
 import { acquireNativeSampleBank, nativeSampleBankKey } from './nativeSampleBanks';
@@ -289,9 +301,9 @@ commandDeviceVersionsPort.setResolver(
         getDeviceContractVersionForCommand(deviceType) ?? getExternalPluginContractVersionForCommand(deviceType)
 );
 commandTrackDefaultsPort.setTrackColorProvider(reserveNextTrackColorForCommand);
-syncActionReplayMetadata(actionHistoryStore.value?.entries ?? []);
-actionHistoryStore.subscribe((state) => {
-    syncActionReplayMetadata(state?.entries ?? []);
+subscribeToPublishedActionHistory({
+    onHistory: syncActionReplayMetadata,
+    onRootReplaced: resetActionReplayAuthority,
 });
 setRuntimeLogger(logger);
 configureCollaborationAssetOwner({
@@ -407,6 +419,17 @@ configureYeastRuntime({ panicOutputNotes: stopAllScheduled });
 configureLevainZoneTableBuilder(buildLevainZoneTables);
 const disposeWebMidiRealtimeProcessor = setWebMidiRealtimeProcessor({ processor: processRealtimeMidiInput });
 setWebMidiRuntimeEventBus({ eventBus });
+setRecordingMidiAdmissionPort({
+    admitRecordingMidiNoteOn,
+    admitRecordingMidiNoteOff,
+    admitRecordingMidiExpression,
+    findOpenRecordingMidiAdmission,
+    findOpenRecordingMidiMemberAdmission,
+    getRecordingMidiAdmission,
+    retireRecordingMidiAdmission,
+    takeOwnsRecordingRoot,
+    recordingMidiSourceBeatAt,
+});
 setNotificationEventBus(eventBus);
 // Storage adapters cannot resolve `notifyUser` before this line: `inject`
 // caches the closure it builds on first call, and an unregistered token
@@ -451,11 +474,7 @@ setProjectIdentityTransitionDependencies({
     },
 });
 
-// The audio-cache collectors pull the durable owned-id set at collection time
-// (issue #3777), so ordinary PCM a saved project still references survives the
-// age/budget sweeps while it is inactive. Enumeration stays a pull from the
-// persisted snapshots — no second ownership table to drift.
-configureDurableAudioBufferOwnership(collectDurableOwnedAudioBufferIds);
+initAudioBufferCacheAccess();
 initInputMonitoringProjectAccess();
 
 function disposeYeastRealtimeBridge(): void {
@@ -672,6 +691,7 @@ initToasterKitPersistence();
 // neither Levain's instrument id nor Crumbs' sample reference is one. Registered
 // here so a device's first appearance is already carrying whatever the document
 // held for it, and only a genuine edit afterwards writes back.
+initLevainDeviceStateProjectAccess();
 initLevainDeviceStatePersistence();
 initBacteriaSubscribers({ eventBus, logger });
 // Same shape and the same reason, subscriber first so the device's first
@@ -706,6 +726,7 @@ initCrumbsModePush(eventBus);
 // this restores.
 syncCrumbsNativeInstances();
 initStalenessDetection();
+initTimelineScrollClamp();
 
 // Registered for the life of the process, so deadline-evidence reading has
 // main-thread long-task coverage from startup regardless of what is mounted.

@@ -21,21 +21,29 @@ export function serializeAudioGraphCommandBatch(
     } else if (batch.timelineLease) {
         timelineLease = batch.timelineLease;
     }
+    const commands = batch.commands.map((command) => {
+        const wire = serializeAudioGraphCommand(command);
+        if (wire.kind !== 'schedule-clip' || !materials) {
+            return wire;
+        }
+        const materialVersion = materials.versions.get(wire.playback.source.sourceId);
+        if (!materialVersion) {
+            throw new Error(`Native clip source "${wire.playback.source.sourceId}" has no exact material version`);
+        }
+        return { ...wire, playback: { ...wire.playback, source: { ...wire.playback.source, materialVersion } } };
+    });
+    const carriesModel = commands.some(
+        (command) =>
+            command.kind === 'set-grinder-model' ||
+            ((command.kind === 'create-track-strip' || command.kind === 'create-bus-strip') &&
+                command.devices.some((device) => device.grinderModel !== undefined)) ||
+            (command.kind === 'insert-device' && command.device.grinderModel !== undefined)
+    );
     const serialized: NativeGraphWireBatch & { timelineLease?: string } = {
-        schemaVersion: batch.schemaVersion,
+        schemaVersion: carriesModel ? 2 : 1,
         ...(batch.correlation ? { correlation: { ...batch.correlation } } : {}),
         ...(batch.replaceTopology ? { replaceTopology: true } : {}),
-        commands: batch.commands.map((command) => {
-            const wire = serializeAudioGraphCommand(command);
-            if (wire.kind !== 'schedule-clip' || !materials) {
-                return wire;
-            }
-            const materialVersion = materials.versions.get(wire.playback.source.sourceId);
-            if (!materialVersion) {
-                throw new Error(`Native clip source "${wire.playback.source.sourceId}" has no exact material version`);
-            }
-            return { ...wire, playback: { ...wire.playback, source: { ...wire.playback.source, materialVersion } } };
-        }),
+        commands,
     };
     if (timelineLease !== undefined) {
         serialized.timelineLease = timelineLease;

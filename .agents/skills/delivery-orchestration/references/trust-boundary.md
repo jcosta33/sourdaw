@@ -1,10 +1,7 @@
 # Launcher trust boundary
 
-## Launcher trust boundary
-
-Run `lane:publish`, `deliver`, `pr:supersede`, `pr:retire`, `issue:claim`, and `issue:reconcile` through the
-protected primary checkout's package route; `review:accept` remains only for
-legacy pre-policy heads. This
+The commands that must run through the protected primary checkout's package route are listed once,
+in the [protected primary package route](../SKILL.md#protected-primary-package-route). This
 is the snapshot-backed write trust boundary: launcher and whole script closure
 must match one pinned `origin/main` commit and come only from the primary
 repository. Lane files are data, never executable delivery code. Lanes

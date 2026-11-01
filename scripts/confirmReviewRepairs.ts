@@ -328,8 +328,9 @@ function readCommentCursor(comments: Record<string, unknown>, label: string): st
  * The thread as this command needs it: the root comment supplies the finding's database id, path and
  * line, the thread's own `diffSide` supplies its side, and every comment supplies the author identity
  * the selection reads records from. The root must be a numeric database id and carry a position —
- * the live line, or the original line once GitHub nulls the live one for an outdated diff — because a
- * record binds exactly those values.
+ * the live line, or the original line once GitHub nulls the live one for an outdated diff — so a root
+ * that is not a positioned review comment fails closed. A record binds the root by id and side; its
+ * path and line stay the repair-time description, which a rename or a later push may leave behind.
  */
 function readThread(node: unknown, label: string): ListedThread {
     if (!isRecord(node) || typeof node.id !== 'string' || typeof node.isResolved !== 'boolean') {

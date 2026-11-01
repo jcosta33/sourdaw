@@ -28,6 +28,15 @@ decision must follow the producer's provenance, not the continued presence of on
   otherwise writable modern thread and sentinel authentication and GitHub ports; require refusal
   before either port is used. An old pull-request number, a bare author `Done`, or a missing bundle
   artifact must never restore author-side thread resolution.
+- For an absent-lock recovery, start from an exact landed version-2 receipt and an unbound modern
+  dossier. Require two stable exact remote reads, one append-only publication binding, and no new
+  POST on a second recovery or a native publish replay. Restoring the early return from the receipt
+  must fail the owning case; a fresh-owner recovery case exercises another branch. Recovering from
+  a merged PR's landed receipt must bind the publication with no retrospective delivery
+  authorization; a recovery that grants authorization there must fail the owning case (#5111).
+- Force a definitive 422 after the journaled pre-write transition of a review publication. Recovery
+  may release the lock only when the prepared bundle digest, head, reviewer actor and remote review
+  enumeration all match; mutate each field in turn and require the exact owner to stay retained (#3342).
 
 ## Escape: PR #4411 left the author resolver callable for modern findings
 
@@ -78,3 +87,53 @@ The stacked-delivery case supplied `delete_branch_on_merge: true` to the initial
 which returned before the final control; the case stayed green if that control was removed.
 Keep the exact three-field manifest as a positive control, reject unproven variants, and make
 the stack fixture reach the final repository-policy read with zero merge attempts.
+
+## Escape: PR #4069 trusted the reviews connection order
+
+PR #4069 chose the reviewer's latest review as the last reviewer node in the GraphQL reviews
+connection, on the stated premise that connection order is authoritative. GitHub orders that
+connection by `submittedAt`, and on PR #6019 it stamped the reviewer App's newest APPROVE earlier
+than the older CHANGES_REQUESTED and COMMENTED reviews. `deliver` then read the stale
+CHANGES_REQUESTED as the reviewer's latest state and refused an approved head. Every fixture gave
+each review the same `databaseId`, so no case could tell creation order from listed order.
+
+Probe that would have caught it: list the reviewer's newest review first with the earliest
+timestamp, older reviewer reviews after it with later timestamps, and require the newest by
+`databaseId` to decide the state. Pair it with the inverse — an older APPROVE listed last behind a
+newer CHANGES_REQUESTED must not read as approved — and require a null or duplicate reviewer id to
+refuse instead of guessing.
+
+## Escape: delivery authority came from an earlier PR state (PR #4586, extended by #5032)
+
+PR #4586 first appended `delivery-authorized` after reading review state without a final PR state and head
+read. Its recorded stances attacked wrong digest or head binding and unsolicited or duplicate authorization,
+but did not admit a late PR state transition. PR #5032 extended that binder to recovered publications; its
+recovery-authority stance and moved-head probe covered a head already moved at inspection, not a merge, close,
+or move after both inspections (2026-10-09).
+
+Probe that would have caught it: hold the landed review exact across both inspections, change the PR state or
+head before the final authorization read, and require a publication-only dossier with zero review POSTs. Keep
+an open, unchanged PR as the positive authorization control.
+
+## Escape: an old receipt bypassed publication authority checks (issue #5111)
+
+Receipt shape and exact owner alone did not prove that a modern dossier could adopt a landed publication. The
+absent-lock replay branch exited before authenticating the reviewer, serializing the write, and comparing the
+retained payload with stable live evidence.
+
+Probe that would have caught it: present a foreign lock, a live original owner, and a changed actor, head, body,
+or payload one at a time to the production recovery route. Require no dossier mutation or review POST. Permit
+exact adoption only under the native lock, and require a merged historical approval to remain without delivery
+authorization.
+
+## Escape: the reviewer confirm token could not perform its own mutation (PR #4411, 2026-09-19)
+
+`review:confirm` resolved threads through a reviewer installation token minted `contents: read`; GitHub gates
+`resolveReviewThread` on repository write access, so every confirm failed with "Resource not accessible by
+integration" and every lane silently fell back to author-side `Done`, so the public record never showed a
+reviewer-resolved thread. Review verified the flow's records and idempotence but never executed the identity's
+own GitHub mutation, and the universal author-side fallback masked the mismatch from every later session.
+
+Probe that would have caught it: for every GitHub mutation a shipped script performs, prove the minted
+permission set admits that mutation class: resolve or create one real thread under the minted identity in a
+fixture repository and require the mutation to succeed before the flow lands.

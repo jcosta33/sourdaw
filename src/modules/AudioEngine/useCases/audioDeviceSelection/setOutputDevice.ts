@@ -13,17 +13,23 @@ type AudioContextWithSinkId = AudioContext & {
 };
 
 /**
- * Whether an audible native carrier is sounding strips right now.
+ * Whether the native programme owns its output, including temporary audition suppression.
  *
  * The native engine owns its output device itself: it opens the OS default
  * (`crates/daw-engine/src/device/cpal_backend.rs`) and offers no command to
  * move it, so while it is the audible carrier there is no route from this use
  * case to the device its mix is leaving through. A parked or shadowed session
  * sounds nothing — Web Audio is then the only audible carrier — so those
- * leave the selection free (#3643).
+ * leave the selection free (#3643). Temporarily suppressing an audible
+ * programme for audition never transfers that device ownership to Web Audio.
  */
-function isAudibleNativeCarrierActive(): boolean {
-    return hasLiveNativeGraphSession() && nativeLiveGraphSession.audibleCarrier;
+function isNativeProgrammeOutputOwned(): boolean {
+    return (
+        hasLiveNativeGraphSession() &&
+        (nativeLiveGraphSession.audibleCarrier ||
+            ((nativeLiveGraphSession.auditionOwner !== null || nativeLiveGraphSession.auditionOutputSuppressed) &&
+                nativeLiveGraphSession.programmeCarrier))
+    );
 }
 
 let outputDeviceQueue: Promise<void> = Promise.resolve();
@@ -40,12 +46,12 @@ export const setOutputDevice = inject({ logger, notifyUser })(
                 // is told why rather than left believing the whole mix moved.
                 // Stopping playback releases the strips back to Web Audio,
                 // after which the same selection applies.
-                if (isAudibleNativeCarrierActive()) {
+                if (isNativeProgrammeOutputOwned()) {
                     logger.warn(
-                        'Refused an output device change while the audible native engine holds the system default output'
+                        'Refused an output device change while the native programme holds the system default output'
                     );
                     notifyUser(
-                        'Output device cannot change while the native audio engine is audible — it plays through the ' +
+                        'Output device cannot change while the native audio engine owns playback — it plays through the ' +
                             'system default output. Stop playback to switch outputs.',
                         'warning'
                     );

@@ -1,4 +1,4 @@
-import { captureEventBeatAt } from './captureEventBeat';
+import { captureEventPositionAt } from './captureEventBeat';
 import { type CapturedInputEventTime } from './resolveInputEventTime';
 
 type ResolveAdmittedEventBeatInput = {
@@ -17,5 +17,5 @@ export function resolveAdmittedEventBeat({ timeStamp, eventTime }: ResolveAdmitt
     }
     // No dispatcher-captured beat: derive it from this event's own instant
     // anyway (#4875).
-    return captureEventBeatAt({ audioTime: eventTime });
+    return captureEventPositionAt({ audioTime: eventTime }).beat;
 }

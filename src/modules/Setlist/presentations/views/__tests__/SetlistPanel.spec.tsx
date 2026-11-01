@@ -43,13 +43,13 @@ vi.mock('../../../useCases/setlist/toggleAutoAdvance', () => ({
     toggleAutoAdvance: vi.fn(),
 }));
 vi.mock('../../../useCases/setlist/nextItem', () => ({
-    nextItem: vi.fn(),
+    nextItem: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../../useCases/setlist/previousItem', () => ({
-    previousItem: vi.fn(),
+    previousItem: vi.fn(() => Promise.resolve()),
 }));
 vi.mock('../../../useCases/setlist/goToItem', () => ({
-    goToItem: vi.fn(),
+    goToItem: vi.fn(() => Promise.resolve()),
 }));
 // Wrap (rather than replace) the real implementations so existing readout
 // assertions keep exercising real computed values while F11's regression

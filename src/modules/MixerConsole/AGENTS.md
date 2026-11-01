@@ -4,9 +4,7 @@ Owns presentation components, layout views, and interaction hooks for the multi-
 
 ## Public Contract Surface
 
-- `presentations/views/`: `MixerPanel`.
-- `stores/`, `useCases/`, `events/`: No public domain stores, use cases, or events exported (pure presentation module).
-- Handlers: None (dispatches actions via Command bus).
+Public surface: `presentations/views/index.ts` only. This is a pure presentation module: it exports no stores, use cases, events or handlers and dispatches actions via the Command bus.
 
 ## Key Subsystems
 
@@ -26,5 +24,5 @@ Owns presentation components, layout views, and interaction hooks for the multi-
 PR CI owns broader unit and crate suites. Locally run only the exact changed spec or filtered Rust test.
 
 ```bash
-pnpm test:run <changed-spec>
+pnpm guard --profile focused -- pnpm test:run <changed-spec>
 ```

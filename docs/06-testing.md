@@ -8,9 +8,11 @@ TypeScript tests use **Vitest** and live under **`__tests__/`** folders (see §3
 
 - **Unit tests by default.** A pure transform needs input/output assertions with no collaborators. When the failure depends on a boundary, keep the real collaborators needed to observe it, including cross-module action routing, Automerge authority, history, or store projection. Double external seams such as hardware, OS I/O, and hosted services. Use the narrowest real path that would fail if the invariant broke.
 - **Observe the outcome.** Assert both the promised result and ownership or non-effects when they matter: an earlier revision must not overwrite a newer one, a late async completion must not revive retired state, and grouped undo must preserve unrelated edits. Control completion explicitly and await the resulting observable; do not rely on fixed microtask counts. For combinatorial invariants, use reproducible seeded property cases and retain a failing seed.
-- **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm test:e2e <spec>`. Prefer Vitest for behavior observable below the browser; use an environment that actually renders audio, uses hardware, or hosts the full UI when that is the claim.
+- **Unit-first.** Playwright E2E lives under `tests/e2e/`. Run only affected specs with `pnpm guard --profile broad -- pnpm test:e2e <spec>`. Prefer Vitest for behavior observable below the browser; use an environment that actually renders audio, uses hardware, or hosts the full UI when that is the claim.
+- **E2E files take `test` and `expect` from `tests/e2e/e2eTest.ts`.** That module is the one place a per-test fixture reaches every test, so importing them from `@playwright/test` bypasses it; `scripts/__tests__/e2eSharedTestFixture.spec.ts` enforces the import. Type-only names still come from `@playwright/test`.
 - **Ad-hoc live-UI probes are not E2E.** One-off browser probes/screenshots live in `.agents/ui-scripts/` per the `playwright-ui-bridge` skill — never add them to `tests/e2e/`.
 - **CI browser shards serve a production-mode build.** The dev server's cold module transform is about half of all browser runner time, so a CI shard serves `vite build --mode e2e` through `vite preview` with one Playwright worker. A build serves no `/src/...` module URLs, so any file that loads one at runtime (itself, through a helper, or through an HTML probe) is listed in `tests/e2e/devServerOnlySpecs.ts` and runs against a dev server started in the same shard. Local runs, the offline smoke job, and nightly use the dev server throughout. A built shard runs a production React build, so a browser spec asserting zero console errors there cannot see React's development-only warnings; the dev-server runs still can. `scripts/__tests__/e2eDevServerOnlySpecs.spec.ts` fails when a file loads a `/src/...` URL without being listed, or stays listed after it stops.
+- **Browser specs run with reduced motion.** `playwright.config.ts` emulates `prefers-reduced-motion: reduce`, so decorative transitions do not add a fixed wait to every boot. The product must honour that preference wherever motion delays interaction, such as the launch overlay's exit. A spec that asserts a full-motion path opts back in with `test.use({ reducedMotion: 'no-preference' })`, as `tests/e2e/launchFlows.spec.ts` does for the launch fade.
 - **Two reference hosts, no test-only privilege.** Surfaces that have to hold in both hosts are proven in both. `tests/e2e/agentWorkspace.spec.ts` drives the agent workspace in the standalone browser — chat composer, Agent bottom tab, approval card, A/B comparison, revert — against an OpenAI-compatible endpoint on loopback admitted through `configureCloudProvider`. `pnpm desktop:agent-proof` (`scripts/proveDesktopAgentWorkspace.ts`, nightly only) drives the same flow in the packaged Electron app over the DevTools protocol, admitting the same endpoint through the Preferences AI form because the packaged renderer has no `/src/...` to import, and streaming one explain-mode answer back from it — as `tests/e2e/aiConfirmApplyUndo.spec.ts` does for the browser host — because admission alone is a local write and proves no round trip. Neither adds a hook, a test id, or a relaxed policy to the app or the preload: a proof that needs a privilege the product does not ship is proving something the product is not.
 - **Specs follow the owner.** Put each spec in **`__tests__/`** inside the folder that owns the behavior. A source-matched name is the default for one subject; a named behavior spanning several subjects may have its own integration spec there. Do **not** place `*.spec.ts` beside production files.
 - **Double only what the claim can exclude.** A unit use-case test can replace repositories; a repository test can replace `#/utils/desktopBridge` or `AudioContext`. Keep real collaborators when their interaction is the subject. Mocks of Web Audio calls prove wiring and requested parameters, not rendered sound or latency.
@@ -457,11 +459,14 @@ Subject: `src/modules/AudioEngine/engine/TrackNode.ts` — constructs an audio g
 
 Pass a mock `AudioContext` (see §7.4) via the constructor `deps`. Assert on the node connections and parameter calls — these are the only observable outputs of the class until the audio thread runs.
 
+Assert a parameter call's time only when the claim is timing, and then assert the frame it lands on, never the raw `ctx.currentTime` (`.agents/skills/review-stances/audio-param-frame-timing.md`). The clamp case below claims the value, so its time argument is `expect.any(Number)`.
+
 ```typescript
 // src/modules/AudioEngine/engine/__tests__/TrackNode.spec.ts
 import { describe, it, expect } from 'vitest';
 import { TrackNode } from '../TrackNode';
 import { createMockAudioContext } from '#/helpers/__tests__/audioContext.mock';
+import { FADER_MAX_GAIN } from '#/utils/audioLevelLaw';
 
 describe('TrackNode', () => {
     it('should wire gain → preFaderTap → fader → pan → analyser in order', () => {
@@ -474,15 +479,15 @@ describe('TrackNode', () => {
         expect(node.strip.panNode.connect).toHaveBeenCalledWith(node.strip.analyserNode);
     });
 
-    it('should clamp gain to [0, 1] when setGain is called with out-of-range input', () => {
+    it('should clamp gain to [0, FADER_MAX_GAIN] when setGain is called with out-of-range input', () => {
         const ctx = createMockAudioContext();
         const node = new TrackNode('track-1', { context: ctx });
 
-        node.setGain(1.5);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(1, ctx.currentTime, 0.01);
+        node.setGain(3);
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(FADER_MAX_GAIN, expect.any(Number), 0.01);
 
         node.setGain(-0.2);
-        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, ctx.currentTime, 0.01);
+        expect(node.strip.faderNode.gain.setTargetAtTime).toHaveBeenCalledWith(0, expect.any(Number), 0.01);
     });
 });
 ```
@@ -698,13 +703,13 @@ unchanged into a passing record.
 
 ## 9. Running tests
 
-| Command                                      | Purpose                                                                                                                                        |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `pnpm test:watch`                            | Vitest watch mode for active development                                                                                                       |
-| `pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                                               |
-| `pnpm test:coverage`                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                                         |
-| `pnpm test:e2e <spec>`                       | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only                  |
-| `pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                                          |
+| Command                                                                      | Purpose                                                                                                                         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `pnpm test:watch`                                                            | Vitest watch mode for active development                                                                                        |
+| `pnpm guard --profile focused -- pnpm test:run <target>`                     | Focused local run; pass the exact changed spec. PR CI owns the broader unit matrix                                              |
+| `pnpm test:coverage`                                                         | Full Vitest coverage run; PR CI owns routine repository-wide validation                                                         |
+| `pnpm guard --profile broad -- pnpm test:e2e <spec>`                         | Focused local diagnostic; PR CI selects affected E2E specs. Bare command runs the full suite and is for explicit debugging only |
+| `pnpm guard --profile focused -- pnpm cargo:test --package <crate> <filter>` | Run affected Rust tests in debug mode                                                                                           |
 
 Run only checks affected by the changed files. Keep local verification focused on tests and
 formatting; CI owns lint, TypeScript typechecks, module boundaries, barrel-mock coverage, builds,
@@ -914,8 +919,10 @@ The deterministic selector in `scripts/prValidationScope.ts` reads the complete 
 immutable base/head revisions, including both rename paths. It publishes `pr-validation-scope`
 with the selected files and reasons. Product changes run the offline smoke set and complete browser
 suite with hardware admission, including presentation files, shared application code, test helpers,
-dependencies, deleted tests and unknown paths. Changed E2E specs run directly. Documentation and
-known review tooling avoid browser execution. The same affected profile reaches validation: a
+dependencies, deleted browser tests and unknown paths. Changed E2E specs run directly. Documentation and
+known review tooling avoid browser execution. Vitest-collected spec files under `src/` keep broad
+non-browser validation without browser execution, since the browser never loads them; non-spec files
+under `__tests__/` stay on the product route. The same affected profile reaches validation: a
 documentation-only pull request runs the standing static and security jobs; explicitly known review
 tooling also runs script types, lint, the script unit suite and review contracts. Application builds,
 application unit shards, browser jobs and native checks require a product or unclassified change.

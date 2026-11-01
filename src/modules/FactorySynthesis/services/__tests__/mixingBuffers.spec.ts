@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { createMono, createStereo, toAudioBufferMono } from '../bufferCreation';
+import { createMono, createStereo, toAudioBuffer } from '../bufferCreation';
 import { mixMono, mixMonoIntoStereo } from '../mixing';
 
 describe('mixMono', () => {
@@ -90,7 +90,7 @@ describe('createStereo', () => {
     });
 });
 
-describe('toAudioBufferMono', () => {
+describe('toAudioBuffer', () => {
     it('creates AudioBuffer with correct length and sample rate', () => {
         const ctx = {
             createBuffer: (_ch: number, length: number, sampleRate: number) => {
@@ -105,7 +105,7 @@ describe('toAudioBufferMono', () => {
             },
         } as unknown as AudioContext;
         const src = new Float32Array(100).fill(0.5);
-        const buf = toAudioBufferMono(ctx, src, 48000);
+        const buf = toAudioBuffer(ctx, { channels: [src], sampleRate: 48000 });
         expect(buf.length).toBe(100);
         expect(buf.sampleRate).toBe(48000);
     });

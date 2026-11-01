@@ -1,5 +1,11 @@
 import { isValidTakePlacement } from '#/modules/Arrangement/stores';
-import { isChordTrackState, isGrooveTemplateState, isValidMidiNoteExpression } from '#/modules/MIDI/stores';
+import {
+    isChordTrackState,
+    isFrozenMidiTakeSource,
+    isGrooveTemplateState,
+    isValidMidiNoteExpression,
+} from '#/modules/MIDI/stores';
+import { hasValidAudioSourceTiles, hasValidAudioSourceState, isAudioSourceSnapshot } from '#/utils/audioSourceTime';
 
 import { isProductionBrief } from '../../../models/ProductionBrief';
 import {
@@ -255,6 +261,16 @@ function isTransport(value: unknown): value is ProjectTransport {
     );
 }
 
+/** The rule `midiStore` hydration enforces: absent, or a pass counted from zero. */
+function hasValidRecordingPassIndex(value: UnknownRecord): boolean {
+    return (
+        !('recordingPassIndex' in value) ||
+        (typeof value.recordingPassIndex === 'number' &&
+            Number.isSafeInteger(value.recordingPassIndex) &&
+            value.recordingPassIndex >= 0)
+    );
+}
+
 function isMidiNote(value: unknown): boolean {
     return (
         isRecord(value) &&
@@ -269,6 +285,7 @@ function isMidiNote(value: unknown): boolean {
             keys: ['probability', 'pressure', 'slide', 'pitchBend'],
             type: 'number',
         }) &&
+        hasValidRecordingPassIndex(value) &&
         (value.expression === undefined ||
             (typeof value.duration === 'number' && isValidMidiNoteExpression(value.expression, value.duration)))
     );
@@ -388,6 +405,7 @@ function isClip(value: unknown): value is ProjectClip {
         typeof value.trackId === 'string' &&
         typeof value.name === 'string' &&
         (value.type === 'audio' || value.type === 'midi') &&
+        hasValidAudioSourceState(value) &&
         hasType({
             record: value,
             keys: ['startBeat', 'endBeat', 'fadeInBeats', 'fadeOutBeats', 'gain'],
@@ -400,6 +418,11 @@ function isClip(value: unknown): value is ProjectClip {
             keys: [
                 'sampleStartBeat',
                 'audioOffsetBeats',
+                'audioOffsetSeconds',
+                'audioUnwrappedOffsetSeconds',
+                'audioLoopStartSeconds',
+                'audioLoopPassEntrySeconds',
+                'audioLoopPassOriginBeat',
                 'midiOffsetBeats',
                 'stretchRatio',
                 'loopLength',
@@ -666,7 +689,9 @@ function isTake(value: unknown): boolean {
         hasType({ record: value, keys: ['id', 'clipId', 'name'], type: 'string' }) &&
         hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
         typeof value.selected === 'boolean' &&
-        isValidTakePlacement(value)
+        isValidTakePlacement(value) &&
+        hasValidRecordingPassIndex(value) &&
+        (!('midiSource' in value) || isFrozenMidiTakeSource(value.midiSource))
     );
 }
 
@@ -674,7 +699,8 @@ function isCompRegion(value: unknown): boolean {
     return (
         isRecord(value) &&
         typeof value.takeId === 'string' &&
-        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' })
+        hasType({ record: value, keys: ['startBeat', 'endBeat'], type: 'number' }) &&
+        (value.audioSource === undefined || isAudioSourceSnapshot(value.audioSource))
     );
 }
 
@@ -686,7 +712,8 @@ function isTakeLane(value: unknown): boolean {
         Array.isArray(value.takes) &&
         value.takes.every(isTake) &&
         Array.isArray(value.activeCompRegions) &&
-        value.activeCompRegions.every(isCompRegion)
+        value.activeCompRegions.every(isCompRegion) &&
+        (value.baseGapAudioSources === undefined || hasValidAudioSourceTiles(value.baseGapAudioSources))
     );
 }
 

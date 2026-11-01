@@ -7,6 +7,7 @@ import {
 } from '../models/VersionedCommandEnvelope';
 
 import { collectCommandIdReferences } from './collectCommandIdReferences';
+import { isDerivedSourceSupportPath } from './isDerivedSourceSupportPath';
 
 type CommandArgumentMetadata = {
     objectReferences: CommandObjectReference[];
@@ -129,5 +130,15 @@ export function compileCommandArgumentMetadata(
             }
         }
     }
-    return metadata;
+    // Source preservation is derived support. Its owner still validates every
+    // value; these captures do not expand the musician's requested scope.
+    return {
+        objectReferences: metadata.objectReferences.filter(
+            (reference) => !isDerivedSourceSupportPath(operation, reference.argument)
+        ),
+        parameterUnits: metadata.parameterUnits.filter(
+            (parameter) => !isDerivedSourceSupportPath(operation, parameter.argument)
+        ),
+        time: metadata.time.filter((time) => !isDerivedSourceSupportPath(operation, time.argument)),
+    };
 }

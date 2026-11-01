@@ -1,0 +1,77 @@
+{
+  "schema": "sourdaw-legacy-audio-split-undo-fixture-v1",
+  "producerCommit": "ba398dbc4ee29531afcc6f56110baf360bcb636f",
+  "producerTest": "src/modules/Arrangement/handlers/clip/__tests__/clipSessionMirrorRoundTrip.spec.ts",
+  "sourceClip": {
+    "id": "legacy-audio-source",
+    "trackId": "track-keys",
+    "name": "Legacy audio source",
+    "startBeat": 0,
+    "endBeat": 4,
+    "type": "audio",
+    "audioBufferId": "legacy-audio-buffer",
+    "audioOffsetBeats": 0,
+    "fadeInBeats": 0,
+    "fadeOutBeats": 0,
+    "gain": 1,
+    "color": "#ffffff",
+    "locked": false,
+    "muted": false
+  },
+  "beforeClips": [
+    {
+      "id": "legacy-audio-source",
+      "trackId": "track-keys",
+      "name": "Legacy audio source",
+      "startBeat": 0,
+      "endBeat": 4,
+      "type": "audio",
+      "fadeInBeats": 0,
+      "fadeOutBeats": 0,
+      "gain": 1,
+      "color": "#ffffff",
+      "locked": false,
+      "muted": false,
+      "audioBufferId": "legacy-audio-buffer",
+      "audioOffsetBeats": 0
+    }
+  ],
+  "afterSplitClips": [
+    {
+      "id": "legacy-audio-source",
+      "trackId": "track-keys",
+      "name": "Legacy audio source (L)",
+      "startBeat": 0,
+      "endBeat": 2,
+      "type": "audio",
+      "fadeInBeats": 0,
+      "fadeOutBeats": 0,
+      "gain": 1,
+      "color": "#ffffff",
+      "locked": false,
+      "muted": false,
+      "audioBufferId": "legacy-audio-buffer",
+      "audioOffsetBeats": 0
+    },
+    {
+      "id": "legacy-audio-right",
+      "trackId": "track-keys",
+      "name": "Legacy audio source (R)",
+      "startBeat": 2,
+      "endBeat": 4,
+      "type": "audio",
+      "fadeInBeats": 0,
+      "fadeOutBeats": 0,
+      "gain": 1,
+      "color": "#ffffff",
+      "locked": false,
+      "muted": false,
+      "audioBufferId": "legacy-audio-buffer",
+      "audioOffsetBeats": 2,
+      "midiOffsetBeats": 0
+    }
+  ],
+  "splitRootBase64": "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",
+  "futureRootBase64": "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",
+  "undoSessionMirror": "{\"past\":[],\"future\":[{\"id\":\"d05406f0-4bb7-4aa7-9b4c-aecab37fde9b\",\"kind\":\"action\",\"label\":\"Split clip \\\"Legacy audio source\\\" (legacy-audio-source) at beat 2\",\"action\":{\"type\":\"splitClip\",\"payload\":{\"clipId\":\"legacy-audio-source\",\"beat\":2,\"rightClipId\":\"legacy-audio-right\",\"targetNoteIds\":[],\"resolvedBeat\":2}},\"inverseAction\":{\"type\":\"restoreClipSplitState\",\"payload\":{\"clipId\":\"legacy-audio-source\",\"rightClipId\":\"legacy-audio-right\",\"expected\":{\"trackId\":\"track-keys\",\"leftClip\":{\"id\":\"legacy-audio-source\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source (L)\",\"startBeat\":0,\"endBeat\":2,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":0},\"rightClip\":{\"id\":\"legacy-audio-right\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source (R)\",\"startBeat\":2,\"endBeat\":4,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":2,\"midiOffsetBeats\":0},\"rightClipIndex\":1,\"rightClipOrder\":[\"legacy-audio-source\",\"legacy-audio-right\"],\"sourceMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"rightMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"clipSatellites\":[{\"clipId\":\"legacy-audio-source\",\"gainEnvelope\":null,\"warpState\":null},{\"clipId\":\"legacy-audio-right\",\"gainEnvelope\":null,\"warpState\":null}],\"clipAutomationLanes\":[]},\"replacement\":{\"trackId\":\"track-keys\",\"leftClip\":{\"id\":\"legacy-audio-source\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source\",\"startBeat\":0,\"endBeat\":4,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":0},\"rightClip\":null,\"rightClipIndex\":1,\"rightClipOrder\":[\"legacy-audio-source\",\"legacy-audio-right\"],\"sourceMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"rightMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"clipSatellites\":[{\"clipId\":\"legacy-audio-source\",\"gainEnvelope\":null,\"warpState\":null},{\"clipId\":\"legacy-audio-right\",\"gainEnvelope\":null,\"warpState\":null}],\"clipAutomationLanes\":[]},\"retiredTakeLanes\":[],\"retiredTakeSourceProof\":{\"changeHash\":\"\",\"memberId\":\"\"},\"reKeyedTakeLanes\":[]}},\"timestamp\":1793271621562,\"source\":\"manual\",\"redoAction\":{\"type\":\"restoreClipSplitState\",\"payload\":{\"clipId\":\"legacy-audio-source\",\"rightClipId\":\"legacy-audio-right\",\"expected\":{\"trackId\":\"track-keys\",\"leftClip\":{\"id\":\"legacy-audio-source\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source\",\"startBeat\":0,\"endBeat\":4,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":0},\"rightClip\":null,\"rightClipIndex\":1,\"rightClipOrder\":[\"legacy-audio-source\",\"legacy-audio-right\"],\"sourceMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"rightMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"clipSatellites\":[{\"clipId\":\"legacy-audio-source\",\"gainEnvelope\":null,\"warpState\":null},{\"clipId\":\"legacy-audio-right\",\"gainEnvelope\":null,\"warpState\":null}],\"clipAutomationLanes\":[]},\"replacement\":{\"trackId\":\"track-keys\",\"leftClip\":{\"id\":\"legacy-audio-source\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source (L)\",\"startBeat\":0,\"endBeat\":2,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":0},\"rightClip\":{\"id\":\"legacy-audio-right\",\"trackId\":\"track-keys\",\"name\":\"Legacy audio source (R)\",\"startBeat\":2,\"endBeat\":4,\"type\":\"audio\",\"fadeInBeats\":0,\"fadeOutBeats\":0,\"gain\":1,\"color\":\"#ffffff\",\"locked\":false,\"muted\":false,\"audioBufferId\":\"legacy-audio-buffer\",\"audioOffsetBeats\":2,\"midiOffsetBeats\":0},\"rightClipIndex\":1,\"rightClipOrder\":[\"legacy-audio-source\",\"legacy-audio-right\"],\"sourceMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"rightMidi\":{\"notes\":{\"present\":false,\"value\":[]},\"controlChanges\":{\"present\":false,\"value\":[]},\"pitchBends\":{\"present\":false,\"value\":[]}},\"clipSatellites\":[{\"clipId\":\"legacy-audio-source\",\"gainEnvelope\":null,\"warpState\":null},{\"clipId\":\"legacy-audio-right\",\"gainEnvelope\":null,\"warpState\":null}],\"clipAutomationLanes\":[]},\"retiredTakeLanes\":[],\"retiredTakeSourceProof\":{\"changeHash\":\"\",\"memberId\":\"\"},\"reKeyedTakeLanes\":[]}},\"actionOperationVersion\":1,\"inverseActionOperationVersion\":1,\"redoActionOperationVersion\":1}]}"
+}

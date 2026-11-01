@@ -1,5 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { type Page } from '@playwright/test';
 
+import { expect, test } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const PANEL_OPEN_TIMEOUT_MS = 30_000;
@@ -15,7 +16,7 @@ async function openInstrumentPanel(
     panel: (typeof INSTRUMENTS)[number]['panel']
 ): Promise<void> {
     const browser = page.getByRole('complementary', { name: 'Browser panel' });
-    await browser.getByRole('button', { name: 'Instruments', exact: true }).click();
+    await browser.getByRole('tab', { name: 'Instruments', exact: true }).click();
     await browser.getByRole('button', { name: new RegExp(`^${card}`) }).click();
     await expect(page.getByRole('button', { name: `Close ${panel}` })).toBeVisible({
         timeout: PANEL_OPEN_TIMEOUT_MS,

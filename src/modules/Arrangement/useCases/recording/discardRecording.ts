@@ -1,6 +1,8 @@
 import { removeClip } from '../clip/removeClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 
+import { recordingPassTiming } from './recordingPassTiming';
+
 /**
  * Retire a recording gesture's provisional result.
  *
@@ -12,6 +14,7 @@ import { getTrackStoreState } from '../getTrackStoreState';
  * entry owns (#4439).
  */
 export function discardRecording(clipId: string): boolean {
+    recordingPassTiming.retire(clipId);
     const exists =
         getTrackStoreState()?.tracks.some((track) => track.clips.some((clip) => clip.id === clipId)) === true;
     if (!exists) {

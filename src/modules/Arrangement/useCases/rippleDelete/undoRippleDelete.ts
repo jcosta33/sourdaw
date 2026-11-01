@@ -4,6 +4,7 @@ import { type RetiredTakeLaneSnapshot } from '#/utils/handlerContract';
 
 import { type ClipSatelliteEntry, writeClipSatelliteEntry } from '../../stores/clipSatelliteState';
 import { type Clip } from '../../stores/trackStore';
+import { relocateAudioSourceTimeFields } from '../clip/relocateAudioSourceTimeFields';
 import { restoreTakesForClip } from '../comping/restoreTakesForClip';
 import { getTrackStoreState } from '../getTrackStoreState';
 import { setTrackState } from '../setTrackState';
@@ -68,6 +69,7 @@ export function undoRippleDelete({
                     // anchor rides the same delta back or the restored
                     // placement would read a spurious advance (#4988).
                     ...shiftLoopOriginEntry(clip, originalShift.origStartBeat - clip.startBeat),
+                    ...relocateAudioSourceTimeFields(clip, originalShift.origStartBeat - clip.startBeat),
                 };
             });
 

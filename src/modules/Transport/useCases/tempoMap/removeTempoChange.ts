@@ -1,11 +1,5 @@
-import { tempoMapStore } from '../../stores/tempoMapStore';
+import { executeAppAction } from '#/modules/Command/useCases';
 
-export function removeTempoChange(changeId: string): void {
-    const state = tempoMapStore.value;
-    if (!state) {
-        return;
-    }
-    tempoMapStore.set({
-        changes: state.changes.filter((context) => context.id !== changeId),
-    });
+export function removeTempoChange(changeId: string): Promise<void> {
+    return executeAppAction({ type: 'editTempoMap', payload: { edit: { type: 'remove', id: changeId } } });
 }

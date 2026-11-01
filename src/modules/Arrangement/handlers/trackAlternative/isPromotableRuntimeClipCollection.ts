@@ -1,3 +1,5 @@
+import { hasValidAudioSourceState } from '#/utils/audioSourceTime';
+
 import { type Clip } from '../../models/Track';
 
 type UnknownRecord = Record<string, unknown>;
@@ -56,7 +58,7 @@ function isValidKneadState(value: unknown): boolean {
 }
 
 function isCompleteRuntimeClip(value: unknown, targetTrackId: string): value is Clip {
-    if (!isRecord(value)) {
+    if (!isRecord(value) || !hasValidAudioSourceState(value)) {
         return false;
     }
 

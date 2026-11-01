@@ -9,6 +9,7 @@ export { commandProjectDivergencePort } from './commandProjectDivergencePort';
 export { commandBatchPreflightPort } from './commandBatchPreflightPort';
 export { commandBatchPreviewPort } from './commandBatchPreviewPort';
 export { commandRuntimeRepairPort } from './commandRuntimeRepairPort';
+export { undoReplayPreparationPort } from './undoReplayPreparationPort';
 export { configureCommandBatchIdempotency } from './configureCommandBatchIdempotency';
 export { resetCommandBatchIdempotency } from './resetCommandBatchIdempotency';
 export { canExecuteCommandBatchEffects } from './canExecuteCommandBatchEffects';

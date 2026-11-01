@@ -4,12 +4,14 @@
 import { type ReactElement } from 'react';
 
 import { DelayTaps } from '#/components/daw/visualizers/DelayTaps';
-import { Grid, Row, Stack } from '#/components/layout';
+import { Stack } from '#/components/layout';
 import { setDeviceParameter } from '#/modules/Arrangement/useCases';
 
 import { SurfaceCard } from '../../../components/Inspector/SurfaceCard';
 import { type DeviceLayoutProps, filterParams, registerDeviceLayout } from '../deviceLayoutRegistry';
 import { DeviceParameterControl } from '../DeviceParameterControl';
+import { FitWidth } from '../FitWidth';
+import { ParamCardGrid } from '../ParamCardGrid';
 import { SectionHeader } from '../SectionHeader';
 
 type P = DeviceLayoutProps['parameters'][number];
@@ -36,27 +38,29 @@ const DelayLayout = ({ device, trackId, parameters }: DeviceLayoutProps): ReactE
     return (
         <Stack gap={3}>
             <SectionHeader title="Echo Pattern" />
-            <Row align="stretch" justify="center">
-                <DelayTaps
-                    time={pv['delay-time'] ?? 250}
-                    feedback={pv['delay-feedback'] ?? 0.4}
-                    mix={pv['delay-mix'] ?? 0.3}
-                    width={240}
-                    height={60}
-                    onParamChange={change}
-                />
-            </Row>
+            <FitWidth fallbackWidth={240}>
+                {(width) => (
+                    <DelayTaps
+                        time={pv['delay-time'] ?? 250}
+                        feedback={pv['delay-feedback'] ?? 0.4}
+                        mix={pv['delay-mix'] ?? 0.3}
+                        width={width}
+                        height={60}
+                        onParamChange={change}
+                    />
+                )}
+            </FitWidth>
             <SectionHeader title="Controls" />
-            <Grid cols={2} gap={2}>
+            <ParamCardGrid>
                 {filterParams(parameters, ['delay-time', 'delay-feedback']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
-            <Grid cols={2} gap={2}>
+            </ParamCardGrid>
+            <ParamCardGrid>
                 {filterParams(parameters, ['delay-lowcut', 'delay-highcut']).map((param) => (
                     <Param key={param.id} param={param} device={device} trackId={trackId} />
                 ))}
-            </Grid>
+            </ParamCardGrid>
             {filterParams(parameters, ['delay-mix']).map((param) => (
                 <Param key={param.id} param={param} device={device} trackId={trackId} />
             ))}

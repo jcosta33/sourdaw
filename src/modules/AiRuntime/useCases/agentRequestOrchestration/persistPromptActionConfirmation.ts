@@ -35,6 +35,7 @@ type PersistPromptActionConfirmationInput = {
     adoptedRecipes?: ConfirmationProposal['adoptedRecipes'];
     /** The preview measurement the proposal adopted; kept only when the persisted batch is the one it rendered. */
     measuredPreview?: MeasuredPreview;
+    metricGoalState?: string;
     /** Which of the run's successive batches this proposal is; absent for a request that fits one batch. */
     batchPosition?: ConfirmationProposal['batchPosition'];
     /** What a terse refinement of this card inherits; present only for an ordinary card. */
@@ -90,6 +91,30 @@ function failUnretainedProposal(input: PersistPromptActionConfirmationInput): vo
     });
 }
 
+function recordConfirmationMetricGoalPlan(
+    input: PersistPromptActionConfirmationInput,
+    confirmation: NonNullable<ReturnType<typeof proposePendingActionConfirmation>>
+): void {
+    const run = agentRunLifecycle.get(input.runId);
+    if (run?.plan !== null && run?.plan !== undefined && confirmation.approvalSnapshot.metricGoalState !== undefined) {
+        agentRunLifecycle.recordPlan({
+            runId: input.runId,
+            summary: run.plan.summary,
+            commandIds: input.parsedCommandBatch.envelope.commands.map((command) => command.commandId),
+            serializedBatchIdentity: input.parsedCommandBatch.envelope.idempotencyKey,
+            revision: input.projectRevision,
+            scope: run.scope,
+            grants: run.grants,
+            budgets: run.budgets,
+            plan: {
+                ...run.plan,
+                metricGoalState: confirmation.approvalSnapshot.metricGoalState,
+                revision: input.projectRevision,
+            },
+        });
+    }
+}
+
 export function persistPromptActionConfirmation(input: PersistPromptActionConfirmationInput): string | null {
     const confirmationId = `prompt-confirmation-${crypto.randomUUID()}`;
     // A batch whose handlers cannot describe themselves still deserves a semantic view, so
@@ -126,6 +151,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             protectedUnchanged: input.protectedUnchanged,
             matchSelectorPredicates: input.matchSelectorPredicates,
             adoptedRecipes: input.adoptedRecipes,
+            metricGoalState: input.metricGoalState ?? input.agentApproval.metricGoalState ?? undefined,
             measuredPreview: bindMeasuredPreviewToBatch(input.measuredPreview, input.parsedCommandBatch.envelope),
             batchPosition: input.batchPosition,
             groundingBasis: input.groundingBasis,
@@ -146,6 +172,7 @@ export function persistPromptActionConfirmation(input: PersistPromptActionConfir
             return null;
         }
 
+        recordConfirmationMetricGoalPlan(input, confirmation);
         updateChatMessage(input.assistantMessageId, {
             isStreaming: false,
             pendingActionConfirmationId: confirmationId,

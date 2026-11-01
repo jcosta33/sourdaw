@@ -12,6 +12,7 @@ import { executeConfirmedCommandBatch } from './agentRequestOrchestration/execut
 import { proposeNextScheduledBatch } from './agentRequestOrchestration/proposeNextScheduledBatch';
 import { confirmationAdmission } from './agentRequestOrchestration/resolveConfirmationAdmission';
 import { settleConfirmedCommandExecution } from './agentRequestOrchestration/settleConfirmedCommandExecution';
+import { stopMeasuredPreviewAudition } from './stopMeasuredPreviewAudition';
 
 type ConfirmPendingChatActionsInput = {
     confirmationId: string;
@@ -39,6 +40,7 @@ type ConfirmPendingChatActionsOutput = Promise<ConfirmPendingChatActionsResult>;
 export async function confirmPendingChatActions(
     input: ConfirmPendingChatActionsInput
 ): ConfirmPendingChatActionsOutput {
+    void stopMeasuredPreviewAudition({ confirmationId: input.confirmationId });
     const admission = confirmationAdmission.consumeConfirmationAdmission(
         await confirmationAdmission.resolveConfirmationAdmission(input)
     );

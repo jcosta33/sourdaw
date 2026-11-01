@@ -1,10 +1,13 @@
 import { prepareClipMidiRowCoordinateShift } from '#/modules/MIDI/useCases';
 import { loopOriginEntry, resolveLoopedOffsetBeats } from '#/utils/clipLoopOrigin';
+import { hasExactAudioSourceFields } from '#/utils/hasExactAudioSourceFields';
 
 import { type Clip } from '../../models/Track';
 import { getTrackState } from '../../repositories/track/getTrackState';
 import { updateClip } from '../../repositories/track/updateClip';
 import { findClipById } from '../../services/findClipById';
+
+import { prepareAudioClipStartTrim } from './prepareAudioClipStartTrim';
 
 /**
  * A looped clip reads its notes at `note.startBeat - midiOffsetBeats` wrapped by
@@ -21,6 +24,52 @@ function loopedMidiOffsetBeats(clip: Clip, offset: number): number {
         clipDurationBeats: clip.endBeat - clip.startBeat,
         configuredLoopLengthBeats: clip.loopLength,
     });
+}
+
+function requiresAudioSourceTrim(clip: Clip, restoredAnchor: number | null | undefined): boolean {
+    // An old anchor-bearing inverse captured beat coordinates only. Keep its
+    // absent source tuple absent so earlier whole-track captures still match.
+    // Present malformed modern fields must still reach strict source validation.
+    return (
+        clip.type === 'audio' &&
+        (restoredAnchor === undefined || Object.hasOwn(clip, 'audioOffsetSeconds') || !hasExactAudioSourceFields(clip))
+    );
+}
+
+function canTrimClipStart(clipId: string, newStartBeat: number, restoreAnchorBeat: number | null | undefined): boolean {
+    try {
+        const state = getTrackState();
+        if (state) {
+            const target = findClipById({ clipId, tracks: state.tracks });
+            if (target && newStartBeat >= target.clip.endBeat) {
+                return false;
+            }
+            if (
+                target &&
+                requiresAudioSourceTrim(target.clip, restoreAnchorBeat) &&
+                !prepareAudioClipStartTrim(target.clip, newStartBeat)
+            ) {
+                return false;
+            }
+        }
+    } catch {
+        return false;
+    }
+
+    return true;
+}
+
+function trimAudioSource(context: Clip, newStartBeat: number, restoreAnchorBeat: number | null | undefined): Clip {
+    const trimmed = prepareAudioClipStartTrim(context, newStartBeat);
+    if (!trimmed || restoreAnchorBeat === undefined) {
+        return trimmed ?? context;
+    }
+    if (restoreAnchorBeat === null) {
+        delete trimmed.loopOriginBeat;
+    } else {
+        trimmed.loopOriginBeat = restoreAnchorBeat;
+    }
+    return trimmed;
 }
 
 /**
@@ -64,15 +113,7 @@ export function trimClipStart(
             ? undefined
             : restoredMidiOffsetBeats;
 
-    try {
-        const state = getTrackState();
-        if (state) {
-            const target = findClipById({ clipId, tracks: state.tracks });
-            if (target && newStartBeat >= target.clip.endBeat) {
-                return false;
-            }
-        }
-    } catch {
+    if (!canTrimClipStart(clipId, newStartBeat, restoreAnchorBeat)) {
         return false;
     }
 
@@ -88,6 +129,9 @@ export function trimClipStart(
     }
     try {
         const didWrite = updateClip(clipId, (context) => {
+            if (requiresAudioSourceTrim(context, restoreAnchorBeat)) {
+                return trimAudioSource(context, newStartBeat, restoreAnchorBeat);
+            }
             if (newStartBeat < context.endBeat) {
                 const startBeat = Math.max(0, newStartBeat);
                 const delta = startBeat - context.startBeat;

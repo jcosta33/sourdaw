@@ -106,6 +106,15 @@ describe('agent release thresholds document', () => {
 });
 
 describe('agent campaign evidence fixtures', () => {
+    it('pins the extracted acceptance fixture lifetime as AC-054 evidence', () => {
+        const path = 'src/modules/AiRuntime/__tests__/acceptanceFixtureLifetime.ts';
+        const suite = manifest.suites.find((entry) => entry.id === 'AC-054');
+        expect(suite).toBeDefined();
+        const fixture = suite?.fixtures.find((entry) => entry.path === path);
+        expect(fixture).toEqual({ path, digest: computeFixtureDigest(REPOSITORY_ROOT, path) });
+        expect(fixture?.digest).not.toBeNull();
+    });
+
     it('records each fixture as the tree actually holds it', () => {
         for (const suite of manifest.suites) {
             for (const fixture of suite.fixtures) {

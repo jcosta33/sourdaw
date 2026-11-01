@@ -49,6 +49,8 @@
         "lane:publish": "node scripts/trustedGithubWriteBootstrap.ts lane:publish",
         "lane:sync-parent": "node scripts/trustedGithubWriteBootstrap.ts lane:sync-parent",
         "lane:remove": "node scripts/removeLane.ts",
+        "lane:cleanup": "node scripts/cleanupLanes.ts",
+        "lane:cleanup:install": "node scripts/installCleanupLanes.ts",
         "lane:strand": "node scripts/removeLane.ts --strand",
         "lane:identity": "node scripts/stampLaneIdentity.ts",
         "lane:prune": "node scripts/pruneLane.ts",

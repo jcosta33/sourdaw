@@ -3,8 +3,11 @@ import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { Mp3Encoder } from '@breezystack/lamejs';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { type ExportAudioSource } from '../../../models/ExportAudioSource';
+import { createDeliveryPcmSource } from '../createDeliveryPcmSource';
 import { audioBufferToFlac } from '../flacEncoder';
 import { audioBufferToMp3 } from '../mp3Encoder';
 import { audioBufferToWav } from '../wavEncoder';
@@ -18,27 +21,19 @@ import { audioBufferToWav } from '../wavEncoder';
  * noise sequence for a given seed, so WAV and FLAC must agree bit-for-bit.
  */
 
-const codecMode = vi.hoisted(() => ({ real: false }));
-
 const capturedMp3Blocks: Int16Array[] = [];
 
-vi.mock('@breezystack/lamejs', async (importOriginal) => {
-    const actual = await importOriginal<typeof import('@breezystack/lamejs')>();
-    return {
-        Mp3Encoder: vi.fn().mockImplementation(function (channels: number, rate: number, bitrate: number) {
-            if (codecMode.real) {
-                return new actual.Mp3Encoder(channels, rate, bitrate);
-            }
-            return {
-                encodeBuffer: (left: Int16Array) => {
-                    capturedMp3Blocks.push(Int16Array.from(left));
-                    return new Uint8Array([1]);
-                },
-                flush: () => new Uint8Array([2]),
-            };
-        }),
-    };
-});
+vi.mock('@breezystack/lamejs', () => ({
+    Mp3Encoder: vi.fn().mockImplementation(function () {
+        return {
+            encodeBuffer: (left: Int16Array) => {
+                capturedMp3Blocks.push(Int16Array.from(left));
+                return new Uint8Array([1]);
+            },
+            flush: () => new Uint8Array([2]),
+        };
+    }),
+}));
 
 /** A deliberately hot mix: peaks at 1.8 (well over full scale) so per-format
  *  clip-vs-normalize divergence shows up as different sample values. */
@@ -104,7 +99,6 @@ function rmsOf(samples: Int16Array): number {
 describe('export format parity (OE-1)', () => {
     beforeEach(() => {
         capturedMp3Blocks.length = 0;
-        codecMode.real = false;
     });
 
     it('should quantize a hot mix to byte-identical 16-bit PCM for WAV and FLAC', async () => {
@@ -224,6 +218,74 @@ async function captureStream(encode: (write: (bytes: Uint8Array) => Promise<void
     return result;
 }
 
+type StreamingMp3 = (source: ExportAudioSource, write: (bytes: Uint8Array) => Promise<void>) => Promise<void>;
+
+async function withRealMp3(run: (encode: StreamingMp3) => Promise<Uint8Array>): Promise<Uint8Array> {
+    const actual = await vi.importActual<typeof import('@breezystack/lamejs')>('@breezystack/lamejs');
+    return run((source, write) => {
+        vi.mocked(Mp3Encoder).mockImplementationOnce(function (channels: number, rate: number, bitrate: number) {
+            return new actual.Mp3Encoder(channels, rate, bitrate);
+        });
+        return audioBufferToMp3(source, 192, undefined, { mode: 'none' }, { write });
+    });
+}
+
+function createSignal() {
+    let release: () => void = () => {
+        throw new Error('Signal was not initialised');
+    };
+    const promise = new Promise<void>((resolve) => {
+        release = resolve;
+    });
+    return { promise, release };
+}
+
+function expectRealMp3Bytes(
+    decoder: DecoderModule,
+    ActualEncoder: typeof Mp3Encoder,
+    observation: { bytes: Uint8Array; encoder: unknown; channels: number }
+) {
+    const { bytes, encoder, channels } = observation;
+    let output: ReturnType<DecoderModule['decode_audio_bytes']> | undefined;
+    let decodeError: string | undefined;
+    try {
+        output = decoder.decode_audio_bytes(bytes);
+    } catch (error) {
+        decodeError = String(error);
+    }
+    console.info(
+        'codec-fixture-observation',
+        JSON.stringify({
+            channels,
+            actualEncoder: encoder instanceof ActualEncoder,
+            byteLength: bytes.length,
+            prefix: Array.from(bytes.subarray(0, 16)),
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            decodeError: decodeError ?? null,
+        })
+    );
+    expect(encoder).toBeInstanceOf(ActualEncoder);
+    expect(decodeError).toBeUndefined();
+    if (!output) {
+        throw new Error('Expected independently decoded real MP3 bytes');
+    }
+    expect(output.sample_rate).toBe(44100);
+    expect(output.channels).toBe(channels);
+    expect(output.decode_warning_count).toBe(0);
+    expect(output.total_frames).toBeGreaterThan(0);
+    expect(Math.abs(output.total_frames - 4608)).toBeLessThanOrEqual(2305);
+    let frame = -1;
+    for (let offset = 0; offset < bytes.length - 4; offset++) {
+        if (bytes[offset] === 0xff && (bytes[offset + 1]! & 0xfe) === 0xfa) {
+            frame = offset;
+            break;
+        }
+    }
+    expect(frame).toBeGreaterThanOrEqual(0);
+    expect(bytes[frame + 2]! >>> 4).toBe(11);
+    expect((bytes[frame + 2]! >>> 2) & 3).toBe(0);
+}
+
 describe('real streaming codec bytes', () => {
     it('replays seeded 16/24-bit WAV PCM in decoded FLAC, with exact STREAMINFO MD5', async () => {
         const decoder = await shippedDecoder();
@@ -247,13 +309,10 @@ describe('real streaming codec bytes', () => {
         }
     });
     it('decodes real LAME packets at the selected bitrate, channel count, sample rate and audible level', async () => {
-        codecMode.real = true;
-        try {
+        await withRealMp3(async (encode) => {
             const decoder = await shippedDecoder();
             const buffer = createHotBuffer(2, 44100);
-            const bytes = await captureStream((write) =>
-                audioBufferToMp3(buffer, 192, undefined, { mode: 'none' }, { write })
-            );
+            const bytes = await captureStream((write) => encode(buffer, write));
             const decoded = decoder.decode_audio_bytes(bytes);
             expect(decoded.channels).toBe(2);
             expect(decoded.sample_rate).toBe(44100);
@@ -273,8 +332,119 @@ describe('real streaming codec bytes', () => {
             expect(frame).toBeGreaterThanOrEqual(0);
             expect(bytes[frame + 2]! >>> 4).toBe(11);
             expect((bytes[frame + 2]! >>> 2) & 3).toBe(0);
+            return bytes;
+        });
+    });
+    it('keeps real MP3 bytes after an earlier codec invocation settles during later startup', async () => {
+        const actual = await vi.importActual<typeof import('@breezystack/lamejs')>('@breezystack/lamejs');
+        const decoder = await shippedDecoder();
+        const firstWritten = createSignal();
+        const releaseFirst = createSignal();
+        const secondAdmitted = createSignal();
+        const releaseSecond = createSignal();
+        const firstEncoderIndex = vi.mocked(Mp3Encoder).mock.calls.length;
+        const first = withRealMp3((encode) =>
+            captureStream((write) =>
+                encode(createHotBuffer(1, 4608), async (bytes) => {
+                    await write(bytes);
+                    firstWritten.release();
+                    await releaseFirst.promise;
+                })
+            )
+        );
+        await firstWritten.promise;
+        const firstEncoder = vi.mocked(Mp3Encoder).mock.results[firstEncoderIndex]?.value;
+        const secondEncoderIndex = vi.mocked(Mp3Encoder).mock.calls.length;
+        const second = withRealMp3(async (encode) => {
+            secondAdmitted.release();
+            await releaseSecond.promise;
+            return captureStream((write) => encode(createHotBuffer(2, 4608), write));
+        });
+        await secondAdmitted.promise;
+        try {
+            expect(firstEncoder).toBeInstanceOf(actual.Mp3Encoder);
+            releaseFirst.release();
+            const firstBytes = await first;
+            releaseSecond.release();
+            const secondBytes = await second;
+            const secondEncoder = vi.mocked(Mp3Encoder).mock.results[secondEncoderIndex]?.value;
+            expectRealMp3Bytes(decoder, actual.Mp3Encoder, { bytes: firstBytes, encoder: firstEncoder, channels: 1 });
+            expectRealMp3Bytes(decoder, actual.Mp3Encoder, { bytes: secondBytes, encoder: secondEncoder, channels: 2 });
         } finally {
-            codecMode.real = false;
+            releaseFirst.release();
+            releaseSecond.release();
+            await Promise.allSettled([first, second]);
         }
+    });
+});
+
+describe('replayable converted real codec bytes', () => {
+    it('independently decodes converted mono WAV/FLAC with identical seeded PCM and exact MD5', async () => {
+        const decoder = await shippedDecoder();
+        const samples = Float32Array.from(
+            { length: 48000 },
+            (_, frame) => 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
+        );
+        const source = createDeliveryPcmSource({
+            source: { length: samples.length, numberOfChannels: 2, sampleRate: 48000, getChannelData: () => samples },
+            sampleRate: 44100,
+            channels: 1,
+        });
+        for (const depth of [16, 24] as const) {
+            const dither = { mode: 'tpdf' as const, seed: 7821 };
+            const wav = await captureStream((write) => audioBufferToWav(source, depth, undefined, dither, { write }));
+            const flac = await captureStream((write) => audioBufferToFlac(source, depth, undefined, dither, { write }));
+            expect(readFlacPcmMd5(flac)).toBe(createHash('md5').update(wav.subarray(44)).digest('hex'));
+            const a = decoder.decode_audio_bytes(wav);
+            const b = decoder.decode_audio_bytes(flac);
+            for (const output of [a, b]) {
+                expect(output.channels).toBe(1);
+                expect(output.sample_rate).toBe(44100);
+                expect(output.total_frames).toBe(44100);
+                expect(output.decode_warning_count).toBe(0);
+            }
+            const actual = a.take_samples();
+            expect(b.take_samples()).toEqual(actual);
+            let error = 0;
+            for (let frame = 256; frame < 44100 - 256; frame++) {
+                error += (actual[frame]! - 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 44100)) ** 2;
+            }
+            expect(error / (44100 - 512)).toBeLessThan(0.000001);
+        }
+    });
+    it.each([
+        [44100, 1],
+        [44100, 2],
+        [48000, 1],
+        [48000, 2],
+    ] as const)('decodes factory192kbps MP3 at requested %iHz/%i channels', async (rate, channels) => {
+        await withRealMp3(async (encode) => {
+            const decoder = await shippedDecoder();
+            const samples = Float32Array.from(
+                { length: 96000 },
+                (_, frame) => 0.2 * Math.sin((2 * Math.PI * 1000 * frame) / 48000)
+            );
+            const source = createDeliveryPcmSource({
+                source: {
+                    length: samples.length,
+                    numberOfChannels: 2,
+                    sampleRate: 48000,
+                    getChannelData: () => samples,
+                },
+                sampleRate: rate,
+                channels,
+            });
+            const bytes = await captureStream((write) => encode(source, write));
+            const output = decoder.decode_audio_bytes(bytes);
+            expect(output.sample_rate).toBe(rate);
+            expect(output.channels).toBe(channels);
+            expect(output.decode_warning_count).toBe(0);
+            expect(Math.abs(output.total_frames - 2 * rate)).toBeLessThanOrEqual(2305);
+            const pcm = output.take_samples();
+            const rms = Math.sqrt(pcm.reduce((sum, sample) => sum + sample * sample, 0) / pcm.length);
+            expect(rms).toBeGreaterThan(0.12);
+            expect(rms).toBeLessThan(0.16);
+            return bytes;
+        });
     });
 });

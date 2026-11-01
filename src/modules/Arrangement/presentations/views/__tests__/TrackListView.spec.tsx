@@ -1,10 +1,11 @@
 import { type ReactElement, type ReactNode } from 'react';
 
-import { render, screen, fireEvent, waitFor, createEvent } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, render, screen, fireEvent, waitFor, createEvent, within } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
 
+import { VARIATION_LANE_HEIGHT } from '../../../models/TimelineTrackExtent';
 import { normalizeTrack } from '../../../models/Track';
 import { setScrollY, setTimelineViewportHeight } from '../../../stores/timelineViewStore';
 import { selectTrack } from '../../../useCases/toggleTrackState/selectTrack';
@@ -101,9 +102,13 @@ vi.mock('#/modules/Preferences/stores', () => ({
     preferencesStore: {},
 }));
 
+const timelineViewFixture = vi.hoisted(() => ({
+    snapshot: { scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true, viewportHeight: 0 },
+}));
+
 vi.mock('../../../stores/timelineViewStore', () => ({
     timelineViewStore: {
-        getSnapshot: () => ({ scrollX: 0, scrollY: 0, pixelsPerBeat: 12, autoScrollEnabled: true }),
+        getSnapshot: () => timelineViewFixture.snapshot,
         subscribeReact: () => () => {},
     },
     setScrollY: vi.fn(),
@@ -142,10 +147,6 @@ vi.mock('#/utils/Notification/confirmUser', () => ({
 
 vi.mock('../../../useCases/getTrackTemplates', () => ({
     getTrackTemplates: vi.fn(() => []),
-}));
-
-vi.mock('../TakeLanesView', () => ({
-    TakeLanePanel: () => null,
 }));
 
 const renderWithTooltip = (ui: ReactElement) => {
@@ -302,12 +303,10 @@ describe('TrackListView', () => {
         rafSpy.mockRestore();
     });
 
-    it('reports the scroll container real height before clamping scrollY (F7)', () => {
-        // Regression guard: `handleScroll` must call `setTimelineViewportHeight`
-        // with the container's own `clientHeight` on every flushed frame, so
-        // `setScrollY`'s clamp always sees the real, current viewport size
-        // rather than a stale or hardcoded one. Deleting that call leaves this
-        // spec's other assertions green — this is the only test guarding it.
+    it('leaves the viewport height to the timeline canvas when the headers scroll', () => {
+        // The canvas owns the store's viewport height. The header list is taller
+        // than the canvas by the horizontal scrollbar strip, so reporting its
+        // own clientHeight would make the shared clamp disagree with the canvas.
         const rafCallbacks: FrameRequestCallback[] = [];
         const rafSpy = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
             rafCallbacks.push(cb);
@@ -316,15 +315,218 @@ describe('TrackListView', () => {
 
         const { container } = renderWithTooltip(<TrackListView />);
         const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+        scrollEl.scrollTop = 40;
 
         fireEvent.scroll(scrollEl);
+        rafCallbacks[0]?.(0);
+
+        expect(setScrollY).toHaveBeenCalledWith(40);
         expect(setTimelineViewportHeight).not.toHaveBeenCalled();
 
-        rafCallbacks[0]?.(0);
-        expect(setTimelineViewportHeight).toHaveBeenCalledTimes(1);
-        expect(setTimelineViewportHeight).toHaveBeenCalledWith(scrollEl.clientHeight);
-
         rafSpy.mockRestore();
+    });
+
+    it('keeps the scroller from contributing its content height to the arrangement column', () => {
+        // `flex: 1` has a 0% basis that resolves to content size when the
+        // container height is indefinite, which grew the whole arrangement to
+        // the height of every track.
+        const { container } = renderWithTooltip(<TrackListView />);
+        const scrollEl = container.querySelector('.overflow-y-auto') as HTMLElement;
+
+        expect(scrollEl).toHaveClass('min-h-0');
+        expect(scrollEl).toHaveClass('flex-[1_1_0px]');
+        expect(scrollEl).not.toHaveClass('flex-1');
+    });
+
+    describe('header spacer sized from the measured canvas viewport', () => {
+        const resizeCallbacks: ResizeObserverCallback[] = [];
+
+        beforeEach(() => {
+            resizeCallbacks.length = 0;
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 0 };
+            vi.stubGlobal(
+                'ResizeObserver',
+                class {
+                    constructor(callback: ResizeObserverCallback) {
+                        resizeCallbacks.push(callback);
+                    }
+                    observe(): void {}
+                    unobserve(): void {}
+                    disconnect(): void {}
+                }
+            );
+        });
+
+        afterEach(() => {
+            vi.unstubAllGlobals();
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 0 };
+        });
+
+        const measureScroller = (height: number): void => {
+            act(() => {
+                for (const callback of resizeCallbacks) {
+                    callback(
+                        [{ contentRect: new DOMRectReadOnly(0, 0, 200, height) } as ResizeObserverEntry],
+                        {} as ResizeObserver
+                    );
+                }
+            });
+        };
+
+        const readSpacerHeight = (): string => screen.getByTestId('track-list-scrollbar-spacer').style.height;
+
+        it('is the scroller height minus the reported canvas viewport height', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(screen.getByTestId('track-list-scrollbar-spacer')).toHaveAttribute('aria-hidden', 'true');
+            expect(readSpacerHeight()).toBe('40px');
+        });
+
+        it('grows when the canvas viewport shrinks, as when the scratch pad opens', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            const { rerender } = renderWithTooltip(<TrackListView />);
+            measureScroller(340);
+            expect(readSpacerHeight()).toBe('40px');
+
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 190 };
+            rerender(
+                <TooltipProvider>
+                    <TrackListView />
+                </TooltipProvider>
+            );
+
+            expect(readSpacerHeight()).toBe('150px');
+        });
+
+        it('follows the scroller when it resizes', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 300 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+            measureScroller(500);
+
+            expect(readSpacerHeight()).toBe('200px');
+        });
+
+        it('is zero until the canvas has reported a viewport height', () => {
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(readSpacerHeight()).toBe('0px');
+        });
+
+        it('is zero when the canvas viewport is taller than the scroller', () => {
+            timelineViewFixture.snapshot = { ...timelineViewFixture.snapshot, viewportHeight: 400 };
+            renderWithTooltip(<TrackListView />);
+
+            measureScroller(340);
+
+            expect(readSpacerHeight()).toBe('0px');
+        });
+    });
+
+    describe('variation lane rows under a track header', () => {
+        const alternatives = [
+            { id: 'u-a', name: 'Take A', clips: [] },
+            { id: 'u-b', name: 'Take B', clips: [] },
+        ];
+
+        it('renders one fixed-height row per alternative, labelled with its name, in a block of the lane extent', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'lower', name: 'Lower', kind: 'audio' }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            const block = screen.getByTestId('variation-lanes-upper');
+            expect(block).toHaveStyle({ height: `${2 * VARIATION_LANE_HEIGHT}px` });
+            const rows = within(block).getAllByTestId('variation-lane-row');
+            expect(rows).toHaveLength(2);
+            for (const row of rows) {
+                expect(row).toHaveStyle({ height: `${VARIATION_LANE_HEIGHT}px` });
+            }
+            expect(rows.map((row) => row.textContent)).toEqual(['Take A', 'Take B']);
+            expect(screen.queryByTestId('variation-lanes-lower')).not.toBeInTheDocument();
+        });
+
+        it('places the next track header exactly one lane block below the track above', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'lower', name: 'Lower', kind: 'audio' }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            const upperRow = screen.getByTestId('variation-lanes-upper').parentElement!;
+            const lowerRow = screen.getByTestId('track-lower').closest('[role="row"]')!;
+            // The upper row holds header + lane block; the lower row follows it in the list.
+            expect(upperRow.nextElementSibling).toBe(lowerRow);
+            expect(upperRow.lastElementChild).toBe(screen.getByTestId('variation-lanes-upper'));
+        });
+
+        it('renders no lane block and no take panel for a folder or a track whose lanes are off', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'folder',
+                        name: 'Folder',
+                        kind: 'folder',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                    normalizeTrack({ id: 'off', name: 'Off', kind: 'audio', alternatives, showVariationLanes: false }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            expect(screen.queryByTestId(/variation-lanes-/)).not.toBeInTheDocument();
+            expect(screen.queryByText(/Takes ·/)).not.toBeInTheDocument();
+        });
+
+        it('no longer hosts the take-lane panel under the header', () => {
+            vi.mocked(useTracks).mockReturnValue({
+                tracks: [
+                    normalizeTrack({
+                        id: 'upper',
+                        name: 'Upper',
+                        kind: 'audio',
+                        alternatives,
+                        showVariationLanes: true,
+                    }),
+                ],
+                selectedTrackId: null,
+            });
+
+            renderWithTooltip(<TrackListView />);
+
+            expect(screen.queryByText(/Takes ·/)).not.toBeInTheDocument();
+            expect(screen.queryByLabelText('Add take')).not.toBeInTheDocument();
+        });
     });
 
     it('selects the first track on ArrowDown when nothing is selected', () => {

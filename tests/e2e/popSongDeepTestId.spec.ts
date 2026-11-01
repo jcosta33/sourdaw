@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './e2eTest';
 import { launch_from_template, setupWorkspace, wait_for_workspace_ready } from './e2eUtils';
 
 test.describe('Pop Song template deep', () => {
@@ -37,7 +37,10 @@ test.describe('Pop Song template deep', () => {
 
         // The track should be selected (aria-selected).
         const selected = rows.filter({ has: page.locator('[aria-selected="true"]') });
-        const hasSelected = await selected.first().isVisible().catch(() => false);
+        const hasSelected = await selected
+            .first()
+            .isVisible()
+            .catch(() => false);
         // Selection may use a different attribute — verify the click didn't crash.
         await expect(rows.first()).toBeVisible();
     });

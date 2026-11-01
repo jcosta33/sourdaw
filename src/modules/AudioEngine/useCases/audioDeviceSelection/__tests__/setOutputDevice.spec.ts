@@ -32,6 +32,9 @@ const mocks = vi.hoisted(() => ({
     setSinkId: vi.fn<SinkIdSetter>(),
     hasLiveNativeGraphSession: { current: false },
     audibleNativeCarrier: { current: false },
+    programmeCarrier: false,
+    auditionOwner: null as symbol | null,
+    auditionOutputSuppressed: false,
 }));
 
 vi.mock('#/infra/logger/appLogger', () => ({
@@ -57,6 +60,15 @@ vi.mock('../../livePlayback/hasLiveNativeGraphSession', () => ({
 
 vi.mock('../../livePlayback/nativeLiveGraphSessionState', () => ({
     nativeLiveGraphSession: {
+        get programmeCarrier() {
+            return mocks.programmeCarrier;
+        },
+        get auditionOwner() {
+            return mocks.auditionOwner;
+        },
+        get auditionOutputSuppressed() {
+            return mocks.auditionOutputSuppressed;
+        },
         get audibleCarrier() {
             return mocks.audibleNativeCarrier.current;
         },
@@ -66,6 +78,9 @@ vi.mock('../../livePlayback/nativeLiveGraphSessionState', () => ({
 describe('setOutputDevice', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.programmeCarrier = false;
+        mocks.auditionOwner = null;
+        mocks.auditionOutputSuppressed = false;
         mocks.setSinkId.mockReset();
         mocks.setSinkId.mockResolvedValue(undefined);
         mocks.context.setSinkId = mocks.setSinkId;
@@ -177,6 +192,9 @@ describe('setOutputDevice', () => {
 describe('setOutputDevice while the native carrier is audible (#3643)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        mocks.programmeCarrier = false;
+        mocks.auditionOwner = null;
+        mocks.auditionOutputSuppressed = false;
         mocks.setSinkId.mockReset();
         mocks.setSinkId.mockResolvedValue(undefined);
         mocks.context.setSinkId = mocks.setSinkId;
@@ -194,12 +212,25 @@ describe('setOutputDevice while the native carrier is audible (#3643)', () => {
         // The displayed selection keeps naming the output in force.
         expect(audioDeviceStore.value).toEqual({ selectedOutputId: 'A', selectedInputId: 'input-A' });
         expect(mocks.notifyUser).toHaveBeenCalledWith(
-            expect.stringContaining('native audio engine is audible'),
+            expect.stringContaining('native audio engine owns playback'),
             'warning'
         );
         expect(mocks.logger.warn).toHaveBeenCalledWith(
-            expect.stringContaining('audible native engine holds the system default output')
+            expect.stringContaining('native programme holds the system default output')
         );
+    });
+
+    it('retains output-device ownership during A/B and its pending restoration', async () => {
+        mocks.audibleNativeCarrier.current = false;
+        mocks.programmeCarrier = true;
+        mocks.auditionOwner = Symbol('audition');
+        await setOutputDevice('B');
+        expect(mocks.setSinkId).not.toHaveBeenCalled();
+        mocks.auditionOwner = null;
+        mocks.auditionOutputSuppressed = true;
+        await setOutputDevice('C');
+        expect(mocks.setSinkId).not.toHaveBeenCalled();
+        expect(audioDeviceStore.value?.selectedOutputId).toBe('A');
     });
 
     it('applies the same selection once the session sounds nothing, and once none is live', async () => {

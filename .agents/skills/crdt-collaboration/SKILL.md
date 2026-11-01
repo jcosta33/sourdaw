@@ -13,7 +13,7 @@ description: >-
 
 Project truth is an Automerge document, not a pile of stores. One write path feeds live stores, undo/history, persistence, and collaboration sync, so a shortcut that "just writes the store" silently breaks the rest.
 
-## Core rules
+## Rules
 
 ### 1. Every project mutation goes through `executeAppAction`
 
@@ -21,11 +21,11 @@ Each action executes inside an Automerge storage transaction and carries a seman
 
 **Why:** a write that skips the transaction is invisible to undo, persistence, and merge — three features lost for the price of one shortcut.
 
-#### The transaction is ambient only until the handler's first `await`
+**Enforced by:** `src/modules/Command/useCases/__tests__/executeAppAction.spec.ts` and `executeAppActionAbortRollback.spec.ts` for the transaction and abort contract; a bypassing write is review only.
 
-`runWithAutomergeStorageTransaction` installs the transaction for the **synchronous** execution of the handler. An `async` handler returns its promise at its first `await`, and the transaction is uninstalled right there. Every CRDT-backed store write the handler makes **after** that await runs unscoped: it gets its own commit owner and its own animation frame, so it is **not** part of the action's atomic commit and **survives an abort that should have discarded it**.
+### 2. Re-enter the transaction scope after an `await`
 
-Capture the scope **synchronously, before the await**, and re-enter it for the later writes:
+`runWithAutomergeStorageTransaction` installs the transaction for the **synchronous** execution of the handler only. Capture the scope synchronously, before the first `await`, and re-enter it for each later write:
 
 ```ts
 import { captureAutomergeStorageTransactionScope } from '#/infra/store/storage/createAutomergeStorage';
@@ -39,151 +39,70 @@ export async function commitSomething(input: Input): Promise<void> {
 }
 ```
 
-Capture is explicit rather than implicit because browsers have no async context propagation: holding the transaction across an `await` would also capture writes made by unrelated code in that window, and this app dispatches many actions without awaiting them. Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`.
+`scope(callback)` takes a synchronous callback; never `await` inside it. Two writes separated by an `await` need two `scope(...)` calls. Worked example: `src/modules/Knead/useCases/pitch/commitPitchEdit.ts`.
 
-**`scope(callback)` takes a synchronous callback.** It restores the previous ambient transaction in a `finally` that runs as soon as the callback's synchronous portion returns — for an `async` callback, at its first `await`. Awaiting inside `scope` reproduces the exact bug `scope` exists to fix; the block above is the correct shape.
+**Why:** a write after the first `await` is unscoped: it commits on its own and survives an abort that should have discarded it. Capturing after an `await`, or awaiting inside `scope`, fails silently — no error, type failure, or lint hit. Capture is explicit because browsers have no async context propagation. A dev-mode thenable assertion cannot catch the second case, because the action dispatchers legitimately pass `() => handler.execute(...)` to `scope` to run a handler's synchronous portion in the transaction.
 
-```ts
-// ❌ the await inside scope re-opens the same hole
-scope(async () => {
-    const rendered = await render(input);
-    trackStore.set(rendered); // unscoped again
-});
-```
+**Enforced by:** `src/modules/Command/useCases/__tests__/executeAppActionAsyncTransaction.spec.ts` for the scoped-write contract; capturing after an `await` or awaiting inside `scope` is review only.
 
-Two writes separated by an `await` need two `scope(...)` calls, one per synchronous run.
-
-**Both mistakes fail silently.** Capturing _after_ an `await` finds no active transaction and returns a pass-through; awaiting _inside_ `scope` un-scopes at that await. Neither raises an error, fails a type check, or trips lint — the code looks fixed and behaves exactly as it did before. Audit finding CC-10 tracks the handlers still awaiting conversion, and proposes making the second case loud with a dev-mode assertion when the callback returns a thenable.
-
-### 2. CrdtDocument owns the document; modules own projections
+### 3. CrdtDocument owns the document; modules own projections
 
 Document lifecycle — create/load/save, branches, merge, semantic action history, compaction — belongs to CrdtDocument. Stores fed from the document are projections (`src/modules/CrdtDocument/useCases/projection/projectProjection.ts`): derived, disposable, rebuildable; never a second truth and never patched by hand.
 
 **Why:** two writable copies of one truth diverge; a projection you cannot throw away becomes the bug you cannot find.
 
-### 3. The document holds serializable truth only
+**Enforced by:** `src/modules/CrdtDocument/useCases/projection/__tests__/projectionIsReadOnly.spec.ts` (a projection pass writes to the document only in slots declaring `derivedFromSiblingSlot`); the rest is review only.
+
+### 4. Dispatch the owning action; never `store.set` a CRDT-backed store
+
+A `store.set(...)` on a projected or Automerge-persisted store "to just update the UI" is a defect. Dispatch the owning action; the transaction updates the document and the projection refreshes the store.
+
+**Why:** a direct store write bypasses rule 1: the document, undo, persistence, and collaboration never see it.
+
+**Enforced by:** ESLint `sourdaw/no-foreign-store-write` (warn) for foreign stores only; a write to a module's own CRDT-backed store is review only.
+
+### 5. The document holds serializable truth only
 
 No `AudioContext`, nodes, worklet handles, plugin instances, or editor windows in the CRDT document or CRDT-backed stores. Runtime objects live with the engine/host (canonical: `state-and-write-paths` rule 4).
 
 **Why:** Automerge must serialize and merge every value; a live handle can do neither.
 
-### 4. Know the persistence layers
+**Enforced by:** review only.
+
+### 6. Know the persistence layers
 
 Browser: CRDT-backed stores persist via the Automerge storage adapter (`src/infra/store/storage/createAutomergeStorage.ts`). Native: the `daw-collab` crate reads and writes `.sdaw` bundles — magic `SDAW`, version u16, per-doc Automerge saves (`crates/daw-collab/src/persistence.rs`); TS encode/decode lives in `CrdtDocument/useCases/sdawFileFormat/`. Filesystem access goes through repositories (`nativeCrdtPersistence/`), never components.
 
 **Why:** two formats, one document model — confusing them corrupts saves at the boundary.
 
-Navigation metadata is not durable project ownership. For persisted assets,
-trace the authoritative record read and its failure semantics, and keep a
-complete ownership census protected through the destructive transaction's
-commit or abort. Releasing protection after the read admits a stale-census
-delete while another renderer publishes the owner.
+**Enforced by:** `src/modules/CrdtDocument/useCases/sdawFileFormat/__tests__/sdawCrossLanguageConformance.spec.ts` and `sdawRoundTrip.spec.ts` for the format; dependency-cruiser `usecases-only-write-boundary-to-repositories` and `presentation-no-direct-repositories` for the repository boundary.
 
-### 5. Transports vary; the document model does not
+### 7. Persisted-asset ownership is not navigation metadata
+
+For persisted assets, trace the authoritative record read and its failure semantics, and keep a complete ownership census protected through the destructive transaction's commit or abort.
+
+**Why:** releasing protection after the read admits a stale-census delete while another renderer publishes the owner.
+
+**Enforced by:** review only.
+
+### 8. Transports vary; the document model does not
 
 Transport, session, and presence belong to the Collaboration module; the document belongs to CrdtDocument. That split, and the transports themselves, are canonical in [src/modules/Collaboration/AGENTS.md](../../../src/modules/Collaboration/AGENTS.md).
 
 **Why:** fixes land in the wrong layer when transport and document ownership blur.
 
-### 6. Merges converge automatically; meaning does not
+**Enforced by:** review only.
+
+### 9. Merges converge automatically; meaning does not
 
 Automerge guarantees convergence of concurrent edits. It does not guarantee sensible undo or reviewable history — those come from the semantic context on each action (rule 1). When adding an action, write the label you would want in a history view.
 
 **Why:** convergence without semantics yields a technically-consistent document nobody can explain.
 
-### 7. Review identity-scoped undo against peer edits
-
-For project-integrity review, apply peer edits after the original operation and again after undo, then exercise real undo/redo through Command and inspect both the authoritative CRDT document and its store projection. Reject whole-aggregate snapshot restoration for an identity-scoped edit even when an isolated round trip passes. When a divergence guard captures serialized project entities, prove that CRDT serialization field order alone cannot become a conflict while changed values, array order, missing fields, and malformed captures still fail closed.
-
-**Why:** issue #3757 escaped in commit `9b8166687867a4e1eb2ffb39ca4f2f69795d349e` because whole-track snapshots passed ordinary undo/redo coverage while erasing later peer work.
-
-### 8. Import reviews must cross the serialized owner boundary
-
-For an import that creates project truth, exercise actual serialized source bytes through the real parser and read API into the owning stores and authoritative document, then use real undo and redo. Include supported event-only inputs and point events after notes or exactly on an extent boundary. Prove mutations that drop an event or its channel at each boundary, omit it from the owner write, mis-size its extent, or skip either history half all fail the connected check.
-
-**Why:** PR #3968 separately proved MIDI export, parsing, and mocked owner writes while controller-only tracks and late control changes still disappeared or landed beyond the usable clip.
-
-## Anti-patterns
-
-### External checkpoint catalogs must prove scoped metadata and atomic authority
-
-PR #3945 introduced checkpoint catalog hydration by reading every stored root. Review external branch catalogs with
-actual owner-filtered metadata-only reads, and validate only a selected root on the separate artifact route. Prove
-publication on transaction completion, including an abort after queued request successes, and race two independent
-connections against one expected revision so split writes and read-then-write conflict checks cannot pass.
-
-### Checkpoint isolation escape
-
-Commit `3d0ca035df506e27e9cd868e71c17b411911ba47` introduced the singleton checkpoint catalog and both
-ownerless restoration routes without an associated pull request; later extraction in PR 376 only preserved the defect.
-When a project-scoped handle can survive a real create/load lifecycle, test every restoration route against the active
-project identity, complete canonical document contents, and catalog selection so a private bypass cannot overwrite the
-incoming project or advance its cursor.
-
-### Branch recovery must bind undo to recovered document truth
-
-PR #3338 commit `961b35ef` restored the outgoing undo snapshot unconditionally after a failed branch switch. Its
-fourth-round approving review explicitly noticed that durable lineage recovery could select a third branch, then dismissed
-that state as existing behavior instead of handing off the defect. A branch-recovery review must exercise both a
-durable recovery whose branch or complete document membership/heads diverge from the outgoing capture and an exact
-snapshot rollback as the positive control. Assert that the final active document reference and undo history agree;
-checking only whether a restore callback ran cannot prove that its entries belong to the recovered project truth.
-
-### Session teardown and callbacks must remain bound to their installed runtime
-
-Commit `78060bccd0bcc3d8f41637c7403443826f9de355` introduced the buffered leave-message drain followed
-by global session cleanup after an await. GitHub reports no pull request associated with that commit. PR #279 commit
-`38d981302e115ffab908a087c146dd7f321c539e` later extracted the behavior unchanged, and commit
-`a1a0739473f06e44bd482761603f2615c711791d` invalidated stale join continuations without binding cleanup to the
-runtime that began it. Collaboration lifecycle review must pause an outgoing leave at its transport await, install a
-successor session, then prove the outgoing cleanup cannot close or reset the successor. Retain old manager, sync,
-asset, timer, branch-transition, and decode callbacks and invoke or settle them after replacement; they must neither
-read successor state nor write project, runtime, or panel state, while current-owner callbacks remain effective.
-
-Teardown durability review must drive the registered create, join, and leave actions through both `executeAppAction`
-and singleton `executeAppActionBatch`. Hold and reject the underlying lifecycle promise, prove command completion
-waits for it, and prove the runtime route never opens a project storage transaction. Exercise no-op root persistence,
-changed-root persistence and handoff, and generic document persistence because each route can swallow its own error
-before a drain-only tail observes it. Include a repository commit followed by an exact-head rejection, partial session
-initialization, and a second explicit lifecycle attempt that retries the retained work after the installed owner was
-cleared. A successful promise tail, a committed write without fresh exact authority, or a configuration-object
-assertion does not establish durable teardown.
-
-Commit `51572a423a` in PR #1581 made non-throwing local-storage writes advance their cache after failure. When a durable
-session backup is consumed in stages, reject repeated removal failures until a fresh durable read proves the backup is
-gone. Write newer branch state while removal remains refused, then prove retry does not replay the stale backup and a
-later successful removal settles it. Refuse both backup and branch-state reads after initialization, then prove recovery
-keeps the earliest durable witness: a failed `trySet` notification cannot authorize deletion, while a directly observed
-successful adapter write must protect the newer branch state even if reads remain blocked.
-
-PR #4248 introduced prepared asset-handoff commit closures that could bypass the durable owner operation queue. Prepare
-the handoff first, then admit and hold a source staging operation before invoking the returned commit; the commit must not
-reach any owner repository until that already-accepted operation settles, and both results must remain recoverable from
-fresh repository instances.
-
-### Receive-side sync progress must be real, fenced transport work
-
-Commit `78060bccd0bcc3d8f41637c7403443826f9de355` suppressed repository change notifications while applying a remote
-document, but left no protocol reply or fan-out at the accepted receive boundary. PR #2256 commit
-`3ea24786531a602a6ff4a57f7d597266f9d7ed57` masked that product defect by having `setupLiveExchange` fabricate a
-local change notification after every receive; PR #3897 commit `703c7c497` later hid empty rounds behind three
-deliveries. Treat the first change as the defect and the later fixtures as masking, not as compatibility behavior.
-
-Collaboration review must use isolated production endpoints, actual transport messages, and one shared initialized
-genesis before separate offline edits. Settle each send before delivering its response so the sender records the
-generated SyncState first. Prove a sanitizer sees an edit-bearing payload before asserting rollback. Fixed delivery
-counts are never convergence proof. After a successful accepted receive, schedule the reply to its connected source
-and changed-content fan-out through the existing per-peer queue; defer only behind completed owner/persistence work,
-and fence both scheduling and queued execution against stop or source disconnect. A stopped or disconnected runtime
-must never revive a queue, while a live host still relays accepted content to its other connected peers.
-
-### CRITICAL — Direct store write against a CRDT-backed store
-
-❌ `store.set(...)` on a projected or Automerge-persisted store to "just update the UI".
-
-✅ Dispatch the owning action; the transaction updates the document and the projection refreshes the store.
+**Enforced by:** `src/modules/Command/useCases/__tests__/actionLabels.spec.ts` for the label map; label quality is review only.
 
 ## References
 
+- Review probes for this area: `../review-stances/project-integrity.md` and `../review-stances/session-lifecycle.md`.
 - [docs/architecture/06-crdt-collaboration.md](../../../docs/architecture/06-crdt-collaboration.md) — full write-path and transport architecture.
 - [docs/architecture/01-system.md](../../../docs/architecture/01-system.md) — truth/projection state model.

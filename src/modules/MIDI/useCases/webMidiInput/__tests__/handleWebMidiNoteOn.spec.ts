@@ -19,6 +19,20 @@ const schedule_device_key_off = vi.hoisted(() => vi.fn());
 /** Stand-in for the PluginHost Faust registry: which device types are Faust instruments. */
 const faust_instrument_types = vi.hoisted(() => ({ value: new Set<string>() }));
 
+vi.mock('#/modules/Arrangement/useCases', () => ({
+    getRecordingMidiAdmission: () => undefined,
+    retireRecordingMidiAdmission: () => undefined,
+    takeOwnsRecordingRoot: () => true,
+}));
+
+vi.mock('../recordingMidiAdmissionPort', () => ({
+    recordingMidiAdmissionPort: {
+        getRecordingMidiAdmission: () => undefined,
+        retireRecordingMidiAdmission: () => undefined,
+        takeOwnsRecordingRoot: () => true,
+    },
+}));
+
 type TestMidiEvent = {
     timeSamples: number;
     noteInstanceId?: string;

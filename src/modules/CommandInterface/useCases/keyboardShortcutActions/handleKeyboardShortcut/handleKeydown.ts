@@ -18,8 +18,9 @@ import { CommandEventBus, executeUserAppAction, pushUndoEntry, redo, undo } from
 import { loopStationStore } from '#/modules/SessionLauncher/stores';
 import { stopAllSlots, triggerPad } from '#/modules/SessionLauncher/useCases';
 import { panicAllNotes, stopPlayback, seekPlayhead, setLoopRegion } from '#/modules/Transport/useCases';
-import { type EditingTool } from '#/modules/WorkspaceShell/stores';
+import { type EditingTool, workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
+    closeCollaborationPanel,
     cycleAutomationVisibility,
     openExportDialog,
     openPreferencesDialog,
@@ -33,6 +34,7 @@ import {
     toggleWorkspaceMode,
     TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
+import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
 import { parseLoopStationPadCallbackId, shortcutStore, type ShortcutAction } from '../../../stores/shortcutStore';
 import { getAllClipIds } from '../../selectionHelpers/getAllClipIds';
@@ -195,7 +197,7 @@ function executeDuplicateTimeRange(startBeat: number, endBeat: number): void {
 }
 
 export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }) => {
-    function executeShortcutAction(action: ShortcutAction): boolean {
+    function executeShortcutAction(action: ShortcutAction, key: string): boolean {
         if (action.type === 'appAction') {
             const appAction = action.action;
 
@@ -221,8 +223,10 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 return true;
             }
             if (appAction.type === 'duplicateClipToNextBar' && appAction.payload.clipId === 'selected') {
+                // Single-clip command: the clip context menu hides it for a multi-clip selection, so the key does too.
+                const selectedClipIds = clipSelectionStore.value?.selectedClipIds ?? [];
                 const selectedClipId = clipSelectionStore.value?.selectedClipId;
-                if (selectedClipId) {
+                if (selectedClipId && selectedClipIds.length <= 1) {
                     void executeUserAppAction({ type: 'duplicateClipToNextBar', payload: { clipId: selectedClipId } });
                 }
                 return true;
@@ -238,6 +242,20 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                     // the gesture discards its preview (no history entry) and
                     // the key does not fall through to transport stop.
                     if (cancelActiveTimelineGesture()) {
+                        return true;
+                    }
+                    // A marked drag owns Escape completely: its own window listener
+                    // cancels it, so no later step may also act on the same key.
+                    // Returning true only prevents the default; that listener still runs.
+                    if (key === 'Escape' && isDragGestureActive()) {
+                        return true;
+                    }
+                    // The Collaborate panel is a non-modal floating surface, so Escape
+                    // dismisses it here, below a gesture cancel and above the selection
+                    // and transport steps, wherever focus is. Enter shares this binding
+                    // but is not a dismissal.
+                    if (key === 'Escape' && workspaceStore.value?.collaborationPanelOpen) {
+                        closeCollaborationPanel();
                         return true;
                     }
                     // R-E1.2: Escape dismisses selected ghost clip first
@@ -627,7 +645,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 if (repeat && !REPEATABLE_ON_HOLD_SHORTCUT_IDS.has(def.id)) {
                     return true;
                 }
-                return executeShortcutAction(def.action);
+                return executeShortcutAction(def.action, key);
             }
         }
 

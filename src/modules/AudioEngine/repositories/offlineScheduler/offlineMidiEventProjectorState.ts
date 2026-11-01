@@ -107,7 +107,16 @@ export type OfflineChannelBendProjector = (input: {
             loopLength?: number;
         };
         controlChanges: readonly OfflineControllerRow[];
-        pitchBends: readonly { id: string; value: number; beat: number; channel: number }[];
+        pitchBends: readonly {
+            id: string;
+            value: number;
+            beat: number;
+            channel: number;
+            sourceRecordedBeat?: number;
+        }[];
+        /** Original frozen rows and their pass offset, present together only for a selected source window. */
+        sourceControlChanges?: readonly OfflineControllerRow[];
+        sourceBeatOffset?: number;
     }[];
     frameAtBeat: (beat: number) => number;
 }) => readonly { beat: number; frame: number; recordedBeat: number; value: number; rangeSemitones: number }[];

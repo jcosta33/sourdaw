@@ -363,6 +363,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
     const isDiscrete = isChoice || isLegalSet;
 
     const isSlider = param.unit === 'dB';
+    // Sliders and selects need the card's full width, so the header sits above them.
+    const isStacked = isSlider || isDiscrete;
     const isLog = param.scaling === 'log';
     const canPreview =
         draggedModulatorId !== null &&
@@ -488,9 +490,15 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
 
     const renderSliderOrKnob = () => {
         if (isLegalSet) {
+            const memberInForce = quantiseDeviceParameterValue({
+                deviceType: device.type,
+                paramId: param.id,
+                value,
+            });
             return (
                 <DawCompactSelect
-                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
+                    title={`${memberInForce}${param.unit}`}
+                    className="w-full min-w-0 truncate bg-surface px-1.5 focus-visible:ring-primary"
                     // Shown at the member actually in force, not the raw stored
                     // number: a project saved before the set was declared, or a
                     // MIDI CC scaled across the range, can hold a value between
@@ -499,11 +507,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                     // law rather than resolved here — a control that works out
                     // "which member is this" for itself is how the readout and
                     // the DSP come to disagree again.
-                    value={quantiseDeviceParameterValue({
-                        deviceType: device.type,
-                        paramId: param.id,
-                        value,
-                    })}
+                    value={memberInForce}
                     onChange={handleSelectChange}
                     aria-label={param.name}
                 >
@@ -519,7 +523,8 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         if (isChoice) {
             return (
                 <DawCompactSelect
-                    className="w-[80px] bg-surface px-1.5 focus-visible:ring-primary"
+                    title={param.choices![Math.round(value)]}
+                    className="w-full min-w-0 truncate bg-surface px-1.5 focus-visible:ring-primary"
                     value={Math.round(value)}
                     onChange={handleSelectChange}
                     aria-label={param.name}
@@ -583,7 +588,7 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
                         step={mappedStep}
                         defaultValue={mappedDefaultValue}
                         aria-label={param.name}
-                        formatValue={(value1) => `${formatDisplayValue(isLog ? toLog(value1) : value1, param)} dB`}
+                        showValue={false}
                         className="w-full"
                     />
                 </div>
@@ -633,115 +638,84 @@ export const DeviceParameterControl = ({ param, device, trackId }: DeviceParamet
         );
     };
 
+    const parameterActions = (
+        <>
+            <MidiLearnButton targetType="deviceParam" trackId={trackId} deviceId={device.id} paramId={param.id} />
+            {param.automatable ? (
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="bare"
+                            size="bare"
+                            type="button"
+                            className={cn(
+                                'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
+                                hasAutomation
+                                    ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
+                                    : 'border-muted-foreground/30 hover:bg-muted'
+                            )}
+                            onClick={() => {
+                                if (activeLane) {
+                                    removeAutomationLane(activeLane.id);
+                                } else {
+                                    addAutomationLane(trackId, targetId, param.name);
+                                }
+                            }}
+                            aria-label={
+                                hasAutomation ? `Remove automation for ${param.name}` : `Automate ${param.name}`
+                            }
+                            aria-pressed={hasAutomation}
+                        />
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                        {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
+                    </TooltipContent>
+                </Tooltip>
+            ) : null}
+        </>
+    );
+
     return (
-        <div className={cn('flex w-full min-w-0', isSlider ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
-            {isSlider ? (
-                <Row justify="between" className="w-full">
-                    <label className="text-[10px] font-medium text-foreground truncate" title={param.name}>
+        <div className={cn('flex w-full min-w-0', isStacked ? 'flex-col gap-2' : 'flex-row items-center gap-3')}>
+            {isStacked ? (
+                <Row justify="between" wrap gap={1} className="w-full">
+                    <label
+                        className="min-w-0 flex-1 truncate text-[10px] font-medium text-foreground"
+                        title={param.name}
+                    >
                         {param.name}
                     </label>
-                    <Row gap={1.5} className="mt-0.5">
-                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                            {displayValue}
-                            {param.unit ? ` ${param.unit}` : ''}
-                        </span>
-                        <MidiLearnButton
-                            targetType="deviceParam"
-                            trackId={trackId}
-                            deviceId={device.id}
-                            paramId={param.id}
-                        />
-                        {param.automatable ? (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className={cn(
-                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                            hasAutomation
-                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                                : 'border-muted-foreground/30 hover:bg-muted'
-                                        )}
-                                        onClick={() => {
-                                            if (activeLane) {
-                                                removeAutomationLane(activeLane.id);
-                                            } else {
-                                                addAutomationLane(trackId, targetId, param.name);
-                                            }
-                                        }}
-                                        aria-label={
-                                            hasAutomation
-                                                ? `Remove automation for ${param.name}`
-                                                : `Automate ${param.name}`
-                                        }
-                                        aria-pressed={hasAutomation}
-                                    />
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                                </TooltipContent>
-                            </Tooltip>
-                        ) : null}
+                    <Row gap={1.5} shrink={false} className="ml-auto mt-0.5">
+                        {isDiscrete ? null : (
+                            <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+                                {displayValue}
+                                {param.unit ? ` ${param.unit}` : ''}
+                            </span>
+                        )}
+                        {parameterActions}
                     </Row>
                 </Row>
             ) : (
                 <Stack justify="center" grow gap={1.5} className="min-w-0 overflow-hidden">
-                    <label className="text-[10px] font-medium text-foreground truncate w-full" title={param.name}>
+                    <label
+                        className="w-full min-w-0 truncate text-[10px] font-medium text-foreground"
+                        title={param.name}
+                    >
                         {param.name}
                     </label>
                     {!isDiscrete ? (
-                        <span className="text-[10px] font-mono text-muted-foreground">
+                        <span className="min-w-0 truncate font-mono text-[10px] tabular-nums text-muted-foreground">
                             {displayValue}
                             {param.unit ? ` ${param.unit}` : ''}
                         </span>
                     ) : null}
-                    <Row gap={1.5} className="mt-0.5">
-                        <MidiLearnButton
-                            targetType="deviceParam"
-                            trackId={trackId}
-                            deviceId={device.id}
-                            paramId={param.id}
-                        />
-                        {param.automatable ? (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="bare"
-                                        size="bare"
-                                        type="button"
-                                        className={cn(
-                                            'size-3 rounded-full border shrink-0 transition-colors cursor-pointer',
-                                            hasAutomation
-                                                ? 'border-[var(--color-accent-peach)] bg-[var(--color-accent-peach)]/20'
-                                                : 'border-muted-foreground/30 hover:bg-muted'
-                                        )}
-                                        onClick={() => {
-                                            if (activeLane) {
-                                                removeAutomationLane(activeLane.id);
-                                            } else {
-                                                addAutomationLane(trackId, targetId, param.name);
-                                            }
-                                        }}
-                                        aria-label={
-                                            hasAutomation
-                                                ? `Remove automation for ${param.name}`
-                                                : `Automate ${param.name}`
-                                        }
-                                        aria-pressed={hasAutomation}
-                                    />
-                                </TooltipTrigger>
-                                <TooltipContent side="top">
-                                    {hasAutomation ? 'Remove automation lane' : 'Add automation lane'}
-                                </TooltipContent>
-                            </Tooltip>
-                        ) : null}
+                    <Row gap={1.5} wrap className="mt-0.5">
+                        {parameterActions}
                     </Row>
                 </Stack>
             )}
 
-            <div className={cn('flex items-center justify-center', isSlider ? 'w-full px-1' : 'shrink-0')}>
+            <div className={cn('flex items-center justify-center', isStacked ? 'w-full min-w-0 px-1' : 'shrink-0')}>
                 {renderSliderOrKnob()}
             </div>
         </div>

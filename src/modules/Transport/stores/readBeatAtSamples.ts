@@ -1,3 +1,5 @@
+import { type TempoSourceClock } from '#/utils/tempoAudioSourcePromotion';
+
 import { samplesToBeat } from '../models/TempoMap';
 
 import { tempoMapStore } from './tempoMapStore';
@@ -8,6 +10,7 @@ type ReadBeatAtSamplesInput = {
     samples: number;
     /** The rate `samples` was counted at; it cancels inside the conversion. */
     sampleRate: number;
+    clock?: TempoSourceClock;
 };
 
 /**
@@ -21,11 +24,11 @@ type ReadBeatAtSamplesInput = {
  * dividing by the tempo at a beat is right only while the span behind it holds
  * no tempo change.
  */
-export function readBeatAtSamples({ samples, sampleRate }: ReadBeatAtSamplesInput): number {
+export function readBeatAtSamples({ samples, sampleRate, clock }: ReadBeatAtSamplesInput): number {
     return samplesToBeat(
-        tempoMapStore.value?.changes ?? [],
+        clock?.changes ?? tempoMapStore.value?.changes ?? [],
         samples,
-        transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
+        clock?.tempo ?? transportStore.value?.tempo ?? DEFAULT_TEMPO_BPM,
         sampleRate
     );
 }

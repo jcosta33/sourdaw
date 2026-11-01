@@ -19,6 +19,7 @@ import { Row, Stack } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
 import { useStore } from '#/infra/store/useStore';
+import { notifyUser } from '#/utils/Notification/notifyUser';
 import { cn } from '#/utils/Styles/cn';
 
 import { setlistStore, type SetlistState } from '../../stores/setlistStore';
@@ -126,6 +127,12 @@ export const SetlistPanel = (): ReactElement => {
         addSetlistItem(`Song ${state.items.length + 1}`);
     };
 
+    const navigate = (action: () => Promise<void>): void => {
+        void action().catch((error: unknown) => {
+            notifyUser(error instanceof Error ? error.message : 'Setlist navigation failed', 'error');
+        });
+    };
+
     useEffect(() => {
         setCountInText(String(state.countInBars));
     }, [state.countInBars]);
@@ -192,7 +199,7 @@ export const SetlistPanel = (): ReactElement => {
                                 size="icon-xs"
                                 aria-label="Previous item"
                                 disabled={!hasItems}
-                                onClick={previousItem}
+                                onClick={() => navigate(previousItem)}
                             >
                                 <SkipBack className="size-3" aria-hidden="true" />
                             </Button>
@@ -206,7 +213,7 @@ export const SetlistPanel = (): ReactElement => {
                                 size="icon-xs"
                                 aria-label="Next item"
                                 disabled={!hasItems}
-                                onClick={nextItem}
+                                onClick={() => navigate(nextItem)}
                             >
                                 <SkipForward className="size-3" aria-hidden="true" />
                             </Button>
@@ -292,7 +299,7 @@ export const SetlistPanel = (): ReactElement => {
                                         handleDrop(index);
                                     }}
                                     onDragEnd={handleDragEnd}
-                                    onClick={() => goToItem(index)}
+                                    onClick={() => navigate(() => goToItem(index))}
                                     className={cn(
                                         'group flex items-center gap-2 border-b border-border-hairline px-2 py-1.5 cursor-pointer',
                                         isCurrent ? 'bg-surface-overlay' : 'hover:bg-surface-panel',

@@ -1,20 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { createMock } from '#/infra/di/testing/createMock';
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { createAppError } from '#/infra/errors/createAppError';
 
-import { setlistStore } from '../../../stores/setlistStore';
 import { type SetlistItem, type SetlistState } from '../../../stores/setlistStore';
 import { goToItem } from '../goToItem';
+
+import type { getTempoWriteTarget } from '#/modules/Transport/useCases';
+
+type TempoWriteTarget = NonNullable<ReturnType<typeof getTempoWriteTarget>>;
 
 type EventBusShape = {
     emit: ReturnType<typeof vi.fn>;
 };
 
 const mocks = vi.hoisted(() => ({
-    setTempo: vi.fn(() => ({ status: 'written' as const })),
-    setTimeSignature: vi.fn(),
+    executeAppActionBatch: vi.fn(async () => ({ status: 'committed' as const, actions: [] })),
+    getTempoWriteTarget: vi.fn((): TempoWriteTarget | null => ({ tempo: 80, tempoChangeId: null, writable: true })),
 }));
 
 const setlistStoreMock = vi.hoisted(() => {
@@ -34,9 +35,14 @@ vi.mock('../../../stores/setlistStore', () => ({
     setlistStore: setlistStoreMock,
 }));
 
+vi.mock('#/modules/Command/useCases', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('#/modules/Command/useCases')>();
+    return { ...actual, executeAppActionBatch: mocks.executeAppActionBatch };
+});
+
 vi.mock('#/modules/Transport/useCases', async (importOriginal) => {
     const actual = await importOriginal<typeof import('#/modules/Transport/useCases')>();
-    return { ...actual, setTempo: mocks.setTempo, setTimeSignature: mocks.setTimeSignature };
+    return { ...actual, getTempoWriteTarget: mocks.getTempoWriteTarget };
 });
 
 function baseItem(overrides?: Partial<SetlistItem>): SetlistItem {
@@ -68,184 +74,133 @@ function baseState(items: SetlistItem[], currentIndex: number): SetlistState {
 }
 
 function injectGoToItem(): EventBusShape {
-    const eventBus = createMock<EventBusShape>();
-    eventBus.emit.mockResolvedValue(undefined);
-    injectDependencies(goToItem, { eventBus, setlistStore });
+    const eventBus: EventBusShape = { emit: vi.fn().mockResolvedValue(undefined) };
+    injectDependencies(goToItem, { eventBus, setlistStore: setlistStoreMock });
     return eventBus;
 }
 
 describe('goToItem', () => {
     beforeEach(() => {
-        vi.mocked(setlistStore.set).mockClear();
-        mocks.setTempo.mockClear();
-        mocks.setTimeSignature.mockClear();
-        mocks.setTempo.mockImplementation(() => ({ status: 'written' as const }));
+        vi.mocked(setlistStoreMock.set).mockClear();
+        mocks.executeAppActionBatch.mockClear();
+        mocks.executeAppActionBatch.mockResolvedValue({ status: 'committed', actions: [] });
+        mocks.getTempoWriteTarget.mockReturnValue({ tempo: 80, tempoChangeId: null, writable: true });
         setlistStoreMock.value = baseState([], 0);
     });
 
-    it('should not change state or emit when index is out of range', () => {
+    it('does not change state or emit when the index is out of range', async () => {
         const eventBus = injectGoToItem();
 
-        goToItem(-1);
+        await goToItem(-1);
 
         expect(eventBus.emit).not.toHaveBeenCalled();
-        expect(setlistStore.set).not.toHaveBeenCalled();
-        expect(mocks.setTempo).not.toHaveBeenCalled();
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        expect(setlistStoreMock.set).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('should not wrap to the first item when index is past the last item', () => {
+    it('does not wrap to the first item when the index is past the last item', async () => {
         const items = [baseItem({ id: 'a' }), baseItem({ id: 'b' })];
         setlistStoreMock.value = baseState(items, 1);
 
         injectGoToItem();
 
-        goToItem(items.length);
+        await goToItem(items.length);
 
-        expect(setlistStore.set).not.toHaveBeenCalled();
-        expect(setlistStore.value?.currentIndex).toBe(1);
-        expect(mocks.setTempo).not.toHaveBeenCalled();
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        expect(setlistStoreMock.set).not.toHaveBeenCalled();
+        expect(setlistStoreMock.value?.currentIndex).toBe(1);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('should not wrap to the last item when index goes below zero', () => {
+    it('does not wrap to the last item when the index goes below zero', async () => {
         const items = [baseItem({ id: 'a' }), baseItem({ id: 'b' })];
         setlistStoreMock.value = baseState(items, 0);
 
         injectGoToItem();
 
-        goToItem(-1);
+        await goToItem(-1);
 
-        expect(setlistStore.set).not.toHaveBeenCalled();
-        expect(setlistStore.value?.currentIndex).toBe(0);
-        expect(mocks.setTempo).not.toHaveBeenCalled();
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        expect(setlistStoreMock.set).not.toHaveBeenCalled();
+        expect(setlistStoreMock.value?.currentIndex).toBe(0);
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('should update setlist index and emit midi.out program change when configured', () => {
-        const items = [
-            baseItem({
-                programChange: { channel: 2, program: 10 },
-            }),
-        ];
-        setlistStoreMock.value = baseState(items, 0);
+    it('updates the runtime index and emits program change when configured', async () => {
+        const items = [baseItem({ programChange: { channel: 2, program: 10 } })];
+        setlistStoreMock.value = baseState(items, -1);
 
         const eventBus = injectGoToItem();
 
-        goToItem(0);
+        await goToItem(0);
 
-        expect(setlistStore.set).toHaveBeenCalled();
-        expect(setlistStore.value?.currentIndex).toBe(0);
+        expect(setlistStoreMock.set).toHaveBeenCalled();
+        expect(setlistStoreMock.value?.currentIndex).toBe(0);
         expect(eventBus.emit).toHaveBeenCalledWith('midi.out', {
             type: 'programChange',
             channel: 2,
             program: 10,
         });
-        expect(mocks.setTempo).not.toHaveBeenCalled();
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).not.toHaveBeenCalled();
     });
 
-    it('should not emit program change when item has no programChange', () => {
-        const items = [baseItem({ programChange: null })];
-        setlistStoreMock.value = baseState(items, 0);
+    it('does not emit program change when the item has no program change', async () => {
+        setlistStoreMock.value = baseState([baseItem()], -1);
 
         const eventBus = injectGoToItem();
 
-        goToItem(0);
+        await goToItem(0);
 
         expect(eventBus.emit).not.toHaveBeenCalled();
-        expect(mocks.setTempo).not.toHaveBeenCalled();
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
     });
 
-    it('should call setTempo when item bpm is set', () => {
-        const items = [baseItem({ bpm: 140 })];
-        setlistStoreMock.value = baseState(items, 0);
+    it('dispatches configured BPM and meter together as project actions', async () => {
+        setlistStoreMock.value = baseState(
+            [baseItem({ bpm: 140, timeSignature: { numerator: 3, denominator: 4 } })],
+            -1
+        );
 
         injectGoToItem();
 
-        goToItem(0);
+        await goToItem(0);
 
-        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [
+                { type: 'setTempo', payload: { bpm: 140 } },
+                { type: 'setTimeSignature', payload: { numerator: 3, denominator: 4 } },
+            ],
+            expect.objectContaining({
+                groupId: expect.any(String),
+                groupLabel: 'Setlist: Song',
+                shouldExecute: expect.any(Function),
+            })
+        );
     });
 
-    it('should call setTimeSignature when item time signature is set', () => {
-        const items = [baseItem({ timeSignature: { numerator: 3, denominator: 4 } })];
-        setlistStoreMock.value = baseState(items, 0);
+    it('keeps the current item and applies meter when a tempo-map ramp blocks BPM', async () => {
+        setlistStoreMock.value = baseState(
+            [baseItem({ bpm: 140, timeSignature: { numerator: 3, denominator: 4 } })],
+            -1
+        );
+        mocks.getTempoWriteTarget.mockReturnValue({ tempo: 120, tempoChangeId: 'ramp', writable: false });
 
         injectGoToItem();
 
-        goToItem(0);
+        await goToItem(0);
 
-        expect(mocks.setTimeSignature).toHaveBeenCalledWith(3, 4);
-        expect(mocks.setTempo).not.toHaveBeenCalled();
+        expect(setlistStoreMock.value?.currentIndex).toBe(0);
+        expect(mocks.executeAppActionBatch).toHaveBeenCalledWith(
+            [{ type: 'setTimeSignature', payload: { numerator: 3, denominator: 4 } }],
+            expect.any(Object)
+        );
     });
 
-    it('should call both transport use cases when bpm and time signature are set', () => {
-        const items = [
-            baseItem({
-                bpm: 140,
-                timeSignature: { numerator: 3, denominator: 4 },
-            }),
-        ];
-        setlistStoreMock.value = baseState(items, 0);
+    it('surfaces a rejected project action to the caller', async () => {
+        setlistStoreMock.value = baseState([baseItem({ bpm: 140 })], -1);
+        const failure = new Error('tempo command failed');
+        mocks.executeAppActionBatch.mockRejectedValue(failure);
 
         injectGoToItem();
 
-        goToItem(0);
-
-        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
-        expect(mocks.setTimeSignature).toHaveBeenCalledWith(3, 4);
-    });
-
-    it('should still update index and apply time signature when setTempo refuses with TempoRampWrite', () => {
-        const items = [
-            baseItem({
-                id: 'a',
-                bpm: 140,
-                timeSignature: { numerator: 3, denominator: 4 },
-            }),
-            baseItem({ id: 'b' }),
-        ];
-        setlistStoreMock.value = baseState(items, 1);
-
-        mocks.setTempo.mockImplementation(() => {
-            throw createAppError('TempoRampWrite', 'Cannot set tempo here', {
-                bpm: 140,
-                tempoChangeId: 'tc-1',
-            });
-        });
-
-        injectGoToItem();
-
-        expect(() => goToItem(0)).not.toThrow();
-        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
-        expect(setlistStore.set).toHaveBeenCalled();
-        expect(setlistStore.value?.currentIndex).toBe(0);
-        expect(mocks.setTimeSignature).toHaveBeenCalledWith(3, 4);
-    });
-
-    it('should rethrow non-TempoRampWrite errors from setTempo and skip time signature', () => {
-        const items = [
-            baseItem({
-                bpm: 140,
-                timeSignature: { numerator: 3, denominator: 4 },
-            }),
-        ];
-        setlistStoreMock.value = baseState(items, 0);
-
-        const invalidTempo = createAppError('InvalidTempo', 'Tempo 140 BPM is outside the valid range (20–300)', {
-            bpm: 140,
-        });
-        mocks.setTempo.mockImplementation(() => {
-            throw invalidTempo;
-        });
-
-        injectGoToItem();
-
-        expect(() => goToItem(0)).toThrow(invalidTempo);
-        expect(mocks.setTempo).toHaveBeenCalledWith({ bpm: 140 });
-        expect(mocks.setTimeSignature).not.toHaveBeenCalled();
+        await expect(goToItem(0)).rejects.toBe(failure);
+        expect(setlistStoreMock.value?.currentIndex).toBe(0);
     });
 });

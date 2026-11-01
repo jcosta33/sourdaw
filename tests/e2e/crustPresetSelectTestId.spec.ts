@@ -1,5 +1,4 @@
-import { test, expect } from '@playwright/test';
-
+import { test, expect } from './e2eTest';
 import { launch_new_project, setupWorkspace } from './e2eUtils';
 
 const MOD = process.platform === 'darwin' ? 'Meta' : 'Control';
@@ -33,11 +32,13 @@ test.describe('Crust preset selection — patch name changes', () => {
         // The preset button is the one with aria-haspopup="listbox" that also
         // contains the preset name (NOT the streaming-target one).
         // The preset dropdown trigger shows the current patch name.
-        const presetTrigger = page.locator('button[aria-haspopup="listbox"]').filter({ hasText: /Crust presets/i }).first();
+        const presetTrigger = page
+            .locator('button[aria-haspopup="listbox"]')
+            .filter({ hasText: /Crust presets/i })
+            .first();
         // If the trigger isn't found by that filter, try the first listbox button.
-        const trigger = (await presetTrigger.count()) > 0
-            ? presetTrigger
-            : page.locator('button[aria-haspopup="listbox"]').first();
+        const trigger =
+            (await presetTrigger.count()) > 0 ? presetTrigger : page.locator('button[aria-haspopup="listbox"]').first();
         await expect(trigger).toBeVisible({ timeout: 5000 });
         const nameBefore = (await trigger.innerText()).trim();
 
