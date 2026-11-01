@@ -1,0 +1,23 @@
+tests/e2e/export.spec.ts
+  s_9091c7fb2989db::t_5881aaa4d88364 22
+tests/e2e/exportAudioEvidence.spec.ts
+  s_9091c7fb2989db::t_a28b8f24f48541 88
+tests/e2e/exportAudioEvidenceFullLength.spec.ts
+  s_9091c7fb2989db::t_446fd5325a5656 48
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c55977b2ab227586fd6598cc530d7731580b7d0d",
+  "prompts": {},
+  "sessions": {
+    "s_9091c7fb2989db": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3cde0d3-cad6-4d0d-93a9-91700b2ed782",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
