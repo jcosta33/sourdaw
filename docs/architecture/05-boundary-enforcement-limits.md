@@ -13,13 +13,14 @@ boundary rule, check it against every row below.
 ## The gates
 
 `pnpm deps:validate` (`scripts/check-dependency-boundaries.mjs`) first runs its static source
-guards, then five gates, each with its own exact known-violations baseline (repaired debt cannot stay
+guards, then six gates, each with its own exact known-violations baseline (repaired debt cannot stay
 silently authorized):
 
 | Gate                    | Source                                 | Sees                                                    |
 | ----------------------- | -------------------------------------- | ------------------------------------------------------- |
 | main                    | `.dependency-cruiser.cjs`              | value + tagged type-only edges (`tsPreCompilationDeps`) |
 | contract re-export reg. | static `export … from` syntax reader   | re-exports of private folders from contract folders     |
+| module tiers            | `.dependency-cruiser.module-tiers.cjs` | module-pair edges against tiers; module-level cycles    |
 | reachability            | `.dependency-cruiser.reachability.cjs` | transitive causal edges                                 |
 | types                   | `.dependency-cruiser.types.cjs`        | type-only-specific duplicate boundary rules             |
 | tests                   | `.dependency-cruiser.tests.cjs`        | test-inclusive barrel boundaries                        |

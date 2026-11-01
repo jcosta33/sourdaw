@@ -14,6 +14,9 @@
 //      every contract-folder file, baseline-compared like a cruise, so a private
 //      models/repositories/transformers symbol reaches a contract surface only
 //      through a registered publication — dependency edges cannot see re-exports)
+//   6) the module tier register (static module-pair edges checked against
+//      .dependency-cruiser.module-tiers.cjs, plus every module-level cycle,
+//      which file-level no-circular cannot see)
 // ----------------------------------------------------------------------------
 // Sourdaw TypeScript module architecture enforcement
 //

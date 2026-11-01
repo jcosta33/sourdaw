@@ -23,6 +23,7 @@ import {
     findContractReexportFindings,
     findMixedTypeValueExports,
     findModelCasingFindings,
+    findModuleTierState,
     findStaticGuardFindings,
     isModuleRootIndex,
     isUseCaseBarrel,
@@ -122,6 +123,39 @@ function invokeStaticGuardFindings(repositoryRoot: string): StaticGuardFinding[]
         throw new TypeError('findStaticGuardFindings is not callable');
     }
     return candidate(repositoryRoot);
+}
+
+// Kernel may depend on nothing, core domain only on kernel; Core and Peer share a tier.
+const moduleTierManifest = {
+    tiers: [
+        { name: 'kernel', meaning: 'Knows no domain.', mayDependOn: [] },
+        { name: 'core domain', meaning: 'Owns project truth.', mayDependOn: ['kernel'] },
+    ],
+    modules: {
+        Core: { tier: 'core domain', reason: 'Owns a core aggregate.' },
+        Kernel: { tier: 'kernel', reason: 'Shared kernel.' },
+        Peer: { tier: 'core domain', reason: 'Owns another core aggregate.' },
+    },
+};
+
+function withModuleTierFixture(files: Record<string, FixtureContents>, run: (repositoryRoot: string) => void): void {
+    const repositoryRoot = mkdtempSync(join(tmpdir(), 'check-dependency-boundaries-module-tiers-'));
+    try {
+        for (const moduleName of Object.keys(moduleTierManifest.modules)) {
+            mkdirSync(join(repositoryRoot, 'src/modules', moduleName), { recursive: true });
+        }
+        for (const [repoPath, contents] of Object.entries(files)) {
+            mkdirSync(dirname(join(repositoryRoot, repoPath)), { recursive: true });
+            writeFixtureFiles(repositoryRoot, { [repoPath]: contents });
+        }
+        run(repositoryRoot);
+    } finally {
+        rmSync(repositoryRoot, { force: true, recursive: true });
+    }
+}
+
+function moduleTierRowsOf(repositoryRoot: string) {
+    return findModuleTierState(repositoryRoot, moduleTierManifest).rows;
 }
 
 function isUnsupportedSymlinkError(error: unknown): boolean {
@@ -1726,6 +1760,152 @@ describe('check-dependency-boundaries', () => {
             (candidate: { name: string }) => candidate.name === 'module-runtime-no-worker-imports-type-only'
         );
         expect(new RegExp(reverseWorkerTypeRule.to.path).test('src/modules/Yeast/workers/MidiRack.ts')).toBe(true);
+    });
+
+    it('should fail a planted module edge its tier may not take, naming an example import', () => {
+        const allowedEdge = {
+            'src/modules/Peer/useCases/readKernel.ts': "import { kernel } from '#/modules/Kernel/stores';\n",
+        };
+        withModuleTierFixture(allowedEdge, (baselineRoot) => {
+            const known = moduleTierRowsOf(baselineRoot);
+            expect(known).toEqual([]);
+
+            withModuleTierFixture(
+                {
+                    ...allowedEdge,
+                    'src/modules/Kernel/useCases/readCore.ts': [
+                        "import { track } from '#/modules/Core/stores';",
+                        'export const read = () => track;',
+                    ],
+                },
+                (repositoryRoot) => {
+                    const state = findModuleTierState(repositoryRoot, moduleTierManifest);
+                    const planted = { type: 'module-tier', from: 'Kernel', to: 'Core' };
+
+                    expect(compareRows({ current: state.rows, known })).toEqual({ novel: [planted], stale: [] });
+                    expect([...state.details.values()]).toEqual([
+                        'kernel may not depend on core domain; e.g. src/modules/Kernel/useCases/readCore.ts:1',
+                    ]);
+                }
+            );
+        });
+    });
+
+    it('should leave a stale module-tier row once its last import is removed', () => {
+        withModuleTierFixture(
+            { 'src/modules/Kernel/useCases/readCore.ts': "export { track } from '#/modules/Core/stores';\n" },
+            (repositoryRoot) => {
+                const known = moduleTierRowsOf(repositoryRoot);
+                expect(known).toEqual([{ type: 'module-tier', from: 'Kernel', to: 'Core' }]);
+
+                rmSync(join(repositoryRoot, 'src/modules/Kernel/useCases/readCore.ts'));
+
+                expect(compareRows({ current: moduleTierRowsOf(repositoryRoot), known })).toEqual({
+                    novel: [],
+                    stale: known,
+                });
+            }
+        );
+    });
+
+    it('should refuse a module directory without a tier and a tier row without a directory', () => {
+        withModuleTierFixture({ 'src/modules/Orphan/useCases/run.ts': 'export const run = 1;\n' }, (repositoryRoot) => {
+            rmSync(join(repositoryRoot, 'src/modules/Peer'), { recursive: true });
+
+            expect(findModuleTierState(repositoryRoot, moduleTierManifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'module Peer has a tier but no src/modules/Peer directory',
+                },
+                { file: '.dependency-cruiser.module-tiers.cjs', line: 1, reason: 'module Orphan has no tier' },
+            ]);
+        });
+    });
+
+    it('should refuse a module that names a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                modules: { ...moduleTierManifest.modules, Peer: { tier: 'platform', reason: 'Misplaced.' } },
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'module Peer names unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
+    it('should refuse a tier that may depend on a tier the manifest does not define', () => {
+        withModuleTierFixture({}, (repositoryRoot) => {
+            const manifest = {
+                ...moduleTierManifest,
+                tiers: [
+                    moduleTierManifest.tiers[0],
+                    { name: 'core domain', meaning: 'Owns project truth.', mayDependOn: ['kernel', 'platform'] },
+                ],
+            };
+
+            expect(findModuleTierState(repositoryRoot, manifest).findings).toEqual([
+                {
+                    file: '.dependency-cruiser.module-tiers.cjs',
+                    line: 1,
+                    reason: 'tier "core domain" may depend on unknown tier "platform"',
+                },
+            ]);
+        });
+    });
+
+    it('should report a two-module cycle as one strongly connected component row', () => {
+        withModuleTierFixture(
+            {
+                'src/modules/Core/useCases/readPeer.ts': "import type { Peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Peer/useCases/loadCore.ts':
+                    "export const load = () => import('#/modules/Core/useCases');\n",
+            },
+            (repositoryRoot) => {
+                const rows = moduleTierRowsOf(repositoryRoot);
+                expect(rows).toEqual([{ type: 'module-cycle', members: ['Core', 'Peer'] }]);
+
+                // A cycle that grows or shrinks is a different row, never the same one.
+                const known = [{ type: 'module-cycle', members: ['Core', 'Kernel', 'Peer'] }];
+                expect(compareRows({ current: rows, known })).toEqual({ novel: rows, stale: known });
+            }
+        );
+    });
+
+    it('should ignore edges into presentations and edges from tests, testing helpers and presentations', () => {
+        withModuleTierFixture(
+            {
+                'src/modules/Kernel/useCases/__tests__/readPeer.spec.ts':
+                    "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/useCases/readPeer.test.ts': "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/testing/peerFixture.ts': "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/presentations/views/PeerView.tsx':
+                    "import { peer } from '#/modules/Peer/stores';\n",
+                'src/modules/Kernel/useCases/mountPeer.ts':
+                    "import { PeerPanel } from '#/modules/Peer/presentations/views';\n",
+                // The one counted edge, spelled relatively, proves the scan itself runs.
+                'src/modules/Kernel/useCases/readCore.ts': "import { track } from '../../Core/stores';\n",
+            },
+            (repositoryRoot) => {
+                expect(moduleTierRowsOf(repositoryRoot)).toEqual([{ type: 'module-tier', from: 'Kernel', to: 'Core' }]);
+            }
+        );
+    });
+
+    it('should admit a same-tier edge that the tier list does not name', () => {
+        withModuleTierFixture(
+            { 'src/modules/Core/useCases/readPeer.ts': "import { peer } from '#/modules/Peer/stores';\n" },
+            (repositoryRoot) => {
+                expect(moduleTierManifest.tiers[1]?.mayDependOn).not.toContain('core domain');
+                expect(moduleTierRowsOf(repositoryRoot)).toEqual([]);
+            }
+        );
     });
 
     it('should verify AGENTS.md and provider symlinks across all modules in src/modules', () => {
