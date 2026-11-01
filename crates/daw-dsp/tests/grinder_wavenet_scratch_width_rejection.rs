@@ -401,9 +401,20 @@ fn every_wavenet_rule_native_admission_enforces_refuses_the_wasm_parser_too() {
             "WaveNet kernel_sizes must be positive integers",
         ),
     ];
-    for (label, capture, wasm_reason) in &refused {
-        assert_refused_everywhere(label, capture, wasm_reason);
-    }
+    // Every case runs, so one report names each rule the parser misses; a
+    // panicking load counts as a miss rather than ending the sweep.
+    let misses: Vec<&str> = refused
+        .iter()
+        .filter(|(label, capture, wasm_reason)| {
+            std::panic::catch_unwind(|| assert_refused_everywhere(label, capture, wasm_reason))
+                .is_err()
+        })
+        .map(|(label, _, _)| *label)
+        .collect();
+    assert!(
+        misses.is_empty(),
+        "rules the WASM parser misses: {misses:?}"
+    );
 
     let admitted = [
         (

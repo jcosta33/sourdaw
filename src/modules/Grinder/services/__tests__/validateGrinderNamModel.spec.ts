@@ -412,7 +412,8 @@ describe('validateGrinderNamModel', () => {
         for (const [label, change, reason] of cases) {
             const capture = waveNetCapture([[1, 2, 1]]);
             change(capture.config.layers[0]!, capture);
-            expect(() => validateGrinderNamModel(capture, `${label}.nam`), label).toThrow(reason);
+            // Soft, so one run names every rule the validator misses.
+            expect.soft(() => validateGrinderNamModel(capture, `${label}.nam`), label).toThrow(reason);
         }
 
         const nested_without_head_bias = waveNetCapture([[1, 2, 1]], 'nested');
