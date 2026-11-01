@@ -2,9 +2,11 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { TooltipProvider } from '#/components/ui/tooltip';
+import { pasteNotes } from '#/modules/Arrangement/useCases';
+import { undoStore } from '#/modules/Command/stores';
 import { clearUndoHistory, redo, undo } from '#/modules/Command/useCases';
 import { midiStore } from '#/modules/MIDI/stores';
-import { getNotesForClip } from '#/modules/MIDI/useCases';
+import { appendMidiNotes, getNotesForClip } from '#/modules/MIDI/useCases';
 
 import { PianoRollContextMenu } from '../PianoRollContextMenu';
 
@@ -144,5 +146,64 @@ describe('PianoRollContextMenu Cut/Delete undo preserves note identity (issue #3
             await redo();
             expect(getNotesForClip('clip-1')).toEqual([keptNote]);
         }
+    });
+});
+
+describe('PianoRollContextMenu Paste records one undo entry', () => {
+    // Stands in for the note clipboard: appends the copied notes under fresh
+    // ids at the menu beat, as the real `pasteNotes` does through
+    // `appendMidiNotes`, so the menu sees a real store change either way.
+    const stageClipboard = (clipboard: (typeof selectedNote)[]): void => {
+        vi.mocked(pasteNotes).mockImplementation((clipId, beatOffset) => {
+            appendMidiNotes({
+                clipId,
+                notes: clipboard.map(({ id: _id, ...node }) => ({ ...node, startBeat: beatOffset })),
+            });
+        });
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        clearUndoHistory();
+        seedStore();
+    });
+
+    it('undoes and redoes a menu Paste as one entry that keeps every expression field', async () => {
+        stageClipboard([selectedNote]);
+        renderMenu();
+        const notesBefore = getNotesForClip('clip-1').map((node) => ({ ...node }));
+
+        fireEvent.click(screen.getByText('Paste'));
+
+        const notesAfter = getNotesForClip('clip-1').map((node) => ({ ...node }));
+        expect(notesAfter).toHaveLength(3);
+        expect(notesAfter.slice(0, 2)).toEqual(notesBefore);
+        expect(notesAfter[2]).toMatchObject({ ...selectedNote, id: expect.stringMatching(/^note-/), startBeat: 4 });
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Paste 1 note']);
+
+        await undo();
+        expect(getNotesForClip('clip-1')).toEqual(notesBefore);
+
+        await redo();
+        expect(getNotesForClip('clip-1')).toEqual(notesAfter);
+    });
+
+    it('labels a multi-note Paste in the plural', () => {
+        stageClipboard([selectedNote, keptNote]);
+        renderMenu();
+
+        fireEvent.click(screen.getByText('Paste'));
+
+        expect(undoStore.value?.past.map((entry) => entry.label)).toEqual(['Paste 2 notes']);
+    });
+
+    it('records no undo entry when the clipboard is empty', () => {
+        stageClipboard([]);
+        renderMenu();
+
+        fireEvent.click(screen.getByText('Paste'));
+
+        expect(getNotesForClip('clip-1')).toEqual([selectedNote, keptNote]);
+        expect(undoStore.value?.past ?? []).toEqual([]);
     });
 });
