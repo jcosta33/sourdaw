@@ -1,5 +1,5 @@
 import { clipSelectionStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
-import { getPluginById } from '#/modules/Arrangement/useCases';
+import { getHeldClips, getPluginById } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { actionHistoryStore } from '#/modules/CrdtDocument/stores';
 import { captureProjectRevision } from '#/modules/CrdtDocument/useCases';
@@ -168,23 +168,21 @@ function buildTrackEntities(tracks: NonNullable<typeof trackStore.value>['tracks
                 (target): target is string => typeof target === 'string'
             ),
         };
-        const clips = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].map(
-            (clip): SemanticIndexEntity => ({
-                ...emptyEntity({ id: clip.id, kind: 'clip' }),
-                name: clip.name,
-                tags: [clip.type, clip.assetHash ? 'managed-asset' : 'project-content'],
-                parentId: track.id,
-                trackId: track.id,
-                startBeat: clip.startBeat,
-                endBeat: clip.endBeat,
-                locked: clip.locked,
-                muted: clip.muted,
-                contentType: clip.type,
-                assetType: getClipAssetType(clip),
-                audioBufferId: clip.audioBufferId,
-                assetHash: clip.assetHash,
-            })
-        );
+        const clips = getHeldClips(track).map((clip): SemanticIndexEntity => ({
+            ...emptyEntity({ id: clip.id, kind: 'clip' }),
+            name: clip.name,
+            tags: [clip.type, clip.assetHash ? 'managed-asset' : 'project-content'],
+            parentId: track.id,
+            trackId: track.id,
+            startBeat: clip.startBeat,
+            endBeat: clip.endBeat,
+            locked: clip.locked,
+            muted: clip.muted,
+            contentType: clip.type,
+            assetType: getClipAssetType(clip),
+            audioBufferId: clip.audioBufferId,
+            assetHash: clip.assetHash,
+        }));
         const devices = track.devices.map((device): SemanticIndexEntity => ({
             ...emptyEntity({ id: device.id, kind: 'device' }),
             name: device.name,

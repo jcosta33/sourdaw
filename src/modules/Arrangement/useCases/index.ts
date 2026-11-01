@@ -263,6 +263,8 @@ export { zoomTracksVertical } from './trackZoom';
 export { initTimelineScrollClamp } from './initTimelineScrollClamp';
 export { detectVariationLaneEnabling } from './detectVariationLaneEnabling';
 export { hasVariationLanes } from './hasVariationLanes';
+export { getAlternativeClips } from './getAlternativeClips';
+export { getHeldClips } from './getHeldClips';
 export { getTimelineSurfaceMinimumHeight } from './getTimelineSurfaceMinimumHeight';
 export { scrollTimelineViewportFromWheel } from './scrollTimelineViewportFromWheel';
 export { scrollTimelineViewportHorizontallyFromWheel } from './scrollTimelineViewportHorizontallyFromWheel';

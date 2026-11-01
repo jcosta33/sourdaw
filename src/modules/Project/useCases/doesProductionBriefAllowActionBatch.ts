@@ -1,4 +1,5 @@
 import { adjustmentLayerStore, markerStore, trackStore } from '#/modules/Arrangement/stores';
+import { getHeldClips } from '#/modules/Arrangement/useCases';
 import { automationStore } from '#/modules/Automation/stores';
 import { chordTrackStore } from '#/modules/MIDI/stores';
 import { transportStore } from '#/modules/Transport/stores';
@@ -83,9 +84,7 @@ function valueOverlapsRange(value: unknown, scope: Extract<ProductionBriefScope,
 
 function findClip(clipId: string, footprint: ProductionBriefActionFootprint) {
     for (const track of footprint.tracks?.tracks ?? []) {
-        const clip = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].find(
-            (candidate) => candidate.id === clipId
-        );
+        const clip = getHeldClips(track).find((candidate) => candidate.id === clipId);
         if (clip) {
             return clip;
         }
@@ -352,9 +351,7 @@ function trackContainerOverlapsRange(
     if (!track) {
         return false;
     }
-    const clipOverlap = [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some(
-        (clip) => intervalOverlapsRange(clip.startBeat, clip.endBeat, scope)
-    );
+    const clipOverlap = getHeldClips(track).some((clip) => intervalOverlapsRange(clip.startBeat, clip.endBeat, scope));
     const automationOverlap =
         footprint.automation?.lanes.some(
             (lane) => lane.trackId === track.id && automationLaneOverlapsRange(lane, scope)
@@ -527,9 +524,8 @@ function trackOwnedIds(trackId: string, footprint: ProductionBriefActionFootprin
         ) ?? [];
     return new Set([
         track.id,
-        ...track.clips.map((clip) => clip.id),
         ...track.alternatives.map((alternative) => alternative.id),
-        ...track.alternatives.flatMap((alternative) => alternative.clips.map((clip) => clip.id)),
+        ...getHeldClips(track).map((clip) => clip.id),
         ...track.devices.map((device) => device.id),
         ...track.midiFx.map((device) => device.id),
         ...automationLanes.map((lane) => lane.id),
@@ -549,7 +545,7 @@ function referencedClipOverlapsRange(
     collectActionStrings(action.payload, identifiers);
     return (
         footprint.tracks?.tracks.some((track) =>
-            [...track.clips, ...track.alternatives.flatMap((alternative) => alternative.clips)].some(
+            getHeldClips(track).some(
                 (clip) => identifiers.has(clip.id) && clip.startBeat < scope.endBeat && clip.endBeat > scope.startBeat
             )
         ) ?? false

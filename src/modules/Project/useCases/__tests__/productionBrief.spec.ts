@@ -861,6 +861,114 @@ describe('production brief', () => {
         ).toBe(true);
     });
 
+    describe('a track whose active alternative still stores a clip deleted from the track', () => {
+        const lockChorusRange = () => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-chorus',
+                            scope: { kind: 'range', startBeat: 32, endBeat: 48 },
+                            statement: 'Keep Chorus One arrangement fixed',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+        };
+        const chorusClip = (id: string) => ({
+            id,
+            trackId: 'track-takes',
+            name: id,
+            startBeat: 36,
+            endBeat: 44,
+            type: 'audio' as const,
+            color: '#000',
+            fadeInBeats: 0,
+            fadeOutBeats: 0,
+            gain: 1,
+            locked: false,
+            muted: false,
+        });
+        // The stored copy of the active alternative is refreshed only on switch or create.
+        const seedTakesTrack = (liveClipIds: string[]) =>
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: liveClipIds.map(chorusClip),
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [{ id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] }],
+                    },
+                ],
+            });
+
+        it('lets the track be removed or duplicated once the clip left the locked range', () => {
+            lockChorusRange();
+            seedTakesTrack([]);
+
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(true);
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(true);
+        });
+
+        it('owns the live and parked clips under a track lock, not the clip deleted from the track', () => {
+            const current = projectStore.value!;
+            projectStore.set({
+                ...current,
+                productionBrief: {
+                    ...current.productionBrief,
+                    locks: [
+                        {
+                            id: 'lock-takes',
+                            scope: { kind: 'track', trackId: 'track-takes' },
+                            statement: 'Keep the takes track fixed',
+                            createdAt: 111,
+                        },
+                    ],
+                },
+            });
+            setTrackStoreState({
+                ...structuredClone(defaultTrackState),
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-takes', name: 'Takes', kind: 'audio' }),
+                        clips: [chorusClip('clip-live')],
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [
+                            { id: 'alt-main', name: 'Alternative 1', clips: [chorusClip('clip-deleted')] },
+                            { id: 'alt-parked', name: 'Alternative 2', clips: [chorusClip('clip-parked')] },
+                        ],
+                    },
+                ],
+            });
+            const removeClip = (clipId: string): AppAction => ({ type: 'removeClip', payload: { clipId } });
+
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-live')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-parked')])).toBe(false);
+            expect(doesProductionBriefAllowActionBatch([removeClip('clip-deleted')])).toBe(true);
+        });
+
+        it('still refuses removing or duplicating the track while a live clip sits in the locked range', () => {
+            lockChorusRange();
+            seedTakesTrack(['clip-live']);
+
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'removeTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(false);
+            expect(
+                doesProductionBriefAllowActionBatch([{ type: 'duplicateTrack', payload: { trackId: 'track-takes' } }])
+            ).toBe(false);
+        });
+    });
+
     it('rejects a range write whose materialized beats overlap a locked range, whatever range form it was asked in', () => {
         const current = projectStore.value!;
         projectStore.set({

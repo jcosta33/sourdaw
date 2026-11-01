@@ -1,7 +1,28 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { trackStore, type Clip } from '#/modules/Arrangement/stores';
+import { createTrack } from '#/modules/Arrangement/useCases';
 
 import { AiRenderClipPreview } from '../AiRenderClipPreview';
+
+function createClip(audioBufferId: string): Clip {
+    return {
+        id: 'clip-1',
+        trackId: 'track-1',
+        name: 'Dropped render',
+        startBeat: 0,
+        endBeat: 4,
+        type: 'audio',
+        audioBufferId,
+        color: '#000',
+        fadeInBeats: 0,
+        fadeOutBeats: 0,
+        gain: 1,
+        locked: false,
+        muted: false,
+    };
+}
 
 const mocks = vi.hoisted(() => ({
     cachePreviewAudioBuffer: vi.fn(),
@@ -127,6 +148,52 @@ describe('AiRenderClipPreview', () => {
 
         expect(mocks.cachePreviewAudioBuffer).toHaveBeenCalledTimes(1);
         expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('preview-buffer');
+    });
+
+    describe('when a track still stores a copy of the dropped clip', () => {
+        // The active alternative's stored copy outlives a clip deleted from the track.
+        const seedTrack = (liveClips: Clip[]) => {
+            const stored = createClip('preview-buffer');
+            trackStore.set({
+                tracks: [
+                    {
+                        ...createTrack({ id: 'track-1', name: 'Track', kind: 'audio' }),
+                        clips: liveClips,
+                        activeAlternativeId: 'alt-main',
+                        alternatives: [{ id: 'alt-main', name: 'Alternative 1', clips: [stored] }],
+                    },
+                ],
+                selectedTrackId: null,
+                ghostClips: [],
+            });
+        };
+        const dropAndCancel = () => {
+            const view = render_preview();
+            const dataTransfer = create_data_transfer('none');
+            fireEvent.dragStart(get_preview_row(), { dataTransfer });
+            fireEvent.dragEnd(get_preview_row(), { dataTransfer });
+            view.unmount();
+        };
+
+        afterEach(() => {
+            trackStore.set({ tracks: [], selectedTrackId: null, ghostClips: [] });
+        });
+
+        it('releases the buffer once the clip was deleted from the track', () => {
+            seedTrack([]);
+
+            dropAndCancel();
+
+            expect(mocks.releasePreviewAudioBuffer).toHaveBeenCalledWith('preview-buffer');
+        });
+
+        it('keeps the buffer while a clip on the track still references it', () => {
+            seedTrack([createClip('preview-buffer')]);
+
+            dropAndCancel();
+
+            expect(mocks.releasePreviewAudioBuffer).not.toHaveBeenCalled();
+        });
     });
 
     it('should keep a successfully handed-off drag buffer cached', () => {

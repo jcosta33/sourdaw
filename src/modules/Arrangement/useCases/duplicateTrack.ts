@@ -5,6 +5,7 @@ import { duplicateMidiClipData } from '#/modules/MIDI/useCases';
 import { notifyUser } from '#/utils/Notification/notifyUser';
 
 import { type Clip, type Track } from '../models/Track';
+import { getAlternativeClips } from '../models/TrackAlternativeClips';
 import { getTrackById } from '../repositories/track/getTrackById';
 import { getTrackState } from '../repositories/track/getTrackState';
 import { setTrackState } from '../repositories/track/setTrackState';
@@ -55,7 +56,7 @@ export const duplicateTrack = inject({ eventBus: ArrangementEventBus })(
             // 1. Deep copy alternatives and collect satellite-state work.
             const newAlternatives = source.alternatives.map((alt) => {
                 const newAltId = `alt-dup-${crypto.randomUUID()}`;
-                const newClips: Clip[] = alt.clips.map((clip) => {
+                const newClips: Clip[] = getAlternativeClips(source, alt).map((clip) => {
                     const newClipId = `clip-dup-${crypto.randomUUID()}`;
                     const copy = { sourceClipId: clip.id, targetClipId: newClipId };
 

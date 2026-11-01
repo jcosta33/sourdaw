@@ -7,6 +7,7 @@ import { DawMicroBadge } from '#/components/daw/DawMicroBadge';
 import { Row } from '#/components/layout';
 import { Button } from '#/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '#/components/ui/tooltip';
+import { getAlternativeClips } from '#/modules/Arrangement/useCases';
 import { executeUserAppAction } from '#/modules/Command/useCases';
 
 import { type Track } from '../../../models/TrackViewTypes';
@@ -63,7 +64,9 @@ export const TrackAlternativesSection = ({ track }: TrackAlternativesSectionProp
                         <Row justify="between" className="w-full">
                             <span className="truncate text-xs font-medium text-foreground">{alt.name}</span>
                             <Row gap={0.5} shrink={false}>
-                                <DawMicroBadge className="mr-1">{alt.clips.length}c</DawMicroBadge>
+                                <DawMicroBadge className="mr-1">
+                                    {getAlternativeClips(track, alt).length}c
+                                </DawMicroBadge>
                                 {track.alternatives.length > 1 ? (
                                     <Button
                                         variant="ghost"

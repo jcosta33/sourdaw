@@ -126,7 +126,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/productionBrief.spec.ts",
-                    "digest": "0e12f47f55a881e87ab20de7f88b3d4177e5681767d61bd576d52b0f32e8718c"
+                    "digest": "f42064dc868370e329c8c50da08f64d0247958ef214084bbd0fe62e2f484e6d8"
                 }
             ]
         },
@@ -138,7 +138,7 @@
             "fixtures": [
                 {
                     "path": "src/modules/Project/useCases/__tests__/semanticProjectQueries.spec.ts",
-                    "digest": "9a7be6783cca3116fe0d421a67e85431b58efd2e10bcd8277408d8609c5579a3"
+                    "digest": "6930b4836923bd5f1c451f1a7df020b998de1a350baf67bcc845e1f809a5a2fe"
                 }
             ]
         },
