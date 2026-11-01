@@ -19,9 +19,11 @@ import { ensureTrackStrips } from '../../ensureTrackStrips';
 // `vi.fn` wrapper exists so one case can stand the claim's own wrap-count zero
 // down and isolate the epoch write's; `mockReset` hands the real one back.
 import { claimSchedulerSession } from '../../playheadScheduler/claimSchedulerSession';
+import { opensPunchIn } from '../../playheadScheduler/opensPunchIn';
 import { prepareInitialBrowserPlayback } from '../../playheadScheduler/prepareInitialBrowserPlayback';
 import { schedulerSession } from '../../playheadScheduler/schedulerSession';
 import { startPlayheadScheduler } from '../../playheadScheduler/startPlayheadScheduler';
+import { recordingLifecycle } from '../recordingLifecycle';
 import { startPlayback } from '../startPlayback';
 import { stopPlayback } from '../stopPlayback';
 
@@ -61,10 +63,33 @@ vi.mock('#/modules/AudioEngine/useCases', () => ({
 vi.mock('#/utils/Notification/notifyUser', () => ({
     notifyUser: vi.fn(),
 }));
+// MIDI owns the overdub landings the recording lifecycle reads, with the
+// semantics of its registry: one in flight until it lands or is refused.
+const overdub = vi.hoisted(() => {
+    const state = { landing: null as Promise<void> | null, settled: 0 };
+    return {
+        state,
+        land(landing: Promise<void>): void {
+            const settle = (): void => {
+                state.landing = null;
+                state.settled += 1;
+            };
+            state.landing = landing.then(settle, settle);
+        },
+    };
+});
+vi.mock('#/modules/MIDI/useCases', () => ({
+    countSettledOverdubPasses: () => overdub.state.settled,
+    isOverdubLanding: () => overdub.state.landing !== null,
+    waitForOverdubLanding: async () => {
+        await overdub.state.landing;
+    },
+}));
 vi.mock('../../playheadScheduler/startPlayheadScheduler', () => ({
     startPlayheadScheduler: vi.fn(),
 }));
 vi.mock('../../playheadScheduler/prepareInitialBrowserPlayback', () => ({ prepareInitialBrowserPlayback: vi.fn() }));
+vi.mock('../../playheadScheduler/opensPunchIn', () => ({ opensPunchIn: vi.fn(() => false) }));
 vi.mock('../stopPlayback', () => ({ stopPlayback: vi.fn(async () => undefined) }));
 vi.mock('../../playheadScheduler/claimSchedulerSession', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../../playheadScheduler/claimSchedulerSession')>();
@@ -124,6 +149,8 @@ describe('startPlayback', () => {
             }),
         }));
         vi.mocked(ensureTrackStrips).mockClear();
+        vi.mocked(opensPunchIn).mockReset();
+        vi.mocked(opensPunchIn).mockReturnValue(false);
         vi.mocked(stopPlayback).mockClear();
         // Back to the real retirement: only the one isolation case overrides it.
         vi.mocked(claimSchedulerSession).mockReset();
@@ -198,6 +225,111 @@ describe('startPlayback', () => {
         await playback;
         expect(settled).toBe(true);
         expect(onRoll).toHaveBeenCalledExactlyOnceWith(10.1, 4);
+    });
+
+    describe('an earlier take still closing (#5998)', () => {
+        function playFrom(beat: number): TransportState {
+            const state = { ...defaultTransportState, isPlaying: false, playheadPosition: beat, preRollEnabled: false };
+            vi.mocked(getTransportState).mockReturnValue(state);
+            vi.mocked(prepareInitialBrowserPlayback).mockClear();
+            return state;
+        }
+
+        it('prepares the first window at once when a punch opens but nothing is closing', () => {
+            playFrom(6);
+            vi.mocked(opensPunchIn).mockReturnValue(true);
+            const closeWait = vi.spyOn(recordingLifecycle, 'waitUntilRecordingClosed');
+            try {
+                void startPlayback();
+
+                expect(closeWait).not.toHaveBeenCalled();
+                expect(prepareInitialBrowserPlayback).toHaveBeenCalledTimes(1);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            } finally {
+                closeWait.mockRestore();
+            }
+        });
+
+        it('prepares the first window at once when Play opens outside the punch region', async () => {
+            const state = playFrom(3);
+            vi.mocked(opensPunchIn).mockReturnValue(false);
+            const closing = Promise.withResolvers<void>();
+            recordingLifecycle.trackClosing(closing.promise);
+            try {
+                void startPlayback();
+
+                expect(opensPunchIn).toHaveBeenCalledWith(state, 3);
+                expect(prepareInitialBrowserPlayback).toHaveBeenCalledTimes(1);
+                expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+                expect(recordingLifecycle.isClosingRecording()).toBe(true);
+            } finally {
+                closing.resolve();
+                await recordingLifecycle.waitForClosing();
+            }
+        });
+
+        it('prepares the first window only once the take has closed when Play opens a punch', async () => {
+            const state = playFrom(6);
+            vi.mocked(opensPunchIn).mockReturnValue(true);
+            const closing = Promise.withResolvers<void>();
+            recordingLifecycle.trackClosing(closing.promise);
+
+            const playback = startPlayback();
+            expect(opensPunchIn).toHaveBeenCalledWith(state, 6);
+            expect(prepareInitialBrowserPlayback).not.toHaveBeenCalled();
+            closing.resolve();
+            await playback;
+
+            expect(prepareInitialBrowserPlayback).toHaveBeenCalledTimes(1);
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+            expect(recordingLifecycle.isClosingRecording()).toBe(false);
+        });
+
+        /** Let every queued continuation run, so a Play that is not held reaches its preparation. */
+        function drainPendingWork(): Promise<void> {
+            return new Promise((resolve) => {
+                setTimeout(resolve, 0);
+            });
+        }
+
+        it.each([
+            [
+                'a take commit still in flight with no stop closing',
+                () => {
+                    const commit = Promise.withResolvers<void>();
+                    recordingLifecycle.trackCommit(commit.promise);
+                    return commit.resolve;
+                },
+            ],
+            [
+                'an overdub pass still landing',
+                () => {
+                    const landing = Promise.withResolvers<void>();
+                    overdub.land(landing.promise);
+                    return landing.resolve;
+                },
+            ],
+        ])('holds a punch Play while %s', async (_, startClosing) => {
+            playFrom(6);
+            vi.mocked(opensPunchIn).mockReturnValue(true);
+            const closingAtPreparation: boolean[] = [];
+            const prepare = vi.mocked(prepareInitialBrowserPlayback).getMockImplementation();
+            vi.mocked(prepareInitialBrowserPlayback).mockImplementationOnce((generation) => {
+                closingAtPreparation.push(recordingLifecycle.isClosingRecording());
+                return prepare ? prepare(generation) : null;
+            });
+            const settle = startClosing();
+            expect(recordingLifecycle.isClosingRecording()).toBe(true);
+
+            const playback = startPlayback();
+            await drainPendingWork();
+            expect(prepareInitialBrowserPlayback).not.toHaveBeenCalled();
+            settle();
+            await playback;
+
+            expect(closingAtPreparation).toEqual([false]);
+            expect(startPlayheadScheduler).toHaveBeenCalledTimes(1);
+        });
     });
 
     it('rolls in over the bars the time-signature map defines, not the flat numerator', () => {
