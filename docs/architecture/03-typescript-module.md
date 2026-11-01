@@ -1224,25 +1224,25 @@ Example: `MixerConsole` is often presentation-only if it reads from Arrangement 
 
 ## 9. What goes where: quick lookup table
 
-| Problem                                         | Put it in                          |
-| ----------------------------------------------- | ---------------------------------- |
-| Shape of a clip, track, marker, plugin instance | `models/`                          |
-| “This clip cannot overlap another”              | `validators/`                      |
-| “Calculate automation interpolation”            | `services/`                        |
-| “Save this to localStorage”                     | `repositories/`                    |
-| “Map Track to engine config”                    | `transformers/`                    |
-| “Move clip and emit event”                      | `useCases/`                        |
-| “Shared app-visible transport state”            | `stores/`                          |
-| “Selected clip in one view subtree”             | `presentations/context/`           |
-| “User zoom preference”                          | `presentations/stores/`            |
-| “Waveform canvas drawing”                       | `presentations/renderers/`         |
-| “Composable UI entry point”                     | `presentations/views/`             |
-| “Pointer-gesture math shared by view code”      | `presentations/helpers/`           |
-| “Audio node or WASM device host”                | `engine/`                          |
-| “Code that runs on the audio thread”            | `worklets/`                        |
-| “Code that runs in a Worker”                    | `workers/`                         |
-| “Dependency this module cannot import”          | `*Port` + `configure*` (§4.15)     |
-| “Derived read view of project truth”            | `useCases/` `*Projection*` (§4.17) |
+| Problem                                         | Put it in                      |
+| ----------------------------------------------- | ------------------------------ |
+| Shape of a clip, track, marker, plugin instance | `models/`                      |
+| “This clip cannot overlap another”              | `validators/`                  |
+| “Calculate automation interpolation”            | `services/`                    |
+| “Save this to localStorage”                     | `repositories/`                |
+| “Map Track to engine config”                    | `transformers/`                |
+| “Move clip and emit event”                      | `useCases/`                    |
+| “Shared app-visible transport state”            | `stores/`                      |
+| “Selected clip in one view subtree”             | `presentations/context/`       |
+| “User zoom preference”                          | `presentations/stores/`        |
+| “Waveform canvas drawing”                       | `presentations/renderers/`     |
+| “Composable UI entry point”                     | `presentations/views/`         |
+| “Pointer-gesture math shared by view code”      | `presentations/helpers/`       |
+| “Audio node or WASM device host”                | `engine/`                      |
+| “Code that runs on the audio thread”            | `worklets/`                    |
+| “Code that runs in a Worker”                    | `workers/`                     |
+| “Dependency this module cannot import”          | `*Port` + `configure*` (§4.15) |
+| “Derived read view of project truth”            | `useCases/` (§4.17)            |
 
 ---
 
