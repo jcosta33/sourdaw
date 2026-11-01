@@ -12,7 +12,9 @@ import { recordChannelEvent, type RecordChannelEventDependencies } from './recor
 type ChannelBendRow = { channel: number; value: number; channelScoped: boolean };
 
 function listOffCentreWheels(): [number, number][] {
-    return [...channelPitchBendState].filter(([, value]) => value !== 0).toSorted(([l], [r]) => l - r);
+    return Array.from(channelPitchBendState)
+        .filter(([, value]) => value !== 0)
+        .toSorted(([l], [r]) => l - r);
 }
 
 /**

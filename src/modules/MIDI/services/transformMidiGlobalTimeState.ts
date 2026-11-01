@@ -1,5 +1,6 @@
 import { clampMidiData7, clampVelocity, DEFAULT_NOTE_PROBABILITY, DEFAULT_NOTE_VELOCITY } from '#/utils/midiData';
 
+import { pitchBendLaneKey } from './pitchBendLaneKey';
 import {
     carriedBendReturnBeat,
     carriedBendReturnIdKey,
@@ -10,7 +11,6 @@ import {
     type ChannelRegisteredParameterMessage,
     type EditedClipHead,
 } from './registeredParameterState';
-import { pitchBendLaneKey } from './pitchBendLaneKey';
 import { sliceMidiNoteExtent } from './sliceMidiNoteExtent';
 
 import type { MidiCC, MidiNote, MidiPitchBend } from '../models/MidiNote';
@@ -607,6 +607,14 @@ function registeredParameterCarry(bends: RightClipBends): StateMessageCarry<Midi
     };
 }
 
+function inRecordedOrder<TCarry extends { event: { beat: number }; sourceIndex: number }>(
+    carries: readonly TCarry[]
+): TCarry[] {
+    return carries.toSorted(
+        (left, right) => left.event.beat - right.event.beat || left.sourceIndex - right.sourceIndex
+    );
+}
+
 /**
  * Partitions recorded controller events at the cut the way notes are: the left
  * clip keeps what precedes the kept range, the deleted window is dropped, and
@@ -683,9 +691,7 @@ function splitSourceEvents<TRow extends SplitEventRow>({
         createId: createRightId,
     }) ?? { origin: [], beforeMoved: [] };
     const carries = [...inForceAtCut].flatMap(([key, carry]) => (lanesStartingAtOrigin.has(key) ? [] : [carry]));
-    const orderedCarries = carriesInRecordedOrder
-        ? carries.toSorted((left, right) => left.event.beat - right.event.beat || left.sourceIndex - right.sourceIndex)
-        : carries;
+    const orderedCarries = carriesInRecordedOrder ? inRecordedOrder(carries) : carries;
     const carriedFromBefore = orderedCarries.map(({ event }) => event);
     const carried = orderedCarries.map(({ event, sourceIndex }) => ({
         ...event,
