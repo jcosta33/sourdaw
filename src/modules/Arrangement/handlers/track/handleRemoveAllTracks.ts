@@ -71,11 +71,12 @@ function restoreSurvivorRoutingOnce(
         (latest, restore) => (latest === null || restore.trackIndex > latest.trackIndex ? restore : latest),
         null
     );
-    return withoutSurvivorPatches.map((restore) =>
-        restore === lastRestore
-            ? { ...restore, routingPatches: [...restore.routingPatches, ...survivorPatches] }
-            : restore
-    );
+    return withoutSurvivorPatches.map((restore) => {
+        if (restore !== lastRestore) {
+            return restore;
+        }
+        return { ...restore, routingPatches: [...restore.routingPatches, ...survivorPatches] };
+    });
 }
 
 export const handleRemoveAllTracks = createHandler<'removeAllTracks'>({

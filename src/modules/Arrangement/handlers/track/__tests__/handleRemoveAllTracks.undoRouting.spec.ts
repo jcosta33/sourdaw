@@ -23,7 +23,7 @@ vi.mock('../../../useCases/getTrackStoreState', () => ({
     getTrackStoreState: () => mocks.project.value,
 }));
 vi.mock('../../../useCases/setTrackState', () => ({
-    setTrackState: (next: unknown) => {
+    setTrackState: (next: Project) => {
         mocks.project.value = next;
     },
 }));
