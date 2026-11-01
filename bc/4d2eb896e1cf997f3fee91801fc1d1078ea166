@@ -1,0 +1,19 @@
+.agents/skills/native-audio-engine/SKILL.md
+  s_422865f62f3967::t_5522be628575e3 26,46,82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bc4d2eb896e1cf997f3fee91801fc1d1078ea166",
+  "prompts": {},
+  "sessions": {
+    "s_422865f62f3967": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_422865f62f3967",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
