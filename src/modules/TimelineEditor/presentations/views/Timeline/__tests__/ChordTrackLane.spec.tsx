@@ -227,6 +227,25 @@ describe('ChordTrackLane', () => {
         expect(executeAppAction).toHaveBeenCalledTimes(1);
     });
 
+    it('keeps the dragged chord mounted past the cull edge and commits only where it is released', () => {
+        renderChordLane();
+        const block = getChordBlock();
+
+        fireEvent.pointerDown(block, { button: 0, clientX: 64, pointerId: 41 });
+        // Beat 64.5 puts the block at 1032px, past the 1000px viewport plus its 20px cull margin.
+        fireEvent.pointerMove(block, { clientX: 1030, pointerId: 41 });
+
+        expect(block).toBeInTheDocument();
+        expect(block).toHaveStyle({ left: '1032px' });
+        expect(executeAppAction).not.toHaveBeenCalled();
+
+        fireEvent.pointerMove(block, { clientX: 400, pointerId: 41 });
+        fireEvent.pointerUp(block, { clientX: 400, pointerId: 41 });
+
+        expect(executeAppAction).toHaveBeenCalledTimes(1);
+        expectAction({ type: 'moveChordEvent', payload: { eventId: 'c1', beat: 25 } });
+    });
+
     it('ends the drag when the dragged chord is deleted mid-drag, and dispatches nothing for it', async () => {
         const otherEvent = { id: 'c2', beat: 12, duration: 4, root: 7, quality: 'major' };
         mockChordState = { enabled: false, events: [oneEvent, otherEvent] };

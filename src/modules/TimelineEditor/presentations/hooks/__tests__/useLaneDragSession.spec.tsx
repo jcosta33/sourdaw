@@ -381,26 +381,49 @@ describe('useLaneDragSession', () => {
             expect(callbacks.move).toHaveBeenCalledWith({ clientX: 90, clientY: 40 });
         });
 
-        it('leaves no lostpointercapture listener on document after any exit', () => {
-            const addSpy = vi.spyOn(document, 'addEventListener');
-            const removeSpy = vi.spyOn(document, 'removeEventListener');
-            const lostCaptureHandlers = (calls: unknown[][]): unknown[] =>
-                calls.filter((call) => call[0] === 'lostpointercapture').map((call) => call[1]);
-            const liveListeners = (): number => {
-                const removed = lostCaptureHandlers(removeSpy.mock.calls);
-                return lostCaptureHandlers(addSpy.mock.calls).filter((handler) => !removed.includes(handler)).length;
-            };
-
+        // A listener left behind by an ended drag would still answer its old pointer and end
+        // whichever drag the lane holds next.
+        it.each([
+            [
+                'pointerup',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerUp(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'pointercancel',
+                (lane: ArmedLane): void => {
+                    fireEvent.pointerCancel(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'lostpointercapture on the lane',
+                (lane: ArmedLane): void => {
+                    fireEvent.lostPointerCapture(lane.handle, { pointerId: 3 });
+                },
+            ],
+            [
+                'window blur',
+                (): void => {
+                    fireEvent(window, new Event('blur'));
+                },
+            ],
+            [
+                'Escape cancel',
+                (): void => {
+                    pressEscape();
+                },
+            ],
+        ])("leaves no listener that ends the next drag on the old pointer's release after %s", (_exit, end) => {
             const lane = renderArmedLane();
-            expect(liveListeners()).toBe(1);
-            fireEvent.pointerUp(lane.handle, { pointerId: 3 });
-            expect(liveListeners()).toBe(0);
+            end(lane);
+            const commitsBefore = lane.callbacks.commit.mock.calls.length;
+            fireEvent.pointerDown(lane.handle, { pointerId: 4, button: 0, clientX: 10, clientY: 10 });
 
-            const escaped = renderArmedLane();
-            expect(liveListeners()).toBe(1);
-            pressEscape();
-            expect(liveListeners()).toBe(0);
-            escaped.unmount();
+            fireEvent.lostPointerCapture(document, { pointerId: 3 });
+
+            expect(lane.callbacks.commit).toHaveBeenCalledTimes(commitsBefore);
+            expect(isDragGestureActive()).toBe(true);
         });
     });
 
