@@ -1,0 +1,21 @@
+src/modules/AudioEngine/useCases/__tests__/exclusiveAudioBufferAudition.spec.ts
+  s_0862da77f83ea6::t_7a2e0cb15ba028 580-666
+src/modules/AudioEngine/useCases/livePlayback/reconcileNativeAuditionMonitoring.ts
+  s_0862da77f83ea6::t_8beaf5824e2585 146-150,156-158
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cf7832b13a335f83c2ddb6aa622876dbd46dbcaa",
+  "prompts": {},
+  "sessions": {
+    "s_0862da77f83ea6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_0862da77f83ea6",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
