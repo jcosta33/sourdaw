@@ -57,7 +57,7 @@ function dependencies(isRecording = true): SetMpeEnabledDependencies {
         getCompensationDelay: () => 0,
         bufferRecordedMidiCC,
         bufferRecordedMidiPitchBend,
-    } as SetMpeEnabledDependencies;
+    };
 }
 
 function recordedRows() {

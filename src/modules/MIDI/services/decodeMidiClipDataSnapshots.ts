@@ -40,10 +40,10 @@ function isControlChange(value: unknown): value is MidiCC {
 
 /** A pitch-bend row's own keys; `channelScoped` is the one it may leave out. */
 function hasPitchBendKeys(value: Record<string, unknown>): boolean {
-    const keys = Object.hasOwn(value, 'channelScoped')
-        ? [...MIDI_PITCH_BEND_REQUIRED_KEYS, ...MIDI_PITCH_BEND_OPTIONAL_KEYS]
-        : MIDI_PITCH_BEND_REQUIRED_KEYS;
-    return hasExactKeys(value, keys);
+    if (Object.hasOwn(value, 'channelScoped')) {
+        return hasExactKeys(value, [...MIDI_PITCH_BEND_REQUIRED_KEYS, ...MIDI_PITCH_BEND_OPTIONAL_KEYS]);
+    }
+    return hasExactKeys(value, MIDI_PITCH_BEND_REQUIRED_KEYS);
 }
 
 function isPitchBend(value: unknown): value is MidiPitchBend {
