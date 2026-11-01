@@ -833,6 +833,120 @@ describe('required affected verification', () => {
         GIT_PLANNER_CASE_TIMEOUT_MS
     );
     it(
+        'narrows a function-body change through a fresh coverage map and keeps the full suite otherwise',
+        () => {
+            const root = temporaryRoot();
+            const mapPath = join(temporaryRoot(), 'e2e-coverage-map.json');
+            const feature = 'src/feature/feed.ts';
+            const alpha = 'tests/e2e/alpha.spec.ts';
+            const beta = 'tests/e2e/beta.spec.ts';
+            const gamma = 'tests/e2e/gamma.spec.ts';
+            mkdirSync(join(root, 'tests/e2e'), { recursive: true });
+            mkdirSync(join(root, 'src/app'), { recursive: true });
+            mkdirSync(join(root, 'src/feature'), { recursive: true });
+            mkdirSync(join(root, 'public'), { recursive: true });
+            fixturePlaywright(root);
+            appendFileSync(join(root, '.gitignore'), 'github-output\npr-validation-scope.json\n');
+            for (const spec of [SMOKE_SPEC, gamma, alpha, beta]) {
+                fixtureBrowserCase(root, spec);
+            }
+            writeFileSync(join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: {} }));
+            writeFileSync(
+                join(root, 'src/app/main.ts'),
+                "import { feed } from '../feature/feed';\nexport const app = feed(1);\n"
+            );
+            const feed =
+                'export const LIMIT = 1;\nexport function feed(value: number): number {\n    return value + LIMIT;\n}\n';
+            writeFileSync(join(root, feature), feed);
+            const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
+            git('init', '-q', '-b', 'main');
+            git('config', 'user.email', 'ci@example.invalid');
+            git('config', 'user.name', 'Scope test');
+            git('add', '.');
+            git('commit', '-q', '-m', 'base');
+            const base = git('rev-parse', 'HEAD');
+            writeFileSync(
+                mapPath,
+                JSON.stringify({
+                    format: 'e2e-coverage-map-v1',
+                    commit: base,
+                    specs: [alpha, beta, gamma],
+                    alwaysSelect: [beta],
+                    files: { [feature]: { blob: git('rev-parse', `HEAD:${feature}`), specs: [0] } },
+                })
+            );
+            const plan = (head: string, map: Record<string, string>) => {
+                const env: NodeJS.ProcessEnv = {
+                    ...process.env,
+                    BASE_SHA: base,
+                    HEAD_SHA: head,
+                    GITHUB_OUTPUT: join(root, 'github-output'),
+                    ...map,
+                };
+                if (!('E2E_COVERAGE_MAP' in map)) {
+                    delete env.E2E_COVERAGE_MAP;
+                    delete env.E2E_COVERAGE_MAP_CREATED_AT;
+                }
+                const result = spawnSync(process.execPath, [resolve('scripts/prValidationScope.ts'), 'plan'], {
+                    cwd: root,
+                    encoding: 'utf8',
+                    env,
+                });
+                expect(result.status, result.stderr).toBe(0);
+                return JSON.parse(readFileSync(join(root, 'pr-validation-scope.json'), 'utf8')) as ReturnType<
+                    typeof selectValidationPlan
+                >;
+            };
+            const freshMap = { E2E_COVERAGE_MAP: mapPath, E2E_COVERAGE_MAP_CREATED_AT: new Date().toISOString() };
+            git('checkout', '-q', '-b', 'body');
+            writeFileSync(join(root, feature), feed.replace('value + LIMIT', 'value - LIMIT'));
+            git('commit', '-q', '-am', 'body change');
+            const bodyHead = git('rev-parse', 'HEAD');
+            const narrowed = plan(bodyHead, freshMap);
+            expect(allSelected(narrowed)).toEqual([alpha, beta]);
+            expect(narrowed).toMatchObject({
+                browser: true,
+                browserAi: false,
+                reasons: [
+                    {
+                        path: feature,
+                        reason: expect.stringContaining('function-body change executed by 1 mapped specs'),
+                    },
+                ],
+            });
+            // The fetch step wrote nothing: the configured path is absent.
+            const unfetched = plan(bodyHead, {
+                E2E_COVERAGE_MAP: `${mapPath}.missing`,
+                E2E_COVERAGE_MAP_CREATED_AT: '',
+            });
+            expect(allSelected(unfetched)).toEqual([alpha, beta, gamma]);
+            expect(unfetched.reasons).toEqual([
+                { path: feature, reason: expect.stringContaining('no coverage map was retrieved') },
+            ]);
+            const unconfigured = plan(bodyHead, {});
+            expect(allSelected(unconfigured)).toEqual([alpha, beta, gamma]);
+            expect(unconfigured.reasons).toEqual([
+                {
+                    path: feature,
+                    reason: 'product, shared, deleted, renamed, or unclassified dependency; full browser coverage',
+                },
+            ]);
+            git('checkout', '-q', 'main');
+            git('checkout', '-q', '-b', 'top-level');
+            writeFileSync(join(root, feature), feed.replace('LIMIT = 1', 'LIMIT = 2'));
+            git('commit', '-q', '-am', 'top-level change');
+            const topLevel = plan(git('rev-parse', 'HEAD'), freshMap);
+            expect(allSelected(topLevel)).toEqual([alpha, beta, gamma]);
+            expect(topLevel.reasons).toEqual([
+                {
+                    path: feature,
+                    reason: expect.stringContaining(`${feature}: change outside a function body at base line 1`),
+                },
+            ]);
+        },
+        GIT_PLANNER_CASE_TIMEOUT_MS
+    );
+    it(
         'disables inherited Trace2 for disposable Git fixture children',
         () => {
             const root = temporaryRoot();

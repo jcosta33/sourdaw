@@ -43,6 +43,7 @@ export function readCheckoutDiff(
                 'tests/e2e',
                 'scripts/e2eSuiteOwners.json',
                 'scripts/e2eAffectedGraph.ts',
+                'scripts/e2eCoverageSelection.ts',
                 'tsconfig.json',
                 'playwright.config.ts',
                 'package.json',

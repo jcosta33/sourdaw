@@ -547,7 +547,7 @@ No job outside `health-gates.yml` may be named `Gate`.
 
 `scripts/prValidationScope.ts` records the affected browser plan with reasons. A clean integration
 checkout may narrow feature-presentation changes through the resolved file dependency graph and
-explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Unknown,
+explicit suite owners in `scripts/e2eSuiteOwners.json`; unowned suites remain selected. Otherwise, product edits that lie only inside function bodies run just the specs the fresh nightly coverage map saw execute those files, failing closed to the full suite. Unknown,
 shared, deleted, renamed, and unsupported graph inputs select the complete browser suite. Direct
 browser spec changes select those specs. Documentation and explicitly known review tooling avoid
 browser runs. Other `scripts/**`, `.agents/**`, `release/*.json`, and non-product Markdown select no
