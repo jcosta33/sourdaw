@@ -146,6 +146,56 @@ describe('transformMidiGlobalTimeState', () => {
         });
     });
 
+    it('keeps the recorded loop pass on the split right half', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [
+                    { id: 'recorded', pitch: 60, startBeat: 0, duration: 4, velocity: 100, recordingPassIndex: 1 },
+                ],
+                right: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 2 }],
+            targetNoteIds: ['recorded-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.notesByClipId.right).toStrictEqual([
+            {
+                id: 'recorded-right',
+                pitch: 60,
+                startBeat: 0,
+                duration: 2,
+                velocity: 100,
+                probability: 100,
+                recordingPassIndex: 1,
+            },
+        ]);
+    });
+
+    it('leaves the split right half without a pass index when the source note has none', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [{ id: 'manual', pitch: 60, startBeat: 0, duration: 4, velocity: 100 }],
+                right: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'split-notes', sourceClipId: 'source', targetClipId: 'right', splitBeat: 2 }],
+            targetNoteIds: ['manual-right'],
+        });
+
+        expect(result.status).toBe('ready');
+        expect(result.state.notesByClipId.right).toStrictEqual([
+            { id: 'manual-right', pitch: 60, startBeat: 0, duration: 2, velocity: 100, probability: 100 },
+        ]);
+    });
+
     it('omits absent split-right optionals and preserves every defined zero value', () => {
         const prepared = state({
             notesByClipId: {
@@ -211,6 +261,54 @@ describe('transformMidiGlobalTimeState', () => {
         ] as const) {
             expect(Object.hasOwn(ordinaryRight ?? {}, key)).toBe(false);
         }
+    });
+
+    it('keeps the recorded loop pass on a duplicate', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [
+                    { id: 'recorded', pitch: 60, startBeat: 1, duration: 1, velocity: 100, recordingPassIndex: 1 },
+                ],
+                target: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }],
+            targetNoteIds: ['recorded-copy'],
+        });
+
+        expect(result.state.notesByClipId.target).toStrictEqual([
+            {
+                id: 'recorded-copy',
+                pitch: 60,
+                startBeat: 1,
+                duration: 1,
+                velocity: 100,
+                probability: 100,
+                recordingPassIndex: 1,
+            },
+        ]);
+    });
+
+    it('leaves a duplicate without a pass index when the source note has none', () => {
+        const prepared = state({
+            notesByClipId: {
+                source: [{ id: 'manual', pitch: 60, startBeat: 1, duration: 1, velocity: 100 }],
+                target: [],
+            },
+        });
+
+        const result = transformMidiGlobalTimeState({
+            state: prepared,
+            commands: [{ type: 'copy-notes', sourceClipId: 'source', targetClipId: 'target' }],
+            targetNoteIds: ['manual-copy'],
+        });
+
+        expect(result.state.notesByClipId.target).toStrictEqual([
+            { id: 'manual-copy', pitch: 60, startBeat: 1, duration: 1, velocity: 100, probability: 100 },
+        ]);
     });
 
     it('duplicates notes with their CC and pitch bend lanes, appending after what the target holds', () => {
