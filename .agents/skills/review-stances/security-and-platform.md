@@ -103,6 +103,32 @@ or none.
     hosted PR summary with actual uploads. Before any authorized retirement inspect alert continuity and the
     documented deletion and historical-data consequences. Mutate or omit the PR category and require the
     independent contract to fail after re-recording the workflow snapshot.
+13. **Accepted NAM dimensions exceeded the runtime input width (#5209 `54ff77cd1f`, 2026-10-27).** The LSTM loader
+    sized deeper cells to `hidden_size` while rendering passed a one-element input to every cell. The source
+    establishes the length contradiction for `num_layers > 1 && hidden_size > 1`; no trap on the introducing head
+    was measured, and the missing obligation was the layer/width cross-product. Pass the exact-layout,
+    finite-weight two-layer, hidden-size-2 file (`num_layers` 2, `hidden_size` 2, 83 zero weights) through the
+    public import boundary and the actual loader and prewarm entry (`GrinderEngine::load_neural_model`) on the
+    rebuilt WASM bytes. Require a named refusal before construction or prewarm, with no model loaded, paired with
+    successful controls: the single-layer wide `lstm.nam` (hidden 3) and the stacked hidden-size-1 file. Count
+    initial hidden and cell state and the head in the fixture (per layer `4h(in + h) + 6h`, plus `h + 1`) rather
+    than guessing its length. A validated metadata object alone cannot prove runtime admission. Existing cases
+    are partial coverage only: `validateGrinderNamModel.spec.ts` is metadata-only, and
+    `grinder_stacked_lstm_rejection.rs` checks the refusal text and that no model loaded.
+14. **Control receipt admission must precede semantic authority (#4128 `1d1471216e`).** The parser advanced
+    interpretation after bounding its receipt without checking whether bounding had replaced success with
+    failure, so staged authority survived an unadmitted control; schema-valid selector arguments hid it.
+    Promote authority only after the actual bounded success receipt passes every carrier and byte admission. A
+    compacted carrier, a failed receipt, or an oversized raw control cannot substitute for that witness: discard
+    unadmitted staged intent and keep effectful schemas and calls closed. Select an otherwise-valid control from
+    the actual published catalog, then drive effectful use through the real parser and the correction route;
+    require no continuation, escaped authority or proposal, and the correlated failure preserved. Keep genuine
+    in-budget local and hosted controls that restore the full effectful contracts. In a committed isolated
+    probe, remove only the responsible discard or admission edge and require the `metricIntent.spec.ts` case
+    "does not let the actual %s carry failed control authority into a following proposal" to fail independently
+    of manifest pins. That case, "retains a genuine in-budget control and projects only the %s receipt copy" and
+    "publishes complete semantic intake and safe reads before restoring exact effectful contracts after success"
+    are partial coverage: none asserts the compacted-carrier input.
 
 ## Relocated
 
@@ -119,14 +145,6 @@ or none.
 
 ## Retired lessons
 
-- Accepted NAM dimensions exceeded the runtime input width (#5209) → enforced by
-  `crates/daw-dsp/tests/grinder_stacked_lstm_rejection.rs`
-  ("stacked_wide_lstm_is_rejected_without_loading_or_panicking",
-  "one_layer_and_stacked_single_hidden_unit_lstm_still_load"),
-  `src/modules/Grinder/useCases/__tests__/importGrinderNeuralModels.spec.ts` "rejects a stacked wide LSTM without
-  replacing or persisting the previous library", and
-  `src/modules/Grinder/services/__tests__/validateGrinderNamModel.spec.ts` "rejects a stacked wide LSTM before it
-  can reach the runtime" and "accepts a stacked single-hidden-unit LSTM".
 - A declared Body choice never entered the worklet schema (#5254) → enforced by
   `src/modules/AudioEngine/worklets/__tests__/bacteriaProcessor.spec.ts` "delivers every band Body value admitted
   by the production schema to the engine" and `src/modules/AudioEngine/engine/__tests__/BacteriaNode.spec.ts`
@@ -136,7 +154,3 @@ or none.
   before replacing an armed target or scheduling another timeout" and
   `src/modules/ControlSurface/useCases/__tests__/midiLearn.spec.ts` "should not start learning when MIDI input is
   unsupported".
-- Control receipt admission preceded semantic authority (#4128) → enforced by
-  `src/modules/AiRuntime/useCases/__tests__/metricIntent.spec.ts` "does not let the actual %s carry failed control
-  authority into a following proposal" (parser and correction-orchestrator routes) and "retains a genuine
-  in-budget control and projects only the %s receipt copy".

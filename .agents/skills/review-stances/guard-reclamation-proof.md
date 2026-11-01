@@ -71,9 +71,11 @@ the check that must go red. Historical reviewer prompts and tiers are unestablis
    missing-type catalogs, then a wholly usable third with fresh before/after PID coverage; release only from the
    complete catalog. Persistent omissions, a third live borrower, expiry of the original five-second budget, and
    an uncovered live PID in the final catalog retain. Descriptor omissions and exclusively new same-UID live PID
-   gaps may each discard a whole catalog only while another of the three observations remains; a previously
-   missing PID still present in the next pre-sample is not new. Never merge partial catalogs or extend the
-   deadline.
+   gaps may each discard a whole catalog and trigger a fresh one, bounded by the five-second deadline alone on
+   Darwin (the `scripts/resourceGuard.ts` loop runs while `Date.now() < deadline` and counts no observations;
+   probe 7 supersedes the original three-catalog cap) and, on Linux, by `LINUX_CENSUS_OBSERVATIONS = 32` or that
+   deadline. A previously missing PID still present in the next pre-sample is not new. Never merge partial
+   catalogs or extend the deadline.
 9. **A documented `LINK` vnode type invalidated the census (#5274 `40baa0716b`).** The parser omitted lsof's
    `LINK` type, so a same-UID capture with an absolute `LINK` outside guarded storage refused the whole catalog
    as `unknown-file-type` (not the original failed guard's field record). Open a private symlink with Darwin
