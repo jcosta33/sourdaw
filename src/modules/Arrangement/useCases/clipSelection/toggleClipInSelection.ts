@@ -1,5 +1,6 @@
 import { clipSelectionStore } from '../../stores/clipSelectionStore';
 import { clearDeviceSelection } from '../deviceSelection/clearDeviceSelection';
+
 import { resolvePrimaryClip } from './resolvePrimaryClip';
 
 function resolvePrimaryAfterRemoval(
