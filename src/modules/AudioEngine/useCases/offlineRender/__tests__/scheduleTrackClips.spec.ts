@@ -1003,6 +1003,114 @@ describe('scheduleTrackClips — MIDI plugin-delay compensation', () => {
         expect(frozen).toEqual(live);
     });
 
+    describe.each([
+        { route: 'direct', withYeast: false },
+        { route: 'Yeast', withYeast: true },
+    ])('a frozen take against live comp playback, rendered through the $route route', ({ withYeast }) => {
+        // Pass 1 of a loop [0, 4) recording reads source 4 at its pass head 0. The comp opens at 8, past
+        // two passes of it, so the take's own grid counts its first repeat there as a later occurrence.
+        // The live take renders the clip's rows through the direct route; the frozen one renders the
+        // captured rows through the route under test.
+        const row = (id: string, pitch: number, startBeat: number, duration = 0.25) => ({
+            id,
+            pitch,
+            startBeat,
+            duration,
+            velocity: 100,
+            probability: 50,
+            recordingPassIndex: 1,
+        });
+        // `held` outlasts every loop length below, so the loop length bounds how long it sounds.
+        const rows = [
+            row('a', 60, 4.25),
+            row('b', 61, 5.25),
+            row('c', 62, 6.25),
+            row('d', 63, 7.25),
+            row('held', 64, 4.5, 3.25),
+        ];
+        const pass = {
+            id: 'pass-1',
+            clipId: 'clip-1',
+            name: 'Pass 1',
+            startBeat: 0,
+            endBeat: 4,
+            selected: true,
+            sourceOffsetBeats: 4,
+            recordingPassIndex: 1,
+        };
+        const midiSource = {
+            sourceClipId: 'clip-1',
+            sourceEntryBeat: 4,
+            sourceEndBeat: 8,
+            phaseHeadBeat: 0,
+            passLengthBeats: 4,
+            rows: {
+                notes: { present: true, value: rows },
+                controlChanges: { present: true, value: [] },
+                pitchBends: { present: true, value: [] },
+            },
+        };
+
+        async function heard(frozen: boolean, loopLengthBeats: number) {
+            mocks.takeLaneValue.value = {
+                lanes: [
+                    {
+                        id: 'lane-midi',
+                        trackId: 'track-inst',
+                        takes: [frozen ? { ...pass, midiSource } : pass],
+                        activeCompRegions: [{ startBeat: 8, endBeat: 20, takeId: 'pass-1' }],
+                    },
+                ],
+            };
+            mocks.shouldPlayMidiEvent.mockClear();
+            const events = await runSchedule({
+                clipEndBeat: 20,
+                loopLengthBeats,
+                notes: frozen ? [] : rows,
+                productionProjection: true,
+                withYeast: frozen && withYeast,
+            });
+            return {
+                notes: voiceEvents(events)
+                    .map((event) => [event.type, event.pitch, event.time])
+                    .sort(
+                        (left, right) =>
+                            Number(left[2]) - Number(right[2]) ||
+                            Number(left[1]) - Number(right[1]) ||
+                            String(left[0]).localeCompare(String(right[0]))
+                    ),
+                rolls: mocks.shouldPlayMidiEvent.mock.calls
+                    .map(([input]) => `${input.eventId}@${input.absoluteOccurrenceIndex}`)
+                    .sort(),
+            };
+        }
+
+        it.each([
+            { loopLengthBeats: 4, firstOccurrence: 3 },
+            { loopLengthBeats: 2, firstOccurrence: 6 },
+            { loopLengthBeats: 3, firstOccurrence: 4 },
+        ])(
+            'renders a comp looping every $loopLengthBeats beats of the four-beat pass as live does',
+            async ({ loopLengthBeats, firstOccurrence }) => {
+                const live = await heard(false, loopLengthBeats);
+                const frozen = await heard(true, loopLengthBeats);
+
+                // The base clip under the gap before the comp rolls its own rows on its own occurrences, and
+                // a held note a repeat wraps rolls once per piece; neither changes what sounds.
+                const compRolls = (rolls: readonly string[]) => [
+                    ...new Set(rolls.filter((roll) => Number(roll.split('@')[1]) >= firstOccurrence)),
+                ];
+                expect(compRolls(live.rolls)).toContain(`a@${firstOccurrence}`);
+                expect(live.notes.filter(([type, pitch]) => type === 'on' && pitch === 60)).toHaveLength(
+                    12 / loopLengthBeats
+                );
+                expect(frozen.notes).toEqual(live.notes);
+                expect(compRolls(frozen.rolls)).toEqual(compRolls(live.rolls));
+                expect(compRolls(frozen.rolls)).toHaveLength(new Set(frozen.rolls).size);
+            }
+        );
+    });
+
     it('projects the same canonical Levain articulation into full-mix worklet events without changing note clocks', async () => {
         const offlineCtx = makeOfflineCtx();
         const track = makeMidiTrack();

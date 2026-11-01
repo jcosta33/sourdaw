@@ -58,6 +58,19 @@ describe('frozen MIDI take repeats', () => {
         }
     );
 
+    it('restarts every loop length, not every pass length, when the clip loops on another length', () => {
+        // The pass is four beats; the clip loops every two, then every six.
+        expect(spans({ startBeat: 8, endBeat: 14, loopEnabled: true, loopLength: 2 }, 8, 14)).toEqual([
+            [0, 8, 8, 10, 2],
+            [1, 10, 10, 12, 2],
+            [2, 12, 12, 14, 2],
+        ]);
+        expect(spans({ startBeat: 8, endBeat: 20, loopEnabled: true, loopLength: 6 }, 8, 20)).toEqual([
+            [0, 8, 8, 14, 6],
+            [1, 14, 14, 20, 6],
+        ]);
+    });
+
     it('ends the last repeat of a looping fragment at the fragment end', () => {
         expect(spans({ startBeat: 6, endBeat: 11, loopEnabled: true, loopLength: 4 }, 6, 11)).toEqual([
             [0, 6, 8, 10, 4],
