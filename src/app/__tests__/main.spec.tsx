@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     },
     bootstrap: vi.fn(),
     reportError: vi.fn(),
+    logError: vi.fn<(error: Error) => void>(),
     clearInheritedRetrospectiveCaptureArm: vi.fn(),
     desktopStartupError: vi.fn(() => null),
     mountBrowserDisplayScaleHost: vi.fn(),
@@ -115,6 +116,10 @@ function expectFirstPaintBusesRegisteredBeforeRender(): void {
 }
 
 vi.mock('#/styles/main.css', () => ({}));
+
+vi.mock('#/infra/logger/appLogger', () => ({
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: mocks.logError, setWriters: vi.fn() },
+}));
 
 vi.mock('../browserDisplayScaleHost', () => ({
     mountBrowserDisplayScaleHost: mocks.mountBrowserDisplayScaleHost,
@@ -455,6 +460,7 @@ describe('app main composition', () => {
         expectFirstPaintBusesRegisteredBeforeRender();
         expect(mocks.reloadApplication).not.toHaveBeenCalled();
         expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).not.toHaveBeenCalled();
         expect(appRenderObserved).toBe(true);
     });
 
@@ -480,7 +486,7 @@ describe('app main composition', () => {
         expect(mocks.reloadApplication).toHaveBeenCalledWith(window.location);
     });
 
-    it('reports the persistent App import failure before rendering the terminal view', async () => {
+    it('logs the persistent App import failure, raising no page error, before rendering the terminal view', async () => {
         const failure = new Error('controlled persistent import failure');
         mocks.resolveAppComposition.mockReturnValue('application');
         mocks.loadApp.mockRejectedValue(failure);
@@ -488,17 +494,20 @@ describe('app main composition', () => {
         await import('../main');
         await vi.waitFor(() => expect(mocks.render).toHaveBeenCalledTimes(2));
 
-        expect(mocks.reportError).toHaveBeenCalledOnce();
+        expect(mocks.reportError).not.toHaveBeenCalled();
+        expect(mocks.logError).toHaveBeenCalledOnce();
         // Vitest wraps a module rejection in its own mock-factory error and keeps the original as `cause`.
-        expect(mocks.reportError).toHaveBeenCalledWith(expect.objectContaining({ cause: failure }));
-        const reportOrder = mocks.reportError.mock.invocationCallOrder[0];
+        expect(mocks.logError).toHaveBeenCalledWith(
+            expect.objectContaining({ cause: expect.objectContaining({ cause: failure }) })
+        );
+        const logOrder = mocks.logError.mock.invocationCallOrder[0];
         const terminalRenderOrder = mocks.render.mock.invocationCallOrder[1];
-        expect(reportOrder).toBeDefined();
+        expect(logOrder).toBeDefined();
         expect(terminalRenderOrder).toBeDefined();
-        if (reportOrder === undefined || terminalRenderOrder === undefined) {
-            throw new Error('The report or the terminal render did not run');
+        if (logOrder === undefined || terminalRenderOrder === undefined) {
+            throw new Error('The log or the terminal render did not run');
         }
-        expect(reportOrder).toBeLessThan(terminalRenderOrder);
+        expect(logOrder).toBeLessThan(terminalRenderOrder);
     });
 
     it('renders only the fatal startup surface when a desktop document has no bridge', async () => {
