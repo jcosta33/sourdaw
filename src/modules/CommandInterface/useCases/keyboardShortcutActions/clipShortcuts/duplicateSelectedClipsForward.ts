@@ -41,6 +41,17 @@ function collectSelectedClips(tracks: readonly Track[], selectedClipIds: readonl
     return selected;
 }
 
+/** The buffers the redo brings back with the copies it re-creates. */
+function readCopyBufferIds(copies: readonly ClipCopy[]): string[] {
+    const ids: string[] = [];
+    for (const copy of copies) {
+        if (copy.info.audioBufferId !== undefined) {
+            ids.push(copy.info.audioBufferId);
+        }
+    }
+    return ids;
+}
+
 /**
  * Duplicates all selected clips forward by the selection's total time span (R-B2).
  *
@@ -139,6 +150,8 @@ export function duplicateSelectedClipsForward(selectedClipIds: string[]): void {
                 retiredTakeLanes.filter((capture) => capture.lane.takes.some((take) => recreatedIds.has(take.clipId)))
             );
             return undefined;
-        }
+        },
+        // The redo re-creates each audio copy on its buffer.
+        { restoresBufferIds: readCopyBufferIds(copies) }
     );
 }

@@ -16,7 +16,7 @@ import { createReadyHandshake, ensureWorkletRegistered, fetchWasmModule } from '
 import { logger } from '#/infra/logger/appLogger';
 
 import { STEREO_CHANNEL_COUNT } from '../models/ChannelLaw';
-import crumbsProcessorUrl from '../services/crumbsProcessor.ts?worker&url';
+import crumbsProcessorUrl from '../worklets/crumbsProcessor.ts?worker&url';
 
 const DEFAULT_WASM_URL = '/wasm/daw-dsp/daw_dsp_bg.wasm';
 

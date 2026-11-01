@@ -27,7 +27,10 @@ export function openAnswerInChat(answer: AiAnswerNotice): OpenAnswerInChatResult
     if (!projectRevisionMatchesLiveIgnoringSaveWrites(answer.projectRevision)) {
         return 'project-changed';
     }
-    appendAnswerChatMessages(answer.prompt, answer);
+    appendAnswerChatMessages(answer.prompt, answer, {
+        projectIdentity: answer.projectIdentity,
+        projectRevision: answer.projectRevision,
+    });
     if (workspaceStore.value?.chatPanelOpen !== true) {
         toggleChatPanel();
     }

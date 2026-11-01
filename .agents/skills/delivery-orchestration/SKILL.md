@@ -134,12 +134,13 @@ that model. The author works only in the lane and commits there; it never pushes
 
 - Read the whole lane diff yourself (`git diff origin/main...HEAD` in the lane) against the brief:
   specified behavior, tests observing their claimed subjects, nothing outside the stated paths.
-- Run the exact affected specs (`pnpm test:run <changed-spec>`, wrapped in `pnpm guard`) and
+- Run the exact affected specs (`pnpm guard --profile focused -- pnpm test:run <changed-spec>`) and
   `pnpm format <changed-files>` under AGENTS.md [Checks](../../../AGENTS.md#checks). PR CI owns the
   broad suites.
 - Settle every generated artifact the change moves, committed in the lane before publishing:
     - **wasm**: any non-test edit in a package's path-dependency closure moves its hash. Name the
-      affected packages and build scripts from `scripts/wasm-artifacts.ts`, rebuild each, run
+      affected packages and build scripts from `scripts/wasm-artifacts.ts`, rebuild each
+      (`pnpm guard --profile broad -- pnpm <build-script>`), run
       `pnpm wasm:manifest`, stage the artifacts, then `pnpm wasm:verify`. AGENTS.md
       [Delivery](../../../AGENTS.md#delivery) holds the full rule.
     - **Agent evidence manifest**: `evidence/agent-campaign/manifest.json` pins the SHA-256 of every

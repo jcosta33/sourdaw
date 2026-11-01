@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { beginDragGesture, isDragGestureActive } from '../activeDragGesture';
+import { beginDragGesture, isPlainEscapePress, isDragGestureActive } from '../activeDragGesture';
 
 describe('activeDragGesture', () => {
     afterEach(() => {
@@ -31,5 +31,20 @@ describe('activeDragGesture', () => {
         endFirst();
         expect(isDragGestureActive()).toBe(true);
         endSecond();
+    });
+});
+
+describe('isPlainEscapePress', () => {
+    it.each([
+        ['plain Escape', { key: 'Escape' }, true],
+        ['auto-repeating Escape', { key: 'Escape', repeat: true }, false],
+        ['Shift+Escape', { key: 'Escape', shiftKey: true }, false],
+        ['Ctrl+Escape', { key: 'Escape', ctrlKey: true }, false],
+        ['Alt+Escape', { key: 'Escape', altKey: true }, false],
+        ['Meta+Escape', { key: 'Escape', metaKey: true }, false],
+        ['Enter', { key: 'Enter' }, false],
+        ['a letter', { key: 'a' }, false],
+    ] satisfies [string, KeyboardEventInit, boolean][])('%s -> %s', (_name, init, expected) => {
+        expect(isPlainEscapePress(new KeyboardEvent('keydown', init))).toBe(expected);
     });
 });

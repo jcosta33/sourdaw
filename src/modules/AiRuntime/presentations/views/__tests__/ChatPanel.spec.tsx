@@ -55,6 +55,9 @@ vi.mock('../../../useCases/cancelPendingChatActions', () => ({
     cancelPendingChatActions: vi.fn(),
 }));
 vi.mock('../../../useCases/reproposePendingChatActions', () => ({ reproposePendingChatActions: vi.fn() }));
+vi.mock('../../../useCases/aiPanelActions/proposeAnswerSuggestion', () => ({
+    proposeAnswerSuggestion: vi.fn(async () => 'requested'),
+}));
 
 // A real subscribed presentation store; planning, approval and mutation remain separate use-case ports.
 vi.mock('../../../stores/pendingActionConfirmationStore', async () => {
@@ -159,6 +162,7 @@ const { useStore: useRealStore } =
 const { sendChatMessage } = await import('#/modules/AiRuntime/useCases/sendChatMessage');
 const { confirmPendingChatActions } = await import('../../../useCases/confirmPendingChatActions');
 const { cancelPendingChatActions } = await import('../../../useCases/cancelPendingChatActions');
+const { proposeAnswerSuggestion } = await import('../../../useCases/aiPanelActions/proposeAnswerSuggestion');
 const { recoverAgentRunPendingEffects } = await import('../../../useCases/recoverAgentRunPendingEffects');
 const { agentRunStore } = await import('#/modules/AiRuntime/stores/agentRunStore');
 const { clearPendingActionConfirmations, pendingActionConfirmationStore, proposePendingActionConfirmation } =
@@ -647,6 +651,63 @@ describe('ChatPanel', () => {
 
         expect(toggle).toHaveAttribute('aria-expanded', 'true');
         expect(screen.getByText('analysis.measure')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /^Propose / })).not.toBeInTheDocument();
+    });
+
+    function answerWithSuggestion(isGenerating: boolean) {
+        (useStore as ReturnType<typeof vi.fn>).mockReturnValue({
+            messages: [
+                {
+                    id: 'assistant-suggestion',
+                    role: 'assistant',
+                    content: 'The catalog recipe suggests a chest-register lift.',
+                    timestamp: 1,
+                    answerEvidence: [{ callId: 'recipe', toolName: 'recipe.discover', summary: 'One recipe.' }],
+                    answerSuggestion: {
+                        recipeId: 'vocal-warm',
+                        recipeTitle: 'Chest-register lift with a softened upper shelf',
+                        targetId: 'track-lead-vocal',
+                        targetName: 'Lead Vocal',
+                        recipeRole: 'vocal',
+                        roleSource: 'target',
+                    },
+                    projectId: 'project-a',
+                    projectRevision: 'revision-a',
+                },
+            ],
+            isGenerating,
+            chatMode: 'chat',
+            enableReasoning: false,
+        });
+    }
+
+    it('offers the suggestion an answer carries and proposes it from that message only on activation', () => {
+        answerWithSuggestion(false);
+
+        render(<ChatPanel />);
+
+        const propose = screen.getByRole('button', {
+            name: 'Propose Chest-register lift with a softened upper shelf for Lead Vocal',
+        });
+        expect(propose).toHaveTextContent('Propose this');
+        expect(proposeAnswerSuggestion).not.toHaveBeenCalled();
+        expect(screen.queryByRole('button', { name: 'Confirm pending actions' })).not.toBeInTheDocument();
+
+        fireEvent.click(propose);
+
+        expect(proposeAnswerSuggestion).toHaveBeenCalledExactlyOnceWith('assistant-suggestion');
+    });
+
+    it('holds the suggestion offer while a request is generating', () => {
+        answerWithSuggestion(true);
+
+        render(<ChatPanel />);
+
+        expect(
+            screen.getByRole('button', {
+                name: 'Propose Chest-register lift with a softened upper shelf for Lead Vocal',
+            })
+        ).toBeDisabled();
     });
 
     it('offers one accessible retry for receipt-bound missing render artifacts', () => {

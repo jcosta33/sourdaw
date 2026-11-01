@@ -7,7 +7,7 @@
  * ## Why this lives in `models/` and not next to `ProofChamberNode`
  *
  * Two layers need the table and they may not import each other: `engine/` builds
- * the `paramAutomation` message, and `services/proofChamberProcessor.ts` —
+ * the `paramAutomation` message, and `worklets/proofChamberProcessor.ts` —
  * AudioWorklet code, which `services-must-stay-pure` forbids from importing
  * `engine/` — must reject any ordinal the crate would ignore. `models/` is the
  * one layer both may read, so the worklet's guard can be *derived* from this

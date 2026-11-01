@@ -104,7 +104,10 @@ export { hydrateClipWarpStates } from './warp/hydrateClipWarpStates';
 export { removeGainEnvelopePoint } from './clipGainEnvelope/removeGainEnvelopePoint';
 export { resetClipGainEnvelope } from './clipGainEnvelope/resetClipGainEnvelope';
 export { toggleClipGainEnvelope } from './clipGainEnvelope/toggleClipGainEnvelope';
+export { collectAudioBufferIdFields } from './collectAudioBufferIdFields';
 export { isAudioBufferReferencedByUndoHistory } from './isAudioBufferReferencedByUndoHistory';
+export { readUndoEntriesAudioBufferIds } from './readUndoEntriesAudioBufferIds';
+export { readUndoHistoryAudioBufferIds } from './readUndoHistoryAudioBufferIds';
 
 // ── Clipboard ─────────────────────────────────────────────────────────────────
 

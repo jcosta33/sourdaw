@@ -58,7 +58,8 @@ export type EngineTransportPosition = {
     timeSigNum: number;
     timeSigDenom: number;
     /**
-     * The engine's held master peak, linear and never negative.
+     * The engine's held master peak, linear and never negative. `+Infinity`
+     * is a reading (an output that blew up), not a malformed value.
      *
      * Alone on this reading in making no claim about *when* it was taken: the
      * engine publishes it on its own channel, and it rides this reply only
