@@ -1,0 +1,24 @@
+scripts/hostedAptInstall.py
+  s_88fc7e0d05bab6::t_fc5e68250ba17a 72
+  s_88fc7e0d05bab6::t_8c3eb3ba8c9b19 69-71
+  s_88fc7e0d05bab6::t_ee36fe036f2854 73-74
+  s_88fc7e0d05bab6::t_028d300f64a1f7 4,85-89
+scripts/__tests__/fixtures/hostedAptInstall/observation.py
+  s_88fc7e0d05bab6::t_11e4b61736ae31 3,95-137
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1d2ec272b7736193507a67755f8719e643bd6d21",
+  "prompts": {},
+  "sessions": {
+    "s_88fc7e0d05bab6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8a1169e5-22ba-4508-8e89-40b3d4d7809b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
