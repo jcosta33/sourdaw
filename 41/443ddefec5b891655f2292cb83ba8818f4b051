@@ -1,0 +1,31 @@
+src/modules/AudioEngine/worklets/__tests__/proofChamberProcessor.spec.ts
+  s_0314bb17e5dee3::t_23a8c2e87de651 15-22
+eslint.config.mjs
+  s_55244eb93b97d1::t_6a73f47e3946b2 2769-2770,2773
+src/modules/AudioEngine/worklets/grinderProcessor.ts
+  s_0314bb17e5dee3::t_6373adb8386784 11
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "41443ddefec5b891655f2292cb83ba8818f4b051",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    },
+    "s_55244eb93b97d1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9d6a0c32-d4ba-4e24-bd13-8da974561f6e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
