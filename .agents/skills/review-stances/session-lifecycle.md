@@ -720,7 +720,7 @@ touches, so defer it until no initial emission is preparing.
 
 PR #5729 made Play's initial window await the punch-in recorder admission while the witness was live.
 The previous take's commit, and later a previous scheduler session's deferred cleanup, could land
-inside that await and refuse the Play. #6013 repairs it: a Play whose first window punches in waits
+inside that await and refuse the Play. #6013 fixed it: a Play whose first window punches in waits
 for the closing take first (`opensPunchIn` is shared with the scheduler), and refused-start cleanup
 is held across scheduler sessions.
 
