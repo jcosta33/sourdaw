@@ -139,21 +139,28 @@ function expectWithinOneSampleOfBisection(
     const expected = expectedSamples(points, projectBeat);
 
     expect(events.map((event) => event.timeSeconds)).toEqual(expected.map((sample) => sample.time));
-    const outOfBound = events.flatMap((event, index) => {
-        const sample = expected[index]!;
-        const low = Math.max(sample.first.beat, sample.oracleBeat - oneSampleOfBeat);
-        const high = Math.min(sample.second.beat, sample.oracleBeat + oneSampleOfBeat);
-        const reachable = Array.from({ length: 17 }, (_, probe) =>
-            curveValue(sample, low + ((high - low) * probe) / 16)
+    const checked = events.map((event, index) => ({
+        event,
+        reachable: valuesWithinBeats(expected[index]!, oneSampleOfBeat),
+    }));
+    const outOfBound = checked
+        .filter(({ event, reachable }) => liesOutside(event.value, reachable, 1e-9))
+        .map(
+            ({ event, reachable }) =>
+                `t=${event.timeSeconds}: ${event.value} outside [${Math.min(...reachable)}, ${Math.max(...reachable)}]`
         );
-        const slack = 1e-9;
-        const lowest = Math.min(...reachable);
-        const highest = Math.max(...reachable);
-        return event.value < lowest - slack || event.value > highest + slack
-            ? [`#${index} t=${event.timeSeconds}: ${event.value} outside [${lowest}, ${highest}]`]
-            : [];
-    });
     expect(outOfBound.slice(0, 5)).toEqual([]);
+}
+
+/** Values the sample's curve takes within `beats` of the beat the old bisection gave it. */
+function valuesWithinBeats(sample: ExpectedSample, beats: number): number[] {
+    const low = Math.max(sample.first.beat, sample.oracleBeat - beats);
+    const high = Math.min(sample.second.beat, sample.oracleBeat + beats);
+    return Array.from({ length: 17 }, (_, probe) => curveValue(sample, low + ((high - low) * probe) / 16));
+}
+
+function liesOutside(value: number, reachable: readonly number[], slack: number): boolean {
+    return value < Math.min(...reachable) - slack || value > Math.max(...reachable) + slack;
 }
 
 describe('compileAutomationEvents — beat inversion on a straight projection', () => {
@@ -235,18 +242,19 @@ describe('compileAutomationEvents — beat inversion on a ramp or across a tempo
                     )
                 );
                 expect(Object.is(events.at(-1)!.value, valueAt(visibleEndBeat))).toBe(true);
-                const outsideBracket = events.slice(0, -1).flatMap((event) => {
-                    const oracleBeat = bisectedBeatAtTime(
-                        visibleStartBeat,
-                        visibleEndBeat,
-                        event.timeSeconds + regionStart,
-                        projectSquare
-                    );
-                    const reachable = [valueAt(oracleBeat - bracket), valueAt(oracleBeat + bracket)];
-                    return event.value < Math.min(...reachable) - 1e-12 || event.value > Math.max(...reachable) + 1e-12
-                        ? [`${duration}s t=${event.timeSeconds}: ${event.value}`]
-                        : [];
-                });
+                const outsideBracket = events
+                    .slice(0, -1)
+                    .filter((event) => {
+                        const oracleBeat = bisectedBeatAtTime(
+                            visibleStartBeat,
+                            visibleEndBeat,
+                            event.timeSeconds + regionStart,
+                            projectSquare
+                        );
+                        const reachable = [valueAt(oracleBeat - bracket), valueAt(oracleBeat + bracket)];
+                        return liesOutside(event.value, reachable, 1e-12);
+                    })
+                    .map((event) => `${duration}s t=${event.timeSeconds}: ${event.value}`);
                 expect(outsideBracket.slice(0, 5)).toEqual([]);
             }
         }
