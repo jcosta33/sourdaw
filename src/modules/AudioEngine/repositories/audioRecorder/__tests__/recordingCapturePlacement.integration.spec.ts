@@ -114,6 +114,11 @@ vi.mock('../../createWebAudioEngine', () => ({
         get context() {
             return context;
         },
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
         setTransportInfo: vi.fn(),
     },
 }));

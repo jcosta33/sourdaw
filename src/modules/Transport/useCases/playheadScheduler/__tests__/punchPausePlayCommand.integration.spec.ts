@@ -154,7 +154,14 @@ vi.mock('#/modules/AudioEngine/useCases', async (importOriginal) => ({
     startAudioRecording: mocks.startAudioRecording,
     stopAudioRecording: mocks.stopAudioRecording,
     readNativeEnginePlayheadSeconds: () => null,
-    audioEngine: { setTransportInfo: vi.fn() },
+    audioEngine: {
+        beginAudioPreviewIntent: () => ({
+            signal: new AbortController().signal,
+            isCurrent: () => true,
+            release: vi.fn(),
+        }),
+        setTransportInfo: vi.fn(),
+    },
     refreshSidechainAlignment: vi.fn(),
     scheduleAdjustmentLayers: vi.fn(),
     stopAllScheduled: vi.fn(),
