@@ -1,0 +1,21 @@
+src/modules/CommandInterface/useCases/keyboardShortcutActions/handleKeyboardShortcut/__tests__/handleKeydownToolKeys.spec.ts
+  s_0314bb17e5dee3::t_cbcc54eb47146e 16-41,51,84-86,92-96,108,125
+src/modules/WorkspaceShell/presentations/components/__tests__/ShortcutCheatSheet.spec.tsx
+  s_0314bb17e5dee3::t_6ec8ef0d6660b1 106-117
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0d57ed84e9db67312807c06a41c4da429189b119",
+  "prompts": {},
+  "sessions": {
+    "s_0314bb17e5dee3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "36258af0-bda2-4189-8943-c2845697b59f",
+        "model": "unknown"
+      },
+      "human_author": "hplovecraft208[bot] <318698904+hplovecraft208[bot]@users.noreply.github.com>"
+    }
+  }
+}
