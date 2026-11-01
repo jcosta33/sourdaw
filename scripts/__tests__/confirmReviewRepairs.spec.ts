@@ -295,19 +295,11 @@ describe('confirmReviewRepairs', () => {
             { label: 'paragraph separator', separator: '\u2029', escaped: '\\u2029' },
         ].flatMap((entry) => [false, true].map((withEligible) => ({ ...entry, withEligible })))
     )(
-        'keeps persisted $label paths in one refusal line before aborting (eligible included: $withEligible)',
+        'keeps persisted $label threads in one refusal line before aborting (eligible included: $withEligible)',
         ({ separator, escaped, withEligible }) => {
-            const record = recordFor({
-                finding: {
-                    commentId: ROOT_COMMENT_ID,
-                    path: `scripts/first.ts${separator}forged`,
-                    line: FINDING_LINE,
-                    side: 'RIGHT',
-                },
-            });
+            const record = recordFor({ thread: `${THREAD}${separator}forged` });
             const reply = authorRecordReply(record);
             const refused = subjectThread({
-                rootPath: 'scripts/actual.ts',
                 replies: [{ id: 9_001, body: reply, authorNodeId: AUTHOR_BOT_NODE_ID }],
             });
             const ignoredThread = `PRRT_ignored${separator}continued`;
@@ -326,7 +318,7 @@ describe('confirmReviewRepairs', () => {
             expect(mutations).toEqual([]);
             const refusalLines = logs.filter((line) => line.startsWith('repair-refused:'));
             expect(refusalLines.join('\n').split(/[\r\n\u2028\u2029]/u)).toEqual([
-                `repair-refused:${PR}:${THREAD}:finding path scripts/first.ts${escaped}forged does not match the thread root scripts/actual.ts`,
+                `repair-refused:${PR}:${THREAD}:thread ${THREAD}${escaped}forged does not match the confirmed thread ${THREAD}`,
             ]);
             expect(logs).toEqual([
                 `repair-ignored:${PR}:PRRT_ignored${escaped}continued:already resolved`,
@@ -343,7 +335,7 @@ describe('confirmReviewRepairs', () => {
                 { ...cleanThreads()[1]!, rootCommentId: SECOND_ROOT_COMMENT_ID + 100 },
                 subjectThread({
                     thread: THIRD_THREAD,
-                    rootPath: 'scripts/other.ts',
+                    rootSide: 'LEFT',
                     replies: [
                         {
                             id: 9_003,
@@ -365,7 +357,7 @@ describe('confirmReviewRepairs', () => {
             expect(logs).toEqual([
                 `repair-ignored:${PR}:PRRT_ignored:already resolved`,
                 `repair-refused:${PR}:${SECOND_THREAD}:finding commentId ${SECOND_ROOT_COMMENT_ID} does not match the thread root ${SECOND_ROOT_COMMENT_ID + 100}`,
-                `repair-refused:${PR}:${THIRD_THREAD}:finding path ${FINDING_PATH} does not match the thread root scripts/other.ts`,
+                `repair-refused:${PR}:${THIRD_THREAD}:finding side RIGHT does not match the thread root LEFT`,
             ]);
             expect(postConfirmation).not.toHaveBeenCalled();
             expect(resolve).not.toHaveBeenCalled();
@@ -1310,9 +1302,9 @@ describe('readReviewThreads', () => {
     /**
      * `line: 367, originalLine: 358` on thread `PRRT_kwDORobapc6j97u1` of this pull request is the
      * live shape: GitHub keeps reporting the line the comment moved to while `originalLine` still
-     * holds the position it was written against. A root with both positive and different must bind
-     * the live line, and the fixture below asserts the live line is what the record is matched on,
-     * so reversing the two branches in `readFindingLine` leaves the repair unconfirmed.
+     * holds the position it was written against. A root with both positive and different must read
+     * the live line, the one `review:repair` records, so reversing the two branches in
+     * `readFindingLine` fails the `rootLine` assertion below.
      */
     it('should bind a moved root to its live line, not the line it was originally written against', () => {
         const record = recordFor({
@@ -1401,6 +1393,58 @@ describe('readReviewThreads', () => {
         const threads = readReviewThreads(PR, gh, []);
         expect(threads[0]?.rootLine).toBe(OUTDATED_LINE);
         expect(calls[0]?.query).toContain('originalLine');
+        expect(confirmReviewRepairs(PR, HEAD, fakePort(HEAD, threads).port)).toEqual({ resolved: [THREAD] });
+    });
+
+    /**
+     * #6085 and #6088: the record kept the line and path the root showed at repair time, then a later
+     * push outdated the root (GitHub nulls its live line, so the reader falls back to the original
+     * line) and renamed its file (GitHub rewrites the root's path). The comment id and side still
+     * identify the root, so the immutable record stays confirmable.
+     */
+    it('should confirm a repair whose root has since gone outdated and been renamed', () => {
+        const record = recordFor({
+            finding: { commentId: ROOT_COMMENT_ID, path: FINDING_PATH, line: MOVED_LINE, side: 'RIGHT' },
+        });
+        const renamedPath = ['scripts', 'models', 'confirmReviewRepairs.ts'].join('/');
+        const { gh } = recordingGh(() =>
+            page(
+                [
+                    threadNode({
+                        comments: {
+                            nodes: [
+                                {
+                                    id: 'PRRC_kwDOconfirmRenamed',
+                                    databaseId: ROOT_COMMENT_ID,
+                                    body: 'Defect.',
+                                    path: renamedPath,
+                                    line: null,
+                                    originalLine: ORIGINAL_LINE,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
+                                    author: { __typename: 'Bot', login: 'r', id: REVIEWER_BOT_NODE_ID },
+                                },
+                                {
+                                    id: 'PRRC_kwDOconfirmRenamedRecord',
+                                    databaseId: 9_001,
+                                    body: authorRecordReply(record),
+                                    path: null,
+                                    line: null,
+                                    originalLine: null,
+                                    pullRequestReview: { commit: { oid: REVIEWED_HEAD } },
+                                    author: { __typename: 'Bot', login: 'a', id: AUTHOR_BOT_NODE_ID },
+                                },
+                            ],
+                            pageInfo: { hasNextPage: false, endCursor: null },
+                        },
+                    }),
+                ],
+                { hasNextPage: false, endCursor: null }
+            )
+        );
+
+        const threads = readReviewThreads(PR, gh, []);
+        expect(threads[0]?.rootPath).toBe(renamedPath);
+        expect(threads[0]?.rootLine).toBe(ORIGINAL_LINE);
         expect(confirmReviewRepairs(PR, HEAD, fakePort(HEAD, threads).port)).toEqual({ resolved: [THREAD] });
     });
 
