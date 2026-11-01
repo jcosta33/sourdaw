@@ -14,6 +14,11 @@ function rowsOf(title: string): { description: string; keys: string }[] {
     }));
 }
 
+function allRows(): { description: string; keys: string }[] {
+    const titles = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent ?? '');
+    return titles.flatMap(rowsOf);
+}
+
 describe('ShortcutCheatSheet', () => {
     it('should open when ? is pressed', () => {
         render(<ShortcutCheatSheet />);
@@ -128,7 +133,9 @@ describe('ShortcutCheatSheet — tool keys', () => {
         render(<ShortcutCheatSheet />);
         fireEvent.keyDown(window, { key: '?' });
 
-        expect(screen.queryByText('Voice command (hold)')).toBeNull();
-        expect(screen.queryByText('Deselect all')).toBeNull();
+        const shownKeys = allRows().map((row) => row.keys);
+
+        expect(shownKeys).not.toContain('V');
+        expect(shownKeys).not.toContain('⌘ ⇧ A');
     });
 });

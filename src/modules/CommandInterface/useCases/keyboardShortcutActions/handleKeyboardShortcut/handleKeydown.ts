@@ -22,6 +22,7 @@ import { workspaceStore } from '#/modules/WorkspaceShell/stores';
 import {
     closeCollaborationPanel,
     cycleAutomationVisibility,
+    getToolForKeyPress,
     openExportDialog,
     openPreferencesDialog,
     setEditingTool,
@@ -32,8 +33,6 @@ import {
     toggleTrackList,
     toggleVirtualKeyboard,
     toggleWorkspaceMode,
-    NUMBER_TOOL_SHORTCUTS,
-    TOOL_SHORTCUTS,
 } from '#/modules/WorkspaceShell/useCases';
 import { isDragGestureActive } from '#/utils/UI/activeDragGesture';
 
@@ -551,7 +550,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         return true;
     }
 
-    function handleSimpleKeys(key: string): boolean {
+    function handleSimpleKeys(desc: KeyDescriptor): boolean {
+        const { key } = desc;
         // NOTE: no shortcut-store definitions loop here. The outer
         // `handleKeydown` already iterates every definition with `matches()`
         // and returns on the first match (with identical input-gating and
@@ -577,12 +577,7 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
                 goToPreviousMarker();
                 return false;
             default: {
-                const numberTool = NUMBER_TOOL_SHORTCUTS[key];
-                if (numberTool) {
-                    setEditingTool(numberTool);
-                    return false;
-                }
-                const tool = TOOL_SHORTCUTS[key];
+                const tool = getToolForKeyPress(desc);
                 if (tool) {
                     setEditingTool(tool);
                 }
@@ -650,9 +645,8 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
         }
 
         // R-A3: Track hold duration for tool shortcuts (press-and-hold for temporary swap)
-        const normalizedKey = key.toLowerCase();
-        const tool = NUMBER_TOOL_SHORTCUTS[key] || TOOL_SHORTCUTS[normalizedKey];
-        if (tool && !mod && !shift && !alt && !repeat) {
+        const tool = getToolForKeyPress({ ...desc, key: key.toLowerCase() });
+        if (tool && !shift && !repeat) {
             startToolSwap({
                 key,
                 timestamp: performance.now(),
@@ -660,6 +654,6 @@ export const handleKeydown = inject({ eventBus: CommandEventBus })(({ eventBus }
             });
         }
 
-        return handleSimpleKeys(key);
+        return handleSimpleKeys(desc);
     };
 });

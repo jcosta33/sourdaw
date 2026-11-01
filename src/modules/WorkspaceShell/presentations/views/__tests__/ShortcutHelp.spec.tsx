@@ -21,6 +21,19 @@ function setCustomMappings(customMappings: Record<string, string[]>): void {
     });
 }
 
+function allRows(): { description: string; keys: string }[] {
+    const titles = screen.getAllByRole('heading', { level: 3 }).map((heading) => heading.textContent ?? '');
+    return titles.flatMap((title) => {
+        const stack = screen.getByText(title).nextElementSibling;
+        return Array.from(stack?.children ?? []).map((row) => ({
+            description: row.children[0]?.textContent ?? '',
+            keys: Array.from(row.children[1]?.children ?? [])
+                .map((keycap) => keycap.textContent)
+                .join(' '),
+        }));
+    });
+}
+
 describe('ShortcutHelp', () => {
     beforeEach(() => {
         setCustomMappings({});
@@ -38,6 +51,15 @@ describe('ShortcutHelp', () => {
         expect(viewRows()).toContainEqual({ description: 'Cycle Automation Visibility', keys: 'A' });
         expect(viewRows()).toContainEqual({ description: 'Show Automation Panel', keys: '⌘ ⇧ A' });
         expect(screen.getAllByText('Automation tool')).toHaveLength(1);
+    });
+
+    it('lists the Cmd+Shift+A combo only on the Show Automation Panel row', () => {
+        render(<ShortcutHelp />);
+        fireEvent.keyDown(window, { key: '?' });
+
+        const owners = allRows().filter((row) => row.keys === '⌘ ⇧ A');
+
+        expect(owners).toStrictEqual([{ description: 'Show Automation Panel', keys: '⌘ ⇧ A' }]);
     });
 
     it('follows a user remap of the shortcut', () => {

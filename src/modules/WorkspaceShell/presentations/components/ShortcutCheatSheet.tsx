@@ -26,8 +26,9 @@ const TOOL_DESCRIPTIONS: Record<EditingTool, string> = {
     marquee: 'Marquee tool',
 };
 
-// Rows come from the maps `handleKeydown` selects tools with, so a key shown
-// here is a key that selects the tool.
+// Rows come from the default tool key maps `handleKeydown` reads, so a default
+// tool key cannot drift from this help. A user remap of a store shortcut onto a
+// tool letter is matched before the tool lookup and is not reflected here.
 const toolRows = (shortcuts: Record<string, EditingTool>): ShortcutRow[] =>
     Object.entries(shortcuts).map(([key, tool]) => ({ keys: key.toUpperCase(), description: TOOL_DESCRIPTIONS[tool] }));
 

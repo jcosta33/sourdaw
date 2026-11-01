@@ -1,4 +1,3 @@
-import { type EditingTool } from '../../models/EditingTool';
 import {
     type WorkspaceState,
     type WorkspaceMode,
@@ -8,18 +7,4 @@ import {
     type AutomationVisibility,
 } from '../../models/WorkspaceState';
 
-export type {
-    WorkspaceState,
-    WorkspaceMode,
-    SoloMode,
-    ChannelStripWidth,
-    TimeDisplayMode,
-    AutomationVisibility,
-    EditingTool,
-};
-
-// Re-exported, never redeclared. A second literal here silently diverged from
-// `models/EditingTool` and dropped `e: 'marquee'`, so the keyboard path (which
-// reads this copy through `useCases/index.ts`) could not reach a tool whose own
-// label advertises the shortcut.
-export { TOOL_SHORTCUTS, NUMBER_TOOL_SHORTCUTS, getToolShortcutKeys } from '../../models/EditingTool';
+export type { WorkspaceState, WorkspaceMode, SoloMode, ChannelStripWidth, TimeDisplayMode, AutomationVisibility };

@@ -53,8 +53,7 @@ vi.mock('#/modules/WorkspaceShell/useCases', () => ({
     toggleVirtualKeyboard: vi.fn(),
     openExportDialog: vi.fn(),
     openPreferencesDialog: vi.fn(),
-    TOOL_SHORTCUTS: {},
-    NUMBER_TOOL_SHORTCUTS: {},
+    getToolForKeyPress: vi.fn(() => null),
 }));
 
 vi.mock('#/modules/Arrangement/stores', () => ({

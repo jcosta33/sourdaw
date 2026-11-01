@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { injectDependencies } from '#/infra/di/testing/injectDependencies';
-import { getToolShortcutKeys, setEditingTool } from '#/modules/WorkspaceShell/useCases';
+import { executeUserAppAction } from '#/modules/Command/useCases';
+import { getToolShortcutHint, setEditingTool } from '#/modules/WorkspaceShell/useCases';
 
 import { shortcutStore } from '../../../../stores/shortcutStore';
 import { viewCommands } from '../../../commands/ViewCommands';
@@ -69,8 +70,16 @@ const TOOLS = ['select', 'cut', 'draw', 'automation', 'stretch', 'marquee'] as c
 // `g` arms the AI chord leader and swallows the next press, so it goes last.
 const CANDIDATE_KEYS = [...'abcdefhijklmnopqrstuvwxyz0123456789g'];
 
-function press(key: string): void {
-    const descriptor: KeyDescriptor = { key, mod: false, shift: false, alt: false, repeat: false, isInput: false };
+function press(key: string, modifiers: Partial<KeyDescriptor> = {}): void {
+    const descriptor: KeyDescriptor = {
+        key,
+        mod: false,
+        shift: false,
+        alt: false,
+        repeat: false,
+        isInput: false,
+        ...modifiers,
+    };
     handleKeydown(descriptor);
 }
 
@@ -105,7 +114,7 @@ describe('tool shortcut help matches the keyboard handler', () => {
         const selecting = keysThatSelect();
 
         for (const tool of TOOLS) {
-            expect(sortedKeys(getToolShortcutKeys(tool))).toStrictEqual(sortedKeys(selecting[tool]));
+            expect(sortedKeys(getToolShortcutHint(tool).split(' / '))).toStrictEqual(sortedKeys(selecting[tool]));
         }
     });
 
@@ -131,6 +140,28 @@ describe('tool shortcut help matches the keyboard handler', () => {
         press('a');
 
         expect(cycleAutomationVisibilityMock).toHaveBeenCalledTimes(1);
+        expect(setEditingTool).not.toHaveBeenCalled();
+    });
+
+    it.each([
+        ['mod', { mod: true }],
+        ['alt', { alt: true }],
+    ] as const)('selects no tool when a tool key is pressed with %s', (_name, modifiers) => {
+        const toolKeys = Object.values(keysThatSelect()).flat();
+        vi.mocked(setEditingTool).mockClear();
+
+        for (const key of toolKeys) {
+            press(key.toLowerCase(), modifiers);
+        }
+
+        expect(toolKeys.length).toBeGreaterThan(0);
+        expect(setEditingTool).not.toHaveBeenCalled();
+    });
+
+    it('still runs the shortcut-store binding of a modified tool letter', () => {
+        press('c', { mod: true });
+
+        expect(executeUserAppAction).toHaveBeenCalledWith({ type: 'copyClip' });
         expect(setEditingTool).not.toHaveBeenCalled();
     });
 });
